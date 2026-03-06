@@ -25,7 +25,13 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { DeleteRegular, KeyRegular, PhoneRegular } from "@fluentui/react-icons";
+import {
+  ArrowDownloadRegular,
+  CopyRegular,
+  DeleteRegular,
+  KeyRegular,
+  PhoneRegular,
+} from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startRegistration } from "@simplewebauthn/browser";
@@ -292,13 +298,37 @@ export function Security() {
                 </Text>
               ))}
             </div>
-            <Button
-              size="small"
-              onClick={() => setBackupCodes(null)}
-              style={{ marginTop: 8 }}
-            >
-              Done
-            </Button>
+            <div className={styles.actions} style={{ marginTop: 8 }}>
+              <Button
+                size="small"
+                icon={<CopyRegular />}
+                onClick={() =>
+                  navigator.clipboard.writeText(backupCodes.join("\n"))
+                }
+              >
+                Copy
+              </Button>
+              <Button
+                size="small"
+                icon={<ArrowDownloadRegular />}
+                onClick={() => {
+                  const blob = new Blob([backupCodes.join("\n")], {
+                    type: "text/plain",
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "prism-backup-codes.txt";
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                Download
+              </Button>
+              <Button size="small" onClick={() => setBackupCodes(null)}>
+                Done
+              </Button>
+            </div>
           </div>
         )}
 
