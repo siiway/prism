@@ -1,7 +1,7 @@
 // Auth routes: register, login, logout, 2FA, passkeys, email verify, social OAuth callback
 
 import { Hono } from 'hono';
-import { getConfig, getConfigValue } from '../lib/config';
+import { getConfig, getConfigValue, getJwtSecret } from '../lib/config';
 import { hashPassword, randomId, randomBase64url, verifyPassword } from '../lib/crypto';
 import { sendEmail, verifyEmailTemplate } from '../lib/email';
 import { signJWT } from '../lib/jwt';
@@ -146,7 +146,7 @@ app.post('/register', async (c) => {
   if (!user) return c.json({ error: 'User not found after creation' }, 500);
 
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c.env.DB, c.env.JWT_SECRET, user, ttl);
+  const token = await issueSession(c.env.DB, await getJwtSecret(c.env.KV_SESSIONS), user, ttl);
   return c.json({ token, user: safeUser(user) }, 201);
 });
 
@@ -214,7 +214,7 @@ app.post('/login', async (c) => {
 
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c.env.DB, c.env.JWT_SECRET, user, ttl);
+  const token = await issueSession(c.env.DB, await getJwtSecret(c.env.KV_SESSIONS), user, ttl);
   return c.json({ token, user: safeUser(user) });
 });
 
@@ -501,7 +501,7 @@ app.post('/passkey/auth/finish', async (c) => {
 
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c.env.DB, c.env.JWT_SECRET, user, ttl);
+  const token = await issueSession(c.env.DB, await getJwtSecret(c.env.KV_SESSIONS), user, ttl);
   return c.json({ token, user: safeUser(user) });
 });
 

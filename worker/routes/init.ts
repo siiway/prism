@@ -1,7 +1,7 @@
 // Init route: check if the platform is initialized, create first admin
 
 import { Hono } from 'hono';
-import { isInitialized, setConfigValue } from '../lib/config';
+import { isInitialized, setConfigValue, getJwtSecret } from '../lib/config';
 import { hashPassword } from '../lib/crypto';
 import { randomId } from '../lib/crypto';
 import { signJWT } from '../lib/jwt';
@@ -72,6 +72,7 @@ app.post('/', async (c) => {
   // Issue a session token
   const sessionId = randomId(32);
   const sessionTtl = 30 * 24 * 60 * 60;
+  const jwtSecret = await getJwtSecret(c.env.KV_SESSIONS);
   const token = await signJWT(
     {
       sub: userId,
@@ -83,7 +84,7 @@ app.post('/', async (c) => {
       email_verified: true,
       sessionId,
     },
-    c.env.JWT_SECRET,
+    jwtSecret,
     sessionTtl,
   );
 

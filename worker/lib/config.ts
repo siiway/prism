@@ -93,3 +93,19 @@ export async function setConfigValues(
 export async function isInitialized(db: D1Database): Promise<boolean> {
   return getConfigValue(db, 'initialized');
 }
+
+// ─── JWT secret (auto-generated, stored in KV, never exposed via config API) ──
+
+const JWT_SECRET_KEY = 'system:jwt_secret';
+
+export async function getJwtSecret(kv: KVNamespace): Promise<string> {
+  const existing = await kv.get(JWT_SECRET_KEY);
+  if (existing) return existing;
+
+  // First call: generate a cryptographically random 256-bit secret
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const secret = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  await kv.put(JWT_SECRET_KEY, secret);
+  return secret;
+}

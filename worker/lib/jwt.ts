@@ -14,7 +14,7 @@ function decodeBase64url(str: string): string {
 }
 
 async function importKey(secret: string): Promise<CryptoKey> {
-  if (!secret) throw new Error('JWT_SECRET is not set. Add it to .dev.vars for local dev or run: wrangler secret put JWT_SECRET');
+  if (!secret) throw new Error('JWT secret is not set');
   return crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),

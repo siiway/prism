@@ -12,8 +12,6 @@ interface Env {
   KV_CACHE: KVNamespace;
   // R2 Bucket
   R2_ASSETS: R2Bucket;
-  // Secrets (set via `wrangler secret put`)
-  JWT_SECRET: string;
   // Vars
   APP_URL: string;
 }

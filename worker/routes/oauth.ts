@@ -1,7 +1,7 @@
 // OAuth 2.0 Authorization Server (Authorization Code + PKCE, OpenID Connect)
 
 import { Hono } from 'hono';
-import { getConfig } from '../lib/config';
+import { getConfig, getJwtSecret } from '../lib/config';
 import { randomBase64url, randomId, verifyPkce } from '../lib/crypto';
 import { requireAuth, optionalAuth } from '../middleware/auth';
 import type { OAuthAppRow, OAuthCodeRow, OAuthTokenRow, UserRow, Variables } from '../types';
@@ -217,7 +217,7 @@ app.post('/token', async (c) => {
     };
     if (refreshToken) response.refresh_token = refreshToken;
     if (scopes.includes('openid')) {
-      response.id_token = await buildIdToken(user, clientId, scopes, codeRow.nonce, c.env.JWT_SECRET, atTtl, c.env.APP_URL);
+      response.id_token = await buildIdToken(user, clientId, scopes, codeRow.nonce, await getJwtSecret(c.env.KV_SESSIONS), atTtl, c.env.APP_URL);
     }
     return c.json(response);
   }

@@ -2,7 +2,7 @@
 
 import { Hono } from 'hono';
 import { randomId, randomBase64url } from '../lib/crypto';
-import { getConfig } from '../lib/config';
+import { getConfig, getJwtSecret } from '../lib/config';
 import { requireAuth, optionalAuth } from '../middleware/auth';
 import { signJWT } from '../lib/jwt';
 import type { SocialConnectionRow, UserRow, Variables } from '../types';
@@ -267,7 +267,7 @@ app.get('/:provider/callback', async (c) => {
       email_verified: user.email_verified === 1,
       sessionId: randomId(32),
     },
-    c.env.JWT_SECRET,
+    await getJwtSecret(c.env.KV_SESSIONS),
     sessionTtl,
   );
 
