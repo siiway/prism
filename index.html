@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Primary meta -->
+    <title>Prism</title>
+    <meta name="description" content="Sign in to your account" />
+    <meta name="application-name" content="Prism" />
+    <meta name="theme-color" content="#0078d4" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Prism" />
+    <meta property="og:description" content="Sign in to your account" />
+    <meta property="og:image" content="/ic_fluent_lock_shield_48_color.svg" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/ic_fluent_lock_shield_48_color.svg" />
+
+    <!-- Prevent flash of unstyled content for dark-mode users -->
+    <script>
+      (function () {
+        var s = localStorage.getItem('prism-theme');
+        if (s === 'dark' || (!s && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
