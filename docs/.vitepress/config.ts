@@ -5,6 +5,7 @@ export default defineConfig({
   description:
     "Self-hosted OAuth 2.0 / OpenID Connect identity platform on Cloudflare Workers.",
   cleanUrls: true,
+  ignoreDeadLinks: true,
 
   head: [
     ["meta", { name: "theme-color", content: "#0078d4" }],
