@@ -10,8 +10,8 @@ interface Env {
   // KV Namespaces
   KV_SESSIONS: KVNamespace;
   KV_CACHE: KVNamespace;
-  // R2 Bucket
-  R2_ASSETS: R2Bucket;
+  // R2 Bucket (optional — omit binding to disable file uploads)
+  R2_ASSETS?: R2Bucket;
   // Vars
   APP_URL: string;
 }

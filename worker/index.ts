@@ -55,6 +55,7 @@ app.get("/api/site", async (c) => {
     accent_color: config.accent_color,
     custom_css: config.custom_css,
     initialized: config.initialized,
+    r2_enabled: !!c.env.R2_ASSETS,
     enabled_providers: [
       config.github_client_id && "github",
       config.google_client_id && "google",
@@ -66,6 +67,7 @@ app.get("/api/site", async (c) => {
 
 // R2 asset serving
 app.get("/api/assets/*", async (c) => {
+  if (!c.env.R2_ASSETS) return c.json({ error: "Not found" }, 404);
   const key = c.req.path.replace("/api/assets/", "");
   const obj = await c.env.R2_ASSETS.get(key);
   if (!obj) return c.json({ error: "Not found" }, 404);

@@ -41,12 +41,16 @@ export function Profile() {
   const { user, setAuth, token } = useAuthStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const { data: site } = useQuery({ queryKey: ["site"], queryFn: api.site, staleTime: 60_000 });
   const { data: me, isLoading } = useQuery({
     queryKey: ["me"],
     queryFn: api.me,
   });
 
+  const r2Enabled = site?.r2_enabled ?? true; // optimistically show upload until site loads
+
   const [displayName, setDisplayName] = useState(user?.display_name ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url ?? "");
   const [saveLoading, setSaveLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [pwForm, setPwForm] = useState({ current: "", next: "" });
@@ -64,7 +68,9 @@ export function Profile() {
   const handleSave = async () => {
     setSaveLoading(true);
     try {
-      const res = await api.updateMe({ display_name: displayName });
+      const body: Parameters<typeof api.updateMe>[0] = { display_name: displayName };
+      if (!r2Enabled) body.avatar_url = avatarUrl || undefined;
+      const res = await api.updateMe(body);
       if (token && res.user) setAuth(token, res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", "Profile updated");
@@ -133,29 +139,39 @@ export function Profile() {
             }
             size={72}
           />
-          <div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              style={{ display: "none" }}
-              onChange={handleAvatarChange}
-            />
-            <Button
-              size="small"
-              disabled={avatarLoading}
-              onClick={() => fileRef.current?.click()}
-            >
-              {avatarLoading ? <Spinner size="tiny" /> : "Change avatar"}
-            </Button>
-            <Text
-              size={200}
-              block
-              style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
-            >
-              JPG, PNG, WebP, GIF — max 2MB
-            </Text>
-          </div>
+          {r2Enabled ? (
+            <div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={handleAvatarChange}
+              />
+              <Button
+                size="small"
+                disabled={avatarLoading}
+                onClick={() => fileRef.current?.click()}
+              >
+                {avatarLoading ? <Spinner size="tiny" /> : "Change avatar"}
+              </Button>
+              <Text
+                size={200}
+                block
+                style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
+              >
+                JPG, PNG, WebP, GIF — max 2MB
+              </Text>
+            </div>
+          ) : (
+            <Field label="Avatar URL" style={{ flex: 1 }}>
+              <Input
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                placeholder="https://example.com/avatar.png"
+              />
+            </Field>
+          )}
         </div>
 
         <div className={styles.form}>

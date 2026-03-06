@@ -351,6 +351,7 @@ export interface SitePublicConfig {
   accent_color: string;
   custom_css: string;
   initialized: boolean;
+  r2_enabled: boolean;
   enabled_providers: string[];
 }
 
