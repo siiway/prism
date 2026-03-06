@@ -1,68 +1,75 @@
-import { defineConfig } from 'vitepress'
+import { defineConfig } from "vitepress";
 
 export default defineConfig({
-  title: 'Prism',
-  description: 'Self-hosted OAuth 2.0 / OpenID Connect identity platform on Cloudflare Workers.',
+  title: "Prism",
+  description:
+    "Self-hosted OAuth 2.0 / OpenID Connect identity platform on Cloudflare Workers.",
   cleanUrls: true,
 
   head: [
-    ['meta', { name: 'theme-color', content: '#0078d4' }],
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+    ["meta", { name: "theme-color", content: "#0078d4" }],
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" }],
   ],
 
   themeConfig: {
-    logo: { light: '/logo-light.svg', dark: '/logo-dark.svg', alt: 'Prism' },
-    siteTitle: 'Prism',
+    logo: { light: "/logo-light.svg", dark: "/logo-dark.svg", alt: "Prism" },
+    siteTitle: "Prism",
 
     nav: [
-      { text: 'Guide', link: '/getting-started', activeMatch: '^/(getting-started|configuration|architecture|admin|social-login)' },
-      { text: 'API', link: '/api', activeMatch: '^/api' },
-      { text: 'OAuth / OIDC', link: '/oauth', activeMatch: '^/oauth' },
       {
-        text: 'Links',
+        text: "Guide",
+        link: "/getting-started",
+        activeMatch:
+          "^/(getting-started|configuration|architecture|admin|social-login)",
+      },
+      { text: "API", link: "/api", activeMatch: "^/api" },
+      { text: "OAuth / OIDC", link: "/oauth", activeMatch: "^/oauth" },
+      {
+        text: "Links",
         items: [
-          { text: 'GitHub', link: 'https://github.com/siiway/prism' },
-          { text: 'Changelog', link: 'https://github.com/siiway/prism/releases' },
+          { text: "GitHub", link: "https://github.com/siiway/prism" },
+          {
+            text: "Changelog",
+            link: "https://github.com/siiway/prism/releases",
+          },
         ],
       },
     ],
 
     sidebar: [
       {
-        text: 'Guide',
+        text: "Guide",
         items: [
-          { text: 'Getting Started', link: '/getting-started' },
-          { text: 'Configuration', link: '/configuration' },
-          { text: 'Social Login Setup', link: '/social-login' },
-          { text: 'Architecture', link: '/architecture' },
-          { text: 'Admin Guide', link: '/admin' },
+          { text: "Getting Started", link: "/getting-started" },
+          { text: "Configuration", link: "/configuration" },
+          { text: "Social Login Setup", link: "/social-login" },
+          { text: "Architecture", link: "/architecture" },
+          { text: "Admin Guide", link: "/admin" },
         ],
       },
       {
-        text: 'Reference',
+        text: "Reference",
         items: [
-          { text: 'API Reference', link: '/api' },
-          { text: 'OAuth / OIDC Guide', link: '/oauth' },
+          { text: "API Reference", link: "/api" },
+          { text: "OAuth / OIDC Guide", link: "/oauth" },
         ],
       },
     ],
 
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/siiway/prism' },
-    ],
+    socialLinks: [{ icon: "github", link: "https://github.com/siiway/prism" }],
 
     editLink: {
-      pattern: 'https://github.com/siiway/prism/edit/main/docs/:path',
-      text: 'Edit this page on GitHub',
+      pattern: "https://github.com/siiway/prism/edit/main/docs/:path",
+      text: "Edit this page on GitHub",
     },
 
     footer: {
-      message: 'Released under the GPL-3.0 License.',
-      copyright: 'Copyright © 2026 SiiWay & project contributors',
+      message: "Released under the GPL-3.0 License.",
+      copyright: "Copyright © 2026 SiiWay & project contributors",
     },
 
     search: {
-      provider: 'local',
+      provider: "local",
     },
   },
-})
+});

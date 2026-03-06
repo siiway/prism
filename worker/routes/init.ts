@@ -1,24 +1,24 @@
 // Init route: check if the platform is initialized, create first admin
 
-import { Hono } from 'hono';
-import { isInitialized, setConfigValue, getJwtSecret } from '../lib/config';
-import { hashPassword } from '../lib/crypto';
-import { randomId } from '../lib/crypto';
-import { signJWT } from '../lib/jwt';
+import { Hono } from "hono";
+import { isInitialized, setConfigValue, getJwtSecret } from "../lib/config";
+import { hashPassword } from "../lib/crypto";
+import { randomId } from "../lib/crypto";
+import { signJWT } from "../lib/jwt";
 
 const app = new Hono<{ Bindings: Env }>();
 
 // GET /api/init/status — is the platform ready?
-app.get('/status', async (c) => {
+app.get("/status", async (c) => {
   const initialized = await isInitialized(c.env.DB);
   return c.json({ initialized });
 });
 
 // POST /api/init — create the first admin account
-app.post('/', async (c) => {
+app.post("/", async (c) => {
   const initialized = await isInitialized(c.env.DB);
   if (initialized) {
-    return c.json({ error: 'Platform already initialized' }, 409);
+    return c.json({ error: "Platform already initialized" }, 409);
   }
 
   const body = await c.req.json<{
@@ -30,10 +30,10 @@ app.post('/', async (c) => {
   }>();
 
   if (!body.email || !body.username || !body.password) {
-    return c.json({ error: 'email, username and password are required' }, 400);
+    return c.json({ error: "email, username and password are required" }, 400);
   }
   if (body.password.length < 8) {
-    return c.json({ error: 'Password must be at least 8 characters' }, 400);
+    return c.json({ error: "Password must be at least 8 characters" }, 400);
   }
 
   const userId = randomId();
@@ -56,17 +56,17 @@ app.post('/', async (c) => {
       ),
     ]);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : '';
-    if (msg.includes('UNIQUE')) {
-      return c.json({ error: 'Email or username already taken' }, 409);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("UNIQUE")) {
+      return c.json({ error: "Email or username already taken" }, 409);
     }
     throw err;
   }
 
   // Mark initialized and optionally set site name
-  await setConfigValue(c.env.DB, 'initialized', true);
+  await setConfigValue(c.env.DB, "initialized", true);
   if (body.site_name) {
-    await setConfigValue(c.env.DB, 'site_name', body.site_name);
+    await setConfigValue(c.env.DB, "site_name", body.site_name);
   }
 
   // Issue a session token
@@ -76,7 +76,7 @@ app.post('/', async (c) => {
   const token = await signJWT(
     {
       sub: userId,
-      role: 'admin',
+      role: "admin",
       email: body.email.toLowerCase().trim(),
       username: body.username.toLowerCase().trim(),
       display_name: body.display_name ?? body.username,
@@ -96,14 +96,28 @@ app.post('/', async (c) => {
     .bind(sessionId, userId, tokenHash, now + sessionTtl, now)
     .run();
 
-  return c.json({ token, user: { id: userId, email: body.email, username: body.username, role: 'admin' } }, 201);
+  return c.json(
+    {
+      token,
+      user: {
+        id: userId,
+        email: body.email,
+        username: body.username,
+        role: "admin",
+      },
+    },
+    201,
+  );
 });
 
 async function sha256(str: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(str),
+  );
   return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export default app;

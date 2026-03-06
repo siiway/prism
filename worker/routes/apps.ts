@@ -1,20 +1,20 @@
 // OAuth application management (CRUD for user-owned apps)
 
-import { Hono } from 'hono';
-import { randomId, randomBase64url } from '../lib/crypto';
-import { requireAuth } from '../middleware/auth';
-import type { OAuthAppRow, Variables } from '../types';
+import { Hono } from "hono";
+import { randomId, randomBase64url } from "../lib/crypto";
+import { requireAuth } from "../middleware/auth";
+import type { OAuthAppRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
-app.use('*', requireAuth);
+app.use("*", requireAuth);
 
 // List user's apps
-app.get('/', async (c) => {
-  const user = c.get('user');
+app.get("/", async (c) => {
+  const user = c.get("user");
   const rows = await c.env.DB.prepare(
-    'SELECT * FROM oauth_apps WHERE owner_id = ? ORDER BY created_at DESC',
+    "SELECT * FROM oauth_apps WHERE owner_id = ? ORDER BY created_at DESC",
   )
     .bind(user.id)
     .all<OAuthAppRow>();
@@ -22,22 +22,23 @@ app.get('/', async (c) => {
 });
 
 // Get single app (owner or admin)
-app.get('/:id', async (c) => {
-  const user = c.get('user');
-  const id = c.req.param('id');
-  const row = await c.env.DB.prepare('SELECT * FROM oauth_apps WHERE id = ?')
+app.get("/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
 
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  if (row.owner_id !== user.id && user.role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (row.owner_id !== user.id && user.role !== "admin")
+    return c.json({ error: "Forbidden" }, 403);
 
   return c.json({ app: fullApp(row) });
 });
 
 // Create app
-app.post('/', async (c) => {
-  const user = c.get('user');
+app.post("/", async (c) => {
+  const user = c.get("user");
   const body = await c.req.json<{
     name: string;
     description?: string;
@@ -47,16 +48,23 @@ app.post('/', async (c) => {
     is_public?: boolean;
   }>();
 
-  if (!body.name) return c.json({ error: 'name is required' }, 400);
-  if (!body.redirect_uris?.length) return c.json({ error: 'At least one redirect_uri required' }, 400);
+  if (!body.name) return c.json({ error: "name is required" }, 400);
+  if (!body.redirect_uris?.length)
+    return c.json({ error: "At least one redirect_uri required" }, 400);
 
   // Validate redirect URIs (no localhost allowed in production mode? just validate format)
   for (const uri of body.redirect_uris) {
-    try { new URL(uri); } catch { return c.json({ error: `Invalid redirect_uri: ${uri}` }, 400); }
+    try {
+      new URL(uri);
+    } catch {
+      return c.json({ error: `Invalid redirect_uri: ${uri}` }, 400);
+    }
   }
 
-  const allowedScopes = (body.allowed_scopes ?? ['openid', 'profile', 'email']).filter(
-    (s) => ['openid', 'profile', 'email', 'apps:read', 'offline_access'].includes(s),
+  const allowedScopes = (
+    body.allowed_scopes ?? ["openid", "profile", "email"]
+  ).filter((s) =>
+    ["openid", "profile", "email", "apps:read", "offline_access"].includes(s),
   );
 
   const id = randomId();
@@ -72,7 +80,7 @@ app.post('/', async (c) => {
       id,
       user.id,
       body.name,
-      body.description ?? '',
+      body.description ?? "",
       body.website_url ?? null,
       clientId,
       clientSecret,
@@ -84,7 +92,7 @@ app.post('/', async (c) => {
     )
     .run();
 
-  const row = await c.env.DB.prepare('SELECT * FROM oauth_apps WHERE id = ?')
+  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
 
@@ -92,15 +100,16 @@ app.post('/', async (c) => {
 });
 
 // Update app
-app.patch('/:id', async (c) => {
-  const user = c.get('user');
-  const id = c.req.param('id');
-  const row = await c.env.DB.prepare('SELECT * FROM oauth_apps WHERE id = ?')
+app.patch("/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
 
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  if (row.owner_id !== user.id && user.role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (row.owner_id !== user.id && user.role !== "admin")
+    return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{
     name?: string;
@@ -117,38 +126,58 @@ app.patch('/:id', async (c) => {
     name: body.name ?? row.name,
     description: body.description ?? row.description,
     icon_url: body.icon_url !== undefined ? body.icon_url : row.icon_url,
-    website_url: body.website_url !== undefined ? body.website_url : row.website_url,
-    redirect_uris: body.redirect_uris ? JSON.stringify(body.redirect_uris) : row.redirect_uris,
-    allowed_scopes: body.allowed_scopes ? JSON.stringify(body.allowed_scopes) : row.allowed_scopes,
-    is_public: body.is_public !== undefined ? (body.is_public ? 1 : 0) : row.is_public,
+    website_url:
+      body.website_url !== undefined ? body.website_url : row.website_url,
+    redirect_uris: body.redirect_uris
+      ? JSON.stringify(body.redirect_uris)
+      : row.redirect_uris,
+    allowed_scopes: body.allowed_scopes
+      ? JSON.stringify(body.allowed_scopes)
+      : row.allowed_scopes,
+    is_public:
+      body.is_public !== undefined ? (body.is_public ? 1 : 0) : row.is_public,
   };
 
   await c.env.DB.prepare(
     `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, is_public=?, updated_at=? WHERE id=?`,
   )
     .bind(
-      updated.name, updated.description, updated.icon_url, updated.website_url,
-      updated.redirect_uris, updated.allowed_scopes, updated.is_public, now, id,
+      updated.name,
+      updated.description,
+      updated.icon_url,
+      updated.website_url,
+      updated.redirect_uris,
+      updated.allowed_scopes,
+      updated.is_public,
+      now,
+      id,
     )
     .run();
 
-  const updatedRow = await c.env.DB.prepare('SELECT * FROM oauth_apps WHERE id = ?').bind(id).first<OAuthAppRow>();
+  const updatedRow = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE id = ?",
+  )
+    .bind(id)
+    .first<OAuthAppRow>();
   return c.json({ app: fullApp(updatedRow!) });
 });
 
 // Rotate client secret
-app.post('/:id/rotate-secret', async (c) => {
-  const user = c.get('user');
-  const id = c.req.param('id');
-  const row = await c.env.DB.prepare('SELECT * FROM oauth_apps WHERE id = ?')
+app.post("/:id/rotate-secret", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
 
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  if (row.owner_id !== user.id && user.role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (row.owner_id !== user.id && user.role !== "admin")
+    return c.json({ error: "Forbidden" }, 403);
 
   const newSecret = randomBase64url(32);
-  await c.env.DB.prepare('UPDATE oauth_apps SET client_secret = ?, updated_at = ? WHERE id = ?')
+  await c.env.DB.prepare(
+    "UPDATE oauth_apps SET client_secret = ?, updated_at = ? WHERE id = ?",
+  )
     .bind(newSecret, Math.floor(Date.now() / 1000), id)
     .run();
 
@@ -156,24 +185,31 @@ app.post('/:id/rotate-secret', async (c) => {
 });
 
 // Delete app
-app.delete('/:id', async (c) => {
-  const user = c.get('user');
-  const id = c.req.param('id');
-  const row = await c.env.DB.prepare('SELECT * FROM oauth_apps WHERE id = ?')
+app.delete("/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
 
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  if (row.owner_id !== user.id && user.role !== 'admin') return c.json({ error: 'Forbidden' }, 403);
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (row.owner_id !== user.id && user.role !== "admin")
+    return c.json({ error: "Forbidden" }, 403);
 
   await c.env.DB.batch([
-    c.env.DB.prepare('DELETE FROM oauth_tokens WHERE client_id = ?').bind(row.client_id),
-    c.env.DB.prepare('DELETE FROM oauth_codes WHERE client_id = ?').bind(row.client_id),
-    c.env.DB.prepare('DELETE FROM oauth_consents WHERE client_id = ?').bind(row.client_id),
-    c.env.DB.prepare('DELETE FROM oauth_apps WHERE id = ?').bind(id),
+    c.env.DB.prepare("DELETE FROM oauth_tokens WHERE client_id = ?").bind(
+      row.client_id,
+    ),
+    c.env.DB.prepare("DELETE FROM oauth_codes WHERE client_id = ?").bind(
+      row.client_id,
+    ),
+    c.env.DB.prepare("DELETE FROM oauth_consents WHERE client_id = ?").bind(
+      row.client_id,
+    ),
+    c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?").bind(id),
   ]);
 
-  return c.json({ message: 'App deleted' });
+  return c.json({ message: "App deleted" });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

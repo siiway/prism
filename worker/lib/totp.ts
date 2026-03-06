@@ -1,10 +1,10 @@
 // TOTP implementation (RFC 6238 / RFC 4226) using Web Crypto
 
-const BASE32_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+const BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 export function generateTotpSecret(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(20));
-  let result = '';
+  let result = "";
   for (let i = 0; i < bytes.length; i += 5) {
     const b0 = bytes[i] ?? 0;
     const b1 = bytes[i + 1] ?? 0;
@@ -24,7 +24,7 @@ export function generateTotpSecret(): string {
 }
 
 function base32ToBytes(secret: string): Uint8Array {
-  const clean = secret.toUpperCase().replace(/[^A-Z2-7]/g, '');
+  const clean = secret.toUpperCase().replace(/[^A-Z2-7]/g, "");
   const bytes = new Uint8Array(Math.floor((clean.length * 5) / 8));
   let bits = 0;
   let bitsCount = 0;
@@ -44,11 +44,11 @@ function base32ToBytes(secret: string): Uint8Array {
 
 async function hotp(secret: Uint8Array, counter: bigint): Promise<number> {
   const key = await crypto.subtle.importKey(
-    'raw',
+    "raw",
     secret,
-    { name: 'HMAC', hash: 'SHA-1' },
+    { name: "HMAC", hash: "SHA-1" },
     false,
-    ['sign'],
+    ["sign"],
   );
 
   const counterBuf = new ArrayBuffer(8);
@@ -57,7 +57,9 @@ async function hotp(secret: Uint8Array, counter: bigint): Promise<number> {
   view.setUint32(0, Number(counter >> 32n), false);
   view.setUint32(4, Number(counter & 0xffffffffn), false);
 
-  const hmac = new Uint8Array(await crypto.subtle.sign('HMAC', key, counterBuf));
+  const hmac = new Uint8Array(
+    await crypto.subtle.sign("HMAC", key, counterBuf),
+  );
   const offset = hmac[19] & 0x0f;
   const code =
     ((hmac[offset] & 0x7f) << 24) |
@@ -67,11 +69,14 @@ async function hotp(secret: Uint8Array, counter: bigint): Promise<number> {
   return code % 1_000_000;
 }
 
-export async function generateTotp(secret: string, timestampMs = Date.now()): Promise<string> {
+export async function generateTotp(
+  secret: string,
+  timestampMs = Date.now(),
+): Promise<string> {
   const counter = BigInt(Math.floor(timestampMs / 30_000));
   const secretBytes = base32ToBytes(secret);
   const code = await hotp(secretBytes, counter);
-  return code.toString().padStart(6, '0');
+  return code.toString().padStart(6, "0");
 }
 
 export async function verifyTotp(
@@ -84,7 +89,7 @@ export async function verifyTotp(
   const counter = BigInt(Math.floor(timestampMs / 30_000));
   for (let i = -window; i <= window; i++) {
     const code = await hotp(secretBytes, counter + BigInt(i));
-    if (code.toString().padStart(6, '0') === token) return true;
+    if (code.toString().padStart(6, "0") === token) return true;
   }
   return false;
 }
@@ -94,8 +99,8 @@ export function generateBackupCodes(count = 10): string[] {
   for (let i = 0; i < count; i++) {
     const bytes = crypto.getRandomValues(new Uint8Array(5));
     const code = Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")
       .slice(0, 8)
       .toUpperCase();
     codes.push(`${code.slice(0, 4)}-${code.slice(4)}`);
@@ -107,9 +112,9 @@ export function totpUri(secret: string, email: string, issuer: string): string {
   const params = new URLSearchParams({
     secret,
     issuer,
-    algorithm: 'SHA1',
-    digits: '6',
-    period: '30',
+    algorithm: "SHA1",
+    digits: "6",
+    period: "30",
   });
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?${params}`;
 }

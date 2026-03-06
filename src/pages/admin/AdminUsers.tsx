@@ -24,15 +24,25 @@ import {
   Text,
   makeStyles,
   tokens,
-} from '@fluentui/react-components';
-import { DeleteRegular, PersonProhibitedRegular, SearchRegular } from '@fluentui/react-icons';
-import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError } from '../../lib/api';
+} from "@fluentui/react-components";
+import {
+  DeleteRegular,
+  PersonProhibitedRegular,
+  SearchRegular,
+} from "@fluentui/react-icons";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError } from "../../lib/api";
 
 const useStyles = makeStyles({
-  toolbar: { display: 'flex', gap: '8px', marginBottom: '16px' },
-  pagination: { display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'flex-end', marginTop: '16px' },
+  toolbar: { display: "flex", gap: "8px", marginBottom: "16px" },
+  pagination: {
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    marginTop: "16px",
+  },
 });
 
 export function AdminUsers() {
@@ -40,49 +50,55 @@ export function AdminUsers() {
   const qc = useQueryClient();
 
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
-  const showMsg = (type: 'success' | 'error', text: string) => {
+  const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 5000);
   };
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-users', page, search],
+    queryKey: ["admin-users", page, search],
     queryFn: () => api.adminListUsers(page, 20, search),
   });
 
-  const handleSearch = () => { setSearch(searchInput); setPage(1); };
+  const handleSearch = () => {
+    setSearch(searchInput);
+    setPage(1);
+  };
 
   const handleRoleChange = async (id: string, role: string) => {
     try {
       await api.adminUpdateUser(id, { role });
-      await qc.invalidateQueries({ queryKey: ['admin-users'] });
-      showMsg('success', 'Role updated');
+      await qc.invalidateQueries({ queryKey: ["admin-users"] });
+      showMsg("success", "Role updated");
     } catch (err) {
-      showMsg('error', err instanceof ApiError ? err.message : 'Update failed');
+      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
     }
   };
 
   const handleToggleActive = async (id: string, currentActive: boolean) => {
     try {
       await api.adminUpdateUser(id, { is_active: !currentActive });
-      await qc.invalidateQueries({ queryKey: ['admin-users'] });
-      showMsg('success', currentActive ? 'User disabled' : 'User enabled');
+      await qc.invalidateQueries({ queryKey: ["admin-users"] });
+      showMsg("success", currentActive ? "User disabled" : "User enabled");
     } catch (err) {
-      showMsg('error', err instanceof ApiError ? err.message : 'Update failed');
+      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
     }
   };
 
   const handleDelete = async (id: string) => {
     try {
       await api.adminDeleteUser(id);
-      await qc.invalidateQueries({ queryKey: ['admin-users'] });
-      showMsg('success', 'User deleted');
+      await qc.invalidateQueries({ queryKey: ["admin-users"] });
+      showMsg("success", "User deleted");
     } catch (err) {
-      showMsg('error', err instanceof ApiError ? err.message : 'Delete failed');
+      showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
     }
   };
 
@@ -90,17 +106,26 @@ export function AdminUsers() {
 
   return (
     <div>
-      {message && <MessageBar intent={message.type === 'success' ? 'success' : 'error'} style={{ marginBottom: 12 }}>{message.text}</MessageBar>}
+      {message && (
+        <MessageBar
+          intent={message.type === "success" ? "success" : "error"}
+          style={{ marginBottom: 12 }}
+        >
+          {message.text}
+        </MessageBar>
+      )}
 
       <div className={styles.toolbar}>
         <Input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search users…"
-          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           style={{ flex: 1 }}
         />
-        <Button icon={<SearchRegular />} onClick={handleSearch}>Search</Button>
+        <Button icon={<SearchRegular />} onClick={handleSearch}>
+          Search
+        </Button>
       </div>
 
       {isLoading ? (
@@ -123,21 +148,36 @@ export function AdminUsers() {
               <TableRow key={u.id}>
                 <TableCell>
                   <div>
-                    <Text weight="semibold" block>{u.display_name}</Text>
-                    <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>@{u.username}</Text>
+                    <Text weight="semibold" block>
+                      {u.display_name}
+                    </Text>
+                    <Text
+                      size={200}
+                      style={{ color: tokens.colorNeutralForeground3 }}
+                    >
+                      @{u.username}
+                    </Text>
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 4 }}
+                  >
                     {u.email}
-                    {u.email_verified && <Badge color="success" appearance="tint" size="small">✓</Badge>}
+                    {u.email_verified && (
+                      <Badge color="success" appearance="tint" size="small">
+                        ✓
+                      </Badge>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell>
                   <Dropdown
                     value={u.role}
                     selectedOptions={[u.role]}
-                    onOptionSelect={(_, d) => handleRoleChange(u.id, d.optionValue as string)}
+                    onOptionSelect={(_, d) =>
+                      handleRoleChange(u.id, d.optionValue as string)
+                    }
                     style={{ minWidth: 90 }}
                   >
                     <Option value="user">User</Option>
@@ -145,32 +185,73 @@ export function AdminUsers() {
                   </Dropdown>
                 </TableCell>
                 <TableCell>
-                  <Badge color={(u as unknown as { is_active: boolean }).is_active ? 'success' : 'subtle'} appearance="filled">
-                    {(u as unknown as { is_active: boolean }).is_active ? 'Active' : 'Disabled'}
+                  <Badge
+                    color={
+                      (u as unknown as { is_active: boolean }).is_active
+                        ? "success"
+                        : "subtle"
+                    }
+                    appearance="filled"
+                  >
+                    {(u as unknown as { is_active: boolean }).is_active
+                      ? "Active"
+                      : "Disabled"}
                   </Badge>
                 </TableCell>
-                <TableCell>{(u as unknown as { app_count: number }).app_count}</TableCell>
-                <TableCell>{u.created_at ? new Date(u.created_at * 1000).toLocaleDateString() : '—'}</TableCell>
                 <TableCell>
-                  <div style={{ display: 'flex', gap: 4 }}>
+                  {(u as unknown as { app_count: number }).app_count}
+                </TableCell>
+                <TableCell>
+                  {u.created_at
+                    ? new Date(u.created_at * 1000).toLocaleDateString()
+                    : "—"}
+                </TableCell>
+                <TableCell>
+                  <div style={{ display: "flex", gap: 4 }}>
                     <Button
                       size="small"
                       appearance="subtle"
                       icon={<PersonProhibitedRegular />}
-                      title={(u as unknown as { is_active: boolean }).is_active ? 'Disable' : 'Enable'}
-                      onClick={() => handleToggleActive(u.id, (u as unknown as { is_active: boolean }).is_active)}
+                      title={
+                        (u as unknown as { is_active: boolean }).is_active
+                          ? "Disable"
+                          : "Enable"
+                      }
+                      onClick={() =>
+                        handleToggleActive(
+                          u.id,
+                          (u as unknown as { is_active: boolean }).is_active,
+                        )
+                      }
                     />
                     <Dialog>
                       <DialogTrigger disableButtonEnhancement>
-                        <Button size="small" appearance="subtle" icon={<DeleteRegular />} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<DeleteRegular />}
+                        />
                       </DialogTrigger>
                       <DialogSurface>
                         <DialogBody>
                           <DialogTitle>Delete user?</DialogTitle>
-                          <DialogContent>Delete <strong>{u.username}</strong> and all their data? This cannot be undone.</DialogContent>
+                          <DialogContent>
+                            Delete <strong>{u.username}</strong> and all their
+                            data? This cannot be undone.
+                          </DialogContent>
                           <DialogActions>
-                            <DialogTrigger><Button>Cancel</Button></DialogTrigger>
-                            <Button appearance="primary" style={{ background: tokens.colorPaletteRedBackground3 }} onClick={() => handleDelete(u.id)}>Delete</Button>
+                            <DialogTrigger>
+                              <Button>Cancel</Button>
+                            </DialogTrigger>
+                            <Button
+                              appearance="primary"
+                              style={{
+                                background: tokens.colorPaletteRedBackground3,
+                              }}
+                              onClick={() => handleDelete(u.id)}
+                            >
+                              Delete
+                            </Button>
                           </DialogActions>
                         </DialogBody>
                       </DialogSurface>
@@ -185,9 +266,23 @@ export function AdminUsers() {
 
       {totalPages > 1 && (
         <div className={styles.pagination}>
-          <Button size="small" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
-          <Text size={200}>{page} / {totalPages}</Text>
-          <Button size="small" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+          <Button
+            size="small"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            Previous
+          </Button>
+          <Text size={200}>
+            {page} / {totalPages}
+          </Text>
+          <Button
+            size="small"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </Button>
         </div>
       )}
     </div>

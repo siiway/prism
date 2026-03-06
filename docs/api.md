@@ -204,7 +204,15 @@ All endpoints require authentication.
 
 ```json
 {
-  "user": { "id": "...", "email": "...", "username": "...", "display_name": "...", "avatar_url": null, "role": "user", "email_verified": true },
+  "user": {
+    "id": "...",
+    "email": "...",
+    "username": "...",
+    "display_name": "...",
+    "avatar_url": null,
+    "role": "user",
+    "email_verified": true
+  },
   "totp_enabled": false,
   "passkey_count": 1
 }
@@ -300,6 +308,7 @@ Lists connected social providers for the authenticated user.
 Redirects to the OAuth authorization URL for `provider` (`github`, `google`, `microsoft`, `discord`).
 
 Query params:
+
 - `mode=login` (default) — log in or register with this provider
 - `mode=connect` — attach the provider to an existing logged-in account
 

@@ -8,19 +8,22 @@ export interface EmailOptions {
 }
 
 export interface EmailConfig {
-  provider: 'none' | 'resend' | 'mailchannels';
+  provider: "none" | "resend" | "mailchannels";
   from: string;
   apiKey: string;
 }
 
-export async function sendEmail(opts: EmailOptions, config: EmailConfig): Promise<void> {
-  if (config.provider === 'none') return;
+export async function sendEmail(
+  opts: EmailOptions,
+  config: EmailConfig,
+): Promise<void> {
+  if (config.provider === "none") return;
 
-  if (config.provider === 'resend') {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
+  if (config.provider === "resend") {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         Authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify({
@@ -35,17 +38,17 @@ export async function sendEmail(opts: EmailOptions, config: EmailConfig): Promis
     return;
   }
 
-  if (config.provider === 'mailchannels') {
-    const res = await fetch('https://api.mailchannels.net/tx/v1/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+  if (config.provider === "mailchannels") {
+    const res = await fetch("https://api.mailchannels.net/tx/v1/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         personalizations: [{ to: [{ email: opts.to }] }],
         from: { email: config.from },
         subject: opts.subject,
         content: [
-          { type: 'text/html', value: opts.html },
-          ...(opts.text ? [{ type: 'text/plain', value: opts.text }] : []),
+          { type: "text/html", value: opts.html },
+          ...(opts.text ? [{ type: "text/plain", value: opts.text }] : []),
         ],
       }),
     });

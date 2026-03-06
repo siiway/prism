@@ -7,7 +7,7 @@ export interface UserRow {
   password_hash: string | null;
   display_name: string;
   avatar_url: string | null;
-  role: 'admin' | 'user';
+  role: "admin" | "user";
   email_verified: number;
   email_verify_token: string | null;
   is_active: number;
@@ -133,9 +133,14 @@ export interface AuditLogRow {
 
 // ─── Application types ────────────────────────────────────────────────────────
 
-export type SocialProvider = 'github' | 'google' | 'microsoft' | 'discord';
+export type SocialProvider = "github" | "google" | "microsoft" | "discord";
 
-export type CaptchaProvider = 'none' | 'turnstile' | 'hcaptcha' | 'recaptcha' | 'pow';
+export type CaptchaProvider =
+  | "none"
+  | "turnstile"
+  | "hcaptcha"
+  | "recaptcha"
+  | "pow";
 
 export interface SiteConfig {
   site_name: string;
@@ -159,7 +164,7 @@ export interface SiteConfig {
   microsoft_client_secret: string;
   discord_client_id: string;
   discord_client_secret: string;
-  email_provider: 'none' | 'resend' | 'mailchannels';
+  email_provider: "none" | "resend" | "mailchannels";
   email_api_key: string;
   email_from: string;
   custom_css: string;
@@ -173,7 +178,7 @@ export interface AuthUser {
   username: string;
   display_name: string;
   avatar_url: string | null;
-  role: 'admin' | 'user';
+  role: "admin" | "user";
   email_verified: boolean;
 }
 

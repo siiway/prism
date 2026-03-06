@@ -43,10 +43,13 @@ self.onmessage = async (e) => {
 };
 `;
 
-export async function solvePoW(challenge: string, difficulty: number): Promise<number> {
+export async function solvePoW(
+  challenge: string,
+  difficulty: number,
+): Promise<number> {
   // Try loading WASM worker first
   try {
-    const wasmRes = await fetch('/pow.wasm');
+    const wasmRes = await fetch("/pow.wasm");
     if (wasmRes.ok) {
       return solvePoWWasm(challenge, difficulty, await wasmRes.arrayBuffer());
     }
@@ -59,15 +62,17 @@ export async function solvePoW(challenge: string, difficulty: number): Promise<n
 
 function solvePoWJs(challenge: string, difficulty: number): Promise<number> {
   return new Promise((resolve, reject) => {
-    const blob = new Blob([WORKER_SCRIPT], { type: 'application/javascript' });
+    const blob = new Blob([WORKER_SCRIPT], { type: "application/javascript" });
     const url = URL.createObjectURL(blob);
     const worker = new Worker(url);
 
-    worker.onmessage = (e: MessageEvent<{ nonce?: number; error?: string }>) => {
+    worker.onmessage = (
+      e: MessageEvent<{ nonce?: number; error?: string }>,
+    ) => {
       worker.terminate();
       URL.revokeObjectURL(url);
       if (e.data.nonce !== undefined) resolve(e.data.nonce);
-      else reject(new Error(e.data.error ?? 'PoW failed'));
+      else reject(new Error(e.data.error ?? "PoW failed"));
     };
 
     worker.onerror = (err) => {
@@ -111,13 +116,21 @@ self.onmessage = async (e) => {
 };
 `;
 
-function solvePoWWasm(challenge: string, difficulty: number, wasmBuf: ArrayBuffer): Promise<number> {
+function solvePoWWasm(
+  challenge: string,
+  difficulty: number,
+  wasmBuf: ArrayBuffer,
+): Promise<number> {
   return new Promise((resolve, reject) => {
-    const blob = new Blob([WASM_WORKER_SCRIPT], { type: 'application/javascript' });
+    const blob = new Blob([WASM_WORKER_SCRIPT], {
+      type: "application/javascript",
+    });
     const url = URL.createObjectURL(blob);
     const worker = new Worker(url);
 
-    worker.onmessage = (e: MessageEvent<{ ready?: boolean; nonce?: number; error?: string }>) => {
+    worker.onmessage = (
+      e: MessageEvent<{ ready?: boolean; nonce?: number; error?: string }>,
+    ) => {
       if (e.data.ready) {
         // WASM initialised — now send the challenge
         worker.postMessage({ challenge, difficulty });

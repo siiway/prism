@@ -6,13 +6,13 @@ import {
   generateRegistrationOptions,
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
-} from '@simplewebauthn/server';
+} from "@simplewebauthn/server";
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
   RegistrationResponseJSON,
-} from '@simplewebauthn/server';
-import type { PasskeyRow } from '../types';
+} from "@simplewebauthn/server";
+import type { PasskeyRow } from "../types";
 
 export interface StoredPasskey {
   id: string;
@@ -52,14 +52,14 @@ export async function beginPasskeyRegistration(
     userID: new TextEncoder().encode(userId) as Uint8Array<ArrayBuffer>,
     userName: email,
     userDisplayName: displayName,
-    attestationType: 'none',
+    attestationType: "none",
     excludeCredentials: existingPasskeys.map((p) => ({
       id: p.credentialId,
       transports: p.transports,
     })),
     authenticatorSelection: {
-      residentKey: 'preferred',
-      userVerification: 'preferred',
+      residentKey: "preferred",
+      userVerification: "preferred",
     },
   });
 }
@@ -89,7 +89,7 @@ export async function beginPasskeyAuthentication(
       id: p.credentialId,
       transports: p.transports,
     })),
-    userVerification: 'preferred',
+    userVerification: "preferred",
   });
 }
 
@@ -107,7 +107,9 @@ export async function finishPasskeyAuthentication(
     expectedOrigin: origin,
     credential: {
       id: passkey.credentialId,
-      publicKey: base64urlToUint8Array(passkey.publicKey) as Uint8Array<ArrayBuffer>,
+      publicKey: base64urlToUint8Array(
+        passkey.publicKey,
+      ) as Uint8Array<ArrayBuffer>,
       counter: passkey.counter,
       transports: passkey.transports,
     },
@@ -116,9 +118,9 @@ export async function finishPasskeyAuthentication(
 }
 
 function base64urlToUint8Array(str: string): Uint8Array {
-  const padded = str.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = str.replace(/-/g, "+").replace(/_/g, "/");
   const pad = (4 - (padded.length % 4)) % 4;
-  const bin = atob(padded + '='.repeat(pad));
+  const bin = atob(padded + "=".repeat(pad));
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;

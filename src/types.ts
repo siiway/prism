@@ -6,7 +6,7 @@ export interface SiteConfig {
   site_icon_url: string | null;
   allow_registration: boolean;
   require_email_verification: boolean;
-  captcha_provider: 'none' | 'turnstile' | 'hcaptcha' | 'recaptcha' | 'pow';
+  captcha_provider: "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow";
   captcha_site_key: string;
   captcha_secret_key: string;
   pow_difficulty: number;
@@ -22,7 +22,7 @@ export interface SiteConfig {
   microsoft_client_secret: string;
   discord_client_id: string;
   discord_client_secret: string;
-  email_provider: 'none' | 'resend' | 'mailchannels';
+  email_provider: "none" | "resend" | "mailchannels";
   email_api_key: string;
   email_from: string;
   custom_css: string;

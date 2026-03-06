@@ -1,38 +1,63 @@
 // OAuth 2.0 Authorization Server (Authorization Code + PKCE, OpenID Connect)
 
-import { Hono } from 'hono';
-import { getConfig, getJwtSecret } from '../lib/config';
-import { randomBase64url, randomId, verifyPkce } from '../lib/crypto';
-import { requireAuth, optionalAuth } from '../middleware/auth';
-import type { OAuthAppRow, OAuthCodeRow, OAuthTokenRow, UserRow, Variables } from '../types';
+import { Hono } from "hono";
+import { getConfig, getJwtSecret } from "../lib/config";
+import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
+import { requireAuth, optionalAuth } from "../middleware/auth";
+import type {
+  OAuthAppRow,
+  OAuthCodeRow,
+  OAuthTokenRow,
+  UserRow,
+  Variables,
+} from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
-const VALID_SCOPES = new Set(['openid', 'profile', 'email', 'apps:read', 'offline_access']);
+const VALID_SCOPES = new Set([
+  "openid",
+  "profile",
+  "email",
+  "apps:read",
+  "offline_access",
+]);
 
 // ─── Authorization endpoint ───────────────────────────────────────────────────
 
 // GET /api/oauth/authorize — show consent screen data
-app.get('/authorize', optionalAuth, async (c) => {
-  const { client_id, redirect_uri, scope, state, response_type, code_challenge, code_challenge_method, nonce } =
-    c.req.query();
+app.get("/authorize", optionalAuth, async (c) => {
+  const {
+    client_id,
+    redirect_uri,
+    scope,
+    state,
+    response_type,
+    code_challenge,
+    code_challenge_method,
+    nonce,
+  } = c.req.query();
 
-  if (!client_id || !redirect_uri || response_type !== 'code') {
-    return c.json({ error: 'invalid_request' }, 400);
+  if (!client_id || !redirect_uri || response_type !== "code") {
+    return c.json({ error: "invalid_request" }, 400);
   }
 
-  const oauthApp = await c.env.DB.prepare('SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1')
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
     .bind(client_id)
     .first<OAuthAppRow>();
-  if (!oauthApp) return c.json({ error: 'invalid_client' }, 400);
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
   const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
-  if (!redirectUris.includes(redirect_uri)) return c.json({ error: 'invalid_redirect_uri' }, 400);
+  if (!redirectUris.includes(redirect_uri))
+    return c.json({ error: "invalid_redirect_uri" }, 400);
 
-  const requestedScopes = (scope ?? '').split(' ').filter(Boolean);
+  const requestedScopes = (scope ?? "").split(" ").filter(Boolean);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
-  const scopes = requestedScopes.filter((s) => VALID_SCOPES.has(s) && allowedScopes.includes(s));
+  const scopes = requestedScopes.filter(
+    (s) => VALID_SCOPES.has(s) && allowedScopes.includes(s),
+  );
 
   return c.json({
     app: {
@@ -49,13 +74,13 @@ app.get('/authorize', optionalAuth, async (c) => {
     code_challenge,
     code_challenge_method,
     nonce,
-    user: c.get('user') ?? null,
+    user: c.get("user") ?? null,
   });
 });
 
 // POST /api/oauth/authorize — user approves or denies
-app.post('/authorize', requireAuth, async (c) => {
-  const user = c.get('user');
+app.post("/authorize", requireAuth, async (c) => {
+  const user = c.get("user");
   const body = await c.req.json<{
     client_id: string;
     redirect_uri: string;
@@ -64,26 +89,31 @@ app.post('/authorize', requireAuth, async (c) => {
     code_challenge?: string;
     code_challenge_method?: string;
     nonce?: string;
-    action: 'approve' | 'deny';
+    action: "approve" | "deny";
   }>();
 
-  if (body.action === 'deny') {
+  if (body.action === "deny") {
     const url = new URL(body.redirect_uri);
-    url.searchParams.set('error', 'access_denied');
-    if (body.state) url.searchParams.set('state', body.state);
+    url.searchParams.set("error", "access_denied");
+    if (body.state) url.searchParams.set("state", body.state);
     return c.json({ redirect: url.toString() });
   }
 
-  const oauthApp = await c.env.DB.prepare('SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1')
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
     .bind(body.client_id)
     .first<OAuthAppRow>();
-  if (!oauthApp) return c.json({ error: 'invalid_client' }, 400);
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
   const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
-  if (!redirectUris.includes(body.redirect_uri)) return c.json({ error: 'invalid_redirect_uri' }, 400);
+  if (!redirectUris.includes(body.redirect_uri))
+    return c.json({ error: "invalid_redirect_uri" }, 400);
 
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
-  const scopes = (body.scope ?? '').split(' ').filter((s) => VALID_SCOPES.has(s) && allowedScopes.includes(s));
+  const scopes = (body.scope ?? "")
+    .split(" ")
+    .filter((s) => VALID_SCOPES.has(s) && allowedScopes.includes(s));
 
   // Store consent
   const now = Math.floor(Date.now() / 1000);
@@ -116,78 +146,117 @@ app.post('/authorize', requireAuth, async (c) => {
     .run();
 
   const url = new URL(body.redirect_uri);
-  url.searchParams.set('code', code);
-  if (body.state) url.searchParams.set('state', body.state);
+  url.searchParams.set("code", code);
+  if (body.state) url.searchParams.set("state", body.state);
   return c.json({ redirect: url.toString() });
 });
 
 // ─── Token endpoint ──────────────────────────────────────────────────────────
 
-app.post('/token', async (c) => {
-  const contentType = c.req.header('Content-Type') ?? '';
+app.post("/token", async (c) => {
+  const contentType = c.req.header("Content-Type") ?? "";
   let params: Record<string, string>;
 
-  if (contentType.includes('application/json')) {
+  if (contentType.includes("application/json")) {
     params = await c.req.json<Record<string, string>>();
   } else {
     const text = await c.req.text();
     params = Object.fromEntries(new URLSearchParams(text));
   }
 
-  const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier, refresh_token } = params;
+  const {
+    grant_type,
+    code,
+    redirect_uri,
+    client_id,
+    client_secret,
+    code_verifier,
+    refresh_token,
+  } = params;
 
   // Authenticate client
-  const authHeader = c.req.header('Authorization');
+  const authHeader = c.req.header("Authorization");
   let clientId = client_id;
   let clientSecret = client_secret;
-  if (authHeader?.startsWith('Basic ')) {
+  if (authHeader?.startsWith("Basic ")) {
     const decoded = atob(authHeader.slice(6));
-    const [id, secret] = decoded.split(':');
-    clientId = id ?? '';
-    clientSecret = secret ?? '';
+    const [id, secret] = decoded.split(":");
+    clientId = id ?? "";
+    clientSecret = secret ?? "";
   }
 
-  const oauthApp = await c.env.DB.prepare('SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1')
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
     .bind(clientId)
     .first<OAuthAppRow>();
-  if (!oauthApp) return c.json({ error: 'invalid_client' }, 401);
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
 
   // For public clients (PKCE), secret not required; for confidential clients, verify secret
   if (!oauthApp.is_public && oauthApp.client_secret !== clientSecret) {
-    return c.json({ error: 'invalid_client' }, 401);
+    return c.json({ error: "invalid_client" }, 401);
   }
 
   const config = await getConfig(c.env.DB);
 
   // ── Authorization Code grant ─────────────────────────────────────────────
-  if (grant_type === 'authorization_code') {
+  if (grant_type === "authorization_code") {
     const now = Math.floor(Date.now() / 1000);
-    const codeRow = await c.env.DB.prepare('SELECT * FROM oauth_codes WHERE code = ?')
+    const codeRow = await c.env.DB.prepare(
+      "SELECT * FROM oauth_codes WHERE code = ?",
+    )
       .bind(code)
       .first<OAuthCodeRow>();
 
-    if (!codeRow || codeRow.client_id !== clientId) return c.json({ error: 'invalid_grant' }, 400);
-    if (codeRow.expires_at < now) return c.json({ error: 'invalid_grant', error_description: 'Code expired' }, 400);
-    if (codeRow.redirect_uri !== redirect_uri) return c.json({ error: 'invalid_grant' }, 400);
+    if (!codeRow || codeRow.client_id !== clientId)
+      return c.json({ error: "invalid_grant" }, 400);
+    if (codeRow.expires_at < now)
+      return c.json(
+        { error: "invalid_grant", error_description: "Code expired" },
+        400,
+      );
+    if (codeRow.redirect_uri !== redirect_uri)
+      return c.json({ error: "invalid_grant" }, 400);
 
     // Verify PKCE
     if (codeRow.code_challenge) {
-      if (!code_verifier) return c.json({ error: 'invalid_grant', error_description: 'code_verifier required' }, 400);
-      const pkceOk = await verifyPkce(code_verifier, codeRow.code_challenge, codeRow.code_challenge_method ?? 'S256');
-      if (!pkceOk) return c.json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
+      if (!code_verifier)
+        return c.json(
+          {
+            error: "invalid_grant",
+            error_description: "code_verifier required",
+          },
+          400,
+        );
+      const pkceOk = await verifyPkce(
+        code_verifier,
+        codeRow.code_challenge,
+        codeRow.code_challenge_method ?? "S256",
+      );
+      if (!pkceOk)
+        return c.json(
+          {
+            error: "invalid_grant",
+            error_description: "PKCE verification failed",
+          },
+          400,
+        );
     }
 
     // Consume code
-    await c.env.DB.prepare('DELETE FROM oauth_codes WHERE code = ?').bind(code).run();
+    await c.env.DB.prepare("DELETE FROM oauth_codes WHERE code = ?")
+      .bind(code)
+      .run();
 
-    const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?')
+    const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
       .bind(codeRow.user_id)
       .first<UserRow>();
-    if (!user || !user.is_active) return c.json({ error: 'invalid_grant' }, 400);
+    if (!user || !user.is_active)
+      return c.json({ error: "invalid_grant" }, 400);
 
     const scopes = JSON.parse(codeRow.scopes) as string[];
     const accessToken = randomBase64url(48);
-    const hasOffline = scopes.includes('offline_access');
+    const hasOffline = scopes.includes("offline_access");
     const refreshToken = hasOffline ? randomBase64url(48) : null;
     const atTtl = config.access_token_ttl_minutes * 60;
     const rtTtl = config.refresh_token_ttl_days * 24 * 60 * 60;
@@ -211,81 +280,102 @@ app.post('/token', async (c) => {
 
     const response: Record<string, unknown> = {
       access_token: accessToken,
-      token_type: 'Bearer',
+      token_type: "Bearer",
       expires_in: atTtl,
-      scope: scopes.join(' '),
+      scope: scopes.join(" "),
     };
     if (refreshToken) response.refresh_token = refreshToken;
-    if (scopes.includes('openid')) {
-      response.id_token = await buildIdToken(user, clientId, scopes, codeRow.nonce, await getJwtSecret(c.env.KV_SESSIONS), atTtl, c.env.APP_URL);
+    if (scopes.includes("openid")) {
+      response.id_token = await buildIdToken(
+        user,
+        clientId,
+        scopes,
+        codeRow.nonce,
+        await getJwtSecret(c.env.KV_SESSIONS),
+        atTtl,
+        c.env.APP_URL,
+      );
     }
     return c.json(response);
   }
 
   // ── Refresh Token grant ──────────────────────────────────────────────────
-  if (grant_type === 'refresh_token') {
+  if (grant_type === "refresh_token") {
     const now = Math.floor(Date.now() / 1000);
-    const tokenRow = await c.env.DB.prepare('SELECT * FROM oauth_tokens WHERE refresh_token = ?')
+    const tokenRow = await c.env.DB.prepare(
+      "SELECT * FROM oauth_tokens WHERE refresh_token = ?",
+    )
       .bind(refresh_token)
       .first<OAuthTokenRow>();
 
-    if (!tokenRow || tokenRow.client_id !== clientId) return c.json({ error: 'invalid_grant' }, 400);
+    if (!tokenRow || tokenRow.client_id !== clientId)
+      return c.json({ error: "invalid_grant" }, 400);
     if (!tokenRow.refresh_expires_at || tokenRow.refresh_expires_at < now) {
-      return c.json({ error: 'invalid_grant', error_description: 'Refresh token expired' }, 400);
+      return c.json(
+        { error: "invalid_grant", error_description: "Refresh token expired" },
+        400,
+      );
     }
 
-    const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?')
+    const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
       .bind(tokenRow.user_id)
       .first<UserRow>();
-    if (!user || !user.is_active) return c.json({ error: 'invalid_grant' }, 400);
+    if (!user || !user.is_active)
+      return c.json({ error: "invalid_grant" }, 400);
 
     const scopes = JSON.parse(tokenRow.scopes) as string[];
     const newAccessToken = randomBase64url(48);
     const atTtl = config.access_token_ttl_minutes * 60;
 
-    await c.env.DB.prepare('UPDATE oauth_tokens SET access_token = ?, expires_at = ? WHERE id = ?')
+    await c.env.DB.prepare(
+      "UPDATE oauth_tokens SET access_token = ?, expires_at = ? WHERE id = ?",
+    )
       .bind(newAccessToken, now + atTtl, tokenRow.id)
       .run();
 
     return c.json({
       access_token: newAccessToken,
-      token_type: 'Bearer',
+      token_type: "Bearer",
       expires_in: atTtl,
-      scope: scopes.join(' '),
+      scope: scopes.join(" "),
       refresh_token,
     });
   }
 
-  return c.json({ error: 'unsupported_grant_type' }, 400);
+  return c.json({ error: "unsupported_grant_type" }, 400);
 });
 
 // ─── UserInfo endpoint (OpenID Connect) ─────────────────────────────────────
 
-app.get('/userinfo', async (c) => {
-  const auth = c.req.header('Authorization');
-  if (!auth?.startsWith('Bearer ')) return c.json({ error: 'invalid_token' }, 401);
+app.get("/userinfo", async (c) => {
+  const auth = c.req.header("Authorization");
+  if (!auth?.startsWith("Bearer "))
+    return c.json({ error: "invalid_token" }, 401);
   const accessToken = auth.slice(7);
 
   const now = Math.floor(Date.now() / 1000);
-  const tokenRow = await c.env.DB.prepare('SELECT * FROM oauth_tokens WHERE access_token = ?')
+  const tokenRow = await c.env.DB.prepare(
+    "SELECT * FROM oauth_tokens WHERE access_token = ?",
+  )
     .bind(accessToken)
     .first<OAuthTokenRow>();
 
-  if (!tokenRow || tokenRow.expires_at < now) return c.json({ error: 'invalid_token' }, 401);
+  if (!tokenRow || tokenRow.expires_at < now)
+    return c.json({ error: "invalid_token" }, 401);
 
-  const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?')
+  const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(tokenRow.user_id)
     .first<UserRow>();
-  if (!user) return c.json({ error: 'invalid_token' }, 401);
+  if (!user) return c.json({ error: "invalid_token" }, 401);
 
   const scopes = JSON.parse(tokenRow.scopes) as string[];
   const claims: Record<string, unknown> = { sub: user.id };
-  if (scopes.includes('profile')) {
+  if (scopes.includes("profile")) {
     claims.name = user.display_name;
     claims.preferred_username = user.username;
     claims.picture = user.avatar_url;
   }
-  if (scopes.includes('email')) {
+  if (scopes.includes("email")) {
     claims.email = user.email;
     claims.email_verified = user.email_verified === 1;
   }
@@ -294,14 +384,16 @@ app.get('/userinfo', async (c) => {
 
 // ─── Token introspection ─────────────────────────────────────────────────────
 
-app.post('/introspect', async (c) => {
+app.post("/introspect", async (c) => {
   const body = await c.req.text();
   const params = Object.fromEntries(new URLSearchParams(body));
   const token = params.token;
   if (!token) return c.json({ active: false });
 
   const now = Math.floor(Date.now() / 1000);
-  const tokenRow = await c.env.DB.prepare('SELECT * FROM oauth_tokens WHERE access_token = ?')
+  const tokenRow = await c.env.DB.prepare(
+    "SELECT * FROM oauth_tokens WHERE access_token = ?",
+  )
     .bind(token)
     .first<OAuthTokenRow>();
 
@@ -310,7 +402,7 @@ app.post('/introspect', async (c) => {
   const scopes = JSON.parse(tokenRow.scopes) as string[];
   return c.json({
     active: true,
-    scope: scopes.join(' '),
+    scope: scopes.join(" "),
     client_id: tokenRow.client_id,
     username: tokenRow.user_id,
     exp: tokenRow.expires_at,
@@ -321,13 +413,13 @@ app.post('/introspect', async (c) => {
 
 // ─── Revocation endpoint ─────────────────────────────────────────────────────
 
-app.post('/revoke', async (c) => {
+app.post("/revoke", async (c) => {
   const body = await c.req.text();
   const params = Object.fromEntries(new URLSearchParams(body));
   const token = params.token;
   if (token) {
     await c.env.DB.prepare(
-      'DELETE FROM oauth_tokens WHERE access_token = ? OR refresh_token = ?',
+      "DELETE FROM oauth_tokens WHERE access_token = ? OR refresh_token = ?",
     )
       .bind(token, token)
       .run();
@@ -337,7 +429,7 @@ app.post('/revoke', async (c) => {
 
 // ─── OpenID Connect Discovery ─────────────────────────────────────────────────
 
-app.get('/.well-known/openid-configuration', (c) => {
+app.get("/.well-known/openid-configuration", (c) => {
   const base = c.env.APP_URL;
   return c.json({
     issuer: base,
@@ -347,13 +439,24 @@ app.get('/.well-known/openid-configuration', (c) => {
     revocation_endpoint: `${base}/api/oauth/revoke`,
     introspection_endpoint: `${base}/api/oauth/introspect`,
     scopes_supported: [...VALID_SCOPES],
-    response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code', 'refresh_token'],
-    subject_types_supported: ['public'],
-    id_token_signing_alg_values_supported: ['HS256'],
-    token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic', 'none'],
-    code_challenge_methods_supported: ['S256', 'plain'],
-    claims_supported: ['sub', 'name', 'preferred_username', 'picture', 'email', 'email_verified'],
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    subject_types_supported: ["public"],
+    id_token_signing_alg_values_supported: ["HS256"],
+    token_endpoint_auth_methods_supported: [
+      "client_secret_post",
+      "client_secret_basic",
+      "none",
+    ],
+    code_challenge_methods_supported: ["S256", "plain"],
+    claims_supported: [
+      "sub",
+      "name",
+      "preferred_username",
+      "picture",
+      "email",
+      "email_verified",
+    ],
   });
 });
 
@@ -368,21 +471,21 @@ async function buildIdToken(
   ttl: number,
   issuer: string,
 ): Promise<string> {
-  const { signJWT } = await import('../lib/jwt');
+  const { signJWT } = await import("../lib/jwt");
   const claims: Record<string, unknown> = {
     iss: issuer,
     aud: clientId,
     sub: user.id,
-    sessionId: '',
+    sessionId: "",
     role: user.role,
   };
   if (nonce) claims.nonce = nonce;
-  if (scopes.includes('profile')) {
+  if (scopes.includes("profile")) {
     claims.name = user.display_name;
     claims.preferred_username = user.username;
     claims.picture = user.avatar_url;
   }
-  if (scopes.includes('email')) {
+  if (scopes.includes("email")) {
     claims.email = user.email;
     claims.email_verified = user.email_verified === 1;
   }

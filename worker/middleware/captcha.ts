@@ -1,39 +1,66 @@
 // Captcha verification middleware (Turnstile, hCaptcha, reCAPTCHA, PoW)
 
-import { getConfig } from '../lib/config';
-import { verifyPoW } from '../lib/crypto';
+import { getConfig } from "../lib/config";
+import { verifyPoW } from "../lib/crypto";
 
 interface CaptchaResult {
   success: boolean;
   error?: string;
 }
 
-async function verifyTurnstile(token: string, secretKey: string, ip: string): Promise<CaptchaResult> {
-  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ secret: secretKey, response: token, remoteip: ip }),
-  });
+async function verifyTurnstile(
+  token: string,
+  secretKey: string,
+  ip: string,
+): Promise<CaptchaResult> {
+  const res = await fetch(
+    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secret: secretKey,
+        response: token,
+        remoteip: ip,
+      }),
+    },
+  );
   const data = (await res.json()) as { success: boolean };
   return { success: data.success };
 }
 
-async function verifyHCaptcha(token: string, secretKey: string, ip: string): Promise<CaptchaResult> {
-  const body = new URLSearchParams({ secret: secretKey, response: token, remoteip: ip });
-  const res = await fetch('https://hcaptcha.com/siteverify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+async function verifyHCaptcha(
+  token: string,
+  secretKey: string,
+  ip: string,
+): Promise<CaptchaResult> {
+  const body = new URLSearchParams({
+    secret: secretKey,
+    response: token,
+    remoteip: ip,
+  });
+  const res = await fetch("https://hcaptcha.com/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
   const data = (await res.json()) as { success: boolean };
   return { success: data.success };
 }
 
-async function verifyRecaptcha(token: string, secretKey: string, ip: string): Promise<CaptchaResult> {
-  const body = new URLSearchParams({ secret: secretKey, response: token, remoteip: ip });
-  const res = await fetch('https://www.google.com/recaptcha/api/siteverify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+async function verifyRecaptcha(
+  token: string,
+  secretKey: string,
+  ip: string,
+): Promise<CaptchaResult> {
+  const body = new URLSearchParams({
+    secret: secretKey,
+    response: token,
+    remoteip: ip,
+  });
+  const res = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
   const data = (await res.json()) as { success: boolean; score?: number };
@@ -51,28 +78,28 @@ export async function verifyCaptchaToken(
 ): Promise<CaptchaResult> {
   const config = await getConfig(db);
 
-  if (config.captcha_provider === 'none') {
+  if (config.captcha_provider === "none") {
     return { success: true };
   }
 
-  if (config.captcha_provider === 'pow') {
+  if (config.captcha_provider === "pow") {
     if (!powChallenge || powNonce === undefined) {
-      return { success: false, error: 'PoW solution required' };
+      return { success: false, error: "PoW solution required" };
     }
     const ok = await verifyPoW(powChallenge, powNonce, config.pow_difficulty);
-    return { success: ok, error: ok ? undefined : 'Invalid PoW solution' };
+    return { success: ok, error: ok ? undefined : "Invalid PoW solution" };
   }
 
   if (!token) {
-    return { success: false, error: 'Captcha token required' };
+    return { success: false, error: "Captcha token required" };
   }
 
   switch (config.captcha_provider) {
-    case 'turnstile':
+    case "turnstile":
       return verifyTurnstile(token, config.captcha_secret_key, ip);
-    case 'hcaptcha':
+    case "hcaptcha":
       return verifyHCaptcha(token, config.captcha_secret_key, ip);
-    case 'recaptcha':
+    case "recaptcha":
       return verifyRecaptcha(token, config.captcha_secret_key, ip);
     default:
       return { success: true };

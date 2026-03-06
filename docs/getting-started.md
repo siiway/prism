@@ -157,11 +157,11 @@ and enter them there. No redeployment is required — settings are stored in D1.
 
 Prism supports two email providers, configured in **Admin → Settings → Email**.
 
-| Provider     | `email_provider` value | Key variable                |
-|--------------|------------------------|-----------------------------|
-| Resend       | `resend`               | `email_api_key` (Admin UI)  |
-| Mailchannels | `mailchannels`         | — (no key needed)           |
-| None / off   | `none`                 | —                           |
+| Provider     | `email_provider` value | Key variable               |
+| ------------ | ---------------------- | -------------------------- |
+| Resend       | `resend`               | `email_api_key` (Admin UI) |
+| Mailchannels | `mailchannels`         | — (no key needed)          |
+| None / off   | `none`                 | —                          |
 
 Email is used for email verification. It is optional — set
 `require_email_verification = false` (the default) to skip it.

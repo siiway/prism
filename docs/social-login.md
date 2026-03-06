@@ -22,10 +22,10 @@ https://<your-prism-domain>/api/connections/<provider>/callback
 1. Go to [GitHub Developer Settings → OAuth Apps](https://github.com/settings/developers) and click **New OAuth App**.
 2. Fill in the form:
 
-   | Field | Value |
-   | --- | --- |
-   | Application name | Your site name |
-   | Homepage URL | `https://your-prism-domain` |
+   | Field                      | Value                                                       |
+   | -------------------------- | ----------------------------------------------------------- |
+   | Application name           | Your site name                                              |
+   | Homepage URL               | `https://your-prism-domain`                                 |
    | Authorization callback URL | `https://your-prism-domain/api/connections/github/callback` |
 
 3. Click **Register application**.
@@ -58,11 +58,11 @@ GitHub login will appear on the login and registration pages immediately.
    - Add scopes: `openid`, `email`, `profile`
 4. Back in **Create OAuth client ID**:
 
-   | Field | Value |
-   | --- | --- |
-   | Application type | **Web application** |
-   | Authorized JavaScript origins | `https://your-prism-domain` |
-   | Authorized redirect URIs | `https://your-prism-domain/api/connections/google/callback` |
+   | Field                         | Value                                                       |
+   | ----------------------------- | ----------------------------------------------------------- |
+   | Application type              | **Web application**                                         |
+   | Authorized JavaScript origins | `https://your-prism-domain`                                 |
+   | Authorized redirect URIs      | `https://your-prism-domain/api/connections/google/callback` |
 
 5. Copy the **Client ID** and **Client Secret**.
 
@@ -85,11 +85,11 @@ Go to **Admin → Settings → Social Login** and paste into the Google fields. 
 1. Open the [Azure Portal → App registrations](https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/RegisteredApps) and click **New registration**.
 2. Fill in the form:
 
-   | Field | Value |
-   | --- | --- |
-   | Name | Your site name |
+   | Field                   | Value                                                                                                     |
+   | ----------------------- | --------------------------------------------------------------------------------------------------------- |
+   | Name                    | Your site name                                                                                            |
    | Supported account types | **Accounts in any organizational directory and personal Microsoft accounts** (for broadest compatibility) |
-   | Redirect URI | Platform: **Web** — `https://your-prism-domain/api/connections/microsoft/callback` |
+   | Redirect URI            | Platform: **Web** — `https://your-prism-domain/api/connections/microsoft/callback`                        |
 
 3. Click **Register**.
 4. On the **Overview** page, copy the **Application (client) ID**.
@@ -138,12 +138,12 @@ Go to **Admin → Settings → Social Login** and paste into the Discord fields.
 
 For local testing, register a separate OAuth app per provider using `http://localhost:8787` as the domain:
 
-| Provider | Callback URL |
-| --- | --- |
-| GitHub | `http://localhost:8787/api/connections/github/callback` |
-| Google | `http://localhost:8787/api/connections/google/callback` |
+| Provider  | Callback URL                                               |
+| --------- | ---------------------------------------------------------- |
+| GitHub    | `http://localhost:8787/api/connections/github/callback`    |
+| Google    | `http://localhost:8787/api/connections/google/callback`    |
 | Microsoft | `http://localhost:8787/api/connections/microsoft/callback` |
-| Discord | `http://localhost:8787/api/connections/discord/callback` |
+| Discord   | `http://localhost:8787/api/connections/discord/callback`   |
 
 ::: tip
 Some providers (Google, Microsoft) require HTTPS for production redirect URIs but allow `http://localhost` for development. GitHub and Discord allow plain HTTP localhost URIs as well.

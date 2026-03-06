@@ -1,6 +1,6 @@
 // API client — all requests go through here
 
-const BASE = '/api';
+const BASE = "/api";
 
 export class ApiError extends Error {
   status: number;
@@ -22,24 +22,32 @@ async function request<T>(
   if (body instanceof FormData) {
     // Let browser set content-type with boundary
   } else if (body !== undefined) {
-    headers['Content-Type'] = 'application/json';
+    headers["Content-Type"] = "application/json";
   }
 
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
-    body: body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
+    body:
+      body instanceof FormData
+        ? body
+        : body !== undefined
+          ? JSON.stringify(body)
+          : undefined,
   });
 
-  const contentType = res.headers.get('Content-Type') ?? '';
-  const data = contentType.includes('application/json') ? await res.json() : await res.text();
+  const contentType = res.headers.get("Content-Type") ?? "";
+  const data = contentType.includes("application/json")
+    ? await res.json()
+    : await res.text();
 
   if (!res.ok) {
-    const message = typeof data === 'object' && data !== null && 'error' in data
-      ? String((data as Record<string, unknown>).error)
-      : `HTTP ${res.status}`;
+    const message =
+      typeof data === "object" && data !== null && "error" in data
+        ? String((data as Record<string, unknown>).error)
+        : `HTTP ${res.status}`;
     throw new ApiError(res.status, message, data);
   }
 
@@ -47,107 +55,287 @@ async function request<T>(
 }
 
 function getToken(): string | undefined {
-  return localStorage.getItem('token') ?? undefined;
+  return localStorage.getItem("token") ?? undefined;
 }
 
 export const api = {
   // ─── Init ────────────────────────────────────────────────────────────────
-  initStatus: () => request<{ initialized: boolean }>('GET', '/init/status'),
-  init: (body: { email: string; username: string; password: string; display_name?: string; site_name?: string }) =>
-    request<{ token: string; user: unknown }>('POST', '/init', body),
+  initStatus: () => request<{ initialized: boolean }>("GET", "/init/status"),
+  init: (body: {
+    email: string;
+    username: string;
+    password: string;
+    display_name?: string;
+    site_name?: string;
+  }) => request<{ token: string; user: unknown }>("POST", "/init", body),
 
   // ─── Site ────────────────────────────────────────────────────────────────
-  site: () => request<SitePublicConfig>('GET', '/site'),
+  site: () => request<SitePublicConfig>("GET", "/site"),
 
   // ─── Auth ────────────────────────────────────────────────────────────────
-  register: (body: RegisterBody) => request<AuthResponse>('POST', '/auth/register', body),
-  login: (body: LoginBody) => request<LoginResponse>('POST', '/auth/login', body),
-  logout: () => request<{ message: string }>('POST', '/auth/logout', undefined, getToken()),
-  verifyEmail: (token: string) => request<{ message: string }>('GET', `/auth/verify-email?token=${encodeURIComponent(token)}`),
+  register: (body: RegisterBody) =>
+    request<AuthResponse>("POST", "/auth/register", body),
+  login: (body: LoginBody) =>
+    request<LoginResponse>("POST", "/auth/login", body),
+  logout: () =>
+    request<{ message: string }>("POST", "/auth/logout", undefined, getToken()),
+  verifyEmail: (token: string) =>
+    request<{ message: string }>(
+      "GET",
+      `/auth/verify-email?token=${encodeURIComponent(token)}`,
+    ),
 
   // ─── TOTP ────────────────────────────────────────────────────────────────
-  totpSetup: () => request<{ secret: string; uri: string }>('POST', '/auth/totp/setup', {}, getToken()),
-  totpVerify: (code: string) => request<{ message: string; backup_codes: string[] }>('POST', '/auth/totp/verify', { code }, getToken()),
-  totpDisable: (code: string) => request<{ message: string }>('DELETE', '/auth/totp', { code }, getToken()),
-  totpNewBackupCodes: (code: string) => request<{ backup_codes: string[] }>('POST', '/auth/totp/backup-codes', { code }, getToken()),
+  totpSetup: () =>
+    request<{ secret: string; uri: string }>(
+      "POST",
+      "/auth/totp/setup",
+      {},
+      getToken(),
+    ),
+  totpVerify: (code: string) =>
+    request<{ message: string; backup_codes: string[] }>(
+      "POST",
+      "/auth/totp/verify",
+      { code },
+      getToken(),
+    ),
+  totpDisable: (code: string) =>
+    request<{ message: string }>("DELETE", "/auth/totp", { code }, getToken()),
+  totpNewBackupCodes: (code: string) =>
+    request<{ backup_codes: string[] }>(
+      "POST",
+      "/auth/totp/backup-codes",
+      { code },
+      getToken(),
+    ),
 
   // ─── Passkeys ────────────────────────────────────────────────────────────
-  passkeyRegBegin: () => request<unknown>('POST', '/auth/passkey/register/begin', {}, getToken()),
+  passkeyRegBegin: () =>
+    request<unknown>("POST", "/auth/passkey/register/begin", {}, getToken()),
   passkeyRegFinish: (response: unknown, name?: string) =>
-    request<{ message: string; id: string }>('POST', '/auth/passkey/register/finish', { response, name }, getToken()),
-  passkeyAuthBegin: (username?: string) => request<unknown>('POST', '/auth/passkey/auth/begin', { username }),
+    request<{ message: string; id: string }>(
+      "POST",
+      "/auth/passkey/register/finish",
+      { response, name },
+      getToken(),
+    ),
+  passkeyAuthBegin: (username?: string) =>
+    request<unknown>("POST", "/auth/passkey/auth/begin", { username }),
   passkeyAuthFinish: (challenge: string, response: unknown) =>
-    request<AuthResponse>('POST', '/auth/passkey/auth/finish', { challenge, response }),
-  listPasskeys: () => request<{ passkeys: PasskeyInfo[] }>('GET', '/auth/passkeys', undefined, getToken()),
-  deletePasskey: (id: string) => request<{ message: string }>('DELETE', `/auth/passkeys/${id}`, undefined, getToken()),
+    request<AuthResponse>("POST", "/auth/passkey/auth/finish", {
+      challenge,
+      response,
+    }),
+  listPasskeys: () =>
+    request<{ passkeys: PasskeyInfo[] }>(
+      "GET",
+      "/auth/passkeys",
+      undefined,
+      getToken(),
+    ),
+  deletePasskey: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/auth/passkeys/${id}`,
+      undefined,
+      getToken(),
+    ),
 
   // ─── Sessions ────────────────────────────────────────────────────────────
-  listSessions: () => request<{ sessions: SessionInfo[] }>('GET', '/auth/sessions', undefined, getToken()),
-  revokeSession: (id: string) => request<{ message: string }>('DELETE', `/auth/sessions/${id}`, undefined, getToken()),
-  powChallenge: () => request<{ challenge: string; difficulty: number }>('GET', '/auth/pow-challenge'),
+  listSessions: () =>
+    request<{ sessions: SessionInfo[] }>(
+      "GET",
+      "/auth/sessions",
+      undefined,
+      getToken(),
+    ),
+  revokeSession: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/auth/sessions/${id}`,
+      undefined,
+      getToken(),
+    ),
+  powChallenge: () =>
+    request<{ challenge: string; difficulty: number }>(
+      "GET",
+      "/auth/pow-challenge",
+    ),
 
   // ─── User ────────────────────────────────────────────────────────────────
-  me: () => request<MeResponse>('GET', '/user/me', undefined, getToken()),
+  me: () => request<MeResponse>("GET", "/user/me", undefined, getToken()),
   updateMe: (body: Partial<{ display_name: string; avatar_url: string }>) =>
-    request<{ user: UserProfile }>('PATCH', '/user/me', body, getToken()),
+    request<{ user: UserProfile }>("PATCH", "/user/me", body, getToken()),
   changePassword: (current_password: string, new_password: string) =>
-    request<{ message: string }>('POST', '/user/me/change-password', { current_password, new_password }, getToken()),
+    request<{ message: string }>(
+      "POST",
+      "/user/me/change-password",
+      { current_password, new_password },
+      getToken(),
+    ),
   uploadAvatar: (file: File) => {
     const fd = new FormData();
-    fd.append('avatar', file);
-    return request<{ avatar_url: string }>('POST', '/user/me/avatar', fd, getToken());
+    fd.append("avatar", file);
+    return request<{ avatar_url: string }>(
+      "POST",
+      "/user/me/avatar",
+      fd,
+      getToken(),
+    );
   },
   deleteAccount: (password: string) =>
-    request<{ message: string }>('DELETE', '/user/me', { password, confirm: 'DELETE' }, getToken()),
+    request<{ message: string }>(
+      "DELETE",
+      "/user/me",
+      { password, confirm: "DELETE" },
+      getToken(),
+    ),
 
   // ─── Apps ────────────────────────────────────────────────────────────────
-  listApps: () => request<{ apps: OAuthApp[] }>('GET', '/apps', undefined, getToken()),
-  getApp: (id: string) => request<{ app: OAuthApp }>('GET', `/apps/${id}`, undefined, getToken()),
-  createApp: (body: CreateAppBody) => request<{ app: OAuthApp }>('POST', '/apps', body, getToken()),
+  listApps: () =>
+    request<{ apps: OAuthApp[] }>("GET", "/apps", undefined, getToken()),
+  getApp: (id: string) =>
+    request<{ app: OAuthApp }>("GET", `/apps/${id}`, undefined, getToken()),
+  createApp: (body: CreateAppBody) =>
+    request<{ app: OAuthApp }>("POST", "/apps", body, getToken()),
   updateApp: (id: string, body: Partial<CreateAppBody>) =>
-    request<{ app: OAuthApp }>('PATCH', `/apps/${id}`, body, getToken()),
+    request<{ app: OAuthApp }>("PATCH", `/apps/${id}`, body, getToken()),
   rotateSecret: (id: string) =>
-    request<{ client_secret: string }>('POST', `/apps/${id}/rotate-secret`, {}, getToken()),
-  deleteApp: (id: string) => request<{ message: string }>('DELETE', `/apps/${id}`, undefined, getToken()),
+    request<{ client_secret: string }>(
+      "POST",
+      `/apps/${id}/rotate-secret`,
+      {},
+      getToken(),
+    ),
+  deleteApp: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/apps/${id}`,
+      undefined,
+      getToken(),
+    ),
 
   // ─── Domains ─────────────────────────────────────────────────────────────
-  listDomains: () => request<{ domains: Domain[] }>('GET', '/domains', undefined, getToken()),
+  listDomains: () =>
+    request<{ domains: Domain[] }>("GET", "/domains", undefined, getToken()),
   addDomain: (domain: string, app_id?: string) =>
-    request<DomainAddResponse>('POST', '/domains', { domain, app_id }, getToken()),
-  verifyDomain: (id: string) => request<{ verified: boolean; next_reverify_at?: number }>('POST', `/domains/${id}/verify`, {}, getToken()),
-  deleteDomain: (id: string) => request<{ message: string }>('DELETE', `/domains/${id}`, undefined, getToken()),
+    request<DomainAddResponse>(
+      "POST",
+      "/domains",
+      { domain, app_id },
+      getToken(),
+    ),
+  verifyDomain: (id: string) =>
+    request<{ verified: boolean; next_reverify_at?: number }>(
+      "POST",
+      `/domains/${id}/verify`,
+      {},
+      getToken(),
+    ),
+  deleteDomain: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/domains/${id}`,
+      undefined,
+      getToken(),
+    ),
 
   // ─── Connections ─────────────────────────────────────────────────────────
-  listConnections: () => request<{ connections: SocialConnection[] }>('GET', '/connections', undefined, getToken()),
+  listConnections: () =>
+    request<{ connections: SocialConnection[] }>(
+      "GET",
+      "/connections",
+      undefined,
+      getToken(),
+    ),
   disconnectProvider: (provider: string) =>
-    request<{ message: string }>('DELETE', `/connections/${provider}`, undefined, getToken()),
+    request<{ message: string }>(
+      "DELETE",
+      `/connections/${provider}`,
+      undefined,
+      getToken(),
+    ),
 
   // ─── OAuth authorize ─────────────────────────────────────────────────────
   oauthAuthorizeInfo: (params: Record<string, string>) =>
-    request<OAuthAuthorizeInfo>('GET', `/oauth/authorize?${new URLSearchParams(params)}`),
-  oauthApprove: (body: OAuthApproveBody) => request<{ redirect: string }>('POST', '/oauth/authorize', body, getToken()),
+    request<OAuthAuthorizeInfo>(
+      "GET",
+      `/oauth/authorize?${new URLSearchParams(params)}`,
+    ),
+  oauthApprove: (body: OAuthApproveBody) =>
+    request<{ redirect: string }>("POST", "/oauth/authorize", body, getToken()),
 
   // ─── Admin ────────────────────────────────────────────────────────────────
-  adminConfig: () => request<{ config: import('../types').SiteConfig }>('GET', '/admin/config', undefined, getToken()),
+  adminConfig: () =>
+    request<{ config: import("../types").SiteConfig }>(
+      "GET",
+      "/admin/config",
+      undefined,
+      getToken(),
+    ),
   adminUpdateConfig: (updates: Record<string, unknown>) =>
-    request<{ message: string }>('PATCH', '/admin/config', updates, getToken()),
-  adminStats: () => request<AdminStats>('GET', '/admin/stats', undefined, getToken()),
-  adminListUsers: (page = 1, limit = 20, search = '') =>
-    request<AdminUserList>('GET', `/admin/users?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`, undefined, getToken()),
-  adminGetUser: (id: string) => request<AdminUserDetail>('GET', `/admin/users/${id}`, undefined, getToken()),
+    request<{ message: string }>("PATCH", "/admin/config", updates, getToken()),
+  adminStats: () =>
+    request<AdminStats>("GET", "/admin/stats", undefined, getToken()),
+  adminListUsers: (page = 1, limit = 20, search = "") =>
+    request<AdminUserList>(
+      "GET",
+      `/admin/users?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`,
+      undefined,
+      getToken(),
+    ),
+  adminGetUser: (id: string) =>
+    request<AdminUserDetail>(
+      "GET",
+      `/admin/users/${id}`,
+      undefined,
+      getToken(),
+    ),
   adminUpdateUser: (id: string, body: Record<string, unknown>) =>
-    request<{ message: string }>('PATCH', `/admin/users/${id}`, body, getToken()),
-  adminDeleteUser: (id: string) => request<{ message: string }>('DELETE', `/admin/users/${id}`, undefined, getToken()),
+    request<{ message: string }>(
+      "PATCH",
+      `/admin/users/${id}`,
+      body,
+      getToken(),
+    ),
+  adminDeleteUser: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}`,
+      undefined,
+      getToken(),
+    ),
   adminListApps: (page = 1) =>
-    request<{ apps: OAuthApp[]; total: number }>('GET', `/admin/apps?page=${page}`, undefined, getToken()),
+    request<{ apps: OAuthApp[]; total: number }>(
+      "GET",
+      `/admin/apps?page=${page}`,
+      undefined,
+      getToken(),
+    ),
   adminUpdateApp: (id: string, body: Record<string, unknown>) =>
-    request<{ message: string }>('PATCH', `/admin/apps/${id}`, body, getToken()),
+    request<{ message: string }>(
+      "PATCH",
+      `/admin/apps/${id}`,
+      body,
+      getToken(),
+    ),
   adminAuditLog: (page = 1) =>
-    request<{ logs: unknown[]; total: number }>('GET', `/admin/audit-log?page=${page}`, undefined, getToken()),
+    request<{ logs: unknown[]; total: number }>(
+      "GET",
+      `/admin/audit-log?page=${page}`,
+      undefined,
+      getToken(),
+    ),
   adminTestEmail: () =>
-    request<{ message: string }>('POST', '/admin/test-email', {}, getToken()),
+    request<{ message: string }>("POST", "/admin/test-email", {}, getToken()),
   adminReset: () =>
-    request<{ message: string }>('POST', '/admin/reset', { confirm: 'RESET_EVERYTHING' }, getToken()),
+    request<{ message: string }>(
+      "POST",
+      "/admin/reset",
+      { confirm: "RESET_EVERYTHING" },
+      getToken(),
+    ),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -201,7 +389,7 @@ export interface UserProfile {
   username: string;
   display_name: string;
   avatar_url: string | null;
-  role: 'admin' | 'user';
+  role: "admin" | "user";
   email_verified: boolean;
   created_at?: number;
 }
@@ -306,7 +494,7 @@ export interface OAuthApproveBody {
   code_challenge?: string;
   code_challenge_method?: string;
   nonce?: string;
-  action: 'approve' | 'deny';
+  action: "approve" | "deny";
 }
 
 export interface AdminStats {
