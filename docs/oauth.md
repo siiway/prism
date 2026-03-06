@@ -50,7 +50,7 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 **Scopes**
 
 | Scope            | Claims included                                       |
-| ---------------- | ----------------------------------------------------- |
+|------------------|-------------------------------------------------------|
 | `openid`         | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC) |
 | `profile`        | `name`, `preferred_username`, `picture`               |
 | `email`          | `email`, `email_verified`                             |
@@ -178,7 +178,7 @@ The ID token is a signed JWT (HS256). Validate it by fetching the JWKS at
 Standard claims:
 
 | Claim   | Value                             |
-| ------- | --------------------------------- |
+|---------|-----------------------------------|
 | `iss`   | Your Prism instance URL           |
 | `sub`   | Stable user ID                    |
 | `aud`   | Your `client_id`                  |
