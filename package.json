@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "db:migrate": "wrangler d1 migrations apply prism-db --local",
-    "db:migrate:prod": "wrangler d1 migrations apply prism-db",
+    "db:migrate:prod": "wrangler d1 migrations apply prism-db --remote",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"
