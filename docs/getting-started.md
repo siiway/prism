@@ -60,19 +60,7 @@ wrangler r2 bucket create prism-assets
 
 The bucket name is already set in `wrangler.jsonc` as `prism-assets`.
 
-## 3. Set secrets
-
-```bash
-wrangler secret put JWT_SECRET        # required — any long random string
-```
-
-For local dev, create a `.dev.vars` file in the project root (gitignored):
-
-```ini
-JWT_SECRET=dev-secret-replace-in-prod
-```
-
-## 4. Run migrations
+## 3. Run migrations
 
 ```bash
 pnpm db:migrate          # local D1 (wrangler dev)

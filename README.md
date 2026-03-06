@@ -44,13 +44,10 @@ wrangler r2 bucket create prism-assets
 
 # 3. Fill in the resource IDs in wrangler.jsonc
 
-# 4. Set secrets
-wrangler secret put JWT_SECRET        # any long random string
-
-# 5. Run migrations
+# 4. Run migrations
 pnpm db:migrate
 
-# 6. Start dev servers (two terminals)
+# 5. Start dev servers (two terminals)
 pnpm worker:dev   # Wrangler on :8787
 pnpm dev          # Vite on :5173
 ```
