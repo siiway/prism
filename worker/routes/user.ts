@@ -110,7 +110,10 @@ app.post("/me/change-password", async (c) => {
 // Upload avatar to R2
 app.post("/me/avatar", async (c) => {
   if (!c.env.R2_ASSETS)
-    return c.json({ error: "File uploads are not enabled on this instance" }, 503);
+    return c.json(
+      { error: "File uploads are not enabled on this instance" },
+      503,
+    );
 
   const user = c.get("user");
   const formData = await c.req.formData();

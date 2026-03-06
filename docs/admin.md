@@ -14,7 +14,7 @@ The first admin is created during first-run setup. Additional admins are promote
 Shows four summary stats:
 
 | Stat             | Description                          |
-|------------------|--------------------------------------|
+| ---------------- | ------------------------------------ |
 | Total users      | All registered accounts              |
 | OAuth apps       | All registered applications          |
 | Verified domains | Domains that passed DNS verification |
@@ -48,7 +48,7 @@ Settings are grouped into tabs. All changes take effect immediately — no redep
 Choose one captcha provider:
 
 | Provider             | Notes                                                                |
-|----------------------|----------------------------------------------------------------------|
+| -------------------- | -------------------------------------------------------------------- |
 | None                 | No bot protection                                                    |
 | Cloudflare Turnstile | Requires a Turnstile site key + secret. Free tier available.         |
 | hCaptcha             | Requires an hCaptcha site key + secret.                              |
@@ -79,7 +79,7 @@ The user table is searchable and sortable. Click a user row to open the detail v
 ### Actions on a user
 
 | Action              | Effect                                                                                          |
-|---------------------|-------------------------------------------------------------------------------------------------|
+| ------------------- | ----------------------------------------------------------------------------------------------- |
 | Change role         | Toggle between `user` and `admin`                                                               |
 | Deactivate          | Prevents login; existing tokens remain valid until expiry                                       |
 | Mark email verified | Manually verify without sending an email                                                        |
@@ -99,7 +99,7 @@ The app table lists all OAuth apps across all users, including:
 ### App moderation
 
 | Action     | Effect                                                                                      |
-|------------|---------------------------------------------------------------------------------------------|
+| ---------- | ------------------------------------------------------------------------------------------- |
 | Verify     | Marks the app with a verified badge visible on the consent screen                           |
 | Deactivate | Prevents the app from completing new authorization flows. Existing tokens continue to work. |
 
@@ -111,7 +111,7 @@ have been reviewed by an admin.
 The audit log is a paginated, append-only list of significant events:
 
 | Event                 | Triggered by               |
-|-----------------------|----------------------------|
+| --------------------- | -------------------------- |
 | `user.register`       | Successful registration    |
 | `user.login`          | Successful login           |
 | `user.login.failed`   | Failed login attempt       |

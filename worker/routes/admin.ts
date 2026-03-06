@@ -348,7 +348,9 @@ app.post("/test-email", async (c) => {
 // ─── Reset everything ─────────────────────────────────────────────────────────
 
 app.post("/reset", async (c) => {
-  const body = await c.req.json<{ confirm?: string }>().catch(() => ({} as { confirm?: string }));
+  const body = await c.req
+    .json<{ confirm?: string }>()
+    .catch(() => ({}) as { confirm?: string });
   if (body.confirm !== "RESET_EVERYTHING") {
     return c.json({ error: "Missing confirmation" }, 400);
   }

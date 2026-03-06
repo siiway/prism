@@ -41,7 +41,11 @@ export function Profile() {
   const { user, setAuth, token } = useAuthStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const { data: site } = useQuery({ queryKey: ["site"], queryFn: api.site, staleTime: 60_000 });
+  const { data: site } = useQuery({
+    queryKey: ["site"],
+    queryFn: api.site,
+    staleTime: 60_000,
+  });
   const { data: me, isLoading } = useQuery({
     queryKey: ["me"],
     queryFn: api.me,
@@ -68,7 +72,9 @@ export function Profile() {
   const handleSave = async () => {
     setSaveLoading(true);
     try {
-      const body: Parameters<typeof api.updateMe>[0] = { display_name: displayName };
+      const body: Parameters<typeof api.updateMe>[0] = {
+        display_name: displayName,
+      };
       if (!r2Enabled) body.avatar_url = avatarUrl || undefined;
       const res = await api.updateMe(body);
       if (token && res.user) setAuth(token, res.user);

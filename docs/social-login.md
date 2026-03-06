@@ -23,7 +23,7 @@ https://<your-prism-domain>/api/connections/<provider>/callback
 2. Fill in the form:
 
    | Field                      | Value                                                       |
-   |----------------------------|-------------------------------------------------------------|
+   | -------------------------- | ----------------------------------------------------------- |
    | Application name           | Your site name                                              |
    | Homepage URL               | `https://your-prism-domain`                                 |
    | Authorization callback URL | `https://your-prism-domain/api/connections/github/callback` |
@@ -59,7 +59,7 @@ GitHub login will appear on the login and registration pages immediately.
 4. Back in **Create OAuth client ID**:
 
    | Field                         | Value                                                       |
-   |-------------------------------|-------------------------------------------------------------|
+   | ----------------------------- | ----------------------------------------------------------- |
    | Application type              | **Web application**                                         |
    | Authorized JavaScript origins | `https://your-prism-domain`                                 |
    | Authorized redirect URIs      | `https://your-prism-domain/api/connections/google/callback` |
@@ -86,7 +86,7 @@ Go to **Admin → Settings → Social Login** and paste into the Google fields. 
 2. Fill in the form:
 
    | Field                   | Value                                                                                                     |
-   |-------------------------|-----------------------------------------------------------------------------------------------------------|
+   | ----------------------- | --------------------------------------------------------------------------------------------------------- |
    | Name                    | Your site name                                                                                            |
    | Supported account types | **Accounts in any organizational directory and personal Microsoft accounts** (for broadest compatibility) |
    | Redirect URI            | Platform: **Web** — `https://your-prism-domain/api/connections/microsoft/callback`                        |
@@ -139,7 +139,7 @@ Go to **Admin → Settings → Social Login** and paste into the Discord fields.
 For local testing, register a separate OAuth app per provider using `http://localhost:8787` as the domain:
 
 | Provider  | Callback URL                                               |
-|-----------|------------------------------------------------------------|
+| --------- | ---------------------------------------------------------- |
 | GitHub    | `http://localhost:8787/api/connections/github/callback`    |
 | Google    | `http://localhost:8787/api/connections/google/callback`    |
 | Microsoft | `http://localhost:8787/api/connections/microsoft/callback` |
