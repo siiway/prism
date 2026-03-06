@@ -1,6 +1,6 @@
 // Main router
 
-import { BrowserRouter, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { ThemeProvider } from './components/ThemeProvider';
@@ -36,11 +36,10 @@ const qc = new QueryClient({
 // Auth guard
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore();
-  const navigate = useNavigate();
-  useEffect(() => {
-    if (!token) navigate(`/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`, { replace: true });
-  }, [token, navigate]);
-  if (!token) return null;
+  const location = useLocation();
+  if (!token) {
+    return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  }
   return <>{children}</>;
 }
 
@@ -61,10 +60,15 @@ function AuthCallback() {
     const token = params.get('token');
     if (!token) { navigate('/login?error=no_token'); return; }
 
+    // Set token in localStorage first so api.me() can authenticate with it
+    localStorage.setItem('token', token);
     api.me().then(({ user }) => {
       setAuth(token, user);
       navigate('/');
-    }).catch(() => navigate('/login?error=invalid_token'));
+    }).catch(() => {
+      localStorage.removeItem('token');
+      navigate('/login?error=invalid_token');
+    });
   }, []);
 
   return null;

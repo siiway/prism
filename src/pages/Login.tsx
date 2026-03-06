@@ -13,7 +13,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { KeyMultipleRegular } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -59,7 +59,7 @@ export function Login() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { setAuth } = useAuthStore();
+  const { setAuth, token } = useAuthStore();
   const { data: site } = useQuery({ queryKey: ['site'], queryFn: api.site, staleTime: 60_000 });
 
   const [identifier, setIdentifier] = useState('');
@@ -70,8 +70,12 @@ export function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
-
   const redirectTo = searchParams.get('redirect') ?? '/';
+
+  // Redirect whenever a token appears (on mount if already logged in, or after login)
+  useEffect(() => {
+    if (token) navigate(redirectTo, { replace: true });
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,7 +97,8 @@ export function Login() {
 
       if (res.token && res.user) {
         setAuth(res.token, res.user as UserProfile);
-        navigate(redirectTo, { replace: true });
+        // navigation handled by the token useEffect
+        console.debug('Login successful, token set, navigating to', redirectTo);
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Login failed');
@@ -113,7 +118,8 @@ export function Login() {
         response,
       );
       setAuth(res.token, res.user);
-      navigate(redirectTo, { replace: true });
+      // navigation handled by the token useEffect
+      console.debug('Login successful, token set, navigating to', redirectTo);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Passkey authentication failed');
     } finally {
