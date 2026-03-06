@@ -115,6 +115,7 @@ app.post("/me/avatar", async (c) => {
       503,
     );
 
+  const r2 = c.env.R2_ASSETS;
   const user = c.get("user");
   const formData = await c.req.formData();
   const file = formData.get("avatar") as unknown as File | null;
@@ -129,7 +130,7 @@ app.post("/me/avatar", async (c) => {
 
   const ext = file.type.split("/")[1];
   const key = `avatars/${user.id}.${ext}`;
-  await c.env.R2_ASSETS.put(key, file.stream(), {
+  await r2.put(key, file.stream(), {
     httpMetadata: { contentType: file.type },
   });
 
@@ -145,8 +146,10 @@ app.post("/me/avatar", async (c) => {
 
 // Serve R2 assets
 app.get("/assets/*", async (c) => {
+  if (!c.env.R2_ASSETS) return c.json({ error: "Not found" }, 404);
+  const r2 = c.env.R2_ASSETS;
   const key = c.req.path.replace("/api/assets/", "");
-  const obj = await c.env.R2_ASSETS.get(key);
+  const obj = await r2.get(key);
   if (!obj) return c.json({ error: "Not found" }, 404);
 
   const headers = new Headers();
