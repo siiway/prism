@@ -85,8 +85,9 @@ let wasm;
 
 self.onmessage = async (e) => {
   if (e.data.wasm) {
-    const module = await WebAssembly.instantiate(e.data.wasm);
+    const module = await WebAssembly.instantiate(e.data.wasm, {});
     wasm = module.instance.exports;
+    self.postMessage({ ready: true });
     return;
   }
 
@@ -102,10 +103,10 @@ self.onmessage = async (e) => {
   const nonce = wasm.solve(ptr, encoded.length, difficulty);
   wasm.dealloc(ptr, encoded.length);
 
-  if (nonce === -1) {
+  if (nonce === -1n || nonce === -1) {
     self.postMessage({ error: 'No solution found' });
   } else {
-    self.postMessage({ nonce });
+    self.postMessage({ nonce: Number(nonce) });
   }
 };
 `;
@@ -116,18 +117,19 @@ function solvePoWWasm(challenge: string, difficulty: number, wasmBuf: ArrayBuffe
     const url = URL.createObjectURL(blob);
     const worker = new Worker(url);
 
-    worker.onmessage = (e: MessageEvent<{ nonce?: number; error?: string }>) => {
-      if (e.data.nonce !== undefined) {
+    worker.onmessage = (e: MessageEvent<{ ready?: boolean; nonce?: number; error?: string }>) => {
+      if (e.data.ready) {
+        // WASM initialised — now send the challenge
+        worker.postMessage({ challenge, difficulty });
+      } else if (e.data.nonce !== undefined) {
         worker.terminate();
         URL.revokeObjectURL(url);
         resolve(e.data.nonce);
       } else if (e.data.error) {
-        // WASM failed, fall back to JS
         worker.terminate();
         URL.revokeObjectURL(url);
         solvePoWJs(challenge, difficulty).then(resolve).catch(reject);
       }
-      // Wait for wasm init ack
     };
 
     worker.onerror = () => {
@@ -136,9 +138,7 @@ function solvePoWWasm(challenge: string, difficulty: number, wasmBuf: ArrayBuffe
       solvePoWJs(challenge, difficulty).then(resolve).catch(reject);
     };
 
-    // First send WASM binary
+    // Send WASM binary — worker posts { ready: true } when compiled
     worker.postMessage({ wasm: wasmBuf }, [wasmBuf]);
-    // Then send challenge
-    setTimeout(() => worker.postMessage({ challenge, difficulty }), 50);
   });
 }

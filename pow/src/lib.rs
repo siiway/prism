@@ -1,18 +1,37 @@
 //! Proof-of-Work WASM module for Prism.
 //!
-//! Build: wasm-pack build --target no-modules --out-dir ../public/pow-wasm
-//! Then rename/copy pkg/prism_pow_bg.wasm to public/pow.wasm
+//! Build: cargo build --target wasm32-unknown-unknown --release
+//! Then copy target/wasm32-unknown-unknown/release/prism_pow.wasm to public/pow.wasm
 //!
 //! Algorithm:
 //!   Find nonce (u32) such that SHA-256(challenge_bytes ++ nonce_be32)
 //!   has `difficulty` leading zero bits.
+//!
+//! Exports (raw C ABI, no wasm-bindgen):
+//!   alloc(len: i32) -> i32       — allocate `len` bytes, return pointer
+//!   dealloc(ptr: i32, len: i32)  — free allocation
+//!   solve(ptr: i32, len: i32, difficulty: i32) -> i64
+//!                                — solve PoW; returns nonce or -1
 
-use wasm_bindgen::prelude::*;
+use std::alloc::{alloc as sys_alloc, dealloc as sys_dealloc, Layout};
 
-/// Solve a PoW challenge.
-/// Returns the nonce as i64 (-1 if no solution found in 2^32 attempts).
-#[wasm_bindgen]
-pub fn solve(challenge: &[u8], difficulty: u32) -> i64 {
+#[no_mangle]
+pub unsafe extern "C" fn alloc(len: i32) -> i32 {
+    let layout = Layout::from_size_align(len as usize, 1).unwrap();
+    sys_alloc(layout) as i32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn dealloc(ptr: i32, len: i32) {
+    let layout = Layout::from_size_align(len as usize, 1).unwrap();
+    sys_dealloc(ptr as *mut u8, layout);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn solve(ptr: i32, len: i32, difficulty: i32) -> i64 {
+    let challenge = std::slice::from_raw_parts(ptr as *const u8, len as usize);
+    let difficulty = difficulty as u32;
+
     let mask_bytes = (difficulty / 8) as usize;
     let mask_bits = difficulty % 8;
 
@@ -23,7 +42,6 @@ pub fn solve(challenge: &[u8], difficulty: u32) -> i64 {
     let base_len = challenge.len();
 
     for nonce in 0u32..=u32::MAX {
-        // Write nonce in big-endian
         let nb = nonce.to_be_bytes();
         input[base_len] = nb[0];
         input[base_len + 1] = nb[1];
@@ -32,16 +50,13 @@ pub fn solve(challenge: &[u8], difficulty: u32) -> i64 {
 
         let hash = sha256(&input);
 
-        // Check leading zero bits
         let mut ok = true;
-
         for i in 0..mask_bytes {
             if hash[i] != 0 {
                 ok = false;
                 break;
             }
         }
-
         if ok && mask_bits > 0 {
             let mask: u8 = 0xff << (8 - mask_bits);
             if (hash[mask_bytes] & mask) != 0 {
@@ -57,32 +72,7 @@ pub fn solve(challenge: &[u8], difficulty: u32) -> i64 {
     -1
 }
 
-/// Verify a PoW solution.
-#[wasm_bindgen]
-pub fn verify(challenge: &[u8], nonce: u32, difficulty: u32) -> bool {
-    let mask_bytes = (difficulty / 8) as usize;
-    let mask_bits = difficulty % 8;
-
-    let mut input = Vec::with_capacity(challenge.len() + 4);
-    input.extend_from_slice(challenge);
-    input.extend_from_slice(&nonce.to_be_bytes());
-
-    let hash = sha256(&input);
-
-    for i in 0..mask_bytes {
-        if hash[i] != 0 {
-            return false;
-        }
-    }
-    if mask_bits > 0 {
-        let mask: u8 = 0xff << (8 - mask_bits);
-        (hash[mask_bytes] & mask) == 0
-    } else {
-        true
-    }
-}
-
-// ─── SHA-256 (pure Rust, no std) ─────────────────────────────────────────────
+// ─── SHA-256 (pure Rust, no std deps) ────────────────────────────────────────
 
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,

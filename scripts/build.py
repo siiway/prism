@@ -97,48 +97,6 @@ def ensure_rust() -> None:
     run("rustup", "target", "add", "wasm32-unknown-unknown")
 
 
-# ── Toolchain: wasm-pack ──────────────────────────────────────────────────────
-
-def ensure_wasm_pack() -> None:
-    refresh_path()
-    if has("wasm-pack"):
-        ver = subprocess.check_output(["wasm-pack", "--version"]).decode().split()[1]
-        ok(f"wasm-pack {ver}")
-        return
-
-    step("Installing wasm-pack")
-
-    if IS_WIN:
-        # Try winget
-        if has("winget"):
-            code = run(
-                "winget", "install", "--id", "RustWasm.WasmPack",
-                "-e", "--accept-source-agreements", "--accept-package-agreements",
-                check=False,
-            )
-            refresh_path()
-            if code == 0 and has("wasm-pack"):
-                ok(f"wasm-pack {subprocess.check_output(['wasm-pack','--version']).decode().split()[1]}")
-                return
-        info("winget unavailable or failed — falling back to cargo install wasm-pack")
-        run("cargo", "install", "wasm-pack")
-    elif has("curl"):
-        code = shell_run(
-            "curl --proto '=https' --tlsv1.2 -sSf"
-            " https://rustwasm.github.io/wasm-pack/installer/init.sh | sh"
-        )
-        if code != 0:
-            info("Official installer failed — falling back to cargo install wasm-pack")
-            run("cargo", "install", "wasm-pack")
-    else:
-        info("curl not found — falling back to cargo install wasm-pack")
-        run("cargo", "install", "wasm-pack")
-
-    refresh_path()
-    ver = subprocess.check_output(["wasm-pack", "--version"]).decode().split()[1]
-    ok(f"wasm-pack {ver}")
-
-
 # ── Toolchain: Node.js ────────────────────────────────────────────────────────
 
 def ensure_node() -> None:
@@ -258,18 +216,15 @@ def build_wasm() -> None:
     step("Checking Rust toolchain")
     ensure_rust()
 
-    step("Checking wasm-pack")
-    ensure_wasm_pack()
-
     step("Building PoW WASM (pow/src/lib.rs)")
     run(
-        "wasm-pack", "build",
-        "--target", "no-modules",
-        "--out-dir", "../public/pow-wasm",
+        "cargo", "build",
+        "--target", "wasm32-unknown-unknown",
+        "--release",
         cwd=ROOT / "pow",
     )
 
-    src = ROOT / "public" / "pow-wasm" / "prism_pow_bg.wasm"
+    src = ROOT / "pow" / "target" / "wasm32-unknown-unknown" / "release" / "prism_pow.wasm"
     dst = ROOT / "public" / "pow.wasm"
     if src.exists():
         shutil.copy2(src, dst)

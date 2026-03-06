@@ -61,34 +61,6 @@ function Ensure-Rust {
     rustup target add wasm32-unknown-unknown
 }
 
-# ── Toolchain: wasm-pack ───────────────────────────────────────────────────────
-function Ensure-WasmPack {
-    Refresh-Path
-    if (Has 'wasm-pack') {
-        $ver = (wasm-pack --version 2>$null) -replace 'wasm-pack ',''
-        Ok "wasm-pack $ver"
-        return
-    }
-
-    Step 'Installing wasm-pack'
-
-    # Try winget first (fast, pre-built binary)
-    if (Has 'winget') {
-        winget install --id RustWasm.WasmPack -e --accept-source-agreements --accept-package-agreements 2>$null
-        Refresh-Path
-        if (Has 'wasm-pack') {
-            Ok "wasm-pack $(wasm-pack --version -replace 'wasm-pack ','')"
-            return
-        }
-    }
-
-    # Fallback: cargo install (slower, compiles from source)
-    Info 'winget unavailable — falling back to cargo install wasm-pack (this may take a few minutes)'
-    cargo install wasm-pack
-    Refresh-Path
-    Ok "wasm-pack $(wasm-pack --version -replace 'wasm-pack ','')"
-}
-
 # ── Toolchain: Node.js ────────────────────────────────────────────────────────
 function Ensure-Node {
     Refresh-Path
@@ -152,16 +124,13 @@ if (-not $SkipWasm) {
     Step 'Checking Rust toolchain'
     Ensure-Rust
 
-    Step 'Checking wasm-pack'
-    Ensure-WasmPack
-
     Step 'Building PoW WASM (pow/src/lib.rs)'
     Push-Location "$Root\pow"
-    wasm-pack build --target no-modules --out-dir ..\public\pow-wasm
+    cargo build --target wasm32-unknown-unknown --release
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Pop-Location
 
-    $WasmSrc = "$Root\public\pow-wasm\prism_pow_bg.wasm"
+    $WasmSrc = "$Root\pow\target\wasm32-unknown-unknown\release\prism_pow.wasm"
     $WasmDst = "$Root\public\pow.wasm"
     if (Test-Path $WasmSrc) {
         Copy-Item $WasmSrc $WasmDst -Force

@@ -35,9 +35,6 @@ importers:
       react-router-dom:
         specifier: ^7.6.2
         version: 7.13.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      vitepress:
-        specifier: ^1.6.4
-        version: 1.6.4(@algolia/client-search@5.49.1)(@types/node@24.12.0)(@types/react@19.2.14)(postcss@8.5.8)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(search-insights@2.17.3)(typescript@5.9.3)
       zustand:
         specifier: ^5.0.5
         version: 5.0.11(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
@@ -78,6 +75,9 @@ importers:
       vite:
         specifier: ^7.3.1
         version: 7.3.1(@types/node@24.12.0)
+      vitepress:
+        specifier: ^1.6.4
+        version: 1.6.4(@algolia/client-search@5.49.1)(@types/node@24.12.0)(@types/react@19.2.14)(postcss@8.5.8)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(search-insights@2.17.3)(typescript@5.9.3)
       wrangler:
         specifier: ^3.99.0
         version: 3.114.17(@cloudflare/workers-types@4.20260305.1)

@@ -60,25 +60,6 @@ ensure_rust() {
   rustup target add wasm32-unknown-unknown
 }
 
-# ── Toolchain: wasm-pack ───────────────────────────────────────────────────────
-ensure_wasm_pack() {
-  source_cargo_env
-  if has wasm-pack; then
-    ok "wasm-pack $(wasm-pack --version 2>/dev/null | awk '{print $2}')"
-    return
-  fi
-
-  step "Installing wasm-pack"
-  # Official installer is much faster than `cargo install`
-  if has curl; then
-    curl --proto '=https' --tlsv1.2 -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
-  else
-    info "curl not found — falling back to cargo install wasm-pack (this may take a while)"
-    cargo install wasm-pack
-  fi
-  ok "wasm-pack $(wasm-pack --version | awk '{print $2}')"
-}
-
 # ── Toolchain: Node.js ────────────────────────────────────────────────────────
 ensure_node() {
   if has node; then
@@ -138,15 +119,12 @@ if [ "$SKIP_WASM" = false ]; then
   step "Checking Rust toolchain"
   ensure_rust
 
-  step "Checking wasm-pack"
-  ensure_wasm_pack
-
   step "Building PoW WASM (pow/src/lib.rs)"
   cd "$ROOT/pow"
-  wasm-pack build --target no-modules --out-dir ../public/pow-wasm
+  cargo build --target wasm32-unknown-unknown --release
   cd "$ROOT"
 
-  WASM_SRC="$ROOT/public/pow-wasm/prism_pow_bg.wasm"
+  WASM_SRC="$ROOT/pow/target/wasm32-unknown-unknown/release/prism_pow.wasm"
   WASM_DST="$ROOT/public/pow.wasm"
   if [ -f "$WASM_SRC" ]; then
     cp "$WASM_SRC" "$WASM_DST"
