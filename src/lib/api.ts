@@ -144,6 +144,10 @@ export const api = {
     request<{ message: string }>('PATCH', `/admin/apps/${id}`, body, getToken()),
   adminAuditLog: (page = 1) =>
     request<{ logs: unknown[]; total: number }>('GET', `/admin/audit-log?page=${page}`, undefined, getToken()),
+  adminTestEmail: () =>
+    request<{ message: string }>('POST', '/admin/test-email', {}, getToken()),
+  adminReset: () =>
+    request<{ message: string }>('POST', '/admin/reset', { confirm: 'RESET_EVERYTHING' }, getToken()),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────

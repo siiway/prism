@@ -2,6 +2,7 @@
 
 import { Hono } from 'hono';
 import { getConfig, setConfigValues } from '../lib/config';
+import { sendEmail } from '../lib/email';
 import { requireAdmin } from '../middleware/auth';
 import type { AuditLogRow, OAuthAppRow, UserRow, Variables } from '../types';
 
@@ -212,6 +213,64 @@ app.patch('/apps/:id', async (c) => {
   await c.env.DB.prepare(`UPDATE oauth_apps SET ${updates.join(', ')} WHERE id = ?`).bind(...values).run();
   await logAudit(c.env.DB, admin.id, 'admin.app.update', 'oauth_app', id, body, getIp(c));
   return c.json({ message: 'App updated' });
+});
+
+// ─── Test email ───────────────────────────────────────────────────────────────
+
+app.post('/test-email', async (c) => {
+  const config = await getConfig(c.env.DB);
+  if (config.email_provider === 'none') {
+    return c.json({ error: 'Email provider is not configured' }, 400);
+  }
+  const admin = c.get('user');
+  try {
+    await sendEmail(
+      {
+        to: admin.email,
+        subject: 'Prism — Test Email',
+        html: '<div style="font-family:sans-serif"><h2>Test Email</h2><p>This is a test email from your Prism instance. Email is working correctly!</p></div>',
+        text: 'This is a test email from your Prism instance. Email is working correctly!',
+      },
+      {
+        provider: config.email_provider as 'resend' | 'mailchannels',
+        from: config.email_from,
+        apiKey: config.email_api_key,
+      },
+    );
+    return c.json({ message: `Test email sent to ${admin.email}` });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'Failed to send email' }, 500);
+  }
+});
+
+// ─── Reset everything ─────────────────────────────────────────────────────────
+
+app.post('/reset', async (c) => {
+  const body = await c.req.json<{ confirm?: string }>().catch(() => ({}));
+  if (body.confirm !== 'RESET_EVERYTHING') {
+    return c.json({ error: 'Missing confirmation' }, 400);
+  }
+
+  // Delete all data in reverse dependency order
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM oauth_tokens'),
+    c.env.DB.prepare('DELETE FROM oauth_codes'),
+    c.env.DB.prepare('DELETE FROM oauth_consents'),
+    c.env.DB.prepare('DELETE FROM sessions'),
+    c.env.DB.prepare('DELETE FROM totp_secrets'),
+    c.env.DB.prepare('DELETE FROM passkeys'),
+    c.env.DB.prepare('DELETE FROM social_connections'),
+    c.env.DB.prepare('DELETE FROM domains'),
+    c.env.DB.prepare('DELETE FROM audit_log'),
+    c.env.DB.prepare('DELETE FROM oauth_apps'),
+    c.env.DB.prepare('DELETE FROM users'),
+    c.env.DB.prepare('DELETE FROM site_config'),
+  ]);
+
+  // Rotate JWT secret so all existing tokens become invalid
+  await c.env.KV_SESSIONS.delete('system:jwt_secret');
+
+  return c.json({ message: 'Platform reset complete' });
 });
 
 // ─── Statistics ───────────────────────────────────────────────────────────────

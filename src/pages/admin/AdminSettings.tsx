@@ -2,6 +2,13 @@
 
 import {
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  DialogTrigger,
   Dropdown,
   Field,
   Input,
@@ -18,8 +25,10 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../lib/api';
+import { useAuthStore } from '../../store/auth';
 import type { SiteConfig } from '../../types';
 
 const useStyles = makeStyles({
@@ -40,6 +49,8 @@ const useStyles = makeStyles({
 export function AdminSettings() {
   const styles = useStyles();
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const { clearAuth } = useAuthStore();
 
   const { data, isLoading } = useQuery({ queryKey: ['admin-config'], queryFn: api.adminConfig });
   const config = data?.config as SiteConfig | undefined;
@@ -48,6 +59,8 @@ export function AdminSettings() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [tab, setTab] = useState('general');
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const showMsg = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
@@ -61,6 +74,30 @@ export function AdminSettings() {
 
   const set = (key: keyof SiteConfig, value: unknown) =>
     setLocalConfig((c) => ({ ...c, [key]: value }));
+
+  const handleTestEmail = async () => {
+    setTestingEmail(true);
+    try {
+      const result = await api.adminTestEmail();
+      showMsg('success', result.message);
+    } catch (err) {
+      showMsg('error', err instanceof ApiError ? err.message : 'Failed to send test email');
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      await api.adminReset();
+      clearAuth();
+      navigate('/init', { replace: true });
+    } catch (err) {
+      showMsg('error', err instanceof ApiError ? err.message : 'Reset failed');
+      setResetting(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -90,6 +127,7 @@ export function AdminSettings() {
         <Tab value="social">Social Login</Tab>
         <Tab value="email">Email</Tab>
         <Tab value="appearance">Appearance</Tab>
+        <Tab value="danger">Danger Zone</Tab>
       </TabList>
 
       {tab === 'general' && (
@@ -232,6 +270,16 @@ export function AdminSettings() {
               <Input value={get('email_from') ?? ''} onChange={(e) => set('email_from', e.target.value)} placeholder="noreply@example.com" />
             </Field>
           </div>
+          {get('email_provider') !== 'none' && (
+            <div>
+              <Button onClick={handleTestEmail} disabled={testingEmail}>
+                {testingEmail ? <Spinner size="tiny" /> : 'Send test email'}
+              </Button>
+              <Text size={200} style={{ marginLeft: 8, color: tokens.colorNeutralForeground3 }}>
+                Sends a test email to your admin address.
+              </Text>
+            </div>
+          )}
         </div>
       )}
 
@@ -262,6 +310,47 @@ export function AdminSettings() {
                 placeholder=":root { /* custom styles */ }"
               />
             </Field>
+          </div>
+        </div>
+      )}
+
+      {tab === 'danger' && (
+        <div className={styles.card} style={{ borderColor: tokens.colorPaletteRedBorder2 }}>
+          <Title3>Danger Zone</Title3>
+          <Text>
+            Permanently delete all users, sessions, apps, tokens, and configuration. The platform will return to the
+            setup screen. <strong>This cannot be undone.</strong>
+          </Text>
+          <div>
+            <Dialog>
+              <DialogTrigger disableButtonEnhancement>
+                <Button appearance="primary" style={{ background: tokens.colorPaletteRedBackground3 }}>
+                  Reset everything
+                </Button>
+              </DialogTrigger>
+              <DialogSurface>
+                <DialogBody>
+                  <DialogTitle>Reset everything?</DialogTitle>
+                  <DialogContent>
+                    All users, sessions, OAuth apps, tokens, domains, and site configuration will be permanently
+                    deleted. The platform will restart setup. This cannot be undone.
+                  </DialogContent>
+                  <DialogActions>
+                    <DialogTrigger disableButtonEnhancement>
+                      <Button appearance="secondary">Cancel</Button>
+                    </DialogTrigger>
+                    <Button
+                      appearance="primary"
+                      style={{ background: tokens.colorPaletteRedBackground3 }}
+                      onClick={handleReset}
+                      disabled={resetting}
+                    >
+                      {resetting ? <Spinner size="tiny" /> : 'Yes, reset everything'}
+                    </Button>
+                  </DialogActions>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
           </div>
         </div>
       )}
