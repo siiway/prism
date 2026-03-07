@@ -9,11 +9,22 @@ export default defineConfig({
 
   head: [
     ["meta", { name: "theme-color", content: "#0078d4" }],
-    ["link", { rel: "icon", type: "image/svg+xml", href: "https://icons.siiway.org/prism/icon.svg" }],
+    [
+      "link",
+      {
+        rel: "icon",
+        type: "image/svg+xml",
+        href: "https://icons.siiway.org/prism/icon.svg",
+      },
+    ],
   ],
 
   themeConfig: {
-    logo: { light: "https://icons.siiway.org/prism/icon.svg", dark: "https://icons.siiway.org/prism/icon.svg", alt: "Prism" },
+    logo: {
+      light: "https://icons.siiway.org/prism/icon.svg",
+      dark: "https://icons.siiway.org/prism/icon.svg",
+      alt: "Prism",
+    },
     siteTitle: "Prism",
 
     nav: [

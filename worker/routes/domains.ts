@@ -114,7 +114,11 @@ app.post("/:id/verify", async (c) => {
     )
       .bind(now, nextReverify, id)
       .run();
-    return c.json({ verified: true, next_reverify_at: nextReverify, verified_by_parent: parent });
+    return c.json({
+      verified: true,
+      next_reverify_at: nextReverify,
+      verified_by_parent: parent,
+    });
   }
 
   const verified = await checkDnsTxtRecord(row.domain, row.verification_token);
