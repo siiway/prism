@@ -4,7 +4,24 @@ import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { requireAuth, optionalAuth } from "../middleware/auth";
-import { signJWT, verifyJWT } from "../lib/jwt";
+import { signJWT } from "../lib/jwt";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface PendingState {
+  type: "register" | "select";
+  provider: string;
+  providerUserId: string;
+  providerEmail: string | null;
+  accessToken: string;
+  profileData: Record<string, unknown>;
+  users?: Array<{
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+  }>;
+}
 import type { SocialConnectionRow, UserRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -93,6 +110,15 @@ app.get("/", requireAuth, async (c) => {
   });
 });
 
+// ─── Connect intent (pre-flight API call so userId survives the browser redirect) ──
+
+app.post("/intent", requireAuth, async (c) => {
+  const user = c.get("user");
+  const key = `connect:intent:${randomBase64url(24)}`;
+  await c.env.KV_CACHE.put(key, user.id, { expirationTtl: 300 });
+  return c.json({ token: key });
+});
+
 // ─── Begin OAuth flow ─────────────────────────────────────────────────────────
 
 app.get("/:provider/begin", optionalAuth, async (c) => {
@@ -108,18 +134,16 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
   const state = randomBase64url(24);
   const mode = c.req.query("mode") ?? "login"; // 'login' | 'connect'
 
-  // optionalAuth reads the Authorization header; for browser redirects (connect flow)
-  // the token is passed as a query param since headers can't be sent
+  // For connect mode, userId comes from a pre-issued intent token stored in KV
+  // (browser redirects can't send Authorization headers, so we use this indirection)
   let userId = c.get("user")?.id ?? null;
   if (!userId && mode === "connect") {
-    const queryToken = c.req.query("token");
-    if (queryToken) {
-      try {
-        const secret = await getJwtSecret(c.env.KV_SESSIONS);
-        const payload = await verifyJWT(queryToken, secret);
-        userId = payload.sub;
-      } catch {
-        // invalid token — userId stays null
+    const intentKey = c.req.query("intent");
+    if (intentKey) {
+      const stored = await c.env.KV_CACHE.get(intentKey);
+      if (stored) {
+        userId = stored;
+        await c.env.KV_CACHE.delete(intentKey); // one-time use
       }
     }
   }
@@ -249,18 +273,15 @@ app.get("/:provider/callback", async (c) => {
 
   // Connect mode: attach to existing account
   if (mode === "connect" && userId) {
-    // Check if this specific provider account is already linked (to any user)
-    const taken = await c.env.DB.prepare(
-      "SELECT user_id FROM social_connections WHERE provider = ? AND provider_user_id = ?",
+    // Prevent linking the same social account to the same Prism user twice
+    const alreadyLinked = await c.env.DB.prepare(
+      "SELECT id FROM social_connections WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
     )
-      .bind(provider, providerUserId)
-      .first<{ user_id: string }>();
+      .bind(userId, provider, providerUserId)
+      .first();
 
-    if (taken) {
-      const errKey =
-        taken.user_id === userId ? "already_connected" : "account_taken";
-      return c.redirect(`${c.env.APP_URL}/connections?error=${errKey}`);
-    }
+    if (alreadyLinked)
+      return c.redirect(`${c.env.APP_URL}/connections?error=already_connected`);
 
     await c.env.DB.prepare(
       "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -278,25 +299,162 @@ app.get("/:provider/callback", async (c) => {
     return c.redirect(`${c.env.APP_URL}/connections?success=connected`);
   }
 
-  // Login mode: find user by explicit social connection only
-  let user = await c.env.DB.prepare(
-    "SELECT u.* FROM users u JOIN social_connections sc ON sc.user_id = u.id WHERE sc.provider = ? AND sc.provider_user_id = ?",
+  // Login mode: find ALL Prism accounts linked to this social account
+  const linkedRows = await c.env.DB.prepare(
+    "SELECT u.id, u.username, u.display_name, u.avatar_url, u.role, u.email, u.email_verified, u.is_active, u.created_at, u.updated_at, u.password_hash, u.email_verify_token FROM users u JOIN social_connections sc ON sc.user_id = u.id WHERE sc.provider = ? AND sc.provider_user_id = ?",
   )
     .bind(provider, providerUserId)
-    .first<UserRow>();
+    .all<UserRow>();
 
-  if (!user) {
-    // Auto-register
+  const linkedUsers = linkedRows.results;
+
+  if (linkedUsers.length === 0) {
+    // No account linked — ask user whether to create one
     const allowReg = await getConfig(c.env.DB).then(
       (cfg) => cfg.allow_registration,
     );
     if (!allowReg)
       return c.redirect(`${c.env.APP_URL}/login?error=registration_disabled`);
 
+    const pendingKey = `social:pending:${randomBase64url(24)}`;
+    await c.env.KV_CACHE.put(
+      pendingKey,
+      JSON.stringify({
+        type: "register",
+        provider,
+        providerUserId,
+        providerEmail,
+        accessToken,
+        profileData,
+      } satisfies PendingState),
+      { expirationTtl: 600 },
+    );
+    return c.redirect(
+      `${c.env.APP_URL}/social-confirm?key=${encodeURIComponent(pendingKey)}`,
+    );
+  }
+
+  if (linkedUsers.length === 1) {
+    // Single account — log in directly and refresh the token
+    const user = linkedUsers[0];
+    await c.env.DB.prepare(
+      "UPDATE social_connections SET access_token = ?, profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
+    )
+      .bind(
+        accessToken,
+        JSON.stringify(profileData),
+        user.id,
+        provider,
+        providerUserId,
+      )
+      .run();
+    return c.redirect(
+      `${c.env.APP_URL}/auth/callback?token=${encodeURIComponent(await issueJWT(user, c.env.KV_SESSIONS))}`,
+    );
+  }
+
+  // Multiple accounts linked — ask user to pick one
+  const pendingKey = `social:pending:${randomBase64url(24)}`;
+  await c.env.KV_CACHE.put(
+    pendingKey,
+    JSON.stringify({
+      type: "select",
+      provider,
+      providerUserId,
+      providerEmail,
+      accessToken,
+      profileData,
+      users: linkedUsers.map((u: UserRow) => ({
+        id: u.id,
+        username: u.username,
+        display_name: u.display_name,
+        avatar_url: u.avatar_url,
+      })),
+    } satisfies PendingState),
+    { expirationTtl: 600 },
+  );
+  return c.redirect(
+    `${c.env.APP_URL}/social-select?key=${encodeURIComponent(pendingKey)}`,
+  );
+});
+
+// ─── Pending social state (for confirm / select pages) ────────────────────────
+
+app.get("/pending/:key", async (c) => {
+  const key = c.req.param("key");
+  const raw = await c.env.KV_CACHE.get(key);
+  if (!raw) return c.json({ error: "Invalid or expired session" }, 404);
+
+  const state = JSON.parse(raw) as PendingState;
+  return c.json({
+    type: state.type,
+    provider: state.provider,
+    profile_name: extractDisplayName(state.provider, state.profileData),
+    profile_avatar: extractProviderAvatar(state.provider, state.profileData),
+    users: state.users,
+  });
+});
+
+// ─── Complete pending social action ───────────────────────────────────────────
+
+app.post("/complete", async (c) => {
+  const body = await c
+    .req
+    .json<{ key: string; action: "login" | "register"; user_id?: string }>()
+    .catch(() => null);
+  if (!body) return c.json({ error: "Invalid request body" }, 400);
+
+  const raw = await c.env.KV_CACHE.get(body.key);
+  if (!raw) return c.json({ error: "Invalid or expired session" }, 400);
+
+  const state = JSON.parse(raw) as PendingState;
+  await c.env.KV_CACHE.delete(body.key);
+
+  const now = Math.floor(Date.now() / 1000);
+
+  if (body.action === "login") {
+    if (state.type !== "select")
+      return c.json({ error: "Invalid action for this session" }, 400);
+    if (!body.user_id || !state.users?.find((u) => u.id === body.user_id))
+      return c.json({ error: "Invalid user selection" }, 400);
+
+    const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
+      .bind(body.user_id)
+      .first<UserRow>();
+    if (!user) return c.json({ error: "User not found" }, 404);
+
+    await c.env.DB.prepare(
+      "UPDATE social_connections SET access_token = ?, profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
+    )
+      .bind(
+        state.accessToken,
+        JSON.stringify(state.profileData),
+        user.id,
+        state.provider,
+        state.providerUserId,
+      )
+      .run();
+
+    return c.json({
+      token: await issueJWT(user, c.env.KV_SESSIONS),
+      user: userToProfile(user),
+    });
+  }
+
+  if (body.action === "register") {
+    if (state.type !== "register")
+      return c.json({ error: "Invalid action for this session" }, 400);
+
+    const allowReg = await getConfig(c.env.DB).then(
+      (cfg) => cfg.allow_registration,
+    );
+    if (!allowReg)
+      return c.json({ error: "Registration is disabled" }, 403);
+
     const newUserId = randomId();
     const username = await uniqueUsername(
       c.env.DB,
-      extractUsername(provider, profileData, providerEmail),
+      extractUsername(state.provider, state.profileData, state.providerEmail),
     );
     await c.env.DB.prepare(
       `INSERT INTO users (id, email, username, display_name, role, email_verified, is_active, created_at, updated_at)
@@ -304,59 +462,41 @@ app.get("/:provider/callback", async (c) => {
     )
       .bind(
         newUserId,
-        providerEmail ?? `${provider}_${providerUserId}@prism.local`,
+        state.providerEmail ??
+          `${state.provider}_${state.providerUserId}@prism.local`,
         username,
-        extractDisplayName(provider, profileData),
+        extractDisplayName(state.provider, state.profileData),
         now,
         now,
       )
       .run();
 
-    user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
+    await c.env.DB.prepare(
+      "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+      .bind(
+        randomId(),
+        newUserId,
+        state.provider,
+        state.providerUserId,
+        state.accessToken,
+        JSON.stringify(state.profileData),
+        now,
+      )
+      .run();
+
+    const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
       .bind(newUserId)
       .first<UserRow>();
+    if (!user) return c.json({ error: "Failed to create user" }, 500);
+
+    return c.json({
+      token: await issueJWT(user, c.env.KV_SESSIONS),
+      user: userToProfile(user),
+    });
   }
 
-  if (!user)
-    return c.redirect(`${c.env.APP_URL}/login?error=user_creation_failed`);
-
-  // Upsert social connection (keyed by provider+provider_user_id so re-login refreshes token)
-  await c.env.DB.prepare(
-    `INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, profile_data, connected_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(provider, provider_user_id) DO UPDATE SET access_token = excluded.access_token, profile_data = excluded.profile_data`,
-  )
-    .bind(
-      randomId(),
-      user.id,
-      provider,
-      providerUserId,
-      accessToken,
-      JSON.stringify(profileData),
-      now,
-    )
-    .run();
-
-  const sessionTtl = 30 * 24 * 60 * 60;
-  const token = await signJWT(
-    {
-      sub: user.id,
-      role: user.role,
-      email: user.email,
-      username: user.username,
-      display_name: user.display_name,
-      avatar_url: user.avatar_url,
-      email_verified: user.email_verified === 1,
-      sessionId: randomId(32),
-    },
-    await getJwtSecret(c.env.KV_SESSIONS),
-    sessionTtl,
-  );
-
-  // Redirect to frontend with token
-  return c.redirect(
-    `${c.env.APP_URL}/auth/callback?token=${encodeURIComponent(token)}`,
-  );
+  return c.json({ error: "Invalid action" }, 400);
 });
 
 // Disconnect a specific connection by ID
@@ -442,6 +582,56 @@ function extractUsername(
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, "_")
     .slice(0, 24);
+}
+
+function extractProviderAvatar(
+  provider: string,
+  profile: Record<string, unknown>,
+): string | null {
+  switch (provider) {
+    case "github":
+      return (profile.avatar_url as string) ?? null;
+    case "google":
+      return (profile.picture as string) ?? null;
+    case "discord": {
+      const id = profile.id as string;
+      const avatar = profile.avatar as string;
+      return id && avatar
+        ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.png`
+        : null;
+    }
+    default:
+      return null;
+  }
+}
+
+async function issueJWT(user: UserRow, kv: KVNamespace): Promise<string> {
+  return signJWT(
+    {
+      sub: user.id,
+      role: user.role,
+      email: user.email,
+      username: user.username,
+      display_name: user.display_name,
+      avatar_url: user.avatar_url,
+      email_verified: user.email_verified === 1,
+      sessionId: randomId(32),
+    },
+    await getJwtSecret(kv),
+    30 * 24 * 60 * 60,
+  );
+}
+
+function userToProfile(user: UserRow) {
+  return {
+    id: user.id,
+    email: user.email,
+    username: user.username,
+    display_name: user.display_name,
+    avatar_url: user.avatar_url,
+    role: user.role,
+    email_verified: user.email_verified === 1,
+  };
 }
 
 async function uniqueUsername(db: D1Database, base: string): Promise<string> {

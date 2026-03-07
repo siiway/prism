@@ -28,6 +28,8 @@ import { AppDetail } from "./pages/apps/AppDetail";
 import { Domains } from "./pages/Domains";
 import { Connections } from "./pages/Connections";
 import { Authorize } from "./pages/oauth/Authorize";
+import { SocialConfirm } from "./pages/SocialConfirm";
+import { SocialSelect } from "./pages/SocialSelect";
 import { AdminLayout } from "./pages/admin/AdminLayout";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { AdminUsers } from "./pages/admin/AdminUsers";
@@ -129,6 +131,8 @@ export default function App() {
               }
             />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/social-confirm" element={<SocialConfirm />} />
+            <Route path="/social-select" element={<SocialSelect />} />
 
             {/* OAuth consent */}
             <Route path="/oauth/authorize" element={<Authorize />} />

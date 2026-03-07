@@ -249,6 +249,23 @@ export const api = {
       undefined,
       getToken(),
     ),
+  connectionIntent: () =>
+    request<{ token: string }>("POST", "/connections/intent", {}, getToken()),
+  connectionPending: (key: string) =>
+    request<SocialPendingInfo>(
+      "GET",
+      `/connections/pending/${encodeURIComponent(key)}`,
+    ),
+  connectionComplete: (
+    body:
+      | { key: string; action: "login"; user_id: string }
+      | { key: string; action: "register" },
+  ) =>
+    request<{ token: string; user: UserProfile }>(
+      "POST",
+      "/connections/complete",
+      body,
+    ),
   disconnectConnection: (id: string) =>
     request<{ message: string }>(
       "DELETE",
@@ -462,6 +479,19 @@ export interface DomainAddResponse {
   txt_record: string;
   txt_value: string;
   verified: boolean;
+}
+
+export interface SocialPendingInfo {
+  type: "register" | "select";
+  provider: string;
+  profile_name: string | null;
+  profile_avatar: string | null;
+  users?: Array<{
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+  }>;
 }
 
 export interface SocialConnection {

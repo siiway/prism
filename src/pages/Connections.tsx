@@ -133,11 +133,17 @@ export function Connections() {
   const getConnections = (providerId: string) =>
     connectionsData?.connections.filter((c) => c.provider === providerId) ?? [];
 
-  const handleConnect = (providerId: string) => {
-    const token = localStorage.getItem("token");
-    const params = new URLSearchParams({ mode: "connect" });
-    if (token) params.set("token", token);
-    window.location.href = `/api/connections/${providerId}/begin?${params}`;
+  const handleConnect = async (providerId: string) => {
+    try {
+      const { token: intent } = await api.connectionIntent();
+      const params = new URLSearchParams({ mode: "connect", intent });
+      window.location.href = `/api/connections/${providerId}/begin?${params}`;
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Failed to start connection",
+      );
+    }
   };
 
   const handleDisconnect = async (id: string, providerName: string) => {
