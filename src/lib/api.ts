@@ -249,10 +249,10 @@ export const api = {
       undefined,
       getToken(),
     ),
-  disconnectProvider: (provider: string) =>
+  disconnectConnection: (id: string) =>
     request<{ message: string }>(
       "DELETE",
-      `/connections/${provider}`,
+      `/connections/${id}`,
       undefined,
       getToken(),
     ),

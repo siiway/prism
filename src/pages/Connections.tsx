@@ -16,6 +16,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { AddRegular, DeleteRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
@@ -23,7 +24,7 @@ import { api, ApiError } from "../lib/api";
 const useStyles = makeStyles({
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
     gap: "16px",
   },
   providerCard: {
@@ -36,6 +37,15 @@ const useStyles = makeStyles({
     gap: "12px",
   },
   providerHeader: { display: "flex", alignItems: "center", gap: "12px" },
+  connRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "8px 10px",
+    borderRadius: "6px",
+    background: tokens.colorNeutralBackground3,
+    gap: "8px",
+  },
 });
 
 const PROVIDERS = [
@@ -44,6 +54,40 @@ const PROVIDERS = [
   { id: "microsoft", name: "Microsoft", color: "#0078d4" },
   { id: "discord", name: "Discord", color: "#5865f2" },
 ];
+
+const ERROR_MESSAGES: Record<string, string> = {
+  invalid_state:
+    "Login session expired or link was already used. Please try connecting again.",
+  profile_fetch_failed:
+    "Could not retrieve your profile from the provider. Check that the app has the correct permissions and try again.",
+  token_exchange_failed:
+    "Failed to complete sign-in with the provider. Please try again.",
+  no_access_token:
+    "The provider did not return an access token. Please try again.",
+  no_user_id: "Could not read your account ID from the provider.",
+  missing_params: "The provider returned an incomplete response.",
+  access_denied:
+    "You cancelled the sign-in or denied the requested permissions.",
+  registration_disabled:
+    "New registrations are currently disabled on this server.",
+  user_creation_failed:
+    "Account creation failed. Please contact an administrator.",
+  already_connected: "This account is already linked to your profile.",
+  account_taken: "This account is already linked to another user.",
+};
+
+function getDisplayName(profile: unknown): string | null {
+  if (!profile || typeof profile !== "object") return null;
+  const p = profile as Record<string, unknown>;
+  return (
+    (p.name as string) ||
+    (p.login as string) ||
+    (p.username as string) ||
+    (p.global_name as string) ||
+    (p.email as string) ||
+    null
+  );
+}
 
 export function Connections() {
   const styles = useStyles();
@@ -58,25 +102,6 @@ export function Connections() {
     staleTime: 60_000,
   });
 
-  const ERROR_MESSAGES: Record<string, string> = {
-    invalid_state:
-      "Login session expired or link was already used. Please try connecting again.",
-    profile_fetch_failed:
-      "Could not retrieve your profile from the provider. Check that the app has the correct permissions and try again.",
-    token_exchange_failed:
-      "Failed to complete sign-in with the provider. Please try again.",
-    no_access_token:
-      "The provider did not return an access token. Please try again.",
-    no_user_id: "Could not read your account ID from the provider.",
-    missing_params: "The provider returned an incomplete response.",
-    access_denied:
-      "You cancelled the sign-in or denied the requested permissions.",
-    registration_disabled:
-      "New registrations are currently disabled on this server.",
-    user_creation_failed:
-      "Account creation failed. Please contact an administrator.",
-  };
-
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -87,7 +112,6 @@ export function Connections() {
     setTimeout(() => setMessage(null), 8000);
   };
 
-  // Read ?error= / ?success= injected by the OAuth callback redirect
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const error = params.get("error");
@@ -106,18 +130,18 @@ export function Connections() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const getConnection = (providerId: string) =>
-    connectionsData?.connections.find((c) => c.provider === providerId);
+  const getConnections = (providerId: string) =>
+    connectionsData?.connections.filter((c) => c.provider === providerId) ?? [];
 
   const handleConnect = (providerId: string) => {
     window.location.href = `/api/connections/${providerId}/begin?mode=connect`;
   };
 
-  const handleDisconnect = async (providerId: string) => {
+  const handleDisconnect = async (id: string, providerName: string) => {
     try {
-      await api.disconnectProvider(providerId);
+      await api.disconnectConnection(id);
       await qc.invalidateQueries({ queryKey: ["connections"] });
-      showMsg("success", `Disconnected from ${providerId}`);
+      showMsg("success", `Disconnected from ${providerName}`);
     } catch (err) {
       showMsg(
         "error",
@@ -132,7 +156,8 @@ export function Connections() {
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <Title2>Linked Accounts</Title2>
       <Text style={{ color: tokens.colorNeutralForeground3 }}>
-        Connect third-party accounts to sign in faster and share your identity.
+        Connect third-party accounts to sign in faster. You can link multiple
+        accounts from the same platform.
       </Text>
 
       {message && (
@@ -143,7 +168,7 @@ export function Connections() {
 
       <div className={styles.grid}>
         {PROVIDERS.map((p) => {
-          const conn = getConnection(p.id);
+          const conns = getConnections(p.id);
           const enabled = enabledProviders.has(p.id);
 
           return (
@@ -158,6 +183,7 @@ export function Connections() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
+                    flexShrink: 0,
                   }}
                 >
                   <Text
@@ -170,9 +196,9 @@ export function Connections() {
                   <Text weight="semibold" block>
                     {p.name}
                   </Text>
-                  {conn ? (
+                  {conns.length > 0 ? (
                     <Badge color="success" appearance="tint" size="small">
-                      Connected
+                      {conns.length} connected
                     </Badge>
                   ) : (
                     <Badge color="subtle" appearance="tint" size="small">
@@ -182,17 +208,72 @@ export function Connections() {
                 </div>
               </div>
 
-              {conn && (
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  Connected{" "}
-                  {new Date(
-                    (conn.connected_at as number) * 1000,
-                  ).toLocaleDateString()}
-                </Text>
-              )}
+              {conns.map((conn) => {
+                const displayName = getDisplayName(conn.profile);
+                return (
+                  <div key={conn.id} className={styles.connRow}>
+                    <div style={{ minWidth: 0 }}>
+                      <Text
+                        size={200}
+                        weight="semibold"
+                        block
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {displayName ?? conn.provider_user_id}
+                      </Text>
+                      <Text
+                        size={100}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        Connected{" "}
+                        {new Date(
+                          conn.connected_at * 1000,
+                        ).toLocaleDateString()}
+                      </Text>
+                    </div>
+
+                    <Dialog>
+                      <DialogTrigger disableButtonEnhancement>
+                        <Button
+                          icon={<DeleteRegular />}
+                          appearance="subtle"
+                          size="small"
+                          title="Disconnect"
+                        />
+                      </DialogTrigger>
+                      <DialogSurface>
+                        <DialogBody>
+                          <DialogTitle>Disconnect {p.name}?</DialogTitle>
+                          <DialogContent>
+                            {displayName ? (
+                              <>
+                                <strong>{displayName}</strong> will be
+                                disconnected from your account.{" "}
+                              </>
+                            ) : null}
+                            Make sure you have another sign-in method available.
+                          </DialogContent>
+                          <DialogActions>
+                            <DialogTrigger>
+                              <Button>Cancel</Button>
+                            </DialogTrigger>
+                            <Button
+                              appearance="primary"
+                              onClick={() => handleDisconnect(conn.id, p.name)}
+                            >
+                              Disconnect
+                            </Button>
+                          </DialogActions>
+                        </DialogBody>
+                      </DialogSurface>
+                    </Dialog>
+                  </div>
+                );
+              })}
 
               {!enabled ? (
                 <Text
@@ -201,41 +282,16 @@ export function Connections() {
                 >
                   Not configured by admin
                 </Text>
-              ) : conn ? (
-                <Dialog>
-                  <DialogTrigger disableButtonEnhancement>
-                    <Button appearance="outline" size="small">
-                      Disconnect
-                    </Button>
-                  </DialogTrigger>
-                  <DialogSurface>
-                    <DialogBody>
-                      <DialogTitle>Disconnect {p.name}?</DialogTitle>
-                      <DialogContent>
-                        You'll no longer be able to sign in with {p.name}. Make
-                        sure you have another sign-in method available.
-                      </DialogContent>
-                      <DialogActions>
-                        <DialogTrigger>
-                          <Button>Cancel</Button>
-                        </DialogTrigger>
-                        <Button
-                          appearance="primary"
-                          onClick={() => handleDisconnect(p.id)}
-                        >
-                          Disconnect
-                        </Button>
-                      </DialogActions>
-                    </DialogBody>
-                  </DialogSurface>
-                </Dialog>
               ) : (
                 <Button
                   appearance="outline"
                   size="small"
+                  icon={<AddRegular />}
                   onClick={() => handleConnect(p.id)}
                 >
-                  Connect {p.name}
+                  {conns.length > 0
+                    ? `Add another ${p.name}`
+                    : `Connect ${p.name}`}
                 </Button>
               )}
             </div>

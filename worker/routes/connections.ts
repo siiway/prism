@@ -234,39 +234,32 @@ app.get("/:provider/callback", async (c) => {
 
   // Connect mode: attach to existing account
   if (mode === "connect" && userId) {
-    const existing = await c.env.DB.prepare(
-      "SELECT id FROM social_connections WHERE user_id = ? AND provider = ?",
+    // Check if this specific provider account is already linked (to any user)
+    const taken = await c.env.DB.prepare(
+      "SELECT user_id FROM social_connections WHERE provider = ? AND provider_user_id = ?",
     )
-      .bind(userId, provider)
-      .first();
+      .bind(provider, providerUserId)
+      .first<{ user_id: string }>();
 
-    if (existing) {
-      await c.env.DB.prepare(
-        "UPDATE social_connections SET provider_user_id = ?, access_token = ?, profile_data = ? WHERE user_id = ? AND provider = ?",
-      )
-        .bind(
-          providerUserId,
-          accessToken,
-          JSON.stringify(profileData),
-          userId,
-          provider,
-        )
-        .run();
-    } else {
-      await c.env.DB.prepare(
-        "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      )
-        .bind(
-          randomId(),
-          userId,
-          provider,
-          providerUserId,
-          accessToken,
-          JSON.stringify(profileData),
-          now,
-        )
-        .run();
+    if (taken) {
+      const errKey =
+        taken.user_id === userId ? "already_connected" : "account_taken";
+      return c.redirect(`${c.env.APP_URL}/connections?error=${errKey}`);
     }
+
+    await c.env.DB.prepare(
+      "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+      .bind(
+        randomId(),
+        userId,
+        provider,
+        providerUserId,
+        accessToken,
+        JSON.stringify(profileData),
+        now,
+      )
+      .run();
     return c.redirect(`${c.env.APP_URL}/connections?success=connected`);
   }
 
@@ -318,11 +311,11 @@ app.get("/:provider/callback", async (c) => {
   if (!user)
     return c.redirect(`${c.env.APP_URL}/login?error=user_creation_failed`);
 
-  // Upsert social connection
+  // Upsert social connection (keyed by provider+provider_user_id so re-login refreshes token)
   await c.env.DB.prepare(
     `INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, profile_data, connected_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(user_id, provider) DO UPDATE SET provider_user_id = excluded.provider_user_id, access_token = excluded.access_token, profile_data = excluded.profile_data`,
+     ON CONFLICT(provider, provider_user_id) DO UPDATE SET access_token = excluded.access_token, profile_data = excluded.profile_data`,
   )
     .bind(
       randomId(),
@@ -357,15 +350,17 @@ app.get("/:provider/callback", async (c) => {
   );
 });
 
-// Disconnect a provider
-app.delete("/:provider", requireAuth, async (c) => {
+// Disconnect a specific connection by ID
+app.delete("/:id", requireAuth, async (c) => {
   const user = c.get("user");
-  const provider = c.req.param("provider");
-  await c.env.DB.prepare(
-    "DELETE FROM social_connections WHERE user_id = ? AND provider = ?",
+  const id = c.req.param("id");
+  const result = await c.env.DB.prepare(
+    "DELETE FROM social_connections WHERE id = ? AND user_id = ?",
   )
-    .bind(user.id, provider)
+    .bind(id, user.id)
     .run();
+  if (!result.meta.changes)
+    return c.json({ error: "Connection not found" }, 404);
   return c.json({ message: "Disconnected" });
 });
 
