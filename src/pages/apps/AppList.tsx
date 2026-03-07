@@ -67,6 +67,7 @@ export function AppList() {
   const [form, setForm] = useState({
     name: "",
     description: "",
+    icon_url: "",
     website_url: "",
     redirect_uris: "",
   });
@@ -145,6 +146,13 @@ export function AppList() {
                     <Input
                       value={form.description}
                       onChange={update("description")}
+                    />
+                  </Field>
+                  <Field label="App icon URL">
+                    <Input
+                      value={form.icon_url}
+                      onChange={update("icon_url")}
+                      placeholder="https://example.com/icon.png"
                     />
                   </Field>
                   <Field label="Website URL">

@@ -82,6 +82,7 @@ export function AppDetail() {
   const [form, setForm] = useState<{
     name: string;
     description: string;
+    icon_url: string;
     website_url: string;
     redirect_uris: string;
     allowed_scopes: string[];
@@ -112,6 +113,7 @@ export function AppDetail() {
     setForm({
       name: app.name,
       description: app.description,
+      icon_url: app.icon_url ?? "",
       website_url: app.website_url ?? "",
       redirect_uris: app.redirect_uris.join("\n"),
       allowed_scopes: app.allowed_scopes,
@@ -126,6 +128,7 @@ export function AppDetail() {
       await api.updateApp(id, {
         name: form.name,
         description: form.description,
+        icon_url: form.icon_url || undefined,
         website_url: form.website_url || undefined,
         redirect_uris: form.redirect_uris
           .split("\n")
@@ -232,6 +235,18 @@ export function AppDetail() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f!, description: e.target.value }))
                 }
+              />
+            </Field>
+            <Field
+              label="Icon URL"
+              hint="Publicly accessible image URL for the app icon"
+            >
+              <Input
+                value={form.icon_url}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f!, icon_url: e.target.value }))
+                }
+                placeholder="https://example.com/icon.png"
               />
             </Field>
             <Field label="Website URL">

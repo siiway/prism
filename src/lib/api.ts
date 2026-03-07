@@ -476,6 +476,7 @@ export interface OAuthApp {
 export interface CreateAppBody {
   name: string;
   description?: string;
+  icon_url?: string;
   website_url?: string;
   redirect_uris: string[];
   allowed_scopes?: string[];
