@@ -73,11 +73,11 @@ const useStyles = makeStyles({
     },
   },
   navItemActive: {
-    background: tokens.colorBrandBackground2,
-    color: tokens.colorBrandForeground1,
+    background: tokens.colorNeutralBackground3,
+    color: tokens.colorNeutralForeground1,
     fontWeight: tokens.fontWeightSemibold,
     ":hover": {
-      background: tokens.colorBrandBackground2Hover,
+      background: tokens.colorNeutralBackground3Hover,
     },
   },
   navSection: {

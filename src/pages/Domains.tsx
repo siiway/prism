@@ -144,8 +144,8 @@ export function Domains() {
           style={{
             padding: 16,
             borderRadius: 8,
-            border: `1px solid ${tokens.colorBrandStroke1}`,
-            background: tokens.colorBrandBackground2,
+            border: `1px solid ${tokens.colorNeutralStroke1}`,
+            background: tokens.colorNeutralBackground3,
           }}
         >
           <Text weight="semibold" block>

@@ -54,8 +54,8 @@ const useStyles = makeStyles({
   securityBanner: {
     padding: "16px",
     borderRadius: "8px",
-    background: tokens.colorBrandBackground2,
-    border: `1px solid ${tokens.colorBrandStroke1}`,
+    background: tokens.colorNeutralBackground3,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
