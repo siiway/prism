@@ -147,6 +147,7 @@ app.get("/app-info", optionalAuth, async (c) => {
         oauthApp.owner_id,
         oauthApp.website_url,
         oauthApp.redirect_uris,
+        oauthApp.team_id,
       ),
       is_official: oauthApp.is_official === 1,
       is_first_party: oauthApp.is_first_party === 1,

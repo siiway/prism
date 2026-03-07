@@ -110,6 +110,7 @@ export interface DomainRow {
   id: string;
   user_id: string;
   app_id: string | null;
+  team_id: string | null;
   domain: string;
   verification_token: string;
   verified: number;

@@ -4,6 +4,8 @@ import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { computeIsVerified } from "../lib/domainVerify";
+import { getConfigValue } from "../lib/config";
+import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail } from "../lib/email";
 import type { OAuthAppRow, TeamMemberRow, TeamRow, Variables } from "../types";
@@ -545,6 +547,208 @@ app.delete("/:id/invites/:token", async (c) => {
 
   return c.json({ message: "Invite revoked" });
 });
+
+// ─── Team domains ─────────────────────────────────────────────────────────────
+
+const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
+
+// List team domains
+app.get(":id/domains", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const m = await getMember(c.env.DB, id, user.id);
+  if (!m) return c.json({ error: "Not a team member" }, 403);
+
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE team_id = ? ORDER BY created_at DESC",
+  )
+    .bind(id)
+    .all<DomainRow>();
+  return c.json({ domains: rows.results });
+});
+
+// Add team domain
+app.post(":id/domains", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const m = await getMember(c.env.DB, id, user.id);
+  if (!m) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+
+  const body = await c.req.json<{ domain: string }>();
+  if (!body.domain) return c.json({ error: "domain is required" }, 400);
+  if (!DOMAIN_REGEX.test(body.domain))
+    return c.json({ error: "Invalid domain format" }, 400);
+
+  const domain = body.domain.toLowerCase().trim();
+
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM domains WHERE team_id = ? AND domain = ?",
+  )
+    .bind(id, domain)
+    .first();
+  if (existing) return c.json({ error: "Domain already added" }, 409);
+
+  const verificationToken = randomBase64url(24);
+  const domainId = randomId();
+  const now = Math.floor(Date.now() / 1000);
+
+  await c.env.DB.prepare(
+    "INSERT INTO domains (id, user_id, team_id, domain, verification_token, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  )
+    .bind(domainId, user.id, id, domain, verificationToken, now)
+    .run();
+
+  // Auto-verify if the team already owns a verified parent domain
+  const parent = await verifiedTeamParentDomain(c.env.DB, id, domain);
+  if (parent) {
+    const reverifyDays = await getConfigValue(c.env.DB, "domain_reverify_days");
+    const nextReverify = now + reverifyDays * 24 * 60 * 60;
+    await c.env.DB.prepare(
+      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+    )
+      .bind(now, nextReverify, domainId)
+      .run();
+    return c.json(
+      {
+        id: domainId,
+        domain,
+        verification_token: verificationToken,
+        txt_record: `_prism-verify.${domain}`,
+        txt_value: `prism-verify=${verificationToken}`,
+        verified: true,
+        verified_by_parent: parent,
+      },
+      201,
+    );
+  }
+
+  return c.json(
+    {
+      id: domainId,
+      domain,
+      verification_token: verificationToken,
+      txt_record: `_prism-verify.${domain}`,
+      txt_value: `prism-verify=${verificationToken}`,
+      verified: false,
+    },
+    201,
+  );
+});
+
+// Verify team domain (check DNS TXT record)
+app.post(":id/domains/:domainId/verify", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const domainId = c.req.param("domainId");
+  const m = await getMember(c.env.DB, id, user.id);
+  if (!m) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE id = ? AND team_id = ?",
+  )
+    .bind(domainId, id)
+    .first<DomainRow>();
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+
+  const reverifyDays = await getConfigValue(c.env.DB, "domain_reverify_days");
+  const now = Math.floor(Date.now() / 1000);
+  const nextReverify = now + reverifyDays * 24 * 60 * 60;
+
+  const parent = await verifiedTeamParentDomain(c.env.DB, id, row.domain);
+  if (parent) {
+    await c.env.DB.prepare(
+      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+    )
+      .bind(now, nextReverify, domainId)
+      .run();
+    return c.json({
+      verified: true,
+      next_reverify_at: nextReverify,
+      verified_by_parent: parent,
+    });
+  }
+
+  const verified = await checkDnsTxtRecord(row.domain, row.verification_token);
+  if (verified) {
+    await c.env.DB.prepare(
+      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+    )
+      .bind(now, nextReverify, domainId)
+      .run();
+    return c.json({ verified: true, next_reverify_at: nextReverify });
+  }
+
+  return c.json({
+    verified: false,
+    message: `Add TXT record: _prism-verify.${row.domain} = prism-verify=${row.verification_token}`,
+  });
+});
+
+// Delete team domain
+app.delete(":id/domains/:domainId", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const domainId = c.req.param("domainId");
+  const m = await getMember(c.env.DB, id, user.id);
+  if (!m) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+
+  const row = await c.env.DB.prepare(
+    "SELECT id FROM domains WHERE id = ? AND team_id = ?",
+  )
+    .bind(domainId, id)
+    .first();
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM domains WHERE id = ?")
+    .bind(domainId)
+    .run();
+  return c.json({ message: "Domain deleted" });
+});
+
+async function verifiedTeamParentDomain(
+  db: D1Database,
+  teamId: string,
+  domain: string,
+): Promise<string | null> {
+  const parts = domain.split(".");
+  for (let i = 1; i < parts.length - 1; i++) {
+    const parent = parts.slice(i).join(".");
+    const row = await db
+      .prepare(
+        "SELECT domain FROM domains WHERE team_id = ? AND domain = ? AND verified = 1",
+      )
+      .bind(teamId, parent)
+      .first<{ domain: string }>();
+    if (row) return row.domain;
+  }
+  return null;
+}
+
+async function checkDnsTxtRecord(
+  domain: string,
+  expectedToken: string,
+): Promise<boolean> {
+  try {
+    const hostname = `_prism-verify.${domain}`;
+    const res = await fetch(
+      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=TXT`,
+      { headers: { Accept: "application/dns-json" } },
+    );
+    if (!res.ok) return false;
+    const data = (await res.json()) as {
+      Answer?: Array<{ type: number; data: string }>;
+    };
+    const expectedValue = `"prism-verify=${expectedToken}"`;
+    return (data.Answer ?? []).some(
+      (r) => r.type === 16 && r.data === expectedValue,
+    );
+  } catch {
+    return false;
+  }
+}
 
 // ─── Team apps ────────────────────────────────────────────────────────────────
 

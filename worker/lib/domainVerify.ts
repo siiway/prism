@@ -40,18 +40,34 @@ export function computeVerified(
   );
 }
 
-/** Fetch verified domains for a single owner and compute is_verified. */
+/** Fetch verified domains for a single owner (and optionally a team) and compute is_verified. */
 export async function computeIsVerified(
   db: D1Database,
   ownerId: string,
   websiteUrl: string | null,
   redirectUrisJson: string,
+  teamId?: string | null,
 ): Promise<boolean> {
-  const { results } = await db
-    .prepare("SELECT domain FROM domains WHERE user_id = ? AND verified = 1")
-    .bind(ownerId)
-    .all<{ domain: string }>();
-  const set = new Set(results.map((r) => r.domain));
+  const queries: Promise<{ results: { domain: string }[] }>[] = [
+    db
+      .prepare(
+        "SELECT domain FROM domains WHERE user_id = ? AND team_id IS NULL AND verified = 1",
+      )
+      .bind(ownerId)
+      .all<{ domain: string }>(),
+  ];
+  if (teamId) {
+    queries.push(
+      db
+        .prepare(
+          "SELECT domain FROM domains WHERE team_id = ? AND verified = 1",
+        )
+        .bind(teamId)
+        .all<{ domain: string }>(),
+    );
+  }
+  const results = await Promise.all(queries);
+  const set = new Set(results.flatMap((r) => r.results.map((x) => x.domain)));
   return computeVerified(set, websiteUrl, redirectUrisJson);
 }
 
@@ -68,7 +84,7 @@ export async function buildVerifiedDomainsMap(
   const placeholders = unique.map(() => "?").join(",");
   const { results } = await db
     .prepare(
-      `SELECT user_id, domain FROM domains WHERE verified = 1 AND user_id IN (${placeholders})`,
+      `SELECT user_id, domain FROM domains WHERE verified = 1 AND team_id IS NULL AND user_id IN (${placeholders})`,
     )
     .bind(...unique)
     .all<{ user_id: string; domain: string }>();
@@ -77,6 +93,32 @@ export async function buildVerifiedDomainsMap(
   for (const r of results) {
     if (!map.has(r.user_id)) map.set(r.user_id, new Set());
     map.get(r.user_id)!.add(r.domain);
+  }
+  return map;
+}
+
+/**
+ * Fetch verified domains for multiple teams in one query.
+ * Returns a Map<teamId, Set<domain>>.
+ */
+export async function buildVerifiedTeamDomainsMap(
+  db: D1Database,
+  teamIds: string[],
+): Promise<Map<string, Set<string>>> {
+  const unique = [...new Set(teamIds.filter(Boolean))];
+  if (!unique.length) return new Map();
+  const placeholders = unique.map(() => "?").join(",");
+  const { results } = await db
+    .prepare(
+      `SELECT team_id, domain FROM domains WHERE verified = 1 AND team_id IN (${placeholders})`,
+    )
+    .bind(...unique)
+    .all<{ team_id: string; domain: string }>();
+
+  const map = new Map<string, Set<string>>();
+  for (const r of results) {
+    if (!map.has(r.team_id)) map.set(r.team_id, new Set());
+    map.get(r.team_id)!.add(r.domain);
   }
   return map;
 }

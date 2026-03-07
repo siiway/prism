@@ -42,9 +42,12 @@ import {
 import {
   AddRegular,
   AppsRegular,
+  ArrowClockwiseRegular,
+  CheckmarkCircleRegular,
   CopyRegular,
   DeleteRegular,
   GlobeRegular,
+  GlobeSearchRegular,
   LinkRegular,
   MailRegular,
   MoreHorizontalRegular,
@@ -54,7 +57,14 @@ import {
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, type OAuthApp, type TeamInvite } from "../../lib/api";
+import {
+  api,
+  ApiError,
+  type Domain,
+  type DomainAddResponse,
+  type OAuthApp,
+  type TeamInvite,
+} from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 
 const useStyles = makeStyles({
@@ -109,7 +119,7 @@ const ROLE_COLORS: Record<string, "brand" | "success" | "subtle"> = {
   member: "subtle",
 };
 
-type Tab = "members" | "apps" | "settings";
+type Tab = "members" | "apps" | "domains" | "settings";
 
 export function TeamDetail() {
   const styles = useStyles();
@@ -149,6 +159,12 @@ export function TeamDetail() {
     queryKey: ["apps"],
     queryFn: api.listApps,
     enabled: tab === "apps",
+  });
+
+  const { data: domainsData, isLoading: domainsLoading } = useQuery({
+    queryKey: ["team-domains", id],
+    queryFn: () => api.listTeamDomains(id!),
+    enabled: !!id && tab === "domains",
   });
 
   const team = data?.team;
@@ -384,6 +400,66 @@ export function TeamDetail() {
     }
   };
 
+  // ── Domains ─────────────────────────────────────────────────────────────────
+  const [newDomain, setNewDomain] = useState("");
+  const [addingDomain, setAddingDomain] = useState(false);
+  const [addedDomainInfo, setAddedDomainInfo] =
+    useState<DomainAddResponse | null>(null);
+  const [verifyingDomain, setVerifyingDomain] = useState<string | null>(null);
+  const [selectedDomain, setSelectedDomain] = useState<Domain | null>(null);
+
+  const handleAddDomain = async () => {
+    if (!id || !newDomain.trim()) return;
+    setAddingDomain(true);
+    try {
+      const res = await api.addTeamDomain(id, newDomain.trim());
+      setAddedDomainInfo(res);
+      setNewDomain("");
+      await qc.invalidateQueries({ queryKey: ["team-domains", id] });
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Failed to add domain",
+      );
+    } finally {
+      setAddingDomain(false);
+    }
+  };
+
+  const handleVerifyDomain = async (domainId: string) => {
+    if (!id) return;
+    setVerifyingDomain(domainId);
+    try {
+      const res = await api.verifyTeamDomain(id, domainId);
+      if (res.verified) {
+        showMsg("success", "Domain verified!");
+        await qc.invalidateQueries({ queryKey: ["team-domains", id] });
+      } else {
+        showMsg(
+          "error",
+          "TXT record not found yet. Make sure the DNS record is set and try again.",
+        );
+      }
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Verification failed",
+      );
+    } finally {
+      setVerifyingDomain(null);
+    }
+  };
+
+  const handleDeleteDomain = async (domainId: string) => {
+    if (!id) return;
+    try {
+      await api.deleteTeamDomain(id, domainId);
+      await qc.invalidateQueries({ queryKey: ["team-domains", id] });
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
+    }
+  };
+
   // ── Settings ────────────────────────────────────────────────────────────────
   const [settingsForm, setSettingsForm] = useState({
     name: "",
@@ -485,6 +561,9 @@ export function TeamDetail() {
         </Tab>
         <Tab value="apps" icon={<AppsRegular />}>
           Apps
+        </Tab>
+        <Tab value="domains" icon={<GlobeSearchRegular />}>
+          Domains
         </Tab>
         {canManage && (
           <Tab value="settings" icon={<SettingsRegular />}>
@@ -1038,6 +1117,283 @@ export function TeamDetail() {
               </Card>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Domains tab */}
+      {tab === "domains" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <Text style={{ color: tokens.colorNeutralForeground3 }}>
+            Verified team domains are used to mark team apps as verified. Add a
+            DNS TXT record to prove ownership.
+          </Text>
+
+          {canManage && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <Field label="Add domain" style={{ flex: 1 }}>
+                <Input
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                  placeholder="example.com"
+                  onKeyDown={(e) => e.key === "Enter" && handleAddDomain()}
+                />
+              </Field>
+              <Button
+                appearance="primary"
+                icon={<AddRegular />}
+                onClick={handleAddDomain}
+                disabled={addingDomain || !newDomain}
+                style={{ alignSelf: "flex-end" }}
+              >
+                {addingDomain ? <Spinner size="tiny" /> : "Add"}
+              </Button>
+            </div>
+          )}
+
+          {addedDomainInfo && (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 8,
+                border: `1px solid ${tokens.colorNeutralStroke1}`,
+                background: tokens.colorNeutralBackground3,
+              }}
+            >
+              <Text weight="semibold" block>
+                Add this DNS TXT record to verify {addedDomainInfo.domain}:
+              </Text>
+              <div
+                style={{
+                  marginTop: 8,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
+              >
+                <Text size={200}>
+                  <strong>Type:</strong> TXT
+                </Text>
+                <Text size={200}>
+                  <strong>Name:</strong>{" "}
+                  <code>{addedDomainInfo.txt_record}</code>
+                </Text>
+                <Text size={200}>
+                  <strong>Value:</strong>{" "}
+                  <code>{addedDomainInfo.txt_value}</code>
+                </Text>
+              </div>
+              <Button
+                size="small"
+                onClick={() => setAddedDomainInfo(null)}
+                style={{ marginTop: 12 }}
+              >
+                Dismiss
+              </Button>
+            </div>
+          )}
+
+          {domainsLoading && <Spinner />}
+          {!domainsLoading && (domainsData?.domains.length ?? 0) === 0 && (
+            <Text
+              style={{
+                color: tokens.colorNeutralForeground3,
+                textAlign: "center",
+                padding: "32px 0",
+              }}
+            >
+              No domains added yet.
+            </Text>
+          )}
+
+          {(domainsData?.domains.length ?? 0) > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>Domain</TableHeaderCell>
+                  <TableHeaderCell>Status</TableHeaderCell>
+                  <TableHeaderCell>Verified at</TableHeaderCell>
+                  {canManage && <TableHeaderCell>Actions</TableHeaderCell>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {domainsData!.domains.map((d: Domain) => (
+                  <TableRow
+                    key={d.id}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setSelectedDomain(d)}
+                  >
+                    <TableCell style={{ fontFamily: "monospace" }}>
+                      {d.domain}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        color={d.verified ? "success" : "subtle"}
+                        appearance="filled"
+                        icon={
+                          d.verified ? <CheckmarkCircleRegular /> : undefined
+                        }
+                      >
+                        {d.verified ? "Verified" : "Pending"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {d.verified_at
+                        ? new Date(d.verified_at * 1000).toLocaleDateString()
+                        : "—"}
+                    </TableCell>
+                    {canManage && (
+                      <TableCell>
+                        <div
+                          style={{ display: "flex", gap: 4 }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button
+                            icon={<ArrowClockwiseRegular />}
+                            size="small"
+                            appearance="subtle"
+                            disabled={verifyingDomain === d.id}
+                            onClick={() => handleVerifyDomain(d.id)}
+                          >
+                            {verifyingDomain === d.id ? (
+                              <Spinner size="tiny" />
+                            ) : (
+                              "Verify"
+                            )}
+                          </Button>
+                          <Dialog>
+                            <DialogTrigger disableButtonEnhancement>
+                              <Button
+                                icon={<DeleteRegular />}
+                                size="small"
+                                appearance="subtle"
+                              />
+                            </DialogTrigger>
+                            <DialogSurface>
+                              <DialogBody>
+                                <DialogTitle>Remove domain?</DialogTitle>
+                                <DialogContent>
+                                  Remove <strong>{d.domain}</strong> from this
+                                  team's verified domains?
+                                </DialogContent>
+                                <DialogActions>
+                                  <DialogTrigger>
+                                    <Button>Cancel</Button>
+                                  </DialogTrigger>
+                                  <Button
+                                    appearance="primary"
+                                    style={{
+                                      background:
+                                        tokens.colorPaletteRedBackground3,
+                                    }}
+                                    onClick={() => handleDeleteDomain(d.id)}
+                                  >
+                                    Remove
+                                  </Button>
+                                </DialogActions>
+                              </DialogBody>
+                            </DialogSurface>
+                          </Dialog>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          {/* Domain detail dialog (shows TXT record for pending domains) */}
+          <Dialog
+            open={!!selectedDomain}
+            onOpenChange={(_, s) => {
+              if (!s.open) setSelectedDomain(null);
+            }}
+          >
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle style={{ fontFamily: "monospace" }}>
+                  {selectedDomain?.domain}
+                </DialogTitle>
+                <DialogContent>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                    }}
+                  >
+                    <Badge
+                      color={selectedDomain?.verified ? "success" : "subtle"}
+                      appearance="filled"
+                      icon={
+                        selectedDomain?.verified ? (
+                          <CheckmarkCircleRegular />
+                        ) : undefined
+                      }
+                      style={{ width: "fit-content" }}
+                    >
+                      {selectedDomain?.verified ? "Verified" : "Pending"}
+                    </Badge>
+                    {selectedDomain?.verified_at && (
+                      <Text size={200}>
+                        <strong>Verified:</strong>{" "}
+                        {new Date(
+                          selectedDomain.verified_at * 1000,
+                        ).toLocaleDateString()}
+                      </Text>
+                    )}
+                    {!selectedDomain?.verified && (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                          padding: "10px 12px",
+                          borderRadius: 6,
+                          background: tokens.colorNeutralBackground3,
+                        }}
+                      >
+                        <Text size={200} weight="semibold">
+                          Add this DNS TXT record:
+                        </Text>
+                        <Text size={200}>
+                          <strong>Name:</strong>{" "}
+                          <code>_prism-verify.{selectedDomain?.domain}</code>
+                        </Text>
+                        <Text size={200}>
+                          <strong>Value:</strong>{" "}
+                          <code>
+                            prism-verify={selectedDomain?.verification_token}
+                          </code>
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setSelectedDomain(null)}>Close</Button>
+                  {canManage && (
+                    <Button
+                      appearance="outline"
+                      icon={<ArrowClockwiseRegular />}
+                      disabled={verifyingDomain === selectedDomain?.id}
+                      onClick={async () => {
+                        if (!selectedDomain) return;
+                        await handleVerifyDomain(selectedDomain.id);
+                        setSelectedDomain(null);
+                      }}
+                    >
+                      {verifyingDomain === selectedDomain?.id ? (
+                        <Spinner size="tiny" />
+                      ) : (
+                        "Verify"
+                      )}
+                    </Button>
+                  )}
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
         </div>
       )}
 

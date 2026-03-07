@@ -4,7 +4,11 @@ import { Hono } from "hono";
 import { getConfig, setConfigValues } from "../lib/config";
 import { sendEmail } from "../lib/email";
 import { requireAdmin } from "../middleware/auth";
-import { buildVerifiedDomainsMap, computeVerified } from "../lib/domainVerify";
+import {
+  buildVerifiedDomainsMap,
+  buildVerifiedTeamDomainsMap,
+  computeVerified,
+} from "../lib/domainVerify";
 import type {
   AuditLogRow,
   OAuthAppRow,
@@ -280,17 +284,25 @@ app.get("/apps", async (c) => {
   ]);
 
   const ownerIds = apps.results.map((a) => a.owner_id);
-  const domainsMap = await buildVerifiedDomainsMap(c.env.DB, ownerIds);
+  const teamIds = apps.results
+    .map((a) => a.team_id)
+    .filter(Boolean) as string[];
+  const [domainsMap, teamDomainsMap] = await Promise.all([
+    buildVerifiedDomainsMap(c.env.DB, ownerIds),
+    buildVerifiedTeamDomainsMap(c.env.DB, teamIds),
+  ]);
 
   return c.json({
-    apps: apps.results.map((a) => ({
-      ...a,
-      is_verified: computeVerified(
-        domainsMap.get(a.owner_id) ?? new Set(),
-        a.website_url,
-        a.redirect_uris,
-      ),
-    })),
+    apps: apps.results.map((a) => {
+      const ownerDomains = domainsMap.get(a.owner_id) ?? new Set<string>();
+      const teamDomains =
+        teamDomainsMap.get(a.team_id ?? "") ?? new Set<string>();
+      const merged = new Set([...ownerDomains, ...teamDomains]);
+      return {
+        ...a,
+        is_verified: computeVerified(merged, a.website_url, a.redirect_uris),
+      };
+    }),
     total: count?.n ?? 0,
     page,
     limit,

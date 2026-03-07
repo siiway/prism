@@ -473,6 +473,36 @@ export const api = {
       getToken(),
     ),
 
+  // Team domains
+  listTeamDomains: (teamId: string) =>
+    request<{ domains: Domain[] }>(
+      "GET",
+      `/teams/${teamId}/domains`,
+      undefined,
+      getToken(),
+    ),
+  addTeamDomain: (teamId: string, domain: string) =>
+    request<DomainAddResponse>(
+      "POST",
+      `/teams/${teamId}/domains`,
+      { domain },
+      getToken(),
+    ),
+  verifyTeamDomain: (teamId: string, domainId: string) =>
+    request<{ verified: boolean; next_reverify_at?: number }>(
+      "POST",
+      `/teams/${teamId}/domains/${domainId}/verify`,
+      undefined,
+      getToken(),
+    ),
+  deleteTeamDomain: (teamId: string, domainId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/teams/${teamId}/domains/${domainId}`,
+      undefined,
+      getToken(),
+    ),
+
   // Team invites
   listTeamInvites: (teamId: string) =>
     request<{ invites: TeamInvite[] }>(

@@ -88,6 +88,7 @@ app.get("/:id", async (c) => {
     row.owner_id,
     row.website_url,
     row.redirect_uris,
+    row.team_id,
   );
   return c.json({ app: fullApp(row, isVerified) });
 });
@@ -228,6 +229,7 @@ app.patch("/:id", async (c) => {
     row.owner_id,
     updatedRow!.website_url,
     updatedRow!.redirect_uris,
+    row.team_id,
   );
   return c.json({ app: fullApp(updatedRow!, isVerified) });
 });
