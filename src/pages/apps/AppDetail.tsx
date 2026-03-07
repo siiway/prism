@@ -14,6 +14,7 @@ import {
   Field,
   Input,
   MessageBar,
+  Select,
   Spinner,
   Tab,
   TabList,
@@ -27,6 +28,7 @@ import {
   ArrowLeftRegular,
   CopyRegular,
   DeleteRegular,
+  PeopleRegular,
   ShieldRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -77,6 +79,11 @@ export function AppDetail() {
     queryFn: () => api.getApp(id!),
   });
   const app = data?.app;
+
+  const { data: teamsData } = useQuery({
+    queryKey: ["teams"],
+    queryFn: api.listTeams,
+  });
 
   const [tab, setTab] = useState("settings");
   const [form, setForm] = useState<{
@@ -174,6 +181,51 @@ export function AppDetail() {
     }
   };
 
+  // ── Team migration ──────────────────────────────────────────────────────────
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [selectedTeamId, setSelectedTeamId] = useState("");
+  const [moving, setMoving] = useState(false);
+
+  // Teams where the user is admin or owner
+  const manageableTeams = (teamsData?.teams ?? []).filter(
+    (t) => t.role === "owner" || t.role === "admin",
+  );
+
+  const handleMoveToTeam = async () => {
+    if (!id || !selectedTeamId) return;
+    setMoving(true);
+    try {
+      await api.transferAppToTeam(selectedTeamId, id);
+      await qc.invalidateQueries({ queryKey: ["app", id] });
+      await qc.invalidateQueries({ queryKey: ["apps"] });
+      setMoveOpen(false);
+      setSelectedTeamId("");
+      showMsg("success", "App moved to team");
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Failed to move app",
+      );
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  const handleRemoveFromTeam = async () => {
+    if (!id || !app?.team_id) return;
+    try {
+      await api.removeAppFromTeam(app.team_id, id);
+      await qc.invalidateQueries({ queryKey: ["app", id] });
+      await qc.invalidateQueries({ queryKey: ["apps"] });
+      showMsg("success", "App removed from team");
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Failed to remove from team",
+      );
+    }
+  };
+
   if (isLoading) return <Spinner />;
   if (!app) return <Text>App not found</Text>;
 
@@ -185,7 +237,9 @@ export function AppDetail() {
         <Button
           appearance="subtle"
           icon={<ArrowLeftRegular />}
-          onClick={() => navigate("/apps")}
+          onClick={() =>
+            app.team_id ? navigate(`/teams/${app.team_id}`) : navigate("/apps")
+          }
         />
         <Title2>{app.name}</Title2>
         {app.is_verified && (
@@ -393,6 +447,101 @@ export function AppDetail() {
 
       {tab === "danger" && (
         <div className={styles.card}>
+          {/* Team membership */}
+          <Text weight="semibold" size={400}>
+            Team
+          </Text>
+          {app.team_id ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <PeopleRegular fontSize={20} />
+              <Text>This app belongs to a team.</Text>
+              <Button
+                appearance="outline"
+                size="small"
+                onClick={() => navigate(`/teams/${app.team_id}`)}
+              >
+                View team
+              </Button>
+              <Button
+                appearance="outline"
+                size="small"
+                style={{ color: tokens.colorPaletteRedForeground1 }}
+                onClick={handleRemoveFromTeam}
+              >
+                Remove from team
+              </Button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <Text style={{ color: tokens.colorNeutralForeground3 }}>
+                This is a personal app.
+              </Text>
+              {manageableTeams.length > 0 && (
+                <Dialog
+                  open={moveOpen}
+                  onOpenChange={(_, d) => setMoveOpen(d.open)}
+                >
+                  <DialogTrigger disableButtonEnhancement>
+                    <Button
+                      appearance="outline"
+                      size="small"
+                      icon={<PeopleRegular />}
+                    >
+                      Move to team
+                    </Button>
+                  </DialogTrigger>
+                  <DialogSurface>
+                    <DialogBody>
+                      <DialogTitle>Move App to Team</DialogTitle>
+                      <DialogContent>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 12,
+                          }}
+                        >
+                          <Field label="Select team" required>
+                            <Select
+                              value={selectedTeamId}
+                              onChange={(_, d) => setSelectedTeamId(d.value)}
+                            >
+                              <option value="">— choose a team —</option>
+                              {manageableTeams.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name}
+                                </option>
+                              ))}
+                            </Select>
+                          </Field>
+                          <Text
+                            size={200}
+                            style={{ color: tokens.colorNeutralForeground3 }}
+                          >
+                            All admins and owners of the selected team will be
+                            able to manage this app.
+                          </Text>
+                        </div>
+                      </DialogContent>
+                      <DialogActions>
+                        <DialogTrigger>
+                          <Button>Cancel</Button>
+                        </DialogTrigger>
+                        <Button
+                          appearance="primary"
+                          onClick={handleMoveToTeam}
+                          disabled={moving || !selectedTeamId}
+                        >
+                          {moving ? <Spinner size="tiny" /> : "Move to team"}
+                        </Button>
+                      </DialogActions>
+                    </DialogBody>
+                  </DialogSurface>
+                </Dialog>
+              )}
+            </div>
+          )}
+
           <Text
             weight="semibold"
             size={400}

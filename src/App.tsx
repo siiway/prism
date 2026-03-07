@@ -40,6 +40,7 @@ import { AdminSettings } from "./pages/admin/AdminSettings";
 import { AdminAudit } from "./pages/admin/AdminAudit";
 import { TeamList } from "./pages/teams/TeamList";
 import { TeamDetail } from "./pages/teams/TeamDetail";
+import { TeamJoin } from "./pages/teams/TeamJoin";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -137,6 +138,9 @@ export default function App() {
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/social-confirm" element={<SocialConfirm />} />
             <Route path="/social-select" element={<SocialSelect />} />
+
+            {/* Team invite */}
+            <Route path="/teams/join/:token" element={<TeamJoin />} />
 
             {/* OAuth consent */}
             <Route path="/oauth/authorize" element={<Authorize />} />

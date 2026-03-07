@@ -2,14 +2,14 @@
 
 import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, optionalAuth } from "../middleware/auth";
 import { computeIsVerified } from "../lib/domainVerify";
+import { getConfig } from "../lib/config";
+import { sendEmail } from "../lib/email";
 import type { OAuthAppRow, TeamMemberRow, TeamRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
-
-app.use("*", requireAuth);
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
 
@@ -32,6 +32,90 @@ async function getMember(
     .bind(teamId, userId)
     .first<TeamMemberRow>();
 }
+
+// ─── Public invite join routes (BEFORE global auth middleware) ────────────────
+
+interface InviteRow {
+  token: string;
+  team_id: string;
+  role: string;
+  created_by: string;
+  email: string | null;
+  max_uses: number;
+  uses: number;
+  expires_at: number;
+  created_at: number;
+}
+
+// GET /join/:token — public: show invite info
+app.get("/join/:token", optionalAuth, async (c) => {
+  const token = c.req.param("token");
+  const now = Math.floor(Date.now() / 1000);
+
+  const invite = await c.env.DB.prepare(
+    "SELECT * FROM team_invites WHERE token = ? AND expires_at > ?",
+  )
+    .bind(token, now)
+    .first<InviteRow>();
+
+  if (!invite) return c.json({ error: "Invite not found or expired" }, 404);
+  if (invite.max_uses > 0 && invite.uses >= invite.max_uses)
+    return c.json({ error: "Invite link has reached its usage limit" }, 410);
+
+  const team = await c.env.DB.prepare(
+    "SELECT id, name, avatar_url FROM teams WHERE id = ?",
+  )
+    .bind(invite.team_id)
+    .first<{ id: string; name: string; avatar_url: string | null }>();
+  if (!team) return c.json({ error: "Team not found" }, 404);
+
+  return c.json({
+    team,
+    invite: { role: invite.role, expires_at: invite.expires_at },
+    user: c.get("user") ?? null,
+  });
+});
+
+// POST /join/:token — accept invite (must be authenticated)
+app.post("/join/:token", requireAuth, async (c) => {
+  const user = c.get("user");
+  const token = c.req.param("token");
+  const now = Math.floor(Date.now() / 1000);
+
+  const invite = await c.env.DB.prepare(
+    "SELECT * FROM team_invites WHERE token = ? AND expires_at > ?",
+  )
+    .bind(token, now)
+    .first<InviteRow>();
+
+  if (!invite) return c.json({ error: "Invite not found or expired" }, 404);
+  if (invite.max_uses > 0 && invite.uses >= invite.max_uses)
+    return c.json({ error: "Invite link has reached its usage limit" }, 410);
+  // Email-specific invites can only be used by the addressed user
+  if (invite.email && invite.email.toLowerCase() !== user.email.toLowerCase())
+    return c.json(
+      { error: "This invite is for a different email address" },
+      403,
+    );
+
+  const existing = await getMember(c.env.DB, invite.team_id, user.id);
+  if (existing) return c.json({ error: "Already a member of this team" }, 409);
+
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+    ).bind(invite.team_id, user.id, invite.role, now),
+    c.env.DB.prepare(
+      "UPDATE team_invites SET uses = uses + 1 WHERE token = ?",
+    ).bind(token),
+  ]);
+
+  return c.json({ team_id: invite.team_id, message: "Joined team" });
+});
+
+// ─── All remaining routes require auth ────────────────────────────────────────
+
+app.use("*", requireAuth);
 
 // ─── Team CRUD ────────────────────────────────────────────────────────────────
 
@@ -59,7 +143,6 @@ app.post("/", async (c) => {
     description?: string;
     avatar_url?: string;
   }>();
-
   if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
 
   const id = randomId();
@@ -67,8 +150,7 @@ app.post("/", async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(
-      `INSERT INTO teams (id, name, description, avatar_url, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      "INSERT INTO teams (id, name, description, avatar_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
     ).bind(
       id,
       body.name.trim(),
@@ -78,7 +160,7 @@ app.post("/", async (c) => {
       now,
     ),
     c.env.DB.prepare(
-      `INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)`,
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
     ).bind(id, user.id, now),
   ]);
 
@@ -104,10 +186,8 @@ app.get("/:id", async (c) => {
     c.env.DB.prepare(
       `SELECT tm.user_id, tm.role, tm.joined_at,
               u.username, u.display_name, u.avatar_url
-       FROM team_members tm
-       JOIN users u ON u.id = tm.user_id
-       WHERE tm.team_id = ?
-       ORDER BY tm.joined_at ASC`,
+       FROM team_members tm JOIN users u ON u.id = tm.user_id
+       WHERE tm.team_id = ? ORDER BY tm.joined_at ASC`,
     )
       .bind(id)
       .all<{
@@ -168,7 +248,7 @@ app.patch("/:id", async (c) => {
   return c.json({ team: { ...updated!, my_role: member.role } });
 });
 
-// Delete team (owner only) — cascades to memberships; apps lose team_id (SET NULL)
+// Delete team (owner only)
 app.delete("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -224,7 +304,6 @@ app.post("/:id/members", async (c) => {
   return c.json({ message: "Member added" }, 201);
 });
 
-// Change member role (owner only; cannot change another owner's role)
 app.patch("/:id/members/:userId", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -272,9 +351,9 @@ app.delete("/:id/members/:userId", async (c) => {
   const target = await getMember(c.env.DB, id, targetUserId);
   if (!target) return c.json({ error: "Member not found" }, 404);
 
-  if (target.role === "owner" && !isSelf) {
+  if (target.role === "owner" && !isSelf)
     return c.json({ error: "Cannot remove the team owner" }, 403);
-  }
+
   if (target.role === "owner" && isSelf) {
     // Leaving as owner: only allowed if no other members
     const { results } = await c.env.DB.prepare(
@@ -338,6 +417,133 @@ app.post("/:id/transfer-ownership", async (c) => {
   ]);
 
   return c.json({ message: "Ownership transferred" });
+});
+
+// ─── Invites ──────────────────────────────────────────────────────────────────
+
+// List active invites for a team
+app.get("/:id/invites", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const member = await getMember(c.env.DB, id, user.id);
+  if (!member) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(member.role, "admin"))
+    return c.json({ error: "Forbidden" }, 403);
+
+  const now = Math.floor(Date.now() / 1000);
+  const { results } = await c.env.DB.prepare(
+    `SELECT i.*, u.username as creator_username
+     FROM team_invites i JOIN users u ON u.id = i.created_by
+     WHERE i.team_id = ? AND i.expires_at > ?
+     ORDER BY i.created_at DESC`,
+  )
+    .bind(id, now)
+    .all<InviteRow & { creator_username: string }>();
+
+  return c.json({ invites: results });
+});
+
+// Create invite (shareable link or email)
+app.post("/:id/invites", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const member = await getMember(c.env.DB, id, user.id);
+  if (!member) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(member.role, "admin"))
+    return c.json({ error: "Forbidden" }, 403);
+
+  const body = await c.req.json<{
+    role?: string;
+    max_uses?: number;
+    expires_in_hours?: number;
+    email?: string;
+  }>();
+
+  const role = body.role === "admin" ? "admin" : "member";
+  const maxUses = body.max_uses ?? 0;
+  const ttlHours = Math.min(body.expires_in_hours ?? 72, 720); // max 30 days
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = now + ttlHours * 3600;
+  const token = randomBase64url(24);
+
+  await c.env.DB.prepare(
+    `INSERT INTO team_invites (token, team_id, role, created_by, email, max_uses, uses, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+  )
+    .bind(token, id, role, user.id, body.email ?? null, maxUses, expiresAt, now)
+    .run();
+
+  const inviteLink = `${c.env.APP_URL}/teams/join/${token}`;
+
+  // Send email if requested
+  if (body.email) {
+    const [team, config] = await Promise.all([
+      c.env.DB.prepare("SELECT name FROM teams WHERE id = ?")
+        .bind(id)
+        .first<{ name: string }>(),
+      getConfig(c.env.DB),
+    ]);
+    if (config.email_provider !== "none") {
+      const esc = (s: string) =>
+        s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      const teamName = esc(team?.name ?? "a team");
+      const senderName = esc(user.display_name);
+      const siteName = esc(config.site_name);
+      await sendEmail(
+        {
+          to: body.email,
+          subject: `You've been invited to join ${team?.name ?? "a team"} on ${config.site_name}`,
+          html: `<div style="font-family:sans-serif">
+            <h2>Team Invitation</h2>
+            <p>${senderName} has invited you to join <strong>${teamName}</strong> as a <strong>${role}</strong> on ${siteName}.</p>
+            <p><a href="${inviteLink}" style="background:#5b5fc7;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;display:inline-block">Accept Invitation</a></p>
+            <p style="color:#888;font-size:12px">This link expires in ${ttlHours} hours.</p>
+          </div>`,
+          text: `${user.display_name} invited you to join a team. Accept: ${inviteLink}`,
+        },
+        {
+          provider: config.email_provider,
+          from: config.email_from,
+          apiKey: config.email_api_key,
+          smtpHost: config.smtp_host,
+          smtpPort: config.smtp_port,
+          smtpSecure: config.smtp_secure,
+          smtpUser: config.smtp_user,
+          smtpPassword: config.smtp_password,
+        },
+      ).catch(() => {
+        /* non-fatal */
+      });
+    }
+  }
+
+  return c.json({ token, link: inviteLink, role, expires_at: expiresAt }, 201);
+});
+
+// Revoke an invite
+app.delete("/:id/invites/:token", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const token = c.req.param("token");
+
+  const member = await getMember(c.env.DB, id, user.id);
+  if (!member) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(member.role, "admin"))
+    return c.json({ error: "Forbidden" }, 403);
+
+  await c.env.DB.prepare(
+    "DELETE FROM team_invites WHERE token = ? AND team_id = ?",
+  )
+    .bind(token, id)
+    .run();
+
+  return c.json({ message: "Invite revoked" });
 });
 
 // ─── Team apps ────────────────────────────────────────────────────────────────
@@ -439,7 +645,6 @@ app.post("/:id/apps", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(appId)
     .first<OAuthAppRow>();
-
   const isVerified = await computeIsVerified(
     c.env.DB,
     user.id,
@@ -449,7 +654,7 @@ app.post("/:id/apps", async (c) => {
   return c.json({ app: fullApp(row!, isVerified) }, 201);
 });
 
-// Transfer a personal app into this team (app owner must be a team admin/owner)
+// Transfer a personal app into this team
 app.post("/:id/apps/transfer", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -480,7 +685,7 @@ app.post("/:id/apps/transfer", async (c) => {
   return c.json({ message: "App transferred to team" });
 });
 
-// Remove app from team (back to personal, admin/owner only)
+// Remove app from team (back to personal)
 app.delete("/:id/apps/:appId/transfer", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");

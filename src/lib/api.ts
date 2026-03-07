@@ -473,6 +473,46 @@ export const api = {
       getToken(),
     ),
 
+  // Team invites
+  listTeamInvites: (teamId: string) =>
+    request<{ invites: TeamInvite[] }>(
+      "GET",
+      `/teams/${teamId}/invites`,
+      undefined,
+      getToken(),
+    ),
+  createTeamInvite: (
+    teamId: string,
+    body: {
+      role?: string;
+      email?: string;
+      max_uses?: number;
+      ttl_hours?: number;
+    },
+  ) =>
+    request<{ invite: TeamInvite }>(
+      "POST",
+      `/teams/${teamId}/invites`,
+      body,
+      getToken(),
+    ),
+  revokeTeamInvite: (teamId: string, token: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/teams/${teamId}/invites/${token}`,
+      undefined,
+      getToken(),
+    ),
+  getTeamInvite: (token: string) =>
+    request<TeamInviteInfo>("GET", `/teams/join/${token}`),
+  acceptTeamInvite: (token: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/teams/join/${token}`,
+      undefined,
+      getToken(),
+    ),
+
   // Admin teams
   adminListTeams: (page = 1) =>
     request<{ teams: AdminTeam[]; total: number }>(
@@ -603,6 +643,32 @@ export interface TeamMember {
   joined_at: number;
 }
 
+export interface TeamInvite {
+  token: string;
+  team_id: string;
+  role: string;
+  email: string | null;
+  max_uses: number;
+  uses: number;
+  expires_at: number;
+  created_at: number;
+  created_by_username: string;
+}
+
+export interface TeamInviteInfo {
+  team: {
+    id: string;
+    name: string;
+    description: string;
+    avatar_url: string | null;
+  };
+  role: string;
+  email: string | null;
+  expires_at: number;
+  user: { id: string; username: string } | null;
+  already_member: boolean;
+}
+
 export interface AdminTeam {
   id: string;
   name: string;
@@ -630,6 +696,7 @@ export interface OAuthApp {
   is_verified: boolean;
   is_official: boolean;
   is_first_party: boolean;
+  team_id: string | null;
   created_at: number;
   updated_at: number;
   owner_username?: string;

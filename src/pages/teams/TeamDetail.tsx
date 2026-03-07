@@ -33,15 +33,20 @@ import {
   TableRow,
   Text,
   Title2,
+  Title3,
   Textarea,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import {
   AddRegular,
   AppsRegular,
+  CopyRegular,
   DeleteRegular,
   GlobeRegular,
+  LinkRegular,
+  MailRegular,
   MoreHorizontalRegular,
   PeopleRegular,
   SettingsRegular,
@@ -49,7 +54,7 @@ import {
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, type OAuthApp } from "../../lib/api";
+import { api, ApiError, type OAuthApp, type TeamInvite } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 
 const useStyles = makeStyles({
@@ -82,6 +87,19 @@ const useStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     gap: "12px",
+  },
+  section: {
+    marginTop: "24px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  },
+  inviteRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 0",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
   },
 });
 
@@ -116,6 +134,21 @@ export function TeamDetail() {
     queryKey: ["team-apps", id],
     queryFn: () => api.listTeamApps(id!),
     enabled: !!id && tab === "apps",
+  });
+
+  const { data: invitesData, isLoading: invitesLoading } = useQuery({
+    queryKey: ["team-invites", id],
+    queryFn: () => api.listTeamInvites(id!),
+    enabled:
+      !!id &&
+      tab === "members" &&
+      (data?.team?.my_role === "owner" || data?.team?.my_role === "admin"),
+  });
+
+  const { data: myAppsData } = useQuery({
+    queryKey: ["apps"],
+    queryFn: api.listApps,
+    enabled: tab === "apps",
   });
 
   const team = data?.team;
@@ -198,6 +231,78 @@ export function TeamDetail() {
     }
   };
 
+  // ── Invites ─────────────────────────────────────────────────────────────────
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteForm, setInviteForm] = useState({
+    role: "member",
+    email: "",
+    max_uses: "",
+    ttl_hours: "72",
+  });
+  const [creatingInvite, setCreatingInvite] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  const handleCreateInvite = async () => {
+    if (!id) return;
+    setCreatingInvite(true);
+    try {
+      const res = await api.createTeamInvite(id, {
+        role: inviteForm.role,
+        email: inviteForm.email.trim() || undefined,
+        max_uses: inviteForm.max_uses
+          ? parseInt(inviteForm.max_uses)
+          : undefined,
+        ttl_hours: inviteForm.ttl_hours
+          ? parseInt(inviteForm.ttl_hours)
+          : undefined,
+      });
+      await qc.invalidateQueries({ queryKey: ["team-invites", id] });
+      setInviteOpen(false);
+      setInviteForm({
+        role: "member",
+        email: "",
+        max_uses: "",
+        ttl_hours: "72",
+      });
+
+      if (!res.invite.email) {
+        const link = `${window.location.origin}/teams/join/${res.invite.token}`;
+        await navigator.clipboard.writeText(link);
+        showMsg("success", "Invite link copied to clipboard!");
+      } else {
+        showMsg("success", "Invite email sent");
+      }
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Failed to create invite",
+      );
+    } finally {
+      setCreatingInvite(false);
+    }
+  };
+
+  const handleRevokeInvite = async (token: string) => {
+    if (!id) return;
+    try {
+      await api.revokeTeamInvite(id, token);
+      await qc.invalidateQueries({ queryKey: ["team-invites", id] });
+      showMsg("success", "Invite revoked");
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Failed to revoke invite",
+      );
+    }
+  };
+
+  const handleCopyInviteLink = async (token: string) => {
+    const link = `${window.location.origin}/teams/join/${token}`;
+    await navigator.clipboard.writeText(link);
+    setCopiedToken(token);
+    setTimeout(() => setCopiedToken(null), 2000);
+  };
+
   // ── Create app ──────────────────────────────────────────────────────────────
   const [appOpen, setAppOpen] = useState(false);
   const [appForm, setAppForm] = useState({
@@ -247,6 +352,35 @@ export function TeamDetail() {
       );
     } finally {
       setCreatingApp(false);
+    }
+  };
+
+  // ── Migrate app to team ──────────────────────────────────────────────────────
+  const [migrateOpen, setMigrateOpen] = useState(false);
+  const [selectedAppId, setSelectedAppId] = useState("");
+  const [migrating, setMigrating] = useState(false);
+
+  const personalApps = (myAppsData?.apps ?? []).filter(
+    (a: OAuthApp) => !a.team_id,
+  );
+
+  const handleMigrateApp = async () => {
+    if (!id || !selectedAppId) return;
+    setMigrating(true);
+    try {
+      await api.transferAppToTeam(id, selectedAppId);
+      await qc.invalidateQueries({ queryKey: ["team-apps", id] });
+      await qc.invalidateQueries({ queryKey: ["apps"] });
+      setMigrateOpen(false);
+      setSelectedAppId("");
+      showMsg("success", "App moved to team");
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Failed to migrate app",
+      );
+    } finally {
+      setMigrating(false);
     }
   };
 
@@ -367,9 +501,104 @@ export function TeamDetail() {
               style={{
                 display: "flex",
                 justifyContent: "flex-end",
+                gap: 8,
                 marginBottom: 12,
               }}
             >
+              {/* Invite dialog */}
+              <Dialog
+                open={inviteOpen}
+                onOpenChange={(_, d) => setInviteOpen(d.open)}
+              >
+                <DialogTrigger disableButtonEnhancement>
+                  <Button icon={<LinkRegular />} size="small">
+                    Invite
+                  </Button>
+                </DialogTrigger>
+                <DialogSurface>
+                  <DialogBody>
+                    <DialogTitle>Invite to Team</DialogTitle>
+                    <DialogContent>
+                      <div className={styles.form}>
+                        <Field label="Role">
+                          <Select
+                            value={inviteForm.role}
+                            onChange={(_, d) =>
+                              setInviteForm((f) => ({ ...f, role: d.value }))
+                            }
+                          >
+                            <option value="member">Member</option>
+                            <option value="admin">Admin</option>
+                          </Select>
+                        </Field>
+                        <Field
+                          label="Email (optional)"
+                          hint="Leave blank to create a shareable link"
+                        >
+                          <Input
+                            type="email"
+                            value={inviteForm.email}
+                            onChange={(e) =>
+                              setInviteForm((f) => ({
+                                ...f,
+                                email: e.target.value,
+                              }))
+                            }
+                            placeholder="user@example.com"
+                            contentBefore={<MailRegular />}
+                          />
+                        </Field>
+                        <Field label="Max uses" hint="0 = unlimited">
+                          <Input
+                            type="number"
+                            value={inviteForm.max_uses}
+                            onChange={(e) =>
+                              setInviteForm((f) => ({
+                                ...f,
+                                max_uses: e.target.value,
+                              }))
+                            }
+                            placeholder="0"
+                          />
+                        </Field>
+                        <Field label="Expires after (hours)">
+                          <Input
+                            type="number"
+                            value={inviteForm.ttl_hours}
+                            onChange={(e) =>
+                              setInviteForm((f) => ({
+                                ...f,
+                                ttl_hours: e.target.value,
+                              }))
+                            }
+                            placeholder="72"
+                          />
+                        </Field>
+                      </div>
+                    </DialogContent>
+                    <DialogActions>
+                      <DialogTrigger>
+                        <Button>Cancel</Button>
+                      </DialogTrigger>
+                      <Button
+                        appearance="primary"
+                        onClick={handleCreateInvite}
+                        disabled={creatingInvite}
+                      >
+                        {creatingInvite ? (
+                          <Spinner size="tiny" />
+                        ) : inviteForm.email ? (
+                          "Send invite"
+                        ) : (
+                          "Copy invite link"
+                        )}
+                      </Button>
+                    </DialogActions>
+                  </DialogBody>
+                </DialogSurface>
+              </Dialog>
+
+              {/* Add member dialog */}
               <Dialog
                 open={addOpen}
                 onOpenChange={(_, d) => setAddOpen(d.open)}
@@ -430,6 +659,7 @@ export function TeamDetail() {
               </Dialog>
             </div>
           )}
+
           <Table>
             <TableHeader>
               <TableRow>
@@ -544,6 +774,82 @@ export function TeamDetail() {
               ))}
             </TableBody>
           </Table>
+
+          {/* Active invites */}
+          {canManage && (
+            <div className={styles.section}>
+              <Title3>Active invites</Title3>
+              {invitesLoading && <Spinner size="small" />}
+              {!invitesLoading && (invitesData?.invites ?? []).length === 0 && (
+                <Text style={{ color: tokens.colorNeutralForeground3 }}>
+                  No active invites
+                </Text>
+              )}
+              {(invitesData?.invites ?? []).map((inv: TeamInvite) => (
+                <div key={inv.token} className={styles.inviteRow}>
+                  <Badge
+                    color={ROLE_COLORS[inv.role] ?? "subtle"}
+                    appearance="filled"
+                    size="small"
+                  >
+                    {inv.role}
+                  </Badge>
+                  <div style={{ flex: 1 }}>
+                    {inv.email ? (
+                      <Text size={300}>
+                        <MailRegular
+                          style={{ verticalAlign: "middle", marginRight: 4 }}
+                        />
+                        {inv.email}
+                      </Text>
+                    ) : (
+                      <Text
+                        size={300}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        <LinkRegular
+                          style={{ verticalAlign: "middle", marginRight: 4 }}
+                        />
+                        Shareable link
+                      </Text>
+                    )}
+                    <Text
+                      size={200}
+                      block
+                      style={{ color: tokens.colorNeutralForeground3 }}
+                    >
+                      {inv.uses}/{inv.max_uses === 0 ? "∞" : inv.max_uses} uses
+                      · expires{" "}
+                      {new Date(inv.expires_at * 1000).toLocaleDateString()} ·
+                      by @{inv.created_by_username}
+                    </Text>
+                  </div>
+                  {!inv.email && (
+                    <Tooltip
+                      content={
+                        copiedToken === inv.token ? "Copied!" : "Copy link"
+                      }
+                      relationship="label"
+                    >
+                      <Button
+                        appearance="subtle"
+                        icon={<CopyRegular />}
+                        size="small"
+                        onClick={() => handleCopyInviteLink(inv.token)}
+                      />
+                    </Tooltip>
+                  )}
+                  <Button
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    size="small"
+                    style={{ color: tokens.colorPaletteRedForeground1 }}
+                    onClick={() => handleRevokeInvite(inv.token)}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -555,9 +861,70 @@ export function TeamDetail() {
               style={{
                 display: "flex",
                 justifyContent: "flex-end",
+                gap: 8,
                 marginBottom: 12,
               }}
             >
+              {/* Migrate existing app dialog */}
+              <Dialog
+                open={migrateOpen}
+                onOpenChange={(_, d) => setMigrateOpen(d.open)}
+              >
+                <DialogTrigger disableButtonEnhancement>
+                  <Button size="small">Migrate existing app</Button>
+                </DialogTrigger>
+                <DialogSurface>
+                  <DialogBody>
+                    <DialogTitle>Migrate App to Team</DialogTitle>
+                    <DialogContent>
+                      {personalApps.length === 0 ? (
+                        <Text style={{ color: tokens.colorNeutralForeground3 }}>
+                          You have no personal apps to migrate.
+                        </Text>
+                      ) : (
+                        <div className={styles.form}>
+                          <Field label="Select app" required>
+                            <Select
+                              value={selectedAppId}
+                              onChange={(_, d) => setSelectedAppId(d.value)}
+                            >
+                              <option value="">— choose an app —</option>
+                              {personalApps.map((a: OAuthApp) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.name}
+                                </option>
+                              ))}
+                            </Select>
+                          </Field>
+                          <Text
+                            size={200}
+                            style={{ color: tokens.colorNeutralForeground3 }}
+                          >
+                            The app will be transferred to this team. All team
+                            admins and owners will be able to manage it.
+                          </Text>
+                        </div>
+                      )}
+                    </DialogContent>
+                    <DialogActions>
+                      <DialogTrigger>
+                        <Button>Cancel</Button>
+                      </DialogTrigger>
+                      {personalApps.length > 0 && (
+                        <Button
+                          appearance="primary"
+                          onClick={handleMigrateApp}
+                          disabled={migrating || !selectedAppId}
+                        >
+                          {migrating ? <Spinner size="tiny" /> : "Move to team"}
+                        </Button>
+                      )}
+                    </DialogActions>
+                  </DialogBody>
+                </DialogSurface>
+              </Dialog>
+
+              {/* New app dialog */}
               <Dialog
                 open={appOpen}
                 onOpenChange={(_, d) => setAppOpen(d.open)}
