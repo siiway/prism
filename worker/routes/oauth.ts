@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
+import { computeIsVerified, buildVerifiedDomainsMap, computeVerified } from "../lib/domainVerify";
 import type {
   OAuthAppRow,
   OAuthCodeRow,
@@ -30,7 +31,8 @@ app.get("/consents", requireAuth, async (c) => {
   const user = c.get("user");
   const rows = await c.env.DB.prepare(
     `SELECT oc.client_id, oc.scopes, oc.granted_at,
-            oa.name, oa.description, oa.icon_url, oa.website_url, oa.is_verified
+            oa.name, oa.description, oa.icon_url, oa.website_url,
+            oa.owner_id, oa.redirect_uris
      FROM oauth_consents oc
      JOIN oauth_apps oa ON oa.client_id = oc.client_id
      WHERE oc.user_id = ?
@@ -45,8 +47,12 @@ app.get("/consents", requireAuth, async (c) => {
       description: string;
       icon_url: string | null;
       website_url: string | null;
-      is_verified: number;
+      owner_id: string;
+      redirect_uris: string;
     }>();
+
+  const ownerIds = [...new Set(rows.results.map((r) => r.owner_id))];
+  const domainsMap = await buildVerifiedDomainsMap(c.env.DB, ownerIds);
 
   return c.json({
     consents: rows.results.map((r) => ({
@@ -58,7 +64,7 @@ app.get("/consents", requireAuth, async (c) => {
         description: r.description,
         icon_url: r.icon_url,
         website_url: r.website_url,
-        is_verified: r.is_verified === 1,
+        is_verified: computeVerified(domainsMap.get(r.owner_id) ?? new Set(), r.website_url, r.redirect_uris),
       },
     })),
   });
@@ -128,7 +134,7 @@ app.get("/app-info", optionalAuth, async (c) => {
       description: oauthApp.description,
       icon_url: oauthApp.icon_url,
       website_url: oauthApp.website_url,
-      is_verified: oauthApp.is_verified === 1,
+      is_verified: await computeIsVerified(c.env.DB, oauthApp.owner_id, oauthApp.website_url, oauthApp.redirect_uris),
     },
     scopes,
     redirect_uri,

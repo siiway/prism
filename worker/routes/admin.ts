@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { getConfig, setConfigValues } from "../lib/config";
 import { sendEmail } from "../lib/email";
 import { requireAdmin } from "../middleware/auth";
+import { buildVerifiedDomainsMap, computeVerified } from "../lib/domainVerify";
 import type { AuditLogRow, OAuthAppRow, UserRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -272,14 +273,24 @@ app.get("/apps", async (c) => {
     }>(),
   ]);
 
-  return c.json({ apps: apps.results, total: count?.n ?? 0, page, limit });
+  const ownerIds = apps.results.map((a) => a.owner_id);
+  const domainsMap = await buildVerifiedDomainsMap(c.env.DB, ownerIds);
+
+  return c.json({
+    apps: apps.results.map((a) => ({
+      ...a,
+      is_verified: computeVerified(domainsMap.get(a.owner_id) ?? new Set(), a.website_url, a.redirect_uris),
+    })),
+    total: count?.n ?? 0,
+    page,
+    limit,
+  });
 });
 
 app.patch("/apps/:id", async (c) => {
   const admin = c.get("user");
   const id = c.req.param("id");
   const body = await c.req.json<{
-    is_verified?: boolean;
     is_active?: boolean;
   }>();
 
@@ -290,10 +301,6 @@ app.patch("/apps/:id", async (c) => {
 
   const updates: string[] = [];
   const values: unknown[] = [];
-  if (body.is_verified !== undefined) {
-    updates.push("is_verified = ?");
-    values.push(body.is_verified ? 1 : 0);
-  }
   if (body.is_active !== undefined) {
     updates.push("is_active = ?");
     values.push(body.is_active ? 1 : 0);

@@ -38,16 +38,6 @@ export function AdminApps() {
     setTimeout(() => setMessage(null), 5000);
   };
 
-  const handleToggleVerified = async (id: string, current: boolean) => {
-    try {
-      await api.adminUpdateApp(id, { is_verified: !current });
-      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
-      showMsg("success", current ? "App unverified" : "App verified");
-    } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
-    }
-  };
-
   const handleToggleActive = async (id: string, current: boolean) => {
     try {
       await api.adminUpdateApp(id, { is_active: !current });
@@ -118,28 +108,15 @@ export function AdminApps() {
                   {app.client_id}
                 </TableCell>
                 <TableCell>
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  <Badge
+                    color={app.is_verified ? "success" : "subtle"}
+                    appearance="filled"
+                    icon={
+                      app.is_verified ? <ShieldCheckmarkRegular /> : undefined
+                    }
                   >
-                    <Badge
-                      color={app.is_verified ? "success" : "subtle"}
-                      appearance="filled"
-                      icon={
-                        app.is_verified ? <ShieldCheckmarkRegular /> : undefined
-                      }
-                    >
-                      {app.is_verified ? "Verified" : "Unverified"}
-                    </Badge>
-                    <Button
-                      size="small"
-                      appearance="subtle"
-                      onClick={() =>
-                        handleToggleVerified(app.id, app.is_verified)
-                      }
-                    >
-                      {app.is_verified ? "Unverify" : "Verify"}
-                    </Button>
-                  </div>
+                    {app.is_verified ? "Verified" : "Unverified"}
+                  </Badge>
                 </TableCell>
                 <TableCell>
                   <Switch

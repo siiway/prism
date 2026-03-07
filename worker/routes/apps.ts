@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
+import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import type { OAuthAppRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -13,12 +14,24 @@ app.use("*", requireAuth);
 // List user's apps
 app.get("/", async (c) => {
   const user = c.get("user");
-  const rows = await c.env.DB.prepare(
-    "SELECT * FROM oauth_apps WHERE owner_id = ? ORDER BY created_at DESC",
-  )
-    .bind(user.id)
-    .all<OAuthAppRow>();
-  return c.json({ apps: rows.results.map(safeApp) });
+  const [rows, domainRows] = await Promise.all([
+    c.env.DB.prepare(
+      "SELECT * FROM oauth_apps WHERE owner_id = ? ORDER BY created_at DESC",
+    )
+      .bind(user.id)
+      .all<OAuthAppRow>(),
+    c.env.DB.prepare(
+      "SELECT domain FROM domains WHERE user_id = ? AND verified = 1",
+    )
+      .bind(user.id)
+      .all<{ domain: string }>(),
+  ]);
+  const verifiedDomains = new Set(domainRows.results.map((r) => r.domain));
+  return c.json({
+    apps: rows.results.map((row) =>
+      safeApp(row, computeVerified(verifiedDomains, row.website_url, row.redirect_uris)),
+    ),
+  });
 });
 
 // Get single app (owner or admin)
@@ -33,7 +46,8 @@ app.get("/:id", async (c) => {
   if (row.owner_id !== user.id && user.role !== "admin")
     return c.json({ error: "Forbidden" }, 403);
 
-  return c.json({ app: fullApp(row) });
+  const isVerified = await computeIsVerified(c.env.DB, row.owner_id, row.website_url, row.redirect_uris);
+  return c.json({ app: fullApp(row, isVerified) });
 });
 
 // Create app
@@ -96,7 +110,8 @@ app.post("/", async (c) => {
     .bind(id)
     .first<OAuthAppRow>();
 
-  return c.json({ app: fullApp(row!) }, 201);
+  const isVerified = await computeIsVerified(c.env.DB, user.id, body.website_url ?? null, JSON.stringify(body.redirect_uris));
+  return c.json({ app: fullApp(row!, isVerified) }, 201);
 });
 
 // Update app
@@ -159,7 +174,9 @@ app.patch("/:id", async (c) => {
   )
     .bind(id)
     .first<OAuthAppRow>();
-  return c.json({ app: fullApp(updatedRow!) });
+
+  const isVerified = await computeIsVerified(c.env.DB, row.owner_id, updatedRow!.website_url, updatedRow!.redirect_uris);
+  return c.json({ app: fullApp(updatedRow!, isVerified) });
 });
 
 // Rotate client secret
@@ -214,7 +231,7 @@ app.delete("/:id", async (c) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function safeApp(row: OAuthAppRow) {
+function safeApp(row: OAuthAppRow, isVerified: boolean) {
   return {
     id: row.id,
     name: row.name,
@@ -226,14 +243,14 @@ function safeApp(row: OAuthAppRow) {
     allowed_scopes: JSON.parse(row.allowed_scopes) as string[],
     is_public: row.is_public === 1,
     is_active: row.is_active === 1,
-    is_verified: row.is_verified === 1,
+    is_verified: isVerified,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
 
-function fullApp(row: OAuthAppRow) {
-  return { ...safeApp(row), client_secret: row.client_secret };
+function fullApp(row: OAuthAppRow, isVerified: boolean) {
+  return { ...safeApp(row, isVerified), client_secret: row.client_secret };
 }
 
 export default app;
