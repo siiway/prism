@@ -2,6 +2,7 @@
 
 import {
   Avatar,
+  Button,
   Menu,
   MenuButton,
   MenuDivider,
@@ -11,21 +12,25 @@ import {
   MenuTrigger,
   Text,
   makeStyles,
+  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
 import {
   AppsRegular,
+  DismissRegular,
   GlobeRegular,
   HomeRegular,
   KeyRegular,
   LinkRegular,
   LockClosedRegular,
+  NavigationRegular,
   PersonRegular,
   SettingsRegular,
   ShieldPersonRegular,
   SignOutRegular,
 } from "@fluentui/react-icons";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
@@ -35,6 +40,9 @@ const useStyles = makeStyles({
     display: "flex",
     height: "100vh",
     overflow: "hidden",
+    "@media (max-width: 768px)": {
+      flexDirection: "column",
+    },
   },
   sidebar: {
     width: "240px",
@@ -43,6 +51,45 @@ const useStyles = makeStyles({
     borderRight: `1px solid ${tokens.colorNeutralStroke1}`,
     background: tokens.colorNeutralBackground2,
     flexShrink: 0,
+    "@media (max-width: 768px)": {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      bottom: 0,
+      zIndex: 200,
+      transform: "translateX(-240px)",
+      transitionProperty: "transform",
+      transitionDuration: "0.25s",
+      transitionTimingFunction: "ease",
+      boxShadow: tokens.shadow28,
+    },
+  },
+  sidebarOpen: {
+    "@media (max-width: 768px)": {
+      transform: "translateX(0)",
+    },
+  },
+  backdrop: {
+    display: "none",
+    "@media (max-width: 768px)": {
+      display: "block",
+      position: "fixed",
+      inset: "0",
+      background: "rgba(0,0,0,0.4)",
+      zIndex: 199,
+    },
+  },
+  topBar: {
+    display: "none",
+    "@media (max-width: 768px)": {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      padding: "10px 12px",
+      borderBottom: `1px solid ${tokens.colorNeutralStroke1}`,
+      background: tokens.colorNeutralBackground2,
+      flexShrink: 0,
+    },
   },
   logo: {
     padding: "20px 16px",
@@ -50,6 +97,11 @@ const useStyles = makeStyles({
     display: "flex",
     alignItems: "center",
     gap: "10px",
+  },
+  closeBtnHidden: {
+    "@media (min-width: 769px)": {
+      display: "none",
+    },
   },
   nav: {
     flex: 1,
@@ -98,6 +150,7 @@ const useStyles = makeStyles({
     overflowY: "auto",
     display: "flex",
     flexDirection: "column",
+    minWidth: 0,
   },
   content: {
     flex: 1,
@@ -105,6 +158,10 @@ const useStyles = makeStyles({
     maxWidth: "960px",
     width: "100%",
     margin: "0 auto",
+    boxSizing: "border-box",
+    "@media (max-width: 768px)": {
+      padding: "16px",
+    },
   },
 });
 
@@ -113,14 +170,16 @@ interface NavItemProps {
   icon: React.ReactElement;
   label: string;
   end?: boolean;
+  onNavigate?: () => void;
 }
 
-function NavItem({ to, icon, label, end }: NavItemProps) {
+function NavItem({ to, icon, label, end, onNavigate }: NavItemProps) {
   const styles = useStyles();
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={onNavigate}
       className={({ isActive }) =>
         `${styles.navItem}${isActive ? ` ${styles.navItemActive}` : ""}`
       }
@@ -134,7 +193,14 @@ function NavItem({ to, icon, label, end }: NavItemProps) {
 export function Layout() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, clearAuth } = useAuthStore();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Close sidebar on route change (mobile)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
   const { data: site } = useQuery({
     queryKey: ["site"],
     queryFn: api.site,
@@ -151,10 +217,14 @@ export function Layout() {
     navigate("/login");
   };
 
-  return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <div className={styles.logo}>
+  const closeSidebar = () => setSidebarOpen(false);
+
+  const sidebarContent = (
+    <>
+      <div className={styles.logo}>
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}
+        >
           {site?.site_icon_url && (
             <img
               src={site.site_icon_url}
@@ -166,106 +236,179 @@ export function Layout() {
             {site?.site_name ?? "Prism"}
           </Text>
         </div>
+        <Button
+          appearance="subtle"
+          icon={<DismissRegular />}
+          size="small"
+          onClick={closeSidebar}
+          className={styles.closeBtnHidden}
+          aria-label="Close menu"
+        />
+      </div>
 
-        <nav className={styles.nav}>
-          <NavItem to="/" icon={<HomeRegular />} label="Dashboard" end />
-          <NavItem to="/profile" icon={<PersonRegular />} label="Profile" />
-          <NavItem
-            to="/security"
-            icon={<ShieldPersonRegular />}
-            label="Security"
-          />
+      <nav className={styles.nav}>
+        <NavItem
+          to="/"
+          icon={<HomeRegular />}
+          label="Dashboard"
+          end
+          onNavigate={closeSidebar}
+        />
+        <NavItem
+          to="/profile"
+          icon={<PersonRegular />}
+          label="Profile"
+          onNavigate={closeSidebar}
+        />
+        <NavItem
+          to="/security"
+          icon={<ShieldPersonRegular />}
+          label="Security"
+          onNavigate={closeSidebar}
+        />
 
-          <div className={styles.navSection}>Developer</div>
-          <NavItem to="/apps" icon={<AppsRegular />} label="My Apps" />
-          <NavItem to="/domains" icon={<GlobeRegular />} label="Domains" />
+        <div className={styles.navSection}>Developer</div>
+        <NavItem
+          to="/apps"
+          icon={<AppsRegular />}
+          label="My Apps"
+          onNavigate={closeSidebar}
+        />
+        <NavItem
+          to="/domains"
+          icon={<GlobeRegular />}
+          label="Domains"
+          onNavigate={closeSidebar}
+        />
 
-          <div className={styles.navSection}>Connections</div>
-          <NavItem
-            to="/connections"
-            icon={<LinkRegular />}
-            label="Linked Accounts"
-          />
-          <NavItem
-            to="/connected-apps"
-            icon={<LockClosedRegular />}
-            label="Connected Apps"
-          />
+        <div className={styles.navSection}>Connections</div>
+        <NavItem
+          to="/connections"
+          icon={<LinkRegular />}
+          label="Linked Accounts"
+          onNavigate={closeSidebar}
+        />
+        <NavItem
+          to="/connected-apps"
+          icon={<LockClosedRegular />}
+          label="Connected Apps"
+          onNavigate={closeSidebar}
+        />
 
-          {user?.role === "admin" && (
-            <>
-              <div className={styles.navSection}>Admin</div>
-              <NavItem
-                to="/admin"
-                icon={<SettingsRegular />}
-                label="Admin Panel"
-              />
-            </>
-          )}
-        </nav>
+        {user?.role === "admin" && (
+          <>
+            <div className={styles.navSection}>Admin</div>
+            <NavItem
+              to="/admin"
+              icon={<SettingsRegular />}
+              label="Admin Panel"
+              onNavigate={closeSidebar}
+            />
+          </>
+        )}
+      </nav>
 
-        <div className={styles.userArea}>
-          <Menu>
-            <MenuTrigger disableButtonEnhancement>
-              <MenuButton
-                appearance="subtle"
-                style={{ width: "100%", justifyContent: "flex-start", gap: 8 }}
-                icon={
-                  <Avatar
-                    name={user?.display_name}
-                    image={
-                      user?.avatar_url ? { src: user.avatar_url } : undefined
-                    }
-                    size={28}
-                  />
-                }
+      <div className={styles.userArea}>
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <MenuButton
+              appearance="subtle"
+              style={{ width: "100%", justifyContent: "flex-start", gap: 8 }}
+              icon={
+                <Avatar
+                  name={user?.display_name}
+                  image={
+                    user?.avatar_url ? { src: user.avatar_url } : undefined
+                  }
+                  size={28}
+                />
+              }
+            >
+              <div style={{ textAlign: "left", overflow: "hidden" }}>
+                <Text
+                  block
+                  size={200}
+                  weight="semibold"
+                  truncate
+                  style={{ maxWidth: 140 }}
+                >
+                  {user?.display_name}
+                </Text>
+                <Text
+                  block
+                  size={100}
+                  style={{
+                    color: tokens.colorNeutralForeground3,
+                    maxWidth: 140,
+                  }}
+                  truncate
+                >
+                  @{user?.username}
+                </Text>
+              </div>
+            </MenuButton>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem
+                icon={<PersonRegular />}
+                onClick={() => navigate("/profile")}
               >
-                <div style={{ textAlign: "left", overflow: "hidden" }}>
-                  <Text
-                    block
-                    size={200}
-                    weight="semibold"
-                    truncate
-                    style={{ maxWidth: 140 }}
-                  >
-                    {user?.display_name}
-                  </Text>
-                  <Text
-                    block
-                    size={100}
-                    style={{
-                      color: tokens.colorNeutralForeground3,
-                      maxWidth: 140,
-                    }}
-                    truncate
-                  >
-                    @{user?.username}
-                  </Text>
-                </div>
-              </MenuButton>
-            </MenuTrigger>
-            <MenuPopover>
-              <MenuList>
-                <MenuItem
-                  icon={<PersonRegular />}
-                  onClick={() => navigate("/profile")}
-                >
-                  Profile
-                </MenuItem>
-                <MenuItem
-                  icon={<KeyRegular />}
-                  onClick={() => navigate("/security")}
-                >
-                  Security
-                </MenuItem>
-                <MenuDivider />
-                <MenuItem icon={<SignOutRegular />} onClick={handleLogout}>
-                  Sign out
-                </MenuItem>
-              </MenuList>
-            </MenuPopover>
-          </Menu>
+                Profile
+              </MenuItem>
+              <MenuItem
+                icon={<KeyRegular />}
+                onClick={() => navigate("/security")}
+              >
+                Security
+              </MenuItem>
+              <MenuDivider />
+              <MenuItem icon={<SignOutRegular />} onClick={handleLogout}>
+                Sign out
+              </MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
+      </div>
+    </>
+  );
+
+  return (
+    <div className={styles.shell}>
+      {/* Mobile top bar */}
+      <div className={styles.topBar}>
+        <Button
+          appearance="subtle"
+          icon={<NavigationRegular />}
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open menu"
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {site?.site_icon_url && (
+            <img
+              src={site.site_icon_url}
+              alt="logo"
+              style={{ width: 24, height: 24, borderRadius: 4 }}
+            />
+          )}
+          <Text weight="semibold" size={400}>
+            {site?.site_name ?? "Prism"}
+          </Text>
         </div>
+      </div>
+
+      {/* Backdrop (mobile only) */}
+      {sidebarOpen && (
+        <div className={styles.backdrop} onClick={closeSidebar} />
+      )}
+
+      <aside
+        className={mergeClasses(
+          styles.sidebar,
+          sidebarOpen && styles.sidebarOpen,
+        )}
+      >
+        {sidebarContent}
       </aside>
 
       <main className={styles.main}>

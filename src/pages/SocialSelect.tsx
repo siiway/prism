@@ -22,9 +22,12 @@ const useStyles = makeStyles({
     alignItems: "center",
     justifyContent: "center",
     background: tokens.colorNeutralBackground1,
+    padding: "16px",
+    boxSizing: "border-box",
   },
   card: {
-    width: "420px",
+    width: "100%",
+    maxWidth: "420px",
     padding: "40px",
     borderRadius: "8px",
     border: `1px solid ${tokens.colorNeutralStroke1}`,

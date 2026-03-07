@@ -61,6 +61,7 @@ const useStyles = makeStyles({
     justifyContent: "space-between",
     gap: "16px",
     marginTop: "24px",
+    flexWrap: "wrap",
   },
 });
 

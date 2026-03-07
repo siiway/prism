@@ -37,6 +37,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startRegistration } from "@simplewebauthn/browser";
 import { api, ApiError } from "../lib/api";
+import type { PasskeyInfo, SessionInfo } from "../lib/api";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: "32px" },
@@ -69,6 +70,13 @@ const useStyles = makeStyles({
     background: tokens.colorNeutralBackground3,
     borderRadius: "4px",
     fontFamily: "monospace",
+  },
+  hiddenOnMobile: {
+    "@media (max-width: 768px)": { display: "none" },
+  },
+  row: {
+    cursor: "pointer",
+    ":hover": { background: tokens.colorNeutralBackground3 },
   },
 });
 
@@ -112,6 +120,11 @@ export function Security() {
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [removeCode, setRemoveCode] = useState("");
   const [resetBkCode, setResetBkCode] = useState("");
+  const [selectedTotp, setSelectedTotp] = useState<{
+    id: string;
+    name: string;
+    created_at: number;
+  } | null>(null);
 
   const handleSetupTotp = async () => {
     setTotpLoading(true);
@@ -181,6 +194,9 @@ export function Security() {
   // ─── Passkeys ────────────────────────────────────────────────────────────
   const [passkeyName, setPasskeyName] = useState("");
   const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [selectedPasskey, setSelectedPasskey] = useState<PasskeyInfo | null>(
+    null,
+  );
 
   const handleAddPasskey = async () => {
     setPasskeyLoading(true);
@@ -208,6 +224,7 @@ export function Security() {
   const handleDeletePasskey = async (id: string) => {
     try {
       await api.deletePasskey(id);
+      setSelectedPasskey(null);
       await refetchPasskeys();
       showMsg("success", "Passkey removed");
     } catch (err) {
@@ -219,9 +236,14 @@ export function Security() {
   };
 
   // ─── Sessions ────────────────────────────────────────────────────────────
+  const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(
+    null,
+  );
+
   const handleRevokeSession = async (id: string) => {
     try {
       await api.revokeSession(id);
+      setSelectedSession(null);
       await refetchSessions();
       showMsg("success", "Session revoked");
     } catch (err) {
@@ -263,40 +285,89 @@ export function Security() {
         </div>
 
         {/* Authenticator list */}
-        {(totpData?.authenticators.filter((a) => a.enabled).length ?? 0) >
-          0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>Name</TableHeaderCell>
-                <TableHeaderCell>Added</TableHeaderCell>
-                <TableHeaderCell></TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {totpData!.authenticators
-                .filter((a) => a.enabled)
-                .map((a) => (
-                  <TableRow key={a.id}>
-                    <TableCell>{a.name}</TableCell>
-                    <TableCell>
-                      {new Date(a.created_at * 1000).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        icon={<DeleteRegular />}
-                        appearance="subtle"
-                        onClick={() => {
-                          setRemoveId(a.id);
-                          setRemoveCode("");
-                        }}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
-        )}
+        <>
+          {(totpData?.authenticators.filter((a) => a.enabled).length ?? 0) >
+            0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>Name</TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    Added
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile} />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {totpData!.authenticators
+                  .filter((a) => a.enabled)
+                  .map((a) => (
+                    <TableRow
+                      key={a.id}
+                      className={styles.row}
+                      onClick={() => setSelectedTotp(a)}
+                    >
+                      <TableCell>{a.name}</TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        {new Date(a.created_at * 1000).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className={styles.hiddenOnMobile}>
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            icon={<DeleteRegular />}
+                            appearance="subtle"
+                            onClick={() => {
+                              setRemoveId(a.id);
+                              setRemoveCode("");
+                            }}
+                          />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          )}
+
+          {/* TOTP detail dialog (mobile) */}
+          <Dialog
+            open={!!selectedTotp}
+            onOpenChange={(_, s) => {
+              if (!s.open) setSelectedTotp(null);
+            }}
+          >
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>{selectedTotp?.name}</DialogTitle>
+                <DialogContent>
+                  <Text size={200}>
+                    <strong>Added:</strong>{" "}
+                    {selectedTotp
+                      ? new Date(
+                          selectedTotp.created_at * 1000,
+                        ).toLocaleDateString()
+                      : ""}
+                  </Text>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setSelectedTotp(null)}>Close</Button>
+                  <Button
+                    appearance="primary"
+                    style={{ background: tokens.colorPaletteRedBackground3 }}
+                    onClick={() => {
+                      if (!selectedTotp) return;
+                      setRemoveId(selectedTotp.id);
+                      setRemoveCode("");
+                      setSelectedTotp(null);
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
+        </>
 
         {/* Add authenticator flow */}
         {!totpSetup && (
@@ -515,42 +586,112 @@ export function Security() {
           </div>
         </div>
 
-        {(passkeysData?.passkeys.length ?? 0) > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>Name</TableHeaderCell>
-                <TableHeaderCell>Type</TableHeaderCell>
-                <TableHeaderCell>Added</TableHeaderCell>
-                <TableHeaderCell>Last used</TableHeaderCell>
-                <TableHeaderCell></TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {passkeysData!.passkeys.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>{p.name ?? "Passkey"}</TableCell>
-                  <TableCell>{p.device_type}</TableCell>
-                  <TableCell>
-                    {new Date(p.created_at * 1000).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    {p.last_used_at
-                      ? new Date(p.last_used_at * 1000).toLocaleDateString()
-                      : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      icon={<DeleteRegular />}
-                      appearance="subtle"
-                      onClick={() => handleDeletePasskey(p.id)}
-                    />
-                  </TableCell>
+        <>
+          {(passkeysData?.passkeys.length ?? 0) > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>Name</TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    Type
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    Added
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    Last used
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile} />
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+              </TableHeader>
+              <TableBody>
+                {passkeysData!.passkeys.map((p) => (
+                  <TableRow
+                    key={p.id}
+                    className={styles.row}
+                    onClick={() => setSelectedPasskey(p)}
+                  >
+                    <TableCell>{p.name ?? "Passkey"}</TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      {p.device_type}
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      {new Date(p.created_at * 1000).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      {p.last_used_at
+                        ? new Date(p.last_used_at * 1000).toLocaleDateString()
+                        : "—"}
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          icon={<DeleteRegular />}
+                          appearance="subtle"
+                          onClick={() => handleDeletePasskey(p.id)}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          {/* Passkey detail dialog (mobile) */}
+          <Dialog
+            open={!!selectedPasskey}
+            onOpenChange={(_, s) => {
+              if (!s.open) setSelectedPasskey(null);
+            }}
+          >
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>{selectedPasskey?.name ?? "Passkey"}</DialogTitle>
+                <DialogContent>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                  >
+                    <Text size={200}>
+                      <strong>Type:</strong> {selectedPasskey?.device_type}
+                    </Text>
+                    <Text size={200}>
+                      <strong>Added:</strong>{" "}
+                      {selectedPasskey
+                        ? new Date(
+                            selectedPasskey.created_at * 1000,
+                          ).toLocaleDateString()
+                        : ""}
+                    </Text>
+                    <Text size={200}>
+                      <strong>Last used:</strong>{" "}
+                      {selectedPasskey?.last_used_at
+                        ? new Date(
+                            selectedPasskey.last_used_at * 1000,
+                          ).toLocaleDateString()
+                        : "—"}
+                    </Text>
+                  </div>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setSelectedPasskey(null)}>
+                    Close
+                  </Button>
+                  <Button
+                    appearance="primary"
+                    style={{ background: tokens.colorPaletteRedBackground3 }}
+                    onClick={() => {
+                      if (!selectedPasskey) return;
+                      handleDeletePasskey(selectedPasskey.id);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
+        </>
 
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
           <Field label="Passkey name (optional)" style={{ flex: 1 }}>
@@ -576,52 +717,126 @@ export function Security() {
         <Text weight="semibold" size={400} block>
           Active Sessions
         </Text>
-        {(sessionsData?.sessions.length ?? 0) === 0 ? (
-          <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            No active sessions
-          </Text>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>Device</TableHeaderCell>
-                <TableHeaderCell>IP</TableHeaderCell>
-                <TableHeaderCell>Created</TableHeaderCell>
-                <TableHeaderCell>Expires</TableHeaderCell>
-                <TableHeaderCell></TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sessionsData!.sessions.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell
-                    style={{
-                      maxWidth: 200,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
+        <>
+          {(sessionsData?.sessions.length ?? 0) === 0 ? (
+            <Text style={{ color: tokens.colorNeutralForeground3 }}>
+              No active sessions
+            </Text>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>Device</TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    IP
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    Created
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    Expires
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile} />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sessionsData!.sessions.map((s) => (
+                  <TableRow
+                    key={s.id}
+                    className={styles.row}
+                    onClick={() => setSelectedSession(s)}
+                  >
+                    <TableCell
+                      style={{
+                        maxWidth: 200,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {s.user_agent ?? "Unknown"}
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      {s.ip_address ?? "—"}
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      {new Date(s.created_at * 1000).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      {new Date(s.expires_at * 1000).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className={styles.hiddenOnMobile}>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          icon={<DeleteRegular />}
+                          appearance="subtle"
+                          onClick={() => handleRevokeSession(s.id)}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          {/* Session detail dialog (mobile) */}
+          <Dialog
+            open={!!selectedSession}
+            onOpenChange={(_, s) => {
+              if (!s.open) setSelectedSession(null);
+            }}
+          >
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>Session</DialogTitle>
+                <DialogContent>
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                  >
+                    <Text size={200}>
+                      <strong>Device:</strong>{" "}
+                      {selectedSession?.user_agent ?? "Unknown"}
+                    </Text>
+                    <Text size={200}>
+                      <strong>IP:</strong> {selectedSession?.ip_address ?? "—"}
+                    </Text>
+                    <Text size={200}>
+                      <strong>Created:</strong>{" "}
+                      {selectedSession
+                        ? new Date(
+                            selectedSession.created_at * 1000,
+                          ).toLocaleDateString()
+                        : ""}
+                    </Text>
+                    <Text size={200}>
+                      <strong>Expires:</strong>{" "}
+                      {selectedSession
+                        ? new Date(
+                            selectedSession.expires_at * 1000,
+                          ).toLocaleDateString()
+                        : ""}
+                    </Text>
+                  </div>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setSelectedSession(null)}>
+                    Close
+                  </Button>
+                  <Button
+                    appearance="primary"
+                    style={{ background: tokens.colorPaletteRedBackground3 }}
+                    onClick={() => {
+                      if (!selectedSession) return;
+                      handleRevokeSession(selectedSession.id);
                     }}
                   >
-                    {s.user_agent ?? "Unknown"}
-                  </TableCell>
-                  <TableCell>{s.ip_address ?? "—"}</TableCell>
-                  <TableCell>
-                    {new Date(s.created_at * 1000).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    {new Date(s.expires_at * 1000).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      icon={<DeleteRegular />}
-                      appearance="subtle"
-                      onClick={() => handleRevokeSession(s.id)}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+                    Revoke
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
+        </>
       </div>
     </div>
   );

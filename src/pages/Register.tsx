@@ -29,9 +29,12 @@ const useStyles = makeStyles({
     alignItems: "center",
     justifyContent: "center",
     background: tokens.colorNeutralBackground1,
+    padding: "16px",
+    boxSizing: "border-box",
   },
   card: {
-    width: "420px",
+    width: "100%",
+    maxWidth: "420px",
     padding: "40px",
     borderRadius: "8px",
     border: `1px solid ${tokens.colorNeutralStroke1}`,
@@ -41,7 +44,14 @@ const useStyles = makeStyles({
     gap: "20px",
   },
   form: { display: "flex", flexDirection: "column", gap: "12px" },
-  row: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" },
+  row: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "12px",
+    "@media (max-width: 480px)": {
+      gridTemplateColumns: "1fr",
+    },
+  },
   footer: { textAlign: "center" },
 });
 

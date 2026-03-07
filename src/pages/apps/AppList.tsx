@@ -49,7 +49,6 @@ const useStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     gap: "12px",
-    minWidth: "400px",
   },
 });
 
