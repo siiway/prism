@@ -19,6 +19,7 @@ import {
   HomeRegular,
   KeyRegular,
   LinkRegular,
+  LockClosedRegular,
   PersonRegular,
   SettingsRegular,
   ShieldPersonRegular,
@@ -184,6 +185,11 @@ export function Layout() {
             to="/connections"
             icon={<LinkRegular />}
             label="Linked Accounts"
+          />
+          <NavItem
+            to="/connected-apps"
+            icon={<LockClosedRegular />}
+            label="Connected Apps"
           />
 
           {user?.role === "admin" && (

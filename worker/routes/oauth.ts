@@ -25,6 +25,62 @@ const VALID_SCOPES = new Set([
 
 // ─── Authorization endpoint ───────────────────────────────────────────────────
 
+// GET /api/oauth/consents — list apps the user has granted access to
+app.get("/consents", requireAuth, async (c) => {
+  const user = c.get("user");
+  const rows = await c.env.DB.prepare(
+    `SELECT oc.client_id, oc.scopes, oc.granted_at,
+            oa.name, oa.description, oa.icon_url, oa.website_url, oa.is_verified
+     FROM oauth_consents oc
+     JOIN oauth_apps oa ON oa.client_id = oc.client_id
+     WHERE oc.user_id = ?
+     ORDER BY oc.granted_at DESC`,
+  )
+    .bind(user.id)
+    .all<{
+      client_id: string;
+      scopes: string;
+      granted_at: number;
+      name: string;
+      description: string;
+      icon_url: string | null;
+      website_url: string | null;
+      is_verified: number;
+    }>();
+
+  return c.json({
+    consents: rows.results.map((r) => ({
+      client_id: r.client_id,
+      scopes: JSON.parse(r.scopes) as string[],
+      granted_at: r.granted_at,
+      app: {
+        name: r.name,
+        description: r.description,
+        icon_url: r.icon_url,
+        website_url: r.website_url,
+        is_verified: r.is_verified === 1,
+      },
+    })),
+  });
+});
+
+// DELETE /api/oauth/consents/:client_id — revoke consent and associated tokens
+app.delete("/consents/:client_id", requireAuth, async (c) => {
+  const user = c.get("user");
+  const clientId = c.req.param("client_id");
+
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "DELETE FROM oauth_consents WHERE user_id = ? AND client_id = ?",
+    ).bind(user.id, clientId),
+    c.env.DB.prepare(
+      "DELETE FROM oauth_tokens WHERE user_id = ? AND client_id = ?",
+    ).bind(user.id, clientId),
+  ]);
+
+  return c.json({ message: "Access revoked" });
+});
+
 // GET /api/oauth/authorize — redirect browser to SPA consent page
 app.get("/authorize", (c) => {
   const qs = new URL(c.req.url).search;

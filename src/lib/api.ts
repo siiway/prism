@@ -294,6 +294,22 @@ export const api = {
       getToken(),
     ),
 
+  // ─── OAuth consents ──────────────────────────────────────────────────────
+  listConsents: () =>
+    request<{ consents: OAuthConsent[] }>(
+      "GET",
+      "/oauth/consents",
+      undefined,
+      getToken(),
+    ),
+  revokeConsent: (clientId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/oauth/consents/${encodeURIComponent(clientId)}`,
+      undefined,
+      getToken(),
+    ),
+
   // ─── OAuth authorize ─────────────────────────────────────────────────────
   oauthAuthorizeInfo: (params: Record<string, string>) =>
     request<OAuthAuthorizeInfo>(
@@ -453,6 +469,19 @@ export interface SessionInfo {
   ip_address: string | null;
   created_at: number;
   expires_at: number;
+}
+
+export interface OAuthConsent {
+  client_id: string;
+  scopes: string[];
+  granted_at: number;
+  app: {
+    name: string;
+    description: string;
+    icon_url: string | null;
+    website_url: string | null;
+    is_verified: boolean;
+  };
 }
 
 export interface OAuthApp {
