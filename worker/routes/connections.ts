@@ -391,6 +391,12 @@ app.get("/pending/:key", async (c) => {
     provider: state.provider,
     profile_name: extractDisplayName(state.provider, state.profileData),
     profile_avatar: extractProviderAvatar(state.provider, state.profileData),
+    suggested_username: extractUsername(
+      state.provider,
+      state.profileData,
+      state.providerEmail,
+    ),
+    suggested_display_name: extractDisplayName(state.provider, state.profileData),
     users: state.users,
   });
 });
@@ -400,7 +406,13 @@ app.get("/pending/:key", async (c) => {
 app.post("/complete", async (c) => {
   const body = await c
     .req
-    .json<{ key: string; action: "login" | "register"; user_id?: string }>()
+    .json<{
+      key: string;
+      action: "login" | "register";
+      user_id?: string;
+      username?: string;
+      display_name?: string;
+    }>()
     .catch(() => null);
   if (!body) return c.json({ error: "Invalid request body" }, 400);
 
@@ -451,11 +463,19 @@ app.post("/complete", async (c) => {
     if (!allowReg)
       return c.json({ error: "Registration is disabled" }, 403);
 
+    const username = (body.username ?? "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32);
+    const display_name = (body.display_name ?? extractDisplayName(state.provider, state.profileData)).trim().slice(0, 64);
+
+    if (!username)
+      return c.json({ error: "Username is required" }, 400);
+
+    const taken = await c.env.DB.prepare("SELECT id FROM users WHERE username = ?")
+      .bind(username)
+      .first();
+    if (taken)
+      return c.json({ error: "Username is already taken" }, 409);
+
     const newUserId = randomId();
-    const username = await uniqueUsername(
-      c.env.DB,
-      extractUsername(state.provider, state.profileData, state.providerEmail),
-    );
     await c.env.DB.prepare(
       `INSERT INTO users (id, email, username, display_name, role, email_verified, is_active, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'user', 1, 1, ?, ?)`,
@@ -465,7 +485,7 @@ app.post("/complete", async (c) => {
         state.providerEmail ??
           `${state.provider}_${state.providerUserId}@prism.local`,
         username,
-        extractDisplayName(state.provider, state.profileData),
+        display_name,
         now,
         now,
       )
@@ -634,18 +654,5 @@ function userToProfile(user: UserRow) {
   };
 }
 
-async function uniqueUsername(db: D1Database, base: string): Promise<string> {
-  let candidate = base || "user";
-  let i = 0;
-  while (true) {
-    const name = i === 0 ? candidate : `${candidate}${i}`;
-    const existing = await db
-      .prepare("SELECT id FROM users WHERE username = ?")
-      .bind(name)
-      .first();
-    if (!existing) return name;
-    i++;
-  }
-}
 
 export default app;

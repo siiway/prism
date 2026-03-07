@@ -259,7 +259,7 @@ export const api = {
   connectionComplete: (
     body:
       | { key: string; action: "login"; user_id: string }
-      | { key: string; action: "register" },
+      | { key: string; action: "register"; username: string; display_name: string },
   ) =>
     request<{ token: string; user: UserProfile }>(
       "POST",
@@ -486,6 +486,8 @@ export interface SocialPendingInfo {
   provider: string;
   profile_name: string | null;
   profile_avatar: string | null;
+  suggested_username?: string;
+  suggested_display_name?: string;
   users?: Array<{
     id: string;
     username: string;
