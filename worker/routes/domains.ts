@@ -53,6 +53,30 @@ app.post("/", async (c) => {
     .bind(id, user.id, body.app_id ?? null, domain, verificationToken, now)
     .run();
 
+  // Auto-verify if the user already owns a verified parent domain
+  const parent = await verifiedParentDomain(c.env.DB, user.id, domain);
+  if (parent) {
+    const reverifyDays = await getConfigValue(c.env.DB, "domain_reverify_days");
+    const nextReverify = now + reverifyDays * 24 * 60 * 60;
+    await c.env.DB.prepare(
+      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+    )
+      .bind(now, nextReverify, id)
+      .run();
+    return c.json(
+      {
+        id,
+        domain,
+        verification_token: verificationToken,
+        txt_record: `_prism-verify.${domain}`,
+        txt_value: `prism-verify=${verificationToken}`,
+        verified: true,
+        verified_by_parent: parent,
+      },
+      201,
+    );
+  }
+
   return c.json(
     {
       id,
@@ -78,19 +102,29 @@ app.post("/:id/verify", async (c) => {
     .first<DomainRow>();
   if (!row) return c.json({ error: "Domain not found" }, 404);
 
-  const verified = await checkDnsTxtRecord(row.domain, row.verification_token);
+  const reverifyDays = await getConfigValue(c.env.DB, "domain_reverify_days");
+  const now = Math.floor(Date.now() / 1000);
+  const nextReverify = now + reverifyDays * 24 * 60 * 60;
 
-  if (verified) {
-    const reverifyDays = await getConfigValue(c.env.DB, "domain_reverify_days");
-    const now = Math.floor(Date.now() / 1000);
-    const nextReverify = now + reverifyDays * 24 * 60 * 60;
-
+  // Auto-verify if the user owns a verified parent domain
+  const parent = await verifiedParentDomain(c.env.DB, user.id, row.domain);
+  if (parent) {
     await c.env.DB.prepare(
       "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
     )
       .bind(now, nextReverify, id)
       .run();
+    return c.json({ verified: true, next_reverify_at: nextReverify, verified_by_parent: parent });
+  }
 
+  const verified = await checkDnsTxtRecord(row.domain, row.verification_token);
+
+  if (verified) {
+    await c.env.DB.prepare(
+      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+    )
+      .bind(now, nextReverify, id)
+      .run();
     return c.json({ verified: true, next_reverify_at: nextReverify });
   }
 
@@ -117,6 +151,30 @@ app.delete("/:id", async (c) => {
   await c.env.DB.prepare("DELETE FROM domains WHERE id = ?").bind(id).run();
   return c.json({ message: "Domain deleted" });
 });
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Returns the verified parent domain if the user owns one, otherwise null.
+// e.g. "git.siiway.org" → checks "siiway.org"
+async function verifiedParentDomain(
+  db: D1Database,
+  userId: string,
+  domain: string,
+): Promise<string | null> {
+  const parts = domain.split(".");
+  // Need at least 3 parts to have a meaningful parent (sub.apex.tld)
+  for (let i = 1; i < parts.length - 1; i++) {
+    const parent = parts.slice(i).join(".");
+    const row = await db
+      .prepare(
+        "SELECT domain FROM domains WHERE user_id = ? AND domain = ? AND verified = 1",
+      )
+      .bind(userId, parent)
+      .first<{ domain: string }>();
+    if (row) return row.domain;
+  }
+  return null;
+}
 
 // ─── DNS verification ─────────────────────────────────────────────────────────
 
