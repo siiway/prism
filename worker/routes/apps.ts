@@ -4,19 +4,53 @@ import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
-import type { OAuthAppRow, Variables } from "../types";
+import type { OAuthAppRow, TeamMemberRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
 app.use("*", requireAuth);
 
-// List user's apps
+// ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+const ROLE_RANK: Record<string, number> = { owner: 3, admin: 2, member: 1 };
+
+async function getTeamMember(
+  db: D1Database,
+  teamId: string,
+  userId: string,
+): Promise<TeamMemberRow | null> {
+  return db
+    .prepare("SELECT * FROM team_members WHERE team_id = ? AND user_id = ?")
+    .bind(teamId, userId)
+    .first<TeamMemberRow>();
+}
+
+/** Returns true if the user may access the app (read or write). */
+async function canAccess(
+  db: D1Database,
+  row: OAuthAppRow,
+  userId: string,
+  siteRole: string,
+  write: boolean,
+): Promise<boolean> {
+  if (siteRole === "admin") return true;
+  if (row.team_id) {
+    const m = await getTeamMember(db, row.team_id, userId);
+    if (!m) return false;
+    return write ? (ROLE_RANK[m.role] ?? 0) >= ROLE_RANK["admin"] : true;
+  }
+  return row.owner_id === userId;
+}
+
+// ─── Routes ───────────────────────────────────────────────────────────────────
+
+// List user's personal apps (team apps are listed via /api/teams/:id/apps)
 app.get("/", async (c) => {
   const user = c.get("user");
   const [rows, domainRows] = await Promise.all([
     c.env.DB.prepare(
-      "SELECT * FROM oauth_apps WHERE owner_id = ? ORDER BY created_at DESC",
+      "SELECT * FROM oauth_apps WHERE owner_id = ? AND team_id IS NULL ORDER BY created_at DESC",
     )
       .bind(user.id)
       .all<OAuthAppRow>(),
@@ -29,12 +63,15 @@ app.get("/", async (c) => {
   const verifiedDomains = new Set(domainRows.results.map((r) => r.domain));
   return c.json({
     apps: rows.results.map((row) =>
-      safeApp(row, computeVerified(verifiedDomains, row.website_url, row.redirect_uris)),
+      safeApp(
+        row,
+        computeVerified(verifiedDomains, row.website_url, row.redirect_uris),
+      ),
     ),
   });
 });
 
-// Get single app (owner or admin)
+// Get single app (personal owner, team member, or site admin)
 app.get("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -43,14 +80,19 @@ app.get("/:id", async (c) => {
     .first<OAuthAppRow>();
 
   if (!row) return c.json({ error: "Not found" }, 404);
-  if (row.owner_id !== user.id && user.role !== "admin")
+  if (!(await canAccess(c.env.DB, row, user.id, user.role, false)))
     return c.json({ error: "Forbidden" }, 403);
 
-  const isVerified = await computeIsVerified(c.env.DB, row.owner_id, row.website_url, row.redirect_uris);
+  const isVerified = await computeIsVerified(
+    c.env.DB,
+    row.owner_id,
+    row.website_url,
+    row.redirect_uris,
+  );
   return c.json({ app: fullApp(row, isVerified) });
 });
 
-// Create app
+// Create personal app
 app.post("/", async (c) => {
   const user = c.get("user");
   const body = await c.req.json<{
@@ -66,7 +108,6 @@ app.post("/", async (c) => {
   if (!body.redirect_uris?.length)
     return c.json({ error: "At least one redirect_uri required" }, 400);
 
-  // Validate redirect URIs (no localhost allowed in production mode? just validate format)
   for (const uri of body.redirect_uris) {
     try {
       new URL(uri);
@@ -87,7 +128,9 @@ app.post("/", async (c) => {
   const now = Math.floor(Date.now() / 1000);
 
   await c.env.DB.prepare(
-    `INSERT INTO oauth_apps (id, owner_id, name, description, website_url, client_id, client_secret, redirect_uris, allowed_scopes, is_public, is_active, is_verified, created_at, updated_at)
+    `INSERT INTO oauth_apps
+       (id, owner_id, name, description, website_url, client_id, client_secret,
+        redirect_uris, allowed_scopes, is_public, is_active, is_verified, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
   )
     .bind(
@@ -110,7 +153,12 @@ app.post("/", async (c) => {
     .bind(id)
     .first<OAuthAppRow>();
 
-  const isVerified = await computeIsVerified(c.env.DB, user.id, body.website_url ?? null, JSON.stringify(body.redirect_uris));
+  const isVerified = await computeIsVerified(
+    c.env.DB,
+    user.id,
+    body.website_url ?? null,
+    JSON.stringify(body.redirect_uris),
+  );
   return c.json({ app: fullApp(row!, isVerified) }, 201);
 });
 
@@ -123,7 +171,7 @@ app.patch("/:id", async (c) => {
     .first<OAuthAppRow>();
 
   if (!row) return c.json({ error: "Not found" }, 404);
-  if (row.owner_id !== user.id && user.role !== "admin")
+  if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
     return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{
@@ -175,7 +223,12 @@ app.patch("/:id", async (c) => {
     .bind(id)
     .first<OAuthAppRow>();
 
-  const isVerified = await computeIsVerified(c.env.DB, row.owner_id, updatedRow!.website_url, updatedRow!.redirect_uris);
+  const isVerified = await computeIsVerified(
+    c.env.DB,
+    row.owner_id,
+    updatedRow!.website_url,
+    updatedRow!.redirect_uris,
+  );
   return c.json({ app: fullApp(updatedRow!, isVerified) });
 });
 
@@ -188,7 +241,7 @@ app.post("/:id/rotate-secret", async (c) => {
     .first<OAuthAppRow>();
 
   if (!row) return c.json({ error: "Not found" }, 404);
-  if (row.owner_id !== user.id && user.role !== "admin")
+  if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
     return c.json({ error: "Forbidden" }, 403);
 
   const newSecret = randomBase64url(32);
@@ -210,7 +263,7 @@ app.delete("/:id", async (c) => {
     .first<OAuthAppRow>();
 
   if (!row) return c.json({ error: "Not found" }, 404);
-  if (row.owner_id !== user.id && user.role !== "admin")
+  if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
     return c.json({ error: "Forbidden" }, 403);
 
   await c.env.DB.batch([
@@ -246,6 +299,7 @@ function safeApp(row: OAuthAppRow, isVerified: boolean) {
     is_verified: isVerified,
     is_official: row.is_official === 1,
     is_first_party: row.is_first_party === 1,
+    team_id: row.team_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

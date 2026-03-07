@@ -389,6 +389,105 @@ export const api = {
       { confirm: "RESET_EVERYTHING" },
       getToken(),
     ),
+
+  // Teams
+  listTeams: () =>
+    request<{ teams: Team[] }>("GET", "/teams", undefined, getToken()),
+  createTeam: (body: {
+    name: string;
+    description?: string;
+    avatar_url?: string;
+  }) => request<{ team: Team }>("POST", "/teams", body, getToken()),
+  getTeam: (id: string) =>
+    request<{ team: Team; members: TeamMember[] }>(
+      "GET",
+      `/teams/${id}`,
+      undefined,
+      getToken(),
+    ),
+  updateTeam: (
+    id: string,
+    body: { name?: string; description?: string; avatar_url?: string },
+  ) => request<{ team: Team }>("PATCH", `/teams/${id}`, body, getToken()),
+  deleteTeam: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/teams/${id}`,
+      undefined,
+      getToken(),
+    ),
+  addTeamMember: (teamId: string, body: { username: string; role?: string }) =>
+    request<{ message: string }>(
+      "POST",
+      `/teams/${teamId}/members`,
+      body,
+      getToken(),
+    ),
+  changeTeamMemberRole: (teamId: string, userId: string, role: string) =>
+    request<{ message: string }>(
+      "PATCH",
+      `/teams/${teamId}/members/${userId}`,
+      { role },
+      getToken(),
+    ),
+  removeTeamMember: (teamId: string, userId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/teams/${teamId}/members/${userId}`,
+      undefined,
+      getToken(),
+    ),
+  transferOwnership: (teamId: string, userId: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/teams/${teamId}/transfer-ownership`,
+      { user_id: userId },
+      getToken(),
+    ),
+  listTeamApps: (teamId: string) =>
+    request<{ apps: OAuthApp[] }>(
+      "GET",
+      `/teams/${teamId}/apps`,
+      undefined,
+      getToken(),
+    ),
+  createTeamApp: (teamId: string, body: CreateAppBody) =>
+    request<{ app: OAuthApp }>(
+      "POST",
+      `/teams/${teamId}/apps`,
+      body,
+      getToken(),
+    ),
+  transferAppToTeam: (teamId: string, appId: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/teams/${teamId}/apps/transfer`,
+      { app_id: appId },
+      getToken(),
+    ),
+  removeAppFromTeam: (teamId: string, appId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/teams/${teamId}/apps/${appId}/transfer`,
+      undefined,
+      getToken(),
+    ),
+
+  // Admin teams
+  adminListTeams: (page = 1) =>
+    request<{ teams: AdminTeam[]; total: number }>(
+      "GET",
+      `/admin/teams?page=${page}`,
+      undefined,
+      getToken(),
+    ),
+  adminDeleteTeam: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/teams/${id}`,
+      undefined,
+      getToken(),
+    ),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -482,6 +581,38 @@ export interface OAuthConsent {
     website_url: string | null;
     is_verified: boolean;
   };
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  description: string;
+  avatar_url: string | null;
+  role: string; // current user's role
+  my_role?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface TeamMember {
+  user_id: string;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  role: "owner" | "admin" | "member";
+  joined_at: number;
+}
+
+export interface AdminTeam {
+  id: string;
+  name: string;
+  description: string;
+  avatar_url: string | null;
+  member_count: number;
+  app_count: number;
+  owner_username: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface OAuthApp {

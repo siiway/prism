@@ -4,7 +4,11 @@ import { Hono } from "hono";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
-import { computeIsVerified, buildVerifiedDomainsMap, computeVerified } from "../lib/domainVerify";
+import {
+  computeIsVerified,
+  buildVerifiedDomainsMap,
+  computeVerified,
+} from "../lib/domainVerify";
 import type {
   OAuthAppRow,
   OAuthCodeRow,
@@ -64,7 +68,11 @@ app.get("/consents", requireAuth, async (c) => {
         description: r.description,
         icon_url: r.icon_url,
         website_url: r.website_url,
-        is_verified: computeVerified(domainsMap.get(r.owner_id) ?? new Set(), r.website_url, r.redirect_uris),
+        is_verified: computeVerified(
+          domainsMap.get(r.owner_id) ?? new Set(),
+          r.website_url,
+          r.redirect_uris,
+        ),
       },
     })),
   });
@@ -134,7 +142,12 @@ app.get("/app-info", optionalAuth, async (c) => {
       description: oauthApp.description,
       icon_url: oauthApp.icon_url,
       website_url: oauthApp.website_url,
-      is_verified: await computeIsVerified(c.env.DB, oauthApp.owner_id, oauthApp.website_url, oauthApp.redirect_uris),
+      is_verified: await computeIsVerified(
+        c.env.DB,
+        oauthApp.owner_id,
+        oauthApp.website_url,
+        oauthApp.redirect_uris,
+      ),
       is_official: oauthApp.is_official === 1,
       is_first_party: oauthApp.is_first_party === 1,
     },

@@ -24,6 +24,7 @@ import {
   LinkRegular,
   LockClosedRegular,
   NavigationRegular,
+  PeopleRegular,
   PersonRegular,
   SettingsRegular,
   ShieldPersonRegular,
@@ -272,6 +273,12 @@ export function Layout() {
           to="/apps"
           icon={<AppsRegular />}
           label="My Apps"
+          onNavigate={closeSidebar}
+        />
+        <NavItem
+          to="/teams"
+          icon={<PeopleRegular />}
+          label="Teams"
           onNavigate={closeSidebar}
         />
         <NavItem

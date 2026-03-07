@@ -60,8 +60,25 @@ export interface OAuthAppRow {
   is_verified: number;
   is_official: number;
   is_first_party: number;
+  team_id: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface TeamRow {
+  id: string;
+  name: string;
+  description: string;
+  avatar_url: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface TeamMemberRow {
+  team_id: string;
+  user_id: string;
+  role: "owner" | "admin" | "member";
+  joined_at: number;
 }
 
 export interface OAuthCodeRow {

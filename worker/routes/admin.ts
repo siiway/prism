@@ -5,7 +5,13 @@ import { getConfig, setConfigValues } from "../lib/config";
 import { sendEmail } from "../lib/email";
 import { requireAdmin } from "../middleware/auth";
 import { buildVerifiedDomainsMap, computeVerified } from "../lib/domainVerify";
-import type { AuditLogRow, OAuthAppRow, UserRow, Variables } from "../types";
+import type {
+  AuditLogRow,
+  OAuthAppRow,
+  TeamRow,
+  UserRow,
+  Variables,
+} from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -279,7 +285,11 @@ app.get("/apps", async (c) => {
   return c.json({
     apps: apps.results.map((a) => ({
       ...a,
-      is_verified: computeVerified(domainsMap.get(a.owner_id) ?? new Set(), a.website_url, a.redirect_uris),
+      is_verified: computeVerified(
+        domainsMap.get(a.owner_id) ?? new Set(),
+        a.website_url,
+        a.redirect_uris,
+      ),
     })),
     total: count?.n ?? 0,
     page,
@@ -395,6 +405,7 @@ app.post("/reset", async (c) => {
     c.env.DB.prepare("DELETE FROM domains"),
     c.env.DB.prepare("DELETE FROM audit_log"),
     c.env.DB.prepare("DELETE FROM oauth_apps"),
+    c.env.DB.prepare("DELETE FROM teams"),
     c.env.DB.prepare("DELETE FROM users"),
     c.env.DB.prepare("DELETE FROM site_config"),
   ]);
@@ -405,26 +416,92 @@ app.post("/reset", async (c) => {
   return c.json({ message: "Platform reset complete" });
 });
 
+// ─── Team administration ──────────────────────────────────────────────────────
+
+app.get("/teams", async (c) => {
+  const page = parseInt(c.req.query("page") ?? "1");
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100);
+  const offset = (page - 1) * limit;
+
+  const [teams, count] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT t.*,
+              (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as member_count,
+              (SELECT COUNT(*) FROM oauth_apps WHERE team_id = t.id) as app_count,
+              (SELECT u.username FROM team_members tm JOIN users u ON u.id = tm.user_id
+               WHERE tm.team_id = t.id AND tm.role = 'owner' LIMIT 1) as owner_username
+       FROM teams t ORDER BY t.created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(limit, offset)
+      .all<
+        TeamRow & {
+          member_count: number;
+          app_count: number;
+          owner_username: string | null;
+        }
+      >(),
+    c.env.DB.prepare("SELECT COUNT(*) as n FROM teams").first<{ n: number }>(),
+  ]);
+
+  return c.json({ teams: teams.results, total: count?.n ?? 0, page, limit });
+});
+
+app.delete("/teams/:id", async (c) => {
+  const admin = c.get("user");
+  const id = c.req.param("id");
+
+  const team = await c.env.DB.prepare("SELECT id FROM teams WHERE id = ?")
+    .bind(id)
+    .first();
+  if (!team) return c.json({ error: "Team not found" }, 404);
+
+  // Disown team apps before deleting
+  await c.env.DB.prepare(
+    "UPDATE oauth_apps SET team_id = NULL WHERE team_id = ?",
+  )
+    .bind(id)
+    .run();
+  await c.env.DB.prepare("DELETE FROM teams WHERE id = ?").bind(id).run();
+
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "admin.team.delete",
+    "team",
+    id,
+    {},
+    getIp(c),
+  );
+  return c.json({ message: "Team deleted" });
+});
+
 // ─── Statistics ───────────────────────────────────────────────────────────────
 
 app.get("/stats", async (c) => {
-  const [userCount, appCount, domainCount, tokenCount] = await Promise.all([
-    c.env.DB.prepare("SELECT COUNT(*) as n FROM users").first<{ n: number }>(),
-    c.env.DB.prepare("SELECT COUNT(*) as n FROM oauth_apps").first<{
-      n: number;
-    }>(),
-    c.env.DB.prepare(
-      "SELECT COUNT(*) as n FROM domains WHERE verified = 1",
-    ).first<{ n: number }>(),
-    c.env.DB.prepare(
-      "SELECT COUNT(*) as n FROM oauth_tokens WHERE expires_at > ?",
-    )
-      .bind(Math.floor(Date.now() / 1000))
-      .first<{ n: number }>(),
-  ]);
+  const [userCount, appCount, teamCount, domainCount, tokenCount] =
+    await Promise.all([
+      c.env.DB.prepare("SELECT COUNT(*) as n FROM users").first<{
+        n: number;
+      }>(),
+      c.env.DB.prepare("SELECT COUNT(*) as n FROM oauth_apps").first<{
+        n: number;
+      }>(),
+      c.env.DB.prepare("SELECT COUNT(*) as n FROM teams").first<{
+        n: number;
+      }>(),
+      c.env.DB.prepare(
+        "SELECT COUNT(*) as n FROM domains WHERE verified = 1",
+      ).first<{ n: number }>(),
+      c.env.DB.prepare(
+        "SELECT COUNT(*) as n FROM oauth_tokens WHERE expires_at > ?",
+      )
+        .bind(Math.floor(Date.now() / 1000))
+        .first<{ n: number }>(),
+    ]);
   return c.json({
     users: userCount?.n ?? 0,
     apps: appCount?.n ?? 0,
+    teams: teamCount?.n ?? 0,
     verified_domains: domainCount?.n ?? 0,
     active_tokens: tokenCount?.n ?? 0,
   });

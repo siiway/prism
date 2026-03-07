@@ -35,8 +35,11 @@ import { AdminLayout } from "./pages/admin/AdminLayout";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { AdminUsers } from "./pages/admin/AdminUsers";
 import { AdminApps } from "./pages/admin/AdminApps";
+import { AdminTeams } from "./pages/admin/AdminTeams";
 import { AdminSettings } from "./pages/admin/AdminSettings";
 import { AdminAudit } from "./pages/admin/AdminAudit";
+import { TeamList } from "./pages/teams/TeamList";
+import { TeamDetail } from "./pages/teams/TeamDetail";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -153,6 +156,8 @@ export default function App() {
               <Route path="security" element={<Security />} />
               <Route path="apps" element={<AppList />} />
               <Route path="apps/:id" element={<AppDetail />} />
+              <Route path="teams" element={<TeamList />} />
+              <Route path="teams/:id" element={<TeamDetail />} />
               <Route path="domains" element={<Domains />} />
               <Route path="connections" element={<Connections />} />
               <Route path="connected-apps" element={<ConnectedApps />} />
@@ -169,6 +174,7 @@ export default function App() {
                 <Route index element={<AdminDashboard />} />
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="apps" element={<AdminApps />} />
+                <Route path="teams" element={<AdminTeams />} />
                 <Route path="settings" element={<AdminSettings />} />
                 <Route path="audit" element={<AdminAudit />} />
               </Route>

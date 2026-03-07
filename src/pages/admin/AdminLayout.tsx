@@ -7,6 +7,7 @@ const TABS = [
   { value: "/admin", label: "Overview" },
   { value: "/admin/users", label: "Users" },
   { value: "/admin/apps", label: "Applications" },
+  { value: "/admin/teams", label: "Teams" },
   { value: "/admin/settings", label: "Settings" },
   { value: "/admin/audit", label: "Audit Log" },
 ];

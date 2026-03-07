@@ -207,11 +207,7 @@ export function Authorize() {
                 {data.app.name}
               </Text>
               {data.app.is_official && (
-                <Badge
-                  color="brand"
-                  appearance="filled"
-                  size="small"
-                >
+                <Badge color="brand" appearance="filled" size="small">
                   Official
                 </Badge>
               )}

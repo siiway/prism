@@ -15,7 +15,11 @@ import {
   Text,
   tokens,
 } from "@fluentui/react-components";
-import { BuildingRegular, ShieldCheckmarkRegular, StarRegular } from "@fluentui/react-icons";
+import {
+  BuildingRegular,
+  ShieldCheckmarkRegular,
+  StarRegular,
+} from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
@@ -52,7 +56,10 @@ export function AdminApps() {
     try {
       await api.adminUpdateApp(id, { is_official: !current });
       await qc.invalidateQueries({ queryKey: ["admin-apps"] });
-      showMsg("success", current ? "Official badge removed" : "Marked as official");
+      showMsg(
+        "success",
+        current ? "Official badge removed" : "Marked as official",
+      );
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Update failed");
     }
@@ -62,7 +69,10 @@ export function AdminApps() {
     try {
       await api.adminUpdateApp(id, { is_first_party: !current });
       await qc.invalidateQueries({ queryKey: ["admin-apps"] });
-      showMsg("success", current ? "First-party disabled" : "First-party enabled");
+      showMsg(
+        "success",
+        current ? "First-party disabled" : "First-party enabled",
+      );
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Update failed");
     }
@@ -144,14 +154,18 @@ export function AdminApps() {
                   <Switch
                     checked={app.is_official}
                     label={app.is_official ? <StarRegular /> : undefined}
-                    onChange={() => handleToggleOfficial(app.id, app.is_official)}
+                    onChange={() =>
+                      handleToggleOfficial(app.id, app.is_official)
+                    }
                   />
                 </TableCell>
                 <TableCell>
                   <Switch
                     checked={app.is_first_party}
                     label={app.is_first_party ? <BuildingRegular /> : undefined}
-                    onChange={() => handleToggleFirstParty(app.id, app.is_first_party)}
+                    onChange={() =>
+                      handleToggleFirstParty(app.id, app.is_first_party)
+                    }
                   />
                 </TableCell>
                 <TableCell>
