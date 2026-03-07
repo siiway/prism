@@ -134,7 +134,10 @@ export function Connections() {
     connectionsData?.connections.filter((c) => c.provider === providerId) ?? [];
 
   const handleConnect = (providerId: string) => {
-    window.location.href = `/api/connections/${providerId}/begin?mode=connect`;
+    const token = localStorage.getItem("token");
+    const params = new URLSearchParams({ mode: "connect" });
+    if (token) params.set("token", token);
+    window.location.href = `/api/connections/${providerId}/begin?${params}`;
   };
 
   const handleDisconnect = async (id: string, providerName: string) => {

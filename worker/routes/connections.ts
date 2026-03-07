@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { requireAuth, optionalAuth } from "../middleware/auth";
-import { signJWT } from "../lib/jwt";
+import { signJWT, verifyJWT } from "../lib/jwt";
 import type { SocialConnectionRow, UserRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -107,7 +107,22 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
 
   const state = randomBase64url(24);
   const mode = c.req.query("mode") ?? "login"; // 'login' | 'connect'
-  const userId = c.get("user")?.id ?? null;
+
+  // optionalAuth reads the Authorization header; for browser redirects (connect flow)
+  // the token is passed as a query param since headers can't be sent
+  let userId = c.get("user")?.id ?? null;
+  if (!userId && mode === "connect") {
+    const queryToken = c.req.query("token");
+    if (queryToken) {
+      try {
+        const secret = await getJwtSecret(c.env.KV_SESSIONS);
+        const payload = await verifyJWT(queryToken, secret);
+        userId = payload.sub;
+      } catch {
+        // invalid token — userId stays null
+      }
+    }
+  }
 
   await c.env.KV_CACHE.put(
     `social:state:${state}`,
@@ -263,18 +278,12 @@ app.get("/:provider/callback", async (c) => {
     return c.redirect(`${c.env.APP_URL}/connections?success=connected`);
   }
 
-  // Login mode: find or create user
+  // Login mode: find user by explicit social connection only
   let user = await c.env.DB.prepare(
     "SELECT u.* FROM users u JOIN social_connections sc ON sc.user_id = u.id WHERE sc.provider = ? AND sc.provider_user_id = ?",
   )
     .bind(provider, providerUserId)
     .first<UserRow>();
-
-  if (!user && providerEmail) {
-    user = await c.env.DB.prepare("SELECT * FROM users WHERE email = ?")
-      .bind(providerEmail.toLowerCase())
-      .first<UserRow>();
-  }
 
   if (!user) {
     // Auto-register
