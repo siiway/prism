@@ -167,6 +167,7 @@ export function AppDetail() {
     if (!id) return;
     try {
       await api.deleteApp(id);
+      await qc.invalidateQueries({ queryKey: ["apps"] });
       navigate("/apps");
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
