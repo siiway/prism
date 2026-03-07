@@ -66,21 +66,17 @@ export async function sendEmail(
     const { WorkerMailer } = await import("worker-mailer");
     const mailer = await WorkerMailer.connect({
       credentials: {
-        user: config.smtpUser ?? "",
-        pass: config.smtpPassword ?? "",
+        username: config.smtpUser ?? "",
+        password: config.smtpPassword ?? "",
       },
       authType: "plain",
       host: config.smtpHost,
       port: config.smtpPort ?? 587,
       secure: config.smtpSecure ?? false,
     });
-    // Parse "Display Name <email@example.com>" or plain email
-    const fromMatch = config.from.match(/^(.+?)\s*<(.+?)>\s*$/);
-    const fromEmail = fromMatch ? fromMatch[2] : config.from;
-    const fromName = fromMatch ? fromMatch[1].trim() : fromEmail;
     await mailer.send({
-      from: { name: fromName, email: fromEmail },
-      to: { email: opts.to },
+      from: config.from,
+      to: opts.to,
       subject: opts.subject,
       html: opts.html,
       text: opts.text,
