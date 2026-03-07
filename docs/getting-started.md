@@ -143,12 +143,13 @@ and enter them there. No redeployment is required — settings are stored in D1.
 
 ## Email setup
 
-Prism supports two email providers, configured in **Admin → Settings → Email**.
+Prism supports three email providers, configured in **Admin → Settings → Email**.
 
 | Provider     | `email_provider` value | Key variable               |
-| ------------ | ---------------------- | -------------------------- |
+|--------------|------------------------|----------------------------|
 | Resend       | `resend`               | `email_api_key` (Admin UI) |
 | Mailchannels | `mailchannels`         | — (no key needed)          |
+| SMTP         | `smtp`                 | See UI                     |
 | None / off   | `none`                 | —                          |
 
 Email is used for email verification. It is optional — set
