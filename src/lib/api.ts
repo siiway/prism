@@ -259,7 +259,12 @@ export const api = {
   connectionComplete: (
     body:
       | { key: string; action: "login"; user_id: string }
-      | { key: string; action: "register"; username: string; display_name: string },
+      | {
+          key: string;
+          action: "register";
+          username: string;
+          display_name: string;
+        },
   ) =>
     request<{ token: string; user: UserProfile }>(
       "POST",

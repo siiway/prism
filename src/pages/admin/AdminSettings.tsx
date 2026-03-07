@@ -358,7 +358,8 @@ export function AdminSettings() {
                 <Option value="smtp">SMTP</Option>
               </Dropdown>
             </Field>
-            {(get("email_provider") === "resend" || get("email_provider") === "mailchannels") && (
+            {(get("email_provider") === "resend" ||
+              get("email_provider") === "mailchannels") && (
               <Field label="API Key">
                 <Input
                   type="password"
@@ -388,7 +389,9 @@ export function AdminSettings() {
                   <Dropdown
                     value={get("smtp_secure") ? "ssl" : "starttls"}
                     selectedOptions={[get("smtp_secure") ? "ssl" : "starttls"]}
-                    onOptionSelect={(_, d) => set("smtp_secure", d.optionValue === "ssl")}
+                    onOptionSelect={(_, d) =>
+                      set("smtp_secure", d.optionValue === "ssl")
+                    }
                   >
                     <Option value="starttls">STARTTLS (port 587)</Option>
                     <Option value="ssl">SSL/TLS (port 465)</Option>

@@ -65,7 +65,10 @@ export async function sendEmail(
     if (!config.smtpHost) throw new Error("SMTP host is not configured");
     const { WorkerMailer } = await import("worker-mailer");
     const mailer = await WorkerMailer.connect({
-      credentials: { user: config.smtpUser ?? "", pass: config.smtpPassword ?? "" },
+      credentials: {
+        user: config.smtpUser ?? "",
+        pass: config.smtpPassword ?? "",
+      },
       authType: "plain",
       host: config.smtpHost,
       port: config.smtpPort ?? 587,

@@ -37,8 +37,18 @@ const useStyles = makeStyles({
     gap: "24px",
     alignItems: "center",
   },
-  form: { display: "flex", flexDirection: "column", gap: "12px", width: "100%" },
-  actions: { display: "flex", flexDirection: "column", gap: "8px", width: "100%" },
+  form: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    width: "100%",
+  },
+  actions: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    width: "100%",
+  },
 });
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -60,7 +70,11 @@ export function SocialConfirm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const { data, isLoading, error: fetchError } = useQuery({
+  const {
+    data,
+    isLoading,
+    error: fetchError,
+  } = useQuery({
     queryKey: ["social-pending", key],
     queryFn: () => api.connectionPending(key),
     enabled: !!key,
@@ -96,7 +110,9 @@ export function SocialConfirm() {
       setAuth(res.token, res.user);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create account");
+      setError(
+        err instanceof ApiError ? err.message : "Failed to create account",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -147,9 +163,8 @@ export function SocialConfirm() {
             block
             style={{ color: tokens.colorNeutralForeground3, marginTop: 8 }}
           >
-            Signing in via{" "}
-            <strong>{data.profile_name ?? providerLabel}</strong>. Choose your
-            username and display name.
+            Signing in via <strong>{data.profile_name ?? providerLabel}</strong>
+            . Choose your username and display name.
           </Text>
         </div>
 

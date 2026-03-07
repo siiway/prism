@@ -396,7 +396,10 @@ app.get("/pending/:key", async (c) => {
       state.profileData,
       state.providerEmail,
     ),
-    suggested_display_name: extractDisplayName(state.provider, state.profileData),
+    suggested_display_name: extractDisplayName(
+      state.provider,
+      state.profileData,
+    ),
     users: state.users,
   });
 });
@@ -404,8 +407,7 @@ app.get("/pending/:key", async (c) => {
 // ─── Complete pending social action ───────────────────────────────────────────
 
 app.post("/complete", async (c) => {
-  const body = await c
-    .req
+  const body = await c.req
     .json<{
       key: string;
       action: "login" | "register";
@@ -460,20 +462,27 @@ app.post("/complete", async (c) => {
     const allowReg = await getConfig(c.env.DB).then(
       (cfg) => cfg.allow_registration,
     );
-    if (!allowReg)
-      return c.json({ error: "Registration is disabled" }, 403);
+    if (!allowReg) return c.json({ error: "Registration is disabled" }, 403);
 
-    const username = (body.username ?? "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 32);
-    const display_name = (body.display_name ?? extractDisplayName(state.provider, state.profileData)).trim().slice(0, 64);
+    const username = (body.username ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, "_")
+      .slice(0, 32);
+    const display_name = (
+      body.display_name ?? extractDisplayName(state.provider, state.profileData)
+    )
+      .trim()
+      .slice(0, 64);
 
-    if (!username)
-      return c.json({ error: "Username is required" }, 400);
+    if (!username) return c.json({ error: "Username is required" }, 400);
 
-    const taken = await c.env.DB.prepare("SELECT id FROM users WHERE username = ?")
+    const taken = await c.env.DB.prepare(
+      "SELECT id FROM users WHERE username = ?",
+    )
       .bind(username)
       .first();
-    if (taken)
-      return c.json({ error: "Username is already taken" }, 409);
+    if (taken) return c.json({ error: "Username is already taken" }, 409);
 
     const newUserId = randomId();
     await c.env.DB.prepare(
@@ -653,6 +662,5 @@ function userToProfile(user: UserRow) {
     email_verified: user.email_verified === 1,
   };
 }
-
 
 export default app;
