@@ -58,6 +58,8 @@ export interface OAuthAppRow {
   is_public: number;
   is_active: number;
   is_verified: number;
+  is_official: number;
+  is_first_party: number;
   created_at: number;
   updated_at: number;
 }

@@ -244,6 +244,8 @@ function safeApp(row: OAuthAppRow, isVerified: boolean) {
     is_public: row.is_public === 1,
     is_active: row.is_active === 1,
     is_verified: isVerified,
+    is_official: row.is_official === 1,
+    is_first_party: row.is_first_party === 1,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

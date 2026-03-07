@@ -135,6 +135,8 @@ app.get("/app-info", optionalAuth, async (c) => {
       icon_url: oauthApp.icon_url,
       website_url: oauthApp.website_url,
       is_verified: await computeIsVerified(c.env.DB, oauthApp.owner_id, oauthApp.website_url, oauthApp.redirect_uris),
+      is_official: oauthApp.is_official === 1,
+      is_first_party: oauthApp.is_first_party === 1,
     },
     scopes,
     redirect_uri,

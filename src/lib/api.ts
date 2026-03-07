@@ -497,6 +497,8 @@ export interface OAuthApp {
   is_public: boolean;
   is_active: boolean;
   is_verified: boolean;
+  is_official: boolean;
+  is_first_party: boolean;
   created_at: number;
   updated_at: number;
   owner_username?: string;
@@ -562,6 +564,8 @@ export interface OAuthAuthorizeInfo {
     icon_url: string | null;
     website_url: string | null;
     is_verified: boolean;
+    is_official: boolean;
+    is_first_party: boolean;
   };
   scopes: string[];
   redirect_uri: string;

@@ -16,7 +16,7 @@ import {
   GlobeRegular,
   ShieldRegular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
@@ -102,13 +102,7 @@ export function Authorize() {
   });
 
   const [loading, setLoading] = useState(false);
-
-  // If not logged in, redirect to login
-  if (!user || !token) {
-    const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
-    navigate(loginUrl, { replace: true });
-    return null;
-  }
+  const autoApproved = useRef(false);
 
   const handleDecision = async (action: "approve" | "deny") => {
     if (!data) return;
@@ -137,6 +131,21 @@ export function Authorize() {
       setLoading(false);
     }
   };
+
+  // Auto-approve first-party apps without showing the consent screen
+  useEffect(() => {
+    if (data?.app.is_first_party && !autoApproved.current) {
+      autoApproved.current = true;
+      handleDecision("approve");
+    }
+  }, [data]);
+
+  // If not logged in, redirect to login
+  if (!user || !token) {
+    const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+    navigate(loginUrl, { replace: true });
+    return null;
+  }
 
   if (isLoading) {
     return (
@@ -197,6 +206,15 @@ export function Authorize() {
               <Text weight="semibold" size={400}>
                 {data.app.name}
               </Text>
+              {data.app.is_official && (
+                <Badge
+                  color="brand"
+                  appearance="filled"
+                  size="small"
+                >
+                  Official
+                </Badge>
+              )}
               {data.app.is_verified && (
                 <Badge
                   color="success"

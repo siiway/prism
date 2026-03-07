@@ -292,6 +292,8 @@ app.patch("/apps/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json<{
     is_active?: boolean;
+    is_official?: boolean;
+    is_first_party?: boolean;
   }>();
 
   const app = await c.env.DB.prepare("SELECT id FROM oauth_apps WHERE id = ?")
@@ -304,6 +306,14 @@ app.patch("/apps/:id", async (c) => {
   if (body.is_active !== undefined) {
     updates.push("is_active = ?");
     values.push(body.is_active ? 1 : 0);
+  }
+  if (body.is_official !== undefined) {
+    updates.push("is_official = ?");
+    values.push(body.is_official ? 1 : 0);
+  }
+  if (body.is_first_party !== undefined) {
+    updates.push("is_first_party = ?");
+    values.push(body.is_first_party ? 1 : 0);
   }
   if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
 

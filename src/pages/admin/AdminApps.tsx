@@ -15,7 +15,7 @@ import {
   Text,
   tokens,
 } from "@fluentui/react-components";
-import { ShieldCheckmarkRegular } from "@fluentui/react-icons";
+import { BuildingRegular, ShieldCheckmarkRegular, StarRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
@@ -48,6 +48,26 @@ export function AdminApps() {
     }
   };
 
+  const handleToggleOfficial = async (id: string, current: boolean) => {
+    try {
+      await api.adminUpdateApp(id, { is_official: !current });
+      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
+      showMsg("success", current ? "Official badge removed" : "Marked as official");
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+    }
+  };
+
+  const handleToggleFirstParty = async (id: string, current: boolean) => {
+    try {
+      await api.adminUpdateApp(id, { is_first_party: !current });
+      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
+      showMsg("success", current ? "First-party disabled" : "First-party enabled");
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+    }
+  };
+
   const totalPages = data ? Math.ceil(data.total / 20) : 1;
 
   return (
@@ -68,6 +88,8 @@ export function AdminApps() {
               <TableHeaderCell>Owner</TableHeaderCell>
               <TableHeaderCell>Client ID</TableHeaderCell>
               <TableHeaderCell>Verified</TableHeaderCell>
+              <TableHeaderCell>Official</TableHeaderCell>
+              <TableHeaderCell>First-party</TableHeaderCell>
               <TableHeaderCell>Active</TableHeaderCell>
               <TableHeaderCell>Created</TableHeaderCell>
             </TableRow>
@@ -117,6 +139,20 @@ export function AdminApps() {
                   >
                     {app.is_verified ? "Verified" : "Unverified"}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  <Switch
+                    checked={app.is_official}
+                    label={app.is_official ? <StarRegular /> : undefined}
+                    onChange={() => handleToggleOfficial(app.id, app.is_official)}
+                  />
+                </TableCell>
+                <TableCell>
+                  <Switch
+                    checked={app.is_first_party}
+                    label={app.is_first_party ? <BuildingRegular /> : undefined}
+                    onChange={() => handleToggleFirstParty(app.id, app.is_first_party)}
+                  />
                 </TableCell>
                 <TableCell>
                   <Switch
