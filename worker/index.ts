@@ -119,13 +119,18 @@ app.get("/.well-known/openid-configuration", async (c) => {
   });
 });
 
-// ─── 404 fallback (non-API routes handled by CF Assets) ───────────────────────
+// ─── 404 fallback ─────────────────────────────────────────────────────────────
 
-app.notFound((c) => {
+app.notFound(async (c) => {
   if (c.req.path.startsWith("/api/")) {
     return c.json({ error: "Not found" }, 404);
   }
-  // Let CF Assets handle the SPA fallback
+  // Delegate to CF Assets, which will serve index.html for unknown paths
+  // thanks to `not_found_handling: "single-page-application"` in wrangler.jsonc
+  if (c.env.ASSETS) {
+    const res = await c.env.ASSETS.fetch(c.req.raw);
+    return new Response(res.body, res);
+  }
   return new Response(null, { status: 404 });
 });
 

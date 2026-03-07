@@ -12,6 +12,8 @@ interface Env {
   KV_CACHE: KVNamespace;
   // R2 Bucket (optional — omit binding to disable file uploads)
   R2_ASSETS?: R2Bucket;
+  // Static assets (auto-provided by CF when `assets` dir is configured)
+  ASSETS?: Fetcher;
   // Vars
   APP_URL: string;
 }
