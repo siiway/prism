@@ -355,9 +355,10 @@ export function AdminSettings() {
                 <Option value="none">None (disable email)</Option>
                 <Option value="resend">Resend</Option>
                 <Option value="mailchannels">Mailchannels (CF Workers)</Option>
+                <Option value="smtp">SMTP</Option>
               </Dropdown>
             </Field>
-            {get("email_provider") !== "none" && (
+            {(get("email_provider") === "resend" || get("email_provider") === "mailchannels") && (
               <Field label="API Key">
                 <Input
                   type="password"
@@ -366,6 +367,49 @@ export function AdminSettings() {
                   placeholder="(unchanged)"
                 />
               </Field>
+            )}
+            {get("email_provider") === "smtp" && (
+              <>
+                <Field label="SMTP Host">
+                  <Input
+                    value={get("smtp_host") ?? ""}
+                    onChange={(e) => set("smtp_host", e.target.value)}
+                    placeholder="smtp.example.com"
+                  />
+                </Field>
+                <Field label="SMTP Port">
+                  <Input
+                    type="number"
+                    value={String(get("smtp_port") ?? 587)}
+                    onChange={(e) => set("smtp_port", Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="Encryption">
+                  <Dropdown
+                    value={get("smtp_secure") ? "ssl" : "starttls"}
+                    selectedOptions={[get("smtp_secure") ? "ssl" : "starttls"]}
+                    onOptionSelect={(_, d) => set("smtp_secure", d.optionValue === "ssl")}
+                  >
+                    <Option value="starttls">STARTTLS (port 587)</Option>
+                    <Option value="ssl">SSL/TLS (port 465)</Option>
+                  </Dropdown>
+                </Field>
+                <Field label="SMTP Username">
+                  <Input
+                    value={get("smtp_user") ?? ""}
+                    onChange={(e) => set("smtp_user", e.target.value)}
+                    placeholder="user@example.com"
+                  />
+                </Field>
+                <Field label="SMTP Password">
+                  <Input
+                    type="password"
+                    value={get("smtp_password") ?? ""}
+                    onChange={(e) => set("smtp_password", e.target.value)}
+                    placeholder="(unchanged)"
+                  />
+                </Field>
+              </>
             )}
             <Field label="From Address">
               <Input

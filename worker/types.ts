@@ -164,9 +164,14 @@ export interface SiteConfig {
   microsoft_client_secret: string;
   discord_client_id: string;
   discord_client_secret: string;
-  email_provider: "none" | "resend" | "mailchannels";
+  email_provider: "none" | "resend" | "mailchannels" | "smtp";
   email_api_key: string;
   email_from: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_secure: boolean;
+  smtp_user: string;
+  smtp_password: string;
   custom_css: string;
   accent_color: string;
   initialized: boolean;

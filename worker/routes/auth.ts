@@ -165,6 +165,11 @@ app.post("/register", async (c) => {
         provider: config.email_provider,
         from: config.email_from,
         apiKey: config.email_api_key,
+        smtpHost: config.smtp_host,
+        smtpPort: config.smtp_port,
+        smtpSecure: config.smtp_secure,
+        smtpUser: config.smtp_user,
+        smtpPassword: config.smtp_password,
       },
     );
   }

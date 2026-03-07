@@ -24,6 +24,7 @@ app.get("/config", async (c) => {
     microsoft_client_secret: "***",
     discord_client_secret: "***",
     email_api_key: "***",
+    smtp_password: "***",
   };
   return c.json({ config: safeConfig });
 });
@@ -57,6 +58,11 @@ app.patch("/config", async (c) => {
     "email_provider",
     "email_api_key",
     "email_from",
+    "smtp_host",
+    "smtp_port",
+    "smtp_secure",
+    "smtp_user",
+    "smtp_password",
     "custom_css",
     "accent_color",
   ]);
@@ -331,9 +337,14 @@ app.post("/test-email", async (c) => {
         text: "This is a test email from your Prism instance. Email is working correctly!",
       },
       {
-        provider: config.email_provider as "resend" | "mailchannels",
+        provider: config.email_provider as "resend" | "mailchannels" | "smtp",
         from: config.email_from,
         apiKey: config.email_api_key,
+        smtpHost: config.smtp_host,
+        smtpPort: config.smtp_port,
+        smtpSecure: config.smtp_secure,
+        smtpUser: config.smtp_user,
+        smtpPassword: config.smtp_password,
       },
     );
     return c.json({ message: `Test email sent to ${admin.email}` });

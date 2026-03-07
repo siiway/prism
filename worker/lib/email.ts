@@ -1,4 +1,4 @@
-// Email sending via Resend or Mailchannels
+// Email sending via Resend, Mailchannels, or SMTP
 
 export interface EmailOptions {
   to: string;
@@ -8,9 +8,14 @@ export interface EmailOptions {
 }
 
 export interface EmailConfig {
-  provider: "none" | "resend" | "mailchannels";
+  provider: "none" | "resend" | "mailchannels" | "smtp";
   from: string;
   apiKey: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
+  smtpUser?: string;
+  smtpPassword?: string;
 }
 
 export async function sendEmail(
@@ -53,6 +58,30 @@ export async function sendEmail(
       }),
     });
     if (!res.ok) throw new Error(`Mailchannels error: ${await res.text()}`);
+    return;
+  }
+
+  if (config.provider === "smtp") {
+    if (!config.smtpHost) throw new Error("SMTP host is not configured");
+    const { WorkerMailer } = await import("worker-mailer");
+    const mailer = await WorkerMailer.connect({
+      credentials: { user: config.smtpUser ?? "", pass: config.smtpPassword ?? "" },
+      authType: "plain",
+      host: config.smtpHost,
+      port: config.smtpPort ?? 587,
+      secure: config.smtpSecure ?? false,
+    });
+    // Parse "Display Name <email@example.com>" or plain email
+    const fromMatch = config.from.match(/^(.+?)\s*<(.+?)>\s*$/);
+    const fromEmail = fromMatch ? fromMatch[2] : config.from;
+    const fromName = fromMatch ? fromMatch[1].trim() : fromEmail;
+    await mailer.send({
+      from: { name: fromName, email: fromEmail },
+      to: { email: opts.to },
+      subject: opts.subject,
+      html: opts.html,
+      text: opts.text,
+    });
   }
 }
 
