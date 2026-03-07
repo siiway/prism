@@ -298,7 +298,7 @@ export const api = {
   oauthAuthorizeInfo: (params: Record<string, string>) =>
     request<OAuthAuthorizeInfo>(
       "GET",
-      `/oauth/authorize?${new URLSearchParams(params)}`,
+      `/oauth/app-info?${new URLSearchParams(params)}`,
     ),
   oauthApprove: (body: OAuthApproveBody) =>
     request<{ redirect: string }>("POST", "/oauth/authorize", body, getToken()),

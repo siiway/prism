@@ -25,8 +25,14 @@ const VALID_SCOPES = new Set([
 
 // ─── Authorization endpoint ───────────────────────────────────────────────────
 
-// GET /api/oauth/authorize — show consent screen data
-app.get("/authorize", optionalAuth, async (c) => {
+// GET /api/oauth/authorize — redirect browser to SPA consent page
+app.get("/authorize", (c) => {
+  const qs = new URL(c.req.url).search;
+  return c.redirect(`/oauth/authorize${qs}`, 302);
+});
+
+// GET /api/oauth/app-info — consent screen data (called by the SPA)
+app.get("/app-info", optionalAuth, async (c) => {
   const {
     client_id,
     redirect_uri,
