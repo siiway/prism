@@ -44,6 +44,7 @@ export default defineConfig({
             text: "Changelog",
             link: "https://github.com/siiway/prism/releases",
           },
+          { text: "Production Demo", link: "https://prism.siiway.org" },
         ],
       },
     ],
