@@ -86,22 +86,37 @@ export const api = {
     ),
 
   // ─── TOTP ────────────────────────────────────────────────────────────────
-  totpSetup: () =>
-    request<{ secret: string; uri: string }>(
+  totpList: () =>
+    request<{
+      authenticators: {
+        id: string;
+        name: string;
+        enabled: number;
+        created_at: number;
+      }[];
+      backup_codes_remaining: number;
+    }>("GET", "/auth/totp/list", undefined, getToken()),
+  totpSetup: (name?: string) =>
+    request<{ id: string; secret: string; uri: string }>(
       "POST",
       "/auth/totp/setup",
-      {},
+      { name },
       getToken(),
     ),
-  totpVerify: (code: string) =>
-    request<{ message: string; backup_codes: string[] }>(
+  totpVerify: (id: string, code: string) =>
+    request<{ message: string; backup_codes?: string[] }>(
       "POST",
       "/auth/totp/verify",
+      { id, code },
+      getToken(),
+    ),
+  totpRemove: (id: string, code: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/auth/totp/${id}`,
       { code },
       getToken(),
     ),
-  totpDisable: (code: string) =>
-    request<{ message: string }>("DELETE", "/auth/totp", { code }, getToken()),
   totpNewBackupCodes: (code: string) =>
     request<{ backup_codes: string[] }>(
       "POST",

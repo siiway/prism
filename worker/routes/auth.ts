@@ -30,7 +30,8 @@ import { requireAuth } from "../middleware/auth";
 import type {
   AuthUser,
   PasskeyRow,
-  TotpRow,
+  TotpAuthenticatorRow,
+  TotpRecoveryRow,
   UserRow,
   Variables,
 } from "../types";
@@ -243,32 +244,18 @@ app.post("/login", async (c) => {
   const passwordOk = await verifyPassword(body.password, user.password_hash);
   if (!passwordOk) return c.json({ error: "Invalid credentials" }, 401);
 
-  // Check TOTP if enabled
-  const totp = await c.env.DB.prepare(
-    "SELECT * FROM totp_secrets WHERE user_id = ?",
+  // Check TOTP if any authenticators enabled
+  const totpCount = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
   )
     .bind(user.id)
-    .first<TotpRow>();
-  if (totp?.enabled) {
+    .first<{ n: number }>();
+  if ((totpCount?.n ?? 0) > 0) {
     if (!body.totp_code) {
       return c.json({ error: "TOTP code required", totp_required: true }, 200);
     }
-    // Check backup codes first
-    const backupCodes = JSON.parse(totp.backup_codes) as string[];
-    const backupIdx = backupCodes.indexOf(
-      body.totp_code.replace(/-/g, "").toUpperCase(),
-    );
-    if (backupIdx !== -1) {
-      backupCodes.splice(backupIdx, 1);
-      await c.env.DB.prepare(
-        "UPDATE totp_secrets SET backup_codes = ? WHERE user_id = ?",
-      )
-        .bind(JSON.stringify(backupCodes), user.id)
-        .run();
-    } else {
-      const totpOk = await verifyTotp(body.totp_code, totp.secret);
-      if (!totpOk) return c.json({ error: "Invalid TOTP code" }, 401);
-    }
+    const ok = await verifyAnyTotp(c.env.DB, user.id, body.totp_code);
+    if (!ok) return c.json({ error: "Invalid TOTP code" }, 401);
   }
 
   const config = await getConfig(c.env.DB);
@@ -314,105 +301,189 @@ app.get("/verify-email", async (c) => {
   return c.json({ message: "Email verified successfully" });
 });
 
-// ─── TOTP setup ───────────────────────────────────────────────────────────────
+// ─── TOTP (multi-authenticator) ───────────────────────────────────────────────
+
+// Verify a code against any of the user's enabled authenticators or backup codes.
+// Consumes a backup code if matched.
+async function verifyAnyTotp(
+  db: D1Database,
+  userId: string,
+  code: string,
+): Promise<boolean> {
+  const recovery = await db
+    .prepare("SELECT * FROM user_totp_recovery WHERE user_id = ?")
+    .bind(userId)
+    .first<TotpRecoveryRow>();
+  if (recovery) {
+    const codes = JSON.parse(recovery.backup_codes) as string[];
+    const normalized = code.replace(/-/g, "").toUpperCase();
+    const idx = codes.indexOf(normalized);
+    if (idx !== -1) {
+      codes.splice(idx, 1);
+      await db
+        .prepare(
+          "UPDATE user_totp_recovery SET backup_codes = ? WHERE user_id = ?",
+        )
+        .bind(JSON.stringify(codes), userId)
+        .run();
+      return true;
+    }
+  }
+  const totps = await db
+    .prepare(
+      "SELECT * FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
+    )
+    .bind(userId)
+    .all<TotpAuthenticatorRow>();
+  for (const t of totps.results) {
+    if (await verifyTotp(code, t.secret)) return true;
+  }
+  return false;
+}
+
+app.get("/totp/list", requireAuth, async (c) => {
+  const user = c.get("user");
+  const rows = await c.env.DB.prepare(
+    "SELECT id, name, enabled, created_at FROM totp_authenticators WHERE user_id = ? ORDER BY created_at ASC",
+  )
+    .bind(user.id)
+    .all<
+      Pick<TotpAuthenticatorRow, "id" | "name" | "enabled" | "created_at">
+    >();
+  const recovery = await c.env.DB.prepare(
+    "SELECT backup_codes FROM user_totp_recovery WHERE user_id = ?",
+  )
+    .bind(user.id)
+    .first<{ backup_codes: string }>();
+  const backup_codes_remaining = recovery
+    ? (JSON.parse(recovery.backup_codes) as string[]).length
+    : 0;
+  return c.json({ authenticators: rows.results, backup_codes_remaining });
+});
 
 app.post("/totp/setup", requireAuth, async (c) => {
   const user = c.get("user");
+  const body = await c.req.json<{ name?: string }>();
   const config = await getConfig(c.env.DB);
 
-  const existing = await c.env.DB.prepare(
-    "SELECT * FROM totp_secrets WHERE user_id = ?",
-  )
-    .bind(user.id)
-    .first<TotpRow>();
-  if (existing?.enabled) return c.json({ error: "TOTP already enabled" }, 409);
-
   const secret = generateTotpSecret();
+  const id = crypto.randomUUID();
+  const name = body.name?.trim() || "Authenticator";
   const now = Math.floor(Date.now() / 1000);
 
-  if (existing) {
-    await c.env.DB.prepare(
-      "UPDATE totp_secrets SET secret = ?, enabled = 0 WHERE user_id = ?",
-    )
-      .bind(secret, user.id)
-      .run();
-  } else {
-    await c.env.DB.prepare(
-      "INSERT INTO totp_secrets (user_id, secret, enabled, backup_codes, created_at) VALUES (?, ?, 0, ?, ?)",
-    )
-      .bind(user.id, secret, "[]", now)
-      .run();
-  }
+  await c.env.DB.prepare(
+    "INSERT INTO totp_authenticators (id, user_id, name, secret, enabled, created_at) VALUES (?, ?, ?, ?, 0, ?)",
+  )
+    .bind(id, user.id, name, secret, now)
+    .run();
 
   const uri = totpUri(secret, user.email, config.site_name);
-  return c.json({ secret, uri });
+  return c.json({ id, secret, uri });
 });
 
 app.post("/totp/verify", requireAuth, async (c) => {
   const user = c.get("user");
-  const body = await c.req.json<{ code: string }>();
+  const body = await c.req.json<{ id: string; code: string }>();
 
-  const totp = await c.env.DB.prepare(
-    "SELECT * FROM totp_secrets WHERE user_id = ?",
+  const auth = await c.env.DB.prepare(
+    "SELECT * FROM totp_authenticators WHERE id = ? AND user_id = ?",
+  )
+    .bind(body.id, user.id)
+    .first<TotpAuthenticatorRow>();
+  if (!auth) return c.json({ error: "Authenticator not found" }, 404);
+  if (auth.enabled) return c.json({ error: "Already enabled" }, 409);
+
+  const ok = await verifyTotp(body.code, auth.secret);
+  if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
+
+  await c.env.DB.prepare(
+    "UPDATE totp_authenticators SET enabled = 1 WHERE id = ?",
+  )
+    .bind(body.id)
+    .run();
+
+  // Generate backup codes only on the first enabled authenticator
+  const existing = await c.env.DB.prepare(
+    "SELECT user_id FROM user_totp_recovery WHERE user_id = ?",
   )
     .bind(user.id)
-    .first<TotpRow>();
-  if (!totp) return c.json({ error: "TOTP not set up" }, 400);
-
-  const ok = await verifyTotp(body.code, totp.secret);
-  if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
+    .first<{ user_id: string }>();
+  if (existing) return c.json({ message: "Authenticator enabled" });
 
   const backupCodes = generateBackupCodes();
+  const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(
-    "UPDATE totp_secrets SET enabled = 1, backup_codes = ? WHERE user_id = ?",
+    "INSERT INTO user_totp_recovery (user_id, backup_codes, updated_at) VALUES (?, ?, ?)",
   )
-    .bind(JSON.stringify(backupCodes), user.id)
+    .bind(user.id, JSON.stringify(backupCodes), now)
     .run();
-
-  return c.json({ message: "TOTP enabled", backup_codes: backupCodes });
+  return c.json({
+    message: "Authenticator enabled",
+    backup_codes: backupCodes,
+  });
 });
 
-app.delete("/totp", requireAuth, async (c) => {
+app.delete("/totp/:id", requireAuth, async (c) => {
   const user = c.get("user");
+  const { id } = c.req.param();
   const body = await c.req.json<{ code: string }>();
 
-  const totp = await c.env.DB.prepare(
-    "SELECT * FROM totp_secrets WHERE user_id = ?",
+  const auth = await c.env.DB.prepare(
+    "SELECT id FROM totp_authenticators WHERE id = ? AND user_id = ? AND enabled = 1",
   )
-    .bind(user.id)
-    .first<TotpRow>();
-  if (!totp?.enabled) return c.json({ error: "TOTP not enabled" }, 400);
+    .bind(id, user.id)
+    .first<{ id: string }>();
+  if (!auth) return c.json({ error: "Authenticator not found" }, 404);
 
-  const ok = await verifyTotp(body.code, totp.secret);
+  const ok = await verifyAnyTotp(c.env.DB, user.id, body.code);
   if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
 
-  await c.env.DB.prepare("DELETE FROM totp_secrets WHERE user_id = ?")
-    .bind(user.id)
+  await c.env.DB.prepare(
+    "DELETE FROM totp_authenticators WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, user.id)
     .run();
-  return c.json({ message: "TOTP disabled" });
+
+  // If no enabled authenticators remain, clean up everything
+  const remaining = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
+  )
+    .bind(user.id)
+    .first<{ n: number }>();
+  if ((remaining?.n ?? 0) === 0) {
+    await c.env.DB.prepare("DELETE FROM user_totp_recovery WHERE user_id = ?")
+      .bind(user.id)
+      .run();
+    await c.env.DB.prepare("DELETE FROM totp_authenticators WHERE user_id = ?")
+      .bind(user.id)
+      .run();
+  }
+
+  return c.json({ message: "Authenticator removed" });
 });
 
 app.post("/totp/backup-codes", requireAuth, async (c) => {
   const user = c.get("user");
   const body = await c.req.json<{ code: string }>();
 
-  const totp = await c.env.DB.prepare(
-    "SELECT * FROM totp_secrets WHERE user_id = ?",
+  const count = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
   )
     .bind(user.id)
-    .first<TotpRow>();
-  if (!totp?.enabled) return c.json({ error: "TOTP not enabled" }, 400);
+    .first<{ n: number }>();
+  if ((count?.n ?? 0) === 0)
+    return c.json({ error: "No TOTP authenticators enabled" }, 400);
 
-  const ok = await verifyTotp(body.code, totp.secret);
+  const ok = await verifyAnyTotp(c.env.DB, user.id, body.code);
   if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
 
   const backupCodes = generateBackupCodes();
+  const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(
-    "UPDATE totp_secrets SET backup_codes = ? WHERE user_id = ?",
+    "INSERT INTO user_totp_recovery (user_id, backup_codes, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET backup_codes = excluded.backup_codes, updated_at = excluded.updated_at",
   )
-    .bind(JSON.stringify(backupCodes), user.id)
+    .bind(user.id, JSON.stringify(backupCodes), now)
     .run();
-
   return c.json({ backup_codes: backupCodes });
 });
 

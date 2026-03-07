@@ -15,12 +15,19 @@ export interface UserRow {
   updated_at: number;
 }
 
-export interface TotpRow {
+export interface TotpAuthenticatorRow {
+  id: string;
   user_id: string;
+  name: string;
   secret: string;
   enabled: number;
-  backup_codes: string; // JSON string[]
   created_at: number;
+}
+
+export interface TotpRecoveryRow {
+  user_id: string;
+  backup_codes: string; // JSON string[]
+  updated_at: number;
 }
 
 export interface PasskeyRow {

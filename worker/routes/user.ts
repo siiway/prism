@@ -19,10 +19,10 @@ app.get("/me", async (c) => {
   if (!row) return c.json({ error: "User not found" }, 404);
 
   const totp = await c.env.DB.prepare(
-    "SELECT enabled FROM totp_secrets WHERE user_id = ?",
+    "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
   )
     .bind(user.id)
-    .first<{ enabled: number }>();
+    .first<{ n: number }>();
   const passkeyCount = await c.env.DB.prepare(
     "SELECT COUNT(*) as n FROM passkeys WHERE user_id = ?",
   )
@@ -31,7 +31,7 @@ app.get("/me", async (c) => {
 
   return c.json({
     user: safeUser(row),
-    totp_enabled: totp?.enabled === 1,
+    totp_enabled: (totp?.n ?? 0) > 0,
     passkey_count: passkeyCount?.n ?? 0,
   });
 });

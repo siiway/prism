@@ -26,11 +26,12 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  AddRegular,
   ArrowDownloadRegular,
+  ArrowSyncRegular,
   CopyRegular,
   DeleteRegular,
   KeyRegular,
-  PhoneRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -76,6 +77,10 @@ export function Security() {
   const qc = useQueryClient();
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
+  const { data: totpData, refetch: refetchTotp } = useQuery({
+    queryKey: ["totp-list"],
+    queryFn: api.totpList,
+  });
   const { data: passkeysData, refetch: refetchPasskeys } = useQuery({
     queryKey: ["passkeys"],
     queryFn: api.listPasskeys,
@@ -94,21 +99,26 @@ export function Security() {
     setTimeout(() => setMessage(null), 6000);
   };
 
-  // ─── TOTP setup ──────────────────────────────────────────────────────────
+  // ─── TOTP ────────────────────────────────────────────────────────────────
   const [totpSetup, setTotpSetup] = useState<{
+    id: string;
     secret: string;
     uri: string;
   } | null>(null);
+  const [totpName, setTotpName] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [totpLoading, setTotpLoading] = useState(false);
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
-  const [disableCode, setDisableCode] = useState("");
+  const [removeId, setRemoveId] = useState<string | null>(null);
+  const [removeCode, setRemoveCode] = useState("");
+  const [resetBkCode, setResetBkCode] = useState("");
 
   const handleSetupTotp = async () => {
     setTotpLoading(true);
     try {
-      const res = await api.totpSetup();
+      const res = await api.totpSetup(totpName || undefined);
       setTotpSetup(res);
+      setTotpCode("");
     } catch (err) {
       showMsg(
         "error",
@@ -120,14 +130,19 @@ export function Security() {
   };
 
   const handleVerifyTotp = async () => {
+    if (!totpSetup) return;
     setTotpLoading(true);
     try {
-      const res = await api.totpVerify(totpCode);
-      setBackupCodes(res.backup_codes);
+      const res = await api.totpVerify(totpSetup.id, totpCode);
+      if (res.backup_codes) setBackupCodes(res.backup_codes);
       setTotpSetup(null);
+      setTotpName("");
       setTotpCode("");
-      await qc.invalidateQueries({ queryKey: ["me"] });
-      showMsg("success", "Two-factor authentication enabled!");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["me"] }),
+        refetchTotp(),
+      ]);
+      showMsg("success", "Authenticator added!");
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Invalid code");
     } finally {
@@ -135,12 +150,29 @@ export function Security() {
     }
   };
 
-  const handleDisableTotp = async () => {
+  const handleRemoveTotp = async () => {
+    if (!removeId) return;
     try {
-      await api.totpDisable(disableCode);
-      setDisableCode("");
-      await qc.invalidateQueries({ queryKey: ["me"] });
-      showMsg("success", "Two-factor authentication disabled");
+      await api.totpRemove(removeId, removeCode);
+      setRemoveId(null);
+      setRemoveCode("");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["me"] }),
+        refetchTotp(),
+      ]);
+      showMsg("success", "Authenticator removed");
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Invalid code");
+    }
+  };
+
+  const handleResetBackupCodes = async () => {
+    try {
+      const res = await api.totpNewBackupCodes(resetBkCode);
+      setBackupCodes(res.backup_codes);
+      setResetBkCode("");
+      await refetchTotp();
+      showMsg("success", "Backup codes regenerated");
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Invalid code");
     }
@@ -215,10 +247,11 @@ export function Security() {
         <div className={styles.cardHeader}>
           <div>
             <Text weight="semibold" size={400} block>
-              Two-Factor Authentication (TOTP)
+              Authenticator Apps (TOTP)
             </Text>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              Use an authenticator app like Authy or Google Authenticator.
+              Use apps like Authy or Google Authenticator. One set of backup
+              codes is shared across all authenticators.
             </Text>
           </div>
           <Badge
@@ -229,15 +262,62 @@ export function Security() {
           </Badge>
         </div>
 
-        {!me?.totp_enabled && !totpSetup && (
-          <Button
-            appearance="primary"
-            icon={<PhoneRegular />}
-            onClick={handleSetupTotp}
-            disabled={totpLoading}
-          >
-            {totpLoading ? <Spinner size="tiny" /> : "Set up TOTP"}
-          </Button>
+        {/* Authenticator list */}
+        {(totpData?.authenticators.filter((a) => a.enabled).length ?? 0) >
+          0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>Name</TableHeaderCell>
+                <TableHeaderCell>Added</TableHeaderCell>
+                <TableHeaderCell></TableHeaderCell>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {totpData!.authenticators
+                .filter((a) => a.enabled)
+                .map((a) => (
+                  <TableRow key={a.id}>
+                    <TableCell>{a.name}</TableCell>
+                    <TableCell>
+                      {new Date(a.created_at * 1000).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        icon={<DeleteRegular />}
+                        appearance="subtle"
+                        onClick={() => {
+                          setRemoveId(a.id);
+                          setRemoveCode("");
+                        }}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        )}
+
+        {/* Add authenticator flow */}
+        {!totpSetup && (
+          <div className={styles.actions}>
+            <Field label="Name (optional)" style={{ flex: 1 }}>
+              <Input
+                value={totpName}
+                onChange={(e) => setTotpName(e.target.value)}
+                placeholder="My Phone"
+              />
+            </Field>
+            <Button
+              appearance="primary"
+              icon={<AddRegular />}
+              onClick={handleSetupTotp}
+              disabled={totpLoading}
+              style={{ alignSelf: "flex-end" }}
+            >
+              {totpLoading ? <Spinner size="tiny" /> : "Add authenticator"}
+            </Button>
+          </div>
         )}
 
         {totpSetup && (
@@ -286,6 +366,7 @@ export function Security() {
           </div>
         )}
 
+        {/* Backup codes display after enabling or reset */}
         {backupCodes && (
           <div>
             <Text weight="semibold" block>
@@ -332,45 +413,93 @@ export function Security() {
           </div>
         )}
 
-        {me?.totp_enabled && (
-          <Dialog>
-            <DialogTrigger disableButtonEnhancement>
-              <Button
-                appearance="outline"
-                style={{ color: tokens.colorPaletteRedForeground1 }}
-              >
-                Disable TOTP
-              </Button>
-            </DialogTrigger>
-            <DialogSurface>
-              <DialogBody>
-                <DialogTitle>Disable Two-Factor Authentication</DialogTitle>
-                <DialogContent>
-                  <Field label="Enter your current TOTP code to confirm">
-                    <Input
-                      value={disableCode}
-                      onChange={(e) => setDisableCode(e.target.value)}
-                      placeholder="000000"
-                      maxLength={6}
-                    />
-                  </Field>
-                </DialogContent>
-                <DialogActions>
-                  <DialogTrigger>
-                    <Button appearance="secondary">Cancel</Button>
-                  </DialogTrigger>
-                  <Button
-                    appearance="primary"
-                    style={{ background: tokens.colorPaletteRedBackground3 }}
-                    onClick={handleDisableTotp}
-                  >
-                    Disable
-                  </Button>
-                </DialogActions>
-              </DialogBody>
-            </DialogSurface>
-          </Dialog>
+        {/* Backup codes status + reset */}
+        {me?.totp_enabled && !backupCodes && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {totpData?.backup_codes_remaining ?? 0} backup code
+              {totpData?.backup_codes_remaining !== 1 ? "s" : ""} remaining
+            </Text>
+            <Dialog>
+              <DialogTrigger disableButtonEnhancement>
+                <Button size="small" icon={<ArrowSyncRegular />}>
+                  Reset backup codes
+                </Button>
+              </DialogTrigger>
+              <DialogSurface>
+                <DialogBody>
+                  <DialogTitle>Reset Backup Codes</DialogTitle>
+                  <DialogContent>
+                    <Field label="Enter a TOTP code to confirm">
+                      <Input
+                        value={resetBkCode}
+                        onChange={(e) => setResetBkCode(e.target.value)}
+                        placeholder="000000"
+                        maxLength={6}
+                        autoComplete="one-time-code"
+                      />
+                    </Field>
+                  </DialogContent>
+                  <DialogActions>
+                    <DialogTrigger>
+                      <Button appearance="secondary">Cancel</Button>
+                    </DialogTrigger>
+                    <DialogTrigger disableButtonEnhancement>
+                      <Button
+                        appearance="primary"
+                        disabled={resetBkCode.length < 6}
+                        onClick={handleResetBackupCodes}
+                      >
+                        Reset
+                      </Button>
+                    </DialogTrigger>
+                  </DialogActions>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
+          </div>
         )}
+
+        {/* Remove authenticator dialog */}
+        <Dialog
+          open={!!removeId}
+          onOpenChange={(_, s) => {
+            if (!s.open) setRemoveId(null);
+          }}
+        >
+          <DialogSurface>
+            <DialogBody>
+              <DialogTitle>Remove Authenticator</DialogTitle>
+              <DialogContent>
+                <Field label="Enter a TOTP code to confirm">
+                  <Input
+                    value={removeCode}
+                    onChange={(e) => setRemoveCode(e.target.value)}
+                    placeholder="000000"
+                    maxLength={6}
+                    autoComplete="one-time-code"
+                  />
+                </Field>
+              </DialogContent>
+              <DialogActions>
+                <Button
+                  appearance="secondary"
+                  onClick={() => setRemoveId(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  appearance="primary"
+                  style={{ background: tokens.colorPaletteRedBackground3 }}
+                  disabled={removeCode.length < 6}
+                  onClick={handleRemoveTotp}
+                >
+                  Remove
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
       </div>
 
       {/* Passkeys */}
