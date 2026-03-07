@@ -13,8 +13,6 @@ All callback URLs follow this pattern:
 https://<your-prism-domain>/api/connections/<provider>/callback
 ```
 
----
-
 ## GitHub
 
 ### 1. Create a GitHub OAuth App
@@ -43,8 +41,6 @@ GitHub login will appear on the login and registration pages immediately.
 - GitHub OAuth Apps grant access to public profile info and email by default. Prism requests the `user:email` scope to ensure the email is always returned even if it is set to private.
 - If a GitHub user has no public email and their email is private, GitHub returns a list of emails — Prism picks the primary verified one.
 - GitHub does not support OpenID Connect. Prism uses their REST API (`/user`, `/user/emails`) to fetch the profile.
-
----
 
 ## Google
 
@@ -76,8 +72,6 @@ Go to **Admin → Settings → Social Login** and paste into the Google fields. 
 - New Google Cloud projects start with the consent screen in **testing** mode, which limits login to test users you explicitly add. Publish the consent screen to allow any Google account to log in.
 - If your app is unverified, Google shows a warning screen. Submit for verification if you expect external users.
 
----
-
 ## Microsoft
 
 ### 1. Register an Azure AD Application
@@ -105,8 +99,6 @@ Go to **Admin → Settings → Social Login** and paste into the Microsoft field
 - If you restrict **Supported account types** to a single tenant, only users in that Azure AD tenant can authenticate.
 - Client secrets expire. Set a calendar reminder to rotate the secret before it expires — an expired secret will break Microsoft login silently.
 
----
-
 ## Discord
 
 ### 1. Create a Discord Application
@@ -132,8 +124,6 @@ Go to **Admin → Settings → Social Login** and paste into the Discord fields.
 - Discord usernames are unique. If a Discord user has no email set (rare for verified accounts), Prism will reject the login with an error asking the user to add an email to their Discord account.
 - Discord does not support OpenID Connect. Prism uses their REST API (`/users/@me`) to fetch the profile.
 
----
-
 ## Local development
 
 For local testing, register a separate OAuth app per provider using `http://localhost:8787` as the domain:
@@ -155,8 +145,6 @@ Add the development credentials to your `.dev.vars` file by setting them through
 wrangler d1 execute prism-db --local --command \
   "UPDATE site_config SET value = '\"your-dev-client-id\"' WHERE key = 'github_client_id'"
 ```
-
----
 
 ## Troubleshooting
 
