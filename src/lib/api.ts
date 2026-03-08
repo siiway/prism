@@ -647,12 +647,24 @@ export const api = {
       undefined,
       getToken(),
     ),
+  adminDiscoverOIDC: (issuer: string) =>
+    request<{ auth_url: string; token_url: string; userinfo_url: string }>(
+      "GET",
+      `/admin/oauth-sources/discover?issuer=${encodeURIComponent(issuer)}`,
+      undefined,
+      getToken(),
+    ),
   adminCreateOAuthSource: (body: {
     slug: string;
     provider: string;
     name: string;
     client_id: string;
     client_secret: string;
+    auth_url?: string;
+    token_url?: string;
+    userinfo_url?: string;
+    scopes?: string;
+    issuer_url?: string;
   }) =>
     request<{ source: OAuthSource }>(
       "POST",
@@ -667,6 +679,11 @@ export const api = {
       client_id?: string;
       client_secret?: string;
       enabled?: boolean;
+      auth_url?: string;
+      token_url?: string;
+      userinfo_url?: string;
+      scopes?: string;
+      issuer_url?: string;
     },
   ) =>
     request<{ message: string }>(
@@ -965,6 +982,11 @@ export interface OAuthSource {
   name: string;
   enabled: number;
   created_at: number;
+  auth_url: string | null;
+  token_url: string | null;
+  userinfo_url: string | null;
+  scopes: string | null;
+  issuer_url: string | null;
 }
 
 export interface SiteInvite {

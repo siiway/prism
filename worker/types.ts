@@ -151,6 +151,13 @@ export interface OAuthSourceRow {
   client_secret: string;
   enabled: number;
   created_at: number;
+  // Nullable columns added in 0012 — only set for provider="oidc"|"oauth2"
+  auth_url: string | null;
+  token_url: string | null;
+  userinfo_url: string | null;
+  scopes: string | null;
+  // Added in 0013 — OIDC issuer URL for discovery reference
+  issuer_url: string | null;
 }
 
 export interface SiteInviteRow {

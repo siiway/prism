@@ -27,7 +27,12 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { AddRegular, DeleteRegular, EditRegular } from "@fluentui/react-icons";
+import {
+  AddRegular,
+  DeleteRegular,
+  EditRegular,
+  SearchRegular,
+} from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -50,14 +55,23 @@ const useStyles = makeStyles({
     justifyContent: "flex-end",
     gap: "8px",
   },
-  hint: {
-    color: tokens.colorNeutralForeground3,
-    fontSize: "12px",
-    marginTop: "4px",
-  },
+  issuerRow: { display: "flex", gap: "8px", alignItems: "flex-end" },
 });
 
-const PROVIDER_OPTIONS = ["github", "google", "microsoft", "discord"];
+const PROVIDER_OPTIONS = [
+  { value: "github", label: "GitHub" },
+  { value: "google", label: "Google" },
+  { value: "microsoft", label: "Microsoft" },
+  { value: "discord", label: "Discord" },
+  { value: "oidc", label: "Generic OpenID Connect" },
+  { value: "oauth2", label: "Generic OAuth 2" },
+];
+
+const PROVIDER_LABEL: Record<string, string> = Object.fromEntries(
+  PROVIDER_OPTIONS.map((p) => [p.value, p.label]),
+);
+
+const GENERIC_PROVIDERS = new Set(["oidc", "oauth2"]);
 
 const EMPTY_FORM = {
   slug: "",
@@ -65,6 +79,28 @@ const EMPTY_FORM = {
   name: "",
   client_id: "",
   client_secret: "",
+  issuer_url: "",
+  auth_url: "",
+  token_url: "",
+  userinfo_url: "",
+  scopes: "",
+};
+
+const EMPTY_EDIT = {
+  name: "",
+  client_id: "",
+  client_secret: "",
+  issuer_url: "",
+  auth_url: "",
+  token_url: "",
+  userinfo_url: "",
+  scopes: "",
+};
+
+type DiscoveredUrls = {
+  auth_url: string;
+  token_url: string;
+  userinfo_url: string;
 };
 
 export function AdminConnections() {
@@ -75,15 +111,15 @@ export function AdminConnections() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverError, setDiscoverError] = useState("");
 
   const [editTarget, setEditTarget] = useState<OAuthSource | null>(null);
-  const [editForm, setEditForm] = useState({
-    name: "",
-    client_id: "",
-    client_secret: "",
-  });
+  const [editForm, setEditForm] = useState(EMPTY_EDIT);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState("");
+  const [editDiscovering, setEditDiscovering] = useState(false);
+  const [editDiscoverError, setEditDiscoverError] = useState("");
 
   const [deleteTarget, setDeleteTarget] = useState<OAuthSource | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -93,12 +129,56 @@ export function AdminConnections() {
     queryFn: api.adminListOAuthSources,
   });
 
+  const isOidc = form.provider === "oidc";
+  const isGenericCreate = GENERIC_PROVIDERS.has(form.provider);
+  const isOidcEdit = editTarget?.provider === "oidc";
+  const isGenericEdit = editTarget
+    ? GENERIC_PROVIDERS.has(editTarget.provider)
+    : false;
+
+  const runDiscover = async (
+    issuer: string,
+    setFields: (f: DiscoveredUrls) => void,
+    setLoading: (v: boolean) => void,
+    setError: (v: string) => void,
+  ) => {
+    if (!issuer) {
+      setError(t("admin.oauthIssuerRequired"));
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await api.adminDiscoverOIDC(issuer);
+      setFields(res);
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : t("admin.oauthDiscoverFailed"),
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError("");
     setCreating(true);
     try {
-      await api.adminCreateOAuthSource(form);
+      await api.adminCreateOAuthSource({
+        slug: form.slug,
+        provider: form.provider,
+        name: form.name,
+        client_id: form.client_id,
+        client_secret: form.client_secret,
+        ...(isGenericCreate && {
+          auth_url: form.auth_url,
+          token_url: form.token_url,
+          userinfo_url: form.userinfo_url,
+          scopes: form.scopes || undefined,
+          issuer_url: form.issuer_url || undefined,
+        }),
+      });
       setForm(EMPTY_FORM);
       qc.invalidateQueries({ queryKey: ["admin", "oauth-sources"] });
       qc.invalidateQueries({ queryKey: ["site"] });
@@ -113,8 +193,18 @@ export function AdminConnections() {
 
   const openEdit = (src: OAuthSource) => {
     setEditTarget(src);
-    setEditForm({ name: src.name, client_id: "", client_secret: "" });
+    setEditForm({
+      name: src.name,
+      client_id: "",
+      client_secret: "",
+      issuer_url: src.issuer_url ?? "",
+      auth_url: src.auth_url ?? "",
+      token_url: src.token_url ?? "",
+      userinfo_url: src.userinfo_url ?? "",
+      scopes: src.scopes ?? "",
+    });
     setEditError("");
+    setEditDiscoverError("");
   };
 
   const handleSave = async () => {
@@ -126,6 +216,13 @@ export function AdminConnections() {
         name: editForm.name || undefined,
         client_id: editForm.client_id || undefined,
         client_secret: editForm.client_secret || undefined,
+        ...(isGenericEdit && {
+          auth_url: editForm.auth_url || undefined,
+          token_url: editForm.token_url || undefined,
+          userinfo_url: editForm.userinfo_url || undefined,
+          scopes: editForm.scopes || undefined,
+          issuer_url: editForm.issuer_url || undefined,
+        }),
       });
       qc.invalidateQueries({ queryKey: ["admin", "oauth-sources"] });
       qc.invalidateQueries({ queryKey: ["site"] });
@@ -181,15 +278,15 @@ export function AdminConnections() {
 
         <Field label={t("admin.oauthProvider")} required>
           <Dropdown
-            value={form.provider}
+            value={PROVIDER_LABEL[form.provider] ?? form.provider}
             selectedOptions={[form.provider]}
             onOptionSelect={(_, d) =>
               setForm((f) => ({ ...f, provider: d.optionValue ?? "github" }))
             }
           >
             {PROVIDER_OPTIONS.map((p) => (
-              <Option key={p} value={p}>
-                {p.charAt(0).toUpperCase() + p.slice(1)}
+              <Option key={p.value} value={p.value}>
+                {p.label}
               </Option>
             ))}
           </Dropdown>
@@ -227,6 +324,107 @@ export function AdminConnections() {
             />
           </Field>
         </div>
+
+        {isGenericCreate && (
+          <>
+            {isOidc && (
+              <div className={styles.formFull}>
+                <Field
+                  label={t("admin.oauthIssuerUrl")}
+                  hint={t("admin.oauthIssuerUrlHint")}
+                >
+                  <div className={styles.issuerRow}>
+                    <Input
+                      style={{ flex: 1 }}
+                      value={form.issuer_url}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, issuer_url: e.target.value }))
+                      }
+                      placeholder="https://accounts.example.com"
+                    />
+                    <Button
+                      icon={
+                        discovering ? (
+                          <Spinner size="tiny" />
+                        ) : (
+                          <SearchRegular />
+                        )
+                      }
+                      disabled={discovering || !form.issuer_url}
+                      onClick={() =>
+                        runDiscover(
+                          form.issuer_url,
+                          (fields) => setForm((f) => ({ ...f, ...fields })),
+                          setDiscovering,
+                          setDiscoverError,
+                        )
+                      }
+                    >
+                      {t("admin.oauthDiscover")}
+                    </Button>
+                  </div>
+                  {discoverError && (
+                    <Text
+                      style={{
+                        color: tokens.colorPaletteRedForeground1,
+                        fontSize: "12px",
+                        marginTop: "4px",
+                      }}
+                    >
+                      {discoverError}
+                    </Text>
+                  )}
+                </Field>
+              </div>
+            )}
+
+            <div className={styles.formFull}>
+              <Field label={t("admin.oauthAuthUrl")} required>
+                <Input
+                  value={form.auth_url}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, auth_url: e.target.value }))
+                  }
+                  placeholder="https://provider.example.com/oauth2/authorize"
+                />
+              </Field>
+            </div>
+            <Field label={t("admin.oauthTokenUrl")} required>
+              <Input
+                value={form.token_url}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, token_url: e.target.value }))
+                }
+                placeholder="https://provider.example.com/oauth2/token"
+              />
+            </Field>
+            <Field label={t("admin.oauthUserinfoUrl")} required>
+              <Input
+                value={form.userinfo_url}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, userinfo_url: e.target.value }))
+                }
+                placeholder="https://provider.example.com/oauth2/userinfo"
+              />
+            </Field>
+            <div className={styles.formFull}>
+              <Field
+                label={t("admin.oauthScopes")}
+                hint={t("admin.oauthScopesHint")}
+              >
+                <Input
+                  value={form.scopes}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, scopes: e.target.value }))
+                  }
+                  placeholder={
+                    form.provider === "oidc" ? "openid email profile" : ""
+                  }
+                />
+              </Field>
+            </div>
+          </>
+        )}
 
         {createError && (
           <div className={styles.formFull}>
@@ -271,7 +469,9 @@ export function AdminConnections() {
                   <code style={{ fontFamily: "monospace" }}>{src.slug}</code>
                 </TableCell>
                 <TableCell>
-                  <Badge color="informative">{src.provider}</Badge>
+                  <Badge color="informative">
+                    {PROVIDER_LABEL[src.provider] ?? src.provider}
+                  </Badge>
                 </TableCell>
                 <TableCell>{src.name}</TableCell>
                 <TableCell>
@@ -345,6 +545,101 @@ export function AdminConnections() {
                   }
                 />
               </Field>
+
+              {isGenericEdit && (
+                <>
+                  {isOidcEdit && (
+                    <Field
+                      label={t("admin.oauthIssuerUrl")}
+                      hint={t("admin.oauthIssuerUrlHint")}
+                    >
+                      <div className={styles.issuerRow}>
+                        <Input
+                          style={{ flex: 1 }}
+                          value={editForm.issuer_url}
+                          onChange={(e) =>
+                            setEditForm((f) => ({
+                              ...f,
+                              issuer_url: e.target.value,
+                            }))
+                          }
+                        />
+                        <Button
+                          icon={
+                            editDiscovering ? (
+                              <Spinner size="tiny" />
+                            ) : (
+                              <SearchRegular />
+                            )
+                          }
+                          disabled={editDiscovering || !editForm.issuer_url}
+                          onClick={() =>
+                            runDiscover(
+                              editForm.issuer_url,
+                              (fields) =>
+                                setEditForm((f) => ({ ...f, ...fields })),
+                              setEditDiscovering,
+                              setEditDiscoverError,
+                            )
+                          }
+                        >
+                          {t("admin.oauthDiscover")}
+                        </Button>
+                      </div>
+                      {editDiscoverError && (
+                        <Text
+                          style={{
+                            color: tokens.colorPaletteRedForeground1,
+                            fontSize: "12px",
+                            marginTop: "4px",
+                          }}
+                        >
+                          {editDiscoverError}
+                        </Text>
+                      )}
+                    </Field>
+                  )}
+                  <Field label={t("admin.oauthAuthUrl")}>
+                    <Input
+                      value={editForm.auth_url}
+                      onChange={(e) =>
+                        setEditForm((f) => ({ ...f, auth_url: e.target.value }))
+                      }
+                    />
+                  </Field>
+                  <Field label={t("admin.oauthTokenUrl")}>
+                    <Input
+                      value={editForm.token_url}
+                      onChange={(e) =>
+                        setEditForm((f) => ({
+                          ...f,
+                          token_url: e.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label={t("admin.oauthUserinfoUrl")}>
+                    <Input
+                      value={editForm.userinfo_url}
+                      onChange={(e) =>
+                        setEditForm((f) => ({
+                          ...f,
+                          userinfo_url: e.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field label={t("admin.oauthScopes")}>
+                    <Input
+                      value={editForm.scopes}
+                      onChange={(e) =>
+                        setEditForm((f) => ({ ...f, scopes: e.target.value }))
+                      }
+                    />
+                  </Field>
+                </>
+              )}
+
               {editError && <MessageBar intent="error">{editError}</MessageBar>}
             </DialogContent>
             <DialogActions>

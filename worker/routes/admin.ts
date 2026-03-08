@@ -694,13 +694,79 @@ app.delete("/invites/:id", async (c) => {
 
 // ─── OAuth Sources ─────────────────────────────────────────────────────────────
 
-const VALID_PROVIDERS = new Set(["github", "google", "microsoft", "discord"]);
+const VALID_PROVIDERS = new Set([
+  "github",
+  "google",
+  "microsoft",
+  "discord",
+  "oidc",
+  "oauth2",
+]);
+const GENERIC_PROVIDERS = new Set(["oidc", "oauth2"]);
 
 app.get("/oauth-sources", async (c) => {
   const { results } = await c.env.DB.prepare(
-    "SELECT id, slug, provider, name, enabled, created_at FROM oauth_sources ORDER BY created_at ASC",
+    "SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url FROM oauth_sources ORDER BY created_at ASC",
   ).all<Omit<OAuthSourceRow, "client_id" | "client_secret">>();
   return c.json({ sources: results });
+});
+
+// ─── OIDC Discovery ───────────────────────────────────────────────────────────
+
+app.get("/oauth-sources/discover", async (c) => {
+  const issuer = c.req.query("issuer");
+  if (!issuer) return c.json({ error: "issuer query parameter required" }, 400);
+
+  let issuerUrl: URL;
+  try {
+    issuerUrl = new URL(issuer);
+    if (issuerUrl.protocol !== "https:") throw new Error("HTTPS required");
+  } catch {
+    return c.json(
+      { error: "Invalid issuer URL — must be a valid HTTPS URL" },
+      400,
+    );
+  }
+
+  // Canonical discovery document path per OpenID Connect Discovery 1.0
+  const base = issuer.replace(/\/$/, "");
+  const discoveryUrl = `${base}/.well-known/openid-configuration`;
+
+  let doc: Record<string, unknown>;
+  try {
+    const res = await fetch(discoveryUrl, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok)
+      return c.json(
+        { error: `Discovery endpoint returned HTTP ${res.status}` },
+        502,
+      );
+    doc = (await res.json()) as Record<string, unknown>;
+  } catch (err) {
+    return c.json(
+      {
+        error: `Failed to fetch discovery document: ${err instanceof Error ? err.message : String(err)}`,
+      },
+      502,
+    );
+  }
+
+  const auth_url = doc.authorization_endpoint as string | undefined;
+  const token_url = doc.token_endpoint as string | undefined;
+  const userinfo_url = doc.userinfo_endpoint as string | undefined;
+
+  if (!auth_url || !token_url || !userinfo_url)
+    return c.json(
+      {
+        error:
+          "Discovery document missing required endpoints (authorization_endpoint, token_endpoint, userinfo_endpoint)",
+      },
+      422,
+    );
+
+  return c.json({ auth_url, token_url, userinfo_url });
 });
 
 app.post("/oauth-sources", async (c) => {
@@ -711,6 +777,11 @@ app.post("/oauth-sources", async (c) => {
     name: string;
     client_id: string;
     client_secret: string;
+    auth_url?: string;
+    token_url?: string;
+    userinfo_url?: string;
+    scopes?: string;
+    issuer_url?: string;
   }>();
 
   if (
@@ -743,12 +814,23 @@ app.post("/oauth-sources", async (c) => {
       400,
     );
 
+  if (GENERIC_PROVIDERS.has(body.provider)) {
+    if (!body.auth_url || !body.token_url || !body.userinfo_url)
+      return c.json(
+        {
+          error:
+            "auth_url, token_url and userinfo_url are required for generic providers",
+        },
+        400,
+      );
+  }
+
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
 
   try {
     await c.env.DB.prepare(
-      "INSERT INTO oauth_sources (id, slug, provider, name, client_id, client_secret, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+      "INSERT INTO oauth_sources (id, slug, provider, name, client_id, client_secret, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         id,
@@ -758,6 +840,11 @@ app.post("/oauth-sources", async (c) => {
         body.client_id,
         body.client_secret,
         now,
+        body.auth_url ?? null,
+        body.token_url ?? null,
+        body.userinfo_url ?? null,
+        body.scopes ?? null,
+        body.issuer_url ?? null,
       )
       .run();
   } catch (err) {
@@ -806,6 +893,11 @@ app.patch("/oauth-sources/:id", async (c) => {
     client_id?: string;
     client_secret?: string;
     enabled?: boolean;
+    auth_url?: string;
+    token_url?: string;
+    userinfo_url?: string;
+    scopes?: string;
+    issuer_url?: string;
   }>();
 
   const sets: string[] = [];
@@ -826,6 +918,27 @@ app.patch("/oauth-sources/:id", async (c) => {
     sets.push("enabled = ?");
     vals.push(body.enabled ? 1 : 0);
   }
+  if (body.auth_url !== undefined) {
+    sets.push("auth_url = ?");
+    vals.push(body.auth_url || null);
+  }
+  if (body.token_url !== undefined) {
+    sets.push("token_url = ?");
+    vals.push(body.token_url || null);
+  }
+  if (body.userinfo_url !== undefined) {
+    sets.push("userinfo_url = ?");
+    vals.push(body.userinfo_url || null);
+  }
+  if (body.scopes !== undefined) {
+    sets.push("scopes = ?");
+    vals.push(body.scopes || null);
+  }
+  if (body.issuer_url !== undefined) {
+    sets.push("issuer_url = ?");
+    vals.push(body.issuer_url || null);
+  }
+
   if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
 
   vals.push(id);

@@ -23,7 +23,8 @@
     "saveChanges": "Save changes",
     "discard": "Discard changes",
     "pageOf": "{{page}} / {{total}}",
-    "enabled": "Enabled"
+    "enabled": "Enabled",
+    "saveFailed": "Save failed"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -620,7 +621,17 @@
     "oauthNoSources": "No OAuth sources configured yet.",
     "oauthEditSource": "Edit OAuth Source",
     "oauthDeleteConfirm": "Delete this OAuth source?",
-    "oauthLeaveBlankToKeep": "Leave blank to keep current value"
+    "oauthLeaveBlankToKeep": "Leave blank to keep current value",
+    "oauthAuthUrl": "Authorization URL",
+    "oauthTokenUrl": "Token URL",
+    "oauthUserinfoUrl": "Userinfo URL",
+    "oauthScopes": "Scopes",
+    "oauthScopesHint": "Space-separated OAuth scopes",
+    "oauthIssuerUrl": "Issuer URL",
+    "oauthIssuerUrlHint": "Provider issuer URL — used for OIDC auto-discovery",
+    "oauthDiscover": "Discover",
+    "oauthIssuerRequired": "Issuer URL is required to discover endpoints",
+    "oauthDiscoverFailed": "Discovery failed — check the issuer URL and try again"
   },
   "language": {
     "switchToZh": "中文",

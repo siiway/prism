@@ -23,7 +23,8 @@
     "saveChanges": "保存更改",
     "discard": "放弃更改",
     "pageOf": "{{page}} / {{total}}",
-    "enabled": "已启用"
+    "enabled": "已启用",
+    "saveFailed": "保存失败"
   },
   "nav": {
     "dashboard": "控制台",
@@ -620,7 +621,17 @@
     "oauthNoSources": "暂未配置任何 OAuth 来源。",
     "oauthEditSource": "编辑 OAuth 来源",
     "oauthDeleteConfirm": "删除此 OAuth 来源？",
-    "oauthLeaveBlankToKeep": "留空表示保持原值"
+    "oauthLeaveBlankToKeep": "留空表示保持原值",
+    "oauthAuthUrl": "授权 URL",
+    "oauthTokenUrl": "令牌 URL",
+    "oauthUserinfoUrl": "用户信息 URL",
+    "oauthScopes": "权限范围",
+    "oauthScopesHint": "以空格分隔的 OAuth 权限范围",
+    "oauthIssuerUrl": "Issuer URL",
+    "oauthIssuerUrlHint": "提供商 Issuer URL — 用于 OIDC 自动发现",
+    "oauthDiscover": "自动发现",
+    "oauthIssuerRequired": "需要 Issuer URL 才能发现端点",
+    "oauthDiscoverFailed": "发现失败 — 请检查 Issuer URL 后重试"
   },
   "language": {
     "switchToZh": "中文",

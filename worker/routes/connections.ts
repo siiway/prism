@@ -1,4 +1,4 @@
-// Social platform connections (GitHub, Google, Microsoft, Discord)
+// Social platform connections (GitHub, Google, Microsoft, Discord, generic OIDC/OAuth2)
 
 import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
@@ -77,6 +77,23 @@ const PROVIDER_DEFS: Record<string, ProviderDef> = {
     clientIdKey: "discord_client_id",
     clientSecretKey: "discord_client_secret",
   },
+  // Generic providers — all URLs/scopes are configured per-source in oauth_sources table
+  oidc: {
+    authUrl: "",
+    tokenUrl: "",
+    userUrl: "",
+    scopes: "openid email profile",
+    clientIdKey: "",
+    clientSecretKey: "",
+  },
+  oauth2: {
+    authUrl: "",
+    tokenUrl: "",
+    userUrl: "",
+    scopes: "",
+    clientIdKey: "",
+    clientSecretKey: "",
+  },
 };
 
 // Resolved source: everything needed to run the OAuth flow for a given slug
@@ -111,16 +128,26 @@ async function resolveSource(
   if (row) {
     const def = PROVIDER_DEFS[row.provider];
     if (!def) return null; // unknown base provider type
+
+    // For generic providers (oidc/oauth2), URLs are stored per-row
+    const isGeneric = row.provider === "oidc" || row.provider === "oauth2";
+    const authUrl = isGeneric ? (row.auth_url ?? "") : def.authUrl;
+    const tokenUrl = isGeneric ? (row.token_url ?? "") : def.tokenUrl;
+    const userUrl = isGeneric ? (row.userinfo_url ?? "") : def.userUrl;
+    const scopes = row.scopes ?? def.scopes;
+
+    if (isGeneric && (!authUrl || !tokenUrl || !userUrl)) return null; // misconfigured generic source
+
     return {
       slug: row.slug,
       provider: row.provider,
       name: row.name,
       clientId: row.client_id,
       clientSecret: row.client_secret,
-      authUrl: def.authUrl,
-      tokenUrl: def.tokenUrl,
-      userUrl: def.userUrl,
-      scopes: def.scopes,
+      authUrl,
+      tokenUrl,
+      userUrl,
+      scopes,
     };
   }
 
@@ -632,13 +659,15 @@ function extractProviderUserId(
     case "github":
       return String(profile.id ?? "");
     case "google":
+    case "oidc":
       return String(profile.sub ?? "");
     case "microsoft":
       return String(profile.id ?? "");
     case "discord":
       return String(profile.id ?? "");
     default:
-      return String(profile.id ?? profile.sub ?? "");
+      // oauth2 and unknown — try sub first (OIDC-style), then id
+      return String(profile.sub ?? profile.id ?? "");
   }
 }
 
@@ -662,7 +691,12 @@ function extractDisplayName(
     case "github":
       return (profile.name as string) || (profile.login as string) || "User";
     case "google":
-      return (profile.name as string) || "User";
+    case "oidc":
+      return (
+        (profile.name as string) ||
+        (profile.preferred_username as string) ||
+        "User"
+      );
     case "microsoft":
       return (profile.displayName as string) || "User";
     case "discord":
@@ -672,7 +706,13 @@ function extractDisplayName(
         "User"
       );
     default:
-      return "User";
+      // oauth2 and unknown
+      return (
+        (profile.name as string) ||
+        (profile.login as string) ||
+        (profile.username as string) ||
+        "User"
+      );
   }
 }
 
@@ -681,12 +721,20 @@ function extractUsername(
   profile: Record<string, unknown>,
   email: string | null,
 ): string {
-  const base =
-    provider === "github"
-      ? (profile.login as string)
-      : provider === "discord"
-        ? (profile.username as string)
-        : (email?.split("@")[0] ?? "user");
+  let base: string;
+  if (provider === "github") {
+    base = (profile.login as string) || email?.split("@")[0] || "user";
+  } else if (provider === "discord") {
+    base = (profile.username as string) || email?.split("@")[0] || "user";
+  } else {
+    // google, microsoft, oidc, oauth2, unknown — prefer preferred_username, then email prefix
+    base =
+      (profile.preferred_username as string) ||
+      (profile.login as string) ||
+      (profile.username as string) ||
+      email?.split("@")[0] ||
+      "user";
+  }
   return base
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, "_")
@@ -701,6 +749,7 @@ function extractProviderAvatar(
     case "github":
       return (profile.avatar_url as string) ?? null;
     case "google":
+    case "oidc":
       return (profile.picture as string) ?? null;
     case "discord": {
       const id = profile.id as string;
@@ -710,7 +759,10 @@ function extractProviderAvatar(
         : null;
     }
     default:
-      return null;
+      // oauth2 and unknown — try common field names
+      return (
+        (profile.picture as string) ?? (profile.avatar_url as string) ?? null
+      );
   }
 }
 
