@@ -1,11 +1,13 @@
 import { defineConfig } from "vitepress";
 
 export default defineConfig({
-  title: "Prism",
-  description:
-    "Self-hosted OAuth 2.0 / OpenID Connect identity platform on Cloudflare Workers.",
   cleanUrls: true,
   ignoreDeadLinks: true,
+  lastUpdated: true,
+
+  sitemap: {
+    hostname: "https://prism.wss.moe",
+  },
 
   head: [
     ["meta", { name: "theme-color", content: "#0078d4" }],
@@ -23,6 +25,11 @@ export default defineConfig({
     root: {
       label: "English",
       lang: "en",
+
+      title: "Prism",
+      description:
+        "Self-hosted OAuth 2.0 / OpenID Connect identity platform on Cloudflare Workers.",
+
       themeConfig: {
         nav: [
           {
@@ -76,6 +83,10 @@ export default defineConfig({
     zh: {
       label: "中文",
       lang: "zh-CN",
+
+      title: "Prism",
+      description: "基于 Cloudflare Workers 的自托管 OAuth 2.0 / OpenID Connect 平台。",
+
       themeConfig: {
         nav: [
           {
@@ -128,21 +139,21 @@ export default defineConfig({
           text: "在 GitHub 上编辑此页",
         },
 
-        lastUpdatedText: "最后更新",
+        footer: {
+          message: "在 GPL-3.0 许可协议下发布.",
+          copyright: "版权所有 © 2026 SiiWay & 项目贡献者",
+        },
 
+        lastUpdatedText: "最后更新",
         docFooter: {
           prev: "上一页",
           next: "下一页",
         },
-
         outline: {
           label: "目录",
         },
-
         returnToTopLabel: "返回顶部",
-
         sidebarMenuLabel: "菜单",
-
         darkModeSwitchLabel: "外观",
       },
     },
