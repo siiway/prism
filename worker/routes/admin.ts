@@ -205,6 +205,10 @@ app.patch("/users/:id", async (c) => {
     return c.json({ error: "You cannot demote yourself from admin" }, 403);
   }
 
+  if (body.is_active === false && id === admin.id) {
+    return c.json({ error: "You cannot disable yourself" }, 403);
+  }
+
   const updates: string[] = [];
   const values: unknown[] = [];
 

@@ -491,6 +491,8 @@
     "deleteFailed": "Delete failed",
     "deleteUserTitle": "Delete user?",
     "deleteUserDesc": "Delete {{username}} and all their data? This cannot be undone.",
+    "cannotDisableSelf": "You cannot disable your own account.",
+    "cannotDeleteSelf": "You cannot delete your own account.",
     "appHeader": "App",
     "ownerHeader": "Owner",
     "clientIdHeader": "Client ID",

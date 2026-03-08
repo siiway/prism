@@ -491,6 +491,8 @@
     "deleteFailed": "删除失败",
     "deleteUserTitle": "删除用户？",
     "deleteUserDesc": "删除 {{username}} 及其所有数据？此操作无法撤销。",
+    "cannotDisableSelf": "您不能禁用自己的账户。",
+    "cannotDeleteSelf": "您不能删除自己的账户。",
     "appHeader": "应用",
     "ownerHeader": "所有者",
     "clientIdHeader": "客户端 ID",

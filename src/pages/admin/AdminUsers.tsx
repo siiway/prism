@@ -34,6 +34,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { useAuthStore } from "../../store/auth";
 
 const useStyles = makeStyles({
   toolbar: { display: "flex", gap: "8px", marginBottom: "16px" },
@@ -50,6 +51,7 @@ export function AdminUsers() {
   const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();
+  const { user } = useAuthStore();
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -226,10 +228,13 @@ export function AdminUsers() {
                       size="small"
                       appearance="subtle"
                       icon={<PersonProhibitedRegular />}
+                      disabled={u.id === user?.id}
                       title={
-                        (u as unknown as { is_active: boolean }).is_active
-                          ? t("admin.disabledStatus")
-                          : t("admin.activeStatus")
+                        u.id === user?.id
+                          ? t("admin.cannotDisableSelf")
+                          : (u as unknown as { is_active: boolean }).is_active
+                            ? t("admin.disabledStatus")
+                            : t("admin.activeStatus")
                       }
                       onClick={() =>
                         handleToggleActive(
@@ -244,6 +249,12 @@ export function AdminUsers() {
                           size="small"
                           appearance="subtle"
                           icon={<DeleteRegular />}
+                          disabled={u.id === user?.id}
+                          title={
+                            u.id === user?.id
+                              ? t("admin.cannotDeleteSelf")
+                              : undefined
+                          }
                         />
                       </DialogTrigger>
                       <DialogSurface>
