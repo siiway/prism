@@ -183,18 +183,41 @@ export function AdminSettings() {
               value={get("site_icon_url") ?? ""}
               onChange={(v) => set("site_icon_url", v || null)}
             />
-            <Switch
-              label={t("admin.allowRegistration")}
-              checked={!!get("allow_registration")}
-              onChange={(_, d) => set("allow_registration", d.checked)}
-            />
-            <Field hint={t("admin.inviteOnlyHint")}>
-              <Switch
-                label={t("admin.inviteOnly")}
-                checked={!!get("invite_only")}
-                disabled={!get("allow_registration")}
-                onChange={(_, d) => set("invite_only", d.checked)}
-              />
+            <Field label={t("admin.registrationMode")}>
+              <Dropdown
+                value={
+                  get("allow_registration")
+                    ? get("invite_only")
+                      ? t("admin.regModeInviteOnly")
+                      : t("admin.regModeOpen")
+                    : t("admin.regModeClosed")
+                }
+                selectedOptions={[
+                  get("allow_registration")
+                    ? get("invite_only")
+                      ? "invite_only"
+                      : "open"
+                    : "closed",
+                ]}
+                onOptionSelect={(_, d) => {
+                  if (d.optionValue === "open") {
+                    set("allow_registration", true);
+                    set("invite_only", false);
+                  } else if (d.optionValue === "invite_only") {
+                    set("allow_registration", true);
+                    set("invite_only", true);
+                  } else {
+                    set("allow_registration", false);
+                    set("invite_only", false);
+                  }
+                }}
+              >
+                <Option value="open">{t("admin.regModeOpen")}</Option>
+                <Option value="invite_only">
+                  {t("admin.regModeInviteOnly")}
+                </Option>
+                <Option value="closed">{t("admin.regModeClosed")}</Option>
+              </Dropdown>
             </Field>
             <Switch
               label={t("admin.requireEmailVerification")}
