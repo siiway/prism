@@ -6,10 +6,10 @@
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
-    "binding": "ASSETS",
+    "binding": "ASSETS"
   },
   "observability": {
-    "enabled": true,
+    "enabled": true
   },
   // D1 Database
   "d1_databases": [
@@ -17,19 +17,19 @@
       "binding": "DB",
       "database_name": "prism-db",
       "database_id": "5790c075-635c-470f-a166-8b9f145ec311",
-      "migrations_dir": "worker/db/migrations",
-    },
+      "migrations_dir": "worker/db/migrations"
+    }
   ],
   // KV Namespaces
   "kv_namespaces": [
     {
       "binding": "KV_SESSIONS",
-      "id": "e76739c67270401e8f7b5283cf22d2dd",
+      "id": "e76739c67270401e8f7b5283cf22d2dd"
     },
     {
       "binding": "KV_CACHE",
-      "id": "db4d8187fc3f48eabc412a3f5654fa69",
-    },
+      "id": "db4d8187fc3f48eabc412a3f5654fa69"
+    }
   ],
   // R2 Bucket
   /*
@@ -42,12 +42,16 @@
   */
   // Environment variables (non-secret)
   "vars": {
-    "APP_URL": "https://prism.siiway.org",
+    "APP_URL": "https://prism.siiway.org"
   },
   "routes": [
     {
       "pattern": "prism.siiway.org",
-      "custom_domain": true,
-    },
+      "custom_domain": true
+    }
   ],
+  // Re-verify domains every 6 hours
+  "triggers": {
+    "crons": ["0 */6 * * *"]
+  }
 }

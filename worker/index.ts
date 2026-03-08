@@ -1,6 +1,7 @@
 // Prism — OAuth Account Platform
 // Cloudflare Worker entry point using Hono
 
+import { runReverification } from "./cron/reverify";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -141,4 +142,10 @@ app.onError((err, c) => {
   return c.json({ error: "Internal server error" }, 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch.bind(app),
+
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runReverification(env.DB));
+  },
+};
