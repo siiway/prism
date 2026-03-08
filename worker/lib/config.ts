@@ -7,6 +7,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   site_description: "Federated identity platform",
   site_icon_url: null,
   allow_registration: true,
+  invite_only: false,
   require_email_verification: false,
   captcha_provider: "none",
   captcha_site_key: "",

@@ -142,6 +142,18 @@ export interface SessionRow {
   created_at: number;
 }
 
+export interface SiteInviteRow {
+  id: string;
+  token: string;
+  email: string | null;
+  note: string | null;
+  max_uses: number | null;
+  use_count: number;
+  created_by: string;
+  expires_at: number | null;
+  created_at: number;
+}
+
 export interface SiteConfigRow {
   key: string;
   value: string; // JSON-encoded
@@ -175,6 +187,7 @@ export interface SiteConfig {
   site_description: string;
   site_icon_url: string | null;
   allow_registration: boolean;
+  invite_only: boolean;
   require_email_verification: boolean;
   captcha_provider: CaptchaProvider;
   captcha_site_key: string;

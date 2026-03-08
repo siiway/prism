@@ -10,9 +10,12 @@ import {
   buildVerifiedTeamDomainsMap,
   computeVerified,
 } from "../lib/domainVerify";
+import { inviteEmailTemplate } from "../lib/email";
+import { randomBase64url, randomId } from "../lib/crypto";
 import type {
   AuditLogRow,
   OAuthAppRow,
+  SiteInviteRow,
   TeamRow,
   UserRow,
   Variables,
@@ -50,6 +53,7 @@ app.patch("/config", async (c) => {
     "site_description",
     "site_icon_url",
     "allow_registration",
+    "invite_only",
     "require_email_verification",
     "captcha_provider",
     "captcha_site_key",
@@ -557,7 +561,6 @@ async function logAudit(
   metadata: unknown,
   ip: string,
 ) {
-  const { randomId } = await import("../lib/crypto");
   await db
     .prepare(
       "INSERT INTO audit_log (id, user_id, action, resource_type, resource_id, metadata, ip_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -574,6 +577,119 @@ async function logAudit(
     )
     .run();
 }
+
+// ─── Site Invites ─────────────────────────────────────────────────────────────
+
+// List all invites
+app.get("/invites", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT i.*, u.username AS created_by_username
+     FROM site_invites i
+     LEFT JOIN users u ON u.id = i.created_by
+     ORDER BY i.created_at DESC`,
+  ).all<SiteInviteRow & { created_by_username: string | null }>();
+  return c.json({ invites: results });
+});
+
+// Create invite (optionally send email)
+app.post("/invites", async (c) => {
+  const admin = c.get("user");
+  const body = await c.req.json<{
+    email?: string;
+    note?: string;
+    max_uses?: number;
+    expires_in_days?: number;
+    send_email?: boolean;
+  }>();
+
+  const config = await getConfig(c.env.DB);
+  const now = Math.floor(Date.now() / 1000);
+  const id = randomId();
+  const token = randomBase64url(24);
+  const expiresAt = body.expires_in_days
+    ? now + body.expires_in_days * 86400
+    : null;
+
+  await c.env.DB.prepare(
+    `INSERT INTO site_invites (id, token, email, note, max_uses, use_count, created_by, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+  )
+    .bind(
+      id,
+      token,
+      body.email?.toLowerCase().trim() ?? null,
+      body.note ?? null,
+      body.max_uses ?? null,
+      admin.id,
+      expiresAt,
+      now,
+    )
+    .run();
+
+  const inviteUrl = `${c.env.APP_URL}/register?invite=${token}`;
+
+  if (body.send_email && body.email && config.email_provider !== "none") {
+    const tmpl = inviteEmailTemplate(config.site_name, inviteUrl, body.note);
+    await sendEmail(
+      {
+        to: body.email,
+        subject: `You've been invited to ${config.site_name}`,
+        ...tmpl,
+      },
+      {
+        provider: config.email_provider,
+        from: config.email_from,
+        apiKey: config.email_api_key,
+        smtpHost: config.smtp_host,
+        smtpPort: config.smtp_port,
+        smtpSecure: config.smtp_secure,
+        smtpUser: config.smtp_user,
+        smtpPassword: config.smtp_password,
+      },
+    );
+  }
+
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "invite.create",
+    "site_invite",
+    id,
+    { email: body.email ?? null },
+    getIp(c),
+  );
+
+  return c.json({ invite: { id, token, invite_url: inviteUrl } }, 201);
+});
+
+// Revoke (delete) invite
+app.delete("/invites/:id", async (c) => {
+  const admin = c.get("user");
+  const { id } = c.req.param();
+
+  const invite = await c.env.DB.prepare(
+    "SELECT id FROM site_invites WHERE id = ?",
+  )
+    .bind(id)
+    .first<{ id: string }>();
+  if (!invite) return c.json({ error: "Invite not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM site_invites WHERE id = ?")
+    .bind(id)
+    .run();
+
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "invite.revoke",
+    "site_invite",
+    id,
+    {},
+    getIp(c),
+  );
+
+  return c.json({ message: "Invite revoked" });
+});
 
 function getIp(c: {
   req: { header: (h: string) => string | undefined };

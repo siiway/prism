@@ -181,6 +181,14 @@ export function AdminSettings() {
               checked={!!get("allow_registration")}
               onChange={(_, d) => set("allow_registration", d.checked)}
             />
+            <Field hint={t("admin.inviteOnlyHint")}>
+              <Switch
+                label={t("admin.inviteOnly")}
+                checked={!!get("invite_only")}
+                disabled={!get("allow_registration")}
+                onChange={(_, d) => set("invite_only", d.checked)}
+              />
+            </Field>
             <Switch
               label={t("admin.requireEmailVerification")}
               checked={!!get("require_email_verification")}

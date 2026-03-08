@@ -14,7 +14,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
@@ -66,6 +66,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 export function Register() {
   const styles = useStyles();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { setAuth } = useAuthStore();
   const { t } = useTranslation();
   const { data: site } = useQuery({
@@ -79,6 +80,7 @@ export function Register() {
     username: "",
     password: "",
     display_name: "",
+    invite_token: searchParams.get("invite") ?? "",
   });
   const [captcha, setCaptcha] = useState<CaptchaValue>({});
   const [error, setError] = useState("");
@@ -122,6 +124,8 @@ export function Register() {
     );
   }
 
+  const showInviteField = site?.invite_only || !!form.invite_token;
+
   return (
     <div className={styles.page}>
       <div className={styles.card}>
@@ -129,6 +133,10 @@ export function Register() {
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
           {t("auth.join", { siteName: site?.site_name ?? "Prism" })}
         </Text>
+
+        {site?.invite_only && (
+          <MessageBar intent="info">{t("auth.inviteOnly")}</MessageBar>
+        )}
 
         {success ? (
           <MessageBar intent="success">{success}</MessageBar>
@@ -166,6 +174,20 @@ export function Register() {
                 placeholder={t("init.passwordPlaceholder")}
               />
             </Field>
+
+            {showInviteField && (
+              <Field
+                label={t("auth.inviteToken")}
+                required={!!site?.invite_only}
+                hint={t("auth.inviteTokenHint")}
+              >
+                <Input
+                  value={form.invite_token}
+                  onChange={update("invite_token")}
+                  placeholder={t("auth.inviteTokenPlaceholder")}
+                />
+              </Field>
+            )}
 
             {site.captcha_provider !== "none" && (
               <Captcha

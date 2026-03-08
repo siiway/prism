@@ -30,6 +30,7 @@ import { requireAuth } from "../middleware/auth";
 import type {
   AuthUser,
   PasskeyRow,
+  SiteInviteRow,
   TotpAuthenticatorRow,
   TotpRecoveryRow,
   UserRow,
@@ -97,10 +98,41 @@ app.post("/register", async (c) => {
     username: string;
     password: string;
     display_name?: string;
+    invite_token?: string;
     captcha_token?: string;
     pow_challenge?: string;
     pow_nonce?: number;
   }>();
+
+  // Invite-only mode: validate the invite token before anything else
+  let usedInvite: SiteInviteRow | null = null;
+  if (config.invite_only) {
+    if (!body.invite_token)
+      return c.json({ error: "An invite token is required to register" }, 403);
+
+    const now = Math.floor(Date.now() / 1000);
+    const invite = await c.env.DB.prepare(
+      "SELECT * FROM site_invites WHERE token = ?",
+    )
+      .bind(body.invite_token)
+      .first<SiteInviteRow>();
+
+    if (!invite) return c.json({ error: "Invalid invite token" }, 403);
+    if (invite.expires_at !== null && invite.expires_at < now)
+      return c.json({ error: "Invite token has expired" }, 403);
+    if (invite.max_uses !== null && invite.use_count >= invite.max_uses)
+      return c.json({ error: "Invite token has reached its usage limit" }, 403);
+    if (
+      invite.email &&
+      invite.email.toLowerCase() !== (body.email ?? "").toLowerCase().trim()
+    )
+      return c.json(
+        { error: "This invite is for a different email address" },
+        403,
+      );
+
+    usedInvite = invite;
+  }
 
   const captchaOk = await verifyCaptchaToken(
     c.env.DB,
@@ -151,6 +183,15 @@ app.post("/register", async (c) => {
     if (msg.includes("UNIQUE"))
       return c.json({ error: "Email or username already taken" }, 409);
     throw err;
+  }
+
+  // Mark invite as used
+  if (usedInvite) {
+    await c.env.DB.prepare(
+      "UPDATE site_invites SET use_count = use_count + 1 WHERE id = ?",
+    )
+      .bind(usedInvite.id)
+      .run();
   }
 
   if (verifyToken && config.email_provider !== "none") {

@@ -52,6 +52,7 @@ app.get("/api/site", async (c) => {
     site_description: config.site_description,
     site_icon_url: config.site_icon_url,
     allow_registration: config.allow_registration,
+    invite_only: config.invite_only,
     captcha_provider: config.captcha_provider,
     captcha_site_key: config.captcha_site_key,
     pow_difficulty: config.pow_difficulty,

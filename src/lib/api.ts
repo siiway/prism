@@ -609,6 +609,35 @@ export const api = {
       undefined,
       getToken(),
     ),
+
+  // Site invites
+  adminListInvites: () =>
+    request<{ invites: SiteInvite[] }>(
+      "GET",
+      "/admin/invites",
+      undefined,
+      getToken(),
+    ),
+  adminCreateInvite: (body: {
+    email?: string;
+    note?: string;
+    max_uses?: number;
+    expires_in_days?: number;
+    send_email?: boolean;
+  }) =>
+    request<{ invite: { id: string; token: string; invite_url: string } }>(
+      "POST",
+      "/admin/invites",
+      body,
+      getToken(),
+    ),
+  adminRevokeInvite: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/invites/${id}`,
+      undefined,
+      getToken(),
+    ),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -618,6 +647,7 @@ export interface SitePublicConfig {
   site_description: string;
   site_icon_url: string | null;
   allow_registration: boolean;
+  invite_only: boolean;
   captcha_provider: string;
   captcha_site_key: string;
   pow_difficulty: number;
@@ -882,4 +912,17 @@ export interface AdminUserDetail {
   apps: unknown[];
   connections: unknown[];
   sessions: unknown[];
+}
+
+export interface SiteInvite {
+  id: string;
+  token: string;
+  email: string | null;
+  note: string | null;
+  max_uses: number | null;
+  use_count: number;
+  created_by: string;
+  created_by_username: string | null;
+  expires_at: number | null;
+  created_at: number;
 }
