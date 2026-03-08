@@ -49,12 +49,12 @@ const useStyles = makeStyles({
   },
 });
 
-const PROVIDERS = [
-  { id: "github", name: "GitHub", color: "#24292e" },
-  { id: "google", name: "Google", color: "#4285f4" },
-  { id: "microsoft", name: "Microsoft", color: "#0078d4" },
-  { id: "discord", name: "Discord", color: "#5865f2" },
-];
+const PROVIDER_COLORS: Record<string, string> = {
+  github: "#24292e",
+  google: "#4285f4",
+  microsoft: "#0078d4",
+  discord: "#5865f2",
+};
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_state:
@@ -168,7 +168,7 @@ export function Connections() {
     }
   };
 
-  const enabledProviders = new Set(site?.enabled_providers ?? []);
+  const providers = site?.enabled_providers ?? [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -184,19 +184,19 @@ export function Connections() {
       )}
 
       <div className={styles.grid}>
-        {PROVIDERS.map((p) => {
-          const conns = getConnections(p.id);
-          const enabled = enabledProviders.has(p.id);
+        {providers.map((p) => {
+          const conns = getConnections(p.slug);
+          const color = PROVIDER_COLORS[p.provider] ?? "#666";
 
           return (
-            <div key={p.id} className={styles.providerCard}>
+            <div key={p.slug} className={styles.providerCard}>
               <div className={styles.providerHeader}>
                 <div
                   style={{
                     width: 40,
                     height: 40,
                     borderRadius: 8,
-                    background: p.color,
+                    background: color,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -296,25 +296,16 @@ export function Connections() {
                 );
               })}
 
-              {!enabled ? (
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {t("connections.notConfigured")}
-                </Text>
-              ) : (
-                <Button
-                  appearance="outline"
-                  size="small"
-                  icon={<AddRegular />}
-                  onClick={() => handleConnect(p.id)}
-                >
-                  {conns.length > 0
-                    ? t("connections.addAnother", { provider: p.name })
-                    : t("connections.connect", { provider: p.name })}
-                </Button>
-              )}
+              <Button
+                appearance="outline"
+                size="small"
+                icon={<AddRegular />}
+                onClick={() => handleConnect(p.slug)}
+              >
+                {conns.length > 0
+                  ? t("connections.addAnother", { provider: p.name })
+                  : t("connections.connect", { provider: p.name })}
+              </Button>
             </div>
           );
         })}

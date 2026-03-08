@@ -60,12 +60,23 @@ app.get("/api/site", async (c) => {
     custom_css: config.custom_css,
     initialized: config.initialized,
     r2_enabled: !!c.env.R2_ASSETS,
-    enabled_providers: [
-      config.github_client_id && "github",
-      config.google_client_id && "google",
-      config.microsoft_client_id && "microsoft",
-      config.discord_client_id && "discord",
-    ].filter(Boolean) as string[],
+    enabled_providers: await (async () => {
+      // Prefer explicit oauth_sources rows; fall back to legacy site_config keys
+      const { results } = await c.env.DB.prepare(
+        "SELECT slug, name, provider FROM oauth_sources WHERE enabled = 1 ORDER BY created_at ASC",
+      ).all<{ slug: string; name: string; provider: string }>();
+      if (results.length > 0) return results;
+      return (["github", "google", "microsoft", "discord"] as const)
+        .filter(
+          (p) =>
+            !!(config as unknown as Record<string, string>)[`${p}_client_id`],
+        )
+        .map((p) => ({
+          slug: p,
+          name: p.charAt(0).toUpperCase() + p.slice(1),
+          provider: p,
+        }));
+    })(),
   });
 });
 

@@ -638,6 +638,50 @@ export const api = {
       undefined,
       getToken(),
     ),
+
+  // OAuth sources
+  adminListOAuthSources: () =>
+    request<{ sources: OAuthSource[] }>(
+      "GET",
+      "/admin/oauth-sources",
+      undefined,
+      getToken(),
+    ),
+  adminCreateOAuthSource: (body: {
+    slug: string;
+    provider: string;
+    name: string;
+    client_id: string;
+    client_secret: string;
+  }) =>
+    request<{ source: OAuthSource }>(
+      "POST",
+      "/admin/oauth-sources",
+      body,
+      getToken(),
+    ),
+  adminUpdateOAuthSource: (
+    id: string,
+    body: {
+      name?: string;
+      client_id?: string;
+      client_secret?: string;
+      enabled?: boolean;
+    },
+  ) =>
+    request<{ message: string }>(
+      "PATCH",
+      `/admin/oauth-sources/${id}`,
+      body,
+      getToken(),
+    ),
+  adminDeleteOAuthSource: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/oauth-sources/${id}`,
+      undefined,
+      getToken(),
+    ),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -655,7 +699,7 @@ export interface SitePublicConfig {
   custom_css: string;
   initialized: boolean;
   r2_enabled: boolean;
-  enabled_providers: string[];
+  enabled_providers: { slug: string; name: string; provider: string }[];
 }
 
 export interface RegisterBody {
@@ -912,6 +956,15 @@ export interface AdminUserDetail {
   apps: unknown[];
   connections: unknown[];
   sessions: unknown[];
+}
+
+export interface OAuthSource {
+  id: string;
+  slug: string;
+  provider: string;
+  name: string;
+  enabled: number;
+  created_at: number;
 }
 
 export interface SiteInvite {

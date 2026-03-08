@@ -39,6 +39,7 @@ import { AdminTeams } from "./pages/admin/AdminTeams";
 import { AdminSettings } from "./pages/admin/AdminSettings";
 import { AdminAudit } from "./pages/admin/AdminAudit";
 import { AdminInvites } from "./pages/admin/AdminInvites";
+import { AdminConnections } from "./pages/admin/AdminConnections";
 import { TeamList } from "./pages/teams/TeamList";
 import { TeamDetail } from "./pages/teams/TeamDetail";
 import { TeamJoin } from "./pages/teams/TeamJoin";
@@ -182,6 +183,7 @@ export default function App() {
                 <Route path="teams" element={<AdminTeams />} />
                 <Route path="settings" element={<AdminSettings />} />
                 <Route path="invites" element={<AdminInvites />} />
+                <Route path="connections" element={<AdminConnections />} />
                 <Route path="audit" element={<AdminAudit />} />
               </Route>
             </Route>

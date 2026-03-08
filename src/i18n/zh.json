@@ -22,7 +22,8 @@
     "disconnect": "断开连接",
     "saveChanges": "保存更改",
     "discard": "放弃更改",
-    "pageOf": "{{page}} / {{total}}"
+    "pageOf": "{{page}} / {{total}}",
+    "enabled": "已启用"
   },
   "nav": {
     "dashboard": "控制台",
@@ -604,7 +605,22 @@
     "inviteExpired": "已过期",
     "inviteNoExpiry": "永不过期",
     "inviteCreatedBy": "创建者",
-    "inviteNoInvites": "暂无邀请，请在上方创建。"
+    "inviteNoInvites": "暂无邀请，请在上方创建。",
+    "connectionsTab": "OAuth 来源",
+    "oauthSources": "OAuth 来源",
+    "oauthSourcesHint": "配置多个 OAuth 提供商。每个来源有唯一的 slug 用于 URL 中。",
+    "oauthSlug": "标识符",
+    "oauthSlugHint": "唯一 URL 键，例如 github-work",
+    "oauthProvider": "提供商",
+    "oauthName": "显示名称",
+    "oauthNameHint": "显示在登录按钮上，例如 GitHub（工作）",
+    "oauthClientId": "Client ID",
+    "oauthClientSecret": "Client Secret",
+    "oauthAddSource": "添加来源",
+    "oauthNoSources": "暂未配置任何 OAuth 来源。",
+    "oauthEditSource": "编辑 OAuth 来源",
+    "oauthDeleteConfirm": "删除此 OAuth 来源？",
+    "oauthLeaveBlankToKeep": "留空表示保持原值"
   },
   "language": {
     "switchToZh": "中文",

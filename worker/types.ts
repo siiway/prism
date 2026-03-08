@@ -142,6 +142,17 @@ export interface SessionRow {
   created_at: number;
 }
 
+export interface OAuthSourceRow {
+  id: string;
+  slug: string;
+  provider: string;
+  name: string;
+  client_id: string;
+  client_secret: string;
+  enabled: number;
+  created_at: number;
+}
+
 export interface SiteInviteRow {
   id: string;
   token: string;

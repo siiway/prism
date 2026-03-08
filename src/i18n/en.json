@@ -22,7 +22,8 @@
     "disconnect": "Disconnect",
     "saveChanges": "Save changes",
     "discard": "Discard changes",
-    "pageOf": "{{page}} / {{total}}"
+    "pageOf": "{{page}} / {{total}}",
+    "enabled": "Enabled"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -604,7 +605,22 @@
     "inviteExpired": "Expired",
     "inviteNoExpiry": "No expiry",
     "inviteCreatedBy": "Created by",
-    "inviteNoInvites": "No invites yet. Create one above."
+    "inviteNoInvites": "No invites yet. Create one above.",
+    "connectionsTab": "OAuth Sources",
+    "oauthSources": "OAuth Sources",
+    "oauthSourcesHint": "Configure multiple OAuth providers. Each source has a unique slug used in URLs.",
+    "oauthSlug": "Slug",
+    "oauthSlugHint": "Unique URL key, e.g. github-work",
+    "oauthProvider": "Provider",
+    "oauthName": "Display name",
+    "oauthNameHint": "Shown on login buttons, e.g. GitHub (Work)",
+    "oauthClientId": "Client ID",
+    "oauthClientSecret": "Client Secret",
+    "oauthAddSource": "Add source",
+    "oauthNoSources": "No OAuth sources configured yet.",
+    "oauthEditSource": "Edit OAuth Source",
+    "oauthDeleteConfirm": "Delete this OAuth source?",
+    "oauthLeaveBlankToKeep": "Leave blank to keep current value"
   },
   "language": {
     "switchToZh": "中文",

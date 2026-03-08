@@ -56,13 +56,6 @@ const useStyles = makeStyles({
   footer: { textAlign: "center" },
 });
 
-const PROVIDER_LABELS: Record<string, string> = {
-  github: "GitHub",
-  google: "Google",
-  microsoft: "Microsoft",
-  discord: "Discord",
-};
-
 export function Register() {
   const styles = useStyles();
   const navigate = useNavigate();
@@ -223,13 +216,13 @@ export function Register() {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {site!.enabled_providers.map((p) => (
                 <Button
-                  key={p}
+                  key={p.slug}
                   appearance="outline"
                   onClick={() =>
-                    (window.location.href = `/api/connections/${p}/begin?mode=login`)
+                    (window.location.href = `/api/connections/${p.slug}/begin?mode=login`)
                   }
                 >
-                  {PROVIDER_LABELS[p] ?? p}
+                  {p.name}
                 </Button>
               ))}
             </div>

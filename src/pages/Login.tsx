@@ -50,13 +50,6 @@ const useStyles = makeStyles({
   footer: { textAlign: "center" },
 });
 
-const PROVIDER_LABELS: Record<string, string> = {
-  github: "GitHub",
-  google: "Google",
-  microsoft: "Microsoft",
-  discord: "Discord",
-};
-
 export function Login() {
   const styles = useStyles();
   const navigate = useNavigate();
@@ -235,11 +228,11 @@ export function Login() {
                 <div className={styles.providers}>
                   {site!.enabled_providers.map((p) => (
                     <Button
-                      key={p}
+                      key={p.slug}
                       appearance="outline"
-                      onClick={() => handleSocialLogin(p)}
+                      onClick={() => handleSocialLogin(p.slug)}
                     >
-                      {PROVIDER_LABELS[p] ?? p}
+                      {p.name}
                     </Button>
                   ))}
                 </div>

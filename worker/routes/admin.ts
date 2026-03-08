@@ -15,6 +15,7 @@ import { randomBase64url, randomId } from "../lib/crypto";
 import type {
   AuditLogRow,
   OAuthAppRow,
+  OAuthSourceRow,
   SiteInviteRow,
   TeamRow,
   UserRow,
@@ -689,6 +690,187 @@ app.delete("/invites/:id", async (c) => {
   );
 
   return c.json({ message: "Invite revoked" });
+});
+
+// ─── OAuth Sources ─────────────────────────────────────────────────────────────
+
+const VALID_PROVIDERS = new Set(["github", "google", "microsoft", "discord"]);
+
+app.get("/oauth-sources", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, slug, provider, name, enabled, created_at FROM oauth_sources ORDER BY created_at ASC",
+  ).all<Omit<OAuthSourceRow, "client_id" | "client_secret">>();
+  return c.json({ sources: results });
+});
+
+app.post("/oauth-sources", async (c) => {
+  const admin = c.get("user");
+  const body = await c.req.json<{
+    slug: string;
+    provider: string;
+    name: string;
+    client_id: string;
+    client_secret: string;
+  }>();
+
+  if (
+    !body.slug ||
+    !body.provider ||
+    !body.name ||
+    !body.client_id ||
+    !body.client_secret
+  )
+    return c.json(
+      {
+        error: "slug, provider, name, client_id and client_secret are required",
+      },
+      400,
+    );
+
+  if (!VALID_PROVIDERS.has(body.provider))
+    return c.json(
+      {
+        error: `Invalid provider. Must be one of: ${[...VALID_PROVIDERS].join(", ")}`,
+      },
+      400,
+    );
+
+  if (!/^[a-z0-9-]{1,64}$/.test(body.slug))
+    return c.json(
+      {
+        error: "slug must be 1-64 lowercase alphanumeric characters or hyphens",
+      },
+      400,
+    );
+
+  const id = randomId();
+  const now = Math.floor(Date.now() / 1000);
+
+  try {
+    await c.env.DB.prepare(
+      "INSERT INTO oauth_sources (id, slug, provider, name, client_id, client_secret, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+    )
+      .bind(
+        id,
+        body.slug,
+        body.provider,
+        body.name,
+        body.client_id,
+        body.client_secret,
+        now,
+      )
+      .run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("UNIQUE"))
+      return c.json({ error: "A source with this slug already exists" }, 409);
+    throw err;
+  }
+
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "oauth_source.create",
+    "oauth_source",
+    id,
+    { slug: body.slug, provider: body.provider },
+    getIp(c),
+  );
+  return c.json(
+    {
+      source: {
+        id,
+        slug: body.slug,
+        provider: body.provider,
+        name: body.name,
+        enabled: 1,
+      },
+    },
+    201,
+  );
+});
+
+app.patch("/oauth-sources/:id", async (c) => {
+  const admin = c.get("user");
+  const { id } = c.req.param();
+
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM oauth_sources WHERE id = ?",
+  )
+    .bind(id)
+    .first();
+  if (!existing) return c.json({ error: "Source not found" }, 404);
+
+  const body = await c.req.json<{
+    name?: string;
+    client_id?: string;
+    client_secret?: string;
+    enabled?: boolean;
+  }>();
+
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (body.name !== undefined) {
+    sets.push("name = ?");
+    vals.push(body.name);
+  }
+  if (body.client_id !== undefined) {
+    sets.push("client_id = ?");
+    vals.push(body.client_id);
+  }
+  if (body.client_secret !== undefined) {
+    sets.push("client_secret = ?");
+    vals.push(body.client_secret);
+  }
+  if (body.enabled !== undefined) {
+    sets.push("enabled = ?");
+    vals.push(body.enabled ? 1 : 0);
+  }
+  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
+
+  vals.push(id);
+  await c.env.DB.prepare(
+    `UPDATE oauth_sources SET ${sets.join(", ")} WHERE id = ?`,
+  )
+    .bind(...vals)
+    .run();
+
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "oauth_source.update",
+    "oauth_source",
+    id,
+    {},
+    getIp(c),
+  );
+  return c.json({ message: "Updated" });
+});
+
+app.delete("/oauth-sources/:id", async (c) => {
+  const admin = c.get("user");
+  const { id } = c.req.param();
+
+  const existing = await c.env.DB.prepare(
+    "SELECT slug FROM oauth_sources WHERE id = ?",
+  )
+    .bind(id)
+    .first<{ slug: string }>();
+  if (!existing) return c.json({ error: "Source not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM oauth_sources WHERE id = ?")
+    .bind(id)
+    .run();
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "oauth_source.delete",
+    "oauth_source",
+    id,
+    { slug: existing.slug },
+    getIp(c),
+  );
+  return c.json({ message: "Deleted" });
 });
 
 function getIp(c: {

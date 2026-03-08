@@ -22,23 +22,29 @@ interface PendingState {
     avatar_url: string | null;
   }>;
 }
-import type { SocialConnectionRow, UserRow, Variables } from "../types";
+import type {
+  OAuthSourceRow,
+  SocialConnectionRow,
+  UserRow,
+  Variables,
+} from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
-// ─── Provider config ──────────────────────────────────────────────────────────
+// ─── Provider definitions (URL/scope metadata, keyed by base provider type) ───
 
 interface ProviderDef {
   authUrl: string;
   tokenUrl: string;
   userUrl: string;
   scopes: string;
-  clientIdKey: keyof import("../types").SiteConfig;
-  clientSecretKey: keyof import("../types").SiteConfig;
+  // Legacy site_config key names for backward-compatibility
+  clientIdKey: string;
+  clientSecretKey: string;
 }
 
-const PROVIDERS: Record<string, ProviderDef> = {
+const PROVIDER_DEFS: Record<string, ProviderDef> = {
   github: {
     authUrl: "https://github.com/login/oauth/authorize",
     tokenUrl: "https://github.com/login/oauth/access_token",
@@ -72,6 +78,72 @@ const PROVIDERS: Record<string, ProviderDef> = {
     clientSecretKey: "discord_client_secret",
   },
 };
+
+// Resolved source: everything needed to run the OAuth flow for a given slug
+interface ResolvedSource {
+  slug: string;
+  provider: string; // base type used for profile extraction helpers
+  name: string;
+  clientId: string;
+  clientSecret: string;
+  authUrl: string;
+  tokenUrl: string;
+  userUrl: string;
+  scopes: string;
+}
+
+/**
+ * Look up an OAuth source by slug.
+ * Priority: oauth_sources table → legacy site_config keys.
+ * Returns null if the slug is unknown or unconfigured.
+ */
+async function resolveSource(
+  db: D1Database,
+  slug: string,
+  config: import("../types").SiteConfig,
+): Promise<ResolvedSource | null> {
+  // 1. Check the explicit oauth_sources table
+  const row = await db
+    .prepare("SELECT * FROM oauth_sources WHERE slug = ? AND enabled = 1")
+    .bind(slug)
+    .first<OAuthSourceRow>();
+
+  if (row) {
+    const def = PROVIDER_DEFS[row.provider];
+    if (!def) return null; // unknown base provider type
+    return {
+      slug: row.slug,
+      provider: row.provider,
+      name: row.name,
+      clientId: row.client_id,
+      clientSecret: row.client_secret,
+      authUrl: def.authUrl,
+      tokenUrl: def.tokenUrl,
+      userUrl: def.userUrl,
+      scopes: def.scopes,
+    };
+  }
+
+  // 2. Fall back to legacy site_config keys (slug must equal a base provider name)
+  const def = PROVIDER_DEFS[slug];
+  if (!def) return null;
+
+  const cfg = config as unknown as Record<string, string>;
+  const clientId = cfg[def.clientIdKey];
+  if (!clientId) return null;
+
+  return {
+    slug,
+    provider: slug,
+    name: slug.charAt(0).toUpperCase() + slug.slice(1),
+    clientId,
+    clientSecret: cfg[def.clientSecretKey] ?? "",
+    authUrl: def.authUrl,
+    tokenUrl: def.tokenUrl,
+    userUrl: def.userUrl,
+    scopes: def.scopes,
+  };
+}
 
 // ─── List connections ─────────────────────────────────────────────────────────
 
@@ -122,20 +194,16 @@ app.post("/intent", requireAuth, async (c) => {
 // ─── Begin OAuth flow ─────────────────────────────────────────────────────────
 
 app.get("/:provider/begin", optionalAuth, async (c) => {
-  const provider = c.req.param("provider") ?? "";
-  const def = PROVIDERS[provider];
-  if (!def) return c.json({ error: "Unknown provider" }, 400);
-
+  const slug = c.req.param("provider") ?? "";
   const config = await getConfig(c.env.DB);
-  const cfg = config as unknown as Record<string, unknown>;
-  const clientId = cfg[def.clientIdKey as string] as string;
-  if (!clientId) return c.json({ error: `${provider} is not configured` }, 503);
+  const source = await resolveSource(c.env.DB, slug, config);
+  if (!source)
+    return c.json({ error: "Unknown or unconfigured provider" }, 400);
 
   const state = randomBase64url(24);
   const mode = c.req.query("mode") ?? "login"; // 'login' | 'connect'
 
   // For connect mode, userId comes from a pre-issued intent token stored in KV
-  // (browser redirects can't send Authorization headers, so we use this indirection)
   let userId = c.get("user")?.id ?? null;
   if (!userId && mode === "connect") {
     const intentKey = c.req.query("intent");
@@ -150,33 +218,29 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
 
   await c.env.KV_CACHE.put(
     `social:state:${state}`,
-    JSON.stringify({ provider, mode, userId }),
+    JSON.stringify({ slug, provider: source.provider, mode, userId }),
     { expirationTtl: 600 },
   );
 
-  const redirectUri = `${c.env.APP_URL}/api/connections/${provider}/callback`;
+  const redirectUri = `${c.env.APP_URL}/api/connections/${slug}/callback`;
   const params = new URLSearchParams({
-    client_id: clientId,
+    client_id: source.clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: def.scopes,
+    scope: source.scopes,
     state,
   });
 
-  // Google/Microsoft need additional params
-  if (provider === "google") params.set("access_type", "offline");
-  if (provider === "microsoft") params.set("response_mode", "query");
+  if (source.provider === "google") params.set("access_type", "offline");
+  if (source.provider === "microsoft") params.set("response_mode", "query");
 
-  return c.redirect(`${def.authUrl}?${params}`);
+  return c.redirect(`${source.authUrl}?${params}`);
 });
 
 // ─── OAuth callback ───────────────────────────────────────────────────────────
 
 app.get("/:provider/callback", async (c) => {
-  const provider = c.req.param("provider") ?? "";
-  const def = PROVIDERS[provider];
-  if (!def) return c.json({ error: "Unknown provider" }, 400);
-
+  const slug = c.req.param("provider") ?? "";
   const code = c.req.query("code");
   const state = c.req.query("state");
   const error = c.req.query("error");
@@ -191,36 +255,40 @@ app.get("/:provider/callback", async (c) => {
   const stateData = await c.env.KV_CACHE.get(`social:state:${state}`);
   if (!stateData) {
     console.error(
-      `[connections] invalid_state — key not found for state=${state} provider=${provider}`,
+      `[connections] invalid_state — key not found for state=${state} slug=${slug}`,
     );
     return c.redirect(`${c.env.APP_URL}/connections?error=invalid_state`);
   }
   await c.env.KV_CACHE.delete(`social:state:${state}`);
 
-  const { mode, userId } = JSON.parse(stateData) as {
+  const { provider, mode, userId } = JSON.parse(stateData) as {
+    slug: string;
     provider: string;
     mode: string;
     userId: string | null;
   };
 
   const config = await getConfig(c.env.DB);
-  const cfgCb = config as unknown as Record<string, unknown>;
-  const clientId = cfgCb[def.clientIdKey as string] as string;
-  const clientSecret = cfgCb[def.clientSecretKey as string] as string;
-  const redirectUri = `${c.env.APP_URL}/api/connections/${provider}/callback`;
+  const source = await resolveSource(c.env.DB, slug, config);
+  if (!source)
+    return c.redirect(
+      `${c.env.APP_URL}/connections?error=provider_not_configured`,
+    );
+
+  const redirectUri = `${c.env.APP_URL}/api/connections/${slug}/callback`;
 
   // Exchange code for token
   let tokenData: Record<string, unknown>;
   try {
-    const tokenRes = await fetch(def.tokenUrl, {
+    const tokenRes = await fetch(source.tokenUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json",
       },
       body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: source.clientId,
+        client_secret: source.clientSecret,
         code,
         redirect_uri: redirectUri,
         grant_type: "authorization_code",
@@ -240,7 +308,7 @@ app.get("/:provider/callback", async (c) => {
   // Fetch user profile
   let profileData: Record<string, unknown>;
   try {
-    const userRes = await fetch(def.userUrl, {
+    const userRes = await fetch(source.userUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
@@ -264,6 +332,7 @@ app.get("/:provider/callback", async (c) => {
     );
   }
 
+  // `provider` is the base type (github/google/…); `slug` is the source identifier
   const providerUserId = extractProviderUserId(provider, profileData);
   const providerEmail = extractProviderEmail(provider, profileData);
   if (!providerUserId)
@@ -272,12 +341,12 @@ app.get("/:provider/callback", async (c) => {
   const now = Math.floor(Date.now() / 1000);
 
   // Connect mode: attach to existing account
+  // social_connections.provider stores the slug so users can have e.g. github + github-work
   if (mode === "connect" && userId) {
-    // Prevent linking the same social account to the same Prism user twice
     const alreadyLinked = await c.env.DB.prepare(
       "SELECT id FROM social_connections WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
     )
-      .bind(userId, provider, providerUserId)
+      .bind(userId, slug, providerUserId)
       .first();
 
     if (alreadyLinked)
@@ -289,7 +358,7 @@ app.get("/:provider/callback", async (c) => {
       .bind(
         randomId(),
         userId,
-        provider,
+        slug,
         providerUserId,
         accessToken,
         JSON.stringify(profileData),
@@ -299,11 +368,11 @@ app.get("/:provider/callback", async (c) => {
     return c.redirect(`${c.env.APP_URL}/connections?success=connected`);
   }
 
-  // Login mode: find ALL Prism accounts linked to this social account
+  // Login mode: find ALL Prism accounts linked to this source slug + provider_user_id
   const linkedRows = await c.env.DB.prepare(
     "SELECT u.id, u.username, u.display_name, u.avatar_url, u.role, u.email, u.email_verified, u.is_active, u.created_at, u.updated_at, u.password_hash, u.email_verify_token FROM users u JOIN social_connections sc ON sc.user_id = u.id WHERE sc.provider = ? AND sc.provider_user_id = ?",
   )
-    .bind(provider, providerUserId)
+    .bind(slug, providerUserId)
     .all<UserRow>();
 
   const linkedUsers = linkedRows.results;
@@ -321,7 +390,7 @@ app.get("/:provider/callback", async (c) => {
       pendingKey,
       JSON.stringify({
         type: "register",
-        provider,
+        provider: slug, // store slug so /complete can insert the right value
         providerUserId,
         providerEmail,
         accessToken,
@@ -344,7 +413,7 @@ app.get("/:provider/callback", async (c) => {
         accessToken,
         JSON.stringify(profileData),
         user.id,
-        provider,
+        slug,
         providerUserId,
       )
       .run();
@@ -359,7 +428,7 @@ app.get("/:provider/callback", async (c) => {
     pendingKey,
     JSON.stringify({
       type: "select",
-      provider,
+      provider: slug,
       providerUserId,
       providerEmail,
       accessToken,
@@ -386,20 +455,23 @@ app.get("/pending/:key", async (c) => {
   if (!raw) return c.json({ error: "Invalid or expired session" }, 404);
 
   const state = JSON.parse(raw) as PendingState;
+  // state.provider holds the slug; resolve the base provider type for helpers
+  const config = await getConfig(c.env.DB);
+  const source = await resolveSource(c.env.DB, state.provider, config);
+  const baseProvider = source?.provider ?? state.provider;
+
   return c.json({
     type: state.type,
-    provider: state.provider,
-    profile_name: extractDisplayName(state.provider, state.profileData),
-    profile_avatar: extractProviderAvatar(state.provider, state.profileData),
+    provider: state.provider, // slug (used for display / URL)
+    provider_name: source?.name ?? state.provider,
+    profile_name: extractDisplayName(baseProvider, state.profileData),
+    profile_avatar: extractProviderAvatar(baseProvider, state.profileData),
     suggested_username: extractUsername(
-      state.provider,
+      baseProvider,
       state.profileData,
       state.providerEmail,
     ),
-    suggested_display_name: extractDisplayName(
-      state.provider,
-      state.profileData,
-    ),
+    suggested_display_name: extractDisplayName(baseProvider, state.profileData),
     users: state.users,
   });
 });
@@ -425,6 +497,14 @@ app.post("/complete", async (c) => {
   await c.env.KV_CACHE.delete(body.key);
 
   const now = Math.floor(Date.now() / 1000);
+  // Resolve base provider type for display-name helpers
+  const completeCfg = await getConfig(c.env.DB);
+  const completeSource = await resolveSource(
+    c.env.DB,
+    state.provider,
+    completeCfg,
+  );
+  const baseProvider = completeSource?.provider ?? state.provider;
 
   if (body.action === "login") {
     if (state.type !== "select")
@@ -470,7 +550,7 @@ app.post("/complete", async (c) => {
       .replace(/[^a-z0-9_]/g, "_")
       .slice(0, 32);
     const display_name = (
-      body.display_name ?? extractDisplayName(state.provider, state.profileData)
+      body.display_name ?? extractDisplayName(baseProvider, state.profileData)
     )
       .trim()
       .slice(0, 64);
