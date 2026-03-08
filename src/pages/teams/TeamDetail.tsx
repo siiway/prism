@@ -167,6 +167,14 @@ export function TeamDetail() {
     enabled: !!id && tab === "domains",
   });
 
+  const { data: personalDomainsData } = useQuery({
+    queryKey: ["domains"],
+    queryFn: api.listDomains,
+    enabled:
+      tab === "domains" &&
+      (data?.team?.my_role === "owner" || data?.team?.my_role === "admin"),
+  });
+
   const team = data?.team;
   const members = data?.members ?? [];
   const myRole = team?.my_role ?? "member";
@@ -457,6 +465,51 @@ export function TeamDetail() {
       await qc.invalidateQueries({ queryKey: ["team-domains", id] });
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
+    }
+  };
+
+  // Transfer a personal domain into this team
+  const [fromPersonalOpen, setFromPersonalOpen] = useState(false);
+  const [selectedPersonalDomainId, setSelectedPersonalDomainId] = useState("");
+  const [transferringIn, setTransferringIn] = useState(false);
+
+  // Personal domains not already in a team
+  const transferableDomains = (personalDomainsData?.domains ?? []).filter(
+    (d: Domain) => !("team_id" in d && d.team_id),
+  );
+
+  const handleTransferFromPersonal = async () => {
+    if (!id || !selectedPersonalDomainId) return;
+    setTransferringIn(true);
+    try {
+      await api.transferDomainToTeam(selectedPersonalDomainId, id);
+      await qc.invalidateQueries({ queryKey: ["team-domains", id] });
+      await qc.invalidateQueries({ queryKey: ["domains"] });
+      setFromPersonalOpen(false);
+      setSelectedPersonalDomainId("");
+      showMsg("success", "Domain moved to team");
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Transfer failed",
+      );
+    } finally {
+      setTransferringIn(false);
+    }
+  };
+
+  const handleReturnToPersonal = async (domainId: string) => {
+    if (!id) return;
+    try {
+      await api.returnDomainToPersonal(id, domainId);
+      await qc.invalidateQueries({ queryKey: ["team-domains", id] });
+      await qc.invalidateQueries({ queryKey: ["domains"] });
+      showMsg("success", "Domain returned to personal ownership");
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Transfer failed",
+      );
     }
   };
 
@@ -1129,25 +1182,99 @@ export function TeamDetail() {
           </Text>
 
           {canManage && (
-            <div style={{ display: "flex", gap: 8 }}>
-              <Field label="Add domain" style={{ flex: 1 }}>
-                <Input
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
-                  placeholder="example.com"
-                  onKeyDown={(e) => e.key === "Enter" && handleAddDomain()}
-                />
-              </Field>
-              <Button
-                appearance="primary"
-                icon={<AddRegular />}
-                onClick={handleAddDomain}
-                disabled={addingDomain || !newDomain}
-                style={{ alignSelf: "flex-end" }}
+            <>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Field label="Add domain" style={{ flex: 1 }}>
+                  <Input
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    placeholder="example.com"
+                    onKeyDown={(e) => e.key === "Enter" && handleAddDomain()}
+                  />
+                </Field>
+                <Button
+                  appearance="primary"
+                  icon={<AddRegular />}
+                  onClick={handleAddDomain}
+                  disabled={addingDomain || !newDomain}
+                  style={{ alignSelf: "flex-end" }}
+                >
+                  {addingDomain ? <Spinner size="tiny" /> : "Add"}
+                </Button>
+                {transferableDomains.length > 0 && (
+                  <Button
+                    style={{ alignSelf: "flex-end" }}
+                    onClick={() => {
+                      setFromPersonalOpen(true);
+                      setSelectedPersonalDomainId("");
+                    }}
+                  >
+                    Transfer from personal
+                  </Button>
+                )}
+              </div>
+
+              {/* Transfer from personal dialog */}
+              <Dialog
+                open={fromPersonalOpen}
+                onOpenChange={(_, d) => setFromPersonalOpen(d.open)}
               >
-                {addingDomain ? <Spinner size="tiny" /> : "Add"}
-              </Button>
-            </div>
+                <DialogSurface>
+                  <DialogBody>
+                    <DialogTitle>Transfer personal domain to team</DialogTitle>
+                    <DialogContent>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 12,
+                        }}
+                      >
+                        <Text
+                          size={200}
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          Move one of your verified personal domains into this
+                          team. It will be used to verify team apps.
+                        </Text>
+                        <Field label="Select domain" required>
+                          <Select
+                            value={selectedPersonalDomainId}
+                            onChange={(_, d) =>
+                              setSelectedPersonalDomainId(d.value)
+                            }
+                          >
+                            <option value="">— choose a domain —</option>
+                            {transferableDomains.map((d: Domain) => (
+                              <option key={d.id} value={d.id}>
+                                {d.domain}
+                                {d.verified ? " ✓" : " (unverified)"}
+                              </option>
+                            ))}
+                          </Select>
+                        </Field>
+                      </div>
+                    </DialogContent>
+                    <DialogActions>
+                      <Button onClick={() => setFromPersonalOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        appearance="primary"
+                        onClick={handleTransferFromPersonal}
+                        disabled={transferringIn || !selectedPersonalDomainId}
+                      >
+                        {transferringIn ? (
+                          <Spinner size="tiny" />
+                        ) : (
+                          "Transfer to team"
+                        )}
+                      </Button>
+                    </DialogActions>
+                  </DialogBody>
+                </DialogSurface>
+              </Dialog>
+            </>
           )}
 
           {addedDomainInfo && (
@@ -1293,6 +1420,18 @@ export function TeamDetail() {
                               </DialogBody>
                             </DialogSurface>
                           </Dialog>
+                          <Tooltip
+                            content="Return to personal"
+                            relationship="label"
+                          >
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              onClick={() => handleReturnToPersonal(d.id)}
+                            >
+                              ↩ Personal
+                            </Button>
+                          </Tooltip>
                         </div>
                       </TableCell>
                     )}

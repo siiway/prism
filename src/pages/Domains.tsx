@@ -13,6 +13,7 @@ import {
   Field,
   Input,
   MessageBar,
+  Select,
   Spinner,
   Table,
   TableBody,
@@ -27,9 +28,10 @@ import {
 } from "@fluentui/react-components";
 import {
   AddRegular,
+  ArrowClockwiseRegular,
+  ArrowSwapRegular,
   CheckmarkCircleRegular,
   DeleteRegular,
-  ArrowClockwiseRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -54,6 +56,15 @@ export function Domains() {
     queryFn: api.listDomains,
   });
 
+  const { data: teamsData } = useQuery({
+    queryKey: ["teams"],
+    queryFn: api.listTeams,
+  });
+  // Only teams where user is admin/owner
+  const manageableTeams = (teamsData?.teams ?? []).filter(
+    (t) => t.role === "owner" || t.role === "admin",
+  );
+
   const [newDomain, setNewDomain] = useState("");
   const [adding, setAdding] = useState(false);
   const [addedInfo, setAddedInfo] = useState<DomainAddResponse | null>(null);
@@ -63,6 +74,9 @@ export function Domains() {
   } | null>(null);
   const [verifying, setVerifying] = useState<string | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<Domain | null>(null);
+  const [transferDomain, setTransferDomain] = useState<Domain | null>(null);
+  const [transferTeamId, setTransferTeamId] = useState("");
+  const [transferring, setTransferring] = useState(false);
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -115,6 +129,28 @@ export function Domains() {
       await qc.invalidateQueries({ queryKey: ["domains"] });
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
+    }
+  };
+
+  const handleTransferToTeam = async () => {
+    if (!transferDomain || !transferTeamId) return;
+    setTransferring(true);
+    try {
+      await api.transferDomainToTeam(transferDomain.id, transferTeamId);
+      await qc.invalidateQueries({ queryKey: ["domains"] });
+      await qc.invalidateQueries({
+        queryKey: ["team-domains", transferTeamId],
+      });
+      setTransferDomain(null);
+      setTransferTeamId("");
+      showMsg("success", "Domain moved to team");
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : "Transfer failed",
+      );
+    } finally {
+      setTransferring(false);
     }
   };
 
@@ -269,6 +305,17 @@ export function Domains() {
                           "Verify"
                         )}
                       </Button>
+                      {manageableTeams.length > 0 && (
+                        <Button
+                          icon={<ArrowSwapRegular />}
+                          size="small"
+                          appearance="subtle"
+                          onClick={() => {
+                            setTransferDomain(d);
+                            setTransferTeamId("");
+                          }}
+                        />
+                      )}
                       <Dialog>
                         <DialogTrigger disableButtonEnhancement>
                           <Button
@@ -411,6 +458,57 @@ export function Domains() {
                   }}
                 >
                   Delete
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+
+        {/* Transfer to team dialog */}
+        <Dialog
+          open={!!transferDomain}
+          onOpenChange={(_, s) => {
+            if (!s.open) setTransferDomain(null);
+          }}
+        >
+          <DialogSurface>
+            <DialogBody>
+              <DialogTitle>Move domain to team</DialogTitle>
+              <DialogContent>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                >
+                  <Text>
+                    Move{" "}
+                    <strong style={{ fontFamily: "monospace" }}>
+                      {transferDomain?.domain}
+                    </strong>{" "}
+                    to a team. The domain will be managed by the team and used
+                    to verify team apps.
+                  </Text>
+                  <Field label="Select team" required>
+                    <Select
+                      value={transferTeamId}
+                      onChange={(_, d) => setTransferTeamId(d.value)}
+                    >
+                      <option value="">— choose a team —</option>
+                      {manageableTeams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setTransferDomain(null)}>Cancel</Button>
+                <Button
+                  appearance="primary"
+                  onClick={handleTransferToTeam}
+                  disabled={transferring || !transferTeamId}
+                >
+                  {transferring ? <Spinner size="tiny" /> : "Move to team"}
                 </Button>
               </DialogActions>
             </DialogBody>

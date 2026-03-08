@@ -141,6 +141,45 @@ app.post("/:id/verify", async (c) => {
   );
 });
 
+// Transfer personal domain to a team
+app.post("/:id/transfer", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE id = ? AND user_id = ? AND team_id IS NULL",
+  )
+    .bind(id, user.id)
+    .first<DomainRow>();
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+
+  const body = await c.req.json<{ team_id: string }>();
+  if (!body.team_id) return c.json({ error: "team_id is required" }, 400);
+
+  // Requester must be admin+ in the target team
+  const member = await c.env.DB.prepare(
+    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(body.team_id, user.id)
+    .first<{ role: string }>();
+  if (!member || (member.role !== "owner" && member.role !== "admin"))
+    return c.json({ error: "Forbidden: must be team admin or owner" }, 403);
+
+  // Team must not already have this domain
+  const conflict = await c.env.DB.prepare(
+    "SELECT id FROM domains WHERE team_id = ? AND domain = ?",
+  )
+    .bind(body.team_id, row.domain)
+    .first();
+  if (conflict) return c.json({ error: "Team already has this domain" }, 409);
+
+  await c.env.DB.prepare("UPDATE domains SET team_id = ? WHERE id = ?")
+    .bind(body.team_id, id)
+    .run();
+
+  return c.json({ message: "Domain transferred to team" });
+});
+
 // Delete domain
 app.delete("/:id", async (c) => {
   const user = c.get("user");

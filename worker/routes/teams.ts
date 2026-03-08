@@ -708,6 +708,41 @@ app.delete(":id/domains/:domainId", async (c) => {
   return c.json({ message: "Domain deleted" });
 });
 
+// Return team domain to its creator's personal domains
+app.post(":id/domains/:domainId/to-personal", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const domainId = c.req.param("domainId");
+  const m = await getMember(c.env.DB, id, user.id);
+  if (!m) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE id = ? AND team_id = ?",
+  )
+    .bind(domainId, id)
+    .first<import("../types").DomainRow>();
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+
+  // Check if the creator already has this domain personally
+  const conflict = await c.env.DB.prepare(
+    "SELECT id FROM domains WHERE user_id = ? AND team_id IS NULL AND domain = ?",
+  )
+    .bind(row.user_id, row.domain)
+    .first();
+  if (conflict)
+    return c.json(
+      { error: "Domain creator already owns this domain personally" },
+      409,
+    );
+
+  await c.env.DB.prepare("UPDATE domains SET team_id = NULL WHERE id = ?")
+    .bind(domainId)
+    .run();
+
+  return c.json({ message: "Domain returned to personal ownership" });
+});
+
 async function verifiedTeamParentDomain(
   db: D1Database,
   teamId: string,

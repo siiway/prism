@@ -502,6 +502,20 @@ export const api = {
       undefined,
       getToken(),
     ),
+  transferDomainToTeam: (domainId: string, teamId: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/domains/${domainId}/transfer`,
+      { team_id: teamId },
+      getToken(),
+    ),
+  returnDomainToPersonal: (teamId: string, domainId: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/teams/${teamId}/domains/${domainId}/to-personal`,
+      undefined,
+      getToken(),
+    ),
 
   // Team invites
   listTeamInvites: (teamId: string) =>
