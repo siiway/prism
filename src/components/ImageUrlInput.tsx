@@ -36,8 +36,10 @@ export function ImageUrlInput({ label, value, onChange, placeholder }: Props) {
       label={label}
       validationState={httpsError ? "error" : undefined}
       validationMessage={httpsError ? t("imageUrl.httpsRequired") : undefined}
+      style={{ width: "100%" }}
     >
       <Input
+        style={{ width: "100%" }}
         value={value}
         onChange={(e) => {
           setLoadError(false);

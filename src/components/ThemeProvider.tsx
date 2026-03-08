@@ -8,7 +8,7 @@ import {
   createDarkTheme,
 } from "@fluentui/react-components";
 import type { BrandVariants } from "@fluentui/react-components";
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 
@@ -95,8 +95,17 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   });
   const styleRef = useRef<HTMLStyleElement | null>(null);
 
-  const prefersDark =
-    window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+  const [prefersDark, setPrefersDark] = useState(
+    () => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false,
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!mediaQuery) return;
+    const handler = (e: MediaQueryListEvent) => setPrefersDark(e.matches);
+    mediaQuery.addEventListener("change", handler);
+    return () => mediaQuery.removeEventListener("change", handler);
+  }, []);
 
   const theme = useMemo(() => {
     const accent = siteConfig?.accent_color ?? "#0078d4";
@@ -108,7 +117,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     }
   }, [siteConfig?.accent_color, prefersDark]);
 
-  // Inject custom CSS and set document title/icon
+  // Inject custom CSS, set document title/icon, and update Safari theme color
   useEffect(() => {
     if (!siteConfig) return;
 
@@ -134,6 +143,18 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       styleRef.current.textContent = "";
     }
   }, [siteConfig]);
+
+  useEffect(() => {
+    let themeMeta = document.querySelector<HTMLMetaElement>(
+      'meta[name="theme-color"]',
+    );
+    if (!themeMeta) {
+      themeMeta = document.createElement("meta");
+      themeMeta.name = "theme-color";
+      document.head.appendChild(themeMeta);
+    }
+    themeMeta.content = theme.colorNeutralBackground1;
+  }, [theme]);
 
   return (
     <FluentProvider

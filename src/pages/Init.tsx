@@ -63,6 +63,9 @@ const useStyles = makeStyles({
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: "12px",
+    "@media (max-width: 600px)": {
+      gridTemplateColumns: "1fr",
+    },
   },
 });
 

@@ -43,10 +43,14 @@ const useStyles = makeStyles({
   form: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
+    alignItems: "start",
     gap: "12px",
     padding: "16px",
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: "8px",
+    "@media (max-width: 600px)": {
+      gridTemplateColumns: "1fr",
+    },
   },
   formFull: { gridColumn: "1 / -1" },
   actions: {

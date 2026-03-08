@@ -71,6 +71,9 @@ const useStyles = makeStyles({
     background: tokens.colorNeutralBackground3,
     borderRadius: "4px",
     fontFamily: "monospace",
+    "@media (max-width: 600px)": {
+      gridTemplateColumns: "1fr",
+    },
   },
   hiddenOnMobile: {
     "@media (max-width: 768px)": { display: "none" },
