@@ -32,14 +32,14 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError, type SiteInvite } from "../../lib/api";
 
 const useStyles = makeStyles({
-  section: { display: "flex", flexDirection: "column", gap: 16 },
+  section: { display: "flex", flexDirection: "column", gap: "16px" },
   form: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: 12,
-    padding: 16,
+    gap: "12px",
+    padding: "16px",
     border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: 8,
+    borderRadius: "8px",
   },
   formFull: { gridColumn: "1 / -1" },
   actions: {
@@ -47,14 +47,19 @@ const useStyles = makeStyles({
     display: "flex",
     justifyContent: "flex-end",
   },
-  copyRow: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
+  copyRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    marginTop: "4px",
+  },
   urlBox: {
     flex: 1,
     fontFamily: "monospace",
-    fontSize: 12,
+    fontSize: "12px",
     padding: "4px 8px",
     border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: 4,
+    borderRadius: "4px",
     background: tokens.colorNeutralBackground3,
     overflow: "hidden",
     textOverflow: "ellipsis",
