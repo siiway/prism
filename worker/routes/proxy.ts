@@ -64,8 +64,15 @@ function sanitizeSvg(raw: string): string {
 }
 
 app.get("/", async (c) => {
-  const rawUrl = c.req.query("url");
-  if (!rawUrl) return c.json({ error: "url parameter required" }, 400);
+  const encoded = c.req.query("url");
+  if (!encoded) return c.json({ error: "url parameter required" }, 400);
+
+  let rawUrl: string;
+  try {
+    rawUrl = atob(encoded);
+  } catch {
+    return c.json({ error: "Invalid base64 encoding" }, 400);
+  }
 
   let parsed: URL;
   try {

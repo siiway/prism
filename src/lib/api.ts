@@ -11,7 +11,7 @@ export function proxyImageUrl(url: string | null | undefined): string {
   if (!url) return "";
   // Already a local asset — no need to proxy
   if (url.startsWith("/")) return url;
-  return `${BASE}/proxy/image?url=${encodeURIComponent(url)}`;
+  return `${BASE}/proxy/image?url=${btoa(url)}`;
 }
 
 export class ApiError extends Error {
