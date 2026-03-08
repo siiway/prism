@@ -5,6 +5,7 @@ import { randomId, randomBase64url } from "../lib/crypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { computeIsVerified } from "../lib/domainVerify";
 import { getConfigValue } from "../lib/config";
+import { validateImageUrl } from "../lib/imageValidation";
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail } from "../lib/email";
@@ -147,6 +148,11 @@ app.post("/", async (c) => {
   }>();
   if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
 
+  if (body.avatar_url) {
+    const imgErr = await validateImageUrl(body.avatar_url);
+    if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+  }
+
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
 
@@ -225,6 +231,11 @@ app.patch("/:id", async (c) => {
     description?: string;
     avatar_url?: string;
   }>();
+
+  if (body.avatar_url) {
+    const imgErr = await validateImageUrl(body.avatar_url);
+    if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+  }
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)

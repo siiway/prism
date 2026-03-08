@@ -17,6 +17,7 @@ import domainsRoutes from "./routes/domains";
 import connectionsRoutes from "./routes/connections";
 import userRoutes from "./routes/user";
 import adminRoutes from "./routes/admin";
+import proxyRoutes from "./routes/proxy";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -90,6 +91,7 @@ app.route("/api/domains", domainsRoutes);
 app.route("/api/connections", connectionsRoutes);
 app.route("/api/user", userRoutes);
 app.route("/api/admin", adminRoutes);
+app.route("/api/proxy/image", proxyRoutes);
 
 // OpenID Connect Discovery at root
 app.get("/.well-known/openid-configuration", async (c) => {

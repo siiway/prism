@@ -35,7 +35,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { api, proxyImageUrl } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
@@ -240,7 +240,7 @@ export function Layout() {
         >
           {site?.site_icon_url && (
             <img
-              src={site.site_icon_url}
+              src={proxyImageUrl(site.site_icon_url)}
               alt="logo"
               style={{ width: 28, height: 28, borderRadius: 4 }}
             />
@@ -350,7 +350,9 @@ export function Layout() {
                 <Avatar
                   name={user?.display_name}
                   image={
-                    user?.avatar_url ? { src: user.avatar_url } : undefined
+                    user?.avatar_url
+                      ? { src: proxyImageUrl(user.avatar_url) }
+                      : undefined
                   }
                   size={28}
                 />
@@ -418,7 +420,7 @@ export function Layout() {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {site?.site_icon_url && (
             <img
-              src={site.site_icon_url}
+              src={proxyImageUrl(site.site_icon_url)}
               alt="logo"
               style={{ width: 24, height: 24, borderRadius: 4 }}
             />

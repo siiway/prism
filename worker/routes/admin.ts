@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { getConfig, setConfigValues } from "../lib/config";
 import { sendEmail } from "../lib/email";
 import { requireAdmin } from "../middleware/auth";
+import { validateImageUrl } from "../lib/imageValidation";
 import {
   buildVerifiedDomainsMap,
   buildVerifiedTeamDomainsMap,
@@ -81,6 +82,11 @@ app.patch("/config", async (c) => {
   const updates: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(body)) {
     if (allowed.has(k)) updates[k] = v;
+  }
+
+  if (updates.site_icon_url && typeof updates.site_icon_url === "string") {
+    const imgErr = await validateImageUrl(updates.site_icon_url);
+    if (imgErr) return c.json({ error: `site_icon_url: ${imgErr}` }, 400);
   }
 
   await setConfigValues(c.env.DB, updates);

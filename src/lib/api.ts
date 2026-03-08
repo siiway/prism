@@ -2,6 +2,18 @@
 
 const BASE = "/api";
 
+/**
+ * Returns a URL that routes an external image through the worker's sanitizing
+ * reverse proxy.  SVGs are stripped of script content before being served.
+ * Pass an empty string / nullish value to get back an empty string.
+ */
+export function proxyImageUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  // Already a local asset — no need to proxy
+  if (url.startsWith("/")) return url;
+  return `${BASE}/proxy/image?url=${encodeURIComponent(url)}`;
+}
+
 export class ApiError extends Error {
   status: number;
   data: unknown;

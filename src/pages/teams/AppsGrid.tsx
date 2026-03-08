@@ -11,6 +11,7 @@ import {
 import { GlobeRegular } from "@fluentui/react-icons";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { proxyImageUrl } from "../../lib/api";
 import type { OAuthApp } from "../../lib/api";
 
 const useStyles = makeStyles({
@@ -68,7 +69,7 @@ export function AppsGrid({ apps, loading }: AppsGridProps) {
             image={
               app.icon_url ? (
                 <img
-                  src={app.icon_url}
+                  src={proxyImageUrl(app.icon_url)}
                   alt={app.name}
                   width={32}
                   height={32}

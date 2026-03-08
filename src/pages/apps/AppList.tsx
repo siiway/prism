@@ -27,7 +27,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import { api, ApiError, proxyImageUrl } from "../../lib/api";
 
 const useStyles = makeStyles({
   header: {
@@ -222,7 +222,7 @@ export function AppList() {
               image={
                 app.icon_url ? (
                   <img
-                    src={app.icon_url}
+                    src={proxyImageUrl(app.icon_url)}
                     alt={app.name}
                     width={32}
                     height={32}

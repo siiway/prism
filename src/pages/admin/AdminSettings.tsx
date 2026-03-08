@@ -31,6 +31,7 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 import type { SiteConfig } from "../../types";
+import { ImageUrlInput } from "../../components/ImageUrlInput";
 
 const useStyles = makeStyles({
   card: {
@@ -170,13 +171,11 @@ export function AdminSettings() {
                 onChange={(e) => set("site_description", e.target.value)}
               />
             </Field>
-            <Field label={t("admin.siteIconUrl")}>
-              <Input
-                value={get("site_icon_url") ?? ""}
-                onChange={(e) => set("site_icon_url", e.target.value || null)}
-                placeholder="https://..."
-              />
-            </Field>
+            <ImageUrlInput
+              label={t("admin.siteIconUrl")}
+              value={get("site_icon_url") ?? ""}
+              onChange={(v) => set("site_icon_url", v || null)}
+            />
             <Switch
               label={t("admin.allowRegistration")}
               checked={!!get("allow_registration")}

@@ -24,7 +24,7 @@ import {
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type OAuthConsent } from "../lib/api";
+import { api, ApiError, proxyImageUrl, type OAuthConsent } from "../lib/api";
 
 const useStyles = makeStyles({
   list: {
@@ -131,7 +131,7 @@ export function ConnectedApps() {
             <div key={consent.client_id} className={styles.card}>
               {consent.app.icon_url ? (
                 <Avatar
-                  image={{ src: consent.app.icon_url }}
+                  image={{ src: proxyImageUrl(consent.app.icon_url) }}
                   name={consent.app.name}
                   size={48}
                   shape="square"

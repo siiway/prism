@@ -36,6 +36,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { ImageUrlInput } from "../../components/ImageUrlInput";
 
 const useStyles = makeStyles({
   header: {
@@ -294,15 +295,11 @@ export function AppDetail() {
                 }
               />
             </Field>
-            <Field label={t("apps.iconUrl")} hint={t("apps.iconUrlHint")}>
-              <Input
-                value={form.icon_url}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f!, icon_url: e.target.value }))
-                }
-                placeholder="https://example.com/icon.png"
-              />
-            </Field>
+            <ImageUrlInput
+              label={t("apps.iconUrl")}
+              value={form.icon_url}
+              onChange={(v) => setForm((f) => ({ ...f!, icon_url: v }))}
+            />
             <Field label={t("apps.websiteUrl")}>
               <Input
                 value={form.website_url}

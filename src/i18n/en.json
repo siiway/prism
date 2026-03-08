@@ -380,7 +380,6 @@
     "createTeamAppTitle": "Create Team App",
     "appName": "App name",
     "appNamePlaceholder": "My App",
-    "descriptionField": "Description",
     "websiteUrlField": "Website URL",
     "websiteUrlPlaceholder": "https://example.com",
     "redirectUrisField": "Redirect URIs",
@@ -582,5 +581,10 @@
   "language": {
     "switchToZh": "中文",
     "switchToEn": "English"
+  },
+  "imageUrl": {
+    "httpsRequired": "Image URL must use HTTPS",
+    "preview": "Preview",
+    "loadFailed": "Could not load image from this URL"
   }
 }

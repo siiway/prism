@@ -27,7 +27,14 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type Domain, type OAuthApp } from "../../lib/api";
+import {
+  api,
+  ApiError,
+  proxyImageUrl,
+  type Domain,
+  type OAuthApp,
+} from "../../lib/api";
+import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { useAuthStore } from "../../store/auth";
 import { InviteDialog } from "./dialogs/InviteDialog";
 import { AddMemberDialog } from "./dialogs/AddMemberDialog";
@@ -275,7 +282,11 @@ export function TeamDetail() {
       {/* Header */}
       <div className={styles.header}>
         {team.avatar_url ? (
-          <Avatar image={{ src: team.avatar_url }} name={team.name} size={48} />
+          <Avatar
+            image={{ src: proxyImageUrl(team.avatar_url) }}
+            name={team.name}
+            size={48}
+          />
         ) : (
           <Avatar name={team.name} size={48} />
         )}
@@ -424,13 +435,13 @@ export function TeamDetail() {
                 rows={3}
               />
             </Field>
-            <Field label={t("teams.avatarUrlField")}>
-              <Input
-                value={settingsForm.avatar_url}
-                onChange={updateSettings("avatar_url")}
-                placeholder="https://example.com/logo.png"
-              />
-            </Field>
+            <ImageUrlInput
+              label={t("teams.avatarUrlField")}
+              value={settingsForm.avatar_url}
+              onChange={(v) =>
+                setSettingsForm((f) => ({ ...f, avatar_url: v }))
+              }
+            />
             <div>
               <Button
                 appearance="primary"

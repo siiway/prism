@@ -30,6 +30,7 @@ import {
   MoreHorizontalRegular,
 } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
+import { proxyImageUrl } from "../../lib/api";
 import type { TeamInvite, TeamMember } from "../../lib/api";
 
 const ROLE_COLORS: Record<string, "brand" | "success" | "subtle"> = {
@@ -104,7 +105,11 @@ export function MembersTable({
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Avatar
                     name={m.display_name}
-                    image={m.avatar_url ? { src: m.avatar_url } : undefined}
+                    image={
+                      m.avatar_url
+                        ? { src: proxyImageUrl(m.avatar_url) }
+                        : undefined
+                    }
                     size={24}
                   />
                   <div>

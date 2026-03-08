@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
+import { validateImageUrl } from "../lib/imageValidation";
 import type { OAuthAppRow, TeamMemberRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -184,6 +185,11 @@ app.patch("/:id", async (c) => {
     allowed_scopes?: string[];
     is_public?: boolean;
   }>();
+
+  if (body.icon_url) {
+    const imgErr = await validateImageUrl(body.icon_url);
+    if (imgErr) return c.json({ error: `icon_url: ${imgErr}` }, 400);
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const updated = {

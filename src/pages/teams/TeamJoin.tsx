@@ -15,7 +15,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import { api, ApiError, proxyImageUrl } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 
 const ROLE_COLORS: Record<string, "brand" | "success" | "subtle"> = {
@@ -110,7 +110,11 @@ export function TeamJoin() {
       }}
     >
       {team.avatar_url ? (
-        <Avatar image={{ src: team.avatar_url }} name={team.name} size={64} />
+        <Avatar
+          image={{ src: proxyImageUrl(team.avatar_url) }}
+          name={team.name}
+          size={64}
+        />
       ) : (
         <Avatar name={team.name} size={64} />
       )}

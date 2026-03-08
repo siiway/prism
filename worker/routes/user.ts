@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import { hashPassword, verifyPassword } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
+import { validateImageUrl } from "../lib/imageValidation";
 import type { UserRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -55,6 +56,10 @@ app.patch("/me", async (c) => {
     values.push(body.display_name);
   }
   if (body.avatar_url !== undefined) {
+    if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
+      const imgErr = await validateImageUrl(body.avatar_url);
+      if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+    }
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
   }

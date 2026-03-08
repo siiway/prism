@@ -16,8 +16,9 @@ import {
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, proxyImageUrl } from "../lib/api";
 import { useAuthStore } from "../store/auth";
+import { ImageUrlInput } from "../components/ImageUrlInput";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: "32px" },
@@ -145,7 +146,9 @@ export function Profile() {
           <Avatar
             name={me?.user.display_name}
             image={
-              me?.user.avatar_url ? { src: me.user.avatar_url } : undefined
+              me?.user.avatar_url
+                ? { src: proxyImageUrl(me.user.avatar_url) }
+                : undefined
             }
             size={72}
           />
@@ -178,13 +181,12 @@ export function Profile() {
               </Text>
             </div>
           ) : (
-            <Field label={t("profile.avatarUrl")} style={{ flex: 1 }}>
-              <Input
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder={t("profile.avatarPlaceholder")}
-              />
-            </Field>
+            <ImageUrlInput
+              label={t("profile.avatarUrl")}
+              value={avatarUrl}
+              onChange={setAvatarUrl}
+              placeholder={t("profile.avatarPlaceholder")}
+            />
           )}
         </div>
 

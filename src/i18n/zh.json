@@ -380,7 +380,6 @@
     "createTeamAppTitle": "创建团队应用",
     "appName": "应用名称",
     "appNamePlaceholder": "我的应用",
-    "descriptionField": "描述",
     "websiteUrlField": "网站 URL",
     "websiteUrlPlaceholder": "https://example.com",
     "redirectUrisField": "重定向 URI",
@@ -582,5 +581,10 @@
   "language": {
     "switchToZh": "中文",
     "switchToEn": "English"
+  },
+  "imageUrl": {
+    "httpsRequired": "图片 URL 必须使用 HTTPS",
+    "preview": "预览",
+    "loadFailed": "无法从该 URL 加载图片"
   }
 }
