@@ -20,6 +20,17 @@ export async function requireAuth(c: Context<AppEnv>, next: Next) {
   try {
     const secret = await getJwtSecret(c.env.KV_SESSIONS);
     const payload = await verifyJWT(token, secret);
+
+    const session = await c.env.DB.prepare(
+      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?",
+    )
+      .bind(payload.sessionId)
+      .first<{ id: string; is_active: number }>();
+
+    if (!session || !session.is_active) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     c.set("user", {
       id: payload.sub,
       email: payload.email as string,
@@ -48,6 +59,17 @@ export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
     const secret = await getJwtSecret(c.env.KV_SESSIONS);
     const payload = await verifyJWT(token, secret);
     if (payload.role !== "admin") return c.json({ error: "Forbidden" }, 403);
+
+    const session = await c.env.DB.prepare(
+      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?",
+    )
+      .bind(payload.sessionId)
+      .first<{ id: string; is_active: number }>();
+
+    if (!session || !session.is_active) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     c.set("user", {
       id: payload.sub,
       email: payload.email as string,
@@ -74,16 +96,25 @@ export async function optionalAuth(c: Context<AppEnv>, next: Next) {
     try {
       const secret = await getJwtSecret(c.env.KV_SESSIONS);
       const payload = await verifyJWT(token, secret);
-      c.set("user", {
-        id: payload.sub,
-        email: payload.email as string,
-        username: payload.username as string,
-        display_name: payload.display_name as string,
-        avatar_url: (payload.avatar_url as string) ?? null,
-        role: payload.role,
-        email_verified: payload.email_verified as boolean,
-      });
-      c.set("sessionId", payload.sessionId);
+
+      const session = await c.env.DB.prepare(
+        "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?",
+      )
+        .bind(payload.sessionId)
+        .first<{ id: string; is_active: number }>();
+
+      if (session && session.is_active) {
+        c.set("user", {
+          id: payload.sub,
+          email: payload.email as string,
+          username: payload.username as string,
+          display_name: payload.display_name as string,
+          avatar_url: (payload.avatar_url as string) ?? null,
+          role: payload.role,
+          email_verified: payload.email_verified as boolean,
+        });
+        c.set("sessionId", payload.sessionId);
+      }
     } catch {
       // ignore invalid tokens for optional auth
     }

@@ -118,6 +118,7 @@
   },
   "security": {
     "title": "Security",
+    "currentSession": "Current session",
     "totpTitle": "Authenticator Apps (TOTP)",
     "totpDesc": "Use apps like Authy or Google Authenticator. One set of backup codes is shared across all authenticators.",
     "enabled": "Enabled",

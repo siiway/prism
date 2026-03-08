@@ -802,7 +802,24 @@ export function Security() {
                         textOverflow: "ellipsis",
                       }}
                     >
-                      {s.user_agent ?? t("security.unknown")}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        {s.user_agent ?? t("security.unknown")}
+                        {s.is_current && (
+                          <Badge
+                            color="informative"
+                            appearance="filled"
+                            size="small"
+                          >
+                            {t("security.currentSession")}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className={styles.hiddenOnMobile}>
                       {s.ip_address ?? "—"}

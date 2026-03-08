@@ -118,7 +118,8 @@
   },
   "security": {
     "title": "安全",
-    "totpTitle": "验证器应用 (TOTP)",
+    "currentSession": "当前会话",
+    "totpTitle": "身份验证器应用 (TOTP)",
     "totpDesc": "使用 Authy 或 Google Authenticator 等应用。所有验证器共享同一组备用码。",
     "enabled": "已启用",
     "disabled": "已禁用",

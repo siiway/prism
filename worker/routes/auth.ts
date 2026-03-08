@@ -775,12 +775,18 @@ app.get("/pow-challenge", async (c) => {
 
 app.get("/sessions", requireAuth, async (c) => {
   const user = c.get("user");
+  const currentSessionId = c.get("sessionId");
   const sessions = await c.env.DB.prepare(
     "SELECT id, user_agent, ip_address, created_at, expires_at FROM sessions WHERE user_id = ? ORDER BY created_at DESC",
   )
     .bind(user.id)
     .all();
-  return c.json({ sessions: sessions.results });
+  return c.json({
+    sessions: sessions.results.map((s) => ({
+      ...s,
+      is_current: s.id === currentSessionId,
+    })),
+  });
 });
 
 app.delete("/sessions/:id", requireAuth, async (c) => {

@@ -1,3 +1,5 @@
+import { useAuthStore } from "../store/auth";
+
 // API client — all requests go through here
 
 const BASE = "/api";
@@ -56,6 +58,10 @@ async function request<T>(
     : await res.text();
 
   if (!res.ok) {
+    if (res.status === 401) {
+      useAuthStore.getState().clearAuth();
+    }
+
     const message =
       typeof data === "object" && data !== null && "error" in data
         ? String((data as Record<string, unknown>).error)
@@ -780,6 +786,7 @@ export interface SessionInfo {
   ip_address: string | null;
   created_at: number;
   expires_at: number;
+  is_current: boolean;
 }
 
 export interface OAuthConsent {
