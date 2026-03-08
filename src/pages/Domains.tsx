@@ -1,56 +1,26 @@
 // Domain verification page
 
 import {
-  Badge,
   Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
   Field,
   Input,
   MessageBar,
-  Select,
   Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
   Text,
   Title2,
-  makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  AddRegular,
-  ArrowClockwiseRegular,
-  ArrowSwapRegular,
-  CheckmarkCircleRegular,
-  CopyRegular,
-  DeleteRegular,
-} from "@fluentui/react-icons";
+import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import type { Domain, DomainAddResponse } from "../lib/api";
-
-const useStyles = makeStyles({
-  hiddenOnMobile: {
-    "@media (max-width: 768px)": { display: "none" },
-  },
-  row: {
-    cursor: "pointer",
-    ":hover": { background: tokens.colorNeutralBackground3 },
-  },
-});
+import { DomainDetailDialog } from "./domains/dialogs/DomainDetailDialog";
+import { TransferDomainDialog } from "./domains/dialogs/TransferDomainDialog";
+import { ShareDomainDialog } from "./domains/dialogs/ShareDomainDialog";
+import { DomainsTable } from "./domains/DomainsTable";
 
 export function Domains() {
-  const styles = useStyles();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["domains"],
@@ -76,11 +46,7 @@ export function Domains() {
   const [verifying, setVerifying] = useState<string | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<Domain | null>(null);
   const [transferDomain, setTransferDomain] = useState<Domain | null>(null);
-  const [transferTeamId, setTransferTeamId] = useState("");
-  const [transferring, setTransferring] = useState(false);
   const [shareDomain, setShareDomain] = useState<Domain | null>(null);
-  const [shareTeamId, setShareTeamId] = useState("");
-  const [sharing, setSharing] = useState(false);
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -136,43 +102,33 @@ export function Domains() {
     }
   };
 
-  const handleTransferToTeam = async () => {
-    if (!transferDomain || !transferTeamId) return;
-    setTransferring(true);
+  const handleTransferToTeam = async (teamId: string) => {
+    if (!transferDomain) return;
     try {
-      await api.transferDomainToTeam(transferDomain.id, transferTeamId);
+      await api.transferDomainToTeam(transferDomain.id, teamId);
       await qc.invalidateQueries({ queryKey: ["domains"] });
-      await qc.invalidateQueries({
-        queryKey: ["team-domains", transferTeamId],
-      });
+      await qc.invalidateQueries({ queryKey: ["team-domains", teamId] });
       setTransferDomain(null);
-      setTransferTeamId("");
       showMsg("success", "Domain moved to team");
     } catch (err) {
       showMsg(
         "error",
         err instanceof ApiError ? err.message : "Transfer failed",
       );
-    } finally {
-      setTransferring(false);
+      throw err;
     }
   };
 
-  const handleShareToTeam = async () => {
-    if (!shareDomain || !shareTeamId) return;
-    setSharing(true);
+  const handleShareToTeam = async (teamId: string) => {
+    if (!shareDomain) return;
     try {
-      await api.shareDomainToTeam(shareDomain.id, shareTeamId);
-      await qc.invalidateQueries({
-        queryKey: ["team-domains", shareTeamId],
-      });
+      await api.shareDomainToTeam(shareDomain.id, teamId);
+      await qc.invalidateQueries({ queryKey: ["team-domains", teamId] });
       setShareDomain(null);
-      setShareTeamId("");
       showMsg("success", "Domain shared with team");
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Share failed");
-    } finally {
-      setSharing(false);
+      throw err;
     }
   };
 
@@ -250,357 +206,39 @@ export function Domains() {
         </div>
       )}
 
-      <>
-        {isLoading ? (
-          <Spinner />
-        ) : (data?.domains.length ?? 0) === 0 ? (
-          <Text
-            style={{
-              color: tokens.colorNeutralForeground3,
-              textAlign: "center",
-              padding: "40px 0",
-            }}
-          >
-            No domains added yet.
-          </Text>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>Domain</TableHeaderCell>
-                <TableHeaderCell>Status</TableHeaderCell>
-                <TableHeaderCell className={styles.hiddenOnMobile}>
-                  Verified at
-                </TableHeaderCell>
-                <TableHeaderCell className={styles.hiddenOnMobile}>
-                  Next re-verify
-                </TableHeaderCell>
-                <TableHeaderCell className={styles.hiddenOnMobile}>
-                  Actions
-                </TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data!.domains.map((d) => (
-                <TableRow
-                  key={d.id}
-                  className={styles.row}
-                  onClick={() => setSelectedDomain(d)}
-                >
-                  <TableCell style={{ fontFamily: "monospace" }}>
-                    {d.domain}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      color={d.verified ? "success" : "subtle"}
-                      appearance="filled"
-                      icon={d.verified ? <CheckmarkCircleRegular /> : undefined}
-                    >
-                      {d.verified ? "Verified" : "Pending"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className={styles.hiddenOnMobile}>
-                    {d.verified_at
-                      ? new Date(d.verified_at * 1000).toLocaleDateString()
-                      : "—"}
-                  </TableCell>
-                  <TableCell className={styles.hiddenOnMobile}>
-                    {d.next_reverify_at
-                      ? new Date(d.next_reverify_at * 1000).toLocaleDateString()
-                      : "—"}
-                  </TableCell>
-                  <TableCell className={styles.hiddenOnMobile}>
-                    <div
-                      style={{ display: "flex", gap: 4 }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Button
-                        icon={<ArrowClockwiseRegular />}
-                        size="small"
-                        appearance="subtle"
-                        disabled={verifying === d.id}
-                        onClick={() => handleVerify(d.id)}
-                      >
-                        {verifying === d.id ? (
-                          <Spinner size="tiny" />
-                        ) : (
-                          "Verify"
-                        )}
-                      </Button>
-                      {manageableTeams.length > 0 && (
-                        <>
-                          <Button
-                            icon={<ArrowSwapRegular />}
-                            size="small"
-                            appearance="subtle"
-                            title="Move to team"
-                            onClick={() => {
-                              setTransferDomain(d);
-                              setTransferTeamId("");
-                            }}
-                          />
-                          <Button
-                            icon={<CopyRegular />}
-                            size="small"
-                            appearance="subtle"
-                            title="Share with team"
-                            onClick={() => {
-                              setShareDomain(d);
-                              setShareTeamId("");
-                            }}
-                          />
-                        </>
-                      )}
-                      <Dialog>
-                        <DialogTrigger disableButtonEnhancement>
-                          <Button
-                            icon={<DeleteRegular />}
-                            size="small"
-                            appearance="subtle"
-                          />
-                        </DialogTrigger>
-                        <DialogSurface>
-                          <DialogBody>
-                            <DialogTitle>Remove domain?</DialogTitle>
-                            <DialogContent>
-                              Remove <strong>{d.domain}</strong> from your
-                              verified domains?
-                            </DialogContent>
-                            <DialogActions>
-                              <DialogTrigger>
-                                <Button>Cancel</Button>
-                              </DialogTrigger>
-                              <Button
-                                appearance="primary"
-                                style={{
-                                  background: tokens.colorPaletteRedBackground3,
-                                }}
-                                onClick={() => handleDelete(d.id)}
-                              >
-                                Remove
-                              </Button>
-                            </DialogActions>
-                          </DialogBody>
-                        </DialogSurface>
-                      </Dialog>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+      <DomainsTable
+        domains={data?.domains ?? []}
+        loading={isLoading}
+        verifying={verifying}
+        manageableTeams={manageableTeams}
+        onVerify={handleVerify}
+        onDelete={handleDelete}
+        onSelectDomain={setSelectedDomain}
+        onTransferDomain={setTransferDomain}
+        onShareDomain={setShareDomain}
+      />
 
-        {/* Row detail dialog (primary use on mobile) */}
-        <Dialog
-          open={!!selectedDomain}
-          onOpenChange={(_, s) => {
-            if (!s.open) setSelectedDomain(null);
-          }}
-        >
-          <DialogSurface>
-            <DialogBody>
-              <DialogTitle style={{ fontFamily: "monospace" }}>
-                {selectedDomain?.domain}
-              </DialogTitle>
-              <DialogContent>
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
-                >
-                  <Badge
-                    color={selectedDomain?.verified ? "success" : "subtle"}
-                    appearance="filled"
-                    icon={
-                      selectedDomain?.verified ? (
-                        <CheckmarkCircleRegular />
-                      ) : undefined
-                    }
-                    style={{ width: "fit-content" }}
-                  >
-                    {selectedDomain?.verified ? "Verified" : "Pending"}
-                  </Badge>
+      <DomainDetailDialog
+        domain={selectedDomain}
+        verifying={verifying === selectedDomain?.id}
+        onClose={() => setSelectedDomain(null)}
+        onVerify={handleVerify}
+        onDelete={handleDelete}
+      />
 
-                  {selectedDomain?.verified_at && (
-                    <Text size={200}>
-                      <strong>Verified:</strong>{" "}
-                      {new Date(
-                        selectedDomain.verified_at * 1000,
-                      ).toLocaleDateString()}
-                    </Text>
-                  )}
-                  {selectedDomain?.next_reverify_at && (
-                    <Text size={200}>
-                      <strong>Next re-verify:</strong>{" "}
-                      {new Date(
-                        selectedDomain.next_reverify_at * 1000,
-                      ).toLocaleDateString()}
-                    </Text>
-                  )}
+      <TransferDomainDialog
+        domain={transferDomain}
+        teams={manageableTeams}
+        onClose={() => setTransferDomain(null)}
+        onTransfer={handleTransferToTeam}
+      />
 
-                  {!selectedDomain?.verified && (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 4,
-                        padding: "10px 12px",
-                        borderRadius: 6,
-                        background: tokens.colorNeutralBackground3,
-                      }}
-                    >
-                      <Text size={200} weight="semibold">
-                        Add this DNS TXT record:
-                      </Text>
-                      <Text size={200}>
-                        <strong>Name:</strong>{" "}
-                        <code>_prism-verify.{selectedDomain?.domain}</code>
-                      </Text>
-                      <Text size={200}>
-                        <strong>Value:</strong>{" "}
-                        <code>
-                          prism-verify={selectedDomain?.verification_token}
-                        </code>
-                      </Text>
-                    </div>
-                  )}
-                </div>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={() => setSelectedDomain(null)}>Close</Button>
-                <Button
-                  appearance="outline"
-                  icon={<ArrowClockwiseRegular />}
-                  disabled={verifying === selectedDomain?.id}
-                  onClick={async () => {
-                    if (!selectedDomain) return;
-                    await handleVerify(selectedDomain.id);
-                    setSelectedDomain(null);
-                  }}
-                >
-                  {verifying === selectedDomain?.id ? (
-                    <Spinner size="tiny" />
-                  ) : (
-                    "Verify"
-                  )}
-                </Button>
-                <Button
-                  appearance="primary"
-                  style={{ background: tokens.colorPaletteRedBackground3 }}
-                  onClick={() => {
-                    if (!selectedDomain) return;
-                    handleDelete(selectedDomain.id);
-                    setSelectedDomain(null);
-                  }}
-                >
-                  Delete
-                </Button>
-              </DialogActions>
-            </DialogBody>
-          </DialogSurface>
-        </Dialog>
-
-        {/* Transfer to team dialog */}
-        <Dialog
-          open={!!transferDomain}
-          onOpenChange={(_, s) => {
-            if (!s.open) setTransferDomain(null);
-          }}
-        >
-          <DialogSurface>
-            <DialogBody>
-              <DialogTitle>Move domain to team</DialogTitle>
-              <DialogContent>
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
-                >
-                  <Text>
-                    Move{" "}
-                    <strong style={{ fontFamily: "monospace" }}>
-                      {transferDomain?.domain}
-                    </strong>{" "}
-                    to a team. The domain will be removed from your personal
-                    domains and managed by the team.
-                  </Text>
-                  <Field label="Select team" required>
-                    <Select
-                      value={transferTeamId}
-                      onChange={(_, d) => setTransferTeamId(d.value)}
-                    >
-                      <option value="">— choose a team —</option>
-                      {manageableTeams.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </div>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={() => setTransferDomain(null)}>Cancel</Button>
-                <Button
-                  appearance="primary"
-                  onClick={handleTransferToTeam}
-                  disabled={transferring || !transferTeamId}
-                >
-                  {transferring ? <Spinner size="tiny" /> : "Move to team"}
-                </Button>
-              </DialogActions>
-            </DialogBody>
-          </DialogSurface>
-        </Dialog>
-
-        {/* Share to team dialog */}
-        <Dialog
-          open={!!shareDomain}
-          onOpenChange={(_, s) => {
-            if (!s.open) setShareDomain(null);
-          }}
-        >
-          <DialogSurface>
-            <DialogBody>
-              <DialogTitle>Share domain with team</DialogTitle>
-              <DialogContent>
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
-                >
-                  <Text>
-                    Share{" "}
-                    <strong style={{ fontFamily: "monospace" }}>
-                      {shareDomain?.domain}
-                    </strong>{" "}
-                    with a team. The domain will also appear in the team's
-                    verified domains — your personal copy is kept.
-                  </Text>
-                  <Field label="Select team" required>
-                    <Select
-                      value={shareTeamId}
-                      onChange={(_, d) => setShareTeamId(d.value)}
-                    >
-                      <option value="">— choose a team —</option>
-                      {manageableTeams.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </div>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={() => setShareDomain(null)}>Cancel</Button>
-                <Button
-                  appearance="primary"
-                  onClick={handleShareToTeam}
-                  disabled={sharing || !shareTeamId}
-                >
-                  {sharing ? <Spinner size="tiny" /> : "Share with team"}
-                </Button>
-              </DialogActions>
-            </DialogBody>
-          </DialogSurface>
-        </Dialog>
-      </>
+      <ShareDomainDialog
+        domain={shareDomain}
+        teams={manageableTeams}
+        onClose={() => setShareDomain(null)}
+        onShare={handleShareToTeam}
+      />
     </div>
   );
 }

@@ -4,68 +4,37 @@ import {
   Avatar,
   Badge,
   Button,
-  Card,
-  CardHeader,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
   Field,
   Input,
-  Menu,
-  MenuItem,
-  MenuList,
-  MenuPopover,
-  MenuTrigger,
   MessageBar,
-  Select,
   Spinner,
   Tab,
   TabList,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
   Text,
   Title2,
-  Title3,
   Textarea,
-  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import {
-  AddRegular,
   AppsRegular,
-  ArrowClockwiseRegular,
-  CheckmarkCircleRegular,
-  CopyRegular,
   DeleteRegular,
-  GlobeRegular,
   GlobeSearchRegular,
-  LinkRegular,
-  MailRegular,
-  MoreHorizontalRegular,
   PeopleRegular,
   SettingsRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  api,
-  ApiError,
-  type Domain,
-  type DomainAddResponse,
-  type OAuthApp,
-  type TeamInvite,
-} from "../../lib/api";
+import { api, ApiError, type Domain, type OAuthApp } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
+import { InviteDialog } from "./dialogs/InviteDialog";
+import { AddMemberDialog } from "./dialogs/AddMemberDialog";
+import { MigrateAppDialog } from "./dialogs/MigrateAppDialog";
+import { NewTeamAppDialog } from "./dialogs/NewTeamAppDialog";
+import { MembersTable } from "./MembersTable";
+import { AppsGrid } from "./AppsGrid";
+import { DomainsTable } from "./DomainsTable";
 
 const useStyles = makeStyles({
   header: {
@@ -73,17 +42,6 @@ const useStyles = makeStyles({
     alignItems: "center",
     gap: "16px",
     marginBottom: "24px",
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-    gap: "16px",
-    marginTop: "16px",
-  },
-  appCard: {
-    cursor: "pointer",
-    transition: "box-shadow 0.15s",
-    ":hover": { boxShadow: tokens.shadow8 },
   },
   form: {
     display: "flex",
@@ -97,19 +55,6 @@ const useStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     gap: "12px",
-  },
-  section: {
-    marginTop: "24px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-  },
-  inviteRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px 0",
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
   },
 });
 
@@ -186,33 +131,6 @@ export function TeamDetail() {
     setTimeout(() => setMessage(null), 5000);
   };
 
-  // ── Add member ──────────────────────────────────────────────────────────────
-  const [addOpen, setAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState({ username: "", role: "member" });
-  const [adding, setAdding] = useState(false);
-
-  const handleAddMember = async () => {
-    if (!addForm.username.trim() || !id) return;
-    setAdding(true);
-    try {
-      await api.addTeamMember(id, {
-        username: addForm.username.trim(),
-        role: addForm.role,
-      });
-      await qc.invalidateQueries({ queryKey: ["team", id] });
-      setAddOpen(false);
-      setAddForm({ username: "", role: "member" });
-      showMsg("success", "Member added");
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : "Failed to add member",
-      );
-    } finally {
-      setAdding(false);
-    }
-  };
-
   const handleChangeRole = async (userId: string, role: string) => {
     if (!id) return;
     try {
@@ -256,55 +174,7 @@ export function TeamDetail() {
   };
 
   // ── Invites ─────────────────────────────────────────────────────────────────
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteForm, setInviteForm] = useState({
-    role: "member",
-    email: "",
-    max_uses: "",
-    ttl_hours: "72",
-  });
-  const [creatingInvite, setCreatingInvite] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
-
-  const handleCreateInvite = async () => {
-    if (!id) return;
-    setCreatingInvite(true);
-    try {
-      const res = await api.createTeamInvite(id, {
-        role: inviteForm.role,
-        email: inviteForm.email.trim() || undefined,
-        max_uses: inviteForm.max_uses
-          ? parseInt(inviteForm.max_uses)
-          : undefined,
-        ttl_hours: inviteForm.ttl_hours
-          ? parseInt(inviteForm.ttl_hours)
-          : undefined,
-      });
-      await qc.invalidateQueries({ queryKey: ["team-invites", id] });
-      setInviteOpen(false);
-      setInviteForm({
-        role: "member",
-        email: "",
-        max_uses: "",
-        ttl_hours: "72",
-      });
-
-      if (!res.invite.email) {
-        const link = `${window.location.origin}/teams/join/${res.invite.token}`;
-        await navigator.clipboard.writeText(link);
-        showMsg("success", "Invite link copied to clipboard!");
-      } else {
-        showMsg("success", "Invite email sent");
-      }
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : "Failed to create invite",
-      );
-    } finally {
-      setCreatingInvite(false);
-    }
-  };
 
   const handleRevokeInvite = async (token: string) => {
     if (!id) return;
@@ -327,202 +197,14 @@ export function TeamDetail() {
     setTimeout(() => setCopiedToken(null), 2000);
   };
 
-  // ── Create app ──────────────────────────────────────────────────────────────
-  const [appOpen, setAppOpen] = useState(false);
-  const [appForm, setAppForm] = useState({
-    name: "",
-    description: "",
-    website_url: "",
-    redirect_uris: "",
-  });
-  const [creatingApp, setCreatingApp] = useState(false);
-
-  const updateApp =
-    (k: string) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      setAppForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const handleCreateApp = async () => {
-    if (!id || !appForm.name.trim()) return;
-    const uris = appForm.redirect_uris
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!uris.length) {
-      showMsg("error", "At least one redirect URI required");
-      return;
-    }
-    setCreatingApp(true);
-    try {
-      const res = await api.createTeamApp(id, {
-        name: appForm.name.trim(),
-        description: appForm.description || undefined,
-        website_url: appForm.website_url || undefined,
-        redirect_uris: uris,
-      });
-      await qc.invalidateQueries({ queryKey: ["team-apps", id] });
-      setAppOpen(false);
-      setAppForm({
-        name: "",
-        description: "",
-        website_url: "",
-        redirect_uris: "",
-      });
-      navigate(`/apps/${res.app.id}`);
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : "Failed to create app",
-      );
-    } finally {
-      setCreatingApp(false);
-    }
-  };
-
-  // ── Migrate app to team ──────────────────────────────────────────────────────
-  const [migrateOpen, setMigrateOpen] = useState(false);
-  const [selectedAppId, setSelectedAppId] = useState("");
-  const [migrating, setMigrating] = useState(false);
-
-  const personalApps = (myAppsData?.apps ?? []).filter(
-    (a: OAuthApp) => !a.team_id,
-  );
-
-  const handleMigrateApp = async () => {
-    if (!id || !selectedAppId) return;
-    setMigrating(true);
-    try {
-      await api.transferAppToTeam(id, selectedAppId);
-      await qc.invalidateQueries({ queryKey: ["team-apps", id] });
-      await qc.invalidateQueries({ queryKey: ["apps"] });
-      setMigrateOpen(false);
-      setSelectedAppId("");
-      showMsg("success", "App moved to team");
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : "Failed to migrate app",
-      );
-    } finally {
-      setMigrating(false);
-    }
-  };
-
-  // ── Domains ─────────────────────────────────────────────────────────────────
-  const [newDomain, setNewDomain] = useState("");
-  const [addingDomain, setAddingDomain] = useState(false);
-  const [addedDomainInfo, setAddedDomainInfo] =
-    useState<DomainAddResponse | null>(null);
-  const [verifyingDomain, setVerifyingDomain] = useState<string | null>(null);
-  const [selectedDomain, setSelectedDomain] = useState<Domain | null>(null);
-
-  const handleAddDomain = async () => {
-    if (!id || !newDomain.trim()) return;
-    setAddingDomain(true);
-    try {
-      const res = await api.addTeamDomain(id, newDomain.trim());
-      setAddedDomainInfo(res);
-      setNewDomain("");
-      await qc.invalidateQueries({ queryKey: ["team-domains", id] });
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : "Failed to add domain",
-      );
-    } finally {
-      setAddingDomain(false);
-    }
-  };
-
-  const handleVerifyDomain = async (domainId: string) => {
-    if (!id) return;
-    setVerifyingDomain(domainId);
-    try {
-      const res = await api.verifyTeamDomain(id, domainId);
-      if (res.verified) {
-        showMsg("success", "Domain verified!");
-        await qc.invalidateQueries({ queryKey: ["team-domains", id] });
-      } else {
-        showMsg(
-          "error",
-          "TXT record not found yet. Make sure the DNS record is set and try again.",
-        );
-      }
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : "Verification failed",
-      );
-    } finally {
-      setVerifyingDomain(null);
-    }
-  };
-
-  const handleDeleteDomain = async (domainId: string) => {
-    if (!id) return;
-    try {
-      await api.deleteTeamDomain(id, domainId);
-      await qc.invalidateQueries({ queryKey: ["team-domains", id] });
-    } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
-    }
-  };
-
-  // Transfer a personal domain into this team
-  const [fromPersonalOpen, setFromPersonalOpen] = useState(false);
-  const [selectedPersonalDomainId, setSelectedPersonalDomainId] = useState("");
-  const [transferringIn, setTransferringIn] = useState(false);
-
   // Personal domains not already in a team
   const transferableDomains = (personalDomainsData?.domains ?? []).filter(
     (d: Domain) => !("team_id" in d && d.team_id),
   );
 
-  const handleTransferFromPersonal = async () => {
-    if (!id || !selectedPersonalDomainId) return;
-    setTransferringIn(true);
-    try {
-      await api.transferDomainToTeam(selectedPersonalDomainId, id);
-      await qc.invalidateQueries({ queryKey: ["team-domains", id] });
-      await qc.invalidateQueries({ queryKey: ["domains"] });
-      setFromPersonalOpen(false);
-      setSelectedPersonalDomainId("");
-      showMsg("success", "Domain moved to team");
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : "Transfer failed",
-      );
-    } finally {
-      setTransferringIn(false);
-    }
-  };
-
-  const handleReturnToPersonal = async (domainId: string) => {
-    if (!id) return;
-    try {
-      await api.returnDomainToPersonal(id, domainId);
-      await qc.invalidateQueries({ queryKey: ["team-domains", id] });
-      await qc.invalidateQueries({ queryKey: ["domains"] });
-      showMsg("success", "Domain returned to personal ownership");
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : "Transfer failed",
-      );
-    }
-  };
-
-  const handleShareToPersonal = async (domainId: string) => {
-    if (!id) return;
-    try {
-      await api.shareTeamDomainToPersonal(id, domainId);
-      await qc.invalidateQueries({ queryKey: ["domains"] });
-      showMsg("success", "Domain shared to your personal domains");
-    } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Share failed");
-    }
-  };
+  const personalApps = (myAppsData?.apps ?? []).filter(
+    (a: OAuthApp) => !a.team_id,
+  );
 
   // ── Settings ────────────────────────────────────────────────────────────────
   const [settingsForm, setSettingsForm] = useState({
@@ -648,351 +330,25 @@ export function TeamDetail() {
                 marginBottom: 12,
               }}
             >
-              {/* Invite dialog */}
-              <Dialog
-                open={inviteOpen}
-                onOpenChange={(_, d) => setInviteOpen(d.open)}
-              >
-                <DialogTrigger disableButtonEnhancement>
-                  <Button icon={<LinkRegular />} size="small">
-                    Invite
-                  </Button>
-                </DialogTrigger>
-                <DialogSurface>
-                  <DialogBody>
-                    <DialogTitle>Invite to Team</DialogTitle>
-                    <DialogContent>
-                      <div className={styles.form}>
-                        <Field label="Role">
-                          <Select
-                            value={inviteForm.role}
-                            onChange={(_, d) =>
-                              setInviteForm((f) => ({ ...f, role: d.value }))
-                            }
-                          >
-                            <option value="member">Member</option>
-                            <option value="admin">Admin</option>
-                          </Select>
-                        </Field>
-                        <Field
-                          label="Email (optional)"
-                          hint="Leave blank to create a shareable link"
-                        >
-                          <Input
-                            type="email"
-                            value={inviteForm.email}
-                            onChange={(e) =>
-                              setInviteForm((f) => ({
-                                ...f,
-                                email: e.target.value,
-                              }))
-                            }
-                            placeholder="user@example.com"
-                            contentBefore={<MailRegular />}
-                          />
-                        </Field>
-                        <Field label="Max uses" hint="0 = unlimited">
-                          <Input
-                            type="number"
-                            value={inviteForm.max_uses}
-                            onChange={(e) =>
-                              setInviteForm((f) => ({
-                                ...f,
-                                max_uses: e.target.value,
-                              }))
-                            }
-                            placeholder="0"
-                          />
-                        </Field>
-                        <Field label="Expires after (hours)">
-                          <Input
-                            type="number"
-                            value={inviteForm.ttl_hours}
-                            onChange={(e) =>
-                              setInviteForm((f) => ({
-                                ...f,
-                                ttl_hours: e.target.value,
-                              }))
-                            }
-                            placeholder="72"
-                          />
-                        </Field>
-                      </div>
-                    </DialogContent>
-                    <DialogActions>
-                      <DialogTrigger>
-                        <Button>Cancel</Button>
-                      </DialogTrigger>
-                      <Button
-                        appearance="primary"
-                        onClick={handleCreateInvite}
-                        disabled={creatingInvite}
-                      >
-                        {creatingInvite ? (
-                          <Spinner size="tiny" />
-                        ) : inviteForm.email ? (
-                          "Send invite"
-                        ) : (
-                          "Copy invite link"
-                        )}
-                      </Button>
-                    </DialogActions>
-                  </DialogBody>
-                </DialogSurface>
-              </Dialog>
-
-              {/* Add member dialog */}
-              <Dialog
-                open={addOpen}
-                onOpenChange={(_, d) => setAddOpen(d.open)}
-              >
-                <DialogTrigger disableButtonEnhancement>
-                  <Button
-                    appearance="primary"
-                    icon={<AddRegular />}
-                    size="small"
-                  >
-                    Add member
-                  </Button>
-                </DialogTrigger>
-                <DialogSurface>
-                  <DialogBody>
-                    <DialogTitle>Add Team Member</DialogTitle>
-                    <DialogContent>
-                      <div className={styles.form}>
-                        <Field label="Username" required>
-                          <Input
-                            value={addForm.username}
-                            onChange={(e) =>
-                              setAddForm((f) => ({
-                                ...f,
-                                username: e.target.value,
-                              }))
-                            }
-                            placeholder="username"
-                          />
-                        </Field>
-                        <Field label="Role">
-                          <Select
-                            value={addForm.role}
-                            onChange={(_, d) =>
-                              setAddForm((f) => ({ ...f, role: d.value }))
-                            }
-                          >
-                            <option value="member">Member</option>
-                            <option value="admin">Admin</option>
-                          </Select>
-                        </Field>
-                      </div>
-                    </DialogContent>
-                    <DialogActions>
-                      <DialogTrigger>
-                        <Button>Cancel</Button>
-                      </DialogTrigger>
-                      <Button
-                        appearance="primary"
-                        onClick={handleAddMember}
-                        disabled={adding}
-                      >
-                        {adding ? <Spinner size="tiny" /> : "Add"}
-                      </Button>
-                    </DialogActions>
-                  </DialogBody>
-                </DialogSurface>
-              </Dialog>
+              <InviteDialog teamId={id!} showMsg={showMsg} />
+              <AddMemberDialog teamId={id!} showMsg={showMsg} />
             </div>
           )}
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>Member</TableHeaderCell>
-                <TableHeaderCell>Role</TableHeaderCell>
-                <TableHeaderCell>Joined</TableHeaderCell>
-                {canManage && <TableHeaderCell />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {members.map((m) => (
-                <TableRow key={m.user_id}>
-                  <TableCell>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 8 }}
-                    >
-                      <Avatar
-                        name={m.display_name}
-                        image={m.avatar_url ? { src: m.avatar_url } : undefined}
-                        size={24}
-                      />
-                      <div>
-                        <Text weight="semibold" block>
-                          {m.display_name}
-                        </Text>
-                        <Text
-                          size={200}
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          @{m.username}
-                        </Text>
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      color={ROLE_COLORS[m.role] ?? "subtle"}
-                      appearance="filled"
-                      size="small"
-                    >
-                      {m.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {new Date(m.joined_at * 1000).toLocaleDateString()}
-                  </TableCell>
-                  {canManage && (
-                    <TableCell>
-                      {m.user_id !== me?.id && m.role !== "owner" && (
-                        <Menu>
-                          <MenuTrigger disableButtonEnhancement>
-                            <Button
-                              appearance="subtle"
-                              icon={<MoreHorizontalRegular />}
-                              size="small"
-                            />
-                          </MenuTrigger>
-                          <MenuPopover>
-                            <MenuList>
-                              {isOwner && m.role === "member" && (
-                                <MenuItem
-                                  onClick={() =>
-                                    handleChangeRole(m.user_id, "admin")
-                                  }
-                                >
-                                  Promote to admin
-                                </MenuItem>
-                              )}
-                              {isOwner && m.role === "admin" && (
-                                <MenuItem
-                                  onClick={() =>
-                                    handleChangeRole(m.user_id, "member")
-                                  }
-                                >
-                                  Demote to member
-                                </MenuItem>
-                              )}
-                              {isOwner && (
-                                <MenuItem
-                                  onClick={() =>
-                                    handleTransferOwnership(m.user_id)
-                                  }
-                                >
-                                  Transfer ownership
-                                </MenuItem>
-                              )}
-                              <MenuItem
-                                icon={<DeleteRegular />}
-                                onClick={() => handleRemoveMember(m.user_id)}
-                                style={{
-                                  color: tokens.colorPaletteRedForeground1,
-                                }}
-                              >
-                                Remove
-                              </MenuItem>
-                            </MenuList>
-                          </MenuPopover>
-                        </Menu>
-                      )}
-                      {m.user_id === me?.id && m.role !== "owner" && (
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          onClick={() => handleRemoveMember(m.user_id)}
-                        >
-                          Leave
-                        </Button>
-                      )}
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {/* Active invites */}
-          {canManage && (
-            <div className={styles.section}>
-              <Title3>Active invites</Title3>
-              {invitesLoading && <Spinner size="small" />}
-              {!invitesLoading && (invitesData?.invites ?? []).length === 0 && (
-                <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                  No active invites
-                </Text>
-              )}
-              {(invitesData?.invites ?? []).map((inv: TeamInvite) => (
-                <div key={inv.token} className={styles.inviteRow}>
-                  <Badge
-                    color={ROLE_COLORS[inv.role] ?? "subtle"}
-                    appearance="filled"
-                    size="small"
-                  >
-                    {inv.role}
-                  </Badge>
-                  <div style={{ flex: 1 }}>
-                    {inv.email ? (
-                      <Text size={300}>
-                        <MailRegular
-                          style={{ verticalAlign: "middle", marginRight: 4 }}
-                        />
-                        {inv.email}
-                      </Text>
-                    ) : (
-                      <Text
-                        size={300}
-                        style={{ color: tokens.colorNeutralForeground3 }}
-                      >
-                        <LinkRegular
-                          style={{ verticalAlign: "middle", marginRight: 4 }}
-                        />
-                        Shareable link
-                      </Text>
-                    )}
-                    <Text
-                      size={200}
-                      block
-                      style={{ color: tokens.colorNeutralForeground3 }}
-                    >
-                      {inv.uses}/{inv.max_uses === 0 ? "∞" : inv.max_uses} uses
-                      · expires{" "}
-                      {new Date(inv.expires_at * 1000).toLocaleDateString()} ·
-                      by @{inv.created_by_username}
-                    </Text>
-                  </div>
-                  {!inv.email && (
-                    <Tooltip
-                      content={
-                        copiedToken === inv.token ? "Copied!" : "Copy link"
-                      }
-                      relationship="label"
-                    >
-                      <Button
-                        appearance="subtle"
-                        icon={<CopyRegular />}
-                        size="small"
-                        onClick={() => handleCopyInviteLink(inv.token)}
-                      />
-                    </Tooltip>
-                  )}
-                  <Button
-                    appearance="subtle"
-                    icon={<DeleteRegular />}
-                    size="small"
-                    style={{ color: tokens.colorPaletteRedForeground1 }}
-                    onClick={() => handleRevokeInvite(inv.token)}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
+          <MembersTable
+            members={members}
+            invites={invitesData?.invites ?? []}
+            invitesLoading={invitesLoading}
+            canManage={canManage}
+            isOwner={isOwner}
+            meId={me?.id}
+            copiedToken={copiedToken}
+            onChangeRole={handleChangeRole}
+            onRemoveMember={handleRemoveMember}
+            onTransferOwnership={handleTransferOwnership}
+            onRevokeInvite={handleRevokeInvite}
+            onCopyInviteLink={handleCopyInviteLink}
+          />
         </div>
       )}
 
@@ -1008,179 +364,16 @@ export function TeamDetail() {
                 marginBottom: 12,
               }}
             >
-              {/* Migrate existing app dialog */}
-              <Dialog
-                open={migrateOpen}
-                onOpenChange={(_, d) => setMigrateOpen(d.open)}
-              >
-                <DialogTrigger disableButtonEnhancement>
-                  <Button size="small">Migrate existing app</Button>
-                </DialogTrigger>
-                <DialogSurface>
-                  <DialogBody>
-                    <DialogTitle>Migrate App to Team</DialogTitle>
-                    <DialogContent>
-                      {personalApps.length === 0 ? (
-                        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                          You have no personal apps to migrate.
-                        </Text>
-                      ) : (
-                        <div className={styles.form}>
-                          <Field label="Select app" required>
-                            <Select
-                              value={selectedAppId}
-                              onChange={(_, d) => setSelectedAppId(d.value)}
-                            >
-                              <option value="">— choose an app —</option>
-                              {personalApps.map((a: OAuthApp) => (
-                                <option key={a.id} value={a.id}>
-                                  {a.name}
-                                </option>
-                              ))}
-                            </Select>
-                          </Field>
-                          <Text
-                            size={200}
-                            style={{ color: tokens.colorNeutralForeground3 }}
-                          >
-                            The app will be transferred to this team. All team
-                            admins and owners will be able to manage it.
-                          </Text>
-                        </div>
-                      )}
-                    </DialogContent>
-                    <DialogActions>
-                      <DialogTrigger>
-                        <Button>Cancel</Button>
-                      </DialogTrigger>
-                      {personalApps.length > 0 && (
-                        <Button
-                          appearance="primary"
-                          onClick={handleMigrateApp}
-                          disabled={migrating || !selectedAppId}
-                        >
-                          {migrating ? <Spinner size="tiny" /> : "Move to team"}
-                        </Button>
-                      )}
-                    </DialogActions>
-                  </DialogBody>
-                </DialogSurface>
-              </Dialog>
-
-              {/* New app dialog */}
-              <Dialog
-                open={appOpen}
-                onOpenChange={(_, d) => setAppOpen(d.open)}
-              >
-                <DialogTrigger disableButtonEnhancement>
-                  <Button
-                    appearance="primary"
-                    icon={<AddRegular />}
-                    size="small"
-                  >
-                    New app
-                  </Button>
-                </DialogTrigger>
-                <DialogSurface>
-                  <DialogBody>
-                    <DialogTitle>Create Team App</DialogTitle>
-                    <DialogContent>
-                      <div className={styles.form}>
-                        <Field label="App name" required>
-                          <Input
-                            value={appForm.name}
-                            onChange={updateApp("name")}
-                            placeholder="My App"
-                          />
-                        </Field>
-                        <Field label="Description">
-                          <Input
-                            value={appForm.description}
-                            onChange={updateApp("description")}
-                          />
-                        </Field>
-                        <Field label="Website URL">
-                          <Input
-                            value={appForm.website_url}
-                            onChange={updateApp("website_url")}
-                            placeholder="https://example.com"
-                          />
-                        </Field>
-                        <Field
-                          label="Redirect URIs"
-                          hint="One per line"
-                          required
-                        >
-                          <Textarea
-                            value={appForm.redirect_uris}
-                            onChange={updateApp("redirect_uris")}
-                            rows={3}
-                            placeholder="https://example.com/callback"
-                          />
-                        </Field>
-                      </div>
-                    </DialogContent>
-                    <DialogActions>
-                      <DialogTrigger>
-                        <Button>Cancel</Button>
-                      </DialogTrigger>
-                      <Button
-                        appearance="primary"
-                        onClick={handleCreateApp}
-                        disabled={creatingApp}
-                      >
-                        {creatingApp ? <Spinner size="tiny" /> : "Create"}
-                      </Button>
-                    </DialogActions>
-                  </DialogBody>
-                </DialogSurface>
-              </Dialog>
-            </div>
-          )}
-
-          {appsLoading && <Spinner />}
-          {!appsLoading && appsData?.apps.length === 0 && (
-            <div style={{ textAlign: "center", padding: "40px 0" }}>
-              <GlobeRegular
-                fontSize={40}
-                style={{ color: tokens.colorNeutralForeground3 }}
+              <MigrateAppDialog
+                teamId={id!}
+                personalApps={personalApps}
+                showMsg={showMsg}
               />
-              <Text
-                block
-                style={{ marginTop: 12, color: tokens.colorNeutralForeground3 }}
-              >
-                No apps in this team yet.
-              </Text>
+              <NewTeamAppDialog teamId={id!} showMsg={showMsg} />
             </div>
           )}
 
-          <div className={styles.grid}>
-            {appsData?.apps.map((app: OAuthApp) => (
-              <Card
-                key={app.id}
-                className={styles.appCard}
-                onClick={() => navigate(`/apps/${app.id}`)}
-              >
-                <CardHeader
-                  image={
-                    app.icon_url ? (
-                      <img
-                        src={app.icon_url}
-                        alt={app.name}
-                        width={32}
-                        height={32}
-                        style={{ borderRadius: 4 }}
-                      />
-                    ) : (
-                      <GlobeRegular fontSize={32} />
-                    )
-                  }
-                  header={<Text weight="semibold">{app.name}</Text>}
-                  description={app.description || app.client_id}
-                />
-              </Card>
-            ))}
-          </div>
+          <AppsGrid apps={appsData?.apps ?? []} loading={appsLoading} />
         </div>
       )}
 
@@ -1192,369 +385,15 @@ export function TeamDetail() {
             DNS TXT record to prove ownership.
           </Text>
 
-          {canManage && (
-            <>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Field label="Add domain" style={{ flex: 1 }}>
-                  <Input
-                    value={newDomain}
-                    onChange={(e) => setNewDomain(e.target.value)}
-                    placeholder="example.com"
-                    onKeyDown={(e) => e.key === "Enter" && handleAddDomain()}
-                  />
-                </Field>
-                <Button
-                  appearance="primary"
-                  icon={<AddRegular />}
-                  onClick={handleAddDomain}
-                  disabled={addingDomain || !newDomain}
-                  style={{ alignSelf: "flex-end" }}
-                >
-                  {addingDomain ? <Spinner size="tiny" /> : "Add"}
-                </Button>
-                {transferableDomains.length > 0 && (
-                  <Button
-                    style={{ alignSelf: "flex-end" }}
-                    onClick={() => {
-                      setFromPersonalOpen(true);
-                      setSelectedPersonalDomainId("");
-                    }}
-                  >
-                    Transfer from personal
-                  </Button>
-                )}
-              </div>
-
-              {/* Transfer from personal dialog */}
-              <Dialog
-                open={fromPersonalOpen}
-                onOpenChange={(_, d) => setFromPersonalOpen(d.open)}
-              >
-                <DialogSurface>
-                  <DialogBody>
-                    <DialogTitle>Transfer personal domain to team</DialogTitle>
-                    <DialogContent>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 12,
-                        }}
-                      >
-                        <Text
-                          size={200}
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          Move one of your verified personal domains into this
-                          team. It will be used to verify team apps.
-                        </Text>
-                        <Field label="Select domain" required>
-                          <Select
-                            value={selectedPersonalDomainId}
-                            onChange={(_, d) =>
-                              setSelectedPersonalDomainId(d.value)
-                            }
-                          >
-                            <option value="">— choose a domain —</option>
-                            {transferableDomains.map((d: Domain) => (
-                              <option key={d.id} value={d.id}>
-                                {d.domain}
-                                {d.verified ? " ✓" : " (unverified)"}
-                              </option>
-                            ))}
-                          </Select>
-                        </Field>
-                      </div>
-                    </DialogContent>
-                    <DialogActions>
-                      <Button onClick={() => setFromPersonalOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button
-                        appearance="primary"
-                        onClick={handleTransferFromPersonal}
-                        disabled={transferringIn || !selectedPersonalDomainId}
-                      >
-                        {transferringIn ? (
-                          <Spinner size="tiny" />
-                        ) : (
-                          "Transfer to team"
-                        )}
-                      </Button>
-                    </DialogActions>
-                  </DialogBody>
-                </DialogSurface>
-              </Dialog>
-            </>
-          )}
-
-          {addedDomainInfo && (
-            <div
-              style={{
-                padding: 16,
-                borderRadius: 8,
-                border: `1px solid ${tokens.colorNeutralStroke1}`,
-                background: tokens.colorNeutralBackground3,
-              }}
-            >
-              <Text weight="semibold" block>
-                Add this DNS TXT record to verify {addedDomainInfo.domain}:
-              </Text>
-              <div
-                style={{
-                  marginTop: 8,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                }}
-              >
-                <Text size={200}>
-                  <strong>Type:</strong> TXT
-                </Text>
-                <Text size={200}>
-                  <strong>Name:</strong>{" "}
-                  <code>{addedDomainInfo.txt_record}</code>
-                </Text>
-                <Text size={200}>
-                  <strong>Value:</strong>{" "}
-                  <code>{addedDomainInfo.txt_value}</code>
-                </Text>
-              </div>
-              <Button
-                size="small"
-                onClick={() => setAddedDomainInfo(null)}
-                style={{ marginTop: 12 }}
-              >
-                Dismiss
-              </Button>
-            </div>
-          )}
-
-          {domainsLoading && <Spinner />}
-          {!domainsLoading && (domainsData?.domains.length ?? 0) === 0 && (
-            <Text
-              style={{
-                color: tokens.colorNeutralForeground3,
-                textAlign: "center",
-                padding: "32px 0",
-              }}
-            >
-              No domains added yet.
-            </Text>
-          )}
-
-          {(domainsData?.domains.length ?? 0) > 0 && (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHeaderCell>Domain</TableHeaderCell>
-                  <TableHeaderCell>Status</TableHeaderCell>
-                  <TableHeaderCell>Verified at</TableHeaderCell>
-                  {canManage && <TableHeaderCell>Actions</TableHeaderCell>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {domainsData!.domains.map((d: Domain) => (
-                  <TableRow
-                    key={d.id}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => setSelectedDomain(d)}
-                  >
-                    <TableCell style={{ fontFamily: "monospace" }}>
-                      {d.domain}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        color={d.verified ? "success" : "subtle"}
-                        appearance="filled"
-                        icon={
-                          d.verified ? <CheckmarkCircleRegular /> : undefined
-                        }
-                      >
-                        {d.verified ? "Verified" : "Pending"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {d.verified_at
-                        ? new Date(d.verified_at * 1000).toLocaleDateString()
-                        : "—"}
-                    </TableCell>
-                    {canManage && (
-                      <TableCell>
-                        <div
-                          style={{ display: "flex", gap: 4 }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Button
-                            icon={<ArrowClockwiseRegular />}
-                            size="small"
-                            appearance="subtle"
-                            disabled={verifyingDomain === d.id}
-                            onClick={() => handleVerifyDomain(d.id)}
-                          >
-                            {verifyingDomain === d.id ? (
-                              <Spinner size="tiny" />
-                            ) : (
-                              "Verify"
-                            )}
-                          </Button>
-                          <Dialog>
-                            <DialogTrigger disableButtonEnhancement>
-                              <Button
-                                icon={<DeleteRegular />}
-                                size="small"
-                                appearance="subtle"
-                              />
-                            </DialogTrigger>
-                            <DialogSurface>
-                              <DialogBody>
-                                <DialogTitle>Remove domain?</DialogTitle>
-                                <DialogContent>
-                                  Remove <strong>{d.domain}</strong> from this
-                                  team's verified domains?
-                                </DialogContent>
-                                <DialogActions>
-                                  <DialogTrigger>
-                                    <Button>Cancel</Button>
-                                  </DialogTrigger>
-                                  <Button
-                                    appearance="primary"
-                                    style={{
-                                      background:
-                                        tokens.colorPaletteRedBackground3,
-                                    }}
-                                    onClick={() => handleDeleteDomain(d.id)}
-                                  >
-                                    Remove
-                                  </Button>
-                                </DialogActions>
-                              </DialogBody>
-                            </DialogSurface>
-                          </Dialog>
-                          <Tooltip
-                            content="Move back to personal (removes from team)"
-                            relationship="label"
-                          >
-                            <Button
-                              size="small"
-                              appearance="subtle"
-                              onClick={() => handleReturnToPersonal(d.id)}
-                            >
-                              ↩ Personal
-                            </Button>
-                          </Tooltip>
-                          <Tooltip
-                            content="Share to your personal domains (keeps team copy)"
-                            relationship="label"
-                          >
-                            <Button
-                              size="small"
-                              appearance="subtle"
-                              icon={<CopyRegular />}
-                              onClick={() => handleShareToPersonal(d.id)}
-                            />
-                          </Tooltip>
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-
-          {/* Domain detail dialog (shows TXT record for pending domains) */}
-          <Dialog
-            open={!!selectedDomain}
-            onOpenChange={(_, s) => {
-              if (!s.open) setSelectedDomain(null);
-            }}
-          >
-            <DialogSurface>
-              <DialogBody>
-                <DialogTitle style={{ fontFamily: "monospace" }}>
-                  {selectedDomain?.domain}
-                </DialogTitle>
-                <DialogContent>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 12,
-                    }}
-                  >
-                    <Badge
-                      color={selectedDomain?.verified ? "success" : "subtle"}
-                      appearance="filled"
-                      icon={
-                        selectedDomain?.verified ? (
-                          <CheckmarkCircleRegular />
-                        ) : undefined
-                      }
-                      style={{ width: "fit-content" }}
-                    >
-                      {selectedDomain?.verified ? "Verified" : "Pending"}
-                    </Badge>
-                    {selectedDomain?.verified_at && (
-                      <Text size={200}>
-                        <strong>Verified:</strong>{" "}
-                        {new Date(
-                          selectedDomain.verified_at * 1000,
-                        ).toLocaleDateString()}
-                      </Text>
-                    )}
-                    {!selectedDomain?.verified && (
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 4,
-                          padding: "10px 12px",
-                          borderRadius: 6,
-                          background: tokens.colorNeutralBackground3,
-                        }}
-                      >
-                        <Text size={200} weight="semibold">
-                          Add this DNS TXT record:
-                        </Text>
-                        <Text size={200}>
-                          <strong>Name:</strong>{" "}
-                          <code>_prism-verify.{selectedDomain?.domain}</code>
-                        </Text>
-                        <Text size={200}>
-                          <strong>Value:</strong>{" "}
-                          <code>
-                            prism-verify={selectedDomain?.verification_token}
-                          </code>
-                        </Text>
-                      </div>
-                    )}
-                  </div>
-                </DialogContent>
-                <DialogActions>
-                  <Button onClick={() => setSelectedDomain(null)}>Close</Button>
-                  {canManage && (
-                    <Button
-                      appearance="outline"
-                      icon={<ArrowClockwiseRegular />}
-                      disabled={verifyingDomain === selectedDomain?.id}
-                      onClick={async () => {
-                        if (!selectedDomain) return;
-                        await handleVerifyDomain(selectedDomain.id);
-                        setSelectedDomain(null);
-                      }}
-                    >
-                      {verifyingDomain === selectedDomain?.id ? (
-                        <Spinner size="tiny" />
-                      ) : (
-                        "Verify"
-                      )}
-                    </Button>
-                  )}
-                </DialogActions>
-              </DialogBody>
-            </DialogSurface>
-          </Dialog>
+          <DomainsTable
+            teamId={id!}
+            domains={domainsData?.domains ?? []}
+            loading={domainsLoading}
+            canManage={canManage}
+            verifyingDomain={null}
+            transferableDomains={transferableDomains}
+            showMsg={showMsg}
+          />
         </div>
       )}
 
