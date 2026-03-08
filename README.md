@@ -1,5 +1,7 @@
 # Prism
 
+[中文](./README.zh-CN.md)
+
 A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare Workers. Deploy globally in minutes with zero servers.
 
 ## Features
@@ -79,12 +81,12 @@ pnpm deploy   # type-checks + builds frontend + wrangler deploy
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md) — full setup walkthrough
-- [Configuration](docs/configuration.md) — all site config keys
-- [API Reference](docs/api.md) — REST API documentation
-- [OAuth / OIDC Guide](docs/oauth.md) — integrating Prism as an identity provider
-- [Architecture](docs/architecture.md) — system design and data model
-- [Admin Guide](docs/admin.md) — managing users, apps, and settings
+- [Getting Started](https://prism.wss.moe/getting-started) — full setup walkthrough
+- [Configuration](https://prism.wss.moe/configuration) — all site config keys
+- [API Reference](https://prism.wss.moe/api) — REST API documentation
+- [OAuth / OIDC Guide](https://prism.wss.moe/oauth) — integrating Prism as an identity provider
+- [Architecture](https://prism.wss.moe/architecture) — system design and data model
+- [Admin Guide](https://prism.wss.moe/admin) — managing users, apps, and settings
 
 ## Project Structure
 
