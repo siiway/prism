@@ -16,6 +16,7 @@ import {
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { Captcha } from "../components/Captcha";
 import type { CaptchaValue } from "../components/Captcha";
@@ -66,6 +67,7 @@ export function Register() {
   const styles = useStyles();
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
+  const { t } = useTranslation();
   const { data: site } = useQuery({
     queryKey: ["site"],
     queryFn: api.site,
@@ -112,12 +114,9 @@ export function Register() {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <Title2>Registration Disabled</Title2>
-          <Text>
-            New account registration is currently disabled. Contact the
-            administrator.
-          </Text>
-          <Link href="/login">Back to sign in</Link>
+          <Title2>{t("auth.registrationDisabled")}</Title2>
+          <Text>{t("auth.registrationDisabledText")}</Text>
+          <Link href="/login">{t("auth.backToSignIn")}</Link>
         </div>
       </div>
     );
@@ -126,9 +125,9 @@ export function Register() {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <Title2>Create account</Title2>
+        <Title2>{t("auth.createAccount")}</Title2>
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          Join {site?.site_name ?? "Prism"}
+          {t("auth.join", { siteName: site?.site_name ?? "Prism" })}
         </Text>
 
         {success ? (
@@ -164,7 +163,7 @@ export function Register() {
                 type="password"
                 value={form.password}
                 onChange={update("password")}
-                placeholder="At least 8 characters"
+                placeholder={t("init.passwordPlaceholder")}
               />
             </Field>
 
@@ -189,14 +188,16 @@ export function Register() {
               disabled={loading}
               icon={loading ? <Spinner size="tiny" /> : undefined}
             >
-              {loading ? "Creating account…" : "Create account"}
+              {loading
+                ? t("auth.creatingAccount")
+                : t("auth.createAccountAction")}
             </Button>
           </form>
         )}
 
         {(site?.enabled_providers?.length ?? 0) > 0 && !success && (
           <>
-            <Divider>or sign up with</Divider>
+            <Divider>{t("auth.orSignUpWith")}</Divider>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {site!.enabled_providers.map((p) => (
                 <Button
@@ -214,8 +215,8 @@ export function Register() {
         )}
 
         <div className={styles.footer}>
-          <Text>Already have an account? </Text>
-          <Link href="/login">Sign in</Link>
+          <Text>{t("auth.alreadyHaveAccount")} </Text>
+          <Link href="/login">{t("auth.signIn")}</Link>
         </div>
       </div>
     </div>

@@ -12,6 +12,7 @@ import {
   Text,
 } from "@fluentui/react-components";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Domain, Team } from "../../../lib/api";
 
 interface ShareDomainDialogProps {
@@ -27,6 +28,7 @@ export function ShareDomainDialog({
   onClose,
   onShare,
 }: ShareDomainDialogProps) {
+  const { t } = useTranslation();
   const [teamId, setTeamId] = useState("");
   const [sharing, setSharing] = useState(false);
 
@@ -53,20 +55,15 @@ export function ShareDomainDialog({
     >
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>Share domain with team</DialogTitle>
+          <DialogTitle>{t("domains.shareDomainWithTeam")}</DialogTitle>
           <DialogContent>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <Text>
-                Share{" "}
-                <strong style={{ fontFamily: "monospace" }}>
-                  {domain?.domain}
-                </strong>{" "}
-                with a team. The domain will also appear in the team's verified
-                domains — your personal copy is kept.
+                {t("domains.shareDomainDesc", { domain: domain?.domain ?? "" })}
               </Text>
-              <Field label="Select team" required>
+              <Field label={t("domains.selectTeam")} required>
                 <Select value={teamId} onChange={(_, d) => setTeamId(d.value)}>
-                  <option value="">— choose a team —</option>
+                  <option value="">{t("domains.chooseTeam")}</option>
                   {teams.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
@@ -83,14 +80,18 @@ export function ShareDomainDialog({
                 onClose();
               }}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               appearance="primary"
               onClick={handleShare}
               disabled={sharing || !teamId}
             >
-              {sharing ? <Spinner size="tiny" /> : "Share with team"}
+              {sharing ? (
+                <Spinner size="tiny" />
+              ) : (
+                t("domains.shareWithTeamAction")
+              )}
             </Button>
           </DialogActions>
         </DialogBody>

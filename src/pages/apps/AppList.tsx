@@ -26,6 +26,7 @@ import { AddRegular, GlobeRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 
 const useStyles = makeStyles({
@@ -56,6 +57,7 @@ export function AppList() {
   const styles = useStyles();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { t } = useTranslation();
 
   const { data, isLoading } = useQuery({
     queryKey: ["apps"],
@@ -87,7 +89,7 @@ export function AppList() {
       .filter(Boolean);
     if (!form.name) return;
     if (!uris.length) {
-      setMessage({ type: "error", text: "At least one redirect URI required" });
+      setMessage({ type: "error", text: t("apps.atLeastOneRedirectUri") });
       return;
     }
 
@@ -104,7 +106,7 @@ export function AppList() {
     } catch (err) {
       setMessage({
         type: "error",
-        text: err instanceof ApiError ? err.message : "Failed to create app",
+        text: err instanceof ApiError ? err.message : t("apps.failedCreateApp"),
       });
     } finally {
       setCreating(false);
@@ -114,16 +116,16 @@ export function AppList() {
   return (
     <div>
       <div className={styles.header}>
-        <Title2>My Applications</Title2>
+        <Title2>{t("apps.myApplications")}</Title2>
         <Dialog>
           <DialogTrigger disableButtonEnhancement>
             <Button appearance="primary" icon={<AddRegular />}>
-              New app
+              {t("apps.newApp")}
             </Button>
           </DialogTrigger>
           <DialogSurface>
             <DialogBody>
-              <DialogTitle>Create OAuth App</DialogTitle>
+              <DialogTitle>{t("apps.createOAuthApp")}</DialogTitle>
               <DialogContent>
                 {message && (
                   <MessageBar
@@ -134,38 +136,42 @@ export function AppList() {
                   </MessageBar>
                 )}
                 <div className={styles.form}>
-                  <Field label="App name" required>
+                  <Field label={t("apps.appName")} required>
                     <Input
                       value={form.name}
                       onChange={update("name")}
-                      placeholder="My App"
+                      placeholder={t("apps.appNamePlaceholder")}
                     />
                   </Field>
-                  <Field label="Description">
+                  <Field label={t("apps.description")}>
                     <Input
                       value={form.description}
                       onChange={update("description")}
                     />
                   </Field>
-                  <Field label="App icon URL">
+                  <Field label={t("apps.appIconUrl")}>
                     <Input
                       value={form.icon_url}
                       onChange={update("icon_url")}
-                      placeholder="https://example.com/icon.png"
+                      placeholder={t("apps.appIconPlaceholder")}
                     />
                   </Field>
-                  <Field label="Website URL">
+                  <Field label={t("apps.websiteUrl")}>
                     <Input
                       value={form.website_url}
                       onChange={update("website_url")}
-                      placeholder="https://example.com"
+                      placeholder={t("apps.websiteUrlPlaceholder")}
                     />
                   </Field>
-                  <Field label="Redirect URIs" hint="One per line" required>
+                  <Field
+                    label={t("apps.redirectUris")}
+                    hint={t("apps.redirectUrisHint")}
+                    required
+                  >
                     <Textarea
                       value={form.redirect_uris}
                       onChange={update("redirect_uris")}
-                      placeholder="https://example.com/callback"
+                      placeholder={t("apps.redirectUrisPlaceholder")}
                       rows={3}
                     />
                   </Field>
@@ -173,14 +179,14 @@ export function AppList() {
               </DialogContent>
               <DialogActions>
                 <DialogTrigger>
-                  <Button>Cancel</Button>
+                  <Button>{t("common.cancel")}</Button>
                 </DialogTrigger>
                 <Button
                   appearance="primary"
                   onClick={handleCreate}
                   disabled={creating}
                 >
-                  {creating ? <Spinner size="tiny" /> : "Create"}
+                  {creating ? <Spinner size="tiny" /> : t("common.create")}
                 </Button>
               </DialogActions>
             </DialogBody>
@@ -197,10 +203,10 @@ export function AppList() {
             style={{ color: tokens.colorNeutralForeground3 }}
           />
           <Text block size={500} style={{ marginTop: 16 }}>
-            No apps yet
+            {t("apps.noAppsYet")}
           </Text>
           <Text block style={{ color: tokens.colorNeutralForeground3 }}>
-            Create your first OAuth application to get started.
+            {t("apps.noAppsDesc")}
           </Text>
         </div>
       )}
@@ -231,12 +237,12 @@ export function AppList() {
                   <Text weight="semibold">{app.name}</Text>
                   {app.is_verified && (
                     <Badge color="success" appearance="filled" size="small">
-                      Verified
+                      {t("apps.verified")}
                     </Badge>
                   )}
                   {!app.is_active && (
                     <Badge color="subtle" appearance="filled" size="small">
-                      Disabled
+                      {t("apps.disabled")}
                     </Badge>
                   )}
                 </div>

@@ -34,6 +34,7 @@ import {
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 
 const useStyles = makeStyles({
@@ -73,6 +74,7 @@ export function AppDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { t } = useTranslation();
 
   const { data, isLoading } = useQuery({
     queryKey: ["app", id],
@@ -145,7 +147,7 @@ export function AppDetail() {
         is_public: form.is_public,
       });
       await qc.invalidateQueries({ queryKey: ["app", id] });
-      showMsg("success", "App updated");
+      showMsg("success", t("apps.appUpdated"));
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Update failed");
     } finally {
@@ -159,7 +161,7 @@ export function AppDetail() {
     try {
       const res = await api.rotateSecret(id);
       setNewSecret(res.client_secret);
-      showMsg("success", "Client secret rotated — save it now!");
+      showMsg("success", t("apps.secretRotated"));
     } catch (err) {
       showMsg(
         "error",
@@ -200,11 +202,11 @@ export function AppDetail() {
       await qc.invalidateQueries({ queryKey: ["apps"] });
       setMoveOpen(false);
       setSelectedTeamId("");
-      showMsg("success", "App moved to team");
+      showMsg("success", t("apps.appMovedToTeam"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to move app",
+        err instanceof ApiError ? err.message : t("apps.failedMoveApp"),
       );
     } finally {
       setMoving(false);
@@ -217,17 +219,17 @@ export function AppDetail() {
       await api.removeAppFromTeam(app.team_id, id);
       await qc.invalidateQueries({ queryKey: ["app", id] });
       await qc.invalidateQueries({ queryKey: ["apps"] });
-      showMsg("success", "App removed from team");
+      showMsg("success", t("apps.appRemovedFromTeam"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to remove from team",
+        err instanceof ApiError ? err.message : t("apps.failedRemoveFromTeam"),
       );
     }
   };
 
   if (isLoading) return <Spinner />;
-  if (!app) return <Text>App not found</Text>;
+  if (!app) return <Text>{t("apps.appNotFound")}</Text>;
 
   if (!form) initForm();
 
@@ -244,12 +246,12 @@ export function AppDetail() {
         <Title2>{app.name}</Title2>
         {app.is_verified && (
           <Badge color="success" appearance="filled">
-            <ShieldRegular /> Verified
+            <ShieldRegular /> {t("apps.verified")}
           </Badge>
         )}
         {!app.is_active && (
           <Badge color="subtle" appearance="filled">
-            Disabled
+            {t("apps.disabled")}
           </Badge>
         )}
       </div>
@@ -268,15 +270,15 @@ export function AppDetail() {
         onTabSelect={(_, d) => setTab(d.value as string)}
         style={{ marginBottom: 24 }}
       >
-        <Tab value="settings">Settings</Tab>
-        <Tab value="credentials">Credentials</Tab>
-        <Tab value="danger">Danger Zone</Tab>
+        <Tab value="settings">{t("apps.settingsTab")}</Tab>
+        <Tab value="credentials">{t("apps.credentialsTab")}</Tab>
+        <Tab value="danger">{t("apps.dangerTab")}</Tab>
       </TabList>
 
       {tab === "settings" && form && (
         <div className={styles.card}>
           <div className={styles.form}>
-            <Field label="App Name">
+            <Field label={t("apps.appNameField")}>
               <Input
                 value={form.name}
                 onChange={(e) =>
@@ -284,7 +286,7 @@ export function AppDetail() {
                 }
               />
             </Field>
-            <Field label="Description">
+            <Field label={t("apps.description")}>
               <Input
                 value={form.description}
                 onChange={(e) =>
@@ -292,10 +294,7 @@ export function AppDetail() {
                 }
               />
             </Field>
-            <Field
-              label="Icon URL"
-              hint="Publicly accessible image URL for the app icon"
-            >
+            <Field label={t("apps.iconUrl")} hint={t("apps.iconUrlHint")}>
               <Input
                 value={form.icon_url}
                 onChange={(e) =>
@@ -304,7 +303,7 @@ export function AppDetail() {
                 placeholder="https://example.com/icon.png"
               />
             </Field>
-            <Field label="Website URL">
+            <Field label={t("apps.websiteUrl")}>
               <Input
                 value={form.website_url}
                 onChange={(e) =>
@@ -312,7 +311,10 @@ export function AppDetail() {
                 }
               />
             </Field>
-            <Field label="Redirect URIs" hint="One per line">
+            <Field
+              label={t("apps.redirectUris")}
+              hint={t("apps.redirectUrisHint")}
+            >
               <Textarea
                 value={form.redirect_uris}
                 onChange={(e) =>
@@ -321,7 +323,7 @@ export function AppDetail() {
                 rows={4}
               />
             </Field>
-            <Field label="Allowed Scopes">
+            <Field label={t("apps.allowedScopes")}>
               <div className={styles.scopeGrid}>
                 {SCOPES.map((s) => (
                   <Checkbox
@@ -339,14 +341,14 @@ export function AppDetail() {
               </div>
             </Field>
             <Checkbox
-              label="Public client (no client secret, PKCE required)"
+              label={t("apps.publicClient")}
               checked={form.is_public}
               onChange={(_, d) =>
                 setForm((f) => ({ ...f!, is_public: !!d.checked }))
               }
             />
             <Button appearance="primary" onClick={handleSave} disabled={saving}>
-              {saving ? <Spinner size="tiny" /> : "Save changes"}
+              {saving ? <Spinner size="tiny" /> : t("common.saveChanges")}
             </Button>
           </div>
         </div>
@@ -355,10 +357,10 @@ export function AppDetail() {
       {tab === "credentials" && (
         <div className={styles.card}>
           <Text weight="semibold" block>
-            Client Credentials
+            {t("apps.clientCredentials")}
           </Text>
 
-          <Field label="Client ID">
+          <Field label={t("apps.clientId")}>
             <div className={styles.secretRow}>
               <Text style={{ flex: 1, fontFamily: "monospace" }}>
                 {app.client_id}
@@ -369,13 +371,13 @@ export function AppDetail() {
                 appearance="subtle"
                 onClick={() => copy(app.client_id, "id")}
               >
-                {copied === "id" ? "Copied!" : ""}
+                {copied === "id" ? t("apps.copied") : ""}
               </Button>
             </div>
           </Field>
 
           {!app.is_public && (
-            <Field label="Client Secret">
+            <Field label={t("apps.clientSecret")}>
               {newSecret ? (
                 <div>
                   <div className={styles.secretRow}>
@@ -388,16 +390,16 @@ export function AppDetail() {
                       appearance="subtle"
                       onClick={() => copy(newSecret, "secret")}
                     >
-                      {copied === "secret" ? "Copied!" : ""}
+                      {copied === "secret" ? t("apps.copied") : ""}
                     </Button>
                   </div>
                   <MessageBar intent="warning" style={{ marginTop: 8 }}>
-                    Save this secret now — it won't be shown again.
+                    {t("apps.saveSecretWarning")}
                   </MessageBar>
                 </div>
               ) : (
                 <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                  {app.client_secret ? "••••••••••••••••" : "No secret"}
+                  {app.client_secret ? "••••••••••••••••" : t("apps.noSecret")}
                 </Text>
               )}
               <Button
@@ -406,14 +408,18 @@ export function AppDetail() {
                 disabled={secretRotating}
                 style={{ marginTop: 8, width: "fit-content" }}
               >
-                {secretRotating ? <Spinner size="tiny" /> : "Rotate secret"}
+                {secretRotating ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("apps.rotateSecret")
+                )}
               </Button>
             </Field>
           )}
 
           <div>
             <Text weight="semibold" block style={{ marginBottom: 8 }}>
-              OAuth Endpoints
+              {t("apps.oauthEndpoints")}
             </Text>
             {[
               ["Authorization", `/api/oauth/authorize`],
@@ -449,18 +455,18 @@ export function AppDetail() {
         <div className={styles.card}>
           {/* Team membership */}
           <Text weight="semibold" size={400}>
-            Team
+            {t("apps.team")}
           </Text>
           {app.team_id ? (
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <PeopleRegular fontSize={20} />
-              <Text>This app belongs to a team.</Text>
+              <Text>{t("apps.appBelongsToTeam")}</Text>
               <Button
                 appearance="outline"
                 size="small"
                 onClick={() => navigate(`/teams/${app.team_id}`)}
               >
-                View team
+                {t("apps.viewTeam")}
               </Button>
               <Button
                 appearance="outline"
@@ -468,13 +474,13 @@ export function AppDetail() {
                 style={{ color: tokens.colorPaletteRedForeground1 }}
                 onClick={handleRemoveFromTeam}
               >
-                Remove from team
+                {t("apps.removeFromTeam")}
               </Button>
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                This is a personal app.
+                {t("apps.personalApp")}
               </Text>
               {manageableTeams.length > 0 && (
                 <Dialog
@@ -487,12 +493,12 @@ export function AppDetail() {
                       size="small"
                       icon={<PeopleRegular />}
                     >
-                      Move to team
+                      {t("apps.moveToTeam")}
                     </Button>
                   </DialogTrigger>
                   <DialogSurface>
                     <DialogBody>
-                      <DialogTitle>Move App to Team</DialogTitle>
+                      <DialogTitle>{t("apps.moveAppToTeam")}</DialogTitle>
                       <DialogContent>
                         <div
                           style={{
@@ -501,12 +507,12 @@ export function AppDetail() {
                             gap: 12,
                           }}
                         >
-                          <Field label="Select team" required>
+                          <Field label={t("apps.selectTeam")} required>
                             <Select
                               value={selectedTeamId}
                               onChange={(_, d) => setSelectedTeamId(d.value)}
                             >
-                              <option value="">— choose a team —</option>
+                              <option value="">{t("apps.chooseTeam")}</option>
                               {manageableTeams.map((t) => (
                                 <option key={t.id} value={t.id}>
                                   {t.name}
@@ -518,21 +524,24 @@ export function AppDetail() {
                             size={200}
                             style={{ color: tokens.colorNeutralForeground3 }}
                           >
-                            All admins and owners of the selected team will be
-                            able to manage this app.
+                            {t("apps.allAdminsCanManage")}
                           </Text>
                         </div>
                       </DialogContent>
                       <DialogActions>
                         <DialogTrigger>
-                          <Button>Cancel</Button>
+                          <Button>{t("common.cancel")}</Button>
                         </DialogTrigger>
                         <Button
                           appearance="primary"
                           onClick={handleMoveToTeam}
                           disabled={moving || !selectedTeamId}
                         >
-                          {moving ? <Spinner size="tiny" /> : "Move to team"}
+                          {moving ? (
+                            <Spinner size="tiny" />
+                          ) : (
+                            t("apps.moveToTeam")
+                          )}
                         </Button>
                       </DialogActions>
                     </DialogBody>
@@ -547,7 +556,7 @@ export function AppDetail() {
             size={400}
             style={{ color: tokens.colorPaletteRedForeground1 }}
           >
-            Danger Zone
+            {t("apps.dangerTab")}
           </Text>
           <Dialog>
             <DialogTrigger disableButtonEnhancement>
@@ -559,26 +568,25 @@ export function AppDetail() {
                   width: "fit-content",
                 }}
               >
-                Delete application
+                {t("apps.deleteApplication")}
               </Button>
             </DialogTrigger>
             <DialogSurface>
               <DialogBody>
-                <DialogTitle>Delete "{app.name}"?</DialogTitle>
-                <DialogContent>
-                  This will permanently delete the app and revoke all associated
-                  tokens. This action cannot be undone.
-                </DialogContent>
+                <DialogTitle>
+                  {t("apps.deleteAppTitle", { name: app.name })}
+                </DialogTitle>
+                <DialogContent>{t("apps.deleteAppDesc")}</DialogContent>
                 <DialogActions>
                   <DialogTrigger>
-                    <Button>Cancel</Button>
+                    <Button>{t("common.cancel")}</Button>
                   </DialogTrigger>
                   <Button
                     appearance="primary"
                     style={{ background: tokens.colorPaletteRedBackground3 }}
                     onClick={handleDelete}
                   >
-                    Delete permanently
+                    {t("apps.deletePermanently")}
                   </Button>
                 </DialogActions>
               </DialogBody>

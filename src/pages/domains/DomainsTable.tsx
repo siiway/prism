@@ -20,6 +20,7 @@ import {
   CheckmarkCircleRegular,
   CopyRegular,
 } from "@fluentui/react-icons";
+import { useTranslation } from "react-i18next";
 import type { Domain, Team } from "../../lib/api";
 import { DeleteDomainDialog } from "./dialogs/DeleteDomainDialog";
 
@@ -57,6 +58,7 @@ export function DomainsTable({
   onShareDomain,
 }: DomainsTableProps) {
   const styles = useStyles();
+  const { t } = useTranslation();
 
   if (loading) return <Spinner />;
 
@@ -69,7 +71,7 @@ export function DomainsTable({
           padding: "40px 0",
         }}
       >
-        No domains added yet.
+        {t("domains.noDomainsYet")}
       </Text>
     );
   }
@@ -78,16 +80,16 @@ export function DomainsTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHeaderCell>Domain</TableHeaderCell>
-          <TableHeaderCell>Status</TableHeaderCell>
+          <TableHeaderCell>{t("domains.domainHeader")}</TableHeaderCell>
+          <TableHeaderCell>{t("domains.statusHeader")}</TableHeaderCell>
           <TableHeaderCell className={styles.hiddenOnMobile}>
-            Verified at
+            {t("domains.verifiedAtHeader")}
           </TableHeaderCell>
           <TableHeaderCell className={styles.hiddenOnMobile}>
-            Next re-verify
+            {t("domains.nextReverifyHeader")}
           </TableHeaderCell>
           <TableHeaderCell className={styles.hiddenOnMobile}>
-            Actions
+            {t("domains.actionsHeader")}
           </TableHeaderCell>
         </TableRow>
       </TableHeader>
@@ -107,7 +109,7 @@ export function DomainsTable({
                 appearance="filled"
                 icon={d.verified ? <CheckmarkCircleRegular /> : undefined}
               >
-                {d.verified ? "Verified" : "Pending"}
+                {d.verified ? t("domains.verifiedBadge") : t("domains.pending")}
               </Badge>
             </TableCell>
             <TableCell className={styles.hiddenOnMobile}>
@@ -132,7 +134,11 @@ export function DomainsTable({
                   disabled={verifying === d.id}
                   onClick={() => onVerify(d.id)}
                 >
-                  {verifying === d.id ? <Spinner size="tiny" /> : "Verify"}
+                  {verifying === d.id ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    t("common.verify")
+                  )}
                 </Button>
                 {manageableTeams.length > 0 && (
                   <>
@@ -140,14 +146,14 @@ export function DomainsTable({
                       icon={<ArrowSwapRegular />}
                       size="small"
                       appearance="subtle"
-                      title="Move to team"
+                      title={t("apps.moveToTeam")}
                       onClick={() => onTransferDomain(d)}
                     />
                     <Button
                       icon={<CopyRegular />}
                       size="small"
                       appearance="subtle"
-                      title="Share with team"
+                      title={t("domains.shareDomainWithTeam")}
                       onClick={() => onShareDomain(d)}
                     />
                   </>

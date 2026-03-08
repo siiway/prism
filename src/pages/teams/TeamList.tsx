@@ -27,6 +27,7 @@ import { AddRegular, PeopleRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 
 const useStyles = makeStyles({
@@ -63,6 +64,7 @@ export function TeamList() {
   const styles = useStyles();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { t } = useTranslation();
 
   const { data, isLoading } = useQuery({
     queryKey: ["teams"],
@@ -102,7 +104,8 @@ export function TeamList() {
     } catch (err) {
       setMessage({
         type: "error",
-        text: err instanceof ApiError ? err.message : "Failed to create team",
+        text:
+          err instanceof ApiError ? err.message : t("teams.failedCreateTeam"),
       });
     } finally {
       setCreating(false);
@@ -112,16 +115,16 @@ export function TeamList() {
   return (
     <div>
       <div className={styles.header}>
-        <Title2>Teams</Title2>
+        <Title2>{t("teams.title")}</Title2>
         <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
           <DialogTrigger disableButtonEnhancement>
             <Button appearance="primary" icon={<AddRegular />}>
-              New team
+              {t("teams.newTeam")}
             </Button>
           </DialogTrigger>
           <DialogSurface>
             <DialogBody>
-              <DialogTitle>Create Team</DialogTitle>
+              <DialogTitle>{t("teams.createTeam")}</DialogTitle>
               <DialogContent>
                 {message && (
                   <MessageBar
@@ -132,39 +135,39 @@ export function TeamList() {
                   </MessageBar>
                 )}
                 <div className={styles.form}>
-                  <Field label="Team name" required>
+                  <Field label={t("teams.teamName")} required>
                     <Input
                       value={form.name}
                       onChange={update("name")}
-                      placeholder="Acme Corp"
+                      placeholder={t("teams.teamNamePlaceholder")}
                     />
                   </Field>
-                  <Field label="Description">
+                  <Field label={t("teams.description")}>
                     <Textarea
                       value={form.description}
                       onChange={update("description")}
                       rows={2}
                     />
                   </Field>
-                  <Field label="Avatar URL">
+                  <Field label={t("teams.avatarUrl")}>
                     <Input
                       value={form.avatar_url}
                       onChange={update("avatar_url")}
-                      placeholder="https://example.com/logo.png"
+                      placeholder={t("teams.avatarUrlPlaceholder")}
                     />
                   </Field>
                 </div>
               </DialogContent>
               <DialogActions>
                 <DialogTrigger>
-                  <Button>Cancel</Button>
+                  <Button>{t("common.cancel")}</Button>
                 </DialogTrigger>
                 <Button
                   appearance="primary"
                   onClick={handleCreate}
                   disabled={creating}
                 >
-                  {creating ? <Spinner size="tiny" /> : "Create"}
+                  {creating ? <Spinner size="tiny" /> : t("common.create")}
                 </Button>
               </DialogActions>
             </DialogBody>
@@ -181,10 +184,10 @@ export function TeamList() {
             style={{ color: tokens.colorNeutralForeground3 }}
           />
           <Text block size={500} style={{ marginTop: 16 }}>
-            No teams yet
+            {t("teams.noTeamsYet")}
           </Text>
           <Text block style={{ color: tokens.colorNeutralForeground3 }}>
-            Create a team to collaborate on OAuth applications.
+            {t("teams.noTeamsDesc")}
           </Text>
         </div>
       )}

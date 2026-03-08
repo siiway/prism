@@ -15,6 +15,7 @@ import {
 } from "@fluentui/react-components";
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 
@@ -39,6 +40,7 @@ export function Profile() {
   const styles = useStyles();
   const qc = useQueryClient();
   const { user, setAuth, token } = useAuthStore();
+  const { t } = useTranslation();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const { data: site } = useQuery({
@@ -79,7 +81,7 @@ export function Profile() {
       const res = await api.updateMe(body);
       if (token && res.user) setAuth(token, res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
-      showMsg("success", "Profile updated");
+      showMsg("success", t("profile.profileUpdated"));
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Update failed");
     } finally {
@@ -95,7 +97,7 @@ export function Profile() {
       const res = await api.uploadAvatar(file);
       if (token) setAuth(token, { ...user!, avatar_url: res.avatar_url });
       await qc.invalidateQueries({ queryKey: ["me"] });
-      showMsg("success", "Avatar updated");
+      showMsg("success", t("profile.avatarUpdated"));
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Upload failed");
     } finally {
@@ -109,11 +111,13 @@ export function Profile() {
     try {
       await api.changePassword(pwForm.current, pwForm.next);
       setPwForm({ current: "", next: "" });
-      showMsg("success", "Password changed");
+      showMsg("success", t("profile.passwordChanged"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Password change failed",
+        err instanceof ApiError
+          ? err.message
+          : t("profile.passwordChangeFailed"),
       );
     } finally {
       setPwLoading(false);
@@ -124,7 +128,7 @@ export function Profile() {
 
   return (
     <div className={styles.page}>
-      <Title2>Profile</Title2>
+      <Title2>{t("profile.title")}</Title2>
 
       {message && (
         <MessageBar intent={message.type === "success" ? "success" : "error"}>
@@ -135,7 +139,7 @@ export function Profile() {
       {/* Avatar + basic info */}
       <div className={styles.card}>
         <Text weight="semibold" size={400}>
-          Basic Information
+          {t("profile.basicInformation")}
         </Text>
         <div className={styles.avatarRow}>
           <Avatar
@@ -159,22 +163,26 @@ export function Profile() {
                 disabled={avatarLoading}
                 onClick={() => fileRef.current?.click()}
               >
-                {avatarLoading ? <Spinner size="tiny" /> : "Change avatar"}
+                {avatarLoading ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("profile.changeAvatar")
+                )}
               </Button>
               <Text
                 size={200}
                 block
                 style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
               >
-                JPG, PNG, WebP, GIF — max 2MB
+                {t("profile.avatarFormats")}
               </Text>
             </div>
           ) : (
-            <Field label="Avatar URL" style={{ flex: 1 }}>
+            <Field label={t("profile.avatarUrl")} style={{ flex: 1 }}>
               <Input
                 value={avatarUrl}
                 onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://example.com/avatar.png"
+                placeholder={t("profile.avatarPlaceholder")}
               />
             </Field>
           )}
@@ -182,14 +190,14 @@ export function Profile() {
 
         <div className={styles.form}>
           <div className={styles.row}>
-            <Field label="Username">
+            <Field label={t("profile.usernameLabel")}>
               <Input
                 value={me?.user.username}
                 readOnly
                 appearance="filled-lighter"
               />
             </Field>
-            <Field label="Email">
+            <Field label={t("profile.emailLabel")}>
               <Input
                 value={me?.user.email}
                 readOnly
@@ -197,18 +205,18 @@ export function Profile() {
                 contentAfter={
                   me?.user.email_verified ? (
                     <Badge color="success" appearance="filled" size="small">
-                      Verified
+                      {t("profile.verified")}
                     </Badge>
                   ) : (
                     <Badge color="warning" appearance="filled" size="small">
-                      Unverified
+                      {t("profile.unverified")}
                     </Badge>
                   )
                 }
               />
             </Field>
           </div>
-          <Field label="Display Name">
+          <Field label={t("profile.displayName")}>
             <Input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
@@ -220,7 +228,7 @@ export function Profile() {
               onClick={handleSave}
               disabled={saveLoading}
             >
-              {saveLoading ? <Spinner size="tiny" /> : "Save changes"}
+              {saveLoading ? <Spinner size="tiny" /> : t("common.saveChanges")}
             </Button>
           </div>
         </div>
@@ -229,10 +237,10 @@ export function Profile() {
       {/* Password change */}
       <div className={styles.card}>
         <Text weight="semibold" size={400}>
-          Change Password
+          {t("profile.changePassword")}
         </Text>
         <form onSubmit={handlePasswordChange} className={styles.form}>
-          <Field label="Current password">
+          <Field label={t("profile.currentPassword")}>
             <Input
               type="password"
               value={pwForm.current}
@@ -241,19 +249,23 @@ export function Profile() {
               }
             />
           </Field>
-          <Field label="New password">
+          <Field label={t("profile.newPassword")}>
             <Input
               type="password"
               value={pwForm.next}
               onChange={(e) =>
                 setPwForm((f) => ({ ...f, next: e.target.value }))
               }
-              placeholder="At least 8 characters"
+              placeholder={t("profile.newPasswordPlaceholder")}
             />
           </Field>
           <div className={styles.actions}>
             <Button appearance="primary" type="submit" disabled={pwLoading}>
-              {pwLoading ? <Spinner size="tiny" /> : "Update password"}
+              {pwLoading ? (
+                <Spinner size="tiny" />
+              ) : (
+                t("profile.updatePassword")
+              )}
             </Button>
           </div>
         </form>

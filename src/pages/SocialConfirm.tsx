@@ -15,6 +15,7 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 
@@ -66,6 +67,7 @@ export function SocialConfirm() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { setAuth } = useAuthStore();
+  const { t } = useTranslation();
   const key = searchParams.get("key") ?? "";
 
   const [username, setUsername] = useState("");
@@ -133,12 +135,12 @@ export function SocialConfirm() {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <Title2>Session Expired</Title2>
+          <Title2>{t("auth.sessionExpired")}</Title2>
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            This link has expired or is invalid.
+            {t("auth.sessionExpiredText")}
           </Text>
           <Button appearance="primary" onClick={() => navigate("/login")}>
-            Back to login
+            {t("auth.backToLogin")}
           </Button>
         </div>
       </div>
@@ -161,13 +163,14 @@ export function SocialConfirm() {
         )}
 
         <div style={{ textAlign: "center" }}>
-          <Title2>Create a new account</Title2>
+          <Title2>{t("auth.createNewAccount")}</Title2>
           <Text
             block
             style={{ color: tokens.colorNeutralForeground3, marginTop: 8 }}
           >
-            Signing in via <strong>{data.profile_name ?? providerLabel}</strong>
-            . Choose your username and display name.
+            {t("auth.signingInVia", {
+              providerName: data.profile_name ?? providerLabel,
+            })}
           </Text>
         </div>
 
@@ -208,10 +211,10 @@ export function SocialConfirm() {
               disabled={submitting || !username.trim() || !displayName.trim()}
               icon={submitting ? <Spinner size="tiny" /> : undefined}
             >
-              {submitting ? "Creating…" : "Create account"}
+              {submitting ? t("auth.creating") : t("auth.createAccountAction")}
             </Button>
             <Button appearance="subtle" onClick={() => navigate("/login")}>
-              Back to login
+              {t("auth.backToLogin")}
             </Button>
           </div>
         </form>

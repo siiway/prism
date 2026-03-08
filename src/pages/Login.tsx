@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { startAuthentication } from "@simplewebauthn/browser";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { Captcha } from "../components/Captcha";
 import type { CaptchaValue } from "../components/Captcha";
@@ -61,6 +62,7 @@ export function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { setAuth, token } = useAuthStore();
+  const { t } = useTranslation();
   const { data: site } = useQuery({
     queryKey: ["site"],
     queryFn: api.site,
@@ -106,7 +108,7 @@ export function Login() {
         console.debug("Login successful, token set, navigating to", redirectTo);
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Login failed");
+      setError(err instanceof ApiError ? err.message : t("auth.loginFailed"));
     } finally {
       setLoading(false);
     }
@@ -130,9 +132,7 @@ export function Login() {
       // navigation handled by the token useEffect
       console.debug("Login successful, token set, navigating to", redirectTo);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Passkey authentication failed",
-      );
+      setError(err instanceof ApiError ? err.message : t("auth.passkeyFailed"));
     } finally {
       setPasskeyLoading(false);
     }
@@ -145,12 +145,14 @@ export function Login() {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <Title2>Sign in to {site?.site_name ?? "Prism"}</Title2>
+        <Title2>
+          {t("auth.signInTo", { siteName: site?.site_name ?? "Prism" })}
+        </Title2>
 
         <form onSubmit={handleLogin} className={styles.form}>
           {!totpRequired ? (
             <>
-              <Field label="Email or username">
+              <Field label={t("auth.emailOrUsername")}>
                 <Input
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
@@ -158,7 +160,7 @@ export function Login() {
                   autoComplete="username"
                 />
               </Field>
-              <Field label="Password">
+              <Field label={t("auth.password")}>
                 <Input
                   type="password"
                   value={password}
@@ -168,11 +170,11 @@ export function Login() {
               </Field>
             </>
           ) : (
-            <Field label="Two-factor authentication code">
+            <Field label={t("auth.twoFactorCode")}>
               <Input
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
-                placeholder="000000 or backup code"
+                placeholder={t("auth.twoFactorPlaceholder")}
                 maxLength={11}
                 autoFocus
               />
@@ -200,12 +202,16 @@ export function Login() {
             disabled={loading}
             icon={loading ? <Spinner size="tiny" /> : undefined}
           >
-            {loading ? "Signing in…" : totpRequired ? "Verify" : "Sign in"}
+            {loading
+              ? t("auth.signingIn")
+              : totpRequired
+                ? t("common.verify")
+                : t("auth.signIn")}
           </Button>
 
           {totpRequired && (
             <Button appearance="subtle" onClick={() => setTotpRequired(false)}>
-              Back
+              {t("common.back")}
             </Button>
           )}
         </form>
@@ -218,12 +224,14 @@ export function Login() {
               onClick={handlePasskeyLogin}
               disabled={passkeyLoading}
             >
-              {passkeyLoading ? "Authenticating…" : "Sign in with passkey"}
+              {passkeyLoading
+                ? t("auth.authenticating")
+                : t("auth.signInWithPasskey")}
             </Button>
 
             {(site?.enabled_providers?.length ?? 0) > 0 && (
               <>
-                <Divider>or continue with</Divider>
+                <Divider>{t("auth.orContinueWith")}</Divider>
                 <div className={styles.providers}>
                   {site!.enabled_providers.map((p) => (
                     <Button
@@ -242,8 +250,8 @@ export function Login() {
 
         {site?.allow_registration && !totpRequired && (
           <div className={styles.footer}>
-            <Text>Don't have an account? </Text>
-            <Link href="/register">Sign up</Link>
+            <Text>{t("auth.dontHaveAccount")} </Text>
+            <Link href="/register">{t("auth.signUp")}</Link>
           </div>
         )}
       </div>

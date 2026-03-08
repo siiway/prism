@@ -20,6 +20,7 @@ import {
 } from "@fluentui/react-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 
@@ -69,6 +70,7 @@ export function Dashboard() {
   const styles = useStyles();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { t } = useTranslation();
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
   const { data: appsData } = useQuery({
@@ -87,12 +89,16 @@ export function Dashboard() {
   const showSecurityWarning =
     !me?.totp_enabled && (me?.passkey_count ?? 0) === 0;
 
+  const passkeyCount = me?.passkey_count ?? 0;
+
   return (
     <div>
       <div className={styles.welcome}>
-        <Title2>Welcome back, {user?.display_name}!</Title2>
+        <Title2>
+          {t("dashboard.welcomeBack", { name: user?.display_name })}
+        </Title2>
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          Manage your identity, applications, and connections.
+          {t("dashboard.manageDesc")}
         </Text>
       </div>
 
@@ -100,11 +106,10 @@ export function Dashboard() {
         <div className={styles.securityBanner}>
           <div>
             <Text weight="semibold" block>
-              Improve your account security
+              {t("dashboard.improveSecurityTitle")}
             </Text>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              Add two-factor authentication or a passkey to protect your
-              account.
+              {t("dashboard.improveSecurityDesc")}
             </Text>
           </div>
           <Button
@@ -112,7 +117,7 @@ export function Dashboard() {
             size="small"
             onClick={() => navigate("/security")}
           >
-            Set up 2FA
+            {t("dashboard.setUp2FA")}
           </Button>
         </div>
       )}
@@ -123,12 +128,14 @@ export function Dashboard() {
             image={
               <AppsRegular fontSize={24} color={tokens.colorBrandForeground1} />
             }
-            header={<Text weight="semibold">Applications</Text>}
+            header={
+              <Text weight="semibold">{t("dashboard.applications")}</Text>
+            }
           />
           <div style={{ padding: "0 16px 16px" }}>
             <Title3>{appsData?.apps.length ?? 0}</Title3>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              OAuth apps registered
+              {t("dashboard.oauthAppsRegistered")}
             </Text>
           </div>
         </Card>
@@ -141,7 +148,7 @@ export function Dashboard() {
                 color={tokens.colorBrandForeground1}
               />
             }
-            header={<Text weight="semibold">Domains</Text>}
+            header={<Text weight="semibold">{t("dashboard.domainsCard")}</Text>}
           />
           <div style={{ padding: "0 16px 16px" }}>
             <Title3>
@@ -154,7 +161,7 @@ export function Dashboard() {
               </Text>
             </Title3>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              Verified domains
+              {t("dashboard.verifiedDomains")}
             </Text>
           </div>
         </Card>
@@ -167,12 +174,14 @@ export function Dashboard() {
             image={
               <LinkRegular fontSize={24} color={tokens.colorBrandForeground1} />
             }
-            header={<Text weight="semibold">Linked Accounts</Text>}
+            header={
+              <Text weight="semibold">{t("dashboard.linkedAccountsCard")}</Text>
+            }
           />
           <div style={{ padding: "0 16px 16px" }}>
             <Title3>{connectionsData?.connections.length ?? 0}</Title3>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              Connected platforms
+              {t("dashboard.connectedPlatforms")}
             </Text>
           </div>
         </Card>
@@ -185,7 +194,9 @@ export function Dashboard() {
                 color={tokens.colorBrandForeground1}
               />
             }
-            header={<Text weight="semibold">Security</Text>}
+            header={
+              <Text weight="semibold">{t("dashboard.securityCard")}</Text>
+            }
           />
           <div
             style={{
@@ -199,14 +210,17 @@ export function Dashboard() {
               color={me?.totp_enabled ? "success" : "subtle"}
               appearance="filled"
             >
-              {me?.totp_enabled ? "2FA enabled" : "2FA off"}
+              {me?.totp_enabled
+                ? t("security.twoFaEnabled")
+                : t("security.twoFaOff")}
             </Badge>
             <Badge
-              color={(me?.passkey_count ?? 0) > 0 ? "success" : "subtle"}
+              color={passkeyCount > 0 ? "success" : "subtle"}
               appearance="filled"
             >
-              {me?.passkey_count ?? 0} passkey
-              {me?.passkey_count !== 1 ? "s" : ""}
+              {passkeyCount === 1
+                ? t("security.passkeyCount", { count: passkeyCount })
+                : t("security.passkeysCount", { count: passkeyCount })}
             </Badge>
           </div>
         </Card>
@@ -223,14 +237,16 @@ export function Dashboard() {
                   color={tokens.colorBrandForeground1}
                 />
               }
-              header={<Text weight="semibold">Add a Passkey</Text>}
+              header={
+                <Text weight="semibold">{t("dashboard.addPasskeyCard")}</Text>
+              }
             />
             <div style={{ padding: "0 16px 16px" }}>
               <Text
                 size={200}
                 style={{ color: tokens.colorNeutralForeground3 }}
               >
-                Sign in faster with biometrics or hardware keys.
+                {t("dashboard.addPasskeyDesc")}
               </Text>
             </div>
           </Card>

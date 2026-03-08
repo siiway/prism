@@ -14,10 +14,12 @@ import {
 } from "@fluentui/react-components";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
 
 export function AdminAudit() {
   const [page, setPage] = useState(1);
+  const { t } = useTranslation();
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-audit", page],
@@ -44,11 +46,13 @@ export function AdminAudit() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHeaderCell>Time</TableHeaderCell>
-              <TableHeaderCell>User</TableHeaderCell>
-              <TableHeaderCell>Action</TableHeaderCell>
-              <TableHeaderCell>Resource</TableHeaderCell>
-              <TableHeaderCell>IP</TableHeaderCell>
+              <TableHeaderCell>{t("admin.auditTimeHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.auditUserHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.auditActionHeader")}</TableHeaderCell>
+              <TableHeaderCell>
+                {t("admin.auditResourceHeader")}
+              </TableHeaderCell>
+              <TableHeaderCell>{t("admin.auditIpHeader")}</TableHeaderCell>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -104,17 +108,17 @@ export function AdminAudit() {
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
-            Previous
+            {t("common.previous")}
           </Button>
           <Text size={200}>
-            {page} / {totalPages}
+            {t("common.pageOf", { page, total: totalPages })}
           </Text>
           <Button
             size="small"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
-            Next
+            {t("common.next")}
           </Button>
         </div>
       )}

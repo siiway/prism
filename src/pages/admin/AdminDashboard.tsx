@@ -15,32 +15,35 @@ import {
   ShieldRegular,
 } from "@fluentui/react-icons";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
 
-const STAT_CARDS = [
-  {
-    key: "users" as const,
-    label: "Total Users",
-    icon: <PersonRegular fontSize={24} />,
-  },
-  {
-    key: "apps" as const,
-    label: "Total Apps",
-    icon: <AppsRegular fontSize={24} />,
-  },
-  {
-    key: "verified_domains" as const,
-    label: "Verified Domains",
-    icon: <GlobeRegular fontSize={24} />,
-  },
-  {
-    key: "active_tokens" as const,
-    label: "Active Tokens",
-    icon: <ShieldRegular fontSize={24} />,
-  },
-];
-
 export function AdminDashboard() {
+  const { t } = useTranslation();
+
+  const STAT_CARDS = [
+    {
+      key: "users" as const,
+      label: t("admin.totalUsers"),
+      icon: <PersonRegular fontSize={24} />,
+    },
+    {
+      key: "apps" as const,
+      label: t("admin.totalApps"),
+      icon: <AppsRegular fontSize={24} />,
+    },
+    {
+      key: "verified_domains" as const,
+      label: t("admin.verifiedDomains"),
+      icon: <GlobeRegular fontSize={24} />,
+    },
+    {
+      key: "active_tokens" as const,
+      label: t("admin.activeTokens"),
+      icon: <ShieldRegular fontSize={24} />,
+    },
+  ];
+
   const { data: stats, isLoading } = useQuery({
     queryKey: ["admin-stats"],
     queryFn: api.adminStats,

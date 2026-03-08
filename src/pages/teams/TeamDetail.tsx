@@ -26,6 +26,7 @@ import {
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError, type Domain, type OAuthApp } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 import { InviteDialog } from "./dialogs/InviteDialog";
@@ -64,7 +65,7 @@ const ROLE_COLORS: Record<string, "brand" | "success" | "subtle"> = {
   member: "subtle",
 };
 
-type Tab = "members" | "apps" | "domains" | "settings";
+type TabType = "members" | "apps" | "domains" | "settings";
 
 export function TeamDetail() {
   const styles = useStyles();
@@ -72,8 +73,9 @@ export function TeamDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user: me } = useAuthStore();
+  const { t } = useTranslation();
 
-  const [tab, setTab] = useState<Tab>("members");
+  const [tab, setTab] = useState<TabType>("members");
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -136,11 +138,11 @@ export function TeamDetail() {
     try {
       await api.changeTeamMemberRole(id, userId, role);
       await qc.invalidateQueries({ queryKey: ["team", id] });
-      showMsg("success", "Role updated");
+      showMsg("success", t("teams.roleUpdated"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to update role",
+        err instanceof ApiError ? err.message : t("teams.failedUpdateRole"),
       );
     }
   };
@@ -150,11 +152,11 @@ export function TeamDetail() {
     try {
       await api.removeTeamMember(id, userId);
       await qc.invalidateQueries({ queryKey: ["team", id] });
-      showMsg("success", "Member removed");
+      showMsg("success", t("teams.memberRemoved"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to remove member",
+        err instanceof ApiError ? err.message : t("teams.failedRemoveMember"),
       );
     }
   };
@@ -164,11 +166,13 @@ export function TeamDetail() {
     try {
       await api.transferOwnership(id, userId);
       await qc.invalidateQueries({ queryKey: ["team", id] });
-      showMsg("success", "Ownership transferred");
+      showMsg("success", t("teams.ownershipTransferred"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to transfer ownership",
+        err instanceof ApiError
+          ? err.message
+          : t("teams.failedTransferOwnership"),
       );
     }
   };
@@ -181,11 +185,11 @@ export function TeamDetail() {
     try {
       await api.revokeTeamInvite(id, token);
       await qc.invalidateQueries({ queryKey: ["team-invites", id] });
-      showMsg("success", "Invite revoked");
+      showMsg("success", t("teams.inviteRevoked"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to revoke invite",
+        err instanceof ApiError ? err.message : t("teams.failedRevokeInvite"),
       );
     }
   };
@@ -229,11 +233,11 @@ export function TeamDetail() {
         avatar_url: settingsForm.avatar_url || undefined,
       });
       await qc.invalidateQueries({ queryKey: ["team", id] });
-      showMsg("success", "Team updated");
+      showMsg("success", t("teams.teamUpdated"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to update team",
+        err instanceof ApiError ? err.message : t("teams.failedUpdateTeam"),
       );
     } finally {
       setSaving(false);
@@ -249,13 +253,13 @@ export function TeamDetail() {
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to delete team",
+        err instanceof ApiError ? err.message : t("teams.failedDeleteTeam"),
       );
     }
   };
 
   if (isLoading) return <Spinner />;
-  if (!team) return <Text>Team not found</Text>;
+  if (!team) return <Text>{t("teams.teamNotFound")}</Text>;
 
   return (
     <div>
@@ -291,7 +295,7 @@ export function TeamDetail() {
       <TabList
         selectedValue={tab}
         onTabSelect={(_, d) => {
-          setTab(d.value as Tab);
+          setTab(d.value as TabType);
           if (d.value === "settings") {
             setSettingsForm({
               name: team.name,
@@ -303,17 +307,17 @@ export function TeamDetail() {
         style={{ marginBottom: 24 }}
       >
         <Tab value="members" icon={<PeopleRegular />}>
-          Members ({members.length})
+          {t("teams.membersTab", { count: members.length })}
         </Tab>
         <Tab value="apps" icon={<AppsRegular />}>
-          Apps
+          {t("teams.appsTab")}
         </Tab>
         <Tab value="domains" icon={<GlobeSearchRegular />}>
-          Domains
+          {t("teams.domainsTab")}
         </Tab>
         {canManage && (
           <Tab value="settings" icon={<SettingsRegular />}>
-            Settings
+            {t("teams.settingsTab")}
           </Tab>
         )}
       </TabList>
@@ -381,8 +385,7 @@ export function TeamDetail() {
       {tab === "domains" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            Verified team domains are used to mark team apps as verified. Add a
-            DNS TXT record to prove ownership.
+            {t("teams.domainsDesc")}
           </Text>
 
           <DomainsTable
@@ -408,20 +411,20 @@ export function TeamDetail() {
           }}
         >
           <div className={styles.form}>
-            <Field label="Team name">
+            <Field label={t("teams.teamNameField")}>
               <Input
                 value={settingsForm.name}
                 onChange={updateSettings("name")}
               />
             </Field>
-            <Field label="Description">
+            <Field label={t("teams.descriptionField")}>
               <Textarea
                 value={settingsForm.description}
                 onChange={updateSettings("description")}
                 rows={3}
               />
             </Field>
-            <Field label="Avatar URL">
+            <Field label={t("teams.avatarUrlField")}>
               <Input
                 value={settingsForm.avatar_url}
                 onChange={updateSettings("avatar_url")}
@@ -434,7 +437,7 @@ export function TeamDetail() {
                 onClick={handleSaveSettings}
                 disabled={saving}
               >
-                {saving ? <Spinner size="tiny" /> : "Save changes"}
+                {saving ? <Spinner size="tiny" /> : t("teams.saveChanges")}
               </Button>
             </div>
           </div>
@@ -445,14 +448,13 @@ export function TeamDetail() {
                 weight="semibold"
                 style={{ color: tokens.colorPaletteRedForeground1 }}
               >
-                Danger zone
+                {t("teams.dangerZone")}
               </Text>
               <Text
                 size={200}
                 style={{ color: tokens.colorNeutralForeground3 }}
               >
-                Deleting this team will disown all team apps (they will return
-                to their creators). This action cannot be undone.
+                {t("teams.dangerZoneDesc")}
               </Text>
               <div>
                 <Button
@@ -464,7 +466,7 @@ export function TeamDetail() {
                   }}
                   onClick={handleDeleteTeam}
                 >
-                  Delete team
+                  {t("teams.deleteTeam")}
                 </Button>
               </div>
             </div>

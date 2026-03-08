@@ -13,6 +13,7 @@ import {
 import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import type { Domain, DomainAddResponse } from "../lib/api";
 import { DomainDetailDialog } from "./domains/dialogs/DomainDetailDialog";
@@ -21,6 +22,7 @@ import { ShareDomainDialog } from "./domains/dialogs/ShareDomainDialog";
 import { DomainsTable } from "./domains/DomainsTable";
 
 export function Domains() {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["domains"],
@@ -63,7 +65,7 @@ export function Domains() {
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to add domain",
+        err instanceof ApiError ? err.message : t("domains.failedAddDomain"),
       );
     } finally {
       setAdding(false);
@@ -75,18 +77,15 @@ export function Domains() {
     try {
       const res = await api.verifyDomain(id);
       if (res.verified) {
-        showMsg("success", "Domain verified!");
+        showMsg("success", t("domains.domainVerified"));
         await qc.invalidateQueries({ queryKey: ["domains"] });
       } else {
-        showMsg(
-          "error",
-          "TXT record not found yet. Make sure the DNS record is set and try again.",
-        );
+        showMsg("error", t("domains.txtRecordNotFound"));
       }
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Verification failed",
+        err instanceof ApiError ? err.message : t("domains.verificationFailed"),
       );
     } finally {
       setVerifying(null);
@@ -98,7 +97,10 @@ export function Domains() {
       await api.deleteDomain(id);
       await qc.invalidateQueries({ queryKey: ["domains"] });
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("domains.deleteFailed"),
+      );
     }
   };
 
@@ -109,11 +111,11 @@ export function Domains() {
       await qc.invalidateQueries({ queryKey: ["domains"] });
       await qc.invalidateQueries({ queryKey: ["team-domains", teamId] });
       setTransferDomain(null);
-      showMsg("success", "Domain moved to team");
+      showMsg("success", t("domains.domainMovedToTeam"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Transfer failed",
+        err instanceof ApiError ? err.message : t("domains.transferFailed"),
       );
       throw err;
     }
@@ -125,19 +127,21 @@ export function Domains() {
       await api.shareDomainToTeam(shareDomain.id, teamId);
       await qc.invalidateQueries({ queryKey: ["team-domains", teamId] });
       setShareDomain(null);
-      showMsg("success", "Domain shared with team");
+      showMsg("success", t("domains.domainSharedWithTeam"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Share failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("domains.shareFailed"),
+      );
       throw err;
     }
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <Title2>Domain Verification</Title2>
+      <Title2>{t("domains.title")}</Title2>
       <Text style={{ color: tokens.colorNeutralForeground3 }}>
-        Verify domains to associate them with your apps. DNS TXT records are
-        automatically re-verified periodically.
+        {t("domains.description")}
       </Text>
 
       {message && (
@@ -147,11 +151,11 @@ export function Domains() {
       )}
 
       <div style={{ display: "flex", gap: 8 }}>
-        <Field label="Add domain" style={{ flex: 1 }}>
+        <Field label={t("domains.addDomain")} style={{ flex: 1 }}>
           <Input
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
-            placeholder="example.com"
+            placeholder={t("domains.addDomainPlaceholder")}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
           />
         </Field>
@@ -162,7 +166,7 @@ export function Domains() {
           disabled={adding || !newDomain}
           style={{ alignSelf: "flex-end" }}
         >
-          {adding ? <Spinner size="tiny" /> : "Add"}
+          {adding ? <Spinner size="tiny" /> : t("common.add")}
         </Button>
       </div>
 
@@ -176,7 +180,7 @@ export function Domains() {
           }}
         >
           <Text weight="semibold" block>
-            Add this DNS TXT record to verify {addedInfo.domain}:
+            {t("domains.dnsInstructions", { domain: addedInfo.domain })}
           </Text>
           <div
             style={{
@@ -187,13 +191,15 @@ export function Domains() {
             }}
           >
             <Text size={200}>
-              <strong>Type:</strong> TXT
+              <strong>{t("domains.dnsType")}:</strong> TXT
             </Text>
             <Text size={200}>
-              <strong>Name:</strong> <code>{addedInfo.txt_record}</code>
+              <strong>{t("domains.dnsName")}:</strong>{" "}
+              <code>{addedInfo.txt_record}</code>
             </Text>
             <Text size={200}>
-              <strong>Value:</strong> <code>{addedInfo.txt_value}</code>
+              <strong>{t("domains.dnsValue")}:</strong>{" "}
+              <code>{addedInfo.txt_value}</code>
             </Text>
           </div>
           <Button
@@ -201,7 +207,7 @@ export function Domains() {
             onClick={() => setAddedInfo(null)}
             style={{ marginTop: 12 }}
           >
-            Dismiss
+            {t("common.dismiss")}
           </Button>
         </div>
       )}

@@ -15,6 +15,7 @@ import {
 import { LinkRegular, MailRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../../lib/api";
 
 interface InviteDialogProps {
@@ -23,6 +24,7 @@ interface InviteDialogProps {
 }
 
 export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -49,14 +51,14 @@ export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
       if (!res.invite.email) {
         const link = `${window.location.origin}/teams/join/${res.invite.token}`;
         await navigator.clipboard.writeText(link);
-        showMsg("success", "Invite link copied to clipboard!");
+        showMsg("success", t("teams.inviteLinkCopied"));
       } else {
-        showMsg("success", "Invite email sent");
+        showMsg("success", t("teams.inviteEmailSent"));
       }
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to create invite",
+        err instanceof ApiError ? err.message : t("teams.failedCreateInvite"),
       );
     } finally {
       setCreating(false);
@@ -67,12 +69,12 @@ export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
     <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
       <DialogTrigger disableButtonEnhancement>
         <Button icon={<LinkRegular />} size="small">
-          Invite
+          {t("teams.inviteButton")}
         </Button>
       </DialogTrigger>
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>Invite to Team</DialogTitle>
+          <DialogTitle>{t("teams.inviteToTeam")}</DialogTitle>
           <DialogContent>
             <div
               style={{
@@ -81,7 +83,7 @@ export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
                 gap: "12px",
               }}
             >
-              <Field label="Role">
+              <Field label={t("teams.inviteRole")}>
                 <Select
                   value={form.role}
                   onChange={(_, d) => setForm((f) => ({ ...f, role: d.value }))}
@@ -91,8 +93,8 @@ export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
                 </Select>
               </Field>
               <Field
-                label="Email (optional)"
-                hint="Leave blank to create a shareable link"
+                label={t("teams.inviteEmailOptional")}
+                hint={t("teams.inviteEmailHint")}
               >
                 <Input
                   type="email"
@@ -100,11 +102,11 @@ export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, email: e.target.value }))
                   }
-                  placeholder="user@example.com"
+                  placeholder={t("teams.inviteEmailPlaceholder")}
                   contentBefore={<MailRegular />}
                 />
               </Field>
-              <Field label="Max uses" hint="0 = unlimited">
+              <Field label={t("teams.maxUses")} hint={t("teams.maxUsesHint")}>
                 <Input
                   type="number"
                   value={form.max_uses}
@@ -114,7 +116,7 @@ export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
                   placeholder="0"
                 />
               </Field>
-              <Field label="Expires after (hours)">
+              <Field label={t("teams.expiresAfter")}>
                 <Input
                   type="number"
                   value={form.ttl_hours}
@@ -128,7 +130,7 @@ export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
           </DialogContent>
           <DialogActions>
             <DialogTrigger>
-              <Button>Cancel</Button>
+              <Button>{t("common.cancel")}</Button>
             </DialogTrigger>
             <Button
               appearance="primary"
@@ -138,9 +140,9 @@ export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
               {creating ? (
                 <Spinner size="tiny" />
               ) : form.email ? (
-                "Send invite"
+                t("teams.sendInvite")
               ) : (
-                "Copy invite link"
+                t("teams.copyInviteLink")
               )}
             </Button>
           </DialogActions>

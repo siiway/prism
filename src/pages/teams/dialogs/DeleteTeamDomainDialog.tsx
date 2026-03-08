@@ -10,6 +10,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { DeleteRegular } from "@fluentui/react-icons";
+import { useTranslation } from "react-i18next";
 import type { Domain } from "../../../lib/api";
 
 interface DeleteTeamDomainDialogProps {
@@ -21,6 +22,7 @@ export function DeleteTeamDomainDialog({
   domain,
   onDelete,
 }: DeleteTeamDomainDialogProps) {
+  const { t } = useTranslation();
   return (
     <Dialog>
       <DialogTrigger disableButtonEnhancement>
@@ -28,21 +30,20 @@ export function DeleteTeamDomainDialog({
       </DialogTrigger>
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>Remove domain?</DialogTitle>
+          <DialogTitle>{t("domains.removeDomain")}</DialogTitle>
           <DialogContent>
-            Remove <strong>{domain.domain}</strong> from this team's verified
-            domains?
+            {t("domains.removeDomainTeamDesc", { domain: domain.domain })}
           </DialogContent>
           <DialogActions>
             <DialogTrigger>
-              <Button>Cancel</Button>
+              <Button>{t("common.cancel")}</Button>
             </DialogTrigger>
             <Button
               appearance="primary"
               style={{ background: tokens.colorPaletteRedBackground3 }}
               onClick={() => onDelete(domain.id)}
             >
-              Remove
+              {t("common.remove")}
             </Button>
           </DialogActions>
         </DialogBody>

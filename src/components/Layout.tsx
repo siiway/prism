@@ -29,10 +29,12 @@ import {
   SettingsRegular,
   ShieldPersonRegular,
   SignOutRegular,
+  LocalLanguageRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 
@@ -197,6 +199,7 @@ export function Layout() {
   const location = useLocation();
   const { user, clearAuth } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { t, i18n } = useTranslation();
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -219,6 +222,15 @@ export function Layout() {
   };
 
   const closeSidebar = () => setSidebarOpen(false);
+
+  const toggleLanguage = () => {
+    const nextLang = i18n.language.startsWith("zh") ? "en" : "zh";
+    i18n.changeLanguage(nextLang);
+  };
+
+  const langLabel = i18n.language.startsWith("zh")
+    ? t("language.switchToEn")
+    : t("language.switchToZh");
 
   const sidebarContent = (
     <>
@@ -243,7 +255,7 @@ export function Layout() {
           size="small"
           onClick={closeSidebar}
           className={styles.closeBtnHidden}
-          aria-label="Close menu"
+          aria-label={t("nav.closeMenu")}
         />
       </div>
 
@@ -251,64 +263,64 @@ export function Layout() {
         <NavItem
           to="/"
           icon={<HomeRegular />}
-          label="Dashboard"
+          label={t("nav.dashboard")}
           end
           onNavigate={closeSidebar}
         />
         <NavItem
           to="/profile"
           icon={<PersonRegular />}
-          label="Profile"
+          label={t("nav.profile")}
           onNavigate={closeSidebar}
         />
         <NavItem
           to="/security"
           icon={<ShieldPersonRegular />}
-          label="Security"
+          label={t("nav.security")}
           onNavigate={closeSidebar}
         />
 
-        <div className={styles.navSection}>Developer</div>
+        <div className={styles.navSection}>{t("nav.developer")}</div>
         <NavItem
           to="/apps"
           icon={<AppsRegular />}
-          label="My Apps"
+          label={t("nav.myApps")}
           onNavigate={closeSidebar}
         />
         <NavItem
           to="/teams"
           icon={<PeopleRegular />}
-          label="Teams"
+          label={t("nav.teams")}
           onNavigate={closeSidebar}
         />
         <NavItem
           to="/domains"
           icon={<GlobeRegular />}
-          label="Domains"
+          label={t("nav.domains")}
           onNavigate={closeSidebar}
         />
 
-        <div className={styles.navSection}>Connections</div>
+        <div className={styles.navSection}>{t("nav.connections")}</div>
         <NavItem
           to="/connections"
           icon={<LinkRegular />}
-          label="Linked Accounts"
+          label={t("nav.linkedAccounts")}
           onNavigate={closeSidebar}
         />
         <NavItem
           to="/connected-apps"
           icon={<LockClosedRegular />}
-          label="Connected Apps"
+          label={t("nav.connectedApps")}
           onNavigate={closeSidebar}
         />
 
         {user?.role === "admin" && (
           <>
-            <div className={styles.navSection}>Admin</div>
+            <div className={styles.navSection}>{t("nav.admin")}</div>
             <NavItem
               to="/admin"
               icon={<SettingsRegular />}
-              label="Admin Panel"
+              label={t("nav.adminPanel")}
               onNavigate={closeSidebar}
             />
           </>
@@ -316,6 +328,19 @@ export function Layout() {
       </nav>
 
       <div className={styles.userArea}>
+        <Button
+          appearance="subtle"
+          icon={<LocalLanguageRegular />}
+          size="small"
+          onClick={toggleLanguage}
+          style={{
+            width: "100%",
+            justifyContent: "flex-start",
+            marginBottom: 8,
+          }}
+        >
+          {langLabel}
+        </Button>
         <Menu>
           <MenuTrigger disableButtonEnhancement>
             <MenuButton
@@ -361,17 +386,17 @@ export function Layout() {
                 icon={<PersonRegular />}
                 onClick={() => navigate("/profile")}
               >
-                Profile
+                {t("nav.profile")}
               </MenuItem>
               <MenuItem
                 icon={<KeyRegular />}
                 onClick={() => navigate("/security")}
               >
-                Security
+                {t("nav.security")}
               </MenuItem>
               <MenuDivider />
               <MenuItem icon={<SignOutRegular />} onClick={handleLogout}>
-                Sign out
+                {t("nav.signOut")}
               </MenuItem>
             </MenuList>
           </MenuPopover>
@@ -388,7 +413,7 @@ export function Layout() {
           appearance="subtle"
           icon={<NavigationRegular />}
           onClick={() => setSidebarOpen(true)}
-          aria-label="Open menu"
+          aria-label={t("nav.openMenu")}
         />
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {site?.site_icon_url && (

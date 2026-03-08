@@ -12,6 +12,7 @@ import {
   Text,
 } from "@fluentui/react-components";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Domain, Team } from "../../../lib/api";
 
 interface TransferDomainDialogProps {
@@ -27,6 +28,7 @@ export function TransferDomainDialog({
   onClose,
   onTransfer,
 }: TransferDomainDialogProps) {
+  const { t } = useTranslation();
   const [teamId, setTeamId] = useState("");
   const [transferring, setTransferring] = useState(false);
 
@@ -53,20 +55,15 @@ export function TransferDomainDialog({
     >
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>Move domain to team</DialogTitle>
+          <DialogTitle>{t("domains.moveDomainToTeam")}</DialogTitle>
           <DialogContent>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <Text>
-                Move{" "}
-                <strong style={{ fontFamily: "monospace" }}>
-                  {domain?.domain}
-                </strong>{" "}
-                to a team. The domain will be removed from your personal domains
-                and managed by the team.
+                {t("domains.moveDomainDesc", { domain: domain?.domain ?? "" })}
               </Text>
-              <Field label="Select team" required>
+              <Field label={t("domains.selectTeam")} required>
                 <Select value={teamId} onChange={(_, d) => setTeamId(d.value)}>
-                  <option value="">— choose a team —</option>
+                  <option value="">{t("domains.chooseTeam")}</option>
                   {teams.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
@@ -83,14 +80,18 @@ export function TransferDomainDialog({
                 onClose();
               }}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               appearance="primary"
               onClick={handleTransfer}
               disabled={transferring || !teamId}
             >
-              {transferring ? <Spinner size="tiny" /> : "Move to team"}
+              {transferring ? (
+                <Spinner size="tiny" />
+              ) : (
+                t("domains.moveToTeamAction")
+              )}
             </Button>
           </DialogActions>
         </DialogBody>

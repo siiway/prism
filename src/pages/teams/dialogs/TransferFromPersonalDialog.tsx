@@ -14,6 +14,7 @@ import {
 } from "@fluentui/react-components";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError, type Domain } from "../../../lib/api";
 
 interface TransferFromPersonalDialogProps {
@@ -31,6 +32,7 @@ export function TransferFromPersonalDialog({
   onClose,
   showMsg,
 }: TransferFromPersonalDialogProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [selectedDomainId, setSelectedDomainId] = useState("");
   const [transferring, setTransferring] = useState(false);
@@ -44,11 +46,11 @@ export function TransferFromPersonalDialog({
       await qc.invalidateQueries({ queryKey: ["domains"] });
       setSelectedDomainId("");
       onClose();
-      showMsg("success", "Domain moved to team");
+      showMsg("success", t("domains.domainMovedToTeam"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Transfer failed",
+        err instanceof ApiError ? err.message : t("domains.transferFailed"),
       );
     } finally {
       setTransferring(false);
@@ -67,26 +69,25 @@ export function TransferFromPersonalDialog({
     >
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>Transfer personal domain to team</DialogTitle>
+          <DialogTitle>{t("domains.transferPersonalTitle")}</DialogTitle>
           <DialogContent>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <Text
                 size={200}
                 style={{ color: tokens.colorNeutralForeground3 }}
               >
-                Move one of your verified personal domains into this team. It
-                will be used to verify team apps.
+                {t("domains.transferPersonalDesc")}
               </Text>
-              <Field label="Select domain" required>
+              <Field label={t("domains.selectDomain")} required>
                 <Select
                   value={selectedDomainId}
                   onChange={(_, d) => setSelectedDomainId(d.value)}
                 >
-                  <option value="">— choose a domain —</option>
+                  <option value="">{t("domains.chooseDomain")}</option>
                   {transferableDomains.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.domain}
-                      {d.verified ? " ✓" : " (unverified)"}
+                      {d.verified ? " ✓" : t("domains.unverifiedSuffix")}
                     </option>
                   ))}
                 </Select>
@@ -100,14 +101,18 @@ export function TransferFromPersonalDialog({
                 onClose();
               }}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               appearance="primary"
               onClick={handleTransfer}
               disabled={transferring || !selectedDomainId}
             >
-              {transferring ? <Spinner size="tiny" /> : "Transfer to team"}
+              {transferring ? (
+                <Spinner size="tiny" />
+              ) : (
+                t("domains.transferToTeam")
+              )}
             </Button>
           </DialogActions>
         </DialogBody>

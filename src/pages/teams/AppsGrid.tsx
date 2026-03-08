@@ -10,6 +10,7 @@ import {
 } from "@fluentui/react-components";
 import { GlobeRegular } from "@fluentui/react-icons";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import type { OAuthApp } from "../../lib/api";
 
 const useStyles = makeStyles({
@@ -34,6 +35,7 @@ interface AppsGridProps {
 export function AppsGrid({ apps, loading }: AppsGridProps) {
   const styles = useStyles();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   if (loading) return <Spinner />;
 
@@ -48,7 +50,7 @@ export function AppsGrid({ apps, loading }: AppsGridProps) {
           block
           style={{ marginTop: 12, color: tokens.colorNeutralForeground3 }}
         >
-          No apps in this team yet.
+          {t("teams.noAppsInTeam")}
         </Text>
       </div>
     );

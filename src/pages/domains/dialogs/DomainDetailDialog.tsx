@@ -15,6 +15,7 @@ import {
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
 } from "@fluentui/react-icons";
+import { useTranslation } from "react-i18next";
 import type { Domain } from "../../../lib/api";
 
 interface DomainDetailDialogProps {
@@ -32,6 +33,7 @@ export function DomainDetailDialog({
   onVerify,
   onDelete,
 }: DomainDetailDialogProps) {
+  const { t } = useTranslation();
   return (
     <Dialog
       open={!!domain}
@@ -52,18 +54,20 @@ export function DomainDetailDialog({
                 icon={domain?.verified ? <CheckmarkCircleRegular /> : undefined}
                 style={{ width: "fit-content" }}
               >
-                {domain?.verified ? "Verified" : "Pending"}
+                {domain?.verified
+                  ? t("domains.verifiedBadge")
+                  : t("domains.pending")}
               </Badge>
 
               {domain?.verified_at && (
                 <Text size={200}>
-                  <strong>Verified:</strong>{" "}
+                  <strong>{t("domains.verifiedLabel")}:</strong>{" "}
                   {new Date(domain.verified_at * 1000).toLocaleDateString()}
                 </Text>
               )}
               {domain?.next_reverify_at && (
                 <Text size={200}>
-                  <strong>Next re-verify:</strong>{" "}
+                  <strong>{t("domains.nextReverifyLabel")}:</strong>{" "}
                   {new Date(
                     domain.next_reverify_at * 1000,
                   ).toLocaleDateString()}
@@ -82,14 +86,14 @@ export function DomainDetailDialog({
                   }}
                 >
                   <Text size={200} weight="semibold">
-                    Add this DNS TXT record:
+                    {t("domains.addDnsTxtRecord")}
                   </Text>
                   <Text size={200}>
-                    <strong>Name:</strong>{" "}
+                    <strong>{t("domains.dnsName")}:</strong>{" "}
                     <code>_prism-verify.{domain?.domain}</code>
                   </Text>
                   <Text size={200}>
-                    <strong>Value:</strong>{" "}
+                    <strong>{t("domains.dnsValue")}:</strong>{" "}
                     <code>prism-verify={domain?.verification_token}</code>
                   </Text>
                 </div>
@@ -97,7 +101,7 @@ export function DomainDetailDialog({
             </div>
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose}>Close</Button>
+            <Button onClick={onClose}>{t("common.close")}</Button>
             <Button
               appearance="outline"
               icon={<ArrowClockwiseRegular />}
@@ -108,7 +112,7 @@ export function DomainDetailDialog({
                 onClose();
               }}
             >
-              {verifying ? <Spinner size="tiny" /> : "Verify"}
+              {verifying ? <Spinner size="tiny" /> : t("common.verify")}
             </Button>
             <Button
               appearance="primary"
@@ -119,7 +123,7 @@ export function DomainDetailDialog({
                 onClose();
               }}
             >
-              Delete
+              {t("common.delete")}
             </Button>
           </DialogActions>
         </DialogBody>

@@ -23,6 +23,7 @@ import {
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthConsent } from "../lib/api";
 
 const useStyles = makeStyles({
@@ -73,6 +74,7 @@ const useStyles = makeStyles({
 export function ConnectedApps() {
   const styles = useStyles();
   const qc = useQueryClient();
+  const { t } = useTranslation();
   const [revoking, setRevoking] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -87,7 +89,9 @@ export function ConnectedApps() {
       await api.revokeConsent(consent.client_id);
       await qc.invalidateQueries({ queryKey: ["consents"] });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Revoke failed");
+      setError(
+        err instanceof ApiError ? err.message : t("connectedApps.revokeFailed"),
+      );
     } finally {
       setRevoking(null);
     }
@@ -98,13 +102,12 @@ export function ConnectedApps() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
-        <Title2>Connected Apps</Title2>
+        <Title2>{t("connectedApps.title")}</Title2>
         <Text
           block
           style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
         >
-          Applications you have authorized to access your account. Revoking
-          access signs you out of that app immediately.
+          {t("connectedApps.description")}
         </Text>
       </div>
 
@@ -115,10 +118,12 @@ export function ConnectedApps() {
       )}
 
       {isLoading ? (
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>Loading…</Text>
+        <Text style={{ color: tokens.colorNeutralForeground3 }}>
+          {t("connectedApps.loading")}
+        </Text>
       ) : consents.length === 0 ? (
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          No applications have been authorized yet.
+          {t("connectedApps.noApps")}
         </Text>
       ) : (
         <div className={styles.list}>
@@ -152,7 +157,7 @@ export function ConnectedApps() {
                       size="small"
                       icon={<ShieldRegular />}
                     >
-                      Verified
+                      {t("connectedApps.verified")}
                     </Badge>
                   )}
                 </div>
@@ -186,8 +191,11 @@ export function ConnectedApps() {
                     marginTop: 2,
                   }}
                 >
-                  Authorized{" "}
-                  {new Date(consent.granted_at * 1000).toLocaleDateString()}
+                  {t("connectedApps.authorized", {
+                    date: new Date(
+                      consent.granted_at * 1000,
+                    ).toLocaleDateString(),
+                  })}
                 </Text>
               </div>
 
@@ -200,22 +208,24 @@ export function ConnectedApps() {
                     style={{ flexShrink: 0 }}
                     disabled={revoking === consent.client_id}
                   >
-                    Revoke
+                    {t("connectedApps.revokeButton")}
                   </Button>
                 </DialogTrigger>
                 <DialogSurface>
                   <DialogBody>
                     <DialogTitle>
-                      Revoke access for "{consent.app.name}"?
+                      {t("connectedApps.revokeTitle", {
+                        name: consent.app.name,
+                      })}
                     </DialogTitle>
                     <DialogContent>
-                      This will sign you out of {consent.app.name} and delete
-                      all active tokens. The app will need your authorization
-                      again to access your account.
+                      {t("connectedApps.revokeDesc", {
+                        name: consent.app.name,
+                      })}
                     </DialogContent>
                     <DialogActions>
                       <DialogTrigger>
-                        <Button>Cancel</Button>
+                        <Button>{t("common.cancel")}</Button>
                       </DialogTrigger>
                       <Button
                         appearance="primary"
@@ -224,7 +234,7 @@ export function ConnectedApps() {
                         }}
                         onClick={() => handleRevoke(consent)}
                       >
-                        Revoke access
+                        {t("connectedApps.revokeAccess")}
                       </Button>
                     </DialogActions>
                   </DialogBody>

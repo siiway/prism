@@ -15,6 +15,7 @@ import {
 } from "@fluentui/react-components";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthApp } from "../../../lib/api";
 
 interface MigrateAppDialogProps {
@@ -28,6 +29,7 @@ export function MigrateAppDialog({
   personalApps,
   showMsg,
 }: MigrateAppDialogProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [selectedAppId, setSelectedAppId] = useState("");
@@ -42,11 +44,11 @@ export function MigrateAppDialog({
       await qc.invalidateQueries({ queryKey: ["apps"] });
       setOpen(false);
       setSelectedAppId("");
-      showMsg("success", "App moved to team");
+      showMsg("success", t("teams.appMovedToTeam"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to migrate app",
+        err instanceof ApiError ? err.message : t("teams.failedMigrateApp"),
       );
     } finally {
       setMigrating(false);
@@ -56,15 +58,15 @@ export function MigrateAppDialog({
   return (
     <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
       <DialogTrigger disableButtonEnhancement>
-        <Button size="small">Migrate existing app</Button>
+        <Button size="small">{t("teams.migrateExistingApp")}</Button>
       </DialogTrigger>
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>Migrate App to Team</DialogTitle>
+          <DialogTitle>{t("teams.migrateAppTitle")}</DialogTitle>
           <DialogContent>
             {personalApps.length === 0 ? (
               <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                You have no personal apps to migrate.
+                {t("teams.noPersonalApps")}
               </Text>
             ) : (
               <div
@@ -74,12 +76,12 @@ export function MigrateAppDialog({
                   gap: "12px",
                 }}
               >
-                <Field label="Select app" required>
+                <Field label={t("teams.selectApp")} required>
                   <Select
                     value={selectedAppId}
                     onChange={(_, d) => setSelectedAppId(d.value)}
                   >
-                    <option value="">— choose an app —</option>
+                    <option value="">{t("teams.chooseApp")}</option>
                     {personalApps.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
@@ -91,15 +93,14 @@ export function MigrateAppDialog({
                   size={200}
                   style={{ color: tokens.colorNeutralForeground3 }}
                 >
-                  The app will be transferred to this team. All team admins and
-                  owners will be able to manage it.
+                  {t("teams.migrateAppDesc")}
                 </Text>
               </div>
             )}
           </DialogContent>
           <DialogActions>
             <DialogTrigger>
-              <Button>Cancel</Button>
+              <Button>{t("common.cancel")}</Button>
             </DialogTrigger>
             {personalApps.length > 0 && (
               <Button
@@ -107,7 +108,7 @@ export function MigrateAppDialog({
                 onClick={handleMigrate}
                 disabled={migrating || !selectedAppId}
               >
-                {migrating ? <Spinner size="tiny" /> : "Move to team"}
+                {migrating ? <Spinner size="tiny" /> : t("teams.moveToTeam")}
               </Button>
             )}
           </DialogActions>

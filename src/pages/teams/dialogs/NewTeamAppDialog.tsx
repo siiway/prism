@@ -16,6 +16,7 @@ import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../../lib/api";
 
 interface NewTeamAppDialogProps {
@@ -24,6 +25,7 @@ interface NewTeamAppDialogProps {
 }
 
 export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -47,7 +49,7 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
       .map((s) => s.trim())
       .filter(Boolean);
     if (!uris.length) {
-      showMsg("error", "At least one redirect URI required");
+      showMsg("error", t("teams.atLeastOneRedirectUri"));
       return;
     }
     setCreating(true);
@@ -70,7 +72,7 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to create app",
+        err instanceof ApiError ? err.message : t("teams.failedCreateApp"),
       );
     } finally {
       setCreating(false);
@@ -81,12 +83,12 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
     <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
       <DialogTrigger disableButtonEnhancement>
         <Button appearance="primary" icon={<AddRegular />} size="small">
-          New app
+          {t("teams.newAppButton")}
         </Button>
       </DialogTrigger>
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>Create Team App</DialogTitle>
+          <DialogTitle>{t("teams.createTeamAppTitle")}</DialogTitle>
           <DialogContent>
             <div
               style={{
@@ -95,46 +97,50 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
                 gap: "12px",
               }}
             >
-              <Field label="App name" required>
+              <Field label={t("teams.appName")} required>
                 <Input
                   value={form.name}
                   onChange={update("name")}
-                  placeholder="My App"
+                  placeholder={t("teams.appNamePlaceholder")}
                 />
               </Field>
-              <Field label="Description">
+              <Field label={t("teams.descriptionField")}>
                 <Input
                   value={form.description}
                   onChange={update("description")}
                 />
               </Field>
-              <Field label="Website URL">
+              <Field label={t("teams.websiteUrlField")}>
                 <Input
                   value={form.website_url}
                   onChange={update("website_url")}
-                  placeholder="https://example.com"
+                  placeholder={t("teams.websiteUrlPlaceholder")}
                 />
               </Field>
-              <Field label="Redirect URIs" hint="One per line" required>
+              <Field
+                label={t("teams.redirectUrisField")}
+                hint={t("teams.redirectUrisHint")}
+                required
+              >
                 <Textarea
                   value={form.redirect_uris}
                   onChange={update("redirect_uris")}
                   rows={3}
-                  placeholder="https://example.com/callback"
+                  placeholder={t("teams.redirectUrisPlaceholder")}
                 />
               </Field>
             </div>
           </DialogContent>
           <DialogActions>
             <DialogTrigger>
-              <Button>Cancel</Button>
+              <Button>{t("common.cancel")}</Button>
             </DialogTrigger>
             <Button
               appearance="primary"
               onClick={handleCreate}
               disabled={creating}
             >
-              {creating ? <Spinner size="tiny" /> : "Create"}
+              {creating ? <Spinner size="tiny" /> : t("common.create")}
             </Button>
           </DialogActions>
         </DialogBody>

@@ -14,6 +14,7 @@ import { PeopleRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 
@@ -27,6 +28,7 @@ export function TeamJoin() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { t } = useTranslation();
 
   const [accepting, setAccepting] = useState(false);
   const [message, setMessage] = useState<{
@@ -54,7 +56,7 @@ export function TeamJoin() {
     } catch (err) {
       setMessage({
         type: "error",
-        text: err instanceof ApiError ? err.message : "Failed to join team",
+        text: err instanceof ApiError ? err.message : t("teams.failedJoinTeam"),
       });
     } finally {
       setAccepting(false);
@@ -77,17 +79,17 @@ export function TeamJoin() {
           style={{ color: tokens.colorNeutralForeground3 }}
         />
         <Title2 block style={{ marginTop: 16 }}>
-          Invalid invite
+          {t("teams.invalidInvite")}
         </Title2>
         <Text block style={{ color: tokens.colorNeutralForeground3 }}>
-          This invite link is invalid or has expired.
+          {t("teams.invalidInviteDesc")}
         </Text>
         <Button
           appearance="primary"
           style={{ marginTop: 24 }}
           onClick={() => navigate("/")}
         >
-          Go home
+          {t("teams.goHome")}
         </Button>
       </div>
     );
@@ -133,7 +135,7 @@ export function TeamJoin() {
           gap: 8,
         }}
       >
-        <Text>You have been invited to join as</Text>
+        <Text>{t("teams.invitedToJoinAs")}</Text>
         <Badge
           color={ROLE_COLORS[role] ?? "subtle"}
           appearance="filled"
@@ -142,11 +144,13 @@ export function TeamJoin() {
           {role}
         </Badge>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          Invite expires {new Date(expires_at * 1000).toLocaleDateString()}
+          {t("teams.inviteExpires", {
+            date: new Date(expires_at * 1000).toLocaleDateString(),
+          })}
         </Text>
         {email && (
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            This invite is for {email}
+            {t("teams.inviteForEmail", { email })}
           </Text>
         )}
       </div>
@@ -167,13 +171,13 @@ export function TeamJoin() {
           }}
         >
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            You are already a member of this team.
+            {t("teams.alreadyMember")}
           </Text>
           <Button
             appearance="primary"
             onClick={() => navigate(`/teams/${team.id}`)}
           >
-            Go to team
+            {t("teams.goToTeam")}
           </Button>
         </div>
       ) : user ? (
@@ -183,7 +187,7 @@ export function TeamJoin() {
           onClick={handleAccept}
           disabled={accepting}
         >
-          {accepting ? <Spinner size="small" /> : "Accept invite"}
+          {accepting ? <Spinner size="small" /> : t("teams.acceptInvite")}
         </Button>
       ) : (
         <div
@@ -195,14 +199,14 @@ export function TeamJoin() {
           }}
         >
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            Sign in to accept this invite.
+            {t("teams.signInToAccept")}
           </Text>
           <Button
             appearance="primary"
             size="large"
             onClick={() => navigate(`/login?redirect=/teams/join/${token}`)}
           >
-            Sign in to join
+            {t("teams.signInToJoin")}
           </Button>
         </div>
       )}

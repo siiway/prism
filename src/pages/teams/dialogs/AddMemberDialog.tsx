@@ -15,6 +15,7 @@ import {
 import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../../lib/api";
 
 interface AddMemberDialogProps {
@@ -23,6 +24,7 @@ interface AddMemberDialogProps {
 }
 
 export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ username: "", role: "member" });
@@ -39,11 +41,11 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
       await qc.invalidateQueries({ queryKey: ["team", teamId] });
       setOpen(false);
       setForm({ username: "", role: "member" });
-      showMsg("success", "Member added");
+      showMsg("success", t("teams.memberAdded"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to add member",
+        err instanceof ApiError ? err.message : t("teams.failedAddMember"),
       );
     } finally {
       setAdding(false);
@@ -54,12 +56,12 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
     <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
       <DialogTrigger disableButtonEnhancement>
         <Button appearance="primary" icon={<AddRegular />} size="small">
-          Add member
+          {t("teams.addMemberButton")}
         </Button>
       </DialogTrigger>
       <DialogSurface>
         <DialogBody>
-          <DialogTitle>Add Team Member</DialogTitle>
+          <DialogTitle>{t("teams.addTeamMemberTitle")}</DialogTitle>
           <DialogContent>
             <div
               style={{
@@ -68,16 +70,16 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
                 gap: "12px",
               }}
             >
-              <Field label="Username" required>
+              <Field label={t("teams.usernameField")} required>
                 <Input
                   value={form.username}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, username: e.target.value }))
                   }
-                  placeholder="username"
+                  placeholder={t("teams.usernamePlaceholder")}
                 />
               </Field>
-              <Field label="Role">
+              <Field label={t("teams.inviteRole")}>
                 <Select
                   value={form.role}
                   onChange={(_, d) => setForm((f) => ({ ...f, role: d.value }))}
@@ -90,10 +92,10 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
           </DialogContent>
           <DialogActions>
             <DialogTrigger>
-              <Button>Cancel</Button>
+              <Button>{t("common.cancel")}</Button>
             </DialogTrigger>
             <Button appearance="primary" onClick={handleAdd} disabled={adding}>
-              {adding ? <Spinner size="tiny" /> : "Add"}
+              {adding ? <Spinner size="tiny" /> : t("common.add")}
             </Button>
           </DialogActions>
         </DialogBody>

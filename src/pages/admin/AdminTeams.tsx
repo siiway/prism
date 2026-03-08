@@ -16,10 +16,12 @@ import {
 import { DeleteRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 
 export function AdminTeams() {
   const qc = useQueryClient();
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -37,18 +39,16 @@ export function AdminTeams() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (
-      !confirm(
-        `Delete team "${name}"? Apps will be returned to their creators.`,
-      )
-    )
-      return;
+    if (!confirm(t("admin.deleteTeamConfirm", { name }))) return;
     try {
       await api.adminDeleteTeam(id);
       await qc.invalidateQueries({ queryKey: ["admin-teams"] });
-      showMsg("success", "Team deleted");
+      showMsg("success", t("admin.teamDeleted"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("admin.deleteFailed"),
+      );
     }
   };
 
@@ -68,11 +68,11 @@ export function AdminTeams() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHeaderCell>Team</TableHeaderCell>
-              <TableHeaderCell>Owner</TableHeaderCell>
-              <TableHeaderCell>Members</TableHeaderCell>
-              <TableHeaderCell>Apps</TableHeaderCell>
-              <TableHeaderCell>Created</TableHeaderCell>
+              <TableHeaderCell>{t("admin.teamHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.membersHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.appsHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.createdHeader")}</TableHeaderCell>
               <TableHeaderCell />
             </TableRow>
           </TableHeader>
@@ -139,17 +139,17 @@ export function AdminTeams() {
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
-            Previous
+            {t("common.previous")}
           </Button>
           <Text size={200}>
-            {page} / {totalPages}
+            {t("common.pageOf", { page, total: totalPages })}
           </Text>
           <Button
             size="small"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
-            Next
+            {t("common.next")}
           </Button>
         </div>
       )}

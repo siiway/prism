@@ -12,6 +12,7 @@ import {
 import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 
@@ -62,6 +63,7 @@ export function SocialSelect() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { setAuth } = useAuthStore();
+  const { t } = useTranslation();
   const key = searchParams.get("key") ?? "";
 
   const { data, isLoading, error } = useQuery({
@@ -105,12 +107,12 @@ export function SocialSelect() {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <Title2>Session Expired</Title2>
+          <Title2>{t("auth.sessionExpired")}</Title2>
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            This link has expired or is invalid.
+            {t("auth.sessionExpiredText")}
           </Text>
           <Button appearance="primary" onClick={() => navigate("/login")}>
-            Back to login
+            {t("auth.backToLogin")}
           </Button>
         </div>
       </div>
@@ -118,19 +120,21 @@ export function SocialSelect() {
   }
 
   const providerLabel = PROVIDER_LABELS[data.provider] ?? data.provider;
+  const profileSuffix = data.profile_name ? ` (${data.profile_name})` : "";
 
   return (
     <div className={styles.page}>
       <div className={styles.card}>
         <div>
-          <Title2>Which account do you want to use?</Title2>
+          <Title2>{t("auth.whichAccount")}</Title2>
           <Text
             block
             style={{ color: tokens.colorNeutralForeground3, marginTop: 8 }}
           >
-            Multiple Prism accounts are linked to your {providerLabel} account
-            {data.profile_name ? ` (${data.profile_name})` : ""}. Pick one to
-            sign in.
+            {t("auth.multipleAccountsLinked", {
+              provider: providerLabel,
+              profileSuffix,
+            })}
           </Text>
         </div>
 
@@ -165,7 +169,7 @@ export function SocialSelect() {
         </div>
 
         <Button appearance="subtle" onClick={() => navigate("/login")}>
-          Back to login
+          {t("auth.backToLogin")}
         </Button>
       </div>
     </div>

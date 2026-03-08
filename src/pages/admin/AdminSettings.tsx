@@ -27,6 +27,7 @@ import {
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 import type { SiteConfig } from "../../types";
@@ -51,6 +52,7 @@ export function AdminSettings() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { clearAuth } = useAuthStore();
+  const { t } = useTranslation();
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-config"],
@@ -89,7 +91,7 @@ export function AdminSettings() {
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to send test email",
+        err instanceof ApiError ? err.message : t("common.error"),
       );
     } finally {
       setTestingEmail(false);
@@ -103,7 +105,10 @@ export function AdminSettings() {
       clearAuth();
       navigate("/init", { replace: true });
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Reset failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("admin.resetFailed"),
+      );
       setResetting(false);
     }
   };
@@ -115,9 +120,12 @@ export function AdminSettings() {
       await qc.invalidateQueries({ queryKey: ["admin-config"] });
       await qc.invalidateQueries({ queryKey: ["site"] });
       setLocalConfig({});
-      showMsg("success", "Settings saved");
+      showMsg("success", t("admin.settingsSaved"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Save failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("admin.saveFailed"),
+      );
     } finally {
       setSaving(false);
     }
@@ -137,32 +145,32 @@ export function AdminSettings() {
         selectedValue={tab}
         onTabSelect={(_, d) => setTab(d.value as string)}
       >
-        <Tab value="general">General</Tab>
-        <Tab value="auth">Auth & Security</Tab>
-        <Tab value="captcha">Captcha</Tab>
-        <Tab value="social">Social Login</Tab>
-        <Tab value="email">Email</Tab>
-        <Tab value="appearance">Appearance</Tab>
-        <Tab value="danger">Danger Zone</Tab>
+        <Tab value="general">{t("admin.generalTab")}</Tab>
+        <Tab value="auth">{t("admin.authTab")}</Tab>
+        <Tab value="captcha">{t("admin.captchaTab")}</Tab>
+        <Tab value="social">{t("admin.socialTab")}</Tab>
+        <Tab value="email">{t("admin.emailTab")}</Tab>
+        <Tab value="appearance">{t("admin.appearanceTab")}</Tab>
+        <Tab value="danger">{t("admin.dangerTab")}</Tab>
       </TabList>
 
       {tab === "general" && (
         <div className={styles.card}>
-          <Title3>General</Title3>
+          <Title3>{t("admin.generalTitle")}</Title3>
           <div className={styles.form}>
-            <Field label="Site Name">
+            <Field label={t("admin.siteName")}>
               <Input
                 value={get("site_name") ?? ""}
                 onChange={(e) => set("site_name", e.target.value)}
               />
             </Field>
-            <Field label="Site Description">
+            <Field label={t("admin.siteDescription")}>
               <Input
                 value={get("site_description") ?? ""}
                 onChange={(e) => set("site_description", e.target.value)}
               />
             </Field>
-            <Field label="Site Icon URL">
+            <Field label={t("admin.siteIconUrl")}>
               <Input
                 value={get("site_icon_url") ?? ""}
                 onChange={(e) => set("site_icon_url", e.target.value || null)}
@@ -170,12 +178,12 @@ export function AdminSettings() {
               />
             </Field>
             <Switch
-              label="Allow Registration"
+              label={t("admin.allowRegistration")}
               checked={!!get("allow_registration")}
               onChange={(_, d) => set("allow_registration", d.checked)}
             />
             <Switch
-              label="Require Email Verification"
+              label={t("admin.requireEmailVerification")}
               checked={!!get("require_email_verification")}
               onChange={(_, d) => set("require_email_verification", d.checked)}
             />
@@ -185,10 +193,10 @@ export function AdminSettings() {
 
       {tab === "auth" && (
         <div className={styles.card}>
-          <Title3>Auth & Token Settings</Title3>
+          <Title3>{t("admin.authTitle")}</Title3>
           <div className={styles.form}>
             <div className={styles.row}>
-              <Field label="Session TTL (days)">
+              <Field label={t("admin.sessionTtl")}>
                 <Input
                   type="number"
                   value={String(get("session_ttl_days") ?? 30)}
@@ -197,7 +205,7 @@ export function AdminSettings() {
                   }
                 />
               </Field>
-              <Field label="Access Token TTL (minutes)">
+              <Field label={t("admin.accessTokenTtl")}>
                 <Input
                   type="number"
                   value={String(get("access_token_ttl_minutes") ?? 60)}
@@ -208,7 +216,7 @@ export function AdminSettings() {
               </Field>
             </div>
             <div className={styles.row}>
-              <Field label="Refresh Token TTL (days)">
+              <Field label={t("admin.refreshTokenTtl")}>
                 <Input
                   type="number"
                   value={String(get("refresh_token_ttl_days") ?? 30)}
@@ -217,7 +225,7 @@ export function AdminSettings() {
                   }
                 />
               </Field>
-              <Field label="Domain Re-verify (days)">
+              <Field label={t("admin.domainReverify")}>
                 <Input
                   type="number"
                   value={String(get("domain_reverify_days") ?? 30)}
@@ -233,9 +241,9 @@ export function AdminSettings() {
 
       {tab === "captcha" && (
         <div className={styles.card}>
-          <Title3>Captcha</Title3>
+          <Title3>{t("admin.captchaTitle")}</Title3>
           <div className={styles.form}>
-            <Field label="Provider">
+            <Field label={t("admin.captchaProvider")}>
               <Dropdown
                 value={get("captcha_provider") ?? "none"}
                 selectedOptions={[get("captcha_provider") ?? "none"]}
@@ -243,25 +251,23 @@ export function AdminSettings() {
                   set("captcha_provider", d.optionValue)
                 }
               >
-                <Option value="none">None</Option>
-                <Option value="turnstile">Cloudflare Turnstile</Option>
-                <Option value="hcaptcha">hCaptcha</Option>
-                <Option value="recaptcha">Google reCAPTCHA v3</Option>
-                <Option value="pow">
-                  Proof of Work (no server key needed)
-                </Option>
+                <Option value="none">{t("admin.captchaNone")}</Option>
+                <Option value="turnstile">{t("admin.captchaTurnstile")}</Option>
+                <Option value="hcaptcha">{t("admin.captchaHcaptcha")}</Option>
+                <Option value="recaptcha">{t("admin.captchaRecaptcha")}</Option>
+                <Option value="pow">{t("admin.captchaPow")}</Option>
               </Dropdown>
             </Field>
             {get("captcha_provider") !== "none" &&
               get("captcha_provider") !== "pow" && (
                 <>
-                  <Field label="Site Key">
+                  <Field label={t("admin.captchaSiteKey")}>
                     <Input
                       value={get("captcha_site_key") ?? ""}
                       onChange={(e) => set("captcha_site_key", e.target.value)}
                     />
                   </Field>
-                  <Field label="Secret Key">
+                  <Field label={t("admin.captchaSecretKey")}>
                     <Input
                       type="password"
                       value={get("captcha_secret_key") ?? ""}
@@ -273,7 +279,7 @@ export function AdminSettings() {
                 </>
               )}
             {get("captcha_provider") === "pow" && (
-              <Field label="PoW Difficulty (leading zero bits, 16-28 recommended)">
+              <Field label={t("admin.powDifficulty")}>
                 <Input
                   type="number"
                   value={String(get("pow_difficulty") ?? 20)}
@@ -289,9 +295,9 @@ export function AdminSettings() {
 
       {tab === "social" && (
         <div className={styles.card}>
-          <Title3>Social Login Providers</Title3>
+          <Title3>{t("admin.socialTitle")}</Title3>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            Leave blank to disable a provider.
+            {t("admin.socialLeaveBlank")}
           </Text>
           <div className={styles.form}>
             {[
@@ -321,18 +327,18 @@ export function AdminSettings() {
                   {label}
                 </Text>
                 <div className={styles.row}>
-                  <Field label="Client ID">
+                  <Field label={t("admin.clientId")}>
                     <Input
                       value={get(idKey) ?? ""}
                       onChange={(e) => set(idKey, e.target.value)}
                     />
                   </Field>
-                  <Field label="Client Secret">
+                  <Field label={t("admin.clientSecret")}>
                     <Input
                       type="password"
                       value={get(secretKey) ?? ""}
                       onChange={(e) => set(secretKey, e.target.value)}
-                      placeholder="(unchanged)"
+                      placeholder={t("admin.unchanged")}
                     />
                   </Field>
                 </div>
@@ -344,48 +350,50 @@ export function AdminSettings() {
 
       {tab === "email" && (
         <div className={styles.card}>
-          <Title3>Email</Title3>
+          <Title3>{t("admin.emailTitle")}</Title3>
           <div className={styles.form}>
-            <Field label="Provider">
+            <Field label={t("admin.emailProvider")}>
               <Dropdown
                 value={get("email_provider") ?? "none"}
                 selectedOptions={[get("email_provider") ?? "none"]}
                 onOptionSelect={(_, d) => set("email_provider", d.optionValue)}
               >
-                <Option value="none">None (disable email)</Option>
-                <Option value="resend">Resend</Option>
-                <Option value="mailchannels">Mailchannels (CF Workers)</Option>
-                <Option value="smtp">SMTP</Option>
+                <Option value="none">{t("admin.emailNone")}</Option>
+                <Option value="resend">{t("admin.emailResend")}</Option>
+                <Option value="mailchannels">
+                  {t("admin.emailMailchannels")}
+                </Option>
+                <Option value="smtp">{t("admin.emailSmtp")}</Option>
               </Dropdown>
             </Field>
             {(get("email_provider") === "resend" ||
               get("email_provider") === "mailchannels") && (
-              <Field label="API Key">
+              <Field label={t("admin.emailApiKey")}>
                 <Input
                   type="password"
                   value={get("email_api_key") ?? ""}
                   onChange={(e) => set("email_api_key", e.target.value)}
-                  placeholder="(unchanged)"
+                  placeholder={t("admin.unchanged")}
                 />
               </Field>
             )}
             {get("email_provider") === "smtp" && (
               <>
-                <Field label="SMTP Host">
+                <Field label={t("admin.smtpHost")}>
                   <Input
                     value={get("smtp_host") ?? ""}
                     onChange={(e) => set("smtp_host", e.target.value)}
-                    placeholder="smtp.example.com"
+                    placeholder={t("admin.smtpHostPlaceholder")}
                   />
                 </Field>
-                <Field label="SMTP Port">
+                <Field label={t("admin.smtpPort")}>
                   <Input
                     type="number"
                     value={String(get("smtp_port") ?? 587)}
                     onChange={(e) => set("smtp_port", Number(e.target.value))}
                   />
                 </Field>
-                <Field label="Encryption">
+                <Field label={t("admin.smtpEncryption")}>
                   <Dropdown
                     value={get("smtp_secure") ? "ssl" : "starttls"}
                     selectedOptions={[get("smtp_secure") ? "ssl" : "starttls"]}
@@ -393,45 +401,49 @@ export function AdminSettings() {
                       set("smtp_secure", d.optionValue === "ssl")
                     }
                   >
-                    <Option value="starttls">STARTTLS (port 587)</Option>
-                    <Option value="ssl">SSL/TLS (port 465)</Option>
+                    <Option value="starttls">{t("admin.smtpStarttls")}</Option>
+                    <Option value="ssl">{t("admin.smtpSsl")}</Option>
                   </Dropdown>
                 </Field>
-                <Field label="SMTP Username">
+                <Field label={t("admin.smtpUsername")}>
                   <Input
                     value={get("smtp_user") ?? ""}
                     onChange={(e) => set("smtp_user", e.target.value)}
                     placeholder="user@example.com"
                   />
                 </Field>
-                <Field label="SMTP Password">
+                <Field label={t("admin.smtpPassword")}>
                   <Input
                     type="password"
                     value={get("smtp_password") ?? ""}
                     onChange={(e) => set("smtp_password", e.target.value)}
-                    placeholder="(unchanged)"
+                    placeholder={t("admin.unchanged")}
                   />
                 </Field>
               </>
             )}
-            <Field label="From Address">
+            <Field label={t("admin.emailFrom")}>
               <Input
                 value={get("email_from") ?? ""}
                 onChange={(e) => set("email_from", e.target.value)}
-                placeholder="noreply@example.com"
+                placeholder={t("admin.emailFromPlaceholder")}
               />
             </Field>
           </div>
           {get("email_provider") !== "none" && (
             <div>
               <Button onClick={handleTestEmail} disabled={testingEmail}>
-                {testingEmail ? <Spinner size="tiny" /> : "Send test email"}
+                {testingEmail ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("admin.sendTestEmail")
+                )}
               </Button>
               <Text
                 size={200}
                 style={{ marginLeft: 8, color: tokens.colorNeutralForeground3 }}
               >
-                Sends a test email to your admin address.
+                {t("admin.testEmailDesc")}
               </Text>
             </div>
           )}
@@ -440,9 +452,9 @@ export function AdminSettings() {
 
       {tab === "appearance" && (
         <div className={styles.card}>
-          <Title3>Appearance</Title3>
+          <Title3>{t("admin.appearanceTitle")}</Title3>
           <div className={styles.form}>
-            <Field label="Accent Color">
+            <Field label={t("admin.accentColor")}>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <input
                   type="color"
@@ -463,7 +475,7 @@ export function AdminSettings() {
                 />
               </div>
             </Field>
-            <Field label="Custom CSS" hint="Injected into the page head">
+            <Field label={t("admin.customCss")} hint={t("admin.customCssHint")}>
               <Textarea
                 value={get("custom_css") ?? ""}
                 onChange={(e) => set("custom_css", e.target.value)}
@@ -480,12 +492,8 @@ export function AdminSettings() {
           className={styles.card}
           style={{ borderColor: tokens.colorPaletteRedBorder2 }}
         >
-          <Title3>Danger Zone</Title3>
-          <Text>
-            Permanently delete all users, sessions, apps, tokens, and
-            configuration. The platform will return to the setup screen.{" "}
-            <strong>This cannot be undone.</strong>
-          </Text>
+          <Title3>{t("admin.dangerTitle")}</Title3>
+          <Text>{t("admin.dangerDesc")}</Text>
           <div>
             <Dialog>
               <DialogTrigger disableButtonEnhancement>
@@ -493,20 +501,20 @@ export function AdminSettings() {
                   appearance="primary"
                   style={{ background: tokens.colorPaletteRedBackground3 }}
                 >
-                  Reset everything
+                  {t("admin.resetEverything")}
                 </Button>
               </DialogTrigger>
               <DialogSurface>
                 <DialogBody>
-                  <DialogTitle>Reset everything?</DialogTitle>
+                  <DialogTitle>{t("admin.resetEverythingTitle")}</DialogTitle>
                   <DialogContent>
-                    All users, sessions, OAuth apps, tokens, domains, and site
-                    configuration will be permanently deleted. The platform will
-                    restart setup. This cannot be undone.
+                    {t("admin.resetEverythingDesc")}
                   </DialogContent>
                   <DialogActions>
                     <DialogTrigger disableButtonEnhancement>
-                      <Button appearance="secondary">Cancel</Button>
+                      <Button appearance="secondary">
+                        {t("common.cancel")}
+                      </Button>
                     </DialogTrigger>
                     <Button
                       appearance="primary"
@@ -517,7 +525,7 @@ export function AdminSettings() {
                       {resetting ? (
                         <Spinner size="tiny" />
                       ) : (
-                        "Yes, reset everything"
+                        t("admin.yesResetEverything")
                       )}
                     </Button>
                   </DialogActions>
@@ -534,10 +542,12 @@ export function AdminSettings() {
           onClick={handleSave}
           disabled={saving || Object.keys(localConfig).length === 0}
         >
-          {saving ? <Spinner size="tiny" /> : "Save settings"}
+          {saving ? <Spinner size="tiny" /> : t("admin.saveSettings")}
         </Button>
         {Object.keys(localConfig).length > 0 && (
-          <Button onClick={() => setLocalConfig({})}>Discard changes</Button>
+          <Button onClick={() => setLocalConfig({})}>
+            {t("common.discard")}
+          </Button>
         )}
       </div>
     </div>

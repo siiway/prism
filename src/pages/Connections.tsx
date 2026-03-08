@@ -19,6 +19,7 @@ import {
 import { AddRegular, DeleteRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 
 const useStyles = makeStyles({
@@ -92,6 +93,7 @@ function getDisplayName(profile: unknown): string | null {
 export function Connections() {
   const styles = useStyles();
   const qc = useQueryClient();
+  const { t } = useTranslation();
   const { data: connectionsData } = useQuery({
     queryKey: ["connections"],
     queryFn: api.listConnections,
@@ -124,7 +126,7 @@ export function Connections() {
       );
       window.history.replaceState({}, "", window.location.pathname);
     } else if (success === "connected") {
-      showMsg("success", "Account connected successfully.");
+      showMsg("success", t("connections.connectedSuccessfully"));
       window.history.replaceState({}, "", window.location.pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,7 +143,9 @@ export function Connections() {
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to start connection",
+        err instanceof ApiError
+          ? err.message
+          : t("connections.failedStartConnection"),
       );
     }
   };
@@ -150,11 +154,16 @@ export function Connections() {
     try {
       await api.disconnectConnection(id);
       await qc.invalidateQueries({ queryKey: ["connections"] });
-      showMsg("success", `Disconnected from ${providerName}`);
+      showMsg(
+        "success",
+        t("connections.disconnectedFrom", { provider: providerName }),
+      );
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Disconnect failed",
+        err instanceof ApiError
+          ? err.message
+          : t("connections.disconnectFailed"),
       );
     }
   };
@@ -163,10 +172,9 @@ export function Connections() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <Title2>Linked Accounts</Title2>
+      <Title2>{t("connections.title")}</Title2>
       <Text style={{ color: tokens.colorNeutralForeground3 }}>
-        Connect third-party accounts to sign in faster. You can link multiple
-        accounts from the same platform.
+        {t("connections.description")}
       </Text>
 
       {message && (
@@ -207,11 +215,11 @@ export function Connections() {
                   </Text>
                   {conns.length > 0 ? (
                     <Badge color="success" appearance="tint" size="small">
-                      {conns.length} connected
+                      {t("connections.connected", { count: conns.length })}
                     </Badge>
                   ) : (
                     <Badge color="subtle" appearance="tint" size="small">
-                      Not connected
+                      {t("connections.notConnected")}
                     </Badge>
                   )}
                 </div>
@@ -238,10 +246,11 @@ export function Connections() {
                         size={100}
                         style={{ color: tokens.colorNeutralForeground3 }}
                       >
-                        Connected{" "}
-                        {new Date(
-                          conn.connected_at * 1000,
-                        ).toLocaleDateString()}
+                        {t("connections.connectedOn", {
+                          date: new Date(
+                            conn.connected_at * 1000,
+                          ).toLocaleDateString(),
+                        })}
                       </Text>
                     </div>
 
@@ -251,30 +260,33 @@ export function Connections() {
                           icon={<DeleteRegular />}
                           appearance="subtle"
                           size="small"
-                          title="Disconnect"
+                          title={t("connections.disconnectAction")}
                         />
                       </DialogTrigger>
                       <DialogSurface>
                         <DialogBody>
-                          <DialogTitle>Disconnect {p.name}?</DialogTitle>
+                          <DialogTitle>
+                            {t("connections.disconnectTitle", {
+                              provider: p.name,
+                            })}
+                          </DialogTitle>
                           <DialogContent>
-                            {displayName ? (
-                              <>
-                                <strong>{displayName}</strong> will be
-                                disconnected from your account.{" "}
-                              </>
-                            ) : null}
-                            Make sure you have another sign-in method available.
+                            {displayName
+                              ? t("connections.disconnectDesc", {
+                                  name: displayName,
+                                })
+                              : null}{" "}
+                            {t("connections.disconnectWarning")}
                           </DialogContent>
                           <DialogActions>
                             <DialogTrigger>
-                              <Button>Cancel</Button>
+                              <Button>{t("common.cancel")}</Button>
                             </DialogTrigger>
                             <Button
                               appearance="primary"
                               onClick={() => handleDisconnect(conn.id, p.name)}
                             >
-                              Disconnect
+                              {t("connections.disconnectAction")}
                             </Button>
                           </DialogActions>
                         </DialogBody>
@@ -289,7 +301,7 @@ export function Connections() {
                   size={200}
                   style={{ color: tokens.colorNeutralForeground3 }}
                 >
-                  Not configured by admin
+                  {t("connections.notConfigured")}
                 </Text>
               ) : (
                 <Button
@@ -299,8 +311,8 @@ export function Connections() {
                   onClick={() => handleConnect(p.id)}
                 >
                   {conns.length > 0
-                    ? `Add another ${p.name}`
-                    : `Connect ${p.name}`}
+                    ? t("connections.addAnother", { provider: p.name })
+                    : t("connections.connect", { provider: p.name })}
                 </Button>
               )}
             </div>

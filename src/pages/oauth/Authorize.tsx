@@ -19,6 +19,7 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 
@@ -73,25 +74,12 @@ const useStyles = makeStyles({
   },
 });
 
-const SCOPE_LABELS: Record<string, { label: string; desc: string }> = {
-  openid: { label: "Identity", desc: "Know who you are" },
-  profile: { label: "Profile", desc: "Access your name and profile picture" },
-  email: { label: "Email", desc: "Access your email address" },
-  "apps:read": {
-    label: "Applications",
-    desc: "View your registered applications",
-  },
-  offline_access: {
-    label: "Offline access",
-    desc: "Access your data when you're not online",
-  },
-};
-
 export function Authorize() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, token } = useAuthStore();
+  const { t } = useTranslation();
 
   const params = Object.fromEntries(searchParams.entries());
 
@@ -159,21 +147,44 @@ export function Authorize() {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <Title2>Authorization Error</Title2>
+          <Title2>{t("oauth.authorizationError")}</Title2>
           <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
             {error instanceof ApiError
               ? error.message
-              : "Invalid authorization request"}
+              : t("oauth.invalidRequest")}
           </Text>
         </div>
       </div>
     );
   }
 
+  const SCOPE_INFO: Record<string, { label: string; desc: string }> = {
+    openid: {
+      label: t("oauth.scopeIdentityLabel"),
+      desc: t("oauth.scopeIdentityDesc"),
+    },
+    profile: {
+      label: t("oauth.scopeProfileLabel"),
+      desc: t("oauth.scopeProfileDesc"),
+    },
+    email: {
+      label: t("oauth.scopeEmailLabel"),
+      desc: t("oauth.scopeEmailDesc"),
+    },
+    "apps:read": {
+      label: t("oauth.scopeAppsLabel"),
+      desc: t("oauth.scopeAppsDesc"),
+    },
+    offline_access: {
+      label: t("oauth.scopeOfflineLabel"),
+      desc: t("oauth.scopeOfflineDesc"),
+    },
+  };
+
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <Title2>Authorization Request</Title2>
+        <Title2>{t("oauth.authorizationRequest")}</Title2>
 
         {/* App info */}
         <div className={styles.appRow}>
@@ -208,7 +219,7 @@ export function Authorize() {
               </Text>
               {data.app.is_official && (
                 <Badge color="brand" appearance="filled" size="small">
-                  Official
+                  {t("oauth.official")}
                 </Badge>
               )}
               {data.app.is_verified && (
@@ -218,7 +229,7 @@ export function Authorize() {
                   size="small"
                   icon={<ShieldRegular />}
                 >
-                  Verified
+                  {t("oauth.verified")}
                 </Badge>
               )}
             </div>
@@ -236,7 +247,7 @@ export function Authorize() {
         {/* Logged in as */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            Signing in as
+            {t("oauth.signingInAs")}
           </Text>
           <Avatar
             name={user.display_name}
@@ -253,11 +264,11 @@ export function Authorize() {
         {/* Requested scopes */}
         <div>
           <Text weight="semibold" block style={{ marginBottom: 12 }}>
-            {data.app.name} is requesting access to:
+            {t("oauth.requestingAccess", { appName: data.app.name })}
           </Text>
           <div className={styles.scopeList}>
             {data.scopes.map((scope) => {
-              const info = SCOPE_LABELS[scope];
+              const info = SCOPE_INFO[scope];
               return (
                 <div key={scope} className={styles.scopeItem}>
                   <CheckmarkRegular
@@ -306,7 +317,7 @@ export function Authorize() {
             disabled={loading}
             onClick={() => handleDecision("approve")}
           >
-            Authorize {data.app.name}
+            {t("oauth.authorize", { appName: data.app.name })}
           </Button>
           <Button
             appearance="outline"
@@ -314,7 +325,7 @@ export function Authorize() {
             disabled={loading}
             onClick={() => handleDecision("deny")}
           >
-            Deny
+            {t("oauth.deny")}
           </Button>
         </div>
 
@@ -322,8 +333,7 @@ export function Authorize() {
           size={100}
           style={{ color: tokens.colorNeutralForeground4, textAlign: "center" }}
         >
-          By authorizing, you allow {data.app.name} to access the requested
-          information from your Prism account.
+          {t("oauth.footerNote", { appName: data.app.name })}
         </Text>
       </div>
     </div>

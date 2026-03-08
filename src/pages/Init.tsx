@@ -12,6 +12,7 @@ import {
 } from "@fluentui/react-components";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 import type { UserProfile } from "../lib/api";
@@ -69,6 +70,7 @@ export function Init() {
   const styles = useStyles();
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
+  const { t } = useTranslation();
 
   const [form, setForm] = useState({
     site_name: "Prism",
@@ -102,15 +104,15 @@ export function Init() {
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.header}>
-          <span className={styles.badge}>First Run Setup</span>
-          <Title1>Welcome to Prism</Title1>
+          <span className={styles.badge}>{t("init.firstRunSetup")}</span>
+          <Title1>{t("init.welcomeToPrism")}</Title1>
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            Create your admin account to get started.
+            {t("init.createAdminDesc")}
           </Text>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>
-          <Field label="Site Name">
+          <Field label={t("init.siteName")}>
             <Input
               value={form.site_name}
               onChange={update("site_name")}
@@ -118,7 +120,7 @@ export function Init() {
             />
           </Field>
 
-          <Field label="Admin Email" required>
+          <Field label={t("init.adminEmail")} required>
             <Input
               type="email"
               value={form.email}
@@ -127,14 +129,14 @@ export function Init() {
             />
           </Field>
 
-          <Field label="Username" required>
+          <Field label={t("init.username")} required>
             <Input
               value={form.username}
               onChange={update("username")}
               placeholder="admin"
             />
           </Field>
-          <Field label="Display Name">
+          <Field label={t("init.displayName")}>
             <Input
               value={form.display_name}
               onChange={update("display_name")}
@@ -142,12 +144,12 @@ export function Init() {
             />
           </Field>
 
-          <Field label="Password" required>
+          <Field label={t("init.password")} required>
             <Input
               type="password"
               value={form.password}
               onChange={update("password")}
-              placeholder="At least 8 characters"
+              placeholder={t("init.passwordPlaceholder")}
             />
           </Field>
 
@@ -163,7 +165,7 @@ export function Init() {
             disabled={loading}
             icon={loading ? <Spinner size="tiny" /> : undefined}
           >
-            {loading ? "Creating…" : "Create Admin Account"}
+            {loading ? t("init.creating") : t("init.createAdminAccount")}
           </Button>
         </form>
       </div>

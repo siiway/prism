@@ -32,6 +32,7 @@ import {
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 
 const useStyles = makeStyles({
@@ -48,6 +49,7 @@ const useStyles = makeStyles({
 export function AdminUsers() {
   const styles = useStyles();
   const qc = useQueryClient();
+  const { t } = useTranslation();
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -76,9 +78,12 @@ export function AdminUsers() {
     try {
       await api.adminUpdateUser(id, { role });
       await qc.invalidateQueries({ queryKey: ["admin-users"] });
-      showMsg("success", "Role updated");
+      showMsg("success", t("admin.roleUpdated"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     }
   };
 
@@ -86,9 +91,15 @@ export function AdminUsers() {
     try {
       await api.adminUpdateUser(id, { is_active: !currentActive });
       await qc.invalidateQueries({ queryKey: ["admin-users"] });
-      showMsg("success", currentActive ? "User disabled" : "User enabled");
+      showMsg(
+        "success",
+        currentActive ? t("admin.userDisabled") : t("admin.userEnabled"),
+      );
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     }
   };
 
@@ -96,9 +107,12 @@ export function AdminUsers() {
     try {
       await api.adminDeleteUser(id);
       await qc.invalidateQueries({ queryKey: ["admin-users"] });
-      showMsg("success", "User deleted");
+      showMsg("success", t("admin.userDeleted"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("admin.deleteFailed"),
+      );
     }
   };
 
@@ -119,12 +133,12 @@ export function AdminUsers() {
         <Input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search users…"
+          placeholder={t("admin.searchUsers")}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
           style={{ flex: 1 }}
         />
         <Button icon={<SearchRegular />} onClick={handleSearch}>
-          Search
+          {t("common.search")}
         </Button>
       </div>
 
@@ -134,13 +148,13 @@ export function AdminUsers() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHeaderCell>User</TableHeaderCell>
-              <TableHeaderCell>Email</TableHeaderCell>
-              <TableHeaderCell>Role</TableHeaderCell>
-              <TableHeaderCell>Status</TableHeaderCell>
-              <TableHeaderCell>Apps</TableHeaderCell>
-              <TableHeaderCell>Joined</TableHeaderCell>
-              <TableHeaderCell>Actions</TableHeaderCell>
+              <TableHeaderCell>{t("admin.userHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.emailHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.roleHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.appsHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.joinedHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.actionsHeader")}</TableHeaderCell>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -194,8 +208,8 @@ export function AdminUsers() {
                     appearance="filled"
                   >
                     {(u as unknown as { is_active: boolean }).is_active
-                      ? "Active"
-                      : "Disabled"}
+                      ? t("admin.activeStatus")
+                      : t("admin.disabledStatus")}
                   </Badge>
                 </TableCell>
                 <TableCell>
@@ -214,8 +228,8 @@ export function AdminUsers() {
                       icon={<PersonProhibitedRegular />}
                       title={
                         (u as unknown as { is_active: boolean }).is_active
-                          ? "Disable"
-                          : "Enable"
+                          ? t("admin.disabledStatus")
+                          : t("admin.activeStatus")
                       }
                       onClick={() =>
                         handleToggleActive(
@@ -234,14 +248,17 @@ export function AdminUsers() {
                       </DialogTrigger>
                       <DialogSurface>
                         <DialogBody>
-                          <DialogTitle>Delete user?</DialogTitle>
+                          <DialogTitle>
+                            {t("admin.deleteUserTitle")}
+                          </DialogTitle>
                           <DialogContent>
-                            Delete <strong>{u.username}</strong> and all their
-                            data? This cannot be undone.
+                            {t("admin.deleteUserDesc", {
+                              username: u.username,
+                            })}
                           </DialogContent>
                           <DialogActions>
                             <DialogTrigger>
-                              <Button>Cancel</Button>
+                              <Button>{t("common.cancel")}</Button>
                             </DialogTrigger>
                             <Button
                               appearance="primary"
@@ -250,7 +267,7 @@ export function AdminUsers() {
                               }}
                               onClick={() => handleDelete(u.id)}
                             >
-                              Delete
+                              {t("common.delete")}
                             </Button>
                           </DialogActions>
                         </DialogBody>
@@ -271,17 +288,17 @@ export function AdminUsers() {
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
-            Previous
+            {t("common.previous")}
           </Button>
           <Text size={200}>
-            {page} / {totalPages}
+            {t("common.pageOf", { page, total: totalPages })}
           </Text>
           <Button
             size="small"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
-            Next
+            {t("common.next")}
           </Button>
         </div>
       )}

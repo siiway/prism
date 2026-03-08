@@ -22,10 +22,12 @@ import {
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 
 export function AdminApps() {
   const qc = useQueryClient();
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -46,9 +48,15 @@ export function AdminApps() {
     try {
       await api.adminUpdateApp(id, { is_active: !current });
       await qc.invalidateQueries({ queryKey: ["admin-apps"] });
-      showMsg("success", current ? "App disabled" : "App enabled");
+      showMsg(
+        "success",
+        current ? t("admin.appDisabled") : t("admin.appEnabled"),
+      );
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     }
   };
 
@@ -58,10 +66,13 @@ export function AdminApps() {
       await qc.invalidateQueries({ queryKey: ["admin-apps"] });
       showMsg(
         "success",
-        current ? "Official badge removed" : "Marked as official",
+        current ? t("admin.officialBadgeRemoved") : t("admin.markedAsOfficial"),
       );
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     }
   };
 
@@ -71,10 +82,13 @@ export function AdminApps() {
       await qc.invalidateQueries({ queryKey: ["admin-apps"] });
       showMsg(
         "success",
-        current ? "First-party disabled" : "First-party enabled",
+        current ? t("admin.firstPartyDisabled") : t("admin.firstPartyEnabled"),
       );
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     }
   };
 
@@ -94,14 +108,14 @@ export function AdminApps() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHeaderCell>App</TableHeaderCell>
-              <TableHeaderCell>Owner</TableHeaderCell>
-              <TableHeaderCell>Client ID</TableHeaderCell>
-              <TableHeaderCell>Verified</TableHeaderCell>
-              <TableHeaderCell>Official</TableHeaderCell>
-              <TableHeaderCell>First-party</TableHeaderCell>
-              <TableHeaderCell>Active</TableHeaderCell>
-              <TableHeaderCell>Created</TableHeaderCell>
+              <TableHeaderCell>{t("admin.appHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.clientIdHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.verifiedHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.officialHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.firstPartyHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.activeHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.createdHeader")}</TableHeaderCell>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -147,7 +161,9 @@ export function AdminApps() {
                       app.is_verified ? <ShieldCheckmarkRegular /> : undefined
                     }
                   >
-                    {app.is_verified ? "Verified" : "Unverified"}
+                    {app.is_verified
+                      ? t("admin.verifiedBadge")
+                      : t("admin.unverifiedBadge")}
                   </Badge>
                 </TableCell>
                 <TableCell>
@@ -197,17 +213,17 @@ export function AdminApps() {
             disabled={page <= 1}
             onClick={() => setPage((p) => p - 1)}
           >
-            Previous
+            {t("common.previous")}
           </Button>
           <Text size={200}>
-            {page} / {totalPages}
+            {t("common.pageOf", { page, total: totalPages })}
           </Text>
           <Button
             size="small"
             disabled={page >= totalPages}
             onClick={() => setPage((p) => p + 1)}
           >
-            Next
+            {t("common.next")}
           </Button>
         </div>
       )}

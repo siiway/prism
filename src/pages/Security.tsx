@@ -36,6 +36,7 @@ import {
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startRegistration } from "@simplewebauthn/browser";
+import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import type { PasskeyInfo, SessionInfo } from "../lib/api";
 
@@ -83,6 +84,7 @@ const useStyles = makeStyles({
 export function Security() {
   const styles = useStyles();
   const qc = useQueryClient();
+  const { t } = useTranslation();
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
   const { data: totpData, refetch: refetchTotp } = useQuery({
@@ -135,7 +137,7 @@ export function Security() {
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to set up TOTP",
+        err instanceof ApiError ? err.message : t("security.failedSetupTotp"),
       );
     } finally {
       setTotpLoading(false);
@@ -155,9 +157,12 @@ export function Security() {
         qc.invalidateQueries({ queryKey: ["me"] }),
         refetchTotp(),
       ]);
-      showMsg("success", "Authenticator added!");
+      showMsg("success", t("security.authenticatorAdded"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Invalid code");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("security.invalidCode"),
+      );
     } finally {
       setTotpLoading(false);
     }
@@ -173,9 +178,12 @@ export function Security() {
         qc.invalidateQueries({ queryKey: ["me"] }),
         refetchTotp(),
       ]);
-      showMsg("success", "Authenticator removed");
+      showMsg("success", t("security.authenticatorRemoved"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Invalid code");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("security.invalidCode"),
+      );
     }
   };
 
@@ -185,9 +193,12 @@ export function Security() {
       setBackupCodes(res.backup_codes);
       setResetBkCode("");
       await refetchTotp();
-      showMsg("success", "Backup codes regenerated");
+      showMsg("success", t("security.backupCodesRegenerated"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Invalid code");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("security.invalidCode"),
+      );
     }
   };
 
@@ -210,11 +221,13 @@ export function Security() {
       await api.passkeyRegFinish(response, passkeyName || undefined);
       setPasskeyName("");
       await refetchPasskeys();
-      showMsg("success", "Passkey registered!");
+      showMsg("success", t("security.passkeyRegistered"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Passkey registration failed",
+        err instanceof ApiError
+          ? err.message
+          : t("security.passkeyRegistrationFailed"),
       );
     } finally {
       setPasskeyLoading(false);
@@ -226,11 +239,13 @@ export function Security() {
       await api.deletePasskey(id);
       setSelectedPasskey(null);
       await refetchPasskeys();
-      showMsg("success", "Passkey removed");
+      showMsg("success", t("security.passkeyRemoved"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to remove passkey",
+        err instanceof ApiError
+          ? err.message
+          : t("security.failedRemovePasskey"),
       );
     }
   };
@@ -245,18 +260,22 @@ export function Security() {
       await api.revokeSession(id);
       setSelectedSession(null);
       await refetchSessions();
-      showMsg("success", "Session revoked");
+      showMsg("success", t("security.sessionRevoked"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to revoke session",
+        err instanceof ApiError
+          ? err.message
+          : t("security.failedRevokeSession"),
       );
     }
   };
 
+  const backupCodesRemaining = totpData?.backup_codes_remaining ?? 0;
+
   return (
     <div className={styles.page}>
-      <Title2>Security</Title2>
+      <Title2>{t("security.title")}</Title2>
 
       {message && (
         <MessageBar intent={message.type === "success" ? "success" : "error"}>
@@ -269,18 +288,17 @@ export function Security() {
         <div className={styles.cardHeader}>
           <div>
             <Text weight="semibold" size={400} block>
-              Authenticator Apps (TOTP)
+              {t("security.totpTitle")}
             </Text>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              Use apps like Authy or Google Authenticator. One set of backup
-              codes is shared across all authenticators.
+              {t("security.totpDesc")}
             </Text>
           </div>
           <Badge
             color={me?.totp_enabled ? "success" : "subtle"}
             appearance="filled"
           >
-            {me?.totp_enabled ? "Enabled" : "Disabled"}
+            {me?.totp_enabled ? t("security.enabled") : t("security.disabled")}
           </Badge>
         </div>
 
@@ -291,9 +309,9 @@ export function Security() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHeaderCell>Name</TableHeaderCell>
+                  <TableHeaderCell>{t("security.nameHeader")}</TableHeaderCell>
                   <TableHeaderCell className={styles.hiddenOnMobile}>
-                    Added
+                    {t("security.addedHeader")}
                   </TableHeaderCell>
                   <TableHeaderCell className={styles.hiddenOnMobile} />
                 </TableRow>
@@ -341,7 +359,7 @@ export function Security() {
                 <DialogTitle>{selectedTotp?.name}</DialogTitle>
                 <DialogContent>
                   <Text size={200}>
-                    <strong>Added:</strong>{" "}
+                    <strong>{t("security.added")}:</strong>{" "}
                     {selectedTotp
                       ? new Date(
                           selectedTotp.created_at * 1000,
@@ -350,7 +368,9 @@ export function Security() {
                   </Text>
                 </DialogContent>
                 <DialogActions>
-                  <Button onClick={() => setSelectedTotp(null)}>Close</Button>
+                  <Button onClick={() => setSelectedTotp(null)}>
+                    {t("common.close")}
+                  </Button>
                   <Button
                     appearance="primary"
                     style={{ background: tokens.colorPaletteRedBackground3 }}
@@ -361,7 +381,7 @@ export function Security() {
                       setSelectedTotp(null);
                     }}
                   >
-                    Remove
+                    {t("common.remove")}
                   </Button>
                 </DialogActions>
               </DialogBody>
@@ -372,11 +392,11 @@ export function Security() {
         {/* Add authenticator flow */}
         {!totpSetup && (
           <div className={styles.actions}>
-            <Field label="Name (optional)" style={{ flex: 1 }}>
+            <Field label={t("security.nameOptional")} style={{ flex: 1 }}>
               <Input
                 value={totpName}
                 onChange={(e) => setTotpName(e.target.value)}
-                placeholder="My Phone"
+                placeholder={t("security.namePlaceholder")}
               />
             </Field>
             <Button
@@ -386,14 +406,18 @@ export function Security() {
               disabled={totpLoading}
               style={{ alignSelf: "flex-end" }}
             >
-              {totpLoading ? <Spinner size="tiny" /> : "Add authenticator"}
+              {totpLoading ? (
+                <Spinner size="tiny" />
+              ) : (
+                t("security.addAuthenticator")
+              )}
             </Button>
           </div>
         )}
 
         {totpSetup && (
           <div className={styles.qrSection}>
-            <Text>Scan this QR code with your authenticator app:</Text>
+            <Text>{t("security.scanQrCode")}</Text>
             <img
               src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(totpSetup.uri)}&size=200x200`}
               alt="TOTP QR Code"
@@ -413,13 +437,13 @@ export function Security() {
               {totpSetup.secret}
             </Text>
             <Field
-              label="Enter the 6-digit code to verify"
+              label={t("security.enterCode")}
               style={{ width: "100%", maxWidth: 260 }}
             >
               <Input
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value)}
-                placeholder="000000"
+                placeholder={t("security.codePlaceholder")}
                 maxLength={6}
                 autoComplete="one-time-code"
               />
@@ -430,9 +454,15 @@ export function Security() {
                 onClick={handleVerifyTotp}
                 disabled={totpLoading || totpCode.length < 6}
               >
-                {totpLoading ? <Spinner size="tiny" /> : "Verify & Enable"}
+                {totpLoading ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("security.verifyEnable")
+                )}
               </Button>
-              <Button onClick={() => setTotpSetup(null)}>Cancel</Button>
+              <Button onClick={() => setTotpSetup(null)}>
+                {t("common.cancel")}
+              </Button>
             </div>
           </div>
         )}
@@ -441,7 +471,7 @@ export function Security() {
         {backupCodes && (
           <div>
             <Text weight="semibold" block>
-              Save these backup codes — they won't be shown again:
+              {t("security.saveBackupCodes")}
             </Text>
             <div className={styles.backupCodes}>
               {backupCodes.map((c) => (
@@ -458,7 +488,7 @@ export function Security() {
                   navigator.clipboard.writeText(backupCodes.join("\n"))
                 }
               >
-                Copy
+                {t("common.copy")}
               </Button>
               <Button
                 size="small"
@@ -475,10 +505,10 @@ export function Security() {
                   URL.revokeObjectURL(url);
                 }}
               >
-                Download
+                {t("common.download")}
               </Button>
               <Button size="small" onClick={() => setBackupCodes(null)}>
-                Done
+                {t("common.done")}
               </Button>
             </div>
           </div>
@@ -488,24 +518,31 @@ export function Security() {
         {me?.totp_enabled && !backupCodes && (
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {totpData?.backup_codes_remaining ?? 0} backup code
-              {totpData?.backup_codes_remaining !== 1 ? "s" : ""} remaining
+              {backupCodesRemaining === 1
+                ? t("security.backupCodesRemaining", {
+                    count: backupCodesRemaining,
+                  })
+                : t("security.backupCodesRemainingPlural", {
+                    count: backupCodesRemaining,
+                  })}
             </Text>
             <Dialog>
               <DialogTrigger disableButtonEnhancement>
                 <Button size="small" icon={<ArrowSyncRegular />}>
-                  Reset backup codes
+                  {t("security.resetBackupCodes")}
                 </Button>
               </DialogTrigger>
               <DialogSurface>
                 <DialogBody>
-                  <DialogTitle>Reset Backup Codes</DialogTitle>
+                  <DialogTitle>
+                    {t("security.resetBackupCodesTitle")}
+                  </DialogTitle>
                   <DialogContent>
-                    <Field label="Enter a TOTP code to confirm">
+                    <Field label={t("security.enterTotpToConfirm")}>
                       <Input
                         value={resetBkCode}
                         onChange={(e) => setResetBkCode(e.target.value)}
-                        placeholder="000000"
+                        placeholder={t("security.codePlaceholder")}
                         maxLength={6}
                         autoComplete="one-time-code"
                       />
@@ -513,7 +550,9 @@ export function Security() {
                   </DialogContent>
                   <DialogActions>
                     <DialogTrigger>
-                      <Button appearance="secondary">Cancel</Button>
+                      <Button appearance="secondary">
+                        {t("common.cancel")}
+                      </Button>
                     </DialogTrigger>
                     <DialogTrigger disableButtonEnhancement>
                       <Button
@@ -521,7 +560,7 @@ export function Security() {
                         disabled={resetBkCode.length < 6}
                         onClick={handleResetBackupCodes}
                       >
-                        Reset
+                        {t("security.resetBackupCodes")}
                       </Button>
                     </DialogTrigger>
                   </DialogActions>
@@ -540,13 +579,13 @@ export function Security() {
         >
           <DialogSurface>
             <DialogBody>
-              <DialogTitle>Remove Authenticator</DialogTitle>
+              <DialogTitle>{t("security.removeAuthenticator")}</DialogTitle>
               <DialogContent>
-                <Field label="Enter a TOTP code to confirm">
+                <Field label={t("security.enterTotpToConfirm")}>
                   <Input
                     value={removeCode}
                     onChange={(e) => setRemoveCode(e.target.value)}
-                    placeholder="000000"
+                    placeholder={t("security.codePlaceholder")}
                     maxLength={6}
                     autoComplete="one-time-code"
                   />
@@ -557,7 +596,7 @@ export function Security() {
                   appearance="secondary"
                   onClick={() => setRemoveId(null)}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button
                   appearance="primary"
@@ -565,7 +604,7 @@ export function Security() {
                   disabled={removeCode.length < 6}
                   onClick={handleRemoveTotp}
                 >
-                  Remove
+                  {t("common.remove")}
                 </Button>
               </DialogActions>
             </DialogBody>
@@ -578,10 +617,10 @@ export function Security() {
         <div className={styles.cardHeader}>
           <div>
             <Text weight="semibold" size={400} block>
-              Passkeys
+              {t("security.passkeysTitle")}
             </Text>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              Sign in with biometrics or a hardware security key.
+              {t("security.passkeysDesc")}
             </Text>
           </div>
         </div>
@@ -591,15 +630,15 @@ export function Security() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHeaderCell>Name</TableHeaderCell>
+                  <TableHeaderCell>{t("security.nameHeader")}</TableHeaderCell>
                   <TableHeaderCell className={styles.hiddenOnMobile}>
-                    Type
+                    {t("security.typeHeader")}
                   </TableHeaderCell>
                   <TableHeaderCell className={styles.hiddenOnMobile}>
-                    Added
+                    {t("security.addedHeader")}
                   </TableHeaderCell>
                   <TableHeaderCell className={styles.hiddenOnMobile}>
-                    Last used
+                    {t("security.lastUsedHeader")}
                   </TableHeaderCell>
                   <TableHeaderCell className={styles.hiddenOnMobile} />
                 </TableRow>
@@ -653,10 +692,11 @@ export function Security() {
                     style={{ display: "flex", flexDirection: "column", gap: 8 }}
                   >
                     <Text size={200}>
-                      <strong>Type:</strong> {selectedPasskey?.device_type}
+                      <strong>{t("security.typeHeader")}:</strong>{" "}
+                      {selectedPasskey?.device_type}
                     </Text>
                     <Text size={200}>
-                      <strong>Added:</strong>{" "}
+                      <strong>{t("security.added")}:</strong>{" "}
                       {selectedPasskey
                         ? new Date(
                             selectedPasskey.created_at * 1000,
@@ -664,7 +704,7 @@ export function Security() {
                         : ""}
                     </Text>
                     <Text size={200}>
-                      <strong>Last used:</strong>{" "}
+                      <strong>{t("security.lastUsedHeader")}:</strong>{" "}
                       {selectedPasskey?.last_used_at
                         ? new Date(
                             selectedPasskey.last_used_at * 1000,
@@ -675,7 +715,7 @@ export function Security() {
                 </DialogContent>
                 <DialogActions>
                   <Button onClick={() => setSelectedPasskey(null)}>
-                    Close
+                    {t("common.close")}
                   </Button>
                   <Button
                     appearance="primary"
@@ -685,7 +725,7 @@ export function Security() {
                       handleDeletePasskey(selectedPasskey.id);
                     }}
                   >
-                    Delete
+                    {t("security.deletePasskey")}
                   </Button>
                 </DialogActions>
               </DialogBody>
@@ -694,11 +734,11 @@ export function Security() {
         </>
 
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <Field label="Passkey name (optional)" style={{ flex: 1 }}>
+          <Field label={t("security.passkeyNameOptional")} style={{ flex: 1 }}>
             <Input
               value={passkeyName}
               onChange={(e) => setPasskeyName(e.target.value)}
-              placeholder="My MacBook"
+              placeholder={t("security.passkeyNamePlaceholder")}
             />
           </Field>
           <Button
@@ -707,7 +747,11 @@ export function Security() {
             onClick={handleAddPasskey}
             disabled={passkeyLoading}
           >
-            {passkeyLoading ? <Spinner size="tiny" /> : "Add passkey"}
+            {passkeyLoading ? (
+              <Spinner size="tiny" />
+            ) : (
+              t("security.addPasskey")
+            )}
           </Button>
         </div>
       </div>
@@ -715,26 +759,28 @@ export function Security() {
       {/* Sessions */}
       <div className={styles.card}>
         <Text weight="semibold" size={400} block>
-          Active Sessions
+          {t("security.sessionsTitle")}
         </Text>
         <>
           {(sessionsData?.sessions.length ?? 0) === 0 ? (
             <Text style={{ color: tokens.colorNeutralForeground3 }}>
-              No active sessions
+              {t("security.noActiveSessions")}
             </Text>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHeaderCell>Device</TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    IP
+                  <TableHeaderCell>
+                    {t("security.deviceHeader")}
                   </TableHeaderCell>
                   <TableHeaderCell className={styles.hiddenOnMobile}>
-                    Created
+                    {t("security.ipHeader")}
                   </TableHeaderCell>
                   <TableHeaderCell className={styles.hiddenOnMobile}>
-                    Expires
+                    {t("security.createdHeader")}
+                  </TableHeaderCell>
+                  <TableHeaderCell className={styles.hiddenOnMobile}>
+                    {t("security.expiresHeader")}
                   </TableHeaderCell>
                   <TableHeaderCell className={styles.hiddenOnMobile} />
                 </TableRow>
@@ -753,7 +799,7 @@ export function Security() {
                         textOverflow: "ellipsis",
                       }}
                     >
-                      {s.user_agent ?? "Unknown"}
+                      {s.user_agent ?? t("security.unknown")}
                     </TableCell>
                     <TableCell className={styles.hiddenOnMobile}>
                       {s.ip_address ?? "—"}
@@ -788,20 +834,21 @@ export function Security() {
           >
             <DialogSurface>
               <DialogBody>
-                <DialogTitle>Session</DialogTitle>
+                <DialogTitle>{t("security.sessionTitle")}</DialogTitle>
                 <DialogContent>
                   <div
                     style={{ display: "flex", flexDirection: "column", gap: 8 }}
                   >
                     <Text size={200}>
-                      <strong>Device:</strong>{" "}
-                      {selectedSession?.user_agent ?? "Unknown"}
+                      <strong>{t("security.deviceLabel")}:</strong>{" "}
+                      {selectedSession?.user_agent ?? t("security.unknown")}
                     </Text>
                     <Text size={200}>
-                      <strong>IP:</strong> {selectedSession?.ip_address ?? "—"}
+                      <strong>{t("security.ipLabel")}:</strong>{" "}
+                      {selectedSession?.ip_address ?? "—"}
                     </Text>
                     <Text size={200}>
-                      <strong>Created:</strong>{" "}
+                      <strong>{t("security.createdLabel")}:</strong>{" "}
                       {selectedSession
                         ? new Date(
                             selectedSession.created_at * 1000,
@@ -809,7 +856,7 @@ export function Security() {
                         : ""}
                     </Text>
                     <Text size={200}>
-                      <strong>Expires:</strong>{" "}
+                      <strong>{t("security.expiresLabel")}:</strong>{" "}
                       {selectedSession
                         ? new Date(
                             selectedSession.expires_at * 1000,
@@ -820,7 +867,7 @@ export function Security() {
                 </DialogContent>
                 <DialogActions>
                   <Button onClick={() => setSelectedSession(null)}>
-                    Close
+                    {t("common.close")}
                   </Button>
                   <Button
                     appearance="primary"
@@ -830,7 +877,7 @@ export function Security() {
                       handleRevokeSession(selectedSession.id);
                     }}
                   >
-                    Revoke
+                    {t("security.revokeSession")}
                   </Button>
                 </DialogActions>
               </DialogBody>

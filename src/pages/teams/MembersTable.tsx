@@ -29,6 +29,7 @@ import {
   MailRegular,
   MoreHorizontalRegular,
 } from "@fluentui/react-icons";
+import { useTranslation } from "react-i18next";
 import type { TeamInvite, TeamMember } from "../../lib/api";
 
 const ROLE_COLORS: Record<string, "brand" | "success" | "subtle"> = {
@@ -83,15 +84,16 @@ export function MembersTable({
   onCopyInviteLink,
 }: MembersTableProps) {
   const styles = useStyles();
+  const { t } = useTranslation();
 
   return (
     <>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHeaderCell>Member</TableHeaderCell>
-            <TableHeaderCell>Role</TableHeaderCell>
-            <TableHeaderCell>Joined</TableHeaderCell>
+            <TableHeaderCell>{t("teams.memberHeader")}</TableHeaderCell>
+            <TableHeaderCell>{t("teams.roleHeader")}</TableHeaderCell>
+            <TableHeaderCell>{t("teams.joinedHeader")}</TableHeaderCell>
             {canManage && <TableHeaderCell />}
           </TableRow>
         </TableHeader>
@@ -147,21 +149,21 @@ export function MembersTable({
                             <MenuItem
                               onClick={() => onChangeRole(m.user_id, "admin")}
                             >
-                              Promote to admin
+                              {t("teams.promoteToAdmin")}
                             </MenuItem>
                           )}
                           {isOwner && m.role === "admin" && (
                             <MenuItem
                               onClick={() => onChangeRole(m.user_id, "member")}
                             >
-                              Demote to member
+                              {t("teams.demoteToMember")}
                             </MenuItem>
                           )}
                           {isOwner && (
                             <MenuItem
                               onClick={() => onTransferOwnership(m.user_id)}
                             >
-                              Transfer ownership
+                              {t("teams.transferOwnership")}
                             </MenuItem>
                           )}
                           <MenuItem
@@ -171,7 +173,7 @@ export function MembersTable({
                               color: tokens.colorPaletteRedForeground1,
                             }}
                           >
-                            Remove
+                            {t("common.remove")}
                           </MenuItem>
                         </MenuList>
                       </MenuPopover>
@@ -183,7 +185,7 @@ export function MembersTable({
                       size="small"
                       onClick={() => onRemoveMember(m.user_id)}
                     >
-                      Leave
+                      {t("teams.leave")}
                     </Button>
                   )}
                 </TableCell>
@@ -196,11 +198,11 @@ export function MembersTable({
       {/* Active invites */}
       {canManage && (
         <div className={styles.section}>
-          <Title3>Active invites</Title3>
+          <Title3>{t("teams.activeInvites")}</Title3>
           {invitesLoading && <Spinner size="small" />}
           {!invitesLoading && invites.length === 0 && (
             <Text style={{ color: tokens.colorNeutralForeground3 }}>
-              No active invites
+              {t("teams.noActiveInvites")}
             </Text>
           )}
           {invites.map((inv) => (
@@ -228,7 +230,7 @@ export function MembersTable({
                     <LinkRegular
                       style={{ verticalAlign: "middle", marginRight: 4 }}
                     />
-                    Shareable link
+                    {t("teams.shareableLink")}
                   </Text>
                 )}
                 <Text
@@ -243,7 +245,11 @@ export function MembersTable({
               </div>
               {!inv.email && (
                 <Tooltip
-                  content={copiedToken === inv.token ? "Copied!" : "Copy link"}
+                  content={
+                    copiedToken === inv.token
+                      ? t("teams.copiedExclamation")
+                      : t("teams.copyLink")
+                  }
                   relationship="label"
                 >
                   <Button

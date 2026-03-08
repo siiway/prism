@@ -24,6 +24,7 @@ import {
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   api,
   ApiError,
@@ -53,6 +54,7 @@ export function DomainsTable({
   transferableDomains,
   showMsg,
 }: DomainsTableProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
 
   const [newDomain, setNewDomain] = useState("");
@@ -76,7 +78,7 @@ export function DomainsTable({
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Failed to add domain",
+        err instanceof ApiError ? err.message : t("domains.failedAddDomain"),
       );
     } finally {
       setAddingDomain(false);
@@ -88,18 +90,15 @@ export function DomainsTable({
     try {
       const res = await api.verifyTeamDomain(teamId, domainId);
       if (res.verified) {
-        showMsg("success", "Domain verified!");
+        showMsg("success", t("domains.domainVerified"));
         await qc.invalidateQueries({ queryKey: ["team-domains", teamId] });
       } else {
-        showMsg(
-          "error",
-          "TXT record not found yet. Make sure the DNS record is set and try again.",
-        );
+        showMsg("error", t("domains.txtRecordNotFound"));
       }
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Verification failed",
+        err instanceof ApiError ? err.message : t("domains.verificationFailed"),
       );
     } finally {
       setVerifyingDomain(null);
@@ -111,7 +110,10 @@ export function DomainsTable({
       await api.deleteTeamDomain(teamId, domainId);
       await qc.invalidateQueries({ queryKey: ["team-domains", teamId] });
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("domains.deleteFailed"),
+      );
     }
   };
 
@@ -120,11 +122,11 @@ export function DomainsTable({
       await api.returnDomainToPersonal(teamId, domainId);
       await qc.invalidateQueries({ queryKey: ["team-domains", teamId] });
       await qc.invalidateQueries({ queryKey: ["domains"] });
-      showMsg("success", "Domain returned to personal ownership");
+      showMsg("success", t("domains.domainReturnedToPersonal"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError ? err.message : "Transfer failed",
+        err instanceof ApiError ? err.message : t("domains.transferFailed"),
       );
     }
   };
@@ -133,9 +135,12 @@ export function DomainsTable({
     try {
       await api.shareTeamDomainToPersonal(teamId, domainId);
       await qc.invalidateQueries({ queryKey: ["domains"] });
-      showMsg("success", "Domain shared to your personal domains");
+      showMsg("success", t("domains.domainSharedToPersonal"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Share failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("domains.shareFailed"),
+      );
     }
   };
 
@@ -144,11 +149,11 @@ export function DomainsTable({
       {canManage && (
         <>
           <div style={{ display: "flex", gap: 8 }}>
-            <Field label="Add domain" style={{ flex: 1 }}>
+            <Field label={t("domains.addDomain")} style={{ flex: 1 }}>
               <Input
                 value={newDomain}
                 onChange={(e) => setNewDomain(e.target.value)}
-                placeholder="example.com"
+                placeholder={t("domains.addDomainPlaceholder")}
                 onKeyDown={(e) => e.key === "Enter" && handleAddDomain()}
               />
             </Field>
@@ -159,14 +164,14 @@ export function DomainsTable({
               disabled={addingDomain || !newDomain}
               style={{ alignSelf: "flex-end" }}
             >
-              {addingDomain ? <Spinner size="tiny" /> : "Add"}
+              {addingDomain ? <Spinner size="tiny" /> : t("common.add")}
             </Button>
             {transferableDomains.length > 0 && (
               <Button
                 style={{ alignSelf: "flex-end" }}
                 onClick={() => setFromPersonalOpen(true)}
               >
-                Transfer from personal
+                {t("domains.transferFromPersonal")}
               </Button>
             )}
           </div>
@@ -191,7 +196,7 @@ export function DomainsTable({
           }}
         >
           <Text weight="semibold" block>
-            Add this DNS TXT record to verify {addedDomainInfo.domain}:
+            {t("domains.dnsInstructions", { domain: addedDomainInfo.domain })}
           </Text>
           <div
             style={{
@@ -202,13 +207,15 @@ export function DomainsTable({
             }}
           >
             <Text size={200}>
-              <strong>Type:</strong> TXT
+              <strong>{t("domains.dnsType")}:</strong> TXT
             </Text>
             <Text size={200}>
-              <strong>Name:</strong> <code>{addedDomainInfo.txt_record}</code>
+              <strong>{t("domains.dnsName")}:</strong>{" "}
+              <code>{addedDomainInfo.txt_record}</code>
             </Text>
             <Text size={200}>
-              <strong>Value:</strong> <code>{addedDomainInfo.txt_value}</code>
+              <strong>{t("domains.dnsValue")}:</strong>{" "}
+              <code>{addedDomainInfo.txt_value}</code>
             </Text>
           </div>
           <Button
@@ -216,7 +223,7 @@ export function DomainsTable({
             onClick={() => setAddedDomainInfo(null)}
             style={{ marginTop: 12 }}
           >
-            Dismiss
+            {t("common.dismiss")}
           </Button>
         </div>
       )}
@@ -230,7 +237,7 @@ export function DomainsTable({
             padding: "32px 0",
           }}
         >
-          No domains added yet.
+          {t("domains.noDomainsYet")}
         </Text>
       )}
 
@@ -238,10 +245,12 @@ export function DomainsTable({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHeaderCell>Domain</TableHeaderCell>
-              <TableHeaderCell>Status</TableHeaderCell>
-              <TableHeaderCell>Verified at</TableHeaderCell>
-              {canManage && <TableHeaderCell>Actions</TableHeaderCell>}
+              <TableHeaderCell>{t("domains.domainHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("domains.statusHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("domains.verifiedAtHeader")}</TableHeaderCell>
+              {canManage && (
+                <TableHeaderCell>{t("domains.actionsHeader")}</TableHeaderCell>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -260,7 +269,9 @@ export function DomainsTable({
                     appearance="filled"
                     icon={d.verified ? <CheckmarkCircleRegular /> : undefined}
                   >
-                    {d.verified ? "Verified" : "Pending"}
+                    {d.verified
+                      ? t("domains.verifiedBadge")
+                      : t("domains.pending")}
                   </Badge>
                 </TableCell>
                 <TableCell>
@@ -284,7 +295,7 @@ export function DomainsTable({
                         {verifyingDomain === d.id ? (
                           <Spinner size="tiny" />
                         ) : (
-                          "Verify"
+                          t("common.verify")
                         )}
                       </Button>
                       <DeleteTeamDomainDialog
@@ -292,7 +303,7 @@ export function DomainsTable({
                         onDelete={handleDeleteDomain}
                       />
                       <Tooltip
-                        content="Move back to personal (removes from team)"
+                        content={t("domains.returnToPersonalTooltip")}
                         relationship="label"
                       >
                         <Button
@@ -300,11 +311,11 @@ export function DomainsTable({
                           appearance="subtle"
                           onClick={() => handleReturnToPersonal(d.id)}
                         >
-                          ↩ Personal
+                          {t("domains.returnToPersonal")}
                         </Button>
                       </Tooltip>
                       <Tooltip
-                        content="Share to your personal domains (keeps team copy)"
+                        content={t("domains.shareToPersonalTooltip")}
                         relationship="label"
                       >
                         <Button

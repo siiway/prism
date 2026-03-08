@@ -15,6 +15,7 @@ import {
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
 } from "@fluentui/react-icons";
+import { useTranslation } from "react-i18next";
 import type { Domain } from "../../../lib/api";
 
 interface TeamDomainDetailDialogProps {
@@ -32,6 +33,7 @@ export function TeamDomainDetailDialog({
   onClose,
   onVerify,
 }: TeamDomainDetailDialogProps) {
+  const { t } = useTranslation();
   return (
     <Dialog
       open={!!domain}
@@ -52,11 +54,13 @@ export function TeamDomainDetailDialog({
                 icon={domain?.verified ? <CheckmarkCircleRegular /> : undefined}
                 style={{ width: "fit-content" }}
               >
-                {domain?.verified ? "Verified" : "Pending"}
+                {domain?.verified
+                  ? t("domains.verifiedBadge")
+                  : t("domains.pending")}
               </Badge>
               {domain?.verified_at && (
                 <Text size={200}>
-                  <strong>Verified:</strong>{" "}
+                  <strong>{t("domains.verifiedLabel")}:</strong>{" "}
                   {new Date(domain.verified_at * 1000).toLocaleDateString()}
                 </Text>
               )}
@@ -72,14 +76,14 @@ export function TeamDomainDetailDialog({
                   }}
                 >
                   <Text size={200} weight="semibold">
-                    Add this DNS TXT record:
+                    {t("domains.addDnsTxtRecord")}
                   </Text>
                   <Text size={200}>
-                    <strong>Name:</strong>{" "}
+                    <strong>{t("domains.dnsName")}:</strong>{" "}
                     <code>_prism-verify.{domain?.domain}</code>
                   </Text>
                   <Text size={200}>
-                    <strong>Value:</strong>{" "}
+                    <strong>{t("domains.dnsValue")}:</strong>{" "}
                     <code>prism-verify={domain?.verification_token}</code>
                   </Text>
                 </div>
@@ -87,7 +91,7 @@ export function TeamDomainDetailDialog({
             </div>
           </DialogContent>
           <DialogActions>
-            <Button onClick={onClose}>Close</Button>
+            <Button onClick={onClose}>{t("common.close")}</Button>
             {canManage && (
               <Button
                 appearance="outline"
@@ -102,7 +106,7 @@ export function TeamDomainDetailDialog({
                 {verifyingDomain === domain?.id ? (
                   <Spinner size="tiny" />
                 ) : (
-                  "Verify"
+                  t("common.verify")
                 )}
               </Button>
             )}
