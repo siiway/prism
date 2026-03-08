@@ -516,6 +516,31 @@ export const api = {
       undefined,
       getToken(),
     ),
+  shareDomainToTeam: (domainId: string, teamId: string) =>
+    request<{ id: string; domain: string; verified: boolean }>(
+      "POST",
+      `/domains/${domainId}/share`,
+      { team_id: teamId },
+      getToken(),
+    ),
+  shareTeamDomainToTeam: (
+    sourceTeamId: string,
+    domainId: string,
+    targetTeamId: string,
+  ) =>
+    request<{ id: string; domain: string; verified: boolean }>(
+      "POST",
+      `/teams/${sourceTeamId}/domains/${domainId}/share-to-team`,
+      { team_id: targetTeamId },
+      getToken(),
+    ),
+  shareTeamDomainToPersonal: (teamId: string, domainId: string) =>
+    request<{ id: string; domain: string; verified: boolean }>(
+      "POST",
+      `/teams/${teamId}/domains/${domainId}/share-to-personal`,
+      undefined,
+      getToken(),
+    ),
 
   // Team invites
   listTeamInvites: (teamId: string) =>

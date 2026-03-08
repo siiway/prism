@@ -109,6 +109,7 @@ export interface OAuthTokenRow {
 export interface DomainRow {
   id: string;
   user_id: string;
+  created_by: string | null;
   app_id: string | null;
   team_id: string | null;
   domain: string;

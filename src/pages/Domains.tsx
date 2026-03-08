@@ -31,6 +31,7 @@ import {
   ArrowClockwiseRegular,
   ArrowSwapRegular,
   CheckmarkCircleRegular,
+  CopyRegular,
   DeleteRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -77,6 +78,9 @@ export function Domains() {
   const [transferDomain, setTransferDomain] = useState<Domain | null>(null);
   const [transferTeamId, setTransferTeamId] = useState("");
   const [transferring, setTransferring] = useState(false);
+  const [shareDomain, setShareDomain] = useState<Domain | null>(null);
+  const [shareTeamId, setShareTeamId] = useState("");
+  const [sharing, setSharing] = useState(false);
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -151,6 +155,24 @@ export function Domains() {
       );
     } finally {
       setTransferring(false);
+    }
+  };
+
+  const handleShareToTeam = async () => {
+    if (!shareDomain || !shareTeamId) return;
+    setSharing(true);
+    try {
+      await api.shareDomainToTeam(shareDomain.id, shareTeamId);
+      await qc.invalidateQueries({
+        queryKey: ["team-domains", shareTeamId],
+      });
+      setShareDomain(null);
+      setShareTeamId("");
+      showMsg("success", "Domain shared with team");
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Share failed");
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -306,15 +328,28 @@ export function Domains() {
                         )}
                       </Button>
                       {manageableTeams.length > 0 && (
-                        <Button
-                          icon={<ArrowSwapRegular />}
-                          size="small"
-                          appearance="subtle"
-                          onClick={() => {
-                            setTransferDomain(d);
-                            setTransferTeamId("");
-                          }}
-                        />
+                        <>
+                          <Button
+                            icon={<ArrowSwapRegular />}
+                            size="small"
+                            appearance="subtle"
+                            title="Move to team"
+                            onClick={() => {
+                              setTransferDomain(d);
+                              setTransferTeamId("");
+                            }}
+                          />
+                          <Button
+                            icon={<CopyRegular />}
+                            size="small"
+                            appearance="subtle"
+                            title="Share with team"
+                            onClick={() => {
+                              setShareDomain(d);
+                              setShareTeamId("");
+                            }}
+                          />
+                        </>
                       )}
                       <Dialog>
                         <DialogTrigger disableButtonEnhancement>
@@ -483,8 +518,8 @@ export function Domains() {
                     <strong style={{ fontFamily: "monospace" }}>
                       {transferDomain?.domain}
                     </strong>{" "}
-                    to a team. The domain will be managed by the team and used
-                    to verify team apps.
+                    to a team. The domain will be removed from your personal
+                    domains and managed by the team.
                   </Text>
                   <Field label="Select team" required>
                     <Select
@@ -509,6 +544,57 @@ export function Domains() {
                   disabled={transferring || !transferTeamId}
                 >
                   {transferring ? <Spinner size="tiny" /> : "Move to team"}
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+
+        {/* Share to team dialog */}
+        <Dialog
+          open={!!shareDomain}
+          onOpenChange={(_, s) => {
+            if (!s.open) setShareDomain(null);
+          }}
+        >
+          <DialogSurface>
+            <DialogBody>
+              <DialogTitle>Share domain with team</DialogTitle>
+              <DialogContent>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                >
+                  <Text>
+                    Share{" "}
+                    <strong style={{ fontFamily: "monospace" }}>
+                      {shareDomain?.domain}
+                    </strong>{" "}
+                    with a team. The domain will also appear in the team's
+                    verified domains — your personal copy is kept.
+                  </Text>
+                  <Field label="Select team" required>
+                    <Select
+                      value={shareTeamId}
+                      onChange={(_, d) => setShareTeamId(d.value)}
+                    >
+                      <option value="">— choose a team —</option>
+                      {manageableTeams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setShareDomain(null)}>Cancel</Button>
+                <Button
+                  appearance="primary"
+                  onClick={handleShareToTeam}
+                  disabled={sharing || !shareTeamId}
+                >
+                  {sharing ? <Spinner size="tiny" /> : "Share with team"}
                 </Button>
               </DialogActions>
             </DialogBody>

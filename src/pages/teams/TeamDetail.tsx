@@ -513,6 +513,17 @@ export function TeamDetail() {
     }
   };
 
+  const handleShareToPersonal = async (domainId: string) => {
+    if (!id) return;
+    try {
+      await api.shareTeamDomainToPersonal(id, domainId);
+      await qc.invalidateQueries({ queryKey: ["domains"] });
+      showMsg("success", "Domain shared to your personal domains");
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Share failed");
+    }
+  };
+
   // ── Settings ────────────────────────────────────────────────────────────────
   const [settingsForm, setSettingsForm] = useState({
     name: "",
@@ -1421,7 +1432,7 @@ export function TeamDetail() {
                             </DialogSurface>
                           </Dialog>
                           <Tooltip
-                            content="Return to personal"
+                            content="Move back to personal (removes from team)"
                             relationship="label"
                           >
                             <Button
@@ -1431,6 +1442,17 @@ export function TeamDetail() {
                             >
                               ↩ Personal
                             </Button>
+                          </Tooltip>
+                          <Tooltip
+                            content="Share to your personal domains (keeps team copy)"
+                            relationship="label"
+                          >
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              icon={<CopyRegular />}
+                              onClick={() => handleShareToPersonal(d.id)}
+                            />
                           </Tooltip>
                         </div>
                       </TableCell>

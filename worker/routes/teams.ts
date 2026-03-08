@@ -594,9 +594,9 @@ app.post(":id/domains", async (c) => {
   const now = Math.floor(Date.now() / 1000);
 
   await c.env.DB.prepare(
-    "INSERT INTO domains (id, user_id, team_id, domain, verification_token, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO domains (id, user_id, created_by, team_id, domain, verification_token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(domainId, user.id, id, domain, verificationToken, now)
+    .bind(domainId, user.id, user.id, id, domain, verificationToken, now)
     .run();
 
   // Auto-verify if the team already owns a verified parent domain
@@ -741,6 +741,122 @@ app.post(":id/domains/:domainId/to-personal", async (c) => {
     .run();
 
   return c.json({ message: "Domain returned to personal ownership" });
+});
+
+// Share team domain to another team (copy — keeps source, creates new row in target)
+app.post(":id/domains/:domainId/share-to-team", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const domainId = c.req.param("domainId");
+  const m = await getMember(c.env.DB, id, user.id);
+  if (!m) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE id = ? AND team_id = ?",
+  )
+    .bind(domainId, id)
+    .first<DomainRow>();
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+
+  const body = await c.req.json<{ team_id: string }>();
+  if (!body.team_id) return c.json({ error: "team_id is required" }, 400);
+  if (body.team_id === id)
+    return c.json({ error: "Cannot share to the same team" }, 400);
+
+  // Requester must be admin+ in the target team
+  const targetMember = await getMember(c.env.DB, body.team_id, user.id);
+  if (!targetMember || !hasRole(targetMember.role, "admin"))
+    return c.json(
+      { error: "Forbidden: must be admin or owner of target team" },
+      403,
+    );
+
+  // Target team must not already have this domain
+  const conflict = await c.env.DB.prepare(
+    "SELECT id FROM domains WHERE team_id = ? AND domain = ?",
+  )
+    .bind(body.team_id, row.domain)
+    .first();
+  if (conflict)
+    return c.json({ error: "Target team already has this domain" }, 409);
+
+  const newId = randomId();
+  const newToken = randomBase64url(24);
+  const now = Math.floor(Date.now() / 1000);
+
+  await c.env.DB.prepare(
+    `INSERT INTO domains
+      (id, user_id, created_by, team_id, domain, verification_token,
+       verified, verified_at, next_reverify_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      newId,
+      user.id,
+      user.id,
+      body.team_id,
+      row.domain,
+      newToken,
+      row.verified,
+      row.verified_at ?? null,
+      row.next_reverify_at ?? null,
+      now,
+    )
+    .run();
+
+  return c.json({ id: newId, domain: row.domain, verified: !!row.verified });
+});
+
+// Share team domain to personal (copy — keeps team source, creates personal row for requester)
+app.post(":id/domains/:domainId/share-to-personal", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const domainId = c.req.param("domainId");
+  const m = await getMember(c.env.DB, id, user.id);
+  if (!m) return c.json({ error: "Not a team member" }, 403);
+  if (!hasRole(m.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE id = ? AND team_id = ?",
+  )
+    .bind(domainId, id)
+    .first<DomainRow>();
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+
+  // User must not already own this domain personally
+  const conflict = await c.env.DB.prepare(
+    "SELECT id FROM domains WHERE user_id = ? AND team_id IS NULL AND domain = ?",
+  )
+    .bind(user.id, row.domain)
+    .first();
+  if (conflict)
+    return c.json({ error: "You already own this domain personally" }, 409);
+
+  const newId = randomId();
+  const newToken = randomBase64url(24);
+  const now = Math.floor(Date.now() / 1000);
+
+  await c.env.DB.prepare(
+    `INSERT INTO domains
+      (id, user_id, created_by, team_id, domain, verification_token,
+       verified, verified_at, next_reverify_at, created_at)
+     VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      newId,
+      user.id,
+      user.id,
+      row.domain,
+      newToken,
+      row.verified,
+      row.verified_at ?? null,
+      row.next_reverify_at ?? null,
+      now,
+    )
+    .run();
+
+  return c.json({ id: newId, domain: row.domain, verified: !!row.verified });
 });
 
 async function verifiedTeamParentDomain(

@@ -180,6 +180,65 @@ app.post("/:id/transfer", async (c) => {
   return c.json({ message: "Domain transferred to team" });
 });
 
+// Share personal domain to a team (copy — source stays, target gets a new verified row)
+app.post("/:id/share", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE id = ? AND user_id = ? AND team_id IS NULL",
+  )
+    .bind(id, user.id)
+    .first<DomainRow>();
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+
+  const body = await c.req.json<{ team_id: string }>();
+  if (!body.team_id) return c.json({ error: "team_id is required" }, 400);
+
+  // Requester must be admin+ in the target team
+  const member = await c.env.DB.prepare(
+    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(body.team_id, user.id)
+    .first<{ role: string }>();
+  if (!member || (member.role !== "owner" && member.role !== "admin"))
+    return c.json({ error: "Forbidden: must be team admin or owner" }, 403);
+
+  // Target team must not already have this domain
+  const conflict = await c.env.DB.prepare(
+    "SELECT id FROM domains WHERE team_id = ? AND domain = ?",
+  )
+    .bind(body.team_id, row.domain)
+    .first();
+  if (conflict) return c.json({ error: "Team already has this domain" }, 409);
+
+  const newId = randomId();
+  const newToken = randomBase64url(24);
+  const now = Math.floor(Date.now() / 1000);
+
+  await c.env.DB.prepare(
+    `INSERT INTO domains
+      (id, user_id, created_by, team_id, domain, verification_token,
+       verified, verified_at, next_reverify_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      newId,
+      user.id,
+      user.id,
+      body.team_id,
+      row.domain,
+      newToken,
+      row.verified,
+      row.verified_at ?? null,
+      row.next_reverify_at ?? null,
+      now,
+    )
+    .run();
+
+  return c.json({ id: newId, domain: row.domain, verified: !!row.verified });
+});
+
 // Delete domain
 app.delete("/:id", async (c) => {
   const user = c.get("user");
@@ -210,7 +269,7 @@ async function verifiedParentDomain(
     const parent = parts.slice(i).join(".");
     const row = await db
       .prepare(
-        "SELECT domain FROM domains WHERE user_id = ? AND domain = ? AND verified = 1",
+        "SELECT domain FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL AND verified = 1",
       )
       .bind(userId, parent)
       .first<{ domain: string }>();
