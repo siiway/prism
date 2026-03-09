@@ -636,7 +636,11 @@
     "oauthIssuerUrlHint": "Provider issuer URL — used for OIDC auto-discovery",
     "oauthDiscover": "Discover",
     "oauthIssuerRequired": "Issuer URL is required to discover endpoints",
-    "oauthDiscoverFailed": "Discovery failed — check the issuer URL and try again"
+    "oauthDiscoverFailed": "Discovery failed — check the issuer URL and try again",
+    "oauthMigrateBanner": "Legacy OAuth credentials found in site settings ({{providers}}). Migrate them to OAuth Sources to enable multi-provider support.",
+    "oauthMigrateAction": "Migrate",
+    "oauthMigrated": "Migrated: {{providers}}",
+    "oauthMigrateAlreadyDone": "All legacy providers are already migrated."
   },
   "language": {
     "switchToZh": "中文",

@@ -647,10 +647,17 @@ export const api = {
 
   // OAuth sources
   adminListOAuthSources: () =>
-    request<{ sources: OAuthSource[] }>(
+    request<{ sources: OAuthSource[]; legacy_providers: string[] }>(
       "GET",
       "/admin/oauth-sources",
       undefined,
+      getToken(),
+    ),
+  adminMigrateOAuthSources: () =>
+    request<{ migrated: string[]; skipped: string[] }>(
+      "POST",
+      "/admin/oauth-sources/migrate",
+      {},
       getToken(),
     ),
   adminDiscoverOIDC: (issuer: string) =>

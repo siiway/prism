@@ -29,6 +29,7 @@ import {
 } from "@fluentui/react-components";
 import {
   AddRegular,
+  ArrowSyncRegular,
   DeleteRegular,
   EditRegular,
   SearchRegular,
@@ -127,6 +128,9 @@ export function AdminConnections() {
 
   const [deleteTarget, setDeleteTarget] = useState<OAuthSource | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "oauth-sources"],
@@ -259,12 +263,54 @@ export function AdminConnections() {
     }
   };
 
+  const handleMigrate = async () => {
+    setMigrating(true);
+    setMigrateResult(null);
+    try {
+      const res = await api.adminMigrateOAuthSources();
+      if (res.migrated.length > 0) {
+        setMigrateResult(
+          t("admin.oauthMigrated", { providers: res.migrated.join(", ") }),
+        );
+        qc.invalidateQueries({ queryKey: ["admin", "oauth-sources"] });
+        qc.invalidateQueries({ queryKey: ["site"] });
+      } else {
+        setMigrateResult(t("admin.oauthMigrateAlreadyDone"));
+      }
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   return (
     <div className={styles.section}>
       <Title3>{t("admin.oauthSources")}</Title3>
       <Text style={{ color: tokens.colorNeutralForeground3 }}>
         {t("admin.oauthSourcesHint")}
       </Text>
+
+      {/* Legacy migration banner */}
+      {data && data.legacy_providers.length > 0 && !migrateResult && (
+        <MessageBar intent="warning">
+          <span style={{ flex: 1 }}>
+            {t("admin.oauthMigrateBanner", {
+              providers: data.legacy_providers.join(", "),
+            })}
+          </span>
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={migrating ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+            disabled={migrating}
+            onClick={handleMigrate}
+          >
+            {t("admin.oauthMigrateAction")}
+          </Button>
+        </MessageBar>
+      )}
+      {migrateResult && (
+        <MessageBar intent="success">{migrateResult}</MessageBar>
+      )}
 
       {/* Create form */}
       <form onSubmit={handleCreate} className={styles.form}>

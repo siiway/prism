@@ -708,11 +708,28 @@ const VALID_PROVIDERS = new Set([
 ]);
 const GENERIC_PROVIDERS = new Set(["oidc", "oauth2"]);
 
+const LEGACY_PROVIDER_KEYS = [
+  { slug: "github", provider: "github", name: "GitHub" },
+  { slug: "google", provider: "google", name: "Google" },
+  { slug: "microsoft", provider: "microsoft", name: "Microsoft" },
+  { slug: "discord", provider: "discord", name: "Discord" },
+] as const;
+
 app.get("/oauth-sources", async (c) => {
-  const { results } = await c.env.DB.prepare(
-    "SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url FROM oauth_sources ORDER BY created_at ASC",
-  ).all<Omit<OAuthSourceRow, "client_id" | "client_secret">>();
-  return c.json({ sources: results });
+  const [{ results }, config] = await Promise.all([
+    c.env.DB.prepare(
+      "SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url FROM oauth_sources ORDER BY created_at ASC",
+    ).all<Omit<OAuthSourceRow, "client_id" | "client_secret">>(),
+    getConfig(c.env.DB),
+  ]);
+
+  const existingSlugs = new Set(results.map((r) => r.slug));
+  const cfg = config as unknown as Record<string, unknown>;
+  const legacy_providers = LEGACY_PROVIDER_KEYS.filter(
+    (p) => !!cfg[`${p.slug}_client_id`] && !existingSlugs.has(p.slug),
+  ).map((p) => p.slug);
+
+  return c.json({ sources: results, legacy_providers });
 });
 
 // ─── OIDC Discovery ───────────────────────────────────────────────────────────
@@ -771,6 +788,45 @@ app.get("/oauth-sources/discover", async (c) => {
     );
 
   return c.json({ auth_url, token_url, userinfo_url });
+});
+
+// ─── Migrate legacy site_config OAuth credentials to oauth_sources ─────────────
+
+app.post("/oauth-sources/migrate", async (c) => {
+  const config = await getConfig(c.env.DB);
+  const migrated: string[] = [];
+  const skipped: string[] = [];
+
+  const cfg = config as unknown as Record<string, unknown>;
+  for (const { slug, provider, name } of LEGACY_PROVIDER_KEYS) {
+    const clientId = cfg[`${slug}_client_id`] as string;
+    const clientSecret = cfg[`${slug}_client_secret`] as string;
+
+    if (!clientId) continue;
+
+    const existing = await c.env.DB.prepare(
+      "SELECT id FROM oauth_sources WHERE slug = ?",
+    )
+      .bind(slug)
+      .first();
+
+    if (existing) {
+      skipped.push(slug);
+      continue;
+    }
+
+    const id = randomId();
+    const now = Math.floor(Date.now() / 1000);
+    await c.env.DB.prepare(
+      "INSERT INTO oauth_sources (id, slug, provider, name, client_id, client_secret, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+    )
+      .bind(id, slug, provider, name, clientId, clientSecret ?? "", now)
+      .run();
+
+    migrated.push(slug);
+  }
+
+  return c.json({ migrated, skipped });
 });
 
 app.post("/oauth-sources", async (c) => {

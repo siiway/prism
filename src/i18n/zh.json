@@ -636,7 +636,11 @@
     "oauthIssuerUrlHint": "提供商 Issuer URL — 用于 OIDC 自动发现",
     "oauthDiscover": "自动发现",
     "oauthIssuerRequired": "需要 Issuer URL 才能发现端点",
-    "oauthDiscoverFailed": "发现失败 — 请检查 Issuer URL 后重试"
+    "oauthDiscoverFailed": "发现失败 — 请检查 Issuer URL 后重试",
+    "oauthMigrateBanner": "在站点设置中检测到旧版 OAuth 凭据（{{providers}}），将其迁移到 OAuth 来源以启用多提供商支持。",
+    "oauthMigrateAction": "迁移",
+    "oauthMigrated": "已迁移：{{providers}}",
+    "oauthMigrateAlreadyDone": "所有旧版提供商已迁移完成。"
   },
   "language": {
     "switchToZh": "中文",
