@@ -529,18 +529,42 @@ app.post("/revoke", async (c) => {
 
 // ─── Resource endpoints (OAuth-protected) ────────────────────────────────────
 
-/** Validate Bearer token and check for a required scope. Returns null on failure. */
+/** Validate Bearer token (OAuth access token or PAT) and check for a required scope. */
 async function resolveBearerToken(
   c: { req: { header(name: string): string | undefined }; env: Env },
   requiredScope: string,
 ): Promise<{ userId: string; scopes: string[] } | null> {
   const auth = c.req.header("Authorization");
   if (!auth?.startsWith("Bearer ")) return null;
+  const raw = auth.slice(7);
   const now = Math.floor(Date.now() / 1000);
+
+  // Personal Access Token (prism_pat_ prefix)
+  if (raw.startsWith("prism_pat_")) {
+    const pat = await c.env.DB.prepare(
+      "SELECT user_id, scopes, expires_at FROM personal_access_tokens WHERE token = ?",
+    )
+      .bind(raw)
+      .first<{ user_id: string; scopes: string; expires_at: number | null }>();
+    if (!pat) return null;
+    if (pat.expires_at !== null && pat.expires_at < now) return null;
+    const scopes = JSON.parse(pat.scopes) as string[];
+    if (!scopes.includes(requiredScope)) return null;
+    // Update last_used_at asynchronously (best-effort)
+    c.env.DB.prepare(
+      "UPDATE personal_access_tokens SET last_used_at = ? WHERE token = ?",
+    )
+      .bind(now, raw)
+      .run()
+      .catch(() => {});
+    return { userId: pat.user_id, scopes };
+  }
+
+  // Standard OAuth access token
   const tokenRow = await c.env.DB.prepare(
     "SELECT user_id, scopes, expires_at FROM oauth_tokens WHERE access_token = ?",
   )
-    .bind(auth.slice(7))
+    .bind(raw)
     .first<{ user_id: string; scopes: string; expires_at: number }>();
   if (!tokenRow || tokenRow.expires_at < now) return null;
   const scopes = JSON.parse(tokenRow.scopes) as string[];

@@ -170,3 +170,53 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 | `admin.user.delete`   | 管理员删除了用户      |
 
 每条记录包含操作的 `user_id`、`action`、可选的 `resource_type` / `resource_id`、`metadata` JSON 对象以及 `ip_address`。
+
+## OAuth 权限范围参考
+
+Prism 注册的 OAuth 应用和个人访问令牌可申请的所有权限范围：
+
+### 标准范围
+
+| 范围             | 说明                                                  |
+| ---------------- | ----------------------------------------------------- |
+| `openid`         | OIDC 身份——启用 `id_token` 和 `sub` 声明              |
+| `profile`        | 读取显示名称、用户名、头像                            |
+| `profile:write`  | 更新显示名称和头像                                    |
+| `email`          | 读取邮箱地址及验证状态                                |
+| `offline_access` | 颁发刷新令牌                                          |
+
+### 应用范围
+
+| 范围         | 说明                                    |
+| ------------ | --------------------------------------- |
+| `apps:read`  | 列出令牌所有者的 OAuth 应用             |
+| `apps:write` | 创建、更新和删除令牌所有者的 OAuth 应用 |
+
+### 团队范围
+
+| 范围           | 说明                             |
+| -------------- | -------------------------------- |
+| `teams:read`   | 查看团队成员身份和角色           |
+| `teams:create` | 创建新团队                       |
+| `teams:write`  | 更新团队设置；添加和移除成员     |
+| `teams:delete` | 删除团队（仅限所有者）           |
+
+### 域名范围
+
+| 范围            | 说明                                   |
+| --------------- | -------------------------------------- |
+| `domains:read`  | 列出已验证域名                         |
+| `domains:write` | 添加域名、触发 DNS 验证、移除域名      |
+
+### 管理员范围（要求令牌所有者 `role = admin`）
+
+| 范围                   | 说明                                                |
+| ---------------------- | --------------------------------------------------- |
+| `admin:users:read`     | 列出并查看所有用户账号                              |
+| `admin:users:write`    | 更新用户角色、状态、显示名称和头像                  |
+| `admin:users:delete`   | 永久删除用户账号                                    |
+| `admin:config:read`    | 读取全站配置（凭据字段已脱敏）                      |
+| `admin:config:write`   | 更新站点设置（注册策略、外观等）                    |
+| `admin:invites:read`   | 列出所有站点邀请链接                                |
+| `admin:invites:create` | 生成新的站点邀请链接                                |
+| `admin:invites:delete` | 撤销站点邀请链接                                    |

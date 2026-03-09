@@ -37,6 +37,7 @@
     "connections": "Connections",
     "linkedAccounts": "Linked Accounts",
     "connectedApps": "Connected Apps",
+    "tokens": "Access Tokens",
     "admin": "Admin",
     "adminPanel": "Admin Panel",
     "closeMenu": "Close menu",
@@ -426,6 +427,25 @@
     "disconnectDesc": "{{name}} will be disconnected from your account. ",
     "disconnectWarning": "Make sure you have another sign-in method available.",
     "disconnectAction": "Disconnect"
+  },
+  "tokens": {
+    "title": "Personal Access Tokens",
+    "subtitle": "Personal access tokens let you authenticate API requests with specific scopes. Treat them like passwords.",
+    "createToken": "New token",
+    "tokenCreated": "Token created",
+    "saveWarning": "Copy your token now — it will not be shown again.",
+    "tokenName": "Token name",
+    "tokenNamePlaceholder": "e.g. CI deploy script",
+    "expiry": "Expiration",
+    "scopes": "Scopes",
+    "generate": "Generate token",
+    "copied": "Copied!",
+    "revoke": "Revoke",
+    "noTokens": "No personal access tokens yet.",
+    "name": "Name",
+    "scopesCol": "Scopes",
+    "lastUsed": "Last used",
+    "expires": "Expires"
   },
   "connectedApps": {
     "title": "Connected Apps",

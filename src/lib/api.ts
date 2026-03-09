@@ -712,6 +712,39 @@ export const api = {
       undefined,
       getToken(),
     ),
+
+  // ─── Personal Access Tokens ───────────────────────────────────────────────
+  listTokens: () =>
+    request<{
+      tokens: {
+        id: string;
+        name: string;
+        scopes: string[];
+        expires_at: number | null;
+        last_used_at: number | null;
+        created_at: number;
+      }[];
+    }>("GET", "/user/tokens", undefined, getToken()),
+  createToken: (body: {
+    name: string;
+    scopes: string[];
+    expires_in_days?: number;
+  }) =>
+    request<{
+      id: string;
+      name: string;
+      token: string;
+      scopes: string[];
+      expires_at: number | null;
+      created_at: number;
+    }>("POST", "/user/tokens", body, getToken()),
+  revokeToken: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/user/tokens/${id}`,
+      undefined,
+      getToken(),
+    ),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────

@@ -299,6 +299,12 @@ export function Layout() {
           label={t("nav.domains")}
           onNavigate={closeSidebar}
         />
+        <NavItem
+          to="/tokens"
+          icon={<KeyRegular />}
+          label={t("nav.tokens")}
+          onNavigate={closeSidebar}
+        />
 
         <div className={styles.navSection}>{t("nav.connections")}</div>
         <NavItem

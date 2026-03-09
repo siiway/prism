@@ -37,6 +37,7 @@
     "connections": "连接",
     "linkedAccounts": "关联账号",
     "connectedApps": "已授权应用",
+    "tokens": "访问令牌",
     "admin": "管理员",
     "adminPanel": "管理面板",
     "closeMenu": "关闭菜单",
@@ -426,6 +427,25 @@
     "disconnectDesc": "{{name}} 将从您的账号断开连接。",
     "disconnectWarning": "请确保您有其他登录方式可用。",
     "disconnectAction": "断开连接"
+  },
+  "tokens": {
+    "title": "个人访问令牌",
+    "subtitle": "个人访问令牌允许您以特定权限范围进行 API 请求鉴权。请像密码一样妥善保管。",
+    "createToken": "新建令牌",
+    "tokenCreated": "令牌已创建",
+    "saveWarning": "请立即复制您的令牌——此后将不再显示。",
+    "tokenName": "令牌名称",
+    "tokenNamePlaceholder": "例如：CI 部署脚本",
+    "expiry": "有效期",
+    "scopes": "权限范围",
+    "generate": "生成令牌",
+    "copied": "已复制！",
+    "revoke": "撤销",
+    "noTokens": "暂无个人访问令牌。",
+    "name": "名称",
+    "scopesCol": "权限范围",
+    "lastUsed": "最后使用",
+    "expires": "到期时间"
   },
   "connectedApps": {
     "title": "已授权应用",

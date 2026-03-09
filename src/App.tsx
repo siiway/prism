@@ -43,6 +43,7 @@ import { AdminConnections } from "./pages/admin/AdminConnections";
 import { TeamList } from "./pages/teams/TeamList";
 import { TeamDetail } from "./pages/teams/TeamDetail";
 import { TeamJoin } from "./pages/teams/TeamJoin";
+import { Tokens } from "./pages/Tokens";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -167,6 +168,7 @@ export default function App() {
               <Route path="domains" element={<Domains />} />
               <Route path="connections" element={<Connections />} />
               <Route path="connected-apps" element={<ConnectedApps />} />
+              <Route path="tokens" element={<Tokens />} />
 
               {/* Admin */}
               <Route

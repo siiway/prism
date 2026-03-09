@@ -1,7 +1,12 @@
 // User profile routes
 
 import { Hono } from "hono";
-import { hashPassword, verifyPassword } from "../lib/crypto";
+import {
+  hashPassword,
+  verifyPassword,
+  randomId,
+  randomBase64url,
+} from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
 import type { UserRow, Variables } from "../types";
@@ -201,5 +206,130 @@ function safeUser(row: UserRow) {
     created_at: row.created_at,
   };
 }
+
+// ─── Personal Access Tokens ───────────────────────────────────────────────────
+
+const VALID_PAT_SCOPES = new Set([
+  "openid",
+  "profile",
+  "profile:write",
+  "email",
+  "apps:read",
+  "apps:write",
+  "teams:read",
+  "teams:write",
+  "teams:create",
+  "teams:delete",
+  "domains:read",
+  "domains:write",
+  "admin:users:read",
+  "admin:users:write",
+  "admin:users:delete",
+  "admin:config:read",
+  "admin:config:write",
+  "admin:invites:read",
+  "admin:invites:create",
+  "admin:invites:delete",
+  "offline_access",
+]);
+
+// GET /api/user/tokens — list own PATs
+app.get("/tokens", async (c) => {
+  const user = c.get("user");
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, name, scopes, expires_at, last_used_at, created_at
+     FROM personal_access_tokens
+     WHERE user_id = ?
+     ORDER BY created_at DESC`,
+  )
+    .bind(user.id)
+    .all<{
+      id: string;
+      name: string;
+      scopes: string;
+      expires_at: number | null;
+      last_used_at: number | null;
+      created_at: number;
+    }>();
+
+  return c.json({
+    tokens: results.map((r) => ({
+      ...r,
+      scopes: JSON.parse(r.scopes) as string[],
+    })),
+  });
+});
+
+// POST /api/user/tokens — create a PAT
+app.post("/tokens", async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{
+    name: string;
+    scopes: string[];
+    expires_in_days?: number;
+  }>();
+
+  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+  if (!Array.isArray(body.scopes) || body.scopes.length === 0)
+    return c.json({ error: "scopes is required" }, 400);
+
+  const scopes = body.scopes.filter((s) => VALID_PAT_SCOPES.has(s));
+  if (scopes.length === 0)
+    return c.json({ error: "No valid scopes provided" }, 400);
+
+  const id = randomId();
+  const token = `prism_pat_${randomBase64url(48)}`;
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = body.expires_in_days
+    ? now + body.expires_in_days * 86400
+    : null;
+
+  await c.env.DB.prepare(
+    `INSERT INTO personal_access_tokens (id, user_id, name, token, scopes, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      id,
+      user.id,
+      body.name.trim(),
+      token,
+      JSON.stringify(scopes),
+      expiresAt,
+      now,
+    )
+    .run();
+
+  return c.json(
+    {
+      id,
+      name: body.name.trim(),
+      token,
+      scopes,
+      expires_at: expiresAt,
+      created_at: now,
+    },
+    201,
+  );
+});
+
+// DELETE /api/user/tokens/:id — revoke a PAT
+app.delete("/tokens/:id", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const row = await c.env.DB.prepare(
+    "SELECT id FROM personal_access_tokens WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, user.id)
+    .first();
+
+  if (!row) return c.json({ error: "Token not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM personal_access_tokens WHERE id = ?")
+    .bind(id)
+    .run();
+
+  return c.json({ message: "Token revoked" });
+});
 
 export default app;
