@@ -171,9 +171,73 @@ export function Authorize() {
       label: t("oauth.scopeEmailLabel"),
       desc: t("oauth.scopeEmailDesc"),
     },
+    "profile:write": {
+      label: t("oauth.scopeProfileWriteLabel"),
+      desc: t("oauth.scopeProfileWriteDesc"),
+    },
     "apps:read": {
       label: t("oauth.scopeAppsLabel"),
       desc: t("oauth.scopeAppsDesc"),
+    },
+    "apps:write": {
+      label: t("oauth.scopeAppsWriteLabel"),
+      desc: t("oauth.scopeAppsWriteDesc"),
+    },
+    "teams:read": {
+      label: t("oauth.scopeTeamsLabel"),
+      desc: t("oauth.scopeTeamsDesc"),
+    },
+    "teams:write": {
+      label: t("oauth.scopeTeamsWriteLabel"),
+      desc: t("oauth.scopeTeamsWriteDesc"),
+    },
+    "teams:create": {
+      label: t("oauth.scopeTeamsCreateLabel"),
+      desc: t("oauth.scopeTeamsCreateDesc"),
+    },
+    "teams:delete": {
+      label: t("oauth.scopeTeamsDeleteLabel"),
+      desc: t("oauth.scopeTeamsDeleteDesc"),
+    },
+    "domains:read": {
+      label: t("oauth.scopeDomainsLabel"),
+      desc: t("oauth.scopeDomainsDesc"),
+    },
+    "domains:write": {
+      label: t("oauth.scopeDomainsWriteLabel"),
+      desc: t("oauth.scopeDomainsWriteDesc"),
+    },
+    "admin:users:read": {
+      label: t("oauth.scopeAdminUsersReadLabel"),
+      desc: t("oauth.scopeAdminUsersReadDesc"),
+    },
+    "admin:users:write": {
+      label: t("oauth.scopeAdminUsersWriteLabel"),
+      desc: t("oauth.scopeAdminUsersWriteDesc"),
+    },
+    "admin:users:delete": {
+      label: t("oauth.scopeAdminUsersDeleteLabel"),
+      desc: t("oauth.scopeAdminUsersDeleteDesc"),
+    },
+    "admin:config:read": {
+      label: t("oauth.scopeAdminConfigReadLabel"),
+      desc: t("oauth.scopeAdminConfigReadDesc"),
+    },
+    "admin:config:write": {
+      label: t("oauth.scopeAdminConfigWriteLabel"),
+      desc: t("oauth.scopeAdminConfigWriteDesc"),
+    },
+    "admin:invites:read": {
+      label: t("oauth.scopeAdminInvitesReadLabel"),
+      desc: t("oauth.scopeAdminInvitesReadDesc"),
+    },
+    "admin:invites:create": {
+      label: t("oauth.scopeAdminInvitesCreateLabel"),
+      desc: t("oauth.scopeAdminInvitesCreateDesc"),
+    },
+    "admin:invites:delete": {
+      label: t("oauth.scopeAdminInvitesDeleteLabel"),
+      desc: t("oauth.scopeAdminInvitesDeleteDesc"),
     },
     offline_access: {
       label: t("oauth.scopeOfflineLabel"),

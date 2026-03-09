@@ -68,7 +68,29 @@ const useStyles = makeStyles({
   scopeGrid: { display: "flex", flexWrap: "wrap", gap: "8px" },
 });
 
-const SCOPES = ["openid", "profile", "email", "apps:read", "offline_access"];
+const SCOPES = [
+  "openid",
+  "profile",
+  "profile:write",
+  "email",
+  "apps:read",
+  "apps:write",
+  "teams:read",
+  "teams:write",
+  "teams:create",
+  "teams:delete",
+  "domains:read",
+  "domains:write",
+  "admin:users:read",
+  "admin:users:write",
+  "admin:users:delete",
+  "admin:config:read",
+  "admin:config:write",
+  "admin:invites:read",
+  "admin:invites:create",
+  "admin:invites:delete",
+  "offline_access",
+];
 
 export function AppDetail() {
   const styles = useStyles();

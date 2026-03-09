@@ -23,8 +23,24 @@ const app = new Hono<AppEnv>();
 const VALID_SCOPES = new Set([
   "openid",
   "profile",
+  "profile:write",
   "email",
   "apps:read",
+  "apps:write",
+  "teams:read",
+  "teams:write",
+  "teams:create",
+  "teams:delete",
+  "domains:read",
+  "domains:write",
+  "admin:users:read",
+  "admin:users:write",
+  "admin:users:delete",
+  "admin:config:read",
+  "admin:config:write",
+  "admin:invites:read",
+  "admin:invites:create",
+  "admin:invites:delete",
   "offline_access",
 ]);
 
@@ -509,6 +525,1019 @@ app.post("/revoke", async (c) => {
       .run();
   }
   return new Response(null, { status: 200 });
+});
+
+// ─── Resource endpoints (OAuth-protected) ────────────────────────────────────
+
+/** Validate Bearer token and check for a required scope. Returns null on failure. */
+async function resolveBearerToken(
+  c: { req: { header(name: string): string | undefined }; env: Env },
+  requiredScope: string,
+): Promise<{ userId: string; scopes: string[] } | null> {
+  const auth = c.req.header("Authorization");
+  if (!auth?.startsWith("Bearer ")) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const tokenRow = await c.env.DB.prepare(
+    "SELECT user_id, scopes, expires_at FROM oauth_tokens WHERE access_token = ?",
+  )
+    .bind(auth.slice(7))
+    .first<{ user_id: string; scopes: string; expires_at: number }>();
+  if (!tokenRow || tokenRow.expires_at < now) return null;
+  const scopes = JSON.parse(tokenRow.scopes) as string[];
+  if (!scopes.includes(requiredScope)) return null;
+  return { userId: tokenRow.user_id, scopes };
+}
+
+// GET /api/oauth/me/apps — list the token owner's OAuth apps (requires apps:read)
+app.get("/me/apps", async (c) => {
+  const resolved = await resolveBearerToken(c, "apps:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, name, client_id, description, icon_url, website_url, is_public, enabled, created_at
+     FROM oauth_apps WHERE owner_id = ? ORDER BY created_at DESC`,
+  )
+    .bind(resolved.userId)
+    .all<{
+      id: string;
+      name: string;
+      client_id: string;
+      description: string | null;
+      icon_url: string | null;
+      website_url: string | null;
+      is_public: number;
+      enabled: number;
+      created_at: number;
+    }>();
+
+  return c.json({ apps: results });
+});
+
+// GET /api/oauth/me/teams — list the token owner's team memberships (requires teams:read)
+app.get("/me/teams", async (c) => {
+  const resolved = await resolveBearerToken(c, "teams:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT t.id, t.name, t.description, t.avatar_url, t.created_at,
+            tm.role, tm.joined_at
+     FROM team_members tm
+     JOIN teams t ON t.id = tm.team_id
+     WHERE tm.user_id = ?
+     ORDER BY tm.joined_at DESC`,
+  )
+    .bind(resolved.userId)
+    .all<{
+      id: string;
+      name: string;
+      description: string | null;
+      avatar_url: string | null;
+      created_at: number;
+      role: string;
+      joined_at: number;
+    }>();
+
+  return c.json({ teams: results });
+});
+
+// GET /api/oauth/me/domains — list the token owner's verified domains (requires domains:read)
+app.get("/me/domains", async (c) => {
+  const resolved = await resolveBearerToken(c, "domains:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT domain, verified_at, next_reverify_at, created_at
+     FROM domains
+     WHERE user_id = ? AND verified = 1
+     ORDER BY verified_at DESC`,
+  )
+    .bind(resolved.userId)
+    .all<{
+      domain: string;
+      verified_at: number | null;
+      next_reverify_at: number | null;
+      created_at: number;
+    }>();
+
+  return c.json({ domains: results });
+});
+
+// POST /api/oauth/me/teams — create a team (requires teams:create)
+app.post("/me/teams", async (c) => {
+  const resolved = await resolveBearerToken(c, "teams:create");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<{
+    name: string;
+    description?: string;
+    avatar_url?: string;
+  }>();
+  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+
+  const id = randomId();
+  const now = Math.floor(Date.now() / 1000);
+
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "INSERT INTO teams (id, name, description, avatar_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).bind(
+      id,
+      body.name.trim(),
+      body.description ?? "",
+      body.avatar_url ?? null,
+      now,
+      now,
+    ),
+    c.env.DB.prepare(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
+    ).bind(id, resolved.userId, now),
+  ]);
+
+  const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
+    .bind(id)
+    .first();
+
+  return c.json({ team: { ...team, role: "owner" } }, 201);
+});
+
+// PATCH /api/oauth/me/teams/:id — update team settings (requires teams:write, owner or admin)
+app.patch("/me/teams/:id", async (c) => {
+  const resolved = await resolveBearerToken(c, "teams:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const teamId = c.req.param("id");
+  const member = await c.env.DB.prepare(
+    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(teamId, resolved.userId)
+    .first<{ role: string }>();
+
+  if (!member || !["owner", "admin"].includes(member.role))
+    return c.json({ error: "Forbidden" }, 403);
+
+  const body = await c.req.json<{
+    name?: string;
+    description?: string;
+    avatar_url?: string;
+  }>();
+
+  const now = Math.floor(Date.now() / 1000);
+  const updates: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.name !== undefined) {
+    updates.push("name = ?");
+    values.push(body.name.trim());
+  }
+  if (body.description !== undefined) {
+    updates.push("description = ?");
+    values.push(body.description);
+  }
+  if (body.avatar_url !== undefined) {
+    updates.push("avatar_url = ?");
+    values.push(body.avatar_url || null);
+  }
+
+  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+
+  updates.push("updated_at = ?");
+  values.push(now, teamId);
+
+  await c.env.DB.prepare(`UPDATE teams SET ${updates.join(", ")} WHERE id = ?`)
+    .bind(...values)
+    .run();
+
+  const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
+    .bind(teamId)
+    .first();
+
+  return c.json({ team });
+});
+
+// DELETE /api/oauth/me/teams/:id — delete a team (requires teams:delete, owner only)
+app.delete("/me/teams/:id", async (c) => {
+  const resolved = await resolveBearerToken(c, "teams:delete");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const teamId = c.req.param("id");
+  const member = await c.env.DB.prepare(
+    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(teamId, resolved.userId)
+    .first<{ role: string }>();
+
+  if (!member || member.role !== "owner")
+    return c.json({ error: "Only the team owner can delete the team" }, 403);
+
+  // Disown team apps (hand back to creator)
+  await c.env.DB.prepare(
+    "UPDATE oauth_apps SET team_id = NULL WHERE team_id = ?",
+  )
+    .bind(teamId)
+    .run();
+
+  await c.env.DB.prepare("DELETE FROM teams WHERE id = ?").bind(teamId).run();
+
+  return c.json({ message: "Team deleted" });
+});
+
+// POST /api/oauth/me/domains — add a domain for verification (requires domains:write)
+app.post("/me/domains", async (c) => {
+  const resolved = await resolveBearerToken(c, "domains:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<{ domain: string }>();
+  if (!body.domain) return c.json({ error: "domain is required" }, 400);
+
+  const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
+  if (!domainRegex.test(body.domain))
+    return c.json({ error: "Invalid domain format" }, 400);
+
+  const domain = body.domain.toLowerCase().trim();
+
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM domains WHERE user_id = ? AND domain = ?",
+  )
+    .bind(resolved.userId, domain)
+    .first();
+  if (existing) return c.json({ error: "Domain already added" }, 409);
+
+  const verificationToken = randomBase64url(24);
+  const id = randomId();
+  const now = Math.floor(Date.now() / 1000);
+
+  await c.env.DB.prepare(
+    "INSERT INTO domains (id, user_id, domain, verification_token, created_at) VALUES (?, ?, ?, ?, ?)",
+  )
+    .bind(id, resolved.userId, domain, verificationToken, now)
+    .run();
+
+  return c.json(
+    {
+      id,
+      domain,
+      verification_token: verificationToken,
+      txt_record: `_prism-verify.${domain}`,
+      txt_value: `prism-verify=${verificationToken}`,
+    },
+    201,
+  );
+});
+
+// DELETE /api/oauth/me/domains/:domain — remove a domain (requires domains:write)
+app.delete("/me/domains/:domain", async (c) => {
+  const resolved = await resolveBearerToken(c, "domains:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const domain = c.req.param("domain");
+  const row = await c.env.DB.prepare(
+    "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
+  )
+    .bind(resolved.userId, domain)
+    .first();
+
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM domains WHERE id = ?")
+    .bind((row as { id: string }).id)
+    .run();
+
+  return c.json({ message: "Domain removed" });
+});
+
+// POST /api/oauth/me/invites — create a site invite (requires admin:invites:create, admin only)
+app.post("/me/invites", async (c) => {
+  const resolved = await resolveBearerToken(c, "admin:invites:create");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const user = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
+    .bind(resolved.userId)
+    .first<{ role: string }>();
+
+  if (!user || user.role !== "admin")
+    return c.json({ error: "Admin role required" }, 403);
+
+  const body = await c.req.json<{
+    email?: string;
+    note?: string;
+    max_uses?: number;
+    expires_in_days?: number;
+  }>();
+
+  const now = Math.floor(Date.now() / 1000);
+  const id = randomId();
+  const token = randomBase64url(24);
+  const expiresAt = body.expires_in_days
+    ? now + body.expires_in_days * 86400
+    : null;
+
+  await c.env.DB.prepare(
+    `INSERT INTO site_invites (id, token, email, note, max_uses, use_count, created_by, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+  )
+    .bind(
+      id,
+      token,
+      body.email?.toLowerCase().trim() ?? null,
+      body.note ?? null,
+      body.max_uses ?? null,
+      resolved.userId,
+      expiresAt,
+      now,
+    )
+    .run();
+
+  const inviteUrl = `${c.env.APP_URL}/register?invite=${token}`;
+
+  return c.json(
+    { id, token, invite_url: inviteUrl, expires_at: expiresAt },
+    201,
+  );
+});
+
+// GET /api/oauth/me/invites — list site invites (requires admin:invites:read, admin only)
+app.get("/me/invites", async (c) => {
+  const resolved = await resolveBearerToken(c, "admin:invites:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const user = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
+    .bind(resolved.userId)
+    .first<{ role: string }>();
+  if (!user || user.role !== "admin")
+    return c.json({ error: "Admin role required" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT i.id, i.token, i.email, i.note, i.max_uses, i.use_count,
+            i.created_by, i.expires_at, i.created_at,
+            u.username AS created_by_username
+     FROM site_invites i
+     LEFT JOIN users u ON u.id = i.created_by
+     ORDER BY i.created_at DESC`,
+  ).all();
+
+  return c.json({ invites: results });
+});
+
+// DELETE /api/oauth/me/invites/:id — revoke an invite (requires admin:invites:delete, admin only)
+app.delete("/me/invites/:id", async (c) => {
+  const resolved = await resolveBearerToken(c, "admin:invites:delete");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const user = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
+    .bind(resolved.userId)
+    .first<{ role: string }>();
+  if (!user || user.role !== "admin")
+    return c.json({ error: "Admin role required" }, 403);
+
+  const invite = await c.env.DB.prepare(
+    "SELECT id FROM site_invites WHERE id = ?",
+  )
+    .bind(c.req.param("id"))
+    .first();
+  if (!invite) return c.json({ error: "Invite not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM site_invites WHERE id = ?")
+    .bind(c.req.param("id"))
+    .run();
+
+  return c.json({ message: "Invite revoked" });
+});
+
+// GET /api/oauth/me/profile — read own profile (requires profile scope)
+app.get("/me/profile", async (c) => {
+  const resolved = await resolveBearerToken(c, "profile");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, username, display_name, avatar_url, email, email_verified, role, created_at FROM users WHERE id = ?",
+  )
+    .bind(resolved.userId)
+    .first<{
+      id: string;
+      username: string;
+      display_name: string;
+      avatar_url: string | null;
+      email: string;
+      email_verified: number;
+      role: string;
+      created_at: number;
+    }>();
+
+  if (!user) return c.json({ error: "User not found" }, 404);
+
+  return c.json({
+    id: user.id,
+    username: user.username,
+    display_name: user.display_name,
+    avatar_url: user.avatar_url,
+    email: resolved.scopes.includes("email") ? user.email : undefined,
+    email_verified: resolved.scopes.includes("email")
+      ? user.email_verified === 1
+      : undefined,
+    role: user.role,
+    created_at: user.created_at,
+  });
+});
+
+// PATCH /api/oauth/me/profile — update own profile (requires profile:write)
+app.patch("/me/profile", async (c) => {
+  const resolved = await resolveBearerToken(c, "profile:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<{
+    display_name?: string;
+    avatar_url?: string | null;
+  }>();
+
+  const now = Math.floor(Date.now() / 1000);
+  const updates: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.display_name !== undefined) {
+    if (!body.display_name.trim())
+      return c.json({ error: "display_name cannot be empty" }, 400);
+    updates.push("display_name = ?");
+    values.push(body.display_name.trim());
+  }
+  if ("avatar_url" in body) {
+    updates.push("avatar_url = ?");
+    values.push(body.avatar_url ?? null);
+  }
+
+  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+
+  updates.push("updated_at = ?");
+  values.push(now, resolved.userId);
+
+  await c.env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
+    .bind(...values)
+    .run();
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, username, display_name, avatar_url, role FROM users WHERE id = ?",
+  )
+    .bind(resolved.userId)
+    .first();
+
+  return c.json({ user });
+});
+
+// POST /api/oauth/me/apps — create an OAuth app (requires apps:write)
+app.post("/me/apps", async (c) => {
+  const resolved = await resolveBearerToken(c, "apps:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<{
+    name: string;
+    description?: string;
+    website_url?: string;
+    redirect_uris: string[];
+    allowed_scopes?: string[];
+    is_public?: boolean;
+  }>();
+
+  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+  if (!Array.isArray(body.redirect_uris) || body.redirect_uris.length === 0)
+    return c.json({ error: "redirect_uris is required" }, 400);
+
+  for (const uri of body.redirect_uris) {
+    try {
+      new URL(uri);
+    } catch {
+      return c.json({ error: `Invalid redirect_uri: ${uri}` }, 400);
+    }
+  }
+
+  const allowedScopes = (
+    body.allowed_scopes ?? ["openid", "profile", "email"]
+  ).filter((s) => VALID_SCOPES.has(s));
+
+  const id = randomId();
+  const clientId = `prism_${randomBase64url(16)}`;
+  const clientSecret = randomBase64url(32);
+  const now = Math.floor(Date.now() / 1000);
+
+  await c.env.DB.prepare(
+    `INSERT INTO oauth_apps
+       (id, owner_id, name, description, website_url, client_id, client_secret,
+        redirect_uris, allowed_scopes, is_public, is_active, is_verified, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
+  )
+    .bind(
+      id,
+      resolved.userId,
+      body.name.trim(),
+      body.description ?? "",
+      body.website_url ?? null,
+      clientId,
+      clientSecret,
+      JSON.stringify(body.redirect_uris),
+      JSON.stringify(allowedScopes),
+      body.is_public ? 1 : 0,
+      now,
+      now,
+    )
+    .run();
+
+  return c.json(
+    {
+      id,
+      client_id: clientId,
+      client_secret: clientSecret,
+      name: body.name.trim(),
+      description: body.description ?? "",
+      website_url: body.website_url ?? null,
+      redirect_uris: body.redirect_uris,
+      allowed_scopes: allowedScopes,
+      is_public: !!body.is_public,
+      created_at: now,
+    },
+    201,
+  );
+});
+
+// PATCH /api/oauth/me/apps/:id — update own OAuth app (requires apps:write)
+app.patch("/me/apps/:id", async (c) => {
+  const resolved = await resolveBearerToken(c, "apps:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const appId = c.req.param("id");
+  const appRow = await c.env.DB.prepare(
+    "SELECT id, owner_id FROM oauth_apps WHERE id = ?",
+  )
+    .bind(appId)
+    .first<{ id: string; owner_id: string }>();
+
+  if (!appRow) return c.json({ error: "App not found" }, 404);
+  if (appRow.owner_id !== resolved.userId)
+    return c.json({ error: "Forbidden" }, 403);
+
+  const body = await c.req.json<{
+    name?: string;
+    description?: string;
+    website_url?: string | null;
+    redirect_uris?: string[];
+    allowed_scopes?: string[];
+    is_public?: boolean;
+  }>();
+
+  const now = Math.floor(Date.now() / 1000);
+  const updates: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.name !== undefined) {
+    updates.push("name = ?");
+    values.push(body.name.trim());
+  }
+  if (body.description !== undefined) {
+    updates.push("description = ?");
+    values.push(body.description);
+  }
+  if ("website_url" in body) {
+    updates.push("website_url = ?");
+    values.push(body.website_url ?? null);
+  }
+  if (body.redirect_uris !== undefined) {
+    for (const uri of body.redirect_uris) {
+      try {
+        new URL(uri);
+      } catch {
+        return c.json({ error: `Invalid redirect_uri: ${uri}` }, 400);
+      }
+    }
+    updates.push("redirect_uris = ?");
+    values.push(JSON.stringify(body.redirect_uris));
+  }
+  if (body.allowed_scopes !== undefined) {
+    updates.push("allowed_scopes = ?");
+    values.push(
+      JSON.stringify(body.allowed_scopes.filter((s) => VALID_SCOPES.has(s))),
+    );
+  }
+  if (body.is_public !== undefined) {
+    updates.push("is_public = ?");
+    values.push(body.is_public ? 1 : 0);
+  }
+
+  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+
+  updates.push("updated_at = ?");
+  values.push(now, appId);
+
+  await c.env.DB.prepare(
+    `UPDATE oauth_apps SET ${updates.join(", ")} WHERE id = ?`,
+  )
+    .bind(...values)
+    .run();
+
+  const updated = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE id = ?",
+  )
+    .bind(appId)
+    .first<OAuthAppRow>();
+
+  return c.json({ app: updated });
+});
+
+// DELETE /api/oauth/me/apps/:id — delete own OAuth app (requires apps:write)
+app.delete("/me/apps/:id", async (c) => {
+  const resolved = await resolveBearerToken(c, "apps:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const appId = c.req.param("id");
+  const appRow = await c.env.DB.prepare(
+    "SELECT id, owner_id FROM oauth_apps WHERE id = ?",
+  )
+    .bind(appId)
+    .first<{ id: string; owner_id: string }>();
+
+  if (!appRow) return c.json({ error: "App not found" }, 404);
+  if (appRow.owner_id !== resolved.userId)
+    return c.json({ error: "Forbidden" }, 403);
+
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "DELETE FROM oauth_tokens WHERE client_id = (SELECT client_id FROM oauth_apps WHERE id = ?)",
+    ).bind(appId),
+    c.env.DB.prepare(
+      "DELETE FROM oauth_consents WHERE client_id = (SELECT client_id FROM oauth_apps WHERE id = ?)",
+    ).bind(appId),
+    c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?").bind(appId),
+  ]);
+
+  return c.json({ message: "App deleted" });
+});
+
+// POST /api/oauth/me/domains/:domain/verify — trigger DNS re-check (requires domains:write)
+app.post("/me/domains/:domain/verify", async (c) => {
+  const resolved = await resolveBearerToken(c, "domains:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const domain = c.req.param("domain");
+  const row = await c.env.DB.prepare(
+    "SELECT id, verification_token, verified FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
+  )
+    .bind(resolved.userId, domain)
+    .first<{ id: string; verification_token: string; verified: number }>();
+
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (row.verified === 1)
+    return c.json({ message: "Already verified", verified: true });
+
+  // DNS TXT lookup via Cloudflare DNS-over-HTTPS
+  let verified = false;
+  try {
+    const resp = await fetch(
+      `https://cloudflare-dns.com/dns-query?name=_prism-verify.${domain}&type=TXT`,
+      { headers: { Accept: "application/dns-json" } },
+    );
+    const data = await resp.json<{ Answer?: { data: string }[] }>();
+    const expected = `"prism-verify=${row.verification_token}"`;
+    verified = (data.Answer ?? []).some(
+      (a) => a.data === expected || a.data === expected.slice(1, -1),
+    );
+  } catch {
+    return c.json({ error: "DNS lookup failed" }, 502);
+  }
+
+  if (!verified)
+    return c.json({ error: "TXT record not found", verified: false }, 422);
+
+  const now = Math.floor(Date.now() / 1000);
+  const config = await import("../lib/config").then((m) =>
+    m.getConfig(c.env.DB),
+  );
+  const reverifyDays = config.domain_reverify_days ?? 30;
+
+  await c.env.DB.prepare(
+    "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+  )
+    .bind(now, now + reverifyDays * 86400, row.id)
+    .run();
+
+  return c.json({ verified: true, verified_at: now });
+});
+
+// POST /api/oauth/me/teams/:id/members — add a team member (requires teams:write, owner or admin)
+app.post("/me/teams/:id/members", async (c) => {
+  const resolved = await resolveBearerToken(c, "teams:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const teamId = c.req.param("id");
+  const caller = await c.env.DB.prepare(
+    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(teamId, resolved.userId)
+    .first<{ role: string }>();
+
+  if (!caller || !["owner", "admin"].includes(caller.role))
+    return c.json({ error: "Forbidden" }, 403);
+
+  const body = await c.req.json<{
+    username: string;
+    role?: "admin" | "member";
+  }>();
+  if (!body.username) return c.json({ error: "username is required" }, 400);
+
+  const targetUser = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE username = ? AND is_active = 1",
+  )
+    .bind(body.username.toLowerCase().trim())
+    .first<{ id: string }>();
+
+  if (!targetUser) return c.json({ error: "User not found" }, 404);
+
+  const alreadyMember = await c.env.DB.prepare(
+    "SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(teamId, targetUser.id)
+    .first();
+
+  if (alreadyMember)
+    return c.json({ error: "User is already a team member" }, 409);
+
+  // Only owners can add admins
+  const role =
+    body.role === "admin" && caller.role === "owner" ? "admin" : "member";
+  const now = Math.floor(Date.now() / 1000);
+
+  await c.env.DB.prepare(
+    "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+  )
+    .bind(teamId, targetUser.id, role, now)
+    .run();
+
+  return c.json({ user_id: targetUser.id, role, joined_at: now }, 201);
+});
+
+// DELETE /api/oauth/me/teams/:id/members/:userId — remove a team member (requires teams:write, owner or admin)
+app.delete("/me/teams/:id/members/:userId", async (c) => {
+  const resolved = await resolveBearerToken(c, "teams:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const teamId = c.req.param("id");
+  const targetUserId = c.req.param("userId");
+
+  const caller = await c.env.DB.prepare(
+    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(teamId, resolved.userId)
+    .first<{ role: string }>();
+
+  if (!caller || !["owner", "admin"].includes(caller.role))
+    return c.json({ error: "Forbidden" }, 403);
+
+  const target = await c.env.DB.prepare(
+    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(teamId, targetUserId)
+    .first<{ role: string }>();
+
+  if (!target) return c.json({ error: "Member not found" }, 404);
+
+  // Admins cannot remove owners or other admins
+  if (caller.role === "admin" && target.role !== "member")
+    return c.json({ error: "Admins can only remove regular members" }, 403);
+
+  // Owners cannot remove themselves via this endpoint
+  if (targetUserId === resolved.userId && target.role === "owner")
+    return c.json({ error: "Owner cannot remove themselves" }, 403);
+
+  await c.env.DB.prepare(
+    "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(teamId, targetUserId)
+    .run();
+
+  return c.json({ message: "Member removed" });
+});
+
+// ─── Admin resource endpoints (token owner must have role = 'admin') ─────────
+
+/** Ensure the token owner is a site admin. Returns the user row or null. */
+async function requireAdminToken(
+  c: { req: { header(name: string): string | undefined }; env: Env },
+  requiredScope: string,
+): Promise<{ userId: string; scopes: string[] } | null> {
+  const resolved = await resolveBearerToken(c, requiredScope);
+  if (!resolved) return null;
+  const user = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
+    .bind(resolved.userId)
+    .first<{ role: string }>();
+  if (!user || user.role !== "admin") return null;
+  return resolved;
+}
+
+// GET /api/oauth/me/admin/users — list all users (requires admin:users:read)
+app.get("/me/admin/users", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:users:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { page = "1", limit = "50", q } = c.req.query();
+  const pageNum = Math.max(1, parseInt(page, 10));
+  const pageSize = Math.min(100, Math.max(1, parseInt(limit, 10)));
+  const offset = (pageNum - 1) * pageSize;
+
+  let query =
+    "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users";
+  const binds: unknown[] = [];
+
+  if (q) {
+    query += " WHERE (username LIKE ? OR email LIKE ? OR display_name LIKE ?)";
+    const like = `%${q}%`;
+    binds.push(like, like, like);
+  }
+
+  query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+  binds.push(pageSize, offset);
+
+  const { results } = await c.env.DB.prepare(query)
+    .bind(...binds)
+    .all();
+
+  const countQuery = q
+    ? "SELECT COUNT(*) AS total FROM users WHERE username LIKE ? OR email LIKE ? OR display_name LIKE ?"
+    : "SELECT COUNT(*) AS total FROM users";
+  const countBinds = q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [];
+  const countRow = await c.env.DB.prepare(countQuery)
+    .bind(...countBinds)
+    .first<{ total: number }>();
+
+  return c.json({
+    users: results,
+    total: countRow?.total ?? 0,
+    page: pageNum,
+    limit: pageSize,
+  });
+});
+
+// GET /api/oauth/me/admin/users/:id — get a user by id (requires admin:users:read)
+app.get("/me/admin/users/:id", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:users:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users WHERE id = ?",
+  )
+    .bind(c.req.param("id"))
+    .first();
+
+  if (!user) return c.json({ error: "User not found" }, 404);
+  return c.json({ user });
+});
+
+// PATCH /api/oauth/me/admin/users/:id — update a user (requires admin:users:write)
+app.patch("/me/admin/users/:id", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:users:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const targetId = c.req.param("id");
+  const body = await c.req.json<{
+    role?: "admin" | "user";
+    is_active?: boolean;
+    display_name?: string;
+    avatar_url?: string | null;
+  }>();
+
+  const now = Math.floor(Date.now() / 1000);
+  const updates: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.role !== undefined && ["admin", "user"].includes(body.role)) {
+    updates.push("role = ?");
+    values.push(body.role);
+  }
+  if (body.is_active !== undefined) {
+    updates.push("is_active = ?");
+    values.push(body.is_active ? 1 : 0);
+  }
+  if (body.display_name !== undefined) {
+    updates.push("display_name = ?");
+    values.push(body.display_name.trim());
+  }
+  if ("avatar_url" in body) {
+    updates.push("avatar_url = ?");
+    values.push(body.avatar_url ?? null);
+  }
+
+  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+
+  updates.push("updated_at = ?");
+  values.push(now, targetId);
+
+  await c.env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
+    .bind(...values)
+    .run();
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users WHERE id = ?",
+  )
+    .bind(targetId)
+    .first();
+
+  return c.json({ user });
+});
+
+// DELETE /api/oauth/me/admin/users/:id — delete a user (requires admin:users:delete)
+app.delete("/me/admin/users/:id", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:users:delete");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const targetId = c.req.param("id");
+
+  if (targetId === resolved.userId)
+    return c.json(
+      { error: "Cannot delete your own account via this endpoint" },
+      403,
+    );
+
+  const target = await c.env.DB.prepare("SELECT id FROM users WHERE id = ?")
+    .bind(targetId)
+    .first();
+  if (!target) return c.json({ error: "User not found" }, 404);
+
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(targetId),
+    c.env.DB.prepare("DELETE FROM oauth_tokens WHERE user_id = ?").bind(
+      targetId,
+    ),
+    c.env.DB.prepare("DELETE FROM oauth_consents WHERE user_id = ?").bind(
+      targetId,
+    ),
+    c.env.DB.prepare("DELETE FROM team_members WHERE user_id = ?").bind(
+      targetId,
+    ),
+    c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(targetId),
+  ]);
+
+  return c.json({ message: "User deleted" });
+});
+
+// GET /api/oauth/me/admin/config — read site config (requires admin:config:read)
+app.get("/me/admin/config", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:config:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { getConfig } = await import("../lib/config");
+  const config = await getConfig(c.env.DB);
+
+  // Strip sensitive credential fields
+  const {
+    github_client_secret,
+    google_client_secret,
+    microsoft_client_secret,
+    discord_client_secret,
+    captcha_secret_key,
+    smtp_password,
+    email_api_key,
+    ...safe
+  } = config as unknown as Record<string, unknown>;
+  (void github_client_secret,
+    google_client_secret,
+    microsoft_client_secret,
+    discord_client_secret,
+    captcha_secret_key,
+    smtp_password,
+    email_api_key);
+
+  return c.json({ config: safe });
+});
+
+// PATCH /api/oauth/me/admin/config — update site config (requires admin:config:write)
+app.patch("/me/admin/config", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:config:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<Record<string, unknown>>();
+
+  // Disallow updating sensitive credential fields via this endpoint
+  const BLOCKED = new Set([
+    "github_client_id",
+    "github_client_secret",
+    "google_client_id",
+    "google_client_secret",
+    "microsoft_client_id",
+    "microsoft_client_secret",
+    "discord_client_id",
+    "discord_client_secret",
+    "captcha_secret_key",
+    "smtp_password",
+    "email_api_key",
+    "initialized",
+  ]);
+
+  const updates: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (!BLOCKED.has(k)) updates[k] = v;
+  }
+
+  if (Object.keys(updates).length === 0)
+    return c.json({ error: "No updatable fields provided" }, 400);
+
+  const { setConfigValues } = await import("../lib/config");
+  await setConfigValues(c.env.DB, updates);
+
+  return c.json({ updated: Object.keys(updates) });
 });
 
 // ─── OpenID Connect Discovery ─────────────────────────────────────────────────
