@@ -1,6 +1,6 @@
 ---
 title: Admin Guide
-description: Managing users, apps, settings, and the audit log in the Prism admin panel.
+description: Managing users, apps, OAuth sources, settings, and the audit log in the Prism admin panel.
 ---
 
 # Admin Guide
@@ -14,7 +14,7 @@ The first admin is created during first-run setup. Additional admins are promote
 Shows four summary stats:
 
 | Stat             | Description                          |
-| ---------------- | ------------------------------------ |
+|------------------|--------------------------------------|
 | Total users      | All registered accounts              |
 | OAuth apps       | All registered applications          |
 | Verified domains | Domains that passed DNS verification |
@@ -29,7 +29,7 @@ Settings are grouped into tabs. All changes take effect immediately — no redep
 - **Site name** — shown in the browser tab and email templates
 - **Site description** — shown on the login page
 - **Site icon URL** — link to a PNG/SVG logo
-- **Allow registration** — toggle self-registration on/off. When disabled, only admins can create accounts (not yet implemented — contact the instance owner)
+- **Registration mode** — `open` (anyone can register), `invite-only` (requires an invite token), or `closed` (no new registrations)
 - **Require email verification** — users must click the verification link before logging in
 
 ### Appearance
@@ -48,29 +48,75 @@ Settings are grouped into tabs. All changes take effect immediately — no redep
 Choose one captcha provider:
 
 | Provider             | Notes                                                                |
-| -------------------- | -------------------------------------------------------------------- |
+|----------------------|----------------------------------------------------------------------|
 | None                 | No bot protection                                                    |
 | Cloudflare Turnstile | Requires a Turnstile site key + secret. Free tier available.         |
 | hCaptcha             | Requires an hCaptcha site key + secret.                              |
 | reCAPTCHA v3         | Requires a Google reCAPTCHA v3 site key + secret. Invisible.         |
 | Proof-of-Work        | No third-party service. Difficulty 20 = ~0.1–2 s on modern hardware. |
 
-### Social Login
-
-Enter the client ID and secret for each provider. Leave both fields blank to
-disable that provider. See [Configuration](configuration.md#social-login) for the
-callback URLs to register with each provider's developer console.
-
 ### Email
 
-- **Email provider** — `none`, `resend`, or `mailchannels`
-- **Email API key** — the API key for Resend or Mailchannels
-- **From address** — the sender address for verification emails
+- **Email provider** — `none`, `resend`, `mailchannels`, or `smtp`
+- **API key** — for Resend or Mailchannels
+- **SMTP settings** — host, port, encryption, username, password (when provider is `smtp`)
+- **From address** — the sender address for verification and notification emails
 
 ### Domain re-verification
 
-- **Domain reverify interval (days)** — how often Prism re-checks DNS TXT records
-  for verified domains. Default is 30 days.
+- **Domain reverify interval (days)** — how often Prism re-checks DNS TXT records for verified domains. Default is 30 days.
+
+## OAuth Sources
+
+**Admin → OAuth Sources** is where all social login providers are configured. Unlike a simple per-provider on/off toggle, each *source* is an independently named OAuth connection with its own slug, credentials, and display name. This allows multiple sources of the same provider type (e.g. two GitHub apps, or a Keycloak instance alongside Google).
+
+### Source fields
+
+| Field         | Description                                                                         |
+|---------------|-------------------------------------------------------------------------------------|
+| Slug          | Unique URL key — appears in the callback URL as `/api/connections/<slug>/callback`  |
+| Provider      | Base OAuth type (GitHub, Google, Microsoft, Discord, Generic OIDC, Generic OAuth 2) |
+| Display name  | Label shown on login/register buttons                                               |
+| Client ID     | OAuth application client ID                                                         |
+| Client Secret | OAuth application client secret                                                     |
+| Enabled       | Toggle to show/hide the source on login without deleting it                         |
+
+### Generic OIDC sources
+
+When provider is **Generic OpenID Connect**, three additional endpoint URL fields appear:
+
+- **Issuer URL** — the provider's base issuer (e.g. `https://accounts.example.com`). Click **Discover** to auto-fetch the three endpoints from `{issuer}/.well-known/openid-configuration`.
+- **Auth URL** — OAuth 2.0 authorization endpoint
+- **Token URL** — token exchange endpoint
+- **Userinfo URL** — endpoint to fetch the user profile
+
+An optional **Scopes** field allows customizing the requested scopes (default: `openid email profile`).
+
+### Generic OAuth 2 sources
+
+When provider is **Generic OAuth 2**, the same Auth URL / Token URL / Userinfo URL fields appear but there is no OIDC discovery. All three must be filled in manually.
+
+### Callback URL
+
+Each source's callback URL is:
+
+```
+https://<your-prism-domain>/api/connections/<slug>/callback
+```
+
+Register this URL in the provider's developer console when creating the OAuth app.
+
+For detailed per-provider setup instructions see [Social Login Setup](social-login.md).
+
+## Invites
+
+When registration mode is **invite-only**, the Invites tab lets you create and revoke invite tokens.
+
+- **Email (optional)** — restrict the invite to a specific email address
+- **Max uses** — leave empty for unlimited
+- **Expires after (days)** — optional expiry
+
+Invite links are copyable and can be shared directly. Email delivery requires a configured email provider.
 
 ## Users
 
@@ -79,7 +125,7 @@ The user table is searchable and sortable. Click a user row to open the detail v
 ### Actions on a user
 
 | Action              | Effect                                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------------------- |
+|---------------------|-------------------------------------------------------------------------------------------------|
 | Change role         | Toggle between `user` and `admin`                                                               |
 | Deactivate          | Prevents login; existing tokens remain valid until expiry                                       |
 | Mark email verified | Manually verify without sending an email                                                        |
@@ -99,7 +145,7 @@ The app table lists all OAuth apps across all users, including:
 ### App moderation
 
 | Action     | Effect                                                                                      |
-| ---------- | ------------------------------------------------------------------------------------------- |
+|------------|---------------------------------------------------------------------------------------------|
 | Verify     | Marks the app with a verified badge visible on the consent screen                           |
 | Deactivate | Prevents the app from completing new authorization flows. Existing tokens continue to work. |
 
@@ -111,7 +157,7 @@ have been reviewed by an admin.
 The audit log is a paginated, append-only list of significant events:
 
 | Event                 | Triggered by               |
-| --------------------- | -------------------------- |
+|-----------------------|----------------------------|
 | `user.register`       | Successful registration    |
 | `user.login`          | Successful login           |
 | `user.login.failed`   | Failed login attempt       |

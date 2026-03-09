@@ -1,6 +1,6 @@
 ---
 title: 管理员指南
-description: 在 Prism 管理面板中管理用户、应用、设置和审计日志。
+description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设置和审计日志。
 ---
 
 # 管理员指南
@@ -11,12 +11,12 @@ description: 在 Prism 管理面板中管理用户、应用、设置和审计日
 
 显示四个汇总统计数据：
 
-| 统计项         | 说明                         |
-| -------------- | ---------------------------- |
-| 总用户数       | 所有已注册账号               |
-| OAuth 应用数   | 所有已注册应用               |
-| 已验证域名数   | 通过 DNS 验证的域名          |
-| 活跃令牌数     | 未过期的 OAuth 访问令牌      |
+| 统计项       | 说明                    |
+|--------------|-------------------------|
+| 总用户数     | 所有已注册账号          |
+| OAuth 应用数 | 所有已注册应用          |
+| 已验证域名数 | 通过 DNS 验证的域名     |
+| 活跃令牌数   | 未过期的 OAuth 访问令牌 |
 
 ## 设置
 
@@ -27,12 +27,12 @@ description: 在 Prism 管理面板中管理用户、应用、设置和审计日
 - **Site name** — 显示在浏览器标签和邮件模板中
 - **Site description** — 显示在登录页面
 - **Site icon URL** — PNG/SVG Logo 的链接
-- **Allow registration** — 开启/关闭自助注册。禁用时，只有管理员才能创建账号（功能尚未实现——请联系实例管理员）
+- **注册模式** — `开放`（任何人可注册）、`仅限邀请`（需要邀请令牌）或`关闭`（禁止新注册）
 - **Require email verification** — 用户必须点击验证链接后才能登录
 
 ### 外观
 
-- **Accent color** — 驱动整个 FluentUI 主题的十六进制颜色。保存后立即生效。
+- **Accent color** — 驱动整个 FluentUI 主题的十六进制颜色，保存后立即生效。
 - **Custom CSS** — 注入到每个页面的 `<style>` 块，适合在不修改源码的情况下进行品牌定制。
 
 ### 安全 / 会话
@@ -45,27 +45,76 @@ description: 在 Prism 管理面板中管理用户、应用、设置和审计日
 
 选择一个验证码提供商：
 
-| 提供商               | 说明                                                                   |
-| -------------------- | ---------------------------------------------------------------------- |
-| 无                   | 不启用机器人防护                                                       |
-| Cloudflare Turnstile | 需要 Turnstile 站点密钥 + 密钥。提供免费套餐。                         |
-| hCaptcha             | 需要 hCaptcha 站点密钥 + 密钥。                                        |
-| reCAPTCHA v3         | 需要 Google reCAPTCHA v3 站点密钥 + 密钥。无感验证。                  |
-| 工作量证明           | 无需第三方服务。难度 20 在现代硬件上约需 0.1–2 秒。                   |
-
-### 社交登录
-
-为每个提供商填写客户端 ID 和密钥。两个字段均留空则禁用该提供商。各提供商开发者控制台需注册的回调 URL 请参阅[配置文档](configuration.md#社交登录)。
+| 提供商               | 说明                                              |
+|----------------------|---------------------------------------------------|
+| 无                   | 不启用机器人防护                                  |
+| Cloudflare Turnstile | 需要 Turnstile 站点密钥 + 密钥，提供免费套餐       |
+| hCaptcha             | 需要 hCaptcha 站点密钥 + 密钥                     |
+| reCAPTCHA v3         | 需要 Google reCAPTCHA v3 站点密钥 + 密钥，无感验证 |
+| 工作量证明           | 无需第三方服务，难度 20 在现代硬件上约需 0.1–2 秒  |
 
 ### 邮件
 
-- **Email provider** — `none`、`resend` 或 `mailchannels`
-- **Email API key** — Resend 或 Mailchannels 的 API 密钥
-- **From address** — 验证邮件的发件地址
+- **Email provider** — `none`、`resend`、`mailchannels` 或 `smtp`
+- **API key** — Resend 或 Mailchannels 的 API 密钥
+- **SMTP 设置** — 主机、端口、加密方式、用户名、密码（选择 `smtp` 时显示）
+- **From address** — 验证邮件和通知邮件的发件地址
 
 ### 域名重新验证
 
-- **Domain reverify interval（天）** — Prism 重新检查已验证域名 DNS TXT 记录的频率。默认为 30 天。
+- **Domain reverify interval（天）** — Prism 重新检查已验证域名 DNS TXT 记录的频率，默认 30 天。
+
+## OAuth 来源
+
+**Admin → OAuth Sources** 是配置所有社交登录提供商的地方。与简单的开关不同，每个*来源*是一个独立命名的 OAuth 连接，拥有自己的 slug、凭据和显示名称，支持同一提供商类型的多个来源（例如两个 GitHub 应用，或 Keycloak 与 Google 并存）。
+
+### 来源字段
+
+| 字段          | 说明                                                                      |
+|---------------|---------------------------------------------------------------------------|
+| Slug          | 唯一 URL 键 — 出现在回调 URL 中，格式为 `/api/connections/<slug>/callback` |
+| 提供商        | 基础 OAuth 类型（GitHub、Google、Microsoft、Discord、通用 OIDC、通用 OAuth 2）   |
+| 显示名称      | 显示在登录/注册按钮上的标签                                               |
+| Client ID     | OAuth 应用的客户端 ID                                                     |
+| Client Secret | OAuth 应用的客户端密钥                                                    |
+| 启用          | 切换是否在登录页面显示该来源，禁用不会删除数据                             |
+
+### 通用 OIDC 来源
+
+当提供商为**通用 OpenID Connect** 时，会出现额外的端点 URL 字段：
+
+- **Issuer URL** — 提供商的 issuer 地址（如 `https://accounts.example.com`）。点击**自动发现**按钮，Prism 会从 `{issuer}/.well-known/openid-configuration` 自动填充三个端点。
+- **授权 URL** — OAuth 2.0 授权端点
+- **令牌 URL** — 令牌交换端点
+- **用户信息 URL** — 获取用户资料的端点
+
+可选的 **Scopes** 字段用于自定义请求的权限范围（默认：`openid email profile`）。
+
+### 通用 OAuth 2 来源
+
+当提供商为**通用 OAuth 2** 时，同样显示上述三个 URL 字段，但没有 OIDC 自动发现功能，需手动填写全部 URL。
+
+### 回调 URL
+
+每个来源的回调 URL 为：
+
+```
+https://<your-prism-domain>/api/connections/<slug>/callback
+```
+
+在提供商的开发者控制台创建 OAuth 应用时，请注册此 URL。
+
+详细的各提供商配置说明请参阅[社交登录配置](social-login.md)。
+
+## 邀请
+
+当注册模式为**仅限邀请**时，邀请标签页可创建和撤销邀请令牌。
+
+- **邮箱（可选）** — 将邀请限定到特定邮箱地址
+- **最大使用次数** — 留空表示不限次数
+- **有效期（天）** — 可选
+
+邀请链接可直接复制分享。邮件发送需要配置邮件提供商。
 
 ## 用户
 
@@ -73,12 +122,12 @@ description: 在 Prism 管理面板中管理用户、应用、设置和审计日
 
 ### 用户操作
 
-| 操作             | 效果                                                                                         |
-| ---------------- | -------------------------------------------------------------------------------------------- |
-| 更改角色         | 在 `user` 和 `admin` 之间切换                                                                |
-| 停用             | 阻止登录；现有令牌在过期前仍然有效                                                           |
-| 标记邮箱已验证   | 手动验证而无需发送邮件                                                                       |
-| 删除             | 永久删除用户及其所有数据（级联删除会话、应用、关联等）                                       |
+| 操作           | 效果                                               |
+|----------------|----------------------------------------------------|
+| 更改角色       | 在 `user` 和 `admin` 之间切换                      |
+| 停用           | 阻止登录；现有令牌在过期前仍然有效                  |
+| 标记邮箱已验证 | 手动验证而无需发送邮件                             |
+| 删除           | 永久删除用户及其所有数据（级联删除会话、应用、关联等） |
 
 删除用户不可逆。其 OAuth 应用也会一并删除，这将导致使用这些应用的所有第三方集成失效。
 
@@ -92,10 +141,10 @@ description: 在 Prism 管理面板中管理用户、应用、设置和审计日
 
 ### 应用审核
 
-| 操作   | 效果                                                                     |
-| ------ | ------------------------------------------------------------------------ |
-| 验证   | 在授权页面上为应用添加已验证徽章                                         |
-| 停用   | 阻止应用完成新的授权流程。现有令牌继续有效。                             |
+| 操作 | 效果                                      |
+|------|-------------------------------------------|
+| 验证 | 在授权页面上为应用添加已验证徽章          |
+| 停用 | 阻止应用完成新的授权流程，现有令牌继续有效 |
 
 已验证的应用在授权页面上显示对勾标记，表示已由管理员审核。
 
@@ -103,21 +152,21 @@ description: 在 Prism 管理面板中管理用户、应用、设置和审计日
 
 审计日志是一个分页的追加型重要事件列表：
 
-| 事件                  | 触发条件             |
-| --------------------- | -------------------- |
-| `user.register`       | 成功注册             |
-| `user.login`          | 成功登录             |
-| `user.login.failed`   | 登录失败             |
-| `user.logout`         | 退出登录             |
-| `user.delete`         | 账号删除             |
-| `totp.enabled`        | TOTP 设置完成        |
-| `totp.disabled`       | TOTP 已禁用          |
-| `passkey.registered`  | 新 Passkey 已添加    |
-| `passkey.deleted`     | Passkey 已删除       |
-| `oauth.authorize`     | 用户批准了 OAuth 应用|
-| `oauth.token`         | 令牌已颁发           |
-| `admin.config.update` | 站点配置已更改       |
-| `admin.user.update`   | 管理员修改了用户     |
-| `admin.user.delete`   | 管理员删除了用户     |
+| 事件                  | 触发条件              |
+|-----------------------|-----------------------|
+| `user.register`       | 成功注册              |
+| `user.login`          | 成功登录              |
+| `user.login.failed`   | 登录失败              |
+| `user.logout`         | 退出登录              |
+| `user.delete`         | 账号删除              |
+| `totp.enabled`        | TOTP 设置完成         |
+| `totp.disabled`       | TOTP 已禁用           |
+| `passkey.registered`  | 新 Passkey 已添加     |
+| `passkey.deleted`     | Passkey 已删除        |
+| `oauth.authorize`     | 用户批准了 OAuth 应用 |
+| `oauth.token`         | 令牌已颁发            |
+| `admin.config.update` | 站点配置已更改        |
+| `admin.user.update`   | 管理员修改了用户      |
+| `admin.user.delete`   | 管理员删除了用户      |
 
 每条记录包含操作的 `user_id`、`action`、可选的 `resource_type` / `resource_id`、`metadata` JSON 对象以及 `ip_address`。
