@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { getConfigValue } from "../lib/config";
 import { requireAuth } from "../middleware/auth";
+import { deliverUserWebhooks } from "../lib/webhooks";
 import type { DomainRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -77,6 +78,12 @@ app.post("/", async (c) => {
     );
   }
 
+  c.executionCtx.waitUntil(
+    deliverUserWebhooks(c.env.DB, user.id, "domain.added", {
+      domain_id: id,
+      domain,
+    }).catch(() => {}),
+  );
   return c.json(
     {
       id,
@@ -129,6 +136,12 @@ app.post("/:id/verify", async (c) => {
     )
       .bind(now, nextReverify, id)
       .run();
+    c.executionCtx.waitUntil(
+      deliverUserWebhooks(c.env.DB, user.id, "domain.verified", {
+        domain_id: id,
+        domain: row.domain,
+      }).catch(() => {}),
+    );
     return c.json({ verified: true, next_reverify_at: nextReverify });
   }
 
@@ -251,6 +264,12 @@ app.delete("/:id", async (c) => {
   if (!row) return c.json({ error: "Domain not found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM domains WHERE id = ?").bind(id).run();
+  c.executionCtx.waitUntil(
+    deliverUserWebhooks(c.env.DB, user.id, "domain.deleted", {
+      domain_id: id,
+      domain: row.domain,
+    }).catch(() => {}),
+  );
   return c.json({ message: "Domain deleted" });
 });
 

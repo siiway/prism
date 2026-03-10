@@ -89,6 +89,9 @@ const SCOPES = [
   "admin:invites:read",
   "admin:invites:create",
   "admin:invites:delete",
+  "admin:webhooks:read",
+  "admin:webhooks:write",
+  "admin:webhooks:delete",
   "offline_access",
 ];
 

@@ -9,11 +9,14 @@ import {
   buildVerifiedDomainsMap,
   computeVerified,
 } from "../lib/domainVerify";
+import { hmacSign } from "../lib/webhooks";
 import type {
   OAuthAppRow,
   OAuthCodeRow,
   OAuthTokenRow,
   UserRow,
+  WebhookDeliveryRow,
+  WebhookRow,
   Variables,
 } from "../types";
 
@@ -41,6 +44,11 @@ const VALID_SCOPES = new Set([
   "admin:invites:read",
   "admin:invites:create",
   "admin:invites:delete",
+  "admin:webhooks:read",
+  "admin:webhooks:write",
+  "admin:webhooks:delete",
+  "webhooks:read",
+  "webhooks:write",
   "offline_access",
 ]);
 
@@ -1562,6 +1570,477 @@ app.patch("/me/admin/config", async (c) => {
   await setConfigValues(c.env.DB, updates);
 
   return c.json({ updated: Object.keys(updates) });
+});
+
+// ─── User: Webhooks ──────────────────────────────────────────────────────────
+
+const USER_WEBHOOK_EVENTS_OAUTH = [
+  "*",
+  "app.created",
+  "app.updated",
+  "app.deleted",
+  "domain.added",
+  "domain.verified",
+  "domain.deleted",
+  "profile.updated",
+] as const;
+
+// GET /api/oauth/me/webhooks — list own webhooks (requires webhooks:read)
+app.get("/me/webhooks", async (c) => {
+  const resolved = await resolveBearerToken(c, "webhooks:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, name, url, events, is_active, created_at, updated_at FROM webhooks WHERE user_id = ? ORDER BY created_at DESC",
+  )
+    .bind(resolved.userId)
+    .all<Omit<WebhookRow, "secret" | "created_by">>();
+
+  return c.json({ webhooks: results });
+});
+
+// POST /api/oauth/me/webhooks — create a webhook (requires webhooks:write)
+app.post("/me/webhooks", async (c) => {
+  const resolved = await resolveBearerToken(c, "webhooks:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<{
+    name: string;
+    url: string;
+    secret?: string;
+    events: string[];
+  }>();
+  if (!body.name?.trim() || !body.url?.trim())
+    return c.json({ error: "name and url are required" }, 400);
+
+  try {
+    new URL(body.url);
+  } catch {
+    return c.json({ error: "Invalid URL" }, 400);
+  }
+
+  const events = Array.isArray(body.events)
+    ? body.events.filter((e) =>
+        (USER_WEBHOOK_EVENTS_OAUTH as readonly string[]).includes(e),
+      )
+    : [];
+  const secret = body.secret?.trim() || randomBase64url(32);
+  const now = Math.floor(Date.now() / 1000);
+  const id = randomId();
+
+  await c.env.DB.prepare(
+    "INSERT INTO webhooks (id, name, url, secret, events, is_active, user_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
+  )
+    .bind(
+      id,
+      body.name.trim(),
+      body.url.trim(),
+      secret,
+      JSON.stringify(events),
+      resolved.userId,
+      resolved.userId,
+      now,
+      now,
+    )
+    .run();
+
+  return c.json(
+    {
+      webhook: {
+        id,
+        name: body.name,
+        url: body.url,
+        secret,
+        events,
+        is_active: 1,
+        created_at: now,
+      },
+    },
+    201,
+  );
+});
+
+// PATCH /api/oauth/me/webhooks/:id — update (requires webhooks:write)
+app.patch("/me/webhooks/:id", async (c) => {
+  const resolved = await resolveBearerToken(c, "webhooks:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM webhooks WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), resolved.userId)
+    .first();
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const body = await c.req.json<{
+    name?: string;
+    url?: string;
+    secret?: string;
+    events?: string[];
+    is_active?: boolean;
+  }>();
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.name !== undefined) {
+    sets.push("name = ?");
+    values.push(body.name.trim());
+  }
+  if (body.url !== undefined) {
+    try {
+      new URL(body.url);
+    } catch {
+      return c.json({ error: "Invalid URL" }, 400);
+    }
+    sets.push("url = ?");
+    values.push(body.url.trim());
+  }
+  if (body.secret !== undefined) {
+    sets.push("secret = ?");
+    values.push(body.secret);
+  }
+  if (body.events !== undefined) {
+    const filtered = body.events.filter((e) =>
+      (USER_WEBHOOK_EVENTS_OAUTH as readonly string[]).includes(e),
+    );
+    sets.push("events = ?");
+    values.push(JSON.stringify(filtered));
+  }
+  if (body.is_active !== undefined) {
+    sets.push("is_active = ?");
+    values.push(body.is_active ? 1 : 0);
+  }
+  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
+
+  sets.push("updated_at = ?");
+  values.push(Math.floor(Date.now() / 1000));
+  values.push(c.req.param("id"));
+  values.push(resolved.userId);
+  await c.env.DB.prepare(
+    `UPDATE webhooks SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
+  )
+    .bind(...values)
+    .run();
+  return c.json({ message: "Updated" });
+});
+
+// DELETE /api/oauth/me/webhooks/:id — delete (requires webhooks:write)
+app.delete("/me/webhooks/:id", async (c) => {
+  const resolved = await resolveBearerToken(c, "webhooks:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const wh = await c.env.DB.prepare(
+    "SELECT id FROM webhooks WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), resolved.userId)
+    .first();
+  if (!wh) return c.json({ error: "Not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM webhooks WHERE id = ?")
+    .bind(c.req.param("id"))
+    .run();
+  return c.json({ message: "Deleted" });
+});
+
+// GET /api/oauth/me/webhooks/:id/deliveries (requires webhooks:read)
+app.get("/me/webhooks/:id/deliveries", async (c) => {
+  const resolved = await resolveBearerToken(c, "webhooks:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const wh = await c.env.DB.prepare(
+    "SELECT id FROM webhooks WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), resolved.userId)
+    .first();
+  if (!wh) return c.json({ error: "Not found" }, 404);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, event_type, response_status, success, delivered_at FROM webhook_deliveries WHERE webhook_id = ? ORDER BY delivered_at DESC LIMIT 50",
+  )
+    .bind(c.req.param("id"))
+    .all<
+      Pick<
+        WebhookDeliveryRow,
+        "id" | "event_type" | "response_status" | "success" | "delivered_at"
+      >
+    >();
+
+  return c.json({ deliveries: results });
+});
+
+// ─── Admin: Webhooks ─────────────────────────────────────────────────────────
+
+const ALL_WEBHOOK_EVENTS = [
+  "*",
+  "admin.config.update",
+  "admin.user.update",
+  "admin.user.delete",
+  "admin.app.update",
+  "admin.team.delete",
+  "invite.create",
+  "invite.revoke",
+  "oauth_source.create",
+  "oauth_source.update",
+  "oauth_source.delete",
+  "webhook.create",
+  "webhook.update",
+  "webhook.delete",
+] as const;
+
+// GET /api/oauth/me/admin/webhooks — list webhooks (requires admin:webhooks:read)
+app.get("/me/admin/webhooks", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:webhooks:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, name, url, events, is_active, created_at, updated_at FROM webhooks ORDER BY created_at DESC",
+  ).all<Omit<WebhookRow, "secret" | "created_by">>();
+
+  return c.json({ webhooks: results });
+});
+
+// POST /api/oauth/me/admin/webhooks — create a webhook (requires admin:webhooks:write)
+app.post("/me/admin/webhooks", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:webhooks:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<{
+    name: string;
+    url: string;
+    secret?: string;
+    events: string[];
+  }>();
+
+  if (!body.name?.trim() || !body.url?.trim())
+    return c.json({ error: "name and url are required" }, 400);
+
+  try {
+    new URL(body.url);
+  } catch {
+    return c.json({ error: "Invalid URL" }, 400);
+  }
+
+  const events = Array.isArray(body.events)
+    ? body.events.filter((e) =>
+        (ALL_WEBHOOK_EVENTS as readonly string[]).includes(e),
+      )
+    : [];
+  const secret = body.secret?.trim() || randomBase64url(32);
+  const now = Math.floor(Date.now() / 1000);
+  const id = randomId();
+
+  await c.env.DB.prepare(
+    "INSERT INTO webhooks (id, name, url, secret, events, is_active, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)",
+  )
+    .bind(
+      id,
+      body.name.trim(),
+      body.url.trim(),
+      secret,
+      JSON.stringify(events),
+      resolved.userId,
+      now,
+      now,
+    )
+    .run();
+
+  return c.json(
+    {
+      webhook: {
+        id,
+        name: body.name,
+        url: body.url,
+        secret,
+        events,
+        is_active: 1,
+        created_at: now,
+      },
+    },
+    201,
+  );
+});
+
+// GET /api/oauth/me/admin/webhooks/:id — get a webhook (requires admin:webhooks:read)
+app.get("/me/admin/webhooks/:id", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:webhooks:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const wh = await c.env.DB.prepare(
+    "SELECT id, name, url, events, is_active, created_at, updated_at FROM webhooks WHERE id = ?",
+  )
+    .bind(c.req.param("id"))
+    .first<Omit<WebhookRow, "secret" | "created_by">>();
+
+  if (!wh) return c.json({ error: "Not found" }, 404);
+  return c.json({ webhook: wh });
+});
+
+// PATCH /api/oauth/me/admin/webhooks/:id — update a webhook (requires admin:webhooks:write)
+app.patch("/me/admin/webhooks/:id", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:webhooks:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM webhooks WHERE id = ?",
+  )
+    .bind(c.req.param("id"))
+    .first();
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const body = await c.req.json<{
+    name?: string;
+    url?: string;
+    secret?: string;
+    events?: string[];
+    is_active?: boolean;
+  }>();
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.name !== undefined) {
+    sets.push("name = ?");
+    values.push(body.name.trim());
+  }
+  if (body.url !== undefined) {
+    try {
+      new URL(body.url);
+    } catch {
+      return c.json({ error: "Invalid URL" }, 400);
+    }
+    sets.push("url = ?");
+    values.push(body.url.trim());
+  }
+  if (body.secret !== undefined) {
+    sets.push("secret = ?");
+    values.push(body.secret);
+  }
+  if (body.events !== undefined) {
+    const filtered = body.events.filter((e) =>
+      (ALL_WEBHOOK_EVENTS as readonly string[]).includes(e),
+    );
+    sets.push("events = ?");
+    values.push(JSON.stringify(filtered));
+  }
+  if (body.is_active !== undefined) {
+    sets.push("is_active = ?");
+    values.push(body.is_active ? 1 : 0);
+  }
+
+  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
+
+  sets.push("updated_at = ?");
+  values.push(Math.floor(Date.now() / 1000));
+  values.push(c.req.param("id"));
+
+  await c.env.DB.prepare(`UPDATE webhooks SET ${sets.join(", ")} WHERE id = ?`)
+    .bind(...values)
+    .run();
+
+  return c.json({ message: "Updated" });
+});
+
+// DELETE /api/oauth/me/admin/webhooks/:id — delete a webhook (requires admin:webhooks:delete)
+app.delete("/me/admin/webhooks/:id", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:webhooks:delete");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const wh = await c.env.DB.prepare("SELECT id FROM webhooks WHERE id = ?")
+    .bind(c.req.param("id"))
+    .first();
+  if (!wh) return c.json({ error: "Not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM webhooks WHERE id = ?")
+    .bind(c.req.param("id"))
+    .run();
+
+  return c.json({ message: "Deleted" });
+});
+
+// POST /api/oauth/me/admin/webhooks/:id/test — send a test ping (requires admin:webhooks:write)
+app.post("/me/admin/webhooks/:id/test", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:webhooks:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const wh = await c.env.DB.prepare(
+    "SELECT id, url, secret FROM webhooks WHERE id = ?",
+  )
+    .bind(c.req.param("id"))
+    .first<Pick<WebhookRow, "id" | "url" | "secret">>();
+  if (!wh) return c.json({ error: "Not found" }, 404);
+
+  const now = Math.floor(Date.now() / 1000);
+  const deliveryId = randomId();
+  const payload = JSON.stringify({
+    event: "webhook.test",
+    timestamp: now,
+    data: { message: "Test delivery from Prism" },
+  });
+
+  const sig = await hmacSign(wh.secret, payload);
+  let status: number | null = null;
+  let response: string | null = null;
+  let success = false;
+
+  try {
+    const res = await fetch(wh.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Prism-Event": "webhook.test",
+        "X-Prism-Signature": `sha256=${sig}`,
+        "X-Prism-Delivery": deliveryId,
+      },
+      body: payload,
+      signal: AbortSignal.timeout(10_000),
+    });
+    status = res.status;
+    response = (await res.text()).slice(0, 512);
+    success = status >= 200 && status < 300;
+  } catch (err) {
+    response = String(err).slice(0, 512);
+  }
+
+  await c.env.DB.prepare(
+    "INSERT INTO webhook_deliveries (id, webhook_id, event_type, payload, response_status, response_body, success, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(
+      deliveryId,
+      wh.id,
+      "webhook.test",
+      payload,
+      status,
+      response,
+      success ? 1 : 0,
+      now,
+    )
+    .run();
+
+  return c.json({ success, status, response });
+});
+
+// GET /api/oauth/me/admin/webhooks/:id/deliveries — delivery history (requires admin:webhooks:read)
+app.get("/me/admin/webhooks/:id/deliveries", async (c) => {
+  const resolved = await requireAdminToken(c, "admin:webhooks:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const wh = await c.env.DB.prepare("SELECT id FROM webhooks WHERE id = ?")
+    .bind(c.req.param("id"))
+    .first();
+  if (!wh) return c.json({ error: "Not found" }, 404);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, event_type, response_status, success, delivered_at FROM webhook_deliveries WHERE webhook_id = ? ORDER BY delivered_at DESC LIMIT 50",
+  )
+    .bind(c.req.param("id"))
+    .all<
+      Pick<
+        WebhookDeliveryRow,
+        "id" | "event_type" | "response_status" | "success" | "delivered_at"
+      >
+    >();
+
+  return c.json({ deliveries: results });
 });
 
 // ─── OpenID Connect Discovery ─────────────────────────────────────────────────

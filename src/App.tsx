@@ -40,10 +40,12 @@ import { AdminSettings } from "./pages/admin/AdminSettings";
 import { AdminAudit } from "./pages/admin/AdminAudit";
 import { AdminInvites } from "./pages/admin/AdminInvites";
 import { AdminConnections } from "./pages/admin/AdminConnections";
+import { AdminWebhooks } from "./pages/admin/AdminWebhooks";
 import { TeamList } from "./pages/teams/TeamList";
 import { TeamDetail } from "./pages/teams/TeamDetail";
 import { TeamJoin } from "./pages/teams/TeamJoin";
 import { Tokens } from "./pages/Tokens";
+import { UserWebhooks } from "./pages/UserWebhooks";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -169,6 +171,7 @@ export default function App() {
               <Route path="connections" element={<Connections />} />
               <Route path="connected-apps" element={<ConnectedApps />} />
               <Route path="tokens" element={<Tokens />} />
+              <Route path="webhooks" element={<UserWebhooks />} />
 
               {/* Admin */}
               <Route
@@ -187,6 +190,7 @@ export default function App() {
                 <Route path="invites" element={<AdminInvites />} />
                 <Route path="connections" element={<AdminConnections />} />
                 <Route path="audit" element={<AdminAudit />} />
+                <Route path="webhooks" element={<AdminWebhooks />} />
               </Route>
             </Route>
 

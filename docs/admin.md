@@ -182,46 +182,49 @@ All scopes that Prism-registered OAuth apps and personal access tokens can reque
 
 ### Standard scopes
 
-| Scope            | Description                                             |
-| ---------------- | ------------------------------------------------------- |
-| `openid`         | OIDC identity — enables `id_token` and the `sub` claim  |
-| `profile`        | Read display name, username, avatar                     |
-| `profile:write`  | Update display name and avatar                          |
-| `email`          | Read email address and verification status              |
-| `offline_access` | Issue a refresh token                                   |
+| Scope            | Description                                            |
+|------------------|--------------------------------------------------------|
+| `openid`         | OIDC identity — enables `id_token` and the `sub` claim |
+| `profile`        | Read display name, username, avatar                    |
+| `profile:write`  | Update display name and avatar                         |
+| `email`          | Read email address and verification status             |
+| `offline_access` | Issue a refresh token                                  |
 
 ### Apps
 
-| Scope        | Description                                              |
-| ------------ | -------------------------------------------------------- |
-| `apps:read`  | List the token owner's OAuth apps                        |
-| `apps:write` | Create, update, and delete the token owner's OAuth apps  |
+| Scope        | Description                                             |
+|--------------|---------------------------------------------------------|
+| `apps:read`  | List the token owner's OAuth apps                       |
+| `apps:write` | Create, update, and delete the token owner's OAuth apps |
 
 ### Teams
 
-| Scope          | Description                                   |
-| -------------- | --------------------------------------------- |
-| `teams:read`   | List team memberships and roles               |
-| `teams:create` | Create a new team                             |
-| `teams:write`  | Update team settings; add and remove members  |
-| `teams:delete` | Delete a team (owner only)                    |
+| Scope          | Description                                  |
+|----------------|----------------------------------------------|
+| `teams:read`   | List team memberships and roles              |
+| `teams:create` | Create a new team                            |
+| `teams:write`  | Update team settings; add and remove members |
+| `teams:delete` | Delete a team (owner only)                   |
 
 ### Domains
 
-| Scope           | Description                                            |
-| --------------- | ------------------------------------------------------ |
-| `domains:read`  | List verified domains                                  |
-| `domains:write` | Add domains, trigger DNS verification, remove domains  |
+| Scope           | Description                                           |
+|-----------------|-------------------------------------------------------|
+| `domains:read`  | List verified domains                                 |
+| `domains:write` | Add domains, trigger DNS verification, remove domains |
 
 ### Admin scopes (require `role = admin` on the token owner)
 
-| Scope                  | Description                                                   |
-| ---------------------- | ------------------------------------------------------------- |
-| `admin:users:read`     | List and view all user accounts                               |
-| `admin:users:write`    | Update user role, status, display name, and avatar            |
-| `admin:users:delete`   | Permanently delete a user account                             |
-| `admin:config:read`    | Read site-wide configuration (credentials are redacted)       |
-| `admin:config:write`   | Update site settings (registration policy, appearance, etc.)  |
-| `admin:invites:read`   | List all site invite links                                    |
-| `admin:invites:create` | Generate new site invite links                                |
-| `admin:invites:delete` | Revoke site invite links                                      |
+| Scope                   | Description                                                  |
+|-------------------------|--------------------------------------------------------------|
+| `admin:users:read`      | List and view all user accounts                              |
+| `admin:users:write`     | Update user role, status, display name, and avatar           |
+| `admin:users:delete`    | Permanently delete a user account                            |
+| `admin:config:read`     | Read site-wide configuration (credentials are redacted)      |
+| `admin:config:write`    | Update site settings (registration policy, appearance, etc.) |
+| `admin:invites:read`    | List all site invite links                                   |
+| `admin:invites:create`  | Generate new site invite links                               |
+| `admin:invites:delete`  | Revoke site invite links                                     |
+| `admin:webhooks:read`   | List webhooks and view delivery history                      |
+| `admin:webhooks:write`  | Create, update, and send test pings to webhooks              |
+| `admin:webhooks:delete` | Permanently delete webhooks                                  |

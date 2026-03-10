@@ -408,6 +408,117 @@ export const api = {
       getToken(),
     ),
 
+  // ─── Webhooks (admin) ─────────────────────────────────────────────────────
+  listWebhooks: () =>
+    request<{ webhooks: unknown[] }>(
+      "GET",
+      "/admin/webhooks",
+      undefined,
+      getToken(),
+    ),
+  createWebhook: (body: {
+    name: string;
+    url: string;
+    secret?: string;
+    events: string[];
+  }) =>
+    request<{ webhook: unknown }>("POST", "/admin/webhooks", body, getToken()),
+  getWebhook: (id: string) =>
+    request<{ webhook: unknown }>(
+      "GET",
+      `/admin/webhooks/${id}`,
+      undefined,
+      getToken(),
+    ),
+  updateWebhook: (
+    id: string,
+    body: {
+      name?: string;
+      url?: string;
+      secret?: string;
+      events?: string[];
+      is_active?: boolean;
+    },
+  ) =>
+    request<{ message: string }>(
+      "PATCH",
+      `/admin/webhooks/${id}`,
+      body,
+      getToken(),
+    ),
+  deleteWebhook: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/webhooks/${id}`,
+      undefined,
+      getToken(),
+    ),
+  testWebhook: (id: string) =>
+    request<{
+      success: boolean;
+      status: number | null;
+      response: string | null;
+    }>("POST", `/admin/webhooks/${id}/test`, {}, getToken()),
+  listWebhookDeliveries: (id: string) =>
+    request<{ deliveries: unknown[] }>(
+      "GET",
+      `/admin/webhooks/${id}/deliveries`,
+      undefined,
+      getToken(),
+    ),
+
+  // ─── Webhooks (user) ──────────────────────────────────────────────────────
+  listUserWebhooks: () =>
+    request<{ webhooks: unknown[] }>(
+      "GET",
+      "/user/webhooks",
+      undefined,
+      getToken(),
+    ),
+  createUserWebhook: (body: {
+    name: string;
+    url: string;
+    secret?: string;
+    events: string[];
+  }) =>
+    request<{ webhook: unknown }>("POST", "/user/webhooks", body, getToken()),
+  updateUserWebhook: (
+    id: string,
+    body: {
+      name?: string;
+      url?: string;
+      secret?: string;
+      events?: string[];
+      is_active?: boolean;
+    },
+  ) =>
+    request<{ message: string }>(
+      "PATCH",
+      `/user/webhooks/${id}`,
+      body,
+      getToken(),
+    ),
+  deleteUserWebhook: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/user/webhooks/${id}`,
+      undefined,
+      getToken(),
+    ),
+  testUserWebhook: (id: string) =>
+    request<{
+      success: boolean;
+      status: number | null;
+      response: string | null;
+    }>("POST", `/user/webhooks/${id}/test`, {}, getToken()),
+  listUserWebhookDeliveries: (id: string) =>
+    request<{ deliveries: unknown[] }>(
+      "GET",
+      `/user/webhooks/${id}/deliveries`,
+      undefined,
+      getToken(),
+    ),
+
   // Teams
   listTeams: () =>
     request<{ teams: Team[] }>("GET", "/teams", undefined, getToken()),

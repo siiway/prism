@@ -189,6 +189,30 @@ export interface AuditLogRow {
   created_at: number;
 }
 
+export interface WebhookRow {
+  id: string;
+  name: string;
+  url: string;
+  secret: string;
+  events: string; // JSON string[]
+  is_active: number;
+  user_id: string | null; // null = admin-scope, non-null = user-scope
+  created_by: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface WebhookDeliveryRow {
+  id: string;
+  webhook_id: string;
+  event_type: string;
+  payload: string; // JSON
+  response_status: number | null;
+  response_body: string | null;
+  success: number;
+  delivered_at: number;
+}
+
 // ─── Application types ────────────────────────────────────────────────────────
 
 export type SocialProvider = "github" | "google" | "microsoft" | "discord";

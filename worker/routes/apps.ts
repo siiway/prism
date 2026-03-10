@@ -5,6 +5,7 @@ import { randomId, randomBase64url } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
+import { deliverUserWebhooks } from "../lib/webhooks";
 import type { OAuthAppRow, TeamMemberRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -161,6 +162,12 @@ app.post("/", async (c) => {
     body.website_url ?? null,
     JSON.stringify(body.redirect_uris),
   );
+  c.executionCtx.waitUntil(
+    deliverUserWebhooks(c.env.DB, user.id, "app.created", {
+      app_id: id,
+      name: body.name,
+    }).catch(() => {}),
+  );
   return c.json({ app: fullApp(row!, isVerified) }, 201);
 });
 
@@ -237,6 +244,11 @@ app.patch("/:id", async (c) => {
     updatedRow!.redirect_uris,
     row.team_id,
   );
+  c.executionCtx.waitUntil(
+    deliverUserWebhooks(c.env.DB, user.id, "app.updated", { app_id: id }).catch(
+      () => {},
+    ),
+  );
   return c.json({ app: fullApp(updatedRow!, isVerified) });
 });
 
@@ -287,6 +299,11 @@ app.delete("/:id", async (c) => {
     c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?").bind(id),
   ]);
 
+  c.executionCtx.waitUntil(
+    deliverUserWebhooks(c.env.DB, user.id, "app.deleted", { app_id: id }).catch(
+      () => {},
+    ),
+  );
   return c.json({ message: "App deleted" });
 });
 

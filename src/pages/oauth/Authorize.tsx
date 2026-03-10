@@ -239,6 +239,18 @@ export function Authorize() {
       label: t("oauth.scopeAdminInvitesDeleteLabel"),
       desc: t("oauth.scopeAdminInvitesDeleteDesc"),
     },
+    "admin:webhooks:read": {
+      label: t("oauth.scopeAdminWebhooksReadLabel"),
+      desc: t("oauth.scopeAdminWebhooksReadDesc"),
+    },
+    "admin:webhooks:write": {
+      label: t("oauth.scopeAdminWebhooksWriteLabel"),
+      desc: t("oauth.scopeAdminWebhooksWriteDesc"),
+    },
+    "admin:webhooks:delete": {
+      label: t("oauth.scopeAdminWebhooksDeleteLabel"),
+      desc: t("oauth.scopeAdminWebhooksDeleteDesc"),
+    },
     offline_access: {
       label: t("oauth.scopeOfflineLabel"),
       desc: t("oauth.scopeOfflineDesc"),

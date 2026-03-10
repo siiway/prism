@@ -9,7 +9,13 @@ import {
 } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
-import type { UserRow, Variables } from "../types";
+import { hmacSign, deliverUserWebhooks } from "../lib/webhooks";
+import type {
+  UserRow,
+  WebhookRow,
+  WebhookDeliveryRow,
+  Variables,
+} from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -81,6 +87,11 @@ app.patch("/me", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(user.id)
     .first<UserRow>();
+  c.executionCtx.waitUntil(
+    deliverUserWebhooks(c.env.DB, user.id, "profile.updated", {}).catch(
+      () => {},
+    ),
+  );
   return c.json({ user: safeUser(row!) });
 });
 
@@ -330,6 +341,268 @@ app.delete("/tokens/:id", async (c) => {
     .run();
 
   return c.json({ message: "Token revoked" });
+});
+
+// ─── User Webhooks ────────────────────────────────────────────────────────────
+
+const USER_WEBHOOK_EVENTS = [
+  "*",
+  "app.created",
+  "app.updated",
+  "app.deleted",
+  "domain.added",
+  "domain.verified",
+  "domain.deleted",
+  "profile.updated",
+] as const;
+
+// GET /api/user/webhooks
+app.get("/webhooks", async (c) => {
+  const user = c.get("user");
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, name, url, events, is_active, created_at, updated_at FROM webhooks WHERE user_id = ? ORDER BY created_at DESC",
+  )
+    .bind(user.id)
+    .all<Omit<WebhookRow, "secret" | "created_by">>();
+  return c.json({ webhooks: results });
+});
+
+// POST /api/user/webhooks
+app.post("/webhooks", async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{
+    name: string;
+    url: string;
+    secret?: string;
+    events: string[];
+  }>();
+
+  if (!body.name?.trim() || !body.url?.trim())
+    return c.json({ error: "name and url are required" }, 400);
+
+  try {
+    new URL(body.url);
+  } catch {
+    return c.json({ error: "Invalid URL" }, 400);
+  }
+
+  const events = Array.isArray(body.events)
+    ? body.events.filter((e) =>
+        (USER_WEBHOOK_EVENTS as readonly string[]).includes(e),
+      )
+    : [];
+  const secret = body.secret?.trim() || randomBase64url(32);
+  const now = Math.floor(Date.now() / 1000);
+  const id = randomId();
+
+  await c.env.DB.prepare(
+    "INSERT INTO webhooks (id, name, url, secret, events, is_active, user_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
+  )
+    .bind(
+      id,
+      body.name.trim(),
+      body.url.trim(),
+      secret,
+      JSON.stringify(events),
+      user.id,
+      user.id,
+      now,
+      now,
+    )
+    .run();
+
+  return c.json(
+    {
+      webhook: {
+        id,
+        name: body.name,
+        url: body.url,
+        secret,
+        events,
+        is_active: 1,
+        created_at: now,
+      },
+    },
+    201,
+  );
+});
+
+// GET /api/user/webhooks/:id
+app.get("/webhooks/:id", async (c) => {
+  const user = c.get("user");
+  const wh = await c.env.DB.prepare(
+    "SELECT id, name, url, events, is_active, created_at, updated_at FROM webhooks WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first<Omit<WebhookRow, "secret" | "created_by">>();
+  if (!wh) return c.json({ error: "Not found" }, 404);
+  return c.json({ webhook: wh });
+});
+
+// PATCH /api/user/webhooks/:id
+app.patch("/webhooks/:id", async (c) => {
+  const user = c.get("user");
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM webhooks WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first();
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const body = await c.req.json<{
+    name?: string;
+    url?: string;
+    secret?: string;
+    events?: string[];
+    is_active?: boolean;
+  }>();
+
+  const sets: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.name !== undefined) {
+    sets.push("name = ?");
+    values.push(body.name.trim());
+  }
+  if (body.url !== undefined) {
+    try {
+      new URL(body.url);
+    } catch {
+      return c.json({ error: "Invalid URL" }, 400);
+    }
+    sets.push("url = ?");
+    values.push(body.url.trim());
+  }
+  if (body.secret !== undefined) {
+    sets.push("secret = ?");
+    values.push(body.secret);
+  }
+  if (body.events !== undefined) {
+    const filtered = body.events.filter((e) =>
+      (USER_WEBHOOK_EVENTS as readonly string[]).includes(e),
+    );
+    sets.push("events = ?");
+    values.push(JSON.stringify(filtered));
+  }
+  if (body.is_active !== undefined) {
+    sets.push("is_active = ?");
+    values.push(body.is_active ? 1 : 0);
+  }
+
+  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
+
+  sets.push("updated_at = ?");
+  values.push(Math.floor(Date.now() / 1000));
+  values.push(c.req.param("id"));
+  values.push(user.id);
+
+  await c.env.DB.prepare(
+    `UPDATE webhooks SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
+  )
+    .bind(...values)
+    .run();
+
+  return c.json({ message: "Updated" });
+});
+
+// DELETE /api/user/webhooks/:id
+app.delete("/webhooks/:id", async (c) => {
+  const user = c.get("user");
+  const wh = await c.env.DB.prepare(
+    "SELECT id FROM webhooks WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first();
+  if (!wh) return c.json({ error: "Not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM webhooks WHERE id = ?")
+    .bind(c.req.param("id"))
+    .run();
+  return c.json({ message: "Deleted" });
+});
+
+// POST /api/user/webhooks/:id/test
+app.post("/webhooks/:id/test", async (c) => {
+  const user = c.get("user");
+  const wh = await c.env.DB.prepare(
+    "SELECT id, url, secret FROM webhooks WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first<Pick<WebhookRow, "id" | "url" | "secret">>();
+  if (!wh) return c.json({ error: "Not found" }, 404);
+
+  const now = Math.floor(Date.now() / 1000);
+  const deliveryId = randomId();
+  const payload = JSON.stringify({
+    event: "webhook.test",
+    timestamp: now,
+    data: { message: "Test delivery from Prism" },
+  });
+
+  const sig = await hmacSign(wh.secret, payload);
+  let status: number | null = null;
+  let response: string | null = null;
+  let success = false;
+
+  try {
+    const res = await fetch(wh.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Prism-Event": "webhook.test",
+        "X-Prism-Signature": `sha256=${sig}`,
+        "X-Prism-Delivery": deliveryId,
+      },
+      body: payload,
+      signal: AbortSignal.timeout(10_000),
+    });
+    status = res.status;
+    response = (await res.text()).slice(0, 512);
+    success = status >= 200 && status < 300;
+  } catch (err) {
+    response = String(err).slice(0, 512);
+  }
+
+  await c.env.DB.prepare(
+    "INSERT INTO webhook_deliveries (id, webhook_id, event_type, payload, response_status, response_body, success, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(
+      deliveryId,
+      wh.id,
+      "webhook.test",
+      payload,
+      status,
+      response,
+      success ? 1 : 0,
+      now,
+    )
+    .run();
+
+  return c.json({ success, status, response });
+});
+
+// GET /api/user/webhooks/:id/deliveries
+app.get("/webhooks/:id/deliveries", async (c) => {
+  const user = c.get("user");
+  const wh = await c.env.DB.prepare(
+    "SELECT id FROM webhooks WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first();
+  if (!wh) return c.json({ error: "Not found" }, 404);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, event_type, response_status, success, delivered_at FROM webhook_deliveries WHERE webhook_id = ? ORDER BY delivered_at DESC LIMIT 50",
+  )
+    .bind(c.req.param("id"))
+    .all<
+      Pick<
+        WebhookDeliveryRow,
+        "id" | "event_type" | "response_status" | "success" | "delivered_at"
+      >
+    >();
+
+  return c.json({ deliveries: results });
 });
 
 export default app;

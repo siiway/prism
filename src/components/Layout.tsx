@@ -22,6 +22,7 @@ import {
   HomeRegular,
   KeyRegular,
   LinkRegular,
+  LinkMultipleRegular,
   LockClosedRegular,
   NavigationRegular,
   PeopleRegular,
@@ -303,6 +304,12 @@ export function Layout() {
           to="/tokens"
           icon={<KeyRegular />}
           label={t("nav.tokens")}
+          onNavigate={closeSidebar}
+        />
+        <NavItem
+          to="/webhooks"
+          icon={<LinkMultipleRegular />}
+          label={t("nav.webhooks")}
           onNavigate={closeSidebar}
         />
 
