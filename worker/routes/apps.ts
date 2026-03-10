@@ -6,6 +6,7 @@ import { requireAuth } from "../middleware/auth";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
 import { deliverUserWebhooks } from "../lib/webhooks";
+import { deliverUserEmailNotifications } from "../lib/notifications";
 import type { OAuthAppRow, TeamMemberRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -168,6 +169,18 @@ app.post("/", async (c) => {
       name: body.name,
     }).catch(() => {}),
   );
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "app.created",
+      {
+        app_id: id,
+        name: body.name,
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
   return c.json({ app: fullApp(row!, isVerified) }, 201);
 });
 
@@ -249,6 +262,15 @@ app.patch("/:id", async (c) => {
       () => {},
     ),
   );
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "app.updated",
+      { app_id: id },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
   return c.json({ app: fullApp(updatedRow!, isVerified) });
 });
 
@@ -303,6 +325,15 @@ app.delete("/:id", async (c) => {
     deliverUserWebhooks(c.env.DB, user.id, "app.deleted", { app_id: id }).catch(
       () => {},
     ),
+  );
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "app.deleted",
+      { app_id: id },
+      c.env.APP_URL,
+    ).catch(() => {}),
   );
   return c.json({ message: "App deleted" });
 });

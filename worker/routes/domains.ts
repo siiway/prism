@@ -5,6 +5,7 @@ import { randomBase64url, randomId } from "../lib/crypto";
 import { getConfigValue } from "../lib/config";
 import { requireAuth } from "../middleware/auth";
 import { deliverUserWebhooks } from "../lib/webhooks";
+import { deliverUserEmailNotifications } from "../lib/notifications";
 import type { DomainRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -84,6 +85,18 @@ app.post("/", async (c) => {
       domain,
     }).catch(() => {}),
   );
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "domain.added",
+      {
+        domain_id: id,
+        domain,
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
   return c.json(
     {
       id,
@@ -141,6 +154,18 @@ app.post("/:id/verify", async (c) => {
         domain_id: id,
         domain: row.domain,
       }).catch(() => {}),
+    );
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env.DB,
+        user.id,
+        "domain.verified",
+        {
+          domain_id: id,
+          domain: row.domain,
+        },
+        c.env.APP_URL,
+      ).catch(() => {}),
     );
     return c.json({ verified: true, next_reverify_at: nextReverify });
   }
@@ -269,6 +294,18 @@ app.delete("/:id", async (c) => {
       domain_id: id,
       domain: row.domain,
     }).catch(() => {}),
+  );
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "domain.deleted",
+      {
+        domain_id: id,
+        domain: row.domain,
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
   );
   return c.json({ message: "Domain deleted" });
 });

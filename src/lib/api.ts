@@ -519,6 +519,22 @@ export const api = {
       getToken(),
     ),
 
+  // ─── Notification preferences ─────────────────────────────────────────────
+  getNotificationPrefs: () =>
+    request<{ events: string[]; available: string[] }>(
+      "GET",
+      "/user/me/notifications",
+      undefined,
+      getToken(),
+    ),
+  updateNotificationPrefs: (events: string[]) =>
+    request<{ events: string[] }>(
+      "PUT",
+      "/user/me/notifications",
+      { events },
+      getToken(),
+    ),
+
   // Teams
   listTeams: () =>
     request<{ teams: Team[] }>("GET", "/teams", undefined, getToken()),

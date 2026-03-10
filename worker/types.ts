@@ -202,6 +202,11 @@ export interface WebhookRow {
   updated_at: number;
 }
 
+export interface UserNotificationPrefsRow {
+  user_id: string;
+  events: string; // JSON string[]
+}
+
 export interface WebhookDeliveryRow {
   id: string;
   webhook_id: string;

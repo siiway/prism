@@ -16,6 +16,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  AlertRegular,
   AppsRegular,
   DismissRegular,
   GlobeRegular,
@@ -278,6 +279,12 @@ export function Layout() {
           to="/security"
           icon={<ShieldPersonRegular />}
           label={t("nav.security")}
+          onNavigate={closeSidebar}
+        />
+        <NavItem
+          to="/notifications"
+          icon={<AlertRegular />}
+          label={t("nav.notifications")}
           onNavigate={closeSidebar}
         />
 

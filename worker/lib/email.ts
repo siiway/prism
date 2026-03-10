@@ -84,20 +84,41 @@ export async function sendEmail(
   }
 }
 
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function safeHref(url: string): string {
+  try {
+    const { protocol } = new URL(url);
+    if (protocol !== "https:" && protocol !== "http:") return "#";
+    return url;
+  } catch {
+    return "#";
+  }
+}
+
 export function inviteEmailTemplate(
   siteName: string,
   inviteUrl: string,
   note?: string | null,
 ): { html: string; text: string } {
-  const noteHtml = note ? `<p style="color:#444">${note}</p>` : "";
+  const sn = escHtml(siteName);
+  const noteHtml = note ? `<p style="color:#444">${escHtml(note)}</p>` : "";
   const noteText = note ? `\n${note}\n` : "";
+  const href = safeHref(inviteUrl);
   return {
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-        <h2>You've been invited to ${siteName}</h2>
+        <h2>You've been invited to ${sn}</h2>
         ${noteHtml}
         <p>Click the link below to create your account:</p>
-        <a href="${inviteUrl}" style="display:inline-block;padding:12px 24px;background:#0078d4;color:#fff;text-decoration:none;border-radius:4px">Accept Invite</a>
+        <a href="${href}" style="display:inline-block;padding:12px 24px;background:#0078d4;color:#fff;text-decoration:none;border-radius:4px">Accept Invite</a>
         <p style="color:#666;font-size:14px">This link expires in 7 days. If you weren't expecting this, you can ignore this email.</p>
       </div>`,
     text: `You've been invited to ${siteName}\n${noteText}\nAccept your invite: ${inviteUrl}\n\nThis link expires in 7 days.`,
@@ -108,12 +129,14 @@ export function verifyEmailTemplate(
   siteName: string,
   verifyUrl: string,
 ): { html: string; text: string } {
+  const sn = escHtml(siteName);
+  const href = safeHref(verifyUrl);
   return {
     html: `
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
-        <h2>Verify your email — ${siteName}</h2>
+        <h2>Verify your email — ${sn}</h2>
         <p>Click the link below to verify your email address:</p>
-        <a href="${verifyUrl}" style="display:inline-block;padding:12px 24px;background:#0078d4;color:#fff;text-decoration:none;border-radius:4px">Verify Email</a>
+        <a href="${href}" style="display:inline-block;padding:12px 24px;background:#0078d4;color:#fff;text-decoration:none;border-radius:4px">Verify Email</a>
         <p style="color:#666;font-size:14px">This link expires in 24 hours. If you didn't register, you can ignore this email.</p>
       </div>`,
     text: `Verify your email — ${siteName}\n\nClick here to verify: ${verifyUrl}\n\nThis link expires in 24 hours.`,

@@ -46,6 +46,7 @@ import { TeamDetail } from "./pages/teams/TeamDetail";
 import { TeamJoin } from "./pages/teams/TeamJoin";
 import { Tokens } from "./pages/Tokens";
 import { UserWebhooks } from "./pages/UserWebhooks";
+import { Notifications } from "./pages/Notifications";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -172,6 +173,7 @@ export default function App() {
               <Route path="connected-apps" element={<ConnectedApps />} />
               <Route path="tokens" element={<Tokens />} />
               <Route path="webhooks" element={<UserWebhooks />} />
+              <Route path="notifications" element={<Notifications />} />
 
               {/* Admin */}
               <Route

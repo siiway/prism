@@ -10,8 +10,13 @@ import {
 import { requireAuth } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
 import { hmacSign, deliverUserWebhooks } from "../lib/webhooks";
+import {
+  deliverUserEmailNotifications,
+  USER_NOTIFICATION_EVENTS,
+} from "../lib/notifications";
 import type {
   UserRow,
+  UserNotificationPrefsRow,
   WebhookRow,
   WebhookDeliveryRow,
   Variables,
@@ -91,6 +96,15 @@ app.patch("/me", async (c) => {
     deliverUserWebhooks(c.env.DB, user.id, "profile.updated", {}).catch(
       () => {},
     ),
+  );
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "profile.updated",
+      {},
+      c.env.APP_URL,
+    ).catch(() => {}),
   );
   return c.json({ user: safeUser(row!) });
 });
@@ -603,6 +617,43 @@ app.get("/webhooks/:id/deliveries", async (c) => {
     >();
 
   return c.json({ deliveries: results });
+});
+
+// ─── Notification Preferences ─────────────────────────────────────────────────
+
+// GET /api/user/me/notifications
+app.get("/me/notifications", async (c) => {
+  const user = c.get("user");
+  const row = await c.env.DB.prepare(
+    "SELECT events FROM user_notification_prefs WHERE user_id = ?",
+  )
+    .bind(user.id)
+    .first<Pick<UserNotificationPrefsRow, "events">>();
+  return c.json({
+    events: row ? (JSON.parse(row.events) as string[]) : [],
+    available: USER_NOTIFICATION_EVENTS,
+  });
+});
+
+// PUT /api/user/me/notifications
+app.put("/me/notifications", async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{ events: string[] }>();
+
+  if (!Array.isArray(body.events))
+    return c.json({ error: "events must be an array" }, 400);
+
+  const valid = body.events.filter((e) =>
+    (USER_NOTIFICATION_EVENTS as readonly string[]).includes(e),
+  );
+
+  await c.env.DB.prepare(
+    "INSERT INTO user_notification_prefs (user_id, events) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET events = excluded.events",
+  )
+    .bind(user.id, JSON.stringify(valid))
+    .run();
+
+  return c.json({ events: valid });
 });
 
 export default app;
