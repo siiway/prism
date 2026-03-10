@@ -282,6 +282,11 @@ export const api = {
       undefined,
       getToken(),
     ),
+  connectionBegin: (slug: string, params: Record<string, string>) =>
+    request<{ redirect: string }>(
+      "GET",
+      `/connections/${slug}/begin?${new URLSearchParams(params)}`,
+    ),
   connectionIntent: () =>
     request<{ token: string }>("POST", "/connections/intent", {}, getToken()),
   connectionPending: (key: string) =>
@@ -398,6 +403,21 @@ export const api = {
       undefined,
       getToken(),
     ),
+  adminLoginErrors: (
+    page = 1,
+    filters: { error_code?: string; identifier?: string; ip?: string } = {},
+  ) => {
+    const qs = new URLSearchParams({ page: String(page) });
+    if (filters.error_code) qs.set("error_code", filters.error_code);
+    if (filters.identifier) qs.set("identifier", filters.identifier);
+    if (filters.ip) qs.set("ip", filters.ip);
+    return request<{ errors: unknown[]; total: number }>(
+      "GET",
+      `/admin/login-errors?${qs}`,
+      undefined,
+      getToken(),
+    );
+  },
   adminTestEmail: () =>
     request<{ message: string }>("POST", "/admin/test-email", {}, getToken()),
   adminReset: () =>

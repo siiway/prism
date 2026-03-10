@@ -15,6 +15,7 @@ import { randomBase64url, randomId } from "../lib/crypto";
 import { deliverAdminWebhooks, hmacSign } from "../lib/webhooks";
 import type {
   AuditLogRow,
+  LoginErrorRow,
   OAuthAppRow,
   OAuthSourceRow,
   SiteInviteRow,
@@ -85,6 +86,7 @@ app.patch("/config", async (c) => {
     "smtp_password",
     "custom_css",
     "accent_color",
+    "login_error_retention_days",
   ]);
 
   const updates: Record<string, unknown> = {};
@@ -561,6 +563,62 @@ app.get("/audit-log", async (c) => {
     "SELECT COUNT(*) as n FROM audit_log",
   ).first<{ n: number }>();
   return c.json({ logs: rows.results, total: count?.n ?? 0, page, limit });
+});
+
+// ─── Login error log ──────────────────────────────────────────────────────────
+
+app.get("/login-errors", async (c) => {
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1"));
+  const limit = Math.min(
+    Math.max(1, parseInt(c.req.query("limit") ?? "50")),
+    200,
+  );
+  const offset = (page - 1) * limit;
+  const qCode = c.req.query("error_code") ?? "";
+  const qIdentifier = c.req.query("identifier") ?? "";
+  const qIp = c.req.query("ip") ?? "";
+
+  // Lazy cleanup: purge expired records in the background
+  const config = await getConfig(c.env.DB);
+  const retentionDays = config.login_error_retention_days ?? 30;
+  if (retentionDays > 0) {
+    const cutoff = Math.floor(Date.now() / 1000) - retentionDays * 86400;
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare("DELETE FROM login_errors WHERE created_at < ?")
+        .bind(cutoff)
+        .run()
+        .catch(() => {}),
+    );
+  }
+
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (qCode) {
+    conditions.push("error_code = ?");
+    params.push(qCode);
+  }
+  if (qIdentifier) {
+    conditions.push("identifier LIKE ?");
+    params.push(`%${qIdentifier}%`);
+  }
+  if (qIp) {
+    conditions.push("ip_address LIKE ?");
+    params.push(`%${qIp}%`);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const [rows, count] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT * FROM login_errors ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...params, limit, offset)
+      .all<LoginErrorRow>(),
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM login_errors ${where}`)
+      .bind(...params)
+      .first<{ n: number }>(),
+  ]);
+
+  return c.json({ errors: rows.results, total: count?.n ?? 0, page, limit });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

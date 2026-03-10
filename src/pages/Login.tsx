@@ -6,6 +6,8 @@ import {
   Field,
   Input,
   Link,
+  MessageBar,
+  MessageBarBody,
   Spinner,
   Text,
   Title2,
@@ -71,6 +73,16 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const redirectTo = searchParams.get("redirect") ?? "/";
+  const errorParam = searchParams.get("error");
+  const errorParamMessage = errorParam
+    ? t(
+        errorParam === "invalid_token"
+          ? "auth.errorInvalidToken"
+          : errorParam === "no_token"
+            ? "auth.errorNoToken"
+            : "auth.errorGeneric",
+      )
+    : null;
 
   // Redirect whenever a token appears (on mount if already logged in, or after login)
   useEffect(() => {
@@ -131,8 +143,9 @@ export function Login() {
     }
   };
 
-  const handleSocialLogin = (provider: string) => {
-    window.location.href = `/api/connections/${provider}/begin?mode=login`;
+  const handleSocialLogin = async (provider: string) => {
+    const { redirect } = await api.connectionBegin(provider, { mode: "login" });
+    window.location.href = redirect;
   };
 
   return (
@@ -141,6 +154,12 @@ export function Login() {
         <Title2>
           {t("auth.signInTo", { siteName: site?.site_name ?? "Prism" })}
         </Title2>
+
+        {errorParamMessage && (
+          <MessageBar intent="error">
+            <MessageBarBody>{errorParamMessage}</MessageBarBody>
+          </MessageBar>
+        )}
 
         <form onSubmit={handleLogin} className={styles.form}>
           {!totpRequired ? (

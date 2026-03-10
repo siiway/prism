@@ -272,6 +272,18 @@ export function AdminSettings() {
                 />
               </Field>
             </div>
+            <Field
+              label={t("admin.loginErrorRetentionDays")}
+              hint={t("admin.loginErrorRetentionDaysHint")}
+            >
+              <Input
+                type="number"
+                value={String(get("login_error_retention_days") ?? 30)}
+                onChange={(e) =>
+                  set("login_error_retention_days", parseInt(e.target.value))
+                }
+              />
+            </Field>
           </div>
         </div>
       )}

@@ -33,5 +33,6 @@ export interface SiteConfig {
   smtp_password: string;
   custom_css: string;
   accent_color: string;
+  login_error_retention_days: number;
   initialized: boolean;
 }

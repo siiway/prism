@@ -219,7 +219,9 @@ export function Register() {
                   key={p.slug}
                   appearance="outline"
                   onClick={() =>
-                    (window.location.href = `/api/connections/${p.slug}/begin?mode=login`)
+                    api
+                      .connectionBegin(p.slug, { mode: "login" })
+                      .then(({ redirect }) => (window.location.href = redirect))
                   }
                 >
                   {p.name}

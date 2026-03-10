@@ -35,6 +35,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   smtp_password: "",
   custom_css: "",
   accent_color: "#0078d4",
+  login_error_retention_days: 30,
   initialized: false,
 };
 

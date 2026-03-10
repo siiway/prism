@@ -1,7 +1,7 @@
 // Social platform connections (GitHub, Google, Microsoft, Discord, generic OIDC/OAuth2)
 
 import { Hono } from "hono";
-import { randomId, randomBase64url } from "../lib/crypto";
+import { randomId, randomBase64url, sha256Hex } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { signJWT } from "../lib/jwt";
@@ -136,7 +136,22 @@ async function resolveSource(
     const userUrl = isGeneric ? (row.userinfo_url ?? "") : def.userUrl;
     const scopes = row.scopes ?? def.scopes;
 
-    if (isGeneric && (!authUrl || !tokenUrl || !userUrl)) return null; // misconfigured generic source
+    console.log(
+      `[resolveSource] slug=${slug} provider=${row.provider} isGeneric=${isGeneric}`,
+    );
+    console.log(
+      `[resolveSource] row.auth_url=${row.auth_url} row.token_url=${row.token_url} row.userinfo_url=${row.userinfo_url}`,
+    );
+    console.log(
+      `[resolveSource] resolved authUrl=${authUrl} tokenUrl=${tokenUrl} userUrl=${userUrl} scopes=${scopes}`,
+    );
+
+    if (isGeneric && (!authUrl || !tokenUrl || !userUrl)) {
+      console.warn(
+        `[resolveSource] REJECTED — generic source missing URLs: authUrl=${authUrl} tokenUrl=${tokenUrl} userUrl=${userUrl}`,
+      );
+      return null; // misconfigured generic source
+    }
 
     return {
       slug: row.slug,
@@ -222,10 +237,16 @@ app.post("/intent", requireAuth, async (c) => {
 
 app.get("/:provider/begin", optionalAuth, async (c) => {
   const slug = c.req.param("provider") ?? "";
+  console.log(`[begin] slug=${slug} APP_URL=${c.env.APP_URL}`);
   const config = await getConfig(c.env.DB);
   const source = await resolveSource(c.env.DB, slug, config);
-  if (!source)
+  if (!source) {
+    console.warn(`[begin] resolveSource returned null for slug=${slug}`);
     return c.json({ error: "Unknown or unconfigured provider" }, 400);
+  }
+  console.log(
+    `[begin] resolved source: provider=${source.provider} authUrl=${source.authUrl} tokenUrl=${source.tokenUrl} scopes=${source.scopes}`,
+  );
 
   const state = randomBase64url(24);
   const mode = c.req.query("mode") ?? "login"; // 'login' | 'connect'
@@ -261,7 +282,9 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
   if (source.provider === "google") params.set("access_type", "offline");
   if (source.provider === "microsoft") params.set("response_mode", "query");
 
-  return c.redirect(`${source.authUrl}?${params}`);
+  const finalRedirect = `${source.authUrl}?${params}`;
+  console.log(`[begin] redirecting to: ${finalRedirect}`);
+  return c.json({ redirect: finalRedirect });
 });
 
 // ─── OAuth callback ───────────────────────────────────────────────────────────
@@ -445,7 +468,7 @@ app.get("/:provider/callback", async (c) => {
       )
       .run();
     return c.redirect(
-      `${c.env.APP_URL}/auth/callback?token=${encodeURIComponent(await issueJWT(user, c.env.KV_SESSIONS))}`,
+      `${c.env.APP_URL}/auth/callback?token=${encodeURIComponent(await issueJWT(user, c.env.DB, c.env.KV_SESSIONS))}`,
     );
   }
 
@@ -557,7 +580,7 @@ app.post("/complete", async (c) => {
       .run();
 
     return c.json({
-      token: await issueJWT(user, c.env.KV_SESSIONS),
+      token: await issueJWT(user, c.env.DB, c.env.KV_SESSIONS),
       user: userToProfile(user),
     });
   }
@@ -627,7 +650,7 @@ app.post("/complete", async (c) => {
     if (!user) return c.json({ error: "Failed to create user" }, 500);
 
     return c.json({
-      token: await issueJWT(user, c.env.KV_SESSIONS),
+      token: await issueJWT(user, c.env.DB, c.env.KV_SESSIONS),
       user: userToProfile(user),
     });
   }
@@ -766,8 +789,15 @@ function extractProviderAvatar(
   }
 }
 
-async function issueJWT(user: UserRow, kv: KVNamespace): Promise<string> {
-  return signJWT(
+async function issueJWT(
+  user: UserRow,
+  db: D1Database,
+  kv: KVNamespace,
+  ttlSeconds = 30 * 24 * 60 * 60,
+): Promise<string> {
+  const sessionId = randomId(32);
+  const now = Math.floor(Date.now() / 1000);
+  const token = await signJWT(
     {
       sub: user.id,
       role: user.role,
@@ -776,11 +806,19 @@ async function issueJWT(user: UserRow, kv: KVNamespace): Promise<string> {
       display_name: user.display_name,
       avatar_url: user.avatar_url,
       email_verified: user.email_verified === 1,
-      sessionId: randomId(32),
+      sessionId,
     },
     await getJwtSecret(kv),
-    30 * 24 * 60 * 60,
+    ttlSeconds,
   );
+  const hash = await sha256Hex(token);
+  await db
+    .prepare(
+      "INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(sessionId, user.id, hash, now + ttlSeconds, now)
+    .run();
+  return token;
 }
 
 function userToProfile(user: UserRow) {

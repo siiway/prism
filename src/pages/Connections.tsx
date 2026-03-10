@@ -138,8 +138,11 @@ export function Connections() {
   const handleConnect = async (providerId: string) => {
     try {
       const { token: intent } = await api.connectionIntent();
-      const params = new URLSearchParams({ mode: "connect", intent });
-      window.location.href = `/api/connections/${providerId}/begin?${params}`;
+      const { redirect } = await api.connectionBegin(providerId, {
+        mode: "connect",
+        intent,
+      });
+      window.location.href = redirect;
     } catch (err) {
       showMsg(
         "error",

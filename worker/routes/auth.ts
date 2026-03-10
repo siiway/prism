@@ -37,6 +37,33 @@ import type {
   Variables,
 } from "../types";
 
+// ─── Login error logging ─────────────────────────────────────────────────────
+
+async function logLoginError(
+  db: D1Database,
+  errorCode: string,
+  identifier: string | null,
+  ip: string,
+  userAgent: string | null,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      "INSERT INTO login_errors (id, error_code, identifier, ip_address, user_agent, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(
+      randomId(),
+      errorCode,
+      identifier,
+      ip,
+      userAgent,
+      JSON.stringify(metadata),
+      now,
+    )
+    .run();
+}
+
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
@@ -242,8 +269,14 @@ app.post("/register", async (c) => {
 
 app.post("/login", async (c) => {
   const ip = getIp(c);
+  const ua = c.req.header("User-Agent") ?? null;
   const rl = await rateLimitIp(c.env.KV_SESSIONS, ip, "login", 10, 60);
-  if (!rl.allowed) return c.json({ error: "Too many requests" }, 429);
+  if (!rl.allowed) {
+    c.executionCtx.waitUntil(
+      logLoginError(c.env.DB, "rate_limited", null, ip, ua, {}).catch(() => {}),
+    );
+    return c.json({ error: "Too many requests" }, 429);
+  }
 
   const body = await c.req.json<{
     identifier: string; // email or username
@@ -261,8 +294,19 @@ app.post("/login", async (c) => {
     body.pow_nonce,
     ip,
   );
-  if (!captchaOk.success)
+  if (!captchaOk.success) {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "captcha_failed",
+        body.identifier ?? null,
+        ip,
+        ua,
+        {},
+      ).catch(() => {}),
+    );
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
+  }
 
   const isEmail = body.identifier.includes("@");
   const user = await c.env.DB.prepare(
@@ -278,12 +322,46 @@ app.post("/login", async (c) => {
     .first<UserRow>();
 
   if (!user || !user.password_hash) {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "invalid_credentials",
+        body.identifier ?? null,
+        ip,
+        ua,
+        {},
+      ).catch(() => {}),
+    );
     return c.json({ error: "Invalid credentials" }, 401);
   }
-  if (!user.is_active) return c.json({ error: "Account is disabled" }, 403);
+  if (!user.is_active) {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "account_disabled",
+        body.identifier ?? null,
+        ip,
+        ua,
+        { user_id: user.id },
+      ).catch(() => {}),
+    );
+    return c.json({ error: "Account is disabled" }, 403);
+  }
 
   const passwordOk = await verifyPassword(body.password, user.password_hash);
-  if (!passwordOk) return c.json({ error: "Invalid credentials" }, 401);
+  if (!passwordOk) {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "invalid_credentials",
+        body.identifier ?? null,
+        ip,
+        ua,
+        { user_id: user.id },
+      ).catch(() => {}),
+    );
+    return c.json({ error: "Invalid credentials" }, 401);
+  }
 
   // Check TOTP if any authenticators enabled
   const totpCount = await c.env.DB.prepare(
@@ -296,7 +374,19 @@ app.post("/login", async (c) => {
       return c.json({ error: "TOTP code required", totp_required: true }, 200);
     }
     const ok = await verifyAnyTotp(c.env.DB, user.id, body.totp_code);
-    if (!ok) return c.json({ error: "Invalid TOTP code" }, 401);
+    if (!ok) {
+      c.executionCtx.waitUntil(
+        logLoginError(
+          c.env.DB,
+          "totp_invalid",
+          body.identifier ?? null,
+          ip,
+          ua,
+          { user_id: user.id },
+        ).catch(() => {}),
+      );
+      return c.json({ error: "Invalid TOTP code" }, 401);
+    }
   }
 
   const config = await getConfig(c.env.DB);

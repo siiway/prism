@@ -218,6 +218,16 @@ export interface WebhookDeliveryRow {
   delivered_at: number;
 }
 
+export interface LoginErrorRow {
+  id: string;
+  error_code: string;
+  identifier: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  metadata: string; // JSON
+  created_at: number;
+}
+
 // ─── Application types ────────────────────────────────────────────────────────
 
 export type SocialProvider = "github" | "google" | "microsoft" | "discord";
@@ -262,6 +272,7 @@ export interface SiteConfig {
   smtp_password: string;
   custom_css: string;
   accent_color: string;
+  login_error_retention_days: number;
   initialized: boolean;
 }
 
