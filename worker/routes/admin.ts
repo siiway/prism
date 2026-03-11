@@ -432,20 +432,74 @@ app.post("/test-email", async (c) => {
 
 app.post("/test-email-receiving", async (c) => {
   const config = await getConfig(c.env.DB);
-  const emailHost =
-    config.email_receive_host || new URL(c.env.APP_URL).hostname;
-  const testCode = randomId(12);
-  const testAddress = `verify-${testCode}@${emailHost}`;
 
-  // Store in KV so the email handler can validate it
+  if (config.email_receive_provider === "none") {
+    return c.json({ error: "Receive provider is not configured" }, 400);
+  }
+  if (config.email_provider === "none") {
+    return c.json(
+      { error: "Email send provider is required to send the test email" },
+      400,
+    );
+  }
+
+  const testCode = randomId(12);
+
+  // Determine the target address and subject based on receive provider
+  let toAddress: string;
+  let subject: string;
+
+  if (config.email_receive_provider === "imap") {
+    if (!config.imap_user) {
+      return c.json({ error: "IMAP username is not configured" }, 400);
+    }
+    toAddress = config.imap_user;
+    subject = testCode;
+  } else {
+    // Cloudflare Email Workers
+    const emailHost =
+      config.email_receive_host || new URL(c.env.APP_URL).hostname;
+    toAddress = `verify-${testCode}@${emailHost}`;
+    subject = `Prism — Email Receive Test`;
+  }
+
+  // Store in KV so the handler/poller can validate it
   await c.env.KV_CACHE.put(`email-receive-test:${testCode}`, "1", {
     expirationTtl: 300,
   });
 
-  return c.json({
-    message: testAddress,
-    address: testAddress,
-  });
+  try {
+    await sendEmail(
+      {
+        to: toAddress,
+        subject,
+        html: `<div style="font-family:sans-serif"><h2>Email Receive Test</h2><p>Test code: <strong>${testCode}</strong></p><p>If the receive pipeline is working, this will be picked up automatically.</p></div>`,
+        text: `Email Receive Test\n\nTest code: ${testCode}\n\nIf the receive pipeline is working, this will be picked up automatically.`,
+      },
+      {
+        provider: config.email_provider as "resend" | "mailchannels" | "smtp",
+        from: config.email_from,
+        apiKey: config.email_api_key,
+        smtpHost: config.smtp_host,
+        smtpPort: config.smtp_port,
+        smtpSecure: config.smtp_secure,
+        smtpUser: config.smtp_user,
+        smtpPassword: config.smtp_password,
+      },
+    );
+
+    return c.json({
+      message: `Test email sent to ${toAddress}`,
+      address: toAddress,
+    });
+  } catch (err) {
+    return c.json(
+      {
+        error: err instanceof Error ? err.message : "Failed to send test email",
+      },
+      500,
+    );
+  }
 });
 
 // ─── Reset everything ─────────────────────────────────────────────────────────
