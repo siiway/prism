@@ -48,6 +48,7 @@ import { TeamJoin } from "./pages/teams/TeamJoin";
 import { Tokens } from "./pages/Tokens";
 import { UserWebhooks } from "./pages/UserWebhooks";
 import { Notifications } from "./pages/Notifications";
+import { VerifyEmail } from "./pages/VerifyEmail";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -145,6 +146,9 @@ export default function App() {
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/social-confirm" element={<SocialConfirm />} />
             <Route path="/social-select" element={<SocialSelect />} />
+
+            {/* Email verification result */}
+            <Route path="/verify-email" element={<VerifyEmail />} />
 
             {/* Team invite */}
             <Route path="/teams/join/:token" element={<TeamJoin />} />

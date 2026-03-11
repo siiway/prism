@@ -102,6 +102,13 @@ export const api = {
       "GET",
       `/auth/verify-email?token=${encodeURIComponent(token)}`,
     ),
+  resendVerifyEmail: () =>
+    request<{ message: string }>(
+      "POST",
+      "/auth/resend-verify-email",
+      {},
+      getToken(),
+    ),
 
   // ─── TOTP ────────────────────────────────────────────────────────────────
   totpList: () =>

@@ -120,7 +120,10 @@
     "newPasswordPlaceholder": "At least 8 characters",
     "updatePassword": "Update password",
     "passwordChanged": "Password changed",
-    "passwordChangeFailed": "Password change failed"
+    "passwordChangeFailed": "Password change failed",
+    "resendVerification": "Resend verification email",
+    "verifySent": "Verification email sent — please check your inbox.",
+    "verifyFailed": "Failed to send verification email"
   },
   "security": {
     "title": "Security",
@@ -197,7 +200,12 @@
     "connectedPlatforms": "Connected platforms",
     "securityCard": "Security",
     "addPasskeyCard": "Add a Passkey",
-    "addPasskeyDesc": "Sign in faster with biometrics or hardware keys."
+    "addPasskeyDesc": "Sign in faster with biometrics or hardware keys.",
+    "verifyEmailTitle": "Verify your email address",
+    "verifyEmailDesc": "Your email is not yet verified. Please check your inbox or resend the verification email.",
+    "resendVerification": "Resend verification",
+    "verifySent": "Verification email sent — please check your inbox.",
+    "verifyFailed": "Failed to send verification email"
   },
   "apps": {
     "myApplications": "My Applications",
@@ -557,6 +565,8 @@
     "userDeleted": "User deleted",
     "userDisabled": "User disabled",
     "userEnabled": "User enabled",
+    "emailVerified": "Email marked as verified",
+    "emailUnverified": "Email marked as unverified",
     "roleUpdated": "Role updated",
     "deleteFailed": "Delete failed",
     "deleteUserTitle": "Delete user?",
@@ -799,6 +809,14 @@
     "connectionLoginDesc": "When someone signs in to your account via a social connection",
     "profileUpdatedLabel": "Profile updated",
     "profileUpdatedDesc": "When your profile information is changed"
+  },
+  "verifyEmail": {
+    "successTitle": "Email Verified!",
+    "successDesc": "Your email address has been successfully verified. You can now use all features of your account.",
+    "invalidTitle": "Verification Failed",
+    "invalidDesc": "This verification link is invalid or has already been used. Please request a new verification email from your profile.",
+    "goToDashboard": "Go to Dashboard",
+    "goToLogin": "Go to Login"
   },
   "language": {
     "switchToZh": "中文",

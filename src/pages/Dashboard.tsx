@@ -5,6 +5,9 @@ import {
   Button,
   Card,
   CardHeader,
+  MessageBar,
+  MessageBarBody,
+  Spinner,
   Text,
   Title2,
   Title3,
@@ -16,12 +19,14 @@ import {
   GlobeRegular,
   KeyRegular,
   LinkRegular,
+  MailRegular,
   ShieldPersonRegular,
 } from "@fluentui/react-icons";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
@@ -86,10 +91,34 @@ export function Dashboard() {
     queryFn: api.listConnections,
   });
 
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendMsg, setResendMsg] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  const showEmailBanner = me?.user.email_verified === false;
   const showSecurityWarning =
     !me?.totp_enabled && (me?.passkey_count ?? 0) === 0;
 
   const passkeyCount = me?.passkey_count ?? 0;
+
+  const handleResend = async () => {
+    setResendLoading(true);
+    setResendMsg(null);
+    try {
+      await api.resendVerifyEmail();
+      setResendMsg({ type: "success", text: t("dashboard.verifySent") });
+    } catch (err) {
+      setResendMsg({
+        type: "error",
+        text:
+          err instanceof ApiError ? err.message : t("dashboard.verifyFailed"),
+      });
+    } finally {
+      setResendLoading(false);
+    }
+  };
 
   return (
     <div>
@@ -101,6 +130,42 @@ export function Dashboard() {
           {t("dashboard.manageDesc")}
         </Text>
       </div>
+
+      {showEmailBanner && (
+        <div className={styles.securityBanner}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <MailRegular fontSize={24} />
+            <div>
+              <Text weight="semibold" block>
+                {t("dashboard.verifyEmailTitle")}
+              </Text>
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                {t("dashboard.verifyEmailDesc")}
+              </Text>
+            </div>
+          </div>
+          <Button
+            appearance="primary"
+            size="small"
+            icon={resendLoading ? <Spinner size="tiny" /> : undefined}
+            disabled={resendLoading}
+            onClick={handleResend}
+          >
+            {t("dashboard.resendVerification")}
+          </Button>
+        </div>
+      )}
+      {resendMsg && (
+        <MessageBar
+          intent={resendMsg.type === "success" ? "success" : "error"}
+          style={{ marginTop: 8 }}
+        >
+          <MessageBarBody>{resendMsg.text}</MessageBarBody>
+        </MessageBar>
+      )}
 
       {showSecurityWarning && (
         <div className={styles.securityBanner}>

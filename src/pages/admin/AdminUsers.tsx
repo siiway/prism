@@ -89,6 +89,22 @@ export function AdminUsers() {
     }
   };
 
+  const handleToggleVerified = async (id: string, currentVerified: boolean) => {
+    try {
+      await api.adminUpdateUser(id, { email_verified: !currentVerified });
+      await qc.invalidateQueries({ queryKey: ["admin-users"] });
+      showMsg(
+        "success",
+        currentVerified ? t("admin.emailUnverified") : t("admin.emailVerified"),
+      );
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    }
+  };
+
   const handleToggleActive = async (id: string, currentActive: boolean) => {
     try {
       await api.adminUpdateUser(id, { is_active: !currentActive });
@@ -180,11 +196,19 @@ export function AdminUsers() {
                     style={{ display: "flex", alignItems: "center", gap: 4 }}
                   >
                     {u.email}
-                    {u.email_verified && (
-                      <Badge color="success" appearance="tint" size="small">
-                        ✓
-                      </Badge>
-                    )}
+                    <Badge
+                      color={u.email_verified ? "success" : "warning"}
+                      appearance="tint"
+                      size="small"
+                      style={{ cursor: "pointer" }}
+                      onClick={() =>
+                        handleToggleVerified(u.id, u.email_verified)
+                      }
+                    >
+                      {u.email_verified
+                        ? t("profile.verified")
+                        : t("profile.unverified")}
+                    </Badge>
                   </div>
                 </TableCell>
                 <TableCell>

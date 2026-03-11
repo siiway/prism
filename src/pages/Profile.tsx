@@ -68,6 +68,7 @@ export function Profile() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [pwForm, setPwForm] = useState({ current: "", next: "" });
+  const [resendLoading, setResendLoading] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -206,7 +207,41 @@ export function Profile() {
                 appearance="filled-lighter"
               />
             </Field>
-            <Field label={t("profile.emailLabel")}>
+            <Field
+              label={t("profile.emailLabel")}
+              hint={
+                me && !me.user.email_verified ? (
+                  <Button
+                    appearance="transparent"
+                    size="small"
+                    style={{ padding: 0, minWidth: 0, height: "auto" }}
+                    disabled={resendLoading}
+                    onClick={async () => {
+                      setResendLoading(true);
+                      try {
+                        await api.resendVerifyEmail();
+                        showMsg("success", t("profile.verifySent"));
+                      } catch (err) {
+                        showMsg(
+                          "error",
+                          err instanceof ApiError
+                            ? err.message
+                            : t("profile.verifyFailed"),
+                        );
+                      } finally {
+                        setResendLoading(false);
+                      }
+                    }}
+                  >
+                    {resendLoading ? (
+                      <Spinner size="tiny" />
+                    ) : (
+                      t("profile.resendVerification")
+                    )}
+                  </Button>
+                ) : undefined
+              }
+            >
               <Input
                 value={me?.user.email}
                 readOnly

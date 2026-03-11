@@ -120,7 +120,10 @@
     "newPasswordPlaceholder": "至少8个字符",
     "updatePassword": "更新密码",
     "passwordChanged": "密码已修改",
-    "passwordChangeFailed": "密码修改失败"
+    "passwordChangeFailed": "密码修改失败",
+    "resendVerification": "重新发送验证邮件",
+    "verifySent": "验证邮件已发送，请查收您的邮箱。",
+    "verifyFailed": "发送验证邮件失败"
   },
   "security": {
     "title": "安全",
@@ -197,7 +200,12 @@
     "connectedPlatforms": "已连接平台",
     "securityCard": "安全",
     "addPasskeyCard": "添加通行密钥",
-    "addPasskeyDesc": "使用生物识别或硬件密钥更快登录。"
+    "addPasskeyDesc": "使用生物识别或硬件密钥更快登录。",
+    "verifyEmailTitle": "验证您的邮箱地址",
+    "verifyEmailDesc": "您的邮箱尚未验证，请查收邮件或重新发送验证邮件。",
+    "resendVerification": "重新发送验证",
+    "verifySent": "验证邮件已发送，请查收您的邮箱。",
+    "verifyFailed": "发送验证邮件失败"
   },
   "apps": {
     "myApplications": "我的应用",
@@ -557,6 +565,8 @@
     "userDeleted": "用户已删除",
     "userDisabled": "用户已禁用",
     "userEnabled": "用户已启用",
+    "emailVerified": "邮箱已标记为已验证",
+    "emailUnverified": "邮箱已标记为未验证",
     "roleUpdated": "角色已更新",
     "deleteFailed": "删除失败",
     "deleteUserTitle": "删除用户？",
@@ -799,6 +809,14 @@
     "connectionLoginDesc": "当有人通过社交连接登录您的账号时",
     "profileUpdatedLabel": "个人资料已更新",
     "profileUpdatedDesc": "当您的个人资料信息发生变更时"
+  },
+  "verifyEmail": {
+    "successTitle": "邮箱验证成功！",
+    "successDesc": "您的邮箱地址已成功验证，现在可以使用账号的所有功能。",
+    "invalidTitle": "验证失败",
+    "invalidDesc": "此验证链接无效或已被使用，请在个人资料页面重新请求验证邮件。",
+    "goToDashboard": "前往控制台",
+    "goToLogin": "前往登录"
   },
   "language": {
     "switchToZh": "中文",

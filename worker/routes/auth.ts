@@ -222,7 +222,7 @@ app.post("/register", async (c) => {
   }
 
   if (verifyToken && config.email_provider !== "none") {
-    const verifyUrl = `${c.env.APP_URL}/verify-email?token=${verifyToken}`;
+    const verifyUrl = `${c.env.APP_URL}/api/auth/verify-email?token=${verifyToken}`;
     const tmpl = verifyEmailTemplate(config.site_name, verifyUrl);
     await sendEmail(
       {
@@ -414,14 +414,14 @@ app.post("/logout", requireAuth, async (c) => {
 
 app.get("/verify-email", async (c) => {
   const token = c.req.query("token");
-  if (!token) return c.json({ error: "Token required" }, 400);
+  if (!token) return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
 
   const user = await c.env.DB.prepare(
     "SELECT * FROM users WHERE email_verify_token = ?",
   )
     .bind(token)
     .first<UserRow>();
-  if (!user) return c.json({ error: "Invalid or expired token" }, 400);
+  if (!user) return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
 
   await c.env.DB.prepare(
     "UPDATE users SET email_verified = 1, email_verify_token = NULL, updated_at = ? WHERE id = ?",
@@ -429,7 +429,57 @@ app.get("/verify-email", async (c) => {
     .bind(Math.floor(Date.now() / 1000), user.id)
     .run();
 
-  return c.json({ message: "Email verified successfully" });
+  return c.redirect(`${c.env.APP_URL}/verify-email?status=success`);
+});
+
+app.post("/resend-verify-email", requireAuth, async (c) => {
+  const authUser = c.get("user");
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, email, email_verified, display_name FROM users WHERE id = ?",
+  )
+    .bind(authUser.id)
+    .first<{
+      id: string;
+      email: string;
+      email_verified: number;
+      display_name: string;
+    }>();
+  if (!user) return c.json({ error: "User not found" }, 404);
+  if (user.email_verified)
+    return c.json({ error: "Email is already verified" }, 400);
+
+  const config = await getConfig(c.env.DB);
+  if (config.email_provider === "none")
+    return c.json({ error: "Email sending is not configured" }, 503);
+
+  // Generate a fresh token
+  const verifyToken = randomBase64url(24);
+  await c.env.DB.prepare("UPDATE users SET email_verify_token = ? WHERE id = ?")
+    .bind(verifyToken, user.id)
+    .run();
+
+  const verifyUrl = `${c.env.APP_URL}/api/auth/verify-email?token=${verifyToken}`;
+  const tmpl = verifyEmailTemplate(config.site_name, verifyUrl);
+  await sendEmail(
+    {
+      to: user.email,
+      subject: `Verify your email — ${config.site_name}`,
+      ...tmpl,
+    },
+    {
+      provider: config.email_provider,
+      from: config.email_from,
+      apiKey: config.email_api_key,
+      smtpHost: config.smtp_host,
+      smtpPort: config.smtp_port,
+      smtpSecure: config.smtp_secure,
+      smtpUser: config.smtp_user,
+      smtpPassword: config.smtp_password,
+    },
+  );
+
+  return c.json({ message: "Verification email sent" });
 });
 
 // ─── TOTP (multi-authenticator) ───────────────────────────────────────────────
