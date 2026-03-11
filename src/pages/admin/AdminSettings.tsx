@@ -241,6 +241,19 @@ export function AdminSettings() {
               checked={!!get("require_email_verification")}
               onChange={(_, d) => set("require_email_verification", d.checked)}
             />
+            <Field
+              label={t("admin.socialVerifyTtl")}
+              hint={t("admin.socialVerifyTtlHint")}
+            >
+              <Input
+                type="number"
+                min={0}
+                value={String(get("social_verify_ttl_days") ?? 0)}
+                onChange={(_, d) =>
+                  set("social_verify_ttl_days", parseInt(d.value) || 0)
+                }
+              />
+            </Field>
           </div>
         </div>
       )}

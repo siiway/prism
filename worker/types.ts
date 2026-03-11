@@ -281,6 +281,7 @@ export interface SiteConfig {
   custom_css: string;
   accent_color: string;
   login_error_retention_days: number;
+  social_verify_ttl_days: number;
   initialized: boolean;
 }
 

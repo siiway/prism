@@ -629,6 +629,8 @@
     "regModeClosed": "关闭 (禁止新注册)",
     "allowRegistration": "允许注册",
     "requireEmailVerification": "需要邮箱验证",
+    "socialVerifyTtl": "社交验证有效期（天）",
+    "socialVerifyTtlHint": "当关联的社交账号确认了相同的邮箱地址时，自动验证邮箱。设为 0 表示永不过期，或设置天数后需要重新验证。",
     "authTitle": "认证与令牌设置",
     "sessionTtl": "会话有效期（天）",
     "accessTokenTtl": "访问令牌有效期（分钟）",

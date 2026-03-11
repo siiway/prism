@@ -416,6 +416,27 @@ app.get("/:provider/callback", async (c) => {
         now,
       )
       .run();
+
+    // Auto-verify email if provider confirms the same address
+    const connectingUser = await c.env.DB.prepare(
+      "SELECT email, email_verified FROM users WHERE id = ?",
+    )
+      .bind(userId)
+      .first<{ email: string; email_verified: number }>();
+    if (connectingUser) {
+      c.executionCtx.waitUntil(
+        trySocialEmailVerify(
+          c.env.DB,
+          userId,
+          connectingUser.email,
+          connectingUser.email_verified,
+          providerEmail,
+          slug,
+          config.social_verify_ttl_days,
+        ).catch(() => {}),
+      );
+    }
+
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
         c.env.DB,
@@ -477,6 +498,23 @@ app.get("/:provider/callback", async (c) => {
         providerUserId,
       )
       .run();
+
+    // Auto-verify / refresh social verification / check TTL expiry
+    await trySocialEmailVerify(
+      c.env.DB,
+      user.id,
+      user.email,
+      user.email_verified,
+      providerEmail,
+      slug,
+      config.social_verify_ttl_days,
+    );
+    await checkSocialVerifyExpiry(
+      c.env.DB,
+      user.id,
+      config.social_verify_ttl_days,
+    );
+
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
         c.env.DB,
@@ -597,6 +635,22 @@ app.post("/complete", async (c) => {
         state.providerUserId,
       )
       .run();
+
+    // Auto-verify / refresh social verification / check TTL expiry
+    await trySocialEmailVerify(
+      c.env.DB,
+      user.id,
+      user.email,
+      user.email_verified,
+      state.providerEmail,
+      state.provider,
+      completeCfg.social_verify_ttl_days,
+    );
+    await checkSocialVerifyExpiry(
+      c.env.DB,
+      user.id,
+      completeCfg.social_verify_ttl_days,
+    );
 
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
@@ -723,6 +777,99 @@ app.delete("/:id", requireAuth, async (c) => {
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Auto-verify a user's email if the social provider confirms the same address.
+ * Checks TTL expiry for previously social-verified emails.
+ */
+async function trySocialEmailVerify(
+  db: D1Database,
+  userId: string,
+  userEmail: string,
+  userEmailVerified: number,
+  providerEmail: string | null,
+  providerSlug: string,
+  socialVerifyTtlDays: number,
+): Promise<void> {
+  if (!providerEmail) return;
+  if (userEmail.toLowerCase() !== providerEmail.toLowerCase()) return;
+
+  const now = Math.floor(Date.now() / 1000);
+
+  if (!userEmailVerified) {
+    // Not yet verified — auto-verify via this provider
+    await db
+      .prepare(
+        "UPDATE users SET email_verified = 1, email_verified_via = ?, email_verified_at = ?, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+      )
+      .bind(providerSlug, now, now, userId)
+      .run();
+    console.log(
+      `[social-verify] Auto-verified email for user ${userId} via ${providerSlug}`,
+    );
+    return;
+  }
+
+  // Already verified — refresh social-verification timestamp if applicable
+  const user = await db
+    .prepare(
+      "SELECT email_verified_via, email_verified_at FROM users WHERE id = ?",
+    )
+    .bind(userId)
+    .first<{
+      email_verified_via: string | null;
+      email_verified_at: number | null;
+    }>();
+
+  if (user?.email_verified_via) {
+    // Refresh the timestamp so the TTL resets
+    await db
+      .prepare(
+        "UPDATE users SET email_verified_via = ?, email_verified_at = ?, updated_at = ? WHERE id = ?",
+      )
+      .bind(providerSlug, now, now, userId)
+      .run();
+  }
+}
+
+/**
+ * Check if a social-verified email has expired past the configured TTL.
+ * If so, mark it as unverified. Called during login flows.
+ */
+async function checkSocialVerifyExpiry(
+  db: D1Database,
+  userId: string,
+  socialVerifyTtlDays: number,
+): Promise<void> {
+  if (socialVerifyTtlDays <= 0) return; // 0 = never expire
+
+  const user = await db
+    .prepare(
+      "SELECT email_verified, email_verified_via, email_verified_at FROM users WHERE id = ?",
+    )
+    .bind(userId)
+    .first<{
+      email_verified: number;
+      email_verified_via: string | null;
+      email_verified_at: number | null;
+    }>();
+
+  if (!user || !user.email_verified || !user.email_verified_via) return;
+
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = (user.email_verified_at ?? 0) + socialVerifyTtlDays * 86400;
+  if (now > expiresAt) {
+    await db
+      .prepare(
+        "UPDATE users SET email_verified = 0, email_verified_via = NULL, email_verified_at = NULL, updated_at = ? WHERE id = ?",
+      )
+      .bind(now, userId)
+      .run();
+    console.log(
+      `[social-verify] Expired social verification for user ${userId} (verified via ${user.email_verified_via}, TTL ${socialVerifyTtlDays}d)`,
+    );
+  }
+}
 
 function extractProviderUserId(
   provider: string,

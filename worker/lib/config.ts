@@ -44,6 +44,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   custom_css: "",
   accent_color: "#0078d4",
   login_error_retention_days: 30,
+  social_verify_ttl_days: 0,
   initialized: false,
 };
 
