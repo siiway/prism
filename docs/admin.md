@@ -57,17 +57,29 @@ Choose one captcha provider:
 
 ### Email
 
+The email settings are split into two sub-tabs: **Send** and **Receive**.
+
+#### Send
+
 - **Email provider** — `none`, `resend`, `mailchannels`, or `smtp`
 - **API key** — for Resend or Mailchannels
 - **SMTP settings** — host, port, encryption, username, password (when provider is `smtp`)
 - **From address** — the sender address for verification and notification emails
-- **Email receive host** — domain for inbound `verify-<code>@<host>` emails (e.g. `mail.example.com`). Leave blank to default to the `APP_URL` hostname. Must match the domain configured in Cloudflare Email Routing.
+- **Send test email** — sends a test email to the admin's address to verify outgoing email is working
+
+#### Receive
+
 - **Email verification methods** — controls how users can verify their email:
   - `link` — system sends a verification link to the user's email
-  - `send` — user sends an email from their address to a generated `verify-<code>@<domain>` address (requires Cloudflare Email Workers)
+  - `send` — user sends an email from their address to a generated `verify-<code>@<domain>` address
   - `both` — user can choose either method
-- **Send test email** — sends a test email to the admin's address to verify outgoing email is working
-- **Test email receiving** — generates a test `verify-<code>@<domain>` address to verify the Cloudflare Email Worker can receive inbound emails
+- **Receive provider** — how Prism receives inbound verification emails:
+  - `Cloudflare Email Workers` — event-driven, emails trigger the worker's `email()` handler. Requires Cloudflare Email Routing.
+  - `IMAP` — Prism polls an IMAP mailbox on the cron schedule (every 6 hours by default). Works with any email provider.
+  - `None` — disable inbound email (only link-based verification will work)
+- **Receive host** — domain for inbound `verify-<code>@<host>` emails (e.g. `mail.example.com`). Leave blank to default to the `APP_URL` hostname.
+- **IMAP settings** — host, port, encryption, username, password (when receive provider is `imap`)
+- **Test email receiving** — generates a test `verify-<code>@<domain>` address to verify inbound email is working
 
 ### Domain re-verification
 

@@ -45,6 +45,7 @@ app.get("/config", async (c) => {
     discord_client_secret: "***",
     email_api_key: "***",
     smtp_password: "***",
+    imap_password: "***",
   };
   return c.json({ config: safeConfig });
 });
@@ -79,6 +80,12 @@ app.patch("/config", async (c) => {
     "email_provider",
     "email_verify_methods",
     "email_receive_host",
+    "email_receive_provider",
+    "imap_host",
+    "imap_port",
+    "imap_secure",
+    "imap_user",
+    "imap_password",
     "email_api_key",
     "email_from",
     "smtp_host",

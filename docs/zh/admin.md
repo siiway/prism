@@ -55,17 +55,29 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 
 ### 邮件
 
+邮件设置分为两个子标签页：**发送**和**接收**。
+
+#### 发送
+
 - **Email provider** — `none`、`resend`、`mailchannels` 或 `smtp`
 - **API key** — Resend 或 Mailchannels 的 API 密钥
 - **SMTP 设置** — 主机、端口、加密方式、用户名、密码（选择 `smtp` 时显示）
 - **From address** — 验证邮件和通知邮件的发件地址
-- **邮件接收域名** — 用于接收 `verify-<code>@<host>` 验证邮件的域名（例如 `mail.example.com`）。留空则默认使用 `APP_URL` 的主机名。该域名必须与 Cloudflare Email Routing 中配置的域名一致。
+- **发送测试邮件** — 向管理员邮箱发送测试邮件，验证发件功能是否正常
+
+#### 接收
+
 - **邮箱验证方式** — 控制用户验证邮箱的方式：
   - `link` — 系统向用户邮箱发送验证链接
-  - `send` — 用户从自己的邮箱向生成的 `verify-<code>@<domain>` 地址发送邮件（需要 Cloudflare Email Workers）
+  - `send` — 用户从自己的邮箱向生成的 `verify-<code>@<domain>` 地址发送邮件
   - `both` — 用户可以选择任一方式
-- **发送测试邮件** — 向管理员邮箱发送测试邮件，验证发件功能是否正常
-- **测试邮件接收** — 生成测试 `verify-<code>@<domain>` 地址，验证 Cloudflare Email Worker 能否接收入站邮件
+- **接收方式** — Prism 如何接收入站验证邮件：
+  - `Cloudflare Email Workers` — 事件驱动，邮件触发 Worker 的 `email()` 处理程序。需要配置 Cloudflare Email Routing。
+  - `IMAP` — Prism 按计划任务周期（默认每 6 小时）轮询 IMAP 邮箱。适用于任何邮件提供商。
+  - `无` — 禁用邮件接收（仅支持链接验证方式）
+- **接收域名** — 用于接收 `verify-<code>@<host>` 验证邮件的域名（例如 `mail.example.com`）。留空则默认使用 `APP_URL` 的主机名。
+- **IMAP 设置** — 主机、端口、加密方式、用户名、密码（接收方式为 `imap` 时显示）
+- **测试邮件接收** — 生成测试 `verify-<code>@<domain>` 地址，验证入站邮件是否正常工作
 
 ### 域名重新验证
 

@@ -26,6 +26,12 @@ export interface SiteConfig {
   email_provider: "none" | "resend" | "mailchannels" | "smtp";
   email_verify_methods: "link" | "send" | "both";
   email_receive_host: string;
+  email_receive_provider: "cloudflare" | "imap" | "none";
+  imap_host: string;
+  imap_port: number;
+  imap_secure: boolean;
+  imap_user: string;
+  imap_password: string;
   email_api_key: string;
   email_from: string;
   smtp_host: string;

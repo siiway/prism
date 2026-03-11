@@ -77,6 +77,7 @@ export function AdminSettings() {
   const [tab, setTab] = useState("general");
   const [testingEmail, setTestingEmail] = useState(false);
   const [testingEmailReceiving, setTestingEmailReceiving] = useState(false);
+  const [emailSubTab, setEmailSubTab] = useState("send");
   const [resetting, setResetting] = useState(false);
 
   const showMsg = (type: "success" | "error", text: string) => {
@@ -416,143 +417,240 @@ export function AdminSettings() {
       {tab === "email" && (
         <div className={styles.card}>
           <Title3>{t("admin.emailTitle")}</Title3>
-          <div className={styles.form}>
-            <Field label={t("admin.emailProvider")}>
-              <Dropdown
-                value={get("email_provider") ?? "none"}
-                selectedOptions={[get("email_provider") ?? "none"]}
-                onOptionSelect={(_, d) => set("email_provider", d.optionValue)}
-              >
-                <Option value="none">{t("admin.emailNone")}</Option>
-                <Option value="resend">{t("admin.emailResend")}</Option>
-                <Option value="mailchannels">
-                  {t("admin.emailMailchannels")}
-                </Option>
-                <Option value="smtp">{t("admin.emailSmtp")}</Option>
-              </Dropdown>
-            </Field>
-            {(get("email_provider") === "resend" ||
-              get("email_provider") === "mailchannels") && (
-              <Field label={t("admin.emailApiKey")}>
-                <Input
-                  type="password"
-                  value={get("email_api_key") ?? ""}
-                  onChange={(e) => set("email_api_key", e.target.value)}
-                  placeholder={t("admin.unchanged")}
-                />
+          <TabList
+            size="small"
+            selectedValue={emailSubTab}
+            onTabSelect={(_, d) => setEmailSubTab(d.value as string)}
+            style={{ marginBottom: 4 }}
+          >
+            <Tab value="send">{t("admin.emailSendTab")}</Tab>
+            <Tab value="receive">{t("admin.emailReceiveTab")}</Tab>
+          </TabList>
+
+          {emailSubTab === "send" && (
+            <div className={styles.form}>
+              <Field label={t("admin.emailProvider")}>
+                <Dropdown
+                  value={get("email_provider") ?? "none"}
+                  selectedOptions={[get("email_provider") ?? "none"]}
+                  onOptionSelect={(_, d) =>
+                    set("email_provider", d.optionValue)
+                  }
+                >
+                  <Option value="none">{t("admin.emailNone")}</Option>
+                  <Option value="resend">{t("admin.emailResend")}</Option>
+                  <Option value="mailchannels">
+                    {t("admin.emailMailchannels")}
+                  </Option>
+                  <Option value="smtp">{t("admin.emailSmtp")}</Option>
+                </Dropdown>
               </Field>
-            )}
-            {get("email_provider") === "smtp" && (
-              <>
-                <Field label={t("admin.smtpHost")}>
-                  <Input
-                    value={get("smtp_host") ?? ""}
-                    onChange={(e) => set("smtp_host", e.target.value)}
-                    placeholder={t("admin.smtpHostPlaceholder")}
-                  />
-                </Field>
-                <Field label={t("admin.smtpPort")}>
-                  <Input
-                    type="number"
-                    value={String(get("smtp_port") ?? 587)}
-                    onChange={(e) => set("smtp_port", Number(e.target.value))}
-                  />
-                </Field>
-                <Field label={t("admin.smtpEncryption")}>
-                  <Dropdown
-                    value={get("smtp_secure") ? "ssl" : "starttls"}
-                    selectedOptions={[get("smtp_secure") ? "ssl" : "starttls"]}
-                    onOptionSelect={(_, d) =>
-                      set("smtp_secure", d.optionValue === "ssl")
-                    }
-                  >
-                    <Option value="starttls">{t("admin.smtpStarttls")}</Option>
-                    <Option value="ssl">{t("admin.smtpSsl")}</Option>
-                  </Dropdown>
-                </Field>
-                <Field label={t("admin.smtpUsername")}>
-                  <Input
-                    value={get("smtp_user") ?? ""}
-                    onChange={(e) => set("smtp_user", e.target.value)}
-                    placeholder="user@example.com"
-                  />
-                </Field>
-                <Field label={t("admin.smtpPassword")}>
+              {(get("email_provider") === "resend" ||
+                get("email_provider") === "mailchannels") && (
+                <Field label={t("admin.emailApiKey")}>
                   <Input
                     type="password"
-                    value={get("smtp_password") ?? ""}
-                    onChange={(e) => set("smtp_password", e.target.value)}
+                    value={get("email_api_key") ?? ""}
+                    onChange={(e) => set("email_api_key", e.target.value)}
                     placeholder={t("admin.unchanged")}
                   />
                 </Field>
-              </>
-            )}
-            <Field label={t("admin.emailFrom")}>
-              <Input
-                value={get("email_from") ?? ""}
-                onChange={(e) => set("email_from", e.target.value)}
-                placeholder={t("admin.emailFromPlaceholder")}
-              />
-            </Field>
-            <Field label={t("admin.emailVerifyMethods")}>
-              <Dropdown
-                value={
-                  get("email_verify_methods") === "link"
-                    ? t("admin.verifyMethodLink")
-                    : get("email_verify_methods") === "send"
-                      ? t("admin.verifyMethodSend")
-                      : t("admin.verifyMethodBoth")
-                }
-                selectedOptions={[get("email_verify_methods") ?? "both"]}
-                onOptionSelect={(_, d) =>
-                  set("email_verify_methods", d.optionValue)
-                }
+              )}
+              {get("email_provider") === "smtp" && (
+                <>
+                  <Field label={t("admin.smtpHost")}>
+                    <Input
+                      value={get("smtp_host") ?? ""}
+                      onChange={(e) => set("smtp_host", e.target.value)}
+                      placeholder={t("admin.smtpHostPlaceholder")}
+                    />
+                  </Field>
+                  <Field label={t("admin.smtpPort")}>
+                    <Input
+                      type="number"
+                      value={String(get("smtp_port") ?? 587)}
+                      onChange={(e) => set("smtp_port", Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label={t("admin.smtpEncryption")}>
+                    <Dropdown
+                      value={get("smtp_secure") ? "ssl" : "starttls"}
+                      selectedOptions={[
+                        get("smtp_secure") ? "ssl" : "starttls",
+                      ]}
+                      onOptionSelect={(_, d) =>
+                        set("smtp_secure", d.optionValue === "ssl")
+                      }
+                    >
+                      <Option value="starttls">
+                        {t("admin.smtpStarttls")}
+                      </Option>
+                      <Option value="ssl">{t("admin.smtpSsl")}</Option>
+                    </Dropdown>
+                  </Field>
+                  <Field label={t("admin.smtpUsername")}>
+                    <Input
+                      value={get("smtp_user") ?? ""}
+                      onChange={(e) => set("smtp_user", e.target.value)}
+                      placeholder="user@example.com"
+                    />
+                  </Field>
+                  <Field label={t("admin.smtpPassword")}>
+                    <Input
+                      type="password"
+                      value={get("smtp_password") ?? ""}
+                      onChange={(e) => set("smtp_password", e.target.value)}
+                      placeholder={t("admin.unchanged")}
+                    />
+                  </Field>
+                </>
+              )}
+              <Field label={t("admin.emailFrom")}>
+                <Input
+                  value={get("email_from") ?? ""}
+                  onChange={(e) => set("email_from", e.target.value)}
+                  placeholder={t("admin.emailFromPlaceholder")}
+                />
+              </Field>
+              {get("email_provider") !== "none" && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Button onClick={handleTestEmail} disabled={testingEmail}>
+                    {testingEmail ? (
+                      <Spinner size="tiny" />
+                    ) : (
+                      t("admin.sendTestEmail")
+                    )}
+                  </Button>
+                  <Text
+                    size={200}
+                    style={{
+                      color: tokens.colorNeutralForeground3,
+                      alignSelf: "center",
+                    }}
+                  >
+                    {t("admin.testEmailDesc")}
+                  </Text>
+                </div>
+              )}
+            </div>
+          )}
+
+          {emailSubTab === "receive" && (
+            <div className={styles.form}>
+              <Field label={t("admin.emailVerifyMethods")}>
+                <Dropdown
+                  value={
+                    get("email_verify_methods") === "link"
+                      ? t("admin.verifyMethodLink")
+                      : get("email_verify_methods") === "send"
+                        ? t("admin.verifyMethodSend")
+                        : t("admin.verifyMethodBoth")
+                  }
+                  selectedOptions={[get("email_verify_methods") ?? "both"]}
+                  onOptionSelect={(_, d) =>
+                    set("email_verify_methods", d.optionValue)
+                  }
+                >
+                  <Option value="both">{t("admin.verifyMethodBoth")}</Option>
+                  <Option value="link">{t("admin.verifyMethodLink")}</Option>
+                  <Option value="send">{t("admin.verifyMethodSend")}</Option>
+                </Dropdown>
+              </Field>
+              <Field label={t("admin.emailReceiveProvider")}>
+                <Dropdown
+                  value={
+                    get("email_receive_provider") === "imap"
+                      ? t("admin.receiveImap")
+                      : get("email_receive_provider") === "none"
+                        ? t("admin.receiveNone")
+                        : t("admin.receiveCloudflare")
+                  }
+                  selectedOptions={[
+                    get("email_receive_provider") ?? "cloudflare",
+                  ]}
+                  onOptionSelect={(_, d) =>
+                    set("email_receive_provider", d.optionValue)
+                  }
+                >
+                  <Option value="cloudflare">
+                    {t("admin.receiveCloudflare")}
+                  </Option>
+                  <Option value="imap">{t("admin.receiveImap")}</Option>
+                  <Option value="none">{t("admin.receiveNone")}</Option>
+                </Dropdown>
+              </Field>
+              <Field
+                label={t("admin.emailReceiveHost")}
+                hint={t("admin.emailReceiveHostHint")}
               >
-                <Option value="both">{t("admin.verifyMethodBoth")}</Option>
-                <Option value="link">{t("admin.verifyMethodLink")}</Option>
-                <Option value="send">{t("admin.verifyMethodSend")}</Option>
-              </Dropdown>
-            </Field>
-            <Field
-              label={t("admin.emailReceiveHost")}
-              hint={t("admin.emailReceiveHostHint")}
-            >
-              <Input
-                value={get("email_receive_host") ?? ""}
-                onChange={(e) => set("email_receive_host", e.target.value)}
-                placeholder="mail.example.com"
-              />
-            </Field>
-          </div>
-          {get("email_provider") !== "none" && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Button onClick={handleTestEmail} disabled={testingEmail}>
-                {testingEmail ? (
-                  <Spinner size="tiny" />
-                ) : (
-                  t("admin.sendTestEmail")
-                )}
-              </Button>
-              <Button
-                appearance="outline"
-                onClick={handleTestEmailReceiving}
-                disabled={testingEmailReceiving}
-              >
-                {testingEmailReceiving ? (
-                  <Spinner size="tiny" />
-                ) : (
-                  t("admin.testEmailReceiving")
-                )}
-              </Button>
-              <Text
-                size={200}
-                style={{
-                  color: tokens.colorNeutralForeground3,
-                  alignSelf: "center",
-                }}
-              >
-                {t("admin.testEmailDesc")}
-              </Text>
+                <Input
+                  value={get("email_receive_host") ?? ""}
+                  onChange={(e) => set("email_receive_host", e.target.value)}
+                  placeholder="mail.example.com"
+                />
+              </Field>
+              {get("email_receive_provider") === "imap" && (
+                <>
+                  <Field label={t("admin.imapHost")}>
+                    <Input
+                      value={get("imap_host") ?? ""}
+                      onChange={(e) => set("imap_host", e.target.value)}
+                      placeholder="imap.example.com"
+                    />
+                  </Field>
+                  <Field label={t("admin.imapPort")}>
+                    <Input
+                      type="number"
+                      value={String(get("imap_port") ?? 993)}
+                      onChange={(e) => set("imap_port", Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label={t("admin.imapEncryption")}>
+                    <Dropdown
+                      value={get("imap_secure") ? "ssl" : "starttls"}
+                      selectedOptions={[
+                        get("imap_secure") ? "ssl" : "starttls",
+                      ]}
+                      onOptionSelect={(_, d) =>
+                        set("imap_secure", d.optionValue === "ssl")
+                      }
+                    >
+                      <Option value="ssl">{t("admin.imapSsl")}</Option>
+                      <Option value="starttls">
+                        {t("admin.imapStarttls")}
+                      </Option>
+                    </Dropdown>
+                  </Field>
+                  <Field label={t("admin.imapUsername")}>
+                    <Input
+                      value={get("imap_user") ?? ""}
+                      onChange={(e) => set("imap_user", e.target.value)}
+                      placeholder="user@example.com"
+                    />
+                  </Field>
+                  <Field label={t("admin.imapPassword")}>
+                    <Input
+                      type="password"
+                      value={get("imap_password") ?? ""}
+                      onChange={(e) => set("imap_password", e.target.value)}
+                      placeholder={t("admin.unchanged")}
+                    />
+                  </Field>
+                </>
+              )}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button
+                  appearance="outline"
+                  onClick={handleTestEmailReceiving}
+                  disabled={testingEmailReceiving}
+                >
+                  {testingEmailReceiving ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    t("admin.testEmailReceiving")
+                  )}
+                </Button>
+              </div>
             </div>
           )}
         </div>

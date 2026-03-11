@@ -2,6 +2,7 @@
 // Cloudflare Worker entry point using Hono
 
 import { runReverification } from "./cron/reverify";
+import { runImapPoll } from "./cron/imap-poll";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -163,6 +164,7 @@ export default {
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runReverification(env.DB));
+    ctx.waitUntil(runImapPoll(env.DB, env.KV_CACHE, env.APP_URL));
   },
 
   // Cloudflare Email Worker — receives inbound emails for email-sending verification
