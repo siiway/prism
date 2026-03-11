@@ -11,6 +11,7 @@ export interface UserRow {
   email_verified: number;
   email_verify_token: string | null;
   is_active: number;
+  alt_email_login: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -130,6 +131,18 @@ export interface SocialConnectionRow {
   token_expires_at: number | null;
   profile_data: string; // JSON
   connected_at: number;
+}
+
+export interface UserEmailRow {
+  id: string;
+  user_id: string;
+  email: string;
+  verified: number;
+  verify_token: string | null;
+  verify_code: string | null;
+  verified_via: string | null;
+  verified_at: number | null;
+  created_at: number;
 }
 
 export interface SessionRow {
@@ -282,6 +295,7 @@ export interface SiteConfig {
   accent_color: string;
   login_error_retention_days: number;
   social_verify_ttl_days: number;
+  allow_alt_email_login: boolean;
   initialized: boolean;
 }
 

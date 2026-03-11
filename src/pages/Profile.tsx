@@ -4,15 +4,23 @@ import {
   Avatar,
   Badge,
   Button,
+  Dropdown,
   Field,
   Input,
   MessageBar,
+  Option,
   Spinner,
   Text,
   Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import {
+  AddRegular,
+  ArrowUpRegular,
+  DeleteRegular,
+  MailRegular,
+} from "@fluentui/react-icons";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -43,6 +51,21 @@ const useStyles = makeStyles({
     },
   },
   actions: { display: "flex", gap: "8px" },
+  emailRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "8px 12px",
+    borderRadius: "6px",
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    background: tokens.colorNeutralBackground3,
+  },
+  emailActions: {
+    display: "flex",
+    gap: "4px",
+    marginLeft: "auto",
+    flexShrink: 0,
+  },
 });
 
 export function Profile() {
@@ -65,12 +88,19 @@ export function Profile() {
 
   const r2Enabled = site?.r2_enabled ?? true; // optimistically show upload until site loads
 
+  const { data: emails, refetch: refetchEmails } = useQuery({
+    queryKey: ["emails"],
+    queryFn: api.listEmails,
+  });
+
   const [displayName, setDisplayName] = useState(user?.display_name ?? "");
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url ?? "");
   const [saveLoading, setSaveLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [pwForm, setPwForm] = useState({ current: "", next: "" });
   const [pwLoading, setPwLoading] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailLoading, setEmailLoading] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -257,6 +287,216 @@ export function Profile() {
             </Button>
           </div>
         </div>
+      </div>
+
+      {/* Email addresses */}
+      <div className={styles.card}>
+        <Text weight="semibold" size={400}>
+          {t("profile.emailAddresses")}
+        </Text>
+
+        {/* Primary email */}
+        {emails && (
+          <div className={styles.emailRow}>
+            <MailRegular />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Text weight="semibold" style={{ wordBreak: "break-all" }}>
+                {emails.primary.email}
+              </Text>
+              <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                <Badge
+                  color={emails.primary.verified ? "success" : "warning"}
+                  appearance="filled"
+                  size="small"
+                >
+                  {emails.primary.verified
+                    ? t("profile.verified")
+                    : t("profile.unverified")}
+                </Badge>
+                <Badge color="informative" appearance="outline" size="small">
+                  {t("profile.primary")}
+                </Badge>
+              </div>
+            </div>
+            {!emails.primary.verified && (
+              <Button
+                appearance="transparent"
+                size="small"
+                onClick={() => navigate("/verify-choose")}
+              >
+                {t("profile.verifyEmail")}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Alternate emails */}
+        {emails?.emails.map((alt) => (
+          <div key={alt.id} className={styles.emailRow}>
+            <MailRegular />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ wordBreak: "break-all" }}>{alt.email}</Text>
+              <div style={{ marginTop: 2 }}>
+                <Badge
+                  color={alt.verified ? "success" : "warning"}
+                  appearance="filled"
+                  size="small"
+                >
+                  {alt.verified
+                    ? t("profile.verified")
+                    : t("profile.unverified")}
+                </Badge>
+              </div>
+            </div>
+            <div className={styles.emailActions}>
+              {!alt.verified && (
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  onClick={async () => {
+                    try {
+                      await api.resendEmailVerify(alt.id);
+                      showMsg("success", t("profile.verifySent"));
+                    } catch (err) {
+                      showMsg(
+                        "error",
+                        err instanceof ApiError
+                          ? err.message
+                          : t("common.error"),
+                      );
+                    }
+                  }}
+                >
+                  {t("profile.resend")}
+                </Button>
+              )}
+              {alt.verified && (
+                <Button
+                  appearance="subtle"
+                  size="small"
+                  icon={<ArrowUpRegular />}
+                  title={t("profile.makePrimary")}
+                  onClick={async () => {
+                    try {
+                      await api.setEmailPrimary(alt.id);
+                      await refetchEmails();
+                      await qc.invalidateQueries({ queryKey: ["me"] });
+                      showMsg("success", t("profile.primaryUpdated"));
+                    } catch (err) {
+                      showMsg(
+                        "error",
+                        err instanceof ApiError
+                          ? err.message
+                          : t("common.error"),
+                      );
+                    }
+                  }}
+                />
+              )}
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<DeleteRegular />}
+                title={t("common.remove")}
+                onClick={async () => {
+                  try {
+                    await api.removeEmail(alt.id);
+                    await refetchEmails();
+                    showMsg("success", t("profile.emailRemoved"));
+                  } catch (err) {
+                    showMsg(
+                      "error",
+                      err instanceof ApiError ? err.message : t("common.error"),
+                    );
+                  }
+                }}
+              />
+            </div>
+          </div>
+        ))}
+
+        {/* Add new email */}
+        <div style={{ display: "flex", gap: 8, alignItems: "end" }}>
+          <Field label={t("profile.addEmail")} style={{ flex: 1 }}>
+            <Input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              placeholder="user@example.com"
+            />
+          </Field>
+          <Button
+            appearance="primary"
+            size="small"
+            icon={emailLoading ? <Spinner size="tiny" /> : <AddRegular />}
+            disabled={emailLoading || !newEmail.trim()}
+            onClick={async () => {
+              setEmailLoading(true);
+              try {
+                await api.addEmail(newEmail.trim());
+                setNewEmail("");
+                await refetchEmails();
+                showMsg("success", t("profile.emailAdded"));
+              } catch (err) {
+                showMsg(
+                  "error",
+                  err instanceof ApiError ? err.message : t("common.error"),
+                );
+              } finally {
+                setEmailLoading(false);
+              }
+            }}
+            style={{ marginBottom: 1 }}
+          >
+            {t("common.add")}
+          </Button>
+        </div>
+
+        {/* Per-user alt email login toggle */}
+        {emails && emails.emails.length > 0 && (
+          <Field
+            label={t("profile.altEmailLogin")}
+            hint={t("profile.altEmailLoginHint")}
+          >
+            <Dropdown
+              value={
+                me?.user.alt_email_login === 1
+                  ? t("profile.altEmailAllow")
+                  : me?.user.alt_email_login === 0
+                    ? t("profile.altEmailDeny")
+                    : t("profile.altEmailDefault")
+              }
+              selectedOptions={[
+                me?.user.alt_email_login === 1
+                  ? "allow"
+                  : me?.user.alt_email_login === 0
+                    ? "deny"
+                    : "default",
+              ]}
+              onOptionSelect={async (_, d) => {
+                const val =
+                  d.optionValue === "allow"
+                    ? true
+                    : d.optionValue === "deny"
+                      ? false
+                      : null;
+                try {
+                  await api.updateMe({ alt_email_login: val });
+                  await qc.invalidateQueries({ queryKey: ["me"] });
+                } catch (err) {
+                  showMsg(
+                    "error",
+                    err instanceof ApiError ? err.message : t("common.error"),
+                  );
+                }
+              }}
+            >
+              <Option value="default">{t("profile.altEmailDefault")}</Option>
+              <Option value="allow">{t("profile.altEmailAllow")}</Option>
+              <Option value="deny">{t("profile.altEmailDeny")}</Option>
+            </Dropdown>
+          </Field>
+        )}
       </div>
 
       {/* Password change */}

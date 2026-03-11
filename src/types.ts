@@ -43,5 +43,6 @@ export interface SiteConfig {
   accent_color: string;
   login_error_retention_days: number;
   social_verify_ttl_days: number;
+  allow_alt_email_login: boolean;
   initialized: boolean;
 }

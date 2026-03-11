@@ -204,12 +204,34 @@ export default {
       .first<{ id: string; email: string }>();
 
     if (!user) {
+      // Also check alternate emails
+      const altEmail = await env.DB.prepare(
+        "SELECT id, user_id FROM user_emails WHERE verify_code = ? AND verified = 0",
+      )
+        .bind(code)
+        .first<{ id: string; user_id: string }>();
+      if (altEmail) {
+        await env.DB.prepare(
+          "UPDATE user_emails SET verified = 1, verify_code = NULL, verified_at = ? WHERE id = ?",
+        )
+          .bind(Math.floor(Date.now() / 1000), altEmail.id)
+          .run();
+        return;
+      }
       message.setReject("Invalid verification code");
       return;
     }
 
-    // The sender must match the user's registered email
-    if (user.email.toLowerCase() !== senderEmail) {
+    // The sender must match the user's registered email or an alternate
+    const emailMatches =
+      user.email.toLowerCase() === senderEmail ||
+      !!(await env.DB.prepare(
+        "SELECT id FROM user_emails WHERE user_id = ? AND email = ?",
+      )
+        .bind(user.id, senderEmail)
+        .first());
+
+    if (!emailMatches) {
       message.setReject("Sender does not match registered email");
       return;
     }

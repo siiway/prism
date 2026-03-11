@@ -14,8 +14,11 @@ import {
   deliverUserEmailNotifications,
   USER_NOTIFICATION_EVENTS,
 } from "../lib/notifications";
+import { getConfig } from "../lib/config";
+import { sendEmail, verifyEmailTemplate } from "../lib/email";
 import type {
   UserRow,
+  UserEmailRow,
   UserNotificationPrefsRow,
   WebhookRow,
   WebhookDeliveryRow,
@@ -59,6 +62,7 @@ app.patch("/me", async (c) => {
   const body = await c.req.json<{
     display_name?: string;
     avatar_url?: string;
+    alt_email_login?: boolean | null;
   }>();
 
   const now = Math.floor(Date.now() / 1000);
@@ -78,6 +82,12 @@ app.patch("/me", async (c) => {
     }
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
+  }
+  if (body.alt_email_login !== undefined) {
+    updates.push("alt_email_login = ?");
+    values.push(
+      body.alt_email_login === null ? null : body.alt_email_login ? 1 : 0,
+    );
   }
 
   if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
@@ -228,9 +238,237 @@ function safeUser(row: UserRow) {
     avatar_url: row.avatar_url,
     role: row.role,
     email_verified: row.email_verified === 1,
+    alt_email_login: row.alt_email_login,
     created_at: row.created_at,
   };
 }
+
+// ─── Alternate Emails ─────────────────────────────────────────────────────────
+
+// GET /api/user/me/emails — list primary + alternates
+app.get("/me/emails", async (c) => {
+  const user = c.get("user");
+  const row = await c.env.DB.prepare(
+    "SELECT email, email_verified FROM users WHERE id = ?",
+  )
+    .bind(user.id)
+    .first<{ email: string; email_verified: number }>();
+  if (!row) return c.json({ error: "User not found" }, 404);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, email, verified, verified_via, created_at FROM user_emails WHERE user_id = ? ORDER BY created_at ASC",
+  )
+    .bind(user.id)
+    .all<
+      Pick<
+        UserEmailRow,
+        "id" | "email" | "verified" | "verified_via" | "created_at"
+      >
+    >();
+
+  return c.json({
+    primary: { email: row.email, verified: row.email_verified === 1 },
+    emails: results.map((r) => ({
+      ...r,
+      verified: r.verified === 1,
+    })),
+  });
+});
+
+// POST /api/user/me/emails — add alternate email
+app.post("/me/emails", async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{ email: string }>();
+
+  const email = (body.email ?? "").toLowerCase().trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    return c.json({ error: "Invalid email address" }, 400);
+
+  // Check uniqueness against primary emails
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE email = ?",
+  )
+    .bind(email)
+    .first();
+  if (existing) return c.json({ error: "Email is already in use" }, 409);
+
+  // Check uniqueness against other alternate emails
+  const altExisting = await c.env.DB.prepare(
+    "SELECT id FROM user_emails WHERE email = ?",
+  )
+    .bind(email)
+    .first();
+  if (altExisting) return c.json({ error: "Email is already in use" }, 409);
+
+  const now = Math.floor(Date.now() / 1000);
+  const id = randomId();
+  const verifyToken = randomBase64url(24);
+
+  await c.env.DB.prepare(
+    "INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at) VALUES (?, ?, ?, 0, ?, ?)",
+  )
+    .bind(id, user.id, email, verifyToken, now)
+    .run();
+
+  // Send verification email if provider is configured
+  const config = await getConfig(c.env.DB);
+  if (config.email_provider !== "none") {
+    const verifyUrl = `${c.env.APP_URL}/api/auth/verify-email?token=${verifyToken}&alt=1`;
+    const tmpl = verifyEmailTemplate(config.site_name, verifyUrl);
+    c.executionCtx.waitUntil(
+      sendEmail(
+        {
+          to: email,
+          subject: `Verify your email — ${config.site_name}`,
+          ...tmpl,
+        },
+        {
+          provider: config.email_provider,
+          from: config.email_from,
+          apiKey: config.email_api_key,
+          smtpHost: config.smtp_host,
+          smtpPort: config.smtp_port,
+          smtpSecure: config.smtp_secure,
+          smtpUser: config.smtp_user,
+          smtpPassword: config.smtp_password,
+        },
+      ).catch(() => {}),
+    );
+  }
+
+  return c.json({ id, email, verified: false, created_at: now }, 201);
+});
+
+// POST /api/user/me/emails/:id/resend — resend verification for alternate email
+app.post("/me/emails/:id/resend", async (c) => {
+  const user = c.get("user");
+  const emailRow = await c.env.DB.prepare(
+    "SELECT id, email, verified FROM user_emails WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first<Pick<UserEmailRow, "id" | "email" | "verified">>();
+  if (!emailRow) return c.json({ error: "Email not found" }, 404);
+  if (emailRow.verified) return c.json({ error: "Already verified" }, 400);
+
+  const config = await getConfig(c.env.DB);
+  if (config.email_provider === "none")
+    return c.json({ error: "Email sending is not configured" }, 503);
+
+  const verifyToken = randomBase64url(24);
+  await c.env.DB.prepare("UPDATE user_emails SET verify_token = ? WHERE id = ?")
+    .bind(verifyToken, emailRow.id)
+    .run();
+
+  const verifyUrl = `${c.env.APP_URL}/api/auth/verify-email?token=${verifyToken}&alt=1`;
+  const tmpl = verifyEmailTemplate(config.site_name, verifyUrl);
+  await sendEmail(
+    {
+      to: emailRow.email,
+      subject: `Verify your email — ${config.site_name}`,
+      ...tmpl,
+    },
+    {
+      provider: config.email_provider,
+      from: config.email_from,
+      apiKey: config.email_api_key,
+      smtpHost: config.smtp_host,
+      smtpPort: config.smtp_port,
+      smtpSecure: config.smtp_secure,
+      smtpUser: config.smtp_user,
+      smtpPassword: config.smtp_password,
+    },
+  );
+
+  return c.json({ message: "Verification email sent" });
+});
+
+// POST /api/user/me/emails/:id/set-primary — make an alternate email the primary
+app.post("/me/emails/:id/set-primary", async (c) => {
+  const user = c.get("user");
+  const emailRow = await c.env.DB.prepare(
+    "SELECT id, email, verified, verified_via, verified_at FROM user_emails WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first<
+      Pick<
+        UserEmailRow,
+        "id" | "email" | "verified" | "verified_via" | "verified_at"
+      >
+    >();
+  if (!emailRow) return c.json({ error: "Email not found" }, 404);
+  if (!emailRow.verified)
+    return c.json(
+      { error: "Email must be verified before setting as primary" },
+      400,
+    );
+
+  const userRow = await c.env.DB.prepare(
+    "SELECT email, email_verified, email_verified_via, email_verified_at, email_verify_token, email_verify_code FROM users WHERE id = ?",
+  )
+    .bind(user.id)
+    .first<{
+      email: string;
+      email_verified: number;
+      email_verified_via: string | null;
+      email_verified_at: number | null;
+      email_verify_token: string | null;
+      email_verify_code: string | null;
+    }>();
+  if (!userRow) return c.json({ error: "User not found" }, 404);
+
+  const now = Math.floor(Date.now() / 1000);
+
+  // Swap: move current primary to user_emails, promote alternate to users.email
+  const oldPrimaryId = randomId();
+  await c.env.DB.batch([
+    // Insert old primary as alternate
+    c.env.DB.prepare(
+      "INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(
+      oldPrimaryId,
+      user.id,
+      userRow.email,
+      userRow.email_verified,
+      userRow.email_verify_token,
+      userRow.email_verify_code,
+      userRow.email_verified_via,
+      userRow.email_verified_at,
+      now,
+    ),
+    // Update users table with new primary
+    c.env.DB.prepare(
+      "UPDATE users SET email = ?, email_verified = ?, email_verified_via = ?, email_verified_at = ?, email_verify_token = NULL, email_verify_code = NULL, updated_at = ? WHERE id = ?",
+    ).bind(
+      emailRow.email,
+      emailRow.verified,
+      emailRow.verified_via,
+      emailRow.verified_at,
+      now,
+      user.id,
+    ),
+    // Delete the promoted alternate
+    c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?").bind(emailRow.id),
+  ]);
+
+  return c.json({ message: "Primary email updated" });
+});
+
+// DELETE /api/user/me/emails/:id — remove an alternate email
+app.delete("/me/emails/:id", async (c) => {
+  const user = c.get("user");
+  const emailRow = await c.env.DB.prepare(
+    "SELECT id FROM user_emails WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first();
+  if (!emailRow) return c.json({ error: "Email not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?")
+    .bind(c.req.param("id"))
+    .run();
+
+  return c.json({ message: "Email removed" });
+});
 
 // ─── Personal Access Tokens ───────────────────────────────────────────────────
 

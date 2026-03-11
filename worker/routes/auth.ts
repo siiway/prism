@@ -309,17 +309,41 @@ app.post("/login", async (c) => {
   }
 
   const isEmail = body.identifier.includes("@");
-  const user = await c.env.DB.prepare(
-    isEmail
-      ? "SELECT * FROM users WHERE email = ?"
-      : "SELECT * FROM users WHERE username = ?",
-  )
-    .bind(
-      isEmail
-        ? body.identifier.toLowerCase().trim()
-        : body.identifier.toLowerCase().trim(),
-    )
-    .first<UserRow>();
+  const identifier = body.identifier.toLowerCase().trim();
+  let user: UserRow | null;
+  if (isEmail) {
+    // Check primary email first, then alternate emails
+    user = await c.env.DB.prepare("SELECT * FROM users WHERE email = ?")
+      .bind(identifier)
+      .first<UserRow>();
+    if (!user) {
+      const alt = await c.env.DB.prepare(
+        "SELECT user_id FROM user_emails WHERE email = ? AND verified = 1",
+      )
+        .bind(identifier)
+        .first<{ user_id: string }>();
+      if (alt) {
+        const altUser = await c.env.DB.prepare(
+          "SELECT * FROM users WHERE id = ?",
+        )
+          .bind(alt.user_id)
+          .first<UserRow>();
+        if (altUser) {
+          // Check if alternate email login is allowed for this user
+          const siteConfig = await getConfig(c.env.DB);
+          const allowed =
+            altUser.alt_email_login !== null
+              ? altUser.alt_email_login === 1
+              : siteConfig.allow_alt_email_login;
+          if (allowed) user = altUser;
+        }
+      }
+    }
+  } else {
+    user = await c.env.DB.prepare("SELECT * FROM users WHERE username = ?")
+      .bind(identifier)
+      .first<UserRow>();
+  }
 
   if (!user || !user.password_hash) {
     c.executionCtx.waitUntil(
@@ -414,8 +438,31 @@ app.post("/logout", requireAuth, async (c) => {
 
 app.get("/verify-email", async (c) => {
   const token = c.req.query("token");
+  const isAlt = c.req.query("alt") === "1";
   if (!token) return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
 
+  const now = Math.floor(Date.now() / 1000);
+
+  if (isAlt) {
+    // Alternate email verification
+    const altEmail = await c.env.DB.prepare(
+      "SELECT id, verified FROM user_emails WHERE verify_token = ?",
+    )
+      .bind(token)
+      .first<{ id: string; verified: number }>();
+    if (!altEmail)
+      return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
+
+    await c.env.DB.prepare(
+      "UPDATE user_emails SET verified = 1, verify_token = NULL, verified_at = ? WHERE id = ?",
+    )
+      .bind(now, altEmail.id)
+      .run();
+
+    return c.redirect(`${c.env.APP_URL}/verify-email?status=success`);
+  }
+
+  // Primary email verification
   const user = await c.env.DB.prepare(
     "SELECT * FROM users WHERE email_verify_token = ?",
   )
@@ -426,7 +473,7 @@ app.get("/verify-email", async (c) => {
   await c.env.DB.prepare(
     "UPDATE users SET email_verified = 1, email_verify_token = NULL, updated_at = ? WHERE id = ?",
   )
-    .bind(Math.floor(Date.now() / 1000), user.id)
+    .bind(now, user.id)
     .run();
 
   return c.redirect(`${c.env.APP_URL}/verify-email?status=success`);

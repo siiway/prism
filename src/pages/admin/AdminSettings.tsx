@@ -254,6 +254,11 @@ export function AdminSettings() {
                 }
               />
             </Field>
+            <Switch
+              label={t("admin.allowAltEmailLogin")}
+              checked={get("allow_alt_email_login") ?? true}
+              onChange={(_, d) => set("allow_alt_email_login", d.checked)}
+            />
           </div>
         </div>
       )}

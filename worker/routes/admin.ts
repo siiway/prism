@@ -96,6 +96,8 @@ app.patch("/config", async (c) => {
     "custom_css",
     "accent_color",
     "login_error_retention_days",
+    "social_verify_ttl_days",
+    "allow_alt_email_login",
   ]);
 
   const updates: Record<string, unknown> = {};

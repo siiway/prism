@@ -229,8 +229,13 @@ export const api = {
 
   // ─── User ────────────────────────────────────────────────────────────────
   me: () => request<MeResponse>("GET", "/user/me", undefined, getToken()),
-  updateMe: (body: Partial<{ display_name: string; avatar_url: string }>) =>
-    request<{ user: UserProfile }>("PATCH", "/user/me", body, getToken()),
+  updateMe: (
+    body: Partial<{
+      display_name: string;
+      avatar_url: string;
+      alt_email_login: boolean | null;
+    }>,
+  ) => request<{ user: UserProfile }>("PATCH", "/user/me", body, getToken()),
   changePassword: (current_password: string, new_password: string) =>
     request<{ message: string }>(
       "POST",
@@ -253,6 +258,47 @@ export const api = {
       "DELETE",
       "/user/me",
       { password, confirm: "DELETE" },
+      getToken(),
+    ),
+
+  // ─── Alternate Emails ──────────────────────────────────────────────────
+  listEmails: () =>
+    request<{
+      primary: { email: string; verified: boolean };
+      emails: Array<{
+        id: string;
+        email: string;
+        verified: boolean;
+        verified_via: string | null;
+        created_at: number;
+      }>;
+    }>("GET", "/user/me/emails", undefined, getToken()),
+  addEmail: (email: string) =>
+    request<{
+      id: string;
+      email: string;
+      verified: boolean;
+      created_at: number;
+    }>("POST", "/user/me/emails", { email }, getToken()),
+  resendEmailVerify: (id: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/user/me/emails/${id}/resend`,
+      {},
+      getToken(),
+    ),
+  setEmailPrimary: (id: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/user/me/emails/${id}/set-primary`,
+      {},
+      getToken(),
+    ),
+  removeEmail: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/user/me/emails/${id}`,
+      undefined,
       getToken(),
     ),
 
@@ -989,6 +1035,7 @@ export interface UserProfile {
   avatar_url: string | null;
   role: "admin" | "user";
   email_verified: boolean;
+  alt_email_login: number | null;
   created_at?: number;
 }
 

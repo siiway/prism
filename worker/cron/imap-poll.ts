@@ -38,7 +38,9 @@ export async function runImapPoll(
       continue;
     }
 
-    // Look up user by verify code
+    const now = Math.floor(Date.now() / 1000);
+
+    // Look up user by verify code (primary email)
     const user = await db
       .prepare(
         "SELECT id, email FROM users WHERE email_verify_code = ? AND email_verified = 0",
@@ -46,19 +48,42 @@ export async function runImapPoll(
       .bind(code)
       .first<{ id: string; email: string }>();
 
-    if (!user) continue;
+    if (user) {
+      // Sender must match registered email or an alternate
+      const emailMatches =
+        user.email.toLowerCase() === senderEmail ||
+        !!(await db
+          .prepare("SELECT id FROM user_emails WHERE user_id = ? AND email = ?")
+          .bind(user.id, senderEmail)
+          .first());
+      if (!emailMatches) continue;
 
-    // Sender must match registered email
-    if (user.email.toLowerCase() !== senderEmail) continue;
+      await db
+        .prepare(
+          "UPDATE users SET email_verified = 1, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+        )
+        .bind(now, user.id)
+        .run();
+      console.log(`[imap-poll] Verified email for user ${user.id}`);
+      continue;
+    }
 
-    // Mark email as verified
-    await db
+    // Check alternate emails by verify_code
+    const altEmail = await db
       .prepare(
-        "UPDATE users SET email_verified = 1, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+        "SELECT id, user_id FROM user_emails WHERE verify_code = ? AND verified = 0",
       )
-      .bind(Math.floor(Date.now() / 1000), user.id)
-      .run();
+      .bind(code)
+      .first<{ id: string; user_id: string }>();
 
-    console.log(`[imap-poll] Verified email for user ${user.id}`);
+    if (altEmail) {
+      await db
+        .prepare(
+          "UPDATE user_emails SET verified = 1, verify_code = NULL, verified_at = ? WHERE id = ?",
+        )
+        .bind(now, altEmail.id)
+        .run();
+      console.log(`[imap-poll] Verified alternate email ${altEmail.id}`);
+    }
   }
 }
