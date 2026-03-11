@@ -54,6 +54,8 @@ Public site configuration for the frontend. No authentication required.
   "accent_color": "#0078d4",
   "custom_css": "",
   "initialized": true,
+  "require_email_verification": false,
+  "email_verify_methods": "both",
   "enabled_providers": ["github", "google"]
 }
 ```
@@ -114,6 +116,22 @@ Revokes the current session. Requires auth.
 ### `GET /api/auth/verify-email?token=<token>`
 
 Verifies an email address using the token sent by email.
+
+### `POST /api/auth/resend-verify-email`
+
+Resends the email verification link. Requires auth. Accepts optional captcha fields.
+
+**Body** — `{ "captcha_token": "...", "pow_challenge": "...", "pow_nonce": 12345 }`
+
+**Response** — `{ "message": "Verification email sent" }`
+
+### `POST /api/auth/email-verify-code`
+
+Returns a verification address the user can send an email to in order to verify their email. Format: `verify-<code>@<domain>`. Requires auth. Accepts optional captcha fields.
+
+**Body** — `{ "captcha_token": "...", "pow_challenge": "...", "pow_nonce": 12345 }`
+
+**Response** — `{ "address": "verify-abc123@example.com", "code": "abc123" }`
 
 ### `GET /api/auth/pow-challenge`
 

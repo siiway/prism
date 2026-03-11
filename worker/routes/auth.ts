@@ -432,7 +432,93 @@ app.get("/verify-email", async (c) => {
   return c.redirect(`${c.env.APP_URL}/verify-email?status=success`);
 });
 
+// ─── Inbound email verification (user sends email to us) ─────────────────────
+
+app.post("/email-verify-code", requireAuth, async (c) => {
+  const body = await c.req
+    .json<{
+      captcha_token?: string;
+      pow_challenge?: string;
+      pow_nonce?: number;
+    }>()
+    .catch(
+      (): {
+        captcha_token?: string;
+        pow_challenge?: string;
+        pow_nonce?: number;
+      } => ({}),
+    );
+  const ip = getIp(c);
+  const captchaOk = await verifyCaptchaToken(
+    c.env.DB,
+    body.captcha_token,
+    body.pow_challenge,
+    body.pow_nonce,
+    ip,
+  );
+  if (!captchaOk.success)
+    return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);
+
+  const authUser = c.get("user");
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, email_verified, email_verify_code FROM users WHERE id = ?",
+  )
+    .bind(authUser.id)
+    .first<{
+      id: string;
+      email_verified: number;
+      email_verify_code: string | null;
+    }>();
+  if (!user) return c.json({ error: "User not found" }, 404);
+  if (user.email_verified)
+    return c.json({ error: "Email is already verified" }, 400);
+
+  // Reuse existing code or generate a new one
+  let code = user.email_verify_code;
+  if (!code) {
+    code = randomId(12);
+    await c.env.DB.prepare(
+      "UPDATE users SET email_verify_code = ? WHERE id = ?",
+    )
+      .bind(code, user.id)
+      .run();
+  }
+
+  // Build the verification address: verify-<code>@<domain>
+  const config = await getConfig(c.env.DB);
+  const emailHost =
+    config.email_receive_host || new URL(c.env.APP_URL).hostname;
+  const verifyAddress = `verify-${code}@${emailHost}`;
+
+  return c.json({ address: verifyAddress, code });
+});
+
 app.post("/resend-verify-email", requireAuth, async (c) => {
+  const body = await c.req
+    .json<{
+      captcha_token?: string;
+      pow_challenge?: string;
+      pow_nonce?: number;
+    }>()
+    .catch(
+      (): {
+        captcha_token?: string;
+        pow_challenge?: string;
+        pow_nonce?: number;
+      } => ({}),
+    );
+  const ip = getIp(c);
+  const captchaOk = await verifyCaptchaToken(
+    c.env.DB,
+    body.captcha_token,
+    body.pow_challenge,
+    body.pow_nonce,
+    ip,
+  );
+  if (!captchaOk.success)
+    return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);
+
   const authUser = c.get("user");
 
   const user = await c.env.DB.prepare(

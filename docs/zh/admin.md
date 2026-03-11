@@ -59,6 +59,13 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 - **API key** — Resend 或 Mailchannels 的 API 密钥
 - **SMTP 设置** — 主机、端口、加密方式、用户名、密码（选择 `smtp` 时显示）
 - **From address** — 验证邮件和通知邮件的发件地址
+- **邮件接收域名** — 用于接收 `verify-<code>@<host>` 验证邮件的域名（例如 `mail.example.com`）。留空则默认使用 `APP_URL` 的主机名。该域名必须与 Cloudflare Email Routing 中配置的域名一致。
+- **邮箱验证方式** — 控制用户验证邮箱的方式：
+  - `link` — 系统向用户邮箱发送验证链接
+  - `send` — 用户从自己的邮箱向生成的 `verify-<code>@<domain>` 地址发送邮件（需要 Cloudflare Email Workers）
+  - `both` — 用户可以选择任一方式
+- **发送测试邮件** — 向管理员邮箱发送测试邮件，验证发件功能是否正常
+- **测试邮件接收** — 生成测试 `verify-<code>@<domain>` 地址，验证 Cloudflare Email Worker 能否接收入站邮件
 
 ### 域名重新验证
 

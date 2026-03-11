@@ -92,7 +92,11 @@ export function Register() {
       const res = await api.register({ ...form, ...captcha });
       if ("token" in res && res.token) {
         setAuth(res.token as string, res.user as UserProfile);
-        navigate("/");
+        if (site?.require_email_verification) {
+          navigate("/verify-choose");
+        } else {
+          navigate("/");
+        }
       } else {
         setSuccess(
           "Registration successful! Please check your email to verify your account.",

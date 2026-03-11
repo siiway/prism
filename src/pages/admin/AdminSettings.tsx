@@ -76,6 +76,7 @@ export function AdminSettings() {
   } | null>(null);
   const [tab, setTab] = useState("general");
   const [testingEmail, setTestingEmail] = useState(false);
+  const [testingEmailReceiving, setTestingEmailReceiving] = useState(false);
   const [resetting, setResetting] = useState(false);
 
   const showMsg = (type: "success" | "error", text: string) => {
@@ -103,6 +104,21 @@ export function AdminSettings() {
       );
     } finally {
       setTestingEmail(false);
+    }
+  };
+
+  const handleTestEmailReceiving = async () => {
+    setTestingEmailReceiving(true);
+    try {
+      const result = await api.adminTestEmailReceiving();
+      showMsg("success", result.message);
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    } finally {
+      setTestingEmailReceiving(false);
     }
   };
 
@@ -478,9 +494,38 @@ export function AdminSettings() {
                 placeholder={t("admin.emailFromPlaceholder")}
               />
             </Field>
+            <Field label={t("admin.emailVerifyMethods")}>
+              <Dropdown
+                value={
+                  get("email_verify_methods") === "link"
+                    ? t("admin.verifyMethodLink")
+                    : get("email_verify_methods") === "send"
+                      ? t("admin.verifyMethodSend")
+                      : t("admin.verifyMethodBoth")
+                }
+                selectedOptions={[get("email_verify_methods") ?? "both"]}
+                onOptionSelect={(_, d) =>
+                  set("email_verify_methods", d.optionValue)
+                }
+              >
+                <Option value="both">{t("admin.verifyMethodBoth")}</Option>
+                <Option value="link">{t("admin.verifyMethodLink")}</Option>
+                <Option value="send">{t("admin.verifyMethodSend")}</Option>
+              </Dropdown>
+            </Field>
+            <Field
+              label={t("admin.emailReceiveHost")}
+              hint={t("admin.emailReceiveHostHint")}
+            >
+              <Input
+                value={get("email_receive_host") ?? ""}
+                onChange={(e) => set("email_receive_host", e.target.value)}
+                placeholder="mail.example.com"
+              />
+            </Field>
           </div>
           {get("email_provider") !== "none" && (
-            <div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Button onClick={handleTestEmail} disabled={testingEmail}>
                 {testingEmail ? (
                   <Spinner size="tiny" />
@@ -488,9 +533,23 @@ export function AdminSettings() {
                   t("admin.sendTestEmail")
                 )}
               </Button>
+              <Button
+                appearance="outline"
+                onClick={handleTestEmailReceiving}
+                disabled={testingEmailReceiving}
+              >
+                {testingEmailReceiving ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("admin.testEmailReceiving")
+                )}
+              </Button>
               <Text
                 size={200}
-                style={{ marginLeft: 8, color: tokens.colorNeutralForeground3 }}
+                style={{
+                  color: tokens.colorNeutralForeground3,
+                  alignSelf: "center",
+                }}
               >
                 {t("admin.testEmailDesc")}
               </Text>

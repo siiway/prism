@@ -102,11 +102,27 @@ export const api = {
       "GET",
       `/auth/verify-email?token=${encodeURIComponent(token)}`,
     ),
-  resendVerifyEmail: () =>
+  resendVerifyEmail: (captcha?: {
+    captcha_token?: string;
+    pow_challenge?: string;
+    pow_nonce?: number;
+  }) =>
     request<{ message: string }>(
       "POST",
       "/auth/resend-verify-email",
-      {},
+      captcha ?? {},
+      getToken(),
+    ),
+
+  emailVerifyCode: (captcha?: {
+    captcha_token?: string;
+    pow_challenge?: string;
+    pow_nonce?: number;
+  }) =>
+    request<{ address: string; code: string }>(
+      "POST",
+      "/auth/email-verify-code",
+      captcha ?? {},
       getToken(),
     ),
 
@@ -427,6 +443,13 @@ export const api = {
   },
   adminTestEmail: () =>
     request<{ message: string }>("POST", "/admin/test-email", {}, getToken()),
+  adminTestEmailReceiving: () =>
+    request<{ message: string; address: string }>(
+      "POST",
+      "/admin/test-email-receiving",
+      {},
+      getToken(),
+    ),
   adminReset: () =>
     request<{ message: string }>(
       "POST",
@@ -912,6 +935,8 @@ export interface SitePublicConfig {
   captcha_provider: string;
   captcha_site_key: string;
   pow_difficulty: number;
+  require_email_verification: boolean;
+  email_verify_methods: "link" | "send" | "both";
   accent_color: string;
   custom_css: string;
   initialized: boolean;

@@ -61,6 +61,13 @@ Choose one captcha provider:
 - **API key** — for Resend or Mailchannels
 - **SMTP settings** — host, port, encryption, username, password (when provider is `smtp`)
 - **From address** — the sender address for verification and notification emails
+- **Email receive host** — domain for inbound `verify-<code>@<host>` emails (e.g. `mail.example.com`). Leave blank to default to the `APP_URL` hostname. Must match the domain configured in Cloudflare Email Routing.
+- **Email verification methods** — controls how users can verify their email:
+  - `link` — system sends a verification link to the user's email
+  - `send` — user sends an email from their address to a generated `verify-<code>@<domain>` address (requires Cloudflare Email Workers)
+  - `both` — user can choose either method
+- **Send test email** — sends a test email to the admin's address to verify outgoing email is working
+- **Test email receiving** — generates a test `verify-<code>@<domain>` address to verify the Cloudflare Email Worker can receive inbound emails
 
 ### Domain re-verification
 

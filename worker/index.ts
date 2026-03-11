@@ -56,6 +56,8 @@ app.get("/api/site", async (c) => {
     captcha_provider: config.captcha_provider,
     captcha_site_key: config.captcha_site_key,
     pow_difficulty: config.pow_difficulty,
+    require_email_verification: config.require_email_verification,
+    email_verify_methods: config.email_verify_methods,
     accent_color: config.accent_color,
     custom_css: config.custom_css,
     initialized: config.initialized,
@@ -161,5 +163,60 @@ export default {
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runReverification(env.DB));
+  },
+
+  // Cloudflare Email Worker — receives inbound emails for email-sending verification
+  async email(
+    message: EmailMessage & { setReject(reason: string): void },
+    env: Env,
+  ) {
+    const to = message.to.toLowerCase();
+
+    // Extract code from verify-<code>@domain
+    const match = to.match(/^verify-([a-f0-9]+)@/);
+    if (!match) {
+      // Not a verification email — reject silently
+      message.setReject("Unknown recipient");
+      return;
+    }
+
+    const code = match[1];
+    const senderEmail = message.from.toLowerCase();
+
+    // Check if this is an admin test email
+    const testKey = `email-receive-test:${code}`;
+    const testVal = await env.KV_CACHE.get(testKey);
+    if (testVal) {
+      await env.KV_CACHE.delete(testKey);
+      console.log(
+        `[email-receive-test] Success — received from ${senderEmail}`,
+      );
+      return;
+    }
+
+    // Look up the user who owns this verify code and check sender matches
+    const user = await env.DB.prepare(
+      "SELECT id, email FROM users WHERE email_verify_code = ? AND email_verified = 0",
+    )
+      .bind(code)
+      .first<{ id: string; email: string }>();
+
+    if (!user) {
+      message.setReject("Invalid verification code");
+      return;
+    }
+
+    // The sender must match the user's registered email
+    if (user.email.toLowerCase() !== senderEmail) {
+      message.setReject("Sender does not match registered email");
+      return;
+    }
+
+    // Mark email as verified
+    await env.DB.prepare(
+      "UPDATE users SET email_verified = 1, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+    )
+      .bind(Math.floor(Date.now() / 1000), user.id)
+      .run();
   },
 };

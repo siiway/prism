@@ -49,6 +49,7 @@ import { Tokens } from "./pages/Tokens";
 import { UserWebhooks } from "./pages/UserWebhooks";
 import { Notifications } from "./pages/Notifications";
 import { VerifyEmail } from "./pages/VerifyEmail";
+import { VerifyChoose } from "./pages/VerifyChoose";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -149,6 +150,7 @@ export default function App() {
 
             {/* Email verification result */}
             <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/verify-choose" element={<VerifyChoose />} />
 
             {/* Team invite */}
             <Route path="/teams/join/:token" element={<TeamJoin />} />

@@ -205,7 +205,10 @@
     "verifyEmailDesc": "Your email is not yet verified. Please check your inbox or resend the verification email.",
     "resendVerification": "Resend verification",
     "verifySent": "Verification email sent — please check your inbox.",
-    "verifyFailed": "Failed to send verification email"
+    "verifyFailed": "Failed to send verification email",
+    "verifyBySending": "Verify by sending email",
+    "sendEmailTo": "Send an email from your address to:",
+    "verifyNow": "Verify now"
   },
   "apps": {
     "myApplications": "My Applications",
@@ -687,6 +690,13 @@
     "smtpPassword": "SMTP Password",
     "emailFrom": "From Address",
     "emailFromPlaceholder": "noreply@example.com",
+    "emailVerifyMethods": "Email Verification Methods",
+    "verifyMethodLink": "Link only (system sends email)",
+    "verifyMethodSend": "Send only (user sends email)",
+    "verifyMethodBoth": "Both methods",
+    "emailReceiveHost": "Email Receive Host",
+    "emailReceiveHostHint": "Domain for inbound verification emails (e.g. mail.example.com). Leave blank to use the APP_URL hostname.",
+    "testEmailReceiving": "Test email receiving",
     "sendTestEmail": "Send test email",
     "sendingTestEmail": "Sending…",
     "testEmailDesc": "Sends a test email to your admin address.",
@@ -821,6 +831,18 @@
     "connectionLoginDesc": "When someone signs in to your account via a social connection",
     "profileUpdatedLabel": "Profile updated",
     "profileUpdatedDesc": "When your profile information is changed"
+  },
+  "verifyChoose": {
+    "title": "Verify Your Email",
+    "desc": "Choose how you'd like to verify your email address.",
+    "linkTitle": "Verification link",
+    "linkDesc": "We'll send a verification link to your email address.",
+    "sendLink": "Send verification link",
+    "sendTitle": "Send an email",
+    "sendDesc": "Send an email from your address to a special verification address.",
+    "getAddress": "Get verification address",
+    "skipForNow": "Skip for now",
+    "linkSent": "Verification link sent — check your inbox."
   },
   "verifyEmail": {
     "successTitle": "Email Verified!",

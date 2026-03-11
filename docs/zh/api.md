@@ -54,6 +54,8 @@
   "accent_color": "#0078d4",
   "custom_css": "",
   "initialized": true,
+  "require_email_verification": false,
+  "email_verify_methods": "both",
   "enabled_providers": ["github", "google"]
 }
 ```
@@ -114,6 +116,22 @@
 ### `GET /api/auth/verify-email?token=<token>`
 
 使用邮件中发送的令牌验证邮箱地址。
+
+### `POST /api/auth/resend-verify-email`
+
+重新发送邮箱验证链接。需要认证。接受可选的验证码字段。
+
+**请求体** — `{ "captcha_token": "...", "pow_challenge": "...", "pow_nonce": 12345 }`
+
+**响应** — `{ "message": "Verification email sent" }`
+
+### `POST /api/auth/email-verify-code`
+
+返回一个验证邮箱地址，用户可以向该地址发送邮件来验证邮箱。地址格式为 `verify-<code>@<domain>`。需要认证。接受可选的验证码字段。
+
+**请求体** — `{ "captcha_token": "...", "pow_challenge": "...", "pow_nonce": 12345 }`
+
+**响应** — `{ "address": "verify-abc123@example.com", "code": "abc123" }`
 
 ### `GET /api/auth/pow-challenge`
 

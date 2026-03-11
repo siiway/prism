@@ -26,6 +26,8 @@ const DEFAULT_CONFIG: SiteConfig = {
   discord_client_id: "",
   discord_client_secret: "",
   email_provider: "none",
+  email_verify_methods: "both",
+  email_receive_host: "",
   email_api_key: "",
   email_from: "noreply@example.com",
   smtp_host: "",

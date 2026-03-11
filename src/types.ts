@@ -24,6 +24,8 @@ export interface SiteConfig {
   discord_client_id: string;
   discord_client_secret: string;
   email_provider: "none" | "resend" | "mailchannels" | "smtp";
+  email_verify_methods: "link" | "send" | "both";
+  email_receive_host: string;
   email_api_key: string;
   email_from: string;
   smtp_host: string;

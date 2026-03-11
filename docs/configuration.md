@@ -11,7 +11,7 @@ through **Admin → Settings**. No redeployment is needed to change any of these
 ## General
 
 | Key                          | Type    | Default                         | Description                                                 |
-| ---------------------------- | ------- | ------------------------------- | ----------------------------------------------------------- |
+|------------------------------|---------|---------------------------------|-------------------------------------------------------------|
 | `site_name`                  | string  | `"Prism"`                       | Displayed in the browser title and emails                   |
 | `site_description`           | string  | `"Federated identity platform"` | Shown on the login page                                     |
 | `site_icon_url`              | string? | `null`                          | URL to a favicon / logo                                     |
@@ -24,7 +24,7 @@ through **Admin → Settings**. No redeployment is needed to change any of these
 ## Sessions & tokens
 
 | Key                        | Type   | Default | Description                          |
-| -------------------------- | ------ | ------- | ------------------------------------ |
+|----------------------------|--------|---------|--------------------------------------|
 | `session_ttl_days`         | number | `30`    | How long a user session JWT is valid |
 | `access_token_ttl_minutes` | number | `60`    | OAuth access token lifetime          |
 | `refresh_token_ttl_days`   | number | `30`    | OAuth refresh token lifetime         |
@@ -34,7 +34,7 @@ through **Admin → Settings**. No redeployment is needed to change any of these
 Exactly one provider can be active at a time.
 
 | Key                  | Type   | Default  | Description                                                    |
-| -------------------- | ------ | -------- | -------------------------------------------------------------- |
+|----------------------|--------|----------|----------------------------------------------------------------|
 | `captcha_provider`   | string | `"none"` | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow`    |
 | `captcha_site_key`   | string | `""`     | Public site key for the chosen provider                        |
 | `captcha_secret_key` | string | `""`     | Server-side secret for the chosen provider                     |
@@ -48,7 +48,7 @@ depending on device. Values above 24 may timeout on low-end mobile devices.
 All fields are empty by default (provider disabled).
 
 | Key                       | Description                          |
-| ------------------------- | ------------------------------------ |
+|---------------------------|--------------------------------------|
 | `github_client_id`        | GitHub OAuth App Client ID           |
 | `github_client_secret`    | GitHub OAuth App Client Secret       |
 | `google_client_id`        | Google Cloud OAuth 2.0 Client ID     |
@@ -61,7 +61,7 @@ All fields are empty by default (provider disabled).
 Callback URLs to register with each provider:
 
 | Provider  | Callback URL                                             |
-| --------- | -------------------------------------------------------- |
+|-----------|----------------------------------------------------------|
 | GitHub    | `https://your-domain/api/connections/github/callback`    |
 | Google    | `https://your-domain/api/connections/google/callback`    |
 | Microsoft | `https://your-domain/api/connections/microsoft/callback` |
@@ -69,16 +69,23 @@ Callback URLs to register with each provider:
 
 ## Email
 
-| Key              | Type   | Default                 | Description                          |
-| ---------------- | ------ | ----------------------- | ------------------------------------ |
-| `email_provider` | string | `"none"`                | `none` \| `resend` \| `mailchannels` |
-| `email_api_key`  | string | `""`                    | API key for Resend or Mailchannels   |
-| `email_from`     | string | `"noreply@example.com"` | From address for outgoing emails     |
+| Key                    | Type    | Default                 | Description                                                                            |
+|------------------------|---------|-------------------------|----------------------------------------------------------------------------------------|
+| `email_provider`       | string  | `"none"`                | `none` \| `resend` \| `mailchannels` \| `smtp`                                         |
+| `email_verify_methods` | string  | `"both"`                | `link` (system sends email) \| `send` (user sends email to a verify address) \| `both` |
+| `email_receive_host`   | string  | `""`                    | Domain for inbound verification emails. Blank = derive from `APP_URL` hostname         |
+| `email_api_key`        | string  | `""`                    | API key for Resend or Mailchannels                                                     |
+| `email_from`           | string  | `"noreply@example.com"` | From address for outgoing emails                                                       |
+| `smtp_host`            | string  | `""`                    | SMTP server hostname (when provider is `smtp`)                                         |
+| `smtp_port`            | number  | `587`                   | SMTP server port                                                                       |
+| `smtp_secure`          | boolean | `false`                 | Use SSL/TLS (true) or STARTTLS (false)                                                 |
+| `smtp_user`            | string  | `""`                    | SMTP username                                                                          |
+| `smtp_password`        | string  | `""`                    | SMTP password                                                                          |
 
 ## Domain verification
 
 | Key                    | Type   | Default | Description                                               |
-| ---------------------- | ------ | ------- | --------------------------------------------------------- |
+|------------------------|--------|---------|-----------------------------------------------------------|
 | `domain_reverify_days` | number | `30`    | Days between automatic re-verification checks for domains |
 
 ## Wrangler environment variables
@@ -87,5 +94,5 @@ These are set in `wrangler.jsonc` under `vars` or via `wrangler secret put` and
 are not editable from the admin panel.
 
 | Variable  | Required | Description                                                    |
-| --------- | -------- | -------------------------------------------------------------- |
+|-----------|----------|----------------------------------------------------------------|
 | `APP_URL` | Yes      | Full origin of the deployment, e.g. `https://auth.example.com` |

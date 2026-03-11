@@ -77,6 +77,8 @@ app.patch("/config", async (c) => {
     "discord_client_id",
     "discord_client_secret",
     "email_provider",
+    "email_verify_methods",
+    "email_receive_host",
     "email_api_key",
     "email_from",
     "smtp_host",
@@ -417,6 +419,26 @@ app.post("/test-email", async (c) => {
       500,
     );
   }
+});
+
+// ─── Test email receiving ─────────────────────────────────────────────────────
+
+app.post("/test-email-receiving", async (c) => {
+  const config = await getConfig(c.env.DB);
+  const emailHost =
+    config.email_receive_host || new URL(c.env.APP_URL).hostname;
+  const testCode = randomId(12);
+  const testAddress = `verify-${testCode}@${emailHost}`;
+
+  // Store in KV so the email handler can validate it
+  await c.env.KV_CACHE.put(`email-receive-test:${testCode}`, "1", {
+    expirationTtl: 300,
+  });
+
+  return c.json({
+    message: testAddress,
+    address: testAddress,
+  });
 });
 
 // ─── Reset everything ─────────────────────────────────────────────────────────
