@@ -84,14 +84,14 @@ Callback URLs to register with each provider:
 
 | Key                      | Type    | Default        | Description                                                                            |
 |--------------------------|---------|----------------|----------------------------------------------------------------------------------------|
-| `email_verify_methods`   | string  | `"both"`       | `link` (system sends email) \| `send` (user sends email to a verify address) \| `both` |
-| `email_receive_provider` | string  | `"cloudflare"` | `cloudflare` (Email Workers) \| `imap` (poll via IMAP) \| `none`                       |
-| `email_receive_host`     | string  | `""`           | Domain for inbound verification emails. Blank = derive from `APP_URL` hostname         |
-| `imap_host`              | string  | `""`           | IMAP server hostname (when receive provider is `imap`)                                 |
-| `imap_port`              | number  | `993`          | IMAP server port                                                                       |
-| `imap_secure`            | boolean | `true`         | Use implicit TLS (true, port 993) or STARTTLS (false, port 143)                        |
-| `imap_user`              | string  | `""`           | IMAP username                                                                          |
-| `imap_password`          | string  | `""`           | IMAP password                                                                          |
+| `email_verify_methods`   | string  | `"both"`       | `link` (system sends email) \| `send` (user sends email to verify) \| `both`                                    |
+| `email_receive_provider` | string  | `"cloudflare"` | `cloudflare` (Email Workers) \| `imap` (poll via IMAP) \| `none`                                                |
+| `email_receive_host`     | string  | `""`           | Domain for `verify-<code>@<host>` emails (Cloudflare only). Blank = derive from `APP_URL`                       |
+| `imap_host`              | string  | `""`           | IMAP server hostname (when receive provider is `imap`)                                                           |
+| `imap_port`              | number  | `993`          | IMAP server port                                                                                                 |
+| `imap_secure`            | boolean | `true`         | Use implicit TLS (true, port 993) or STARTTLS (false, port 143)                                                  |
+| `imap_user`              | string  | `""`           | IMAP username — also used as the destination address users send verification emails to (with code as subject)     |
+| `imap_password`          | string  | `""`           | IMAP password                                                                                                    |
 
 ## Domain verification
 

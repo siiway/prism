@@ -485,13 +485,18 @@ app.post("/email-verify-code", requireAuth, async (c) => {
       .run();
   }
 
-  // Build the verification address: verify-<code>@<domain>
   const config = await getConfig(c.env.DB);
+
+  if (config.email_receive_provider === "imap") {
+    // IMAP mode: user sends email with code as subject to the IMAP mailbox
+    return c.json({ address: config.imap_user, code, method: "imap" as const });
+  }
+
+  // Cloudflare Email Workers mode: user sends email to verify-<code>@<host>
   const emailHost =
     config.email_receive_host || new URL(c.env.APP_URL).hostname;
   const verifyAddress = `verify-${code}@${emailHost}`;
-
-  return c.json({ address: verifyAddress, code });
+  return c.json({ address: verifyAddress, code, method: "email" as const });
 });
 
 app.post("/resend-verify-email", requireAuth, async (c) => {

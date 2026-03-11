@@ -71,15 +71,15 @@ The email settings are split into two sub-tabs: **Send** and **Receive**.
 
 - **Email verification methods** — controls how users can verify their email:
   - `link` — system sends a verification link to the user's email
-  - `send` — user sends an email from their address to a generated `verify-<code>@<domain>` address
+  - `send` — user sends an email to verify their address (see receive provider below)
   - `both` — user can choose either method
 - **Receive provider** — how Prism receives inbound verification emails:
-  - `Cloudflare Email Workers` — event-driven, emails trigger the worker's `email()` handler. Requires Cloudflare Email Routing.
-  - `IMAP` — Prism polls an IMAP mailbox on the cron schedule (every 6 hours by default). Works with any email provider.
+  - `Cloudflare Email Workers` — event-driven, emails trigger the worker's `email()` handler. Requires Cloudflare Email Routing. Users send an email to `verify-<code>@<host>`.
+  - `IMAP` — Prism polls an IMAP mailbox on the cron schedule (every 6 hours by default). Works with any email provider. Users send an email **with their verification code as the subject** to the configured IMAP mailbox address (e.g. `receive@prism.example.com`).
   - `None` — disable inbound email (only link-based verification will work)
-- **Receive host** — domain for inbound `verify-<code>@<host>` emails (e.g. `mail.example.com`). Leave blank to default to the `APP_URL` hostname.
-- **IMAP settings** — host, port, encryption, username, password (when receive provider is `imap`)
-- **Test email receiving** — generates a test `verify-<code>@<domain>` address to verify inbound email is working
+- **Receive host** — domain for inbound `verify-<code>@<host>` emails (Cloudflare Email Workers only). Leave blank to default to the `APP_URL` hostname.
+- **IMAP settings** — host, port, encryption, username, password (when receive provider is `imap`). The IMAP username (email address) is shown to users as the destination for verification emails.
+- **Test email receiving** — generates a test code and address to verify inbound email is working
 
 ### Domain re-verification
 

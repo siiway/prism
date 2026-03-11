@@ -164,7 +164,7 @@ export default {
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runReverification(env.DB));
-    ctx.waitUntil(runImapPoll(env.DB, env.KV_CACHE, env.APP_URL));
+    ctx.waitUntil(runImapPoll(env.DB, env.KV_CACHE));
   },
 
   // Cloudflare Email Worker — receives inbound emails for email-sending verification

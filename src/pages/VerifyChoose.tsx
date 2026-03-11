@@ -78,7 +78,11 @@ export function VerifyChoose() {
 
   const [resendLoading, setResendLoading] = useState(false);
   const [codeLoading, setCodeLoading] = useState(false);
-  const [verifyAddress, setVerifyAddress] = useState<string | null>(null);
+  const [verifyData, setVerifyData] = useState<{
+    address: string;
+    code: string;
+    method: "imap" | "email";
+  } | null>(null);
   const [msg, setMsg] = useState<{
     type: "success" | "error";
     text: string;
@@ -105,7 +109,7 @@ export function VerifyChoose() {
     setMsg(null);
     try {
       const res = await api.emailVerifyCode(captcha);
-      setVerifyAddress(res.address);
+      setVerifyData(res);
     } catch (err) {
       setMsg({
         type: "error",
@@ -180,27 +184,97 @@ export function VerifyChoose() {
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {t("verifyChoose.sendDesc")}
             </Text>
-            {verifyAddress ? (
-              <div className={styles.verifyAddress}>
-                <code
-                  style={{
-                    flex: 1,
-                    padding: "6px 10px",
-                    background: tokens.colorNeutralBackground1,
-                    border: `1px solid ${tokens.colorNeutralStroke1}`,
-                    borderRadius: 4,
-                    fontSize: 13,
-                    wordBreak: "break-all",
-                  }}
-                >
-                  {verifyAddress}
-                </code>
-                <Button
-                  size="small"
-                  appearance="subtle"
-                  icon={<CopyRegular />}
-                  onClick={() => navigator.clipboard.writeText(verifyAddress)}
-                />
+            {verifyData ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {verifyData.method === "imap" ? (
+                  <>
+                    <Text size={200}>{t("verifyChoose.imapInstructions")}</Text>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                      }}
+                    >
+                      <Text size={200} weight="semibold">
+                        {t("verifyChoose.imapTo")}
+                      </Text>
+                      <div className={styles.verifyAddress}>
+                        <code
+                          style={{
+                            flex: 1,
+                            padding: "6px 10px",
+                            background: tokens.colorNeutralBackground1,
+                            border: `1px solid ${tokens.colorNeutralStroke1}`,
+                            borderRadius: 4,
+                            fontSize: 13,
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {verifyData.address}
+                        </code>
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<CopyRegular />}
+                          onClick={() =>
+                            navigator.clipboard.writeText(verifyData.address)
+                          }
+                        />
+                      </div>
+                      <Text size={200} weight="semibold">
+                        {t("verifyChoose.imapSubject")}
+                      </Text>
+                      <div className={styles.verifyAddress}>
+                        <code
+                          style={{
+                            flex: 1,
+                            padding: "6px 10px",
+                            background: tokens.colorNeutralBackground1,
+                            border: `1px solid ${tokens.colorNeutralStroke1}`,
+                            borderRadius: 4,
+                            fontSize: 13,
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {verifyData.code}
+                        </code>
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<CopyRegular />}
+                          onClick={() =>
+                            navigator.clipboard.writeText(verifyData.code)
+                          }
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className={styles.verifyAddress}>
+                    <code
+                      style={{
+                        flex: 1,
+                        padding: "6px 10px",
+                        background: tokens.colorNeutralBackground1,
+                        border: `1px solid ${tokens.colorNeutralStroke1}`,
+                        borderRadius: 4,
+                        fontSize: 13,
+                        wordBreak: "break-all",
+                      }}
+                    >
+                      {verifyData.address}
+                    </code>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<CopyRegular />}
+                      onClick={() =>
+                        navigator.clipboard.writeText(verifyData.address)
+                      }
+                    />
+                  </div>
+                )}
               </div>
             ) : (
               <Button

@@ -1,5 +1,6 @@
 // Cron task: poll IMAP inbox for inbound verification emails.
-// Runs alongside the domain reverification cron.
+// Users send an email with their verification code as the subject
+// to the IMAP mailbox address (e.g. receive@prism.example.com).
 
 import { getConfig } from "../lib/config";
 import { pollVerifyEmails } from "../lib/imap";
@@ -7,32 +8,25 @@ import { pollVerifyEmails } from "../lib/imap";
 export async function runImapPoll(
   db: D1Database,
   kv: KVNamespace,
-  appUrl: string,
 ): Promise<void> {
   const config = await getConfig(db);
 
   if (config.email_receive_provider !== "imap") return;
   if (!config.imap_host || !config.imap_user || !config.imap_password) return;
 
-  const receiveHost = config.email_receive_host || new URL(appUrl).hostname;
-
-  const messages = await pollVerifyEmails(
-    {
-      host: config.imap_host,
-      port: config.imap_port,
-      secure: config.imap_secure,
-      user: config.imap_user,
-      password: config.imap_password,
-    },
-    receiveHost,
-  );
+  const messages = await pollVerifyEmails({
+    host: config.imap_host,
+    port: config.imap_port,
+    secure: config.imap_secure,
+    user: config.imap_user,
+    password: config.imap_password,
+  });
 
   for (const msg of messages) {
-    // Extract code from to address: verify-<code>@host
-    const match = msg.to.match(/^verify-([a-f0-9]+)@/);
-    if (!match) continue;
+    // Subject should be exactly the hex verification code
+    const code = msg.subject.trim().toLowerCase();
+    if (!/^[a-f0-9]+$/.test(code)) continue;
 
-    const code = match[1];
     const senderEmail = msg.from.toLowerCase();
 
     // Check admin test emails first

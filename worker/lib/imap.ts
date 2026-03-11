@@ -16,7 +16,7 @@ export interface ImapConfig {
 export interface ImapMessage {
   uid: number;
   from: string;
-  to: string;
+  subject: string;
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
@@ -138,39 +138,6 @@ class ImapConnection {
 
 // ─── Envelope parser helpers ─────────────────────────────────────────────────
 
-/**
- * Extract a bracketed/parenthesised value from an IMAP FETCH response.
- * This is a simplified parser that handles the ENVELOPE structure enough
- * to pull out FROM and TO email addresses.
- *
- * ENVELOPE structure (RFC 3501):
- *   (date subject from sender reply-to to cc bcc in-reply-to message-id)
- * Each address is: (personal-name at-domain-list mailbox host)
- */
-function extractEnvelopeAddresses(envStr: string, groupIndex: number): string {
-  // Walk the envelope string counting top-level groups
-  let depth = 0;
-  let group = 0;
-  let start = -1;
-
-  for (let i = 0; i < envStr.length; i++) {
-    const ch = envStr[i];
-    if (ch === "(") {
-      depth++;
-      if (depth === 1) {
-        group++;
-        if (group === groupIndex) start = i;
-      }
-    } else if (ch === ")") {
-      if (depth === 1 && group === groupIndex) {
-        return envStr.slice(start, i + 1);
-      }
-      depth--;
-    }
-  }
-  return "NIL";
-}
-
 /** Parse an IMAP address-list group into "mailbox@host" for the first address. */
 function parseAddressList(addrGroup: string): string {
   // addrGroup looks like ((personal NIL mailbox host)...)
@@ -189,9 +156,41 @@ function parseAddressList(addrGroup: string): string {
 }
 
 /**
- * Parse a UID FETCH ... ENVELOPE response line and extract uid, from, to.
- * Example line:
- *   * 1 FETCH (UID 42 ENVELOPE ("date" "subject" ((from)) ((sender)) ((reply-to)) ((to)) ...))
+ * Extract a quoted string value from an IMAP envelope field.
+ * Returns the unescaped string content, or "" for NIL.
+ */
+function extractQuotedValue(
+  s: string,
+  startPos: number,
+): { value: string; endPos: number } {
+  let pos = skipWhitespace(s, startPos);
+  if (s.slice(pos, pos + 3) === "NIL") {
+    return { value: "", endPos: pos + 3 };
+  }
+  if (s[pos] !== '"') return { value: "", endPos: pos };
+
+  pos++; // skip opening quote
+  let value = "";
+  while (pos < s.length) {
+    if (s[pos] === "\\") {
+      value += s[pos + 1] ?? "";
+      pos += 2;
+      continue;
+    }
+    if (s[pos] === '"') {
+      pos++;
+      break;
+    }
+    value += s[pos];
+    pos++;
+  }
+  return { value, endPos: pos };
+}
+
+/**
+ * Parse a UID FETCH ... ENVELOPE response line and extract uid, from, subject.
+ * ENVELOPE structure (RFC 3501):
+ *   (date subject from sender reply-to to cc bcc in-reply-to message-id)
  */
 function parseFetchLine(lines: string[]): ImapMessage[] {
   const results: ImapMessage[] = [];
@@ -215,7 +214,6 @@ function parseFetchLine(lines: string[]): ImapMessage[] {
     // Extract ENVELOPE (...)
     const envStart = line.indexOf("ENVELOPE ");
     if (envStart === -1) continue;
-    // Find the balanced parenthesised envelope starting after "ENVELOPE "
     const envDataStart = line.indexOf("(", envStart + 9);
     if (envDataStart === -1) continue;
 
@@ -232,74 +230,41 @@ function parseFetchLine(lines: string[]): ImapMessage[] {
       }
     }
     const envelope = line.slice(envDataStart, envEnd + 1);
-
-    // In the top-level envelope, fields are separated by spaces.
-    // Fields: date(1) subject(2) from(3) sender(4) reply-to(5) to(6)
-    // But date and subject are strings, not groups — so we need to skip them.
-    // Strategy: find the first "(" that starts an address-list group.
-    // We count quote-delimited or NIL tokens for date & subject, then take groups.
-
-    // Simpler approach: strip outer parens, skip date & subject tokens, then
-    // parse the remaining address-list groups.
     const inner = envelope.slice(1, -1); // strip outer ( )
 
-    // Skip date (quoted string or NIL) and subject (quoted string or NIL)
+    // Parse date (field 1) — skip it
     let pos = 0;
-    for (let skip = 0; skip < 2; skip++) {
-      pos = skipWhitespace(inner, pos);
-      if (inner[pos] === '"') {
-        pos = skipQuotedString(inner, pos);
-      } else if (inner.slice(pos, pos + 3) === "NIL") {
-        pos += 3;
-      } else {
-        // Unexpected — skip to next space
-        while (pos < inner.length && inner[pos] !== " ") pos++;
-      }
-    }
+    const dateResult = extractQuotedValue(inner, pos);
+    pos = dateResult.endPos;
 
-    // Now the remaining items are address-list groups: from, sender, reply-to, to, cc, bcc, in-reply-to, message-id
-    // from = group 1, to = group 4
-    // Each address-list is either NIL or ((...) ...)
-    const groups: string[] = [];
-    for (let g = 0; g < 6; g++) {
-      pos = skipWhitespace(inner, pos);
-      if (pos >= inner.length) {
-        groups.push("NIL");
-        continue;
-      }
-      if (inner.slice(pos, pos + 3) === "NIL") {
-        groups.push("NIL");
-        pos += 3;
-      } else if (inner[pos] === "(") {
-        const start = pos;
-        let d = 0;
-        for (; pos < inner.length; pos++) {
-          if (inner[pos] === "(") d++;
-          else if (inner[pos] === ")") {
-            d--;
-            if (d === 0) {
-              pos++;
-              break;
-            }
+    // Parse subject (field 2)
+    const subjectResult = extractQuotedValue(inner, pos);
+    pos = subjectResult.endPos;
+    const subject = subjectResult.value.trim();
+
+    // Parse from address (field 3) — first address-list group after subject
+    pos = skipWhitespace(inner, pos);
+    let from = "";
+    if (inner[pos] === "(") {
+      const start = pos;
+      let d = 0;
+      for (; pos < inner.length; pos++) {
+        if (inner[pos] === "(") d++;
+        else if (inner[pos] === ")") {
+          d--;
+          if (d === 0) {
+            pos++;
+            break;
           }
         }
-        groups.push(inner.slice(start, pos));
-      } else if (inner[pos] === '"') {
-        // in-reply-to / message-id are strings, not groups
-        const start = pos;
-        pos = skipQuotedString(inner, pos);
-        groups.push(inner.slice(start, pos));
-      } else {
-        while (pos < inner.length && inner[pos] !== " ") pos++;
-        groups.push("NIL");
       }
+      from = parseAddressList(inner.slice(start, pos));
+    } else if (inner.slice(pos, pos + 3) === "NIL") {
+      pos += 3;
     }
 
-    const from = groups[0] !== "NIL" ? parseAddressList(groups[0]) : "";
-    const to = groups[3] !== "NIL" ? parseAddressList(groups[3]) : "";
-
-    if (from && to) {
-      results.push({ uid, from, to });
+    if (from && subject) {
+      results.push({ uid, from, subject });
     }
   }
 
@@ -331,12 +296,12 @@ function skipQuotedString(s: string, pos: number): number {
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Connects to an IMAP server, searches INBOX for unseen emails to verify-*@<receiveHost>,
- * returns their FROM/TO addresses, and marks them as \Seen.
+ * Connects to an IMAP server, searches INBOX for unseen emails,
+ * returns their FROM address and SUBJECT, and marks them as \Seen + \Deleted.
+ * The caller uses the subject to match verification codes.
  */
 export async function pollVerifyEmails(
   config: ImapConfig,
-  receiveHost: string,
 ): Promise<ImapMessage[]> {
   const addr = { hostname: config.host, port: config.port };
   const secureTransport = config.secure ? "on" : "starttls";
@@ -358,8 +323,6 @@ export async function pollVerifyEmails(
     if (!config.secure) {
       await conn.command("STARTTLS");
       conn = conn.upgradeTls();
-      // Some servers send a new greeting after STARTTLS — but per spec they don't.
-      // We just continue with LOGIN.
     }
 
     // Authenticate
@@ -372,9 +335,7 @@ export async function pollVerifyEmails(
     abortCheck();
     await conn.command("SELECT INBOX");
 
-    // Search for unseen messages.
-    // IMAP SEARCH TO doesn't support wildcards, so we search UNSEEN and filter
-    // envelopes client-side for the verify-*@receiveHost pattern.
+    // Search for unseen messages
     abortCheck();
     const searchResp = await conn.command("UID SEARCH UNSEEN");
 
@@ -400,23 +361,15 @@ export async function pollVerifyEmails(
     const uidSet = uids.join(",");
     const fetchResp = await conn.command(`UID FETCH ${uidSet} (UID ENVELOPE)`);
 
-    const allMessages = parseFetchLine(fetchResp.lines);
+    const messages = parseFetchLine(fetchResp.lines);
 
-    // Filter to messages where TO matches verify-*@receiveHost
-    const host = receiveHost.toLowerCase();
-    const pattern = new RegExp(
-      `^verify-[^@]+@${host.replace(/\./g, "\\.")}$`,
-      "i",
-    );
-    const matched = allMessages.filter((msg) => pattern.test(msg.to));
-
-    // Mark matched messages as \Seen and \Deleted, then expunge
-    if (matched.length > 0) {
-      const matchedUids = matched.map((m) => m.uid).join(",");
+    // Mark all fetched messages as \Seen and \Deleted, then expunge
+    if (messages.length > 0) {
+      const fetchedUids = messages.map((m) => m.uid).join(",");
 
       abortCheck();
       await conn.command(
-        `UID STORE ${matchedUids} +FLAGS.SILENT (\\Seen \\Deleted)`,
+        `UID STORE ${fetchedUids} +FLAGS.SILENT (\\Seen \\Deleted)`,
       );
 
       abortCheck();
@@ -424,13 +377,10 @@ export async function pollVerifyEmails(
     }
 
     // Logout
-    await conn.command("LOGOUT").catch(() => {
-      // LOGOUT response may not be clean if server closes early
-    });
+    await conn.command("LOGOUT").catch(() => {});
 
-    return matched;
+    return messages;
   } catch (err) {
-    // Attempt graceful close on error
     try {
       await conn.command("LOGOUT");
     } catch {

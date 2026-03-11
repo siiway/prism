@@ -119,7 +119,7 @@ export const api = {
     pow_challenge?: string;
     pow_nonce?: number;
   }) =>
-    request<{ address: string; code: string }>(
+    request<{ address: string; code: string; method: "imap" | "email" }>(
       "POST",
       "/auth/email-verify-code",
       captcha ?? {},
