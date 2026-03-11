@@ -5,6 +5,7 @@ import { randomId, randomBase64url, sha256Hex } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { signJWT } from "../lib/jwt";
+import { deliverUserEmailNotifications } from "../lib/notifications";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -415,6 +416,15 @@ app.get("/:provider/callback", async (c) => {
         now,
       )
       .run();
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env.DB,
+        userId,
+        "connection.added",
+        { provider_name: source.name },
+        c.env.APP_URL,
+      ).catch(() => {}),
+    );
     return c.redirect(`${c.env.APP_URL}/connections?success=connected`);
   }
 
@@ -467,6 +477,15 @@ app.get("/:provider/callback", async (c) => {
         providerUserId,
       )
       .run();
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env.DB,
+        user.id,
+        "connection.login",
+        { provider_name: source.name },
+        c.env.APP_URL,
+      ).catch(() => {}),
+    );
     return c.redirect(
       `${c.env.APP_URL}/auth/callback?token=${encodeURIComponent(await issueJWT(user, c.env.DB, c.env.KV_SESSIONS))}`,
     );
@@ -579,6 +598,16 @@ app.post("/complete", async (c) => {
       )
       .run();
 
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env.DB,
+        user.id,
+        "connection.login",
+        { provider_name: completeSource?.name ?? state.provider },
+        c.env.APP_URL,
+      ).catch(() => {}),
+    );
+
     return c.json({
       token: await issueJWT(user, c.env.DB, c.env.KV_SESSIONS),
       user: userToProfile(user),
@@ -662,13 +691,34 @@ app.post("/complete", async (c) => {
 app.delete("/:id", requireAuth, async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const result = await c.env.DB.prepare(
+
+  // Look up provider slug before deleting so we can include it in the notification
+  const conn = await c.env.DB.prepare(
+    "SELECT provider FROM social_connections WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, user.id)
+    .first<{ provider: string }>();
+  if (!conn) return c.json({ error: "Connection not found" }, 404);
+
+  await c.env.DB.prepare(
     "DELETE FROM social_connections WHERE id = ? AND user_id = ?",
   )
     .bind(id, user.id)
     .run();
-  if (!result.meta.changes)
-    return c.json({ error: "Connection not found" }, 404);
+
+  // Resolve provider name for the notification
+  const config = await getConfig(c.env.DB);
+  const source = await resolveSource(c.env.DB, conn.provider, config);
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "connection.removed",
+      { provider_name: source?.name ?? conn.provider },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
+
   return c.json({ message: "Disconnected" });
 });
 

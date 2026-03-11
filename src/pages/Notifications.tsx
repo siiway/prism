@@ -71,6 +71,26 @@ const EVENT_GROUPS: EventGroup[] = [
     ],
   },
   {
+    groupKey: "notifications.groupConnections",
+    events: [
+      {
+        value: "connection.added",
+        labelKey: "notifications.connectionAddedLabel",
+        descKey: "notifications.connectionAddedDesc",
+      },
+      {
+        value: "connection.removed",
+        labelKey: "notifications.connectionRemovedLabel",
+        descKey: "notifications.connectionRemovedDesc",
+      },
+      {
+        value: "connection.login",
+        labelKey: "notifications.connectionLoginLabel",
+        descKey: "notifications.connectionLoginDesc",
+      },
+    ],
+  },
+  {
     groupKey: "notifications.groupAccount",
     events: [
       {

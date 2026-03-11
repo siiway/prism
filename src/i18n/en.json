@@ -790,6 +790,13 @@
     "domainVerifiedDesc": "When a domain you own is successfully verified",
     "domainDeletedLabel": "Domain removed",
     "domainDeletedDesc": "When a domain is removed from your account",
+    "groupConnections": "Connections",
+    "connectionAddedLabel": "Connection added",
+    "connectionAddedDesc": "When a social account is linked to your account",
+    "connectionRemovedLabel": "Connection removed",
+    "connectionRemovedDesc": "When a social account is unlinked from your account",
+    "connectionLoginLabel": "Login via connection",
+    "connectionLoginDesc": "When someone signs in to your account via a social connection",
     "profileUpdatedLabel": "Profile updated",
     "profileUpdatedDesc": "When your profile information is changed"
   },

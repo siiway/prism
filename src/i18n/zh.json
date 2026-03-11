@@ -790,6 +790,13 @@
     "domainVerifiedDesc": "当您拥有的域名通过验证时",
     "domainDeletedLabel": "域名已移除",
     "domainDeletedDesc": "当域名从您的账号中移除时",
+    "groupConnections": "社交连接",
+    "connectionAddedLabel": "连接已添加",
+    "connectionAddedDesc": "当社交账号关联到您的账号时",
+    "connectionRemovedLabel": "连接已移除",
+    "connectionRemovedDesc": "当社交账号从您的账号中取消关联时",
+    "connectionLoginLabel": "通过连接登录",
+    "connectionLoginDesc": "当有人通过社交连接登录您的账号时",
     "profileUpdatedLabel": "个人资料已更新",
     "profileUpdatedDesc": "当您的个人资料信息发生变更时"
   },

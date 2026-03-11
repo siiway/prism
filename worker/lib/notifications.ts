@@ -12,6 +12,9 @@ export const USER_NOTIFICATION_EVENTS = [
   "domain.added",
   "domain.verified",
   "domain.deleted",
+  "connection.added",
+  "connection.removed",
+  "connection.login",
   "profile.updated",
 ] as const;
 
@@ -234,6 +237,68 @@ function buildEmail(
           manageUrl,
         ),
         text: `Hi ${displayName},\n\nThe domain "${rawDomain}" was removed from your account.`,
+      };
+    }
+
+    case "connection.added": {
+      const rawProvider =
+        (data.provider_name as string | undefined) ?? "a provider";
+      const provider = esc(rawProvider);
+      const connectionsUrl = `${appUrl}/connections`;
+      return {
+        subject: `Connection added — ${rawProvider}`,
+        html: wrap(
+          siteName,
+          "Connection added",
+          p(
+            `Hi ${dn}, your account has been linked to <strong>${provider}</strong>.`,
+          ) +
+            p(
+              "If you did not perform this action, please review your connected accounts immediately.",
+            ) +
+            btn(connectionsUrl, "View connections"),
+          manageUrl,
+        ),
+        text: `Hi ${displayName},\n\nYour account has been linked to "${rawProvider}".\n\nIf you did not perform this action, please review your connected accounts.\n\nView connections: ${connectionsUrl}`,
+      };
+    }
+
+    case "connection.removed": {
+      const rawProvider =
+        (data.provider_name as string | undefined) ?? "a provider";
+      const provider = esc(rawProvider);
+      return {
+        subject: `Connection removed — ${rawProvider}`,
+        html: wrap(
+          siteName,
+          "Connection removed",
+          p(
+            `Hi ${dn}, the connection to <strong>${provider}</strong> has been removed from your account.`,
+          ),
+          manageUrl,
+        ),
+        text: `Hi ${displayName},\n\nThe connection to "${rawProvider}" has been removed from your account.`,
+      };
+    }
+
+    case "connection.login": {
+      const rawProvider =
+        (data.provider_name as string | undefined) ?? "a provider";
+      const provider = esc(rawProvider);
+      return {
+        subject: `New login via ${rawProvider}`,
+        html: wrap(
+          siteName,
+          "New login detected",
+          p(
+            `Hi ${dn}, your account was signed in via <strong>${provider}</strong>.`,
+          ) +
+            p(
+              "If this was not you, please change your password and review your connected accounts.",
+            ),
+          manageUrl,
+        ),
+        text: `Hi ${displayName},\n\nYour account was signed in via "${rawProvider}".\n\nIf this was not you, please change your password and review your connected accounts.`,
       };
     }
 
