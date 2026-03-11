@@ -499,6 +499,41 @@ app.post("/email-verify-code", requireAuth, async (c) => {
   return c.json({ address: verifyAddress, code, method: "email" as const });
 });
 
+app.post("/check-email-verification", requireAuth, async (c) => {
+  const authUser = c.get("user");
+
+  // Quick DB check first
+  const user = await c.env.DB.prepare(
+    "SELECT email_verified FROM users WHERE id = ?",
+  )
+    .bind(authUser.id)
+    .first<{ email_verified: number }>();
+  if (!user) return c.json({ error: "User not found" }, 404);
+  if (user.email_verified) return c.json({ verified: true });
+
+  // If IMAP, do an on-demand poll to process any pending emails
+  const config = await getConfig(c.env.DB);
+  if (config.email_receive_provider === "imap") {
+    if (config.imap_host && config.imap_user && config.imap_password) {
+      try {
+        const { runImapPoll } = await import("../cron/imap-poll");
+        await runImapPoll(c.env.DB, c.env.KV_CACHE);
+      } catch {
+        // IMAP poll failure shouldn't block the status check
+      }
+    }
+  }
+
+  // Re-check after potential IMAP poll
+  const updated = await c.env.DB.prepare(
+    "SELECT email_verified FROM users WHERE id = ?",
+  )
+    .bind(authUser.id)
+    .first<{ email_verified: number }>();
+
+  return c.json({ verified: !!updated?.email_verified });
+});
+
 app.post("/resend-verify-email", requireAuth, async (c) => {
   const body = await c.req
     .json<{

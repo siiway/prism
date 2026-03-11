@@ -14,6 +14,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, proxyImageUrl } from "../lib/api";
@@ -46,6 +47,7 @@ const useStyles = makeStyles({
 
 export function Profile() {
   const styles = useStyles();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { user, setAuth, token } = useAuthStore();
   const { t } = useTranslation();
@@ -68,7 +70,6 @@ export function Profile() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [pwForm, setPwForm] = useState({ current: "", next: "" });
-  const [resendLoading, setResendLoading] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -215,29 +216,9 @@ export function Profile() {
                     appearance="transparent"
                     size="small"
                     style={{ padding: 0, minWidth: 0, height: "auto" }}
-                    disabled={resendLoading}
-                    onClick={async () => {
-                      setResendLoading(true);
-                      try {
-                        await api.resendVerifyEmail();
-                        showMsg("success", t("profile.verifySent"));
-                      } catch (err) {
-                        showMsg(
-                          "error",
-                          err instanceof ApiError
-                            ? err.message
-                            : t("profile.verifyFailed"),
-                        );
-                      } finally {
-                        setResendLoading(false);
-                      }
-                    }}
+                    onClick={() => navigate("/verify-choose")}
                   >
-                    {resendLoading ? (
-                      <Spinner size="tiny" />
-                    ) : (
-                      t("profile.resendVerification")
-                    )}
+                    {t("profile.verifyEmail")}
                   </Button>
                 ) : undefined
               }

@@ -10,7 +10,12 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { CopyRegular, MailRegular, SendRegular } from "@fluentui/react-icons";
+import {
+  ArrowSyncRegular,
+  CopyRegular,
+  MailRegular,
+  SendRegular,
+} from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -78,6 +83,7 @@ export function VerifyChoose() {
 
   const [resendLoading, setResendLoading] = useState(false);
   const [codeLoading, setCodeLoading] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(false);
   const [verifyData, setVerifyData] = useState<{
     address: string;
     code: string;
@@ -117,6 +123,27 @@ export function VerifyChoose() {
       });
     } finally {
       setCodeLoading(false);
+    }
+  };
+
+  const handleCheckStatus = async () => {
+    setCheckingStatus(true);
+    setMsg(null);
+    try {
+      const res = await api.checkEmailVerification();
+      if (res.verified) {
+        setMsg({ type: "success", text: t("verifyChoose.verified") });
+        setTimeout(() => navigate("/"), 1500);
+      } else {
+        setMsg({ type: "error", text: t("verifyChoose.notYetVerified") });
+      }
+    } catch (err) {
+      setMsg({
+        type: "error",
+        text: err instanceof ApiError ? err.message : t("common.error"),
+      });
+    } finally {
+      setCheckingStatus(false);
     }
   };
 
@@ -288,6 +315,19 @@ export function VerifyChoose() {
               </Button>
             )}
           </div>
+        )}
+
+        {verifyData && (
+          <Button
+            appearance="outline"
+            icon={
+              checkingStatus ? <Spinner size="tiny" /> : <ArrowSyncRegular />
+            }
+            disabled={checkingStatus}
+            onClick={handleCheckStatus}
+          >
+            {t("verifyChoose.checkStatus")}
+          </Button>
         )}
 
         <Button

@@ -126,6 +126,14 @@ export const api = {
       getToken(),
     ),
 
+  checkEmailVerification: () =>
+    request<{ verified: boolean }>(
+      "POST",
+      "/auth/check-email-verification",
+      {},
+      getToken(),
+    ),
+
   // ─── TOTP ────────────────────────────────────────────────────────────────
   totpList: () =>
     request<{

@@ -121,9 +121,7 @@
     "updatePassword": "Update password",
     "passwordChanged": "Password changed",
     "passwordChangeFailed": "Password change failed",
-    "resendVerification": "Resend verification email",
-    "verifySent": "Verification email sent — please check your inbox.",
-    "verifyFailed": "Failed to send verification email"
+    "verifyEmail": "Verify email"
   },
   "security": {
     "title": "Security",
@@ -857,6 +855,9 @@
     "imapInstructions": "Send an email with the verification code as the subject to the address below.",
     "imapTo": "To:",
     "imapSubject": "Subject:",
+    "checkStatus": "Check verification status",
+    "verified": "Email verified! Redirecting…",
+    "notYetVerified": "Not verified yet — make sure you sent the email and try again.",
     "skipForNow": "Skip for now",
     "linkSent": "Verification link sent — check your inbox."
   },

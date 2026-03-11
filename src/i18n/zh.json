@@ -121,9 +121,7 @@
     "updatePassword": "更新密码",
     "passwordChanged": "密码已修改",
     "passwordChangeFailed": "密码修改失败",
-    "resendVerification": "重新发送验证邮件",
-    "verifySent": "验证邮件已发送，请查收您的邮箱。",
-    "verifyFailed": "发送验证邮件失败"
+    "verifyEmail": "验证邮箱"
   },
   "security": {
     "title": "安全",
@@ -857,6 +855,9 @@
     "imapInstructions": "请发送一封以验证码为主题的邮件到以下地址。",
     "imapTo": "收件地址：",
     "imapSubject": "邮件主题：",
+    "checkStatus": "检查验证状态",
+    "verified": "邮箱验证成功！正在跳转…",
+    "notYetVerified": "尚未验证 — 请确认已发送邮件后重试。",
     "skipForNow": "暂时跳过",
     "linkSent": "验证链接已发送，请查收邮箱。"
   },
