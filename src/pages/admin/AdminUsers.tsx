@@ -1,7 +1,6 @@
 // Admin user management
 
 import {
-  Badge,
   Button,
   Dialog,
   DialogActions,
@@ -72,9 +71,9 @@ export function AdminUsers() {
     text: string;
   } | null>(null);
   const [editing, setEditing] = useState<AdminUser | null>(null);
-  const [editRole, setEditRole] = useState("");
-  const [editActive, setEditActive] = useState(false);
-  const [editVerified, setEditVerified] = useState(false);
+  const [editRole, setEditRole] = useState<string | null>(null);
+  const [editActive, setEditActive] = useState<boolean | null>(null);
+  const [editVerified, setEditVerified] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
 
   const showMsg = (type: "success" | "error", text: string) => {
@@ -94,9 +93,9 @@ export function AdminUsers() {
 
   const openEdit = (u: AdminUser) => {
     setEditing(u);
-    setEditRole(u.role);
-    setEditActive(u.is_active);
-    setEditVerified(u.email_verified);
+    setEditRole(null);
+    setEditActive(null);
+    setEditVerified(null);
   };
 
   const handleSave = async () => {
@@ -104,10 +103,9 @@ export function AdminUsers() {
     setSaving(true);
     try {
       const updates: Record<string, unknown> = {};
-      if (editRole !== editing.role) updates.role = editRole;
-      if (editActive !== editing.is_active) updates.is_active = editActive;
-      if (editVerified !== editing.email_verified)
-        updates.email_verified = editVerified;
+      if (editRole !== null) updates.role = editRole;
+      if (editActive !== null) updates.is_active = editActive;
+      if (editVerified !== null) updates.email_verified = editVerified;
 
       if (Object.keys(updates).length > 0) {
         await api.adminUpdateUser(editing.id, updates);
@@ -172,8 +170,6 @@ export function AdminUsers() {
             <TableRow>
               <TableHeaderCell>{t("admin.userHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.emailHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.roleHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
               <TableHeaderCell />
             </TableRow>
           </TableHeader>
@@ -196,30 +192,7 @@ export function AdminUsers() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 4 }}
-                    >
-                      <Text
-                        size={200}
-                        style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          maxWidth: 180,
-                        }}
-                      >
-                        {u.email}
-                      </Text>
-                      <Badge
-                        color={u.email_verified ? "success" : "warning"}
-                        appearance="tint"
-                        size="small"
-                      >
-                        {u.email_verified
-                          ? t("profile.verified")
-                          : t("profile.unverified")}
-                      </Badge>
-                    </div>
+                    <Text size={200}>{u.email}</Text>
                   </TableCell>
                   <TableCell>
                     <div style={{ display: "flex", gap: 4 }}>
@@ -336,8 +309,8 @@ export function AdminUsers() {
                 <div className={styles.detailGrid}>
                   <Field label={t("admin.roleHeader")}>
                     <Dropdown
-                      value={editRole}
-                      selectedOptions={[editRole]}
+                      value={editRole ?? editing?.role ?? ""}
+                      selectedOptions={[editRole ?? editing?.role ?? ""]}
                       disabled={editing?.id === user?.id}
                       onOptionSelect={(_, d) =>
                         setEditRole(d.optionValue as string)
@@ -353,14 +326,14 @@ export function AdminUsers() {
                 </div>
 
                 <Switch
-                  checked={editActive}
+                  checked={editActive ?? editing?.is_active ?? false}
                   disabled={editing?.id === user?.id}
                   onChange={(_, d) => setEditActive(d.checked)}
                   label={t("admin.accountActive")}
                 />
 
                 <Switch
-                  checked={editVerified}
+                  checked={editVerified ?? editing?.email_verified ?? false}
                   onChange={(_, d) => setEditVerified(d.checked)}
                   label={t("admin.emailVerifiedToggle")}
                 />

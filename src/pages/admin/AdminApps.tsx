@@ -50,10 +50,10 @@ export function AdminApps() {
   } | null>(null);
 
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
-  const [editOfficial, setEditOfficial] = useState(false);
-  const [editFirstParty, setEditFirstParty] = useState(false);
-  const [editActive, setEditActive] = useState(false);
-  const [editVerified, setEditVerified] = useState(false);
+  const [editOfficial, setEditOfficial] = useState<boolean | null>(null);
+  const [editFirstParty, setEditFirstParty] = useState<boolean | null>(null);
+  const [editActive, setEditActive] = useState<boolean | null>(null);
+  const [editVerified, setEditVerified] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -68,10 +68,10 @@ export function AdminApps() {
 
   const openEdit = (app: Record<string, unknown>) => {
     setEditing(app);
-    setEditOfficial(app.is_official as boolean);
-    setEditFirstParty(app.is_first_party as boolean);
-    setEditActive(app.is_active as boolean);
-    setEditVerified(app.is_verified as boolean);
+    setEditOfficial(null);
+    setEditFirstParty(null);
+    setEditActive(null);
+    setEditVerified(null);
   };
 
   const handleSave = async () => {
@@ -79,13 +79,10 @@ export function AdminApps() {
     setSaving(true);
     try {
       const updates: Record<string, unknown> = {};
-      if (editOfficial !== editing.is_official)
-        updates.is_official = editOfficial;
-      if (editFirstParty !== editing.is_first_party)
-        updates.is_first_party = editFirstParty;
-      if (editActive !== editing.is_active) updates.is_active = editActive;
-      if (editVerified !== editing.is_verified)
-        updates.is_verified = editVerified;
+      if (editOfficial !== null) updates.is_official = editOfficial;
+      if (editFirstParty !== null) updates.is_first_party = editFirstParty;
+      if (editActive !== null) updates.is_active = editActive;
+      if (editVerified !== null) updates.is_verified = editVerified;
 
       if (Object.keys(updates).length > 0) {
         await api.adminUpdateApp(editing.id as string, updates);
@@ -299,25 +296,35 @@ export function AdminApps() {
                 </div>
 
                 <Switch
-                  checked={editActive}
+                  checked={
+                    editActive ?? (editing?.is_active as boolean) ?? false
+                  }
                   onChange={(_, d) => setEditActive(d.checked)}
                   label={t("admin.activeToggle")}
                 />
 
                 <Switch
-                  checked={editVerified}
+                  checked={
+                    editVerified ?? (editing?.is_verified as boolean) ?? false
+                  }
                   onChange={(_, d) => setEditVerified(d.checked)}
                   label={t("admin.verifiedToggle")}
                 />
 
                 <Switch
-                  checked={editOfficial}
+                  checked={
+                    editOfficial ?? (editing?.is_official as boolean) ?? false
+                  }
                   onChange={(_, d) => setEditOfficial(d.checked)}
                   label={t("admin.officialToggle")}
                 />
 
                 <Switch
-                  checked={editFirstParty}
+                  checked={
+                    editFirstParty ??
+                    (editing?.is_first_party as boolean) ??
+                    false
+                  }
                   onChange={(_, d) => setEditFirstParty(d.checked)}
                   label={t("admin.firstPartyToggle")}
                 />
