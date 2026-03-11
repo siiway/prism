@@ -3,6 +3,15 @@
 import {
   Avatar,
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  DialogTrigger,
+  Field,
+  Input,
   MessageBar,
   Spinner,
   Table,
@@ -12,14 +21,26 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  makeStyles,
+  tokens,
 } from "@fluentui/react-components";
-import { DeleteRegular } from "@fluentui/react-icons";
+import { DeleteRegular, EditRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, proxyImageUrl } from "../../lib/api";
 
+const useStyles = makeStyles({
+  detailGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "12px",
+    "@media (max-width: 500px)": { gridTemplateColumns: "1fr" },
+  },
+});
+
 export function AdminTeams() {
+  const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
@@ -27,6 +48,7 @@ export function AdminTeams() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [viewing, setViewing] = useState<Record<string, unknown> | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-teams", page],
@@ -38,12 +60,12 @@ export function AdminTeams() {
     setTimeout(() => setMessage(null), 5000);
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(t("admin.deleteTeamConfirm", { name }))) return;
+  const handleDelete = async (id: string) => {
     try {
       await api.adminDeleteTeam(id);
       await qc.invalidateQueries({ queryKey: ["admin-teams"] });
       showMsg("success", t("admin.teamDeleted"));
+      setViewing(null);
     } catch (err) {
       showMsg(
         "error",
@@ -71,8 +93,6 @@ export function AdminTeams() {
               <TableHeaderCell>{t("admin.teamHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.membersHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.appsHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.createdHeader")}</TableHeaderCell>
               <TableHeaderCell />
             </TableRow>
           </TableHeader>
@@ -96,28 +116,68 @@ export function AdminTeams() {
                       <Text weight="semibold" block>
                         {team.name}
                       </Text>
-                      <Text size={200} style={{ color: "#888" }}>
-                        {team.description?.slice(0, 40)}
-                      </Text>
+                      {team.description && (
+                        <Text
+                          size={200}
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {team.description.slice(0, 40)}
+                        </Text>
+                      )}
                     </div>
                   </div>
                 </TableCell>
                 <TableCell>
-                  {team.owner_username ? `@${team.owner_username}` : "—"}
-                </TableCell>
-                <TableCell>{team.member_count}</TableCell>
-                <TableCell>{team.app_count}</TableCell>
-                <TableCell>
-                  {new Date(team.created_at * 1000).toLocaleDateString()}
+                  <Text size={200}>
+                    {team.owner_username ? `@${team.owner_username}` : "—"}
+                  </Text>
                 </TableCell>
                 <TableCell>
-                  <Button
-                    appearance="subtle"
-                    icon={<DeleteRegular />}
-                    size="small"
-                    style={{ color: "#c50f1f" }}
-                    onClick={() => handleDelete(team.id, team.name)}
-                  />
+                  <Text size={200}>{team.member_count}</Text>
+                </TableCell>
+                <TableCell>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<EditRegular />}
+                      onClick={() =>
+                        setViewing(team as unknown as Record<string, unknown>)
+                      }
+                    />
+                    <Dialog>
+                      <DialogTrigger disableButtonEnhancement>
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<DeleteRegular />}
+                        />
+                      </DialogTrigger>
+                      <DialogSurface>
+                        <DialogBody>
+                          <DialogTitle>
+                            {t("admin.deleteTeamConfirm", {
+                              name: team.name,
+                            })}
+                          </DialogTitle>
+                          <DialogActions>
+                            <DialogTrigger>
+                              <Button>{t("common.cancel")}</Button>
+                            </DialogTrigger>
+                            <Button
+                              appearance="primary"
+                              style={{
+                                background: tokens.colorPaletteRedBackground3,
+                              }}
+                              onClick={() => handleDelete(team.id)}
+                            >
+                              {t("common.delete")}
+                            </Button>
+                          </DialogActions>
+                        </DialogBody>
+                      </DialogSurface>
+                    </Dialog>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -153,6 +213,79 @@ export function AdminTeams() {
           </Button>
         </div>
       )}
+
+      {/* Team detail dialog */}
+      <Dialog
+        open={viewing !== null}
+        onOpenChange={(_, d) => !d.open && setViewing(null)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>
+              {t("admin.editTeam")} — {viewing?.name as string}
+            </DialogTitle>
+            <DialogContent>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                  paddingTop: 8,
+                }}
+              >
+                <div className={styles.detailGrid}>
+                  <Field label={t("admin.ownerHeader")}>
+                    <Input
+                      value={
+                        viewing?.owner_username
+                          ? `@${viewing.owner_username}`
+                          : "—"
+                      }
+                      readOnly
+                    />
+                  </Field>
+                  <Field label={t("admin.membersHeader")}>
+                    <Input
+                      value={String(viewing?.member_count ?? 0)}
+                      readOnly
+                    />
+                  </Field>
+                </div>
+
+                <div className={styles.detailGrid}>
+                  <Field label={t("admin.appsHeader")}>
+                    <Input value={String(viewing?.app_count ?? 0)} readOnly />
+                  </Field>
+                  <Field label={t("admin.createdHeader")}>
+                    <Input
+                      value={
+                        viewing?.created_at
+                          ? new Date(
+                              (viewing.created_at as number) * 1000,
+                            ).toLocaleDateString()
+                          : "—"
+                      }
+                      readOnly
+                    />
+                  </Field>
+                </div>
+
+                {typeof viewing?.description === "string" &&
+                  viewing.description && (
+                    <Field label={t("admin.teamDescHeader")}>
+                      <Input value={viewing.description} readOnly />
+                    </Field>
+                  )}
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setViewing(null)}>
+                {t("common.close")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }

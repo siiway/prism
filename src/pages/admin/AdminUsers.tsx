@@ -11,10 +11,12 @@ import {
   DialogTitle,
   DialogTrigger,
   Dropdown,
+  Field,
   Input,
   MessageBar,
   Option,
   Spinner,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -27,7 +29,7 @@ import {
 } from "@fluentui/react-components";
 import {
   DeleteRegular,
-  PersonProhibitedRegular,
+  EditRegular,
   SearchRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -35,6 +37,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
+import type { UserProfile } from "../../lib/api";
+
+type AdminUser = UserProfile & { app_count: number; is_active: boolean };
 
 const useStyles = makeStyles({
   toolbar: { display: "flex", gap: "8px", marginBottom: "16px" },
@@ -44,6 +49,12 @@ const useStyles = makeStyles({
     alignItems: "center",
     justifyContent: "flex-end",
     marginTop: "16px",
+  },
+  detailGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "12px",
+    "@media (max-width: 500px)": { gridTemplateColumns: "1fr" },
   },
 });
 
@@ -60,6 +71,11 @@ export function AdminUsers() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [editing, setEditing] = useState<AdminUser | null>(null);
+  const [editRole, setEditRole] = useState("");
+  const [editActive, setEditActive] = useState(false);
+  const [editVerified, setEditVerified] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -76,48 +92,36 @@ export function AdminUsers() {
     setPage(1);
   };
 
-  const handleRoleChange = async (id: string, role: string) => {
-    try {
-      await api.adminUpdateUser(id, { role });
-      await qc.invalidateQueries({ queryKey: ["admin-users"] });
-      showMsg("success", t("admin.roleUpdated"));
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
-    }
+  const openEdit = (u: AdminUser) => {
+    setEditing(u);
+    setEditRole(u.role);
+    setEditActive(u.is_active);
+    setEditVerified(u.email_verified);
   };
 
-  const handleToggleVerified = async (id: string, currentVerified: boolean) => {
+  const handleSave = async () => {
+    if (!editing) return;
+    setSaving(true);
     try {
-      await api.adminUpdateUser(id, { email_verified: !currentVerified });
-      await qc.invalidateQueries({ queryKey: ["admin-users"] });
-      showMsg(
-        "success",
-        currentVerified ? t("admin.emailUnverified") : t("admin.emailVerified"),
-      );
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
-    }
-  };
+      const updates: Record<string, unknown> = {};
+      if (editRole !== editing.role) updates.role = editRole;
+      if (editActive !== editing.is_active) updates.is_active = editActive;
+      if (editVerified !== editing.email_verified)
+        updates.email_verified = editVerified;
 
-  const handleToggleActive = async (id: string, currentActive: boolean) => {
-    try {
-      await api.adminUpdateUser(id, { is_active: !currentActive });
-      await qc.invalidateQueries({ queryKey: ["admin-users"] });
-      showMsg(
-        "success",
-        currentActive ? t("admin.userDisabled") : t("admin.userEnabled"),
-      );
+      if (Object.keys(updates).length > 0) {
+        await api.adminUpdateUser(editing.id, updates);
+        await qc.invalidateQueries({ queryKey: ["admin-users"] });
+      }
+      showMsg("success", t("admin.userUpdated"));
+      setEditing(null);
     } catch (err) {
       showMsg(
         "error",
         err instanceof ApiError ? err.message : t("common.error"),
       );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -170,148 +174,102 @@ export function AdminUsers() {
               <TableHeaderCell>{t("admin.emailHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.roleHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.appsHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.joinedHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.actionsHeader")}</TableHeaderCell>
+              <TableHeaderCell />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data?.users.map((u) => (
-              <TableRow key={u.id}>
-                <TableCell>
-                  <div>
-                    <Text weight="semibold" block>
-                      {u.display_name}
-                    </Text>
-                    <Text
-                      size={200}
-                      style={{ color: tokens.colorNeutralForeground3 }}
+            {data?.users.map((u) => {
+              const au = u as unknown as AdminUser;
+              return (
+                <TableRow key={u.id}>
+                  <TableCell>
+                    <div>
+                      <Text weight="semibold" block>
+                        {u.display_name}
+                      </Text>
+                      <Text
+                        size={200}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        @{u.username}
+                      </Text>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
                     >
-                      @{u.username}
-                    </Text>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 4 }}
-                  >
-                    {u.email}
-                    <Badge
-                      color={u.email_verified ? "success" : "warning"}
-                      appearance="tint"
-                      size="small"
-                      style={{ cursor: "pointer" }}
-                      onClick={() =>
-                        handleToggleVerified(u.id, u.email_verified)
-                      }
-                    >
-                      {u.email_verified
-                        ? t("profile.verified")
-                        : t("profile.unverified")}
-                    </Badge>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Dropdown
-                    value={u.role}
-                    selectedOptions={[u.role]}
-                    onOptionSelect={(_, d) =>
-                      handleRoleChange(u.id, d.optionValue as string)
-                    }
-                    style={{ minWidth: 90 }}
-                  >
-                    <Option value="user">User</Option>
-                    <Option value="admin">Admin</Option>
-                  </Dropdown>
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    color={
-                      (u as unknown as { is_active: boolean }).is_active
-                        ? "success"
-                        : "subtle"
-                    }
-                    appearance="filled"
-                  >
-                    {(u as unknown as { is_active: boolean }).is_active
-                      ? t("admin.activeStatus")
-                      : t("admin.disabledStatus")}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {(u as unknown as { app_count: number }).app_count}
-                </TableCell>
-                <TableCell>
-                  {u.created_at
-                    ? new Date(u.created_at * 1000).toLocaleDateString()
-                    : "—"}
-                </TableCell>
-                <TableCell>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <Button
-                      size="small"
-                      appearance="subtle"
-                      icon={<PersonProhibitedRegular />}
-                      disabled={u.id === user?.id}
-                      title={
-                        u.id === user?.id
-                          ? t("admin.cannotDisableSelf")
-                          : (u as unknown as { is_active: boolean }).is_active
-                            ? t("admin.disabledStatus")
-                            : t("admin.activeStatus")
-                      }
-                      onClick={() =>
-                        handleToggleActive(
-                          u.id,
-                          (u as unknown as { is_active: boolean }).is_active,
-                        )
-                      }
-                    />
-                    <Dialog>
-                      <DialogTrigger disableButtonEnhancement>
-                        <Button
-                          size="small"
-                          appearance="subtle"
-                          icon={<DeleteRegular />}
-                          disabled={u.id === user?.id}
-                          title={
-                            u.id === user?.id
-                              ? t("admin.cannotDeleteSelf")
-                              : undefined
-                          }
-                        />
-                      </DialogTrigger>
-                      <DialogSurface>
-                        <DialogBody>
-                          <DialogTitle>
-                            {t("admin.deleteUserTitle")}
-                          </DialogTitle>
-                          <DialogContent>
-                            {t("admin.deleteUserDesc", {
-                              username: u.username,
-                            })}
-                          </DialogContent>
-                          <DialogActions>
-                            <DialogTrigger>
-                              <Button>{t("common.cancel")}</Button>
-                            </DialogTrigger>
-                            <Button
-                              appearance="primary"
-                              style={{
-                                background: tokens.colorPaletteRedBackground3,
-                              }}
-                              onClick={() => handleDelete(u.id)}
-                            >
-                              {t("common.delete")}
-                            </Button>
-                          </DialogActions>
-                        </DialogBody>
-                      </DialogSurface>
-                    </Dialog>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                      <Text
+                        size={200}
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          maxWidth: 180,
+                        }}
+                      >
+                        {u.email}
+                      </Text>
+                      <Badge
+                        color={u.email_verified ? "success" : "warning"}
+                        appearance="tint"
+                        size="small"
+                      >
+                        {u.email_verified
+                          ? t("profile.verified")
+                          : t("profile.unverified")}
+                      </Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<EditRegular />}
+                        onClick={() => openEdit(au)}
+                      />
+                      <Dialog>
+                        <DialogTrigger disableButtonEnhancement>
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<DeleteRegular />}
+                            disabled={u.id === user?.id}
+                          />
+                        </DialogTrigger>
+                        <DialogSurface>
+                          <DialogBody>
+                            <DialogTitle>
+                              {t("admin.deleteUserTitle")}
+                            </DialogTitle>
+                            <DialogContent>
+                              {t("admin.deleteUserDesc", {
+                                username: u.username,
+                              })}
+                            </DialogContent>
+                            <DialogActions>
+                              <DialogTrigger>
+                                <Button>{t("common.cancel")}</Button>
+                              </DialogTrigger>
+                              <Button
+                                appearance="primary"
+                                style={{
+                                  background: tokens.colorPaletteRedBackground3,
+                                }}
+                                onClick={() => handleDelete(u.id)}
+                              >
+                                {t("common.delete")}
+                              </Button>
+                            </DialogActions>
+                          </DialogBody>
+                        </DialogSurface>
+                      </Dialog>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       )}
@@ -337,6 +295,93 @@ export function AdminUsers() {
           </Button>
         </div>
       )}
+
+      {/* Edit user dialog */}
+      <Dialog
+        open={editing !== null}
+        onOpenChange={(_, d) => !d.open && setEditing(null)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>
+              {t("admin.editUser")} — @{editing?.username}
+            </DialogTitle>
+            <DialogContent>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                  paddingTop: 8,
+                }}
+              >
+                <div className={styles.detailGrid}>
+                  <Field label={t("admin.emailHeader")}>
+                    <Input value={editing?.email ?? ""} readOnly />
+                  </Field>
+                  <Field label={t("admin.joinedHeader")}>
+                    <Input
+                      value={
+                        editing?.created_at
+                          ? new Date(
+                              editing.created_at * 1000,
+                            ).toLocaleDateString()
+                          : "—"
+                      }
+                      readOnly
+                    />
+                  </Field>
+                </div>
+
+                <div className={styles.detailGrid}>
+                  <Field label={t("admin.roleHeader")}>
+                    <Dropdown
+                      value={editRole}
+                      selectedOptions={[editRole]}
+                      disabled={editing?.id === user?.id}
+                      onOptionSelect={(_, d) =>
+                        setEditRole(d.optionValue as string)
+                      }
+                    >
+                      <Option value="user">User</Option>
+                      <Option value="admin">Admin</Option>
+                    </Dropdown>
+                  </Field>
+                  <Field label={t("admin.appsHeader")}>
+                    <Input value={String(editing?.app_count ?? 0)} readOnly />
+                  </Field>
+                </div>
+
+                <Switch
+                  checked={editActive}
+                  disabled={editing?.id === user?.id}
+                  onChange={(_, d) => setEditActive(d.checked)}
+                  label={t("admin.accountActive")}
+                />
+
+                <Switch
+                  checked={editVerified}
+                  onChange={(_, d) => setEditVerified(d.checked)}
+                  label={t("admin.emailVerifiedToggle")}
+                />
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setEditing(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                onClick={handleSave}
+                disabled={saving}
+                icon={saving ? <Spinner size="tiny" /> : undefined}
+              >
+                {t("common.save")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }

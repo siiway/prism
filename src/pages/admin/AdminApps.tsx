@@ -3,6 +3,14 @@
 import {
   Badge,
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  Field,
+  Input,
   MessageBar,
   Spinner,
   Switch,
@@ -13,19 +21,26 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  BuildingRegular,
-  ShieldCheckmarkRegular,
-  StarRegular,
-} from "@fluentui/react-icons";
+import { EditRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, proxyImageUrl } from "../../lib/api";
 
+const useStyles = makeStyles({
+  detailGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "12px",
+    "@media (max-width: 500px)": { gridTemplateColumns: "1fr" },
+  },
+});
+
 export function AdminApps() {
+  const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
@@ -33,6 +48,13 @@ export function AdminApps() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+
+  const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
+  const [editOfficial, setEditOfficial] = useState(false);
+  const [editFirstParty, setEditFirstParty] = useState(false);
+  const [editActive, setEditActive] = useState(false);
+  const [editVerified, setEditVerified] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-apps", page],
@@ -44,51 +66,40 @@ export function AdminApps() {
     setTimeout(() => setMessage(null), 5000);
   };
 
-  const handleToggleActive = async (id: string, current: boolean) => {
-    try {
-      await api.adminUpdateApp(id, { is_active: !current });
-      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
-      showMsg(
-        "success",
-        current ? t("admin.appDisabled") : t("admin.appEnabled"),
-      );
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
-    }
+  const openEdit = (app: Record<string, unknown>) => {
+    setEditing(app);
+    setEditOfficial(app.is_official as boolean);
+    setEditFirstParty(app.is_first_party as boolean);
+    setEditActive(app.is_active as boolean);
+    setEditVerified(app.is_verified as boolean);
   };
 
-  const handleToggleOfficial = async (id: string, current: boolean) => {
+  const handleSave = async () => {
+    if (!editing) return;
+    setSaving(true);
     try {
-      await api.adminUpdateApp(id, { is_official: !current });
-      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
-      showMsg(
-        "success",
-        current ? t("admin.officialBadgeRemoved") : t("admin.markedAsOfficial"),
-      );
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
-    }
-  };
+      const updates: Record<string, unknown> = {};
+      if (editOfficial !== editing.is_official)
+        updates.is_official = editOfficial;
+      if (editFirstParty !== editing.is_first_party)
+        updates.is_first_party = editFirstParty;
+      if (editActive !== editing.is_active) updates.is_active = editActive;
+      if (editVerified !== editing.is_verified)
+        updates.is_verified = editVerified;
 
-  const handleToggleFirstParty = async (id: string, current: boolean) => {
-    try {
-      await api.adminUpdateApp(id, { is_first_party: !current });
-      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
-      showMsg(
-        "success",
-        current ? t("admin.firstPartyDisabled") : t("admin.firstPartyEnabled"),
-      );
+      if (Object.keys(updates).length > 0) {
+        await api.adminUpdateApp(editing.id as string, updates);
+        await qc.invalidateQueries({ queryKey: ["admin-apps"] });
+      }
+      showMsg("success", t("admin.appUpdated"));
+      setEditing(null);
     } catch (err) {
       showMsg(
         "error",
         err instanceof ApiError ? err.message : t("common.error"),
       );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -110,12 +121,8 @@ export function AdminApps() {
             <TableRow>
               <TableHeaderCell>{t("admin.appHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.clientIdHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.verifiedHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.officialHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.firstPartyHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.activeHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.createdHeader")}</TableHeaderCell>
+              <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
+              <TableHeaderCell />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -135,9 +142,29 @@ export function AdminApps() {
                       />
                     )}
                     <div>
-                      <Text weight="semibold" block>
-                        {app.name}
-                      </Text>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        <Text weight="semibold">{app.name}</Text>
+                        {app.is_official && (
+                          <Badge color="brand" appearance="tint" size="small">
+                            {t("admin.officialHeader")}
+                          </Badge>
+                        )}
+                        {app.is_first_party && (
+                          <Badge
+                            color="informative"
+                            appearance="tint"
+                            size="small"
+                          >
+                            {t("admin.firstPartyHeader")}
+                          </Badge>
+                        )}
+                      </div>
                       <Text
                         size={200}
                         style={{ color: tokens.colorNeutralForeground3 }}
@@ -147,51 +174,40 @@ export function AdminApps() {
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>@{app.owner_username}</TableCell>
-                <TableCell
-                  style={{ fontFamily: "monospace", fontSize: "12px" }}
-                >
-                  {app.client_id}
+                <TableCell>
+                  <Text size={200}>@{app.owner_username}</Text>
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    color={app.is_verified ? "success" : "subtle"}
-                    appearance="filled"
-                    icon={
-                      app.is_verified ? <ShieldCheckmarkRegular /> : undefined
-                    }
-                  >
-                    {app.is_verified
-                      ? t("admin.verifiedBadge")
-                      : t("admin.unverifiedBadge")}
-                  </Badge>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    <Badge
+                      color={app.is_active ? "success" : "subtle"}
+                      appearance="filled"
+                      size="small"
+                    >
+                      {app.is_active
+                        ? t("admin.activeStatus")
+                        : t("admin.disabledStatus")}
+                    </Badge>
+                    <Badge
+                      color={app.is_verified ? "success" : "subtle"}
+                      appearance="filled"
+                      size="small"
+                    >
+                      {app.is_verified
+                        ? t("admin.verifiedBadge")
+                        : t("admin.unverifiedBadge")}
+                    </Badge>
+                  </div>
                 </TableCell>
                 <TableCell>
-                  <Switch
-                    checked={app.is_official}
-                    label={app.is_official ? <StarRegular /> : undefined}
-                    onChange={() =>
-                      handleToggleOfficial(app.id, app.is_official)
-                    }
-                  />
-                </TableCell>
-                <TableCell>
-                  <Switch
-                    checked={app.is_first_party}
-                    label={app.is_first_party ? <BuildingRegular /> : undefined}
-                    onChange={() =>
-                      handleToggleFirstParty(app.id, app.is_first_party)
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<EditRegular />}
+                    onClick={() =>
+                      openEdit(app as unknown as Record<string, unknown>)
                     }
                   />
-                </TableCell>
-                <TableCell>
-                  <Switch
-                    checked={app.is_active}
-                    onChange={() => handleToggleActive(app.id, app.is_active)}
-                  />
-                </TableCell>
-                <TableCell>
-                  {new Date(app.created_at * 1000).toLocaleDateString()}
                 </TableCell>
               </TableRow>
             ))}
@@ -227,6 +243,102 @@ export function AdminApps() {
           </Button>
         </div>
       )}
+
+      {/* Edit app dialog */}
+      <Dialog
+        open={editing !== null}
+        onOpenChange={(_, d) => !d.open && setEditing(null)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>
+              {t("admin.editApp")} — {editing?.name as string}
+            </DialogTitle>
+            <DialogContent>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                  paddingTop: 8,
+                }}
+              >
+                <div className={styles.detailGrid}>
+                  <Field label={t("admin.clientIdHeader")}>
+                    <Input
+                      value={(editing?.client_id as string) ?? ""}
+                      readOnly
+                      style={{ fontFamily: "monospace", fontSize: 12 }}
+                    />
+                  </Field>
+                  <Field label={t("admin.ownerHeader")}>
+                    <Input
+                      value={
+                        editing?.owner_username
+                          ? `@${editing.owner_username}`
+                          : "—"
+                      }
+                      readOnly
+                    />
+                  </Field>
+                </div>
+
+                <div className={styles.detailGrid}>
+                  <Field label={t("admin.createdHeader")}>
+                    <Input
+                      value={
+                        editing?.created_at
+                          ? new Date(
+                              (editing.created_at as number) * 1000,
+                            ).toLocaleDateString()
+                          : "—"
+                      }
+                      readOnly
+                    />
+                  </Field>
+                </div>
+
+                <Switch
+                  checked={editActive}
+                  onChange={(_, d) => setEditActive(d.checked)}
+                  label={t("admin.activeToggle")}
+                />
+
+                <Switch
+                  checked={editVerified}
+                  onChange={(_, d) => setEditVerified(d.checked)}
+                  label={t("admin.verifiedToggle")}
+                />
+
+                <Switch
+                  checked={editOfficial}
+                  onChange={(_, d) => setEditOfficial(d.checked)}
+                  label={t("admin.officialToggle")}
+                />
+
+                <Switch
+                  checked={editFirstParty}
+                  onChange={(_, d) => setEditFirstParty(d.checked)}
+                  label={t("admin.firstPartyToggle")}
+                />
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setEditing(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                onClick={handleSave}
+                disabled={saving}
+                icon={saving ? <Spinner size="tiny" /> : undefined}
+              >
+                {t("common.save")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }
