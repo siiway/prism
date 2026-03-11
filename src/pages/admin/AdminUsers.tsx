@@ -165,12 +165,12 @@ export function AdminUsers() {
       {isLoading ? (
         <Spinner />
       ) : (
-        <Table>
+        <Table style={{ tableLayout: "auto" }}>
           <TableHeader>
             <TableRow>
               <TableHeaderCell>{t("admin.userHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.emailHeader")}</TableHeaderCell>
-              <TableHeaderCell />
+              <TableHeaderCell style={{ width: 1 }} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -195,7 +195,13 @@ export function AdminUsers() {
                     <Text size={200}>{u.email}</Text>
                   </TableCell>
                   <TableCell>
-                    <div style={{ display: "flex", gap: 4 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 4,
+                        justifyContent: "flex-end",
+                      }}
+                    >
                       <Button
                         size="small"
                         appearance="subtle"

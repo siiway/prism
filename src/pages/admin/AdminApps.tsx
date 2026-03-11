@@ -113,13 +113,13 @@ export function AdminApps() {
       {isLoading ? (
         <Spinner />
       ) : (
-        <Table>
+        <Table style={{ tableLayout: "auto" }}>
           <TableHeader>
             <TableRow>
               <TableHeaderCell>{t("admin.appHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
-              <TableHeaderCell />
+              <TableHeaderCell style={{ width: 1 }} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -197,14 +197,16 @@ export function AdminApps() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Button
-                    size="small"
-                    appearance="subtle"
-                    icon={<EditRegular />}
-                    onClick={() =>
-                      openEdit(app as unknown as Record<string, unknown>)
-                    }
-                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<EditRegular />}
+                      onClick={() =>
+                        openEdit(app as unknown as Record<string, unknown>)
+                      }
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

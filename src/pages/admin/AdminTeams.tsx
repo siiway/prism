@@ -87,13 +87,13 @@ export function AdminTeams() {
       {isLoading ? (
         <Spinner />
       ) : (
-        <Table>
+        <Table style={{ tableLayout: "auto" }}>
           <TableHeader>
             <TableRow>
               <TableHeaderCell>{t("admin.teamHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
               <TableHeaderCell>{t("admin.membersHeader")}</TableHeaderCell>
-              <TableHeaderCell />
+              <TableHeaderCell style={{ width: 1 }} />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -136,7 +136,13 @@ export function AdminTeams() {
                   <Text size={200}>{team.member_count}</Text>
                 </TableCell>
                 <TableCell>
-                  <div style={{ display: "flex", gap: 4 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 4,
+                      justifyContent: "flex-end",
+                    }}
+                  >
                     <Button
                       size="small"
                       appearance="subtle"
