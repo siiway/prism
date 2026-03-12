@@ -10,11 +10,16 @@ import {
   MessageBarBody,
   Spinner,
   Text,
+  Textarea,
   Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { KeyMultipleRegular } from "@fluentui/react-icons";
+import {
+  CopyRegular,
+  KeyMultipleRegular,
+  LockClosedRegular,
+} from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -72,6 +77,14 @@ export function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
+
+  // GPG login state
+  const [gpgStep, setGpgStep] = useState<"idle" | "challenge" | "verify">(
+    "idle",
+  );
+  const [gpgLoading, setGpgLoading] = useState(false);
+  const [gpgChallengeText, setGpgChallengeText] = useState("");
+  const [gpgSignedMessage, setGpgSignedMessage] = useState("");
   const redirectTo = searchParams.get("redirect") ?? "/";
   const errorParam = searchParams.get("error");
   const errorParamMessage = errorParam
@@ -146,6 +159,38 @@ export function Login() {
   const handleSocialLogin = async (provider: string) => {
     const { redirect } = await api.connectionBegin(provider, { mode: "login" });
     window.location.href = redirect;
+  };
+
+  const handleGpgBegin = async () => {
+    if (!identifier.trim()) {
+      setError(t("auth.emailOrUsernameRequired"));
+      return;
+    }
+    setError("");
+    setGpgLoading(true);
+    try {
+      const res = await api.gpgChallenge(identifier);
+      setGpgChallengeText(res.text);
+      setGpgSignedMessage("");
+      setGpgStep("challenge");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("auth.gpgFailed"));
+    } finally {
+      setGpgLoading(false);
+    }
+  };
+
+  const handleGpgVerify = async () => {
+    setError("");
+    setGpgLoading(true);
+    try {
+      const res = await api.gpgLogin(identifier, gpgSignedMessage);
+      setAuth(res.token, res.user);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("auth.gpgFailed"));
+    } finally {
+      setGpgLoading(false);
+    }
   };
 
   return (
@@ -228,7 +273,7 @@ export function Login() {
           )}
         </form>
 
-        {!totpRequired && (
+        {!totpRequired && gpgStep === "idle" && (
           <>
             <Button
               appearance="outline"
@@ -239,6 +284,19 @@ export function Login() {
               {passkeyLoading
                 ? t("auth.authenticating")
                 : t("auth.signInWithPasskey")}
+            </Button>
+
+            <Button
+              appearance="outline"
+              icon={<LockClosedRegular />}
+              onClick={handleGpgBegin}
+              disabled={gpgLoading}
+            >
+              {gpgLoading ? (
+                <Spinner size="tiny" />
+              ) : (
+                t("security.signInWithGpg")
+              )}
             </Button>
 
             {(site?.enabled_providers?.length ?? 0) > 0 && (
@@ -258,6 +316,68 @@ export function Login() {
               </>
             )}
           </>
+        )}
+
+        {!totpRequired && gpgStep === "challenge" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Text weight="semibold">{t("security.gpgLoginTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("security.gpgChallengePrompt")}
+            </Text>
+            <div style={{ position: "relative" }}>
+              <pre
+                style={{
+                  margin: 0,
+                  padding: "8px 36px 8px 8px",
+                  background: tokens.colorNeutralBackground3,
+                  borderRadius: 4,
+                  fontSize: 12,
+                  fontFamily: "monospace",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-all",
+                }}
+              >
+                {gpgChallengeText}
+              </pre>
+              <Button
+                appearance="transparent"
+                icon={<CopyRegular />}
+                size="small"
+                style={{ position: "absolute", top: 4, right: 4 }}
+                onClick={() => navigator.clipboard.writeText(gpgChallengeText)}
+                title={t("security.gpgCopied")}
+              />
+            </div>
+            <Field label={t("security.gpgSignedMessage")}>
+              <Textarea
+                value={gpgSignedMessage}
+                onChange={(e) => setGpgSignedMessage(e.target.value)}
+                placeholder={t("security.gpgSignedMessagePlaceholder")}
+                rows={7}
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              />
+            </Field>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                appearance="primary"
+                icon={gpgLoading ? <Spinner size="tiny" /> : undefined}
+                disabled={gpgLoading || !gpgSignedMessage.trim()}
+                onClick={handleGpgVerify}
+                style={{ flex: 1 }}
+              >
+                {t("security.gpgVerify")}
+              </Button>
+              <Button
+                appearance="subtle"
+                onClick={() => {
+                  setGpgStep("idle");
+                  setError("");
+                }}
+              >
+                {t("common.back")}
+              </Button>
+            </div>
+          </div>
         )}
 
         {site?.allow_registration && !totpRequired && (

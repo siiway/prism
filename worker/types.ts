@@ -16,6 +16,17 @@ export interface UserRow {
   updated_at: number;
 }
 
+export interface GpgKeyRow {
+  id: string;
+  user_id: string;
+  fingerprint: string;
+  key_id: string;
+  name: string;
+  public_key: string;
+  created_at: number;
+  last_used_at: number | null;
+}
+
 export interface TotpAuthenticatorRow {
   id: string;
   user_id: string;

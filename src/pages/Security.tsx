@@ -21,6 +21,7 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  Textarea,
   Title2,
   makeStyles,
   tokens,
@@ -38,7 +39,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startRegistration } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
-import type { PasskeyInfo, SessionInfo } from "../lib/api";
+import type { GpgKeyInfo, PasskeyInfo, SessionInfo } from "../lib/api";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: "32px" },
@@ -97,6 +98,10 @@ export function Security() {
   const { data: passkeysData, refetch: refetchPasskeys } = useQuery({
     queryKey: ["passkeys"],
     queryFn: api.listPasskeys,
+  });
+  const { data: gpgData, refetch: refetchGpg } = useQuery({
+    queryKey: ["gpg-keys"],
+    queryFn: api.listGpgKeys,
   });
   const { data: sessionsData, refetch: refetchSessions } = useQuery({
     queryKey: ["sessions"],
@@ -249,6 +254,46 @@ export function Security() {
         err instanceof ApiError
           ? err.message
           : t("security.failedRemovePasskey"),
+      );
+    }
+  };
+
+  // ─── GPG keys ────────────────────────────────────────────────────────────
+  const [gpgKeyText, setGpgKeyText] = useState("");
+  const [gpgKeyName, setGpgKeyName] = useState("");
+  const [gpgLoading, setGpgLoading] = useState(false);
+  const [selectedGpg, setSelectedGpg] = useState<GpgKeyInfo | null>(null);
+
+  const handleAddGpgKey = async () => {
+    setGpgLoading(true);
+    try {
+      await api.addGpgKey(gpgKeyText, gpgKeyName || undefined);
+      setGpgKeyText("");
+      setGpgKeyName("");
+      await refetchGpg();
+      showMsg("success", t("security.gpgKeyAdded"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("security.gpgKeyAddFailed"),
+      );
+    } finally {
+      setGpgLoading(false);
+    }
+  };
+
+  const handleDeleteGpgKey = async (id: string) => {
+    try {
+      await api.deleteGpgKey(id);
+      setSelectedGpg(null);
+      await refetchGpg();
+      showMsg("success", t("security.gpgKeyRemoved"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("security.gpgKeyRemoveFailed"),
       );
     }
   };
@@ -755,6 +800,157 @@ export function Security() {
             ) : (
               t("security.addPasskey")
             )}
+          </Button>
+        </div>
+      </div>
+
+      {/* GPG Keys */}
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div>
+            <Text weight="semibold" size={400} block>
+              {t("security.gpgKeysTitle")}
+            </Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("security.gpgKeysDesc")}
+            </Text>
+          </div>
+        </div>
+
+        {(gpgData?.keys.length ?? 0) > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>{t("security.nameHeader")}</TableHeaderCell>
+                <TableHeaderCell className={styles.hiddenOnMobile}>
+                  {t("security.gpgFingerprintHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell className={styles.hiddenOnMobile}>
+                  {t("security.addedHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell className={styles.hiddenOnMobile}>
+                  {t("security.lastUsedHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell className={styles.hiddenOnMobile} />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {gpgData!.keys.map((k) => (
+                <TableRow
+                  key={k.id}
+                  className={styles.row}
+                  onClick={() => setSelectedGpg(k)}
+                >
+                  <TableCell>{k.name}</TableCell>
+                  <TableCell className={styles.hiddenOnMobile}>
+                    <span style={{ fontFamily: "monospace", fontSize: 12 }}>
+                      {k.fingerprint.slice(-16).toUpperCase()}
+                    </span>
+                  </TableCell>
+                  <TableCell className={styles.hiddenOnMobile}>
+                    {new Date(k.created_at * 1000).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className={styles.hiddenOnMobile}>
+                    {k.last_used_at
+                      ? new Date(k.last_used_at * 1000).toLocaleDateString()
+                      : "—"}
+                  </TableCell>
+                  <TableCell className={styles.hiddenOnMobile}>
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        icon={<DeleteRegular />}
+                        appearance="subtle"
+                        onClick={() => handleDeleteGpgKey(k.id)}
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
+        {/* GPG key detail dialog (mobile) */}
+        <Dialog
+          open={!!selectedGpg}
+          onOpenChange={(_, s) => {
+            if (!s.open) setSelectedGpg(null);
+          }}
+        >
+          <DialogSurface>
+            <DialogBody>
+              <DialogTitle>{selectedGpg?.name}</DialogTitle>
+              <DialogContent>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                >
+                  <Text size={200}>
+                    <strong>{t("security.gpgFingerprintHeader")}:</strong>{" "}
+                    <span style={{ fontFamily: "monospace" }}>
+                      {selectedGpg?.fingerprint.toUpperCase()}
+                    </span>
+                  </Text>
+                  <Text size={200}>
+                    <strong>{t("security.added")}:</strong>{" "}
+                    {selectedGpg
+                      ? new Date(
+                          selectedGpg.created_at * 1000,
+                        ).toLocaleDateString()
+                      : ""}
+                  </Text>
+                  <Text size={200}>
+                    <strong>{t("security.lastUsedHeader")}:</strong>{" "}
+                    {selectedGpg?.last_used_at
+                      ? new Date(
+                          selectedGpg.last_used_at * 1000,
+                        ).toLocaleDateString()
+                      : "—"}
+                  </Text>
+                </div>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setSelectedGpg(null)}>
+                  {t("common.close")}
+                </Button>
+                <Button
+                  appearance="primary"
+                  style={{ background: tokens.colorPaletteRedBackground3 }}
+                  onClick={() => {
+                    if (selectedGpg) handleDeleteGpgKey(selectedGpg.id);
+                  }}
+                >
+                  {t("security.deleteGpgKey")}
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+
+        {/* Add new GPG key */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <Field label={t("security.gpgKeyName")}>
+            <Input
+              value={gpgKeyName}
+              onChange={(e) => setGpgKeyName(e.target.value)}
+              placeholder={t("security.gpgKeyNamePlaceholder")}
+            />
+          </Field>
+          <Field label={t("security.gpgPublicKey")}>
+            <Textarea
+              value={gpgKeyText}
+              onChange={(e) => setGpgKeyText(e.target.value)}
+              placeholder={t("security.gpgPublicKeyPlaceholder")}
+              rows={6}
+              style={{ fontFamily: "monospace", fontSize: 12 }}
+            />
+          </Field>
+          <Button
+            appearance="primary"
+            icon={gpgLoading ? <Spinner size="tiny" /> : <KeyRegular />}
+            disabled={gpgLoading || !gpgKeyText.trim()}
+            onClick={handleAddGpgKey}
+          >
+            {t("security.addGpgKey")}
           </Button>
         </div>
       </div>

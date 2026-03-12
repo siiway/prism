@@ -24,6 +24,7 @@ import {
   finishPasskeyRegistration,
   rowToPasskey,
 } from "../lib/webauthn";
+import { verifyClearsign } from "../lib/gpg";
 import { verifyCaptchaToken } from "../middleware/captcha";
 import { rateLimitIp } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/auth";
@@ -1109,6 +1110,186 @@ app.delete("/sessions/:id", requireAuth, async (c) => {
     .bind(id, user.id)
     .run();
   return c.json({ message: "Session revoked" });
+});
+
+// ─── GPG login ───────────────────────────────────────────────────────────────
+
+// Step 1: request a challenge
+app.post("/gpg-challenge", async (c) => {
+  const ip = getIp(c);
+  const rl = await rateLimitIp(c.env.KV_SESSIONS, ip, "gpg-challenge", 30, 60);
+  if (!rl.allowed) return c.json({ error: "Too many requests" }, 429);
+  const body = await c.req.json<{ identifier: string }>();
+  if (!body.identifier?.trim())
+    return c.json({ error: "identifier is required" }, 400);
+
+  const identifier = body.identifier.toLowerCase().trim();
+  const isEmail = identifier.includes("@");
+  const user = await (isEmail
+    ? c.env.DB.prepare("SELECT id FROM users WHERE email = ?")
+        .bind(identifier)
+        .first<{ id: string }>()
+    : c.env.DB.prepare("SELECT id FROM users WHERE username = ?")
+        .bind(identifier)
+        .first<{ id: string }>());
+
+  // Always return success to avoid user enumeration
+  const userId = user?.id ?? randomId(16);
+
+  const challenge = randomId(32);
+  const now = Math.floor(Date.now() / 1000);
+  const text = `Prism login\nUser: ${identifier}\nChallenge: ${challenge}\nTimestamp: ${now}`;
+
+  await c.env.KV_CACHE.put(`gpg:challenge:${challenge}`, userId, {
+    expirationTtl: 300, // 5 minutes
+  });
+
+  return c.json({ challenge, text });
+});
+
+// Step 2: verify the signed challenge
+app.post("/gpg-login", async (c) => {
+  const rlIp = getIp(c);
+  const rl2 = await rateLimitIp(c.env.KV_SESSIONS, rlIp, "gpg-login", 10, 60);
+  if (!rl2.allowed) return c.json({ error: "Too many requests" }, 429);
+  const body = await c.req.json<{
+    identifier: string;
+    signed_message: string;
+  }>();
+  if (!body.identifier?.trim() || !body.signed_message?.trim())
+    return c.json({ error: "identifier and signed_message are required" }, 400);
+
+  const ip = getIp(c);
+  const ua = c.req.header("User-Agent") ?? null;
+  const identifier = body.identifier.toLowerCase().trim();
+  const isEmail = identifier.includes("@");
+
+  const user = await (isEmail
+    ? c.env.DB.prepare("SELECT * FROM users WHERE email = ?")
+        .bind(identifier)
+        .first<UserRow>()
+    : c.env.DB.prepare("SELECT * FROM users WHERE username = ?")
+        .bind(identifier)
+        .first<UserRow>());
+
+  if (!user || !user.is_active) {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "invalid_credentials",
+        body.identifier,
+        ip,
+        ua,
+        {},
+      ).catch(() => {}),
+    );
+    return c.json({ error: "Invalid credentials" }, 401);
+  }
+
+  // Load the user's GPG keys
+  const { results: gpgKeys } = await c.env.DB.prepare(
+    "SELECT id, public_key, key_id FROM user_gpg_keys WHERE user_id = ?",
+  )
+    .bind(user.id)
+    .all<{ id: string; public_key: string; key_id: string }>();
+
+  if (gpgKeys.length === 0) {
+    c.executionCtx.waitUntil(
+      logLoginError(c.env.DB, "gpg_no_keys", body.identifier, ip, ua, {
+        user_id: user.id,
+      }).catch(() => {}),
+    );
+    return c.json({ error: "No GPG keys registered" }, 401);
+  }
+
+  // Verify the clearsign signature
+  let verifyResult: Awaited<ReturnType<typeof verifyClearsign>>;
+  try {
+    verifyResult = await verifyClearsign(
+      body.signed_message,
+      gpgKeys.map((k) => k.public_key),
+    );
+  } catch {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "gpg_invalid_signature",
+        body.identifier,
+        ip,
+        ua,
+        { user_id: user.id },
+      ).catch(() => {}),
+    );
+    return c.json({ error: "Invalid signature" }, 401);
+  }
+
+  if (!verifyResult.valid) {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "gpg_invalid_signature",
+        body.identifier,
+        ip,
+        ua,
+        { user_id: user.id },
+      ).catch(() => {}),
+    );
+    return c.json({ error: "Invalid signature" }, 401);
+  }
+
+  // Extract and validate the challenge from the signed text
+  const challengeMatch = verifyResult.signedText.match(
+    /\nChallenge:\s*([a-f0-9]+)/,
+  );
+  if (!challengeMatch) {
+    return c.json({ error: "Invalid signed message format" }, 401);
+  }
+  const challenge = challengeMatch[1];
+
+  // Verify challenge was issued for this user
+  const storedUserId = await c.env.KV_CACHE.get(`gpg:challenge:${challenge}`);
+  if (!storedUserId || storedUserId !== user.id) {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "gpg_challenge_mismatch",
+        body.identifier,
+        ip,
+        ua,
+        { user_id: user.id },
+      ).catch(() => {}),
+    );
+    return c.json({ error: "Challenge expired or invalid" }, 401);
+  }
+
+  // Consume the challenge (one-time use)
+  await c.env.KV_CACHE.delete(`gpg:challenge:${challenge}`);
+
+  // Update last_used_at on the matching key
+  if (verifyResult.signerKeyId) {
+    const matchedKey = gpgKeys.find((k) =>
+      k.key_id.endsWith(verifyResult.signerKeyId!),
+    );
+    if (matchedKey) {
+      c.executionCtx.waitUntil(
+        c.env.DB.prepare(
+          "UPDATE user_gpg_keys SET last_used_at = ? WHERE id = ?",
+        )
+          .bind(Math.floor(Date.now() / 1000), matchedKey.id)
+          .run(),
+      );
+    }
+  }
+
+  const config = await getConfig(c.env.DB);
+  const ttl = config.session_ttl_days * 24 * 60 * 60;
+  const token = await issueSession(
+    c.env.DB,
+    await getJwtSecret(c.env.KV_SESSIONS),
+    user,
+    ttl,
+  );
+  return c.json({ token, user: safeUser(user) });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

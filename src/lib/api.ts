@@ -206,6 +206,30 @@ export const api = {
       getToken(),
     ),
 
+  // ─── GPG keys ────────────────────────────────────────────────────────────
+  listGpgKeys: () =>
+    request<{ keys: GpgKeyInfo[] }>("GET", "/user/gpg", undefined, getToken()),
+  addGpgKey: (public_key: string, name?: string) =>
+    request<GpgKeyInfo>("POST", "/user/gpg", { public_key, name }, getToken()),
+  deleteGpgKey: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/user/gpg/${id}`,
+      undefined,
+      getToken(),
+    ),
+  gpgChallenge: (identifier: string) =>
+    request<{ challenge: string; text: string }>(
+      "POST",
+      "/auth/gpg-challenge",
+      { identifier },
+    ),
+  gpgLogin: (identifier: string, signed_message: string) =>
+    request<{ token: string; user: UserProfile }>("POST", "/auth/gpg-login", {
+      identifier,
+      signed_message,
+    }),
+
   // ─── Sessions ────────────────────────────────────────────────────────────
   listSessions: () =>
     request<{ sessions: SessionInfo[] }>(
@@ -1050,6 +1074,15 @@ export interface PasskeyInfo {
   name: string | null;
   device_type: string;
   backed_up: number;
+  created_at: number;
+  last_used_at: number | null;
+}
+
+export interface GpgKeyInfo {
+  id: string;
+  fingerprint: string;
+  key_id: string;
+  name: string;
   created_at: number;
   last_used_at: number | null;
 }
