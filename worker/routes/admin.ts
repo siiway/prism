@@ -514,25 +514,46 @@ app.post("/reset", async (c) => {
     return c.json({ error: "Missing confirmation" }, 400);
   }
 
-  // Delete all data in reverse dependency order
+  // Delete all data in reverse dependency order (leaves first)
   await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM webhook_deliveries"),
+    c.env.DB.prepare("DELETE FROM webhooks"),
     c.env.DB.prepare("DELETE FROM oauth_tokens"),
     c.env.DB.prepare("DELETE FROM oauth_codes"),
     c.env.DB.prepare("DELETE FROM oauth_consents"),
+    c.env.DB.prepare("DELETE FROM personal_access_tokens"),
     c.env.DB.prepare("DELETE FROM sessions"),
+    c.env.DB.prepare("DELETE FROM totp_authenticators"),
     c.env.DB.prepare("DELETE FROM totp_secrets"),
+    c.env.DB.prepare("DELETE FROM user_totp_recovery"),
     c.env.DB.prepare("DELETE FROM passkeys"),
     c.env.DB.prepare("DELETE FROM social_connections"),
+    c.env.DB.prepare("DELETE FROM user_emails"),
+    c.env.DB.prepare("DELETE FROM user_notification_prefs"),
+    c.env.DB.prepare("DELETE FROM user_gpg_keys"),
+    c.env.DB.prepare("DELETE FROM login_errors"),
     c.env.DB.prepare("DELETE FROM domains"),
     c.env.DB.prepare("DELETE FROM audit_log"),
+    c.env.DB.prepare("DELETE FROM team_invites"),
+    c.env.DB.prepare("DELETE FROM team_members"),
     c.env.DB.prepare("DELETE FROM oauth_apps"),
     c.env.DB.prepare("DELETE FROM teams"),
+    c.env.DB.prepare("DELETE FROM site_invites"),
+    c.env.DB.prepare("DELETE FROM oauth_sources"),
     c.env.DB.prepare("DELETE FROM users"),
     c.env.DB.prepare("DELETE FROM site_config"),
   ]);
 
-  // Rotate JWT secret so all existing tokens become invalid
-  await c.env.KV_SESSIONS.delete("system:jwt_secret");
+  // Flush both KV namespaces (paginated to handle > 1000 keys)
+  const flushKv = async (kv: KVNamespace) => {
+    let cursor: string | undefined;
+    do {
+      const result = await kv.list({ cursor });
+      await Promise.all(result.keys.map((k) => kv.delete(k.name)));
+      cursor = result.list_complete ? undefined : result.cursor;
+    } while (cursor);
+  };
+  await Promise.all([flushKv(c.env.KV_SESSIONS), flushKv(c.env.KV_CACHE)]);
 
   return c.json({ message: "Platform reset complete" });
 });
