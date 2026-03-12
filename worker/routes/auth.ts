@@ -1130,7 +1130,8 @@ app.delete("/sessions/:id", requireAuth, async (c) => {
 // Step 1: request a challenge
 app.post("/gpg-challenge", async (c) => {
   const ip = getIp(c);
-  const { ipv6_rate_limit_prefix } = await getConfig(c.env.DB);
+  const { ipv6_rate_limit_prefix, gpg_challenge_prefix, site_name } =
+    await getConfig(c.env.DB);
   const rl = await rateLimitIp(
     c.env.KV_SESSIONS,
     ip,
@@ -1159,7 +1160,14 @@ app.post("/gpg-challenge", async (c) => {
 
   const challenge = randomId(32);
   const now = Math.floor(Date.now() / 1000);
-  const text = `Prism login\nUser: ${identifier}\nChallenge: ${challenge}\nTimestamp: ${now}`;
+  const prefix = gpg_challenge_prefix.trim();
+  const text = [
+    `${site_name} login`,
+    ...(prefix ? [prefix] : []),
+    `User: ${identifier}`,
+    `Challenge: ${challenge}`,
+    `Timestamp: ${now}`,
+  ].join("\n");
 
   await c.env.KV_CACHE.put(`gpg:challenge:${challenge}`, userId, {
     expirationTtl: 300, // 5 minutes

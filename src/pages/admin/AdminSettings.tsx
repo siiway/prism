@@ -334,6 +334,17 @@ export function AdminSettings() {
                 }
               />
             </Field>
+            <Field
+              label={t("admin.gpgChallengePrefix")}
+              hint={t("admin.gpgChallengePrefixHint")}
+            >
+              <Textarea
+                value={(get("gpg_challenge_prefix") as string) ?? ""}
+                onChange={(e) => set("gpg_challenge_prefix", e.target.value)}
+                placeholder={t("admin.gpgChallengePrefixPlaceholder")}
+                rows={3}
+              />
+            </Field>
           </div>
         </div>
       )}

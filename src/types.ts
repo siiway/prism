@@ -45,5 +45,6 @@ export interface SiteConfig {
   social_verify_ttl_days: number;
   allow_alt_email_login: boolean;
   ipv6_rate_limit_prefix: number;
+  gpg_challenge_prefix: string;
   initialized: boolean;
 }

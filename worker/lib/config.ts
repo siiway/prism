@@ -47,6 +47,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   social_verify_ttl_days: 0,
   allow_alt_email_login: true,
   ipv6_rate_limit_prefix: 64,
+  gpg_challenge_prefix: "",
   initialized: false,
 };
 

@@ -99,6 +99,7 @@ app.patch("/config", async (c) => {
     "social_verify_ttl_days",
     "allow_alt_email_login",
     "ipv6_rate_limit_prefix",
+    "gpg_challenge_prefix",
   ]);
 
   const updates: Record<string, unknown> = {};

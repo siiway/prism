@@ -831,7 +831,10 @@
     "oauthMigrated": "已迁移：{{providers}}",
     "oauthMigrateAlreadyDone": "所有旧版提供商已迁移完成。",
     "ipv6RateLimitPrefix": "IPv6 限速前缀长度",
-    "ipv6RateLimitPrefixHint": "用于 IPv6 地址限速分组的前缀长度（例如 64 表示将整个 /64 子网视为同一客户端）。填 128 则对单个地址限速。"
+    "ipv6RateLimitPrefixHint": "用于 IPv6 地址限速分组的前缀长度（例如 64 表示将整个 /64 子网视为同一客户端）。填 128 则对单个地址限速。",
+    "gpgChallengePrefix": "GPG 挑战前缀",
+    "gpgChallengePrefixHint": "在 GPG 登录挑战文本的站点标题行之后插入的额外内容。留空则不添加前缀。",
+    "gpgChallengePrefixPlaceholder": "我授权以账户所有者身份登录。"
   },
   "webhooks": {
     "title": "Webhooks",

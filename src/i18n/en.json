@@ -831,7 +831,10 @@
     "oauthMigrated": "Migrated: {{providers}}",
     "oauthMigrateAlreadyDone": "All legacy providers are already migrated.",
     "ipv6RateLimitPrefix": "IPv6 rate-limit prefix",
-    "ipv6RateLimitPrefixHint": "Prefix length used to bucket IPv6 addresses for rate limiting (e.g. 64 treats the entire /64 subnet as one client). Use 128 to rate-limit individual addresses."
+    "ipv6RateLimitPrefixHint": "Prefix length used to bucket IPv6 addresses for rate limiting (e.g. 64 treats the entire /64 subnet as one client). Use 128 to rate-limit individual addresses.",
+    "gpgChallengePrefix": "GPG challenge prefix",
+    "gpgChallengePrefixHint": "Additional lines inserted after the site header in the GPG login challenge text. Leave empty for no prefix.",
+    "gpgChallengePrefixPlaceholder": "I authorize this login as account owner."
   },
   "webhooks": {
     "title": "Webhooks",
