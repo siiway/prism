@@ -231,7 +231,9 @@
     "gpgAutoSign": "自动签名",
     "gpgAutoSigning": "签名中…",
     "gpgSignFailed": "签名失败",
-    "gpgPrivacyNote": "您的私钥不会离开此浏览器。"
+    "gpgPrivacyNote": "您的私钥不会离开此浏览器。",
+    "gpgModeClearsign": "明文签名 (--clearsign)",
+    "gpgModeSign": "内联签名 (--sign --armor)"
   },
   "dashboard": {
     "welcomeBack": "欢迎回来，{{name}}！",

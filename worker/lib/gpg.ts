@@ -25,28 +25,52 @@ export interface VerifyResult {
 }
 
 /**
- * Verify an ASCII-armored cleartext-signed message against one or more public keys.
- * Returns the signed text and whether at least one valid signature was found.
+ * Verify an ASCII-armored signed message against one or more public keys.
+ * Accepts both cleartext-signed (--clearsign) and inline-signed (--sign --armor) formats.
  */
-export async function verifyClearsign(
+export async function verifySignedMessage(
   armoredMessage: string,
   armoredPublicKeys: string[],
 ): Promise<VerifyResult> {
-  const message = await openpgp.readCleartextMessage({
-    cleartextMessage: armoredMessage,
-  });
   const publicKeys = await Promise.all(
     armoredPublicKeys.map((k) => openpgp.readKey({ armoredKey: k })),
   );
-  const result = await openpgp.verify({
-    message,
-    verificationKeys: publicKeys,
-  });
-  const signedText = message.getText();
 
-  for (const sig of result.signatures) {
+  const isCleartext = armoredMessage
+    .trimStart()
+    .startsWith("-----BEGIN PGP SIGNED MESSAGE-----");
+
+  type Sigs = Awaited<ReturnType<typeof openpgp.verify>>["signatures"];
+  let signedText: string;
+  let signatures: Sigs;
+
+  if (isCleartext) {
+    const message = await openpgp.readCleartextMessage({
+      cleartextMessage: armoredMessage,
+    });
+    const result = await openpgp.verify({
+      message,
+      verificationKeys: publicKeys,
+    });
+    signedText = message.getText();
+    signatures = result.signatures;
+  } else {
+    const message = await openpgp.readMessage({ armoredMessage });
+    const result = await openpgp.verify({
+      message,
+      verificationKeys: publicKeys,
+    });
+    const data = await result.data;
+    signedText =
+      typeof data === "string"
+        ? data
+        : new TextDecoder().decode(data as Uint8Array);
+    signatures = result.signatures;
+  }
+
+  for (const sig of signatures) {
     try {
-      await sig.verified; // throws if invalid
+      await sig.verified;
       const keyId = sig.keyID.toHex().toLowerCase();
       return { valid: true, signerKeyId: keyId, signedText };
     } catch {
@@ -55,3 +79,6 @@ export async function verifyClearsign(
   }
   return { valid: false, signerKeyId: null, signedText };
 }
+
+/** @deprecated Use verifySignedMessage — supports both clearsign and --sign --armor */
+export const verifyClearsign = verifySignedMessage;

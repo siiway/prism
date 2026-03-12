@@ -8,6 +8,8 @@ import {
   Link,
   MessageBar,
   MessageBarBody,
+  Radio,
+  RadioGroup,
   Spinner,
   Text,
   Textarea,
@@ -90,6 +92,9 @@ export function Login() {
   const [gpgSignedMessage, setGpgSignedMessage] = useState("");
 
   // GPG in-browser signing state
+  const [gpgSignMode, setGpgSignMode] = useState<"clearsign" | "sign">(
+    "clearsign",
+  );
   const [gpgPrivateKey, setGpgPrivateKey] = useState("");
   const [gpgPassphrase, setGpgPassphrase] = useState("");
   const [gpgAutoSigning, setGpgAutoSigning] = useState(false);
@@ -203,7 +208,9 @@ export function Login() {
   };
 
   const getGpgCommand = () =>
-    `gpg --clearsign <<'EOF'\n${gpgChallengeText}\nEOF`;
+    gpgSignMode === "clearsign"
+      ? `gpg --clearsign <<'EOF'\n${gpgChallengeText}\nEOF`
+      : `gpg --sign --armor <<'EOF'\n${gpgChallengeText}\nEOF`;
 
   const handleGpgAutoSign = async () => {
     setError("");
@@ -218,13 +225,18 @@ export function Login() {
           passphrase: gpgPassphrase,
         });
       }
-      const message = await openpgp.createCleartextMessage({
-        text: gpgChallengeText,
-      });
-      const signed = await openpgp.sign({
-        message,
-        signingKeys: privateKeyObj,
-      });
+      const signed =
+        gpgSignMode === "clearsign"
+          ? await openpgp.sign({
+              message: await openpgp.createCleartextMessage({
+                text: gpgChallengeText,
+              }),
+              signingKeys: privateKeyObj,
+            })
+          : await openpgp.sign({
+              message: await openpgp.createMessage({ text: gpgChallengeText }),
+              signingKeys: privateKeyObj,
+            });
       setGpgSignedMessage(signed);
     } catch (err) {
       setError(
@@ -376,6 +388,16 @@ export function Login() {
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {t("security.gpgChallengePrompt")}
             </Text>
+            <RadioGroup
+              value={gpgSignMode}
+              onChange={(_, d) =>
+                setGpgSignMode(d.value as "clearsign" | "sign")
+              }
+              layout="horizontal"
+            >
+              <Radio value="clearsign" label={t("security.gpgModeClearsign")} />
+              <Radio value="sign" label={t("security.gpgModeSign")} />
+            </RadioGroup>
 
             {/* Challenge text with copy buttons */}
             <div style={{ position: "relative" }}>
