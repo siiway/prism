@@ -114,10 +114,16 @@ async function issueSession(
 
 app.post("/register", async (c) => {
   const ip = getIp(c);
-  const rl = await rateLimitIp(c.env.KV_SESSIONS, ip, "register", 5, 300);
-  if (!rl.allowed) return c.json({ error: "Too many requests" }, 429);
-
   const config = await getConfig(c.env.DB);
+  const rl = await rateLimitIp(
+    c.env.KV_SESSIONS,
+    ip,
+    "register",
+    5,
+    300,
+    config.ipv6_rate_limit_prefix,
+  );
+  if (!rl.allowed) return c.json({ error: "Too many requests" }, 429);
   if (!config.allow_registration)
     return c.json({ error: "Registration is disabled" }, 403);
 
@@ -271,7 +277,15 @@ app.post("/register", async (c) => {
 app.post("/login", async (c) => {
   const ip = getIp(c);
   const ua = c.req.header("User-Agent") ?? null;
-  const rl = await rateLimitIp(c.env.KV_SESSIONS, ip, "login", 10, 60);
+  const loginConfig = await getConfig(c.env.DB);
+  const rl = await rateLimitIp(
+    c.env.KV_SESSIONS,
+    ip,
+    "login",
+    10,
+    60,
+    loginConfig.ipv6_rate_limit_prefix,
+  );
   if (!rl.allowed) {
     c.executionCtx.waitUntil(
       logLoginError(c.env.DB, "rate_limited", null, ip, ua, {}).catch(() => {}),
@@ -331,11 +345,10 @@ app.post("/login", async (c) => {
           .first<UserRow>();
         if (altUser) {
           // Check if alternate email login is allowed for this user
-          const siteConfig = await getConfig(c.env.DB);
           const allowed =
             altUser.alt_email_login !== null
               ? altUser.alt_email_login === 1
-              : siteConfig.allow_alt_email_login;
+              : loginConfig.allow_alt_email_login;
           if (allowed) user = altUser;
         }
       }
@@ -1117,7 +1130,15 @@ app.delete("/sessions/:id", requireAuth, async (c) => {
 // Step 1: request a challenge
 app.post("/gpg-challenge", async (c) => {
   const ip = getIp(c);
-  const rl = await rateLimitIp(c.env.KV_SESSIONS, ip, "gpg-challenge", 30, 60);
+  const { ipv6_rate_limit_prefix } = await getConfig(c.env.DB);
+  const rl = await rateLimitIp(
+    c.env.KV_SESSIONS,
+    ip,
+    "gpg-challenge",
+    30,
+    60,
+    ipv6_rate_limit_prefix,
+  );
   if (!rl.allowed) return c.json({ error: "Too many requests" }, 429);
   const body = await c.req.json<{ identifier: string }>();
   if (!body.identifier?.trim())
@@ -1150,7 +1171,15 @@ app.post("/gpg-challenge", async (c) => {
 // Step 2: verify the signed challenge
 app.post("/gpg-login", async (c) => {
   const rlIp = getIp(c);
-  const rl2 = await rateLimitIp(c.env.KV_SESSIONS, rlIp, "gpg-login", 10, 60);
+  const gpgLoginConfig = await getConfig(c.env.DB);
+  const rl2 = await rateLimitIp(
+    c.env.KV_SESSIONS,
+    rlIp,
+    "gpg-login",
+    10,
+    60,
+    gpgLoginConfig.ipv6_rate_limit_prefix,
+  );
   if (!rl2.allowed) return c.json({ error: "Too many requests" }, 429);
   const body = await c.req.json<{
     identifier: string;
@@ -1281,8 +1310,7 @@ app.post("/gpg-login", async (c) => {
     }
   }
 
-  const config = await getConfig(c.env.DB);
-  const ttl = config.session_ttl_days * 24 * 60 * 60;
+  const ttl = gpgLoginConfig.session_ttl_days * 24 * 60 * 60;
   const token = await issueSession(
     c.env.DB,
     await getJwtSecret(c.env.KV_SESSIONS),

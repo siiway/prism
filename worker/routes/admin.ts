@@ -98,6 +98,7 @@ app.patch("/config", async (c) => {
     "login_error_retention_days",
     "social_verify_ttl_days",
     "allow_alt_email_login",
+    "ipv6_rate_limit_prefix",
   ]);
 
   const updates: Record<string, unknown> = {};

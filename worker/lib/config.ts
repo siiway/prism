@@ -46,6 +46,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   login_error_retention_days: 30,
   social_verify_ttl_days: 0,
   allow_alt_email_login: true,
+  ipv6_rate_limit_prefix: 64,
   initialized: false,
 };
 

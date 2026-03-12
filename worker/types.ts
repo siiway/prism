@@ -307,6 +307,7 @@ export interface SiteConfig {
   login_error_retention_days: number;
   social_verify_ttl_days: number;
   allow_alt_email_login: boolean;
+  ipv6_rate_limit_prefix: number; // prefix length for IPv6 rate-limit bucketing (e.g. 64)
   initialized: boolean;
 }
 

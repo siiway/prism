@@ -259,6 +259,21 @@ export function AdminSettings() {
               checked={get("allow_alt_email_login") ?? true}
               onChange={(_, d) => set("allow_alt_email_login", d.checked)}
             />
+            <Field
+              label={t("admin.ipv6RateLimitPrefix")}
+              hint={t("admin.ipv6RateLimitPrefixHint")}
+            >
+              <Input
+                type="number"
+                min={1}
+                max={128}
+                value={String(get("ipv6_rate_limit_prefix") ?? 64)}
+                onChange={(e) =>
+                  set("ipv6_rate_limit_prefix", Number(e.target.value))
+                }
+                style={{ width: 100 }}
+              />
+            </Field>
           </div>
         </div>
       )}

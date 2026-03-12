@@ -828,7 +828,9 @@
     "oauthMigrateBanner": "在站点设置中检测到旧版 OAuth 凭据（{{providers}}），将其迁移到 OAuth 来源以启用多提供商支持。",
     "oauthMigrateAction": "迁移",
     "oauthMigrated": "已迁移：{{providers}}",
-    "oauthMigrateAlreadyDone": "所有旧版提供商已迁移完成。"
+    "oauthMigrateAlreadyDone": "所有旧版提供商已迁移完成。",
+    "ipv6RateLimitPrefix": "IPv6 限速前缀长度",
+    "ipv6RateLimitPrefixHint": "用于 IPv6 地址限速分组的前缀长度（例如 64 表示将整个 /64 子网视为同一客户端）。填 128 则对单个地址限速。"
   },
   "webhooks": {
     "title": "Webhooks",

@@ -6,6 +6,47 @@ export interface RateLimitResult {
   resetIn: number; // seconds
 }
 
+/**
+ * Normalise an IP for use as a rate-limit key.
+ * IPv4 addresses are returned unchanged.
+ * IPv6 addresses are truncated to the given prefix length (default /64)
+ * so that all addresses in the same subnet share a single bucket.
+ */
+export function normalizeIp(ip: string, ipv6PrefixLength = 64): string {
+  if (!ip.includes(":")) return ip; // IPv4
+
+  // Expand any "::" shorthand so we have a full 8-group address
+  const expand = (addr: string): number[] => {
+    const halves = addr.split("::");
+    const left = halves[0] ? halves[0].split(":") : [];
+    const right = halves[1] ? halves[1].split(":") : [];
+    const missing = 8 - left.length - right.length;
+    const groups = [...left, ...Array(missing).fill("0"), ...right];
+    return groups.map((g) => parseInt(g || "0", 16));
+  };
+
+  const groups = expand(ip);
+  const bits = ipv6PrefixLength;
+
+  // Zero out bits beyond the prefix
+  for (let i = 0; i < 8; i++) {
+    const groupStart = i * 16;
+    const groupEnd = groupStart + 16;
+    if (groupEnd <= bits) {
+      // group fully inside prefix — keep as-is
+    } else if (groupStart >= bits) {
+      groups[i] = 0; // group fully outside prefix
+    } else {
+      // partial group
+      const keep = bits - groupStart;
+      const mask = (0xffff << (16 - keep)) & 0xffff;
+      groups[i] = groups[i] & mask;
+    }
+  }
+
+  return groups.map((g) => g.toString(16)).join(":") + `/${bits}`;
+}
+
 export async function rateLimit(
   kv: KVNamespace,
   key: string,
@@ -35,13 +76,15 @@ export async function rateLimit(
   return { allowed: true, remaining: remaining - 1, resetIn };
 }
 
-// Convenience: rate limit by IP address
+// Convenience: rate limit by IP address (normalises IPv6 to prefix bucket)
 export async function rateLimitIp(
   kv: KVNamespace,
   ip: string,
   route: string,
   limit = 10,
   windowSeconds = 60,
+  ipv6PrefixLength = 64,
 ): Promise<RateLimitResult> {
-  return rateLimit(kv, `${route}:${ip}`, limit, windowSeconds);
+  const key = normalizeIp(ip, ipv6PrefixLength);
+  return rateLimit(kv, `${route}:${key}`, limit, windowSeconds);
 }
