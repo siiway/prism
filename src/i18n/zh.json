@@ -219,7 +219,19 @@
     "gpgSignedMessagePlaceholder": "-----BEGIN PGP SIGNED MESSAGE-----\n...\n-----END PGP SIGNATURE-----",
     "gpgVerify": "验证签名",
     "gpgLoginFailed": "GPG 登录失败",
-    "gpgCopied": "已复制挑战码"
+    "gpgCopied": "已复制挑战码",
+    "gpgCopyCommand": "复制为 GPG 命令",
+    "gpgCommandCopied": "命令已复制",
+    "gpgAutoSignTitle": "在浏览器中签名",
+    "gpgPrivateKey": "私钥（Armored 格式）",
+    "gpgPrivateKeyPlaceholder": "-----BEGIN PGP PRIVATE KEY BLOCK-----\n...\n-----END PGP PRIVATE KEY BLOCK-----",
+    "gpgUploadKey": "上传 .asc 文件",
+    "gpgPassphrase": "口令（若密钥受保护）",
+    "gpgPassphrasePlaceholder": "未受保护则留空",
+    "gpgAutoSign": "自动签名",
+    "gpgAutoSigning": "签名中…",
+    "gpgSignFailed": "签名失败",
+    "gpgPrivacyNote": "您的私钥不会离开此浏览器。"
   },
   "dashboard": {
     "welcomeBack": "欢迎回来，{{name}}！",

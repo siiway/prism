@@ -219,7 +219,19 @@
     "gpgSignedMessagePlaceholder": "-----BEGIN PGP SIGNED MESSAGE-----\n...\n-----END PGP SIGNATURE-----",
     "gpgVerify": "Verify signature",
     "gpgLoginFailed": "GPG login failed",
-    "gpgCopied": "Challenge copied"
+    "gpgCopied": "Challenge copied",
+    "gpgCopyCommand": "Copy as GPG command",
+    "gpgCommandCopied": "Command copied",
+    "gpgAutoSignTitle": "Sign in browser",
+    "gpgPrivateKey": "Private key (armored)",
+    "gpgPrivateKeyPlaceholder": "-----BEGIN PGP PRIVATE KEY BLOCK-----\n...\n-----END PGP PRIVATE KEY BLOCK-----",
+    "gpgUploadKey": "Upload .asc file",
+    "gpgPassphrase": "Passphrase (if protected)",
+    "gpgPassphrasePlaceholder": "Leave empty if unprotected",
+    "gpgAutoSign": "Sign automatically",
+    "gpgAutoSigning": "Signing…",
+    "gpgSignFailed": "Failed to sign message",
+    "gpgPrivacyNote": "Your private key never leaves this browser."
   },
   "dashboard": {
     "welcomeBack": "Welcome back, {{name}}!",

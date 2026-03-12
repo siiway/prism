@@ -16,11 +16,14 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  ArrowUploadRegular,
+  CodeRegular,
   CopyRegular,
   KeyMultipleRegular,
   LockClosedRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import * as openpgp from "openpgp";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { startAuthentication } from "@simplewebauthn/browser";
@@ -85,6 +88,12 @@ export function Login() {
   const [gpgLoading, setGpgLoading] = useState(false);
   const [gpgChallengeText, setGpgChallengeText] = useState("");
   const [gpgSignedMessage, setGpgSignedMessage] = useState("");
+
+  // GPG in-browser signing state
+  const [gpgPrivateKey, setGpgPrivateKey] = useState("");
+  const [gpgPassphrase, setGpgPassphrase] = useState("");
+  const [gpgAutoSigning, setGpgAutoSigning] = useState(false);
+  const gpgFileRef = useRef<HTMLInputElement>(null);
   const redirectTo = searchParams.get("redirect") ?? "/";
   const errorParam = searchParams.get("error");
   const errorParamMessage = errorParam
@@ -191,6 +200,49 @@ export function Login() {
     } finally {
       setGpgLoading(false);
     }
+  };
+
+  const getGpgCommand = () =>
+    `gpg --clearsign <<'EOF'\n${gpgChallengeText}\nEOF`;
+
+  const handleGpgAutoSign = async () => {
+    setError("");
+    setGpgAutoSigning(true);
+    try {
+      let privateKeyObj = await openpgp.readPrivateKey({
+        armoredKey: gpgPrivateKey,
+      });
+      if (!privateKeyObj.isDecrypted()) {
+        privateKeyObj = await openpgp.decryptKey({
+          privateKey: privateKeyObj,
+          passphrase: gpgPassphrase,
+        });
+      }
+      const message = await openpgp.createCleartextMessage({
+        text: gpgChallengeText,
+      });
+      const signed = await openpgp.sign({
+        message,
+        signingKeys: privateKeyObj,
+      });
+      setGpgSignedMessage(signed);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : t("security.gpgSignFailed"),
+      );
+    } finally {
+      setGpgAutoSigning(false);
+    }
+  };
+
+  const handleGpgFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) =>
+      setGpgPrivateKey((ev.target?.result as string) ?? "");
+    reader.readAsText(file);
+    e.target.value = "";
   };
 
   return (
@@ -324,11 +376,13 @@ export function Login() {
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {t("security.gpgChallengePrompt")}
             </Text>
+
+            {/* Challenge text with copy buttons */}
             <div style={{ position: "relative" }}>
               <pre
                 style={{
                   margin: 0,
-                  padding: "8px 36px 8px 8px",
+                  padding: "8px 76px 8px 8px",
                   background: tokens.colorNeutralBackground3,
                   borderRadius: 4,
                   fontSize: 12,
@@ -339,21 +393,106 @@ export function Login() {
               >
                 {gpgChallengeText}
               </pre>
-              <Button
-                appearance="transparent"
-                icon={<CopyRegular />}
-                size="small"
-                style={{ position: "absolute", top: 4, right: 4 }}
-                onClick={() => navigator.clipboard.writeText(gpgChallengeText)}
-                title={t("security.gpgCopied")}
-              />
+              <div
+                style={{
+                  position: "absolute",
+                  top: 4,
+                  right: 4,
+                  display: "flex",
+                  gap: 2,
+                }}
+              >
+                <Button
+                  appearance="transparent"
+                  icon={<CopyRegular />}
+                  size="small"
+                  onClick={() =>
+                    navigator.clipboard.writeText(gpgChallengeText)
+                  }
+                  title={t("security.gpgCopied")}
+                />
+                <Button
+                  appearance="transparent"
+                  icon={<CodeRegular />}
+                  size="small"
+                  onClick={() => navigator.clipboard.writeText(getGpgCommand())}
+                  title={t("security.gpgCopyCommand")}
+                />
+              </div>
             </div>
+
+            {/* In-browser signing */}
+            <Divider>{t("security.gpgAutoSignTitle")}</Divider>
+            <input
+              ref={gpgFileRef}
+              type="file"
+              accept=".asc,.gpg,.pgp,application/pgp-keys"
+              style={{ display: "none" }}
+              onChange={handleGpgFileUpload}
+            />
+            <Field label={t("security.gpgPrivateKey")}>
+              <div
+                style={{ display: "flex", gap: 6, alignItems: "flex-start" }}
+              >
+                <Textarea
+                  value={gpgPrivateKey}
+                  onChange={(e) => setGpgPrivateKey(e.target.value)}
+                  placeholder={t("security.gpgPrivateKeyPlaceholder")}
+                  rows={3}
+                  style={{ fontFamily: "monospace", fontSize: 11, flex: 1 }}
+                />
+                <Button
+                  appearance="subtle"
+                  icon={<ArrowUploadRegular />}
+                  size="small"
+                  style={{ marginTop: 2, flexShrink: 0 }}
+                  onClick={() => gpgFileRef.current?.click()}
+                  title={t("security.gpgUploadKey")}
+                />
+              </div>
+            </Field>
+            <Field label={t("security.gpgPassphrase")}>
+              <Input
+                type="password"
+                value={gpgPassphrase}
+                onChange={(e) => setGpgPassphrase(e.target.value)}
+                placeholder={t("security.gpgPassphrasePlaceholder")}
+              />
+            </Field>
+            <Button
+              appearance="secondary"
+              icon={
+                gpgAutoSigning ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  <KeyMultipleRegular />
+                )
+              }
+              disabled={gpgAutoSigning || !gpgPrivateKey.trim()}
+              onClick={handleGpgAutoSign}
+            >
+              {gpgAutoSigning
+                ? t("security.gpgAutoSigning")
+                : t("security.gpgAutoSign")}
+            </Button>
+            <Text
+              size={100}
+              style={{
+                color: tokens.colorNeutralForeground3,
+                textAlign: "center",
+              }}
+            >
+              {t("security.gpgPrivacyNote")}
+            </Text>
+
+            <Divider />
+
             <Field label={t("security.gpgSignedMessage")}>
               <Textarea
                 value={gpgSignedMessage}
                 onChange={(e) => setGpgSignedMessage(e.target.value)}
                 placeholder={t("security.gpgSignedMessagePlaceholder")}
-                rows={7}
+                rows={6}
                 style={{ fontFamily: "monospace", fontSize: 12 }}
               />
             </Field>
@@ -372,6 +511,8 @@ export function Login() {
                 onClick={() => {
                   setGpgStep("idle");
                   setError("");
+                  setGpgPrivateKey("");
+                  setGpgPassphrase("");
                 }}
               >
                 {t("common.back")}
