@@ -16,6 +16,8 @@ const SCOPES_SUPPORTED = [
   "teams:delete",
   "domains:read",
   "domains:write",
+  "gpg:read",
+  "gpg:write",
   "admin:users:read",
   "admin:users:write",
   "admin:users:delete",

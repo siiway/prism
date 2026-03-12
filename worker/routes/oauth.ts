@@ -36,6 +36,8 @@ const VALID_SCOPES = new Set([
   "teams:delete",
   "domains:read",
   "domains:write",
+  "gpg:read",
+  "gpg:write",
   "admin:users:read",
   "admin:users:write",
   "admin:users:delete",
@@ -652,6 +654,94 @@ app.get("/me/domains", async (c) => {
     }>();
 
   return c.json({ domains: results });
+});
+
+// GET /api/oauth/me/gpg-keys — list the token owner's GPG keys (requires gpg:read)
+app.get("/me/gpg-keys", async (c) => {
+  const resolved = await resolveBearerToken(c, "gpg:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, fingerprint, key_id, name, created_at, last_used_at FROM user_gpg_keys WHERE user_id = ? ORDER BY created_at ASC",
+  )
+    .bind(resolved.userId)
+    .all<{
+      id: string;
+      fingerprint: string;
+      key_id: string;
+      name: string;
+      created_at: number;
+      last_used_at: number | null;
+    }>();
+
+  return c.json({ keys: results });
+});
+
+// POST /api/oauth/me/gpg-keys — add a GPG key (requires gpg:write)
+app.post("/me/gpg-keys", async (c) => {
+  const resolved = await resolveBearerToken(c, "gpg:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { parseArmoredPublicKey } = await import("../lib/gpg");
+  const body = await c.req.json<{ public_key: string; name?: string }>();
+  if (!body.public_key) return c.json({ error: "public_key is required" }, 400);
+
+  let parsed: Awaited<ReturnType<typeof parseArmoredPublicKey>>;
+  try {
+    parsed = await parseArmoredPublicKey(body.public_key);
+  } catch {
+    return c.json({ error: "Invalid PGP public key" }, 400);
+  }
+
+  const name = (body.name?.trim() || parsed.uids[0] || parsed.keyId).slice(
+    0,
+    128,
+  );
+  const existing = await c.env.DB.prepare(
+    "SELECT id FROM user_gpg_keys WHERE user_id = ? AND fingerprint = ?",
+  )
+    .bind(resolved.userId, parsed.fingerprint)
+    .first();
+  if (existing) return c.json({ error: "Key already added" }, 409);
+
+  const id = randomId();
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.prepare(
+    "INSERT INTO user_gpg_keys (id, user_id, fingerprint, key_id, name, public_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(
+      id,
+      resolved.userId,
+      parsed.fingerprint,
+      parsed.keyId,
+      name,
+      body.public_key.trim(),
+      now,
+    )
+    .run();
+
+  return c.json({
+    id,
+    fingerprint: parsed.fingerprint,
+    key_id: parsed.keyId,
+    name,
+    created_at: now,
+    last_used_at: null,
+  });
+});
+
+// DELETE /api/oauth/me/gpg-keys/:id — remove a GPG key (requires gpg:write)
+app.delete("/me/gpg-keys/:id", async (c) => {
+  const resolved = await resolveBearerToken(c, "gpg:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const result = await c.env.DB.prepare(
+    "DELETE FROM user_gpg_keys WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), resolved.userId)
+    .run();
+  if (!result.meta.changes) return c.json({ error: "Key not found" }, 404);
+  return c.json({ message: "Key removed" });
 });
 
 // POST /api/oauth/me/teams — create a team (requires teams:create)
