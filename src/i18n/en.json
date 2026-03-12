@@ -233,7 +233,8 @@
     "gpgSignFailed": "Failed to sign message",
     "gpgPrivacyNote": "Your private key never leaves this browser.",
     "gpgModeClearsign": "Cleartext (--clearsign)",
-    "gpgModeSign": "Inline signed (--sign --armor)"
+    "gpgModeSign": "Inline signed (--sign --armor)",
+    "gpgAutoSignHide": "Hide in-browser signing"
   },
   "dashboard": {
     "welcomeBack": "Welcome back, {{name}}!",

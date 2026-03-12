@@ -95,6 +95,7 @@ export function Login() {
   const [gpgSignMode, setGpgSignMode] = useState<"clearsign" | "sign">(
     "clearsign",
   );
+  const [gpgShowAutoSign, setGpgShowAutoSign] = useState(false);
   const [gpgPrivateKey, setGpgPrivateKey] = useState("");
   const [gpgPassphrase, setGpgPassphrase] = useState("");
   const [gpgAutoSigning, setGpgAutoSigning] = useState(false);
@@ -443,8 +444,7 @@ export function Login() {
               </div>
             </div>
 
-            {/* In-browser signing */}
-            <Divider>{t("security.gpgAutoSignTitle")}</Divider>
+            {/* In-browser signing — collapsed behind a toggle */}
             <input
               ref={gpgFileRef}
               type="file"
@@ -452,60 +452,85 @@ export function Login() {
               style={{ display: "none" }}
               onChange={handleGpgFileUpload}
             />
-            <Field label={t("security.gpgPrivateKey")}>
-              <div
-                style={{ display: "flex", gap: 6, alignItems: "flex-start" }}
-              >
-                <Textarea
-                  value={gpgPrivateKey}
-                  onChange={(e) => setGpgPrivateKey(e.target.value)}
-                  placeholder={t("security.gpgPrivateKeyPlaceholder")}
-                  rows={3}
-                  style={{ fontFamily: "monospace", fontSize: 11, flex: 1 }}
-                />
-                <Button
-                  appearance="subtle"
-                  icon={<ArrowUploadRegular />}
-                  size="small"
-                  style={{ marginTop: 2, flexShrink: 0 }}
-                  onClick={() => gpgFileRef.current?.click()}
-                  title={t("security.gpgUploadKey")}
-                />
-              </div>
-            </Field>
-            <Field label={t("security.gpgPassphrase")}>
-              <Input
-                type="password"
-                value={gpgPassphrase}
-                onChange={(e) => setGpgPassphrase(e.target.value)}
-                placeholder={t("security.gpgPassphrasePlaceholder")}
-              />
-            </Field>
             <Button
-              appearance="secondary"
-              icon={
-                gpgAutoSigning ? (
-                  <Spinner size="tiny" />
-                ) : (
-                  <KeyMultipleRegular />
-                )
-              }
-              disabled={gpgAutoSigning || !gpgPrivateKey.trim()}
-              onClick={handleGpgAutoSign}
+              appearance="subtle"
+              size="small"
+              onClick={() => setGpgShowAutoSign((v) => !v)}
+              style={{ alignSelf: "flex-start" }}
             >
-              {gpgAutoSigning
-                ? t("security.gpgAutoSigning")
-                : t("security.gpgAutoSign")}
+              {gpgShowAutoSign
+                ? t("security.gpgAutoSignHide")
+                : t("security.gpgAutoSignTitle")}
             </Button>
-            <Text
-              size={100}
-              style={{
-                color: tokens.colorNeutralForeground3,
-                textAlign: "center",
-              }}
-            >
-              {t("security.gpgPrivacyNote")}
-            </Text>
+
+            {gpgShowAutoSign && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  padding: "12px 14px",
+                  background: tokens.colorNeutralBackground3,
+                  borderRadius: 6,
+                }}
+              >
+                <Field label={t("security.gpgPrivateKey")}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <Textarea
+                      value={gpgPrivateKey}
+                      onChange={(e) => setGpgPrivateKey(e.target.value)}
+                      placeholder={t("security.gpgPrivateKeyPlaceholder")}
+                      rows={3}
+                      style={{ fontFamily: "monospace", fontSize: 11, flex: 1 }}
+                    />
+                    <Button
+                      appearance="subtle"
+                      icon={<ArrowUploadRegular />}
+                      size="small"
+                      style={{ marginTop: 2, flexShrink: 0 }}
+                      onClick={() => gpgFileRef.current?.click()}
+                      title={t("security.gpgUploadKey")}
+                    />
+                  </div>
+                </Field>
+                <Field label={t("security.gpgPassphrase")}>
+                  <Input
+                    type="password"
+                    value={gpgPassphrase}
+                    onChange={(e) => setGpgPassphrase(e.target.value)}
+                    placeholder={t("security.gpgPassphrasePlaceholder")}
+                  />
+                </Field>
+                <Button
+                  appearance="secondary"
+                  icon={
+                    gpgAutoSigning ? (
+                      <Spinner size="tiny" />
+                    ) : (
+                      <KeyMultipleRegular />
+                    )
+                  }
+                  disabled={gpgAutoSigning || !gpgPrivateKey.trim()}
+                  onClick={handleGpgAutoSign}
+                >
+                  {gpgAutoSigning
+                    ? t("security.gpgAutoSigning")
+                    : t("security.gpgAutoSign")}
+                </Button>
+                <Text
+                  size={100}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {t("security.gpgPrivacyNote")}
+                </Text>
+              </div>
+            )}
 
             <Divider />
 
