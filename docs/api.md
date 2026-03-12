@@ -202,6 +202,106 @@ Lists the authenticated user's registered passkeys.
 
 Deletes a passkey by ID.
 
+## GPG Keys
+
+### `POST /api/auth/gpg-challenge`
+
+Request a login challenge for GPG-based authentication. Rate-limited to 30 requests per minute per IP.
+
+**Body**
+
+```json
+{ "identifier": "alice" }
+```
+
+**Response**
+
+```json
+{
+  "challenge": "a3f8...",
+  "text": "Prism login\nUser: alice\nChallenge: a3f8...\nTimestamp: 1710000000"
+}
+```
+
+Sign the returned `text` using `gpg --clearsign`, then pass the output to `/api/auth/gpg-login`.
+
+### `POST /api/auth/gpg-login`
+
+Complete GPG login by submitting a signed challenge. Rate-limited to 10 requests per minute per IP.
+
+**Body**
+
+```json
+{
+  "identifier": "alice",
+  "signed_message": "-----BEGIN PGP SIGNED MESSAGE-----\n..."
+}
+```
+
+**Response** — `{ "token": "...", "user": { ... } }`
+
+The challenge is single-use and expires after 5 minutes.
+
+### `GET /api/user/gpg`
+
+List the authenticated user's registered GPG keys. Requires session auth.
+
+**Response**
+
+```json
+{
+  "keys": [
+    {
+      "id": "...",
+      "fingerprint": "abc123...",
+      "key_id": "...",
+      "name": "My laptop key",
+      "created_at": 1710000000,
+      "last_used_at": 1710100000
+    }
+  ]
+}
+```
+
+### `POST /api/user/gpg`
+
+Add a GPG public key. Requires session auth.
+
+**Body**
+
+```json
+{
+  "public_key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...",
+  "name": "My laptop key"
+}
+```
+
+If `name` is omitted, the first user ID from the key is used as the label.
+
+### `DELETE /api/user/gpg/:id`
+
+Remove a GPG key by ID. Requires session auth.
+
+### `GET /users/:username.gpg`
+
+Public endpoint — returns all of the user's registered GPG public keys in ASCII armor format, one block per line (separated by blank lines). `Content-Type: application/pgp-keys`. Returns `404` if the user has no keys.
+
+```
+curl https://your-prism-domain/users/alice.gpg
+```
+
+### OAuth-scoped GPG endpoints
+
+These endpoints accept an OAuth access token or PAT with the appropriate scope instead of a session cookie.
+
+| Method   | Path                         | Scope required |
+|----------|------------------------------|----------------|
+| `GET`    | `/api/oauth/me/gpg-keys`     | `gpg:read`     |
+| `POST`   | `/api/oauth/me/gpg-keys`     | `gpg:write`    |
+| `DELETE` | `/api/oauth/me/gpg-keys/:id` | `gpg:write`    |
+
+Request/response shapes match the session-auth equivalents above.
+
 ## Sessions
 
 ### `GET /api/auth/sessions`

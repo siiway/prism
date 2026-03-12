@@ -201,6 +201,106 @@
 
 按 ID 删除 Passkey。
 
+## GPG 密钥
+
+### `POST /api/auth/gpg-challenge`
+
+为 GPG 登录请求一次性挑战码。每 IP 每分钟限速 30 次。
+
+**请求体**
+
+```json
+{ "identifier": "alice" }
+```
+
+**响应**
+
+```json
+{
+  "challenge": "a3f8...",
+  "text": "Prism login\nUser: alice\nChallenge: a3f8...\nTimestamp: 1710000000"
+}
+```
+
+使用 `gpg --clearsign` 对返回的 `text` 进行签名，然后将输出传递给 `/api/auth/gpg-login`。
+
+### `POST /api/auth/gpg-login`
+
+提交已签名的挑战码完成 GPG 登录。每 IP 每分钟限速 10 次。
+
+**请求体**
+
+```json
+{
+  "identifier": "alice",
+  "signed_message": "-----BEGIN PGP SIGNED MESSAGE-----\n..."
+}
+```
+
+**响应** — `{ "token": "...", "user": { ... } }`
+
+挑战码为一次性使用，5 分钟后过期。
+
+### `GET /api/user/gpg`
+
+列出已认证用户注册的所有 GPG 密钥。需要会话认证。
+
+**响应**
+
+```json
+{
+  "keys": [
+    {
+      "id": "...",
+      "fingerprint": "abc123...",
+      "key_id": "...",
+      "name": "我的笔记本密钥",
+      "created_at": 1710000000,
+      "last_used_at": 1710100000
+    }
+  ]
+}
+```
+
+### `POST /api/user/gpg`
+
+添加 GPG 公钥。需要会话认证。
+
+**请求体**
+
+```json
+{
+  "public_key": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n...",
+  "name": "我的笔记本密钥"
+}
+```
+
+若省略 `name`，则使用密钥中的第一个用户 ID 作为标签。
+
+### `DELETE /api/user/gpg/:id`
+
+按 ID 删除 GPG 密钥。需要会话认证。
+
+### `GET /users/:username.gpg`
+
+公开端点——以 ASCII Armor 格式返回用户注册的所有 GPG 公钥，每个密钥块之间以空行分隔。`Content-Type: application/pgp-keys`。若用户未注册任何密钥则返回 `404`。
+
+```
+curl https://your-prism-domain/users/alice.gpg
+```
+
+### OAuth 范围授权的 GPG 端点
+
+以下端点接受 OAuth 访问令牌或 PAT，无需会话 Cookie：
+
+| 方法     | 路径                         | 所需范围    |
+|----------|------------------------------|-------------|
+| `GET`    | `/api/oauth/me/gpg-keys`     | `gpg:read`  |
+| `POST`   | `/api/oauth/me/gpg-keys`     | `gpg:write` |
+| `DELETE` | `/api/oauth/me/gpg-keys/:id` | `gpg:write` |
+
+请求/响应格式与上述会话认证端点一致。
+
 ## 会话
 
 ### `GET /api/auth/sessions`

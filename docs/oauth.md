@@ -49,12 +49,14 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 **Scopes**
 
-| Scope            | Claims included                                       |
-| ---------------- | ----------------------------------------------------- |
+| Scope            | Claims / access granted                               |
+|------------------|-------------------------------------------------------|
 | `openid`         | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC) |
 | `profile`        | `name`, `preferred_username`, `picture`               |
 | `email`          | `email`, `email_verified`                             |
 | `apps:read`      | List of apps the user owns                            |
+| `gpg:read`       | List the user's registered GPG public keys            |
+| `gpg:write`      | Add and remove GPG public keys                        |
 | `offline_access` | Enables refresh token issuance                        |
 
 ### Step 2 — User consents
@@ -178,7 +180,7 @@ The ID token is a signed JWT (HS256). Validate it by fetching the JWKS at
 Standard claims:
 
 | Claim   | Value                             |
-| ------- | --------------------------------- |
+|---------|-----------------------------------|
 | `iss`   | Your Prism instance URL           |
 | `sub`   | Stable user ID                    |
 | `aud`   | Your `client_id`                  |

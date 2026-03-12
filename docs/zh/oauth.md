@@ -48,13 +48,15 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 **权限范围**
 
-| 范围             | 包含的声明                                              |
-| ---------------- | ------------------------------------------------------- |
-| `openid`         | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须）          |
-| `profile`        | `name`、`preferred_username`、`picture`                 |
-| `email`          | `email`、`email_verified`                               |
-| `apps:read`      | 用户拥有的应用列表                                      |
-| `offline_access` | 启用刷新令牌颁发                                        |
+| 范围             | 包含的声明                               |
+|------------------|------------------------------------------|
+| `openid`         | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
+| `profile`        | `name`、`preferred_username`、`picture`    |
+| `email`          | `email`、`email_verified`                 |
+| `apps:read`      | 用户拥有的应用列表                       |
+| `gpg:read`       | 列出用户已注册的 GPG 公钥                |
+| `gpg:write`      | 添加或删除用户的 GPG 公钥                |
+| `offline_access` | 启用刷新令牌颁发                         |
 
 ### 第二步 — 用户授权
 
@@ -173,14 +175,14 @@ ID 令牌是一个签名的 JWT（HS256）。可通过获取 `/.well-known/jwks.
 
 标准声明：
 
-| 声明    | 值                        |
-| ------- | ------------------------- |
-| `iss`   | 你的 Prism 实例 URL       |
-| `sub`   | 稳定的用户 ID             |
-| `aud`   | 你的 `client_id`          |
-| `iat`   | 颁发时间戳                |
-| `exp`   | 过期时间戳                |
-| `nonce` | 从授权请求中原样返回      |
+| 声明    | 值                   |
+|---------|----------------------|
+| `iss`   | 你的 Prism 实例 URL  |
+| `sub`   | 稳定的用户 ID        |
+| `aud`   | 你的 `client_id`     |
+| `iat`   | 颁发时间戳           |
+| `exp`   | 过期时间戳           |
+| `nonce` | 从授权请求中原样返回 |
 
 ## 错误响应
 

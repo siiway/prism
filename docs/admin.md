@@ -232,6 +232,13 @@ All scopes that Prism-registered OAuth apps and personal access tokens can reque
 | `domains:read`  | List verified domains                                 |
 | `domains:write` | Add domains, trigger DNS verification, remove domains |
 
+### GPG keys
+
+| Scope       | Description                                       |
+|-------------|---------------------------------------------------|
+| `gpg:read`  | List the token owner's registered GPG public keys |
+| `gpg:write` | Add and remove the token owner's GPG public keys  |
+
 ### Admin scopes (require `role = admin` on the token owner)
 
 | Scope                   | Description                                                  |
