@@ -12,6 +12,7 @@ import {
 } from "../lib/domainVerify";
 import { inviteEmailTemplate } from "../lib/email";
 import { randomBase64url, randomId } from "../lib/crypto";
+import { hashBackupCodes } from "../lib/totp";
 import { deliverAdminWebhooks, hmacSign } from "../lib/webhooks";
 import type {
   AuditLogRow,
@@ -558,6 +559,35 @@ app.post("/reset", async (c) => {
   await Promise.all([flushKv(c.env.KV_SESSIONS), flushKv(c.env.KV_CACHE)]);
 
   return c.json({ message: "Platform reset complete" });
+});
+
+// ─── Migrate recovery codes to hashed format ──────────────────────────────────
+
+app.post("/migrate-recovery-codes", async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT user_id, backup_codes FROM user_totp_recovery",
+  ).all<{ user_id: string; backup_codes: string }>();
+
+  const now = Math.floor(Date.now() / 1000);
+  let migrated = 0;
+  const stmts = [];
+
+  for (const row of rows.results) {
+    const codes = JSON.parse(row.backup_codes) as string[];
+    if (codes.every((c) => c.startsWith("$sha256$"))) continue; // already hashed
+
+    const hashed = await hashBackupCodes(codes);
+    stmts.push(
+      c.env.DB.prepare(
+        "UPDATE user_totp_recovery SET backup_codes = ?, updated_at = ? WHERE user_id = ?",
+      ).bind(JSON.stringify(hashed), now, row.user_id),
+    );
+    migrated++;
+  }
+
+  if (stmts.length > 0) await c.env.DB.batch(stmts);
+
+  return c.json({ migrated });
 });
 
 // ─── Team administration ──────────────────────────────────────────────────────

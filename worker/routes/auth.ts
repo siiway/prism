@@ -14,6 +14,8 @@ import {
   generateBackupCodes,
   generateTotp,
   generateTotpSecret,
+  hashBackupCode,
+  hashBackupCodes,
   totpUri,
   verifyTotp,
 } from "../lib/totp";
@@ -685,7 +687,22 @@ async function verifyAnyTotp(
   if (recovery) {
     const codes = JSON.parse(recovery.backup_codes) as string[];
     const normalized = code.replace(/-/g, "").toUpperCase();
-    const idx = codes.indexOf(normalized);
+    let idx = -1;
+    for (let i = 0; i < codes.length; i++) {
+      const stored = codes[i];
+      if (stored.startsWith("$sha256$")) {
+        if (stored === (await hashBackupCode(normalized))) {
+          idx = i;
+          break;
+        }
+      } else {
+        // old plaintext format — compare normalised on both sides
+        if (stored.replace(/-/g, "").toUpperCase() === normalized) {
+          idx = i;
+          break;
+        }
+      }
+    }
     if (idx !== -1) {
       codes.splice(idx, 1);
       await db
@@ -779,11 +796,12 @@ app.post("/totp/verify", requireAuth, async (c) => {
   if (existing) return c.json({ message: "Authenticator enabled" });
 
   const backupCodes = generateBackupCodes();
+  const hashedCodes = await hashBackupCodes(backupCodes);
   const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(
     "INSERT INTO user_totp_recovery (user_id, backup_codes, updated_at) VALUES (?, ?, ?)",
   )
-    .bind(user.id, JSON.stringify(backupCodes), now)
+    .bind(user.id, JSON.stringify(hashedCodes), now)
     .run();
   return c.json({
     message: "Authenticator enabled",
@@ -846,11 +864,12 @@ app.post("/totp/backup-codes", requireAuth, async (c) => {
   if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
 
   const backupCodes = generateBackupCodes();
+  const hashedCodes = await hashBackupCodes(backupCodes);
   const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(
     "INSERT INTO user_totp_recovery (user_id, backup_codes, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET backup_codes = excluded.backup_codes, updated_at = excluded.updated_at",
   )
-    .bind(user.id, JSON.stringify(backupCodes), now)
+    .bind(user.id, JSON.stringify(hashedCodes), now)
     .run();
   return c.json({ backup_codes: backupCodes });
 });

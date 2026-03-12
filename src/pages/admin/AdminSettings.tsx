@@ -79,6 +79,7 @@ export function AdminSettings() {
   const [testingEmailReceiving, setTestingEmailReceiving] = useState(false);
   const [emailSubTab, setEmailSubTab] = useState("send");
   const [resetting, setResetting] = useState(false);
+  const [migratingCodes, setMigratingCodes] = useState(false);
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -120,6 +121,26 @@ export function AdminSettings() {
       );
     } finally {
       setTestingEmailReceiving(false);
+    }
+  };
+
+  const handleMigrateRecoveryCodes = async () => {
+    setMigratingCodes(true);
+    try {
+      const res = await api.adminMigrateRecoveryCodes();
+      showMsg(
+        "success",
+        t("admin.migrateRecoveryCodesSuccess", { count: res.migrated }),
+      );
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("admin.migrateRecoveryCodesFailed"),
+      );
+    } finally {
+      setMigratingCodes(false);
     }
   };
 
@@ -744,6 +765,29 @@ export function AdminSettings() {
         >
           <Title3>{t("admin.dangerTitle")}</Title3>
           <Text>{t("admin.dangerDesc")}</Text>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <Text weight="semibold">
+              {t("admin.migrateRecoveryCodesTitle")}
+            </Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.migrateRecoveryCodesDesc")}
+            </Text>
+            <Button
+              appearance="outline"
+              onClick={handleMigrateRecoveryCodes}
+              disabled={migratingCodes}
+              icon={migratingCodes ? <Spinner size="tiny" /> : undefined}
+            >
+              {t("admin.migrateRecoveryCodes")}
+            </Button>
+          </div>
           <div>
             <Dialog>
               <DialogTrigger disableButtonEnhancement>

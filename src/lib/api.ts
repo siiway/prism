@@ -535,6 +535,13 @@ export const api = {
       { confirm: "RESET_EVERYTHING" },
       getToken(),
     ),
+  adminMigrateRecoveryCodes: () =>
+    request<{ migrated: number }>(
+      "POST",
+      "/admin/migrate-recovery-codes",
+      {},
+      getToken(),
+    ),
 
   // ─── Webhooks (admin) ─────────────────────────────────────────────────────
   listWebhooks: () =>

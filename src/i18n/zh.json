@@ -834,7 +834,12 @@
     "ipv6RateLimitPrefixHint": "用于 IPv6 地址限速分组的前缀长度（例如 64 表示将整个 /64 子网视为同一客户端）。填 128 则对单个地址限速。",
     "gpgChallengePrefix": "GPG 挑战前缀",
     "gpgChallengePrefixHint": "在 GPG 登录挑战文本的站点标题行之后插入的额外内容。留空则不添加前缀。",
-    "gpgChallengePrefixPlaceholder": "我授权以账户所有者身份登录。"
+    "gpgChallengePrefixPlaceholder": "我授权以账户所有者身份登录。",
+    "migrateRecoveryCodesTitle": "迁移恢复码",
+    "migrateRecoveryCodesDesc": "对数据库中所有明文备份/恢复码进行哈希处理。已哈希的码将被跳过。迁移前旧明文码仍可正常使用。",
+    "migrateRecoveryCodes": "迁移至哈希格式",
+    "migrateRecoveryCodesSuccess": "已将 {{count}} 个用户的恢复码迁移至哈希格式",
+    "migrateRecoveryCodesFailed": "迁移失败"
   },
   "webhooks": {
     "title": "Webhooks",

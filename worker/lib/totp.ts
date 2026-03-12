@@ -108,6 +108,26 @@ export function generateBackupCodes(count = 10): string[] {
   return codes;
 }
 
+/** Hash a single backup code with SHA-256. Normalises (strips hyphens, uppercases) before hashing. */
+export async function hashBackupCode(code: string): Promise<string> {
+  const normalized = code.replace(/-/g, "").toUpperCase();
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(normalized),
+  );
+  const hex = Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `$sha256$${hex}`;
+}
+
+/** Hash all codes in a plaintext array. Already-hashed entries (starting with `$sha256$`) are passed through unchanged. */
+export async function hashBackupCodes(codes: string[]): Promise<string[]> {
+  return Promise.all(
+    codes.map((c) => (c.startsWith("$sha256$") ? c : hashBackupCode(c))),
+  );
+}
+
 export function totpUri(secret: string, email: string, issuer: string): string {
   const params = new URLSearchParams({
     secret,
