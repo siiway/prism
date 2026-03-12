@@ -2043,39 +2043,6 @@ app.get("/me/admin/webhooks/:id/deliveries", async (c) => {
   return c.json({ deliveries: results });
 });
 
-// ─── OpenID Connect Discovery ─────────────────────────────────────────────────
-
-app.get("/.well-known/openid-configuration", (c) => {
-  const base = c.env.APP_URL;
-  return c.json({
-    issuer: base,
-    authorization_endpoint: `${base}/api/oauth/authorize`,
-    token_endpoint: `${base}/api/oauth/token`,
-    userinfo_endpoint: `${base}/api/oauth/userinfo`,
-    revocation_endpoint: `${base}/api/oauth/revoke`,
-    introspection_endpoint: `${base}/api/oauth/introspect`,
-    scopes_supported: [...VALID_SCOPES],
-    response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
-    subject_types_supported: ["public"],
-    id_token_signing_alg_values_supported: ["HS256"],
-    token_endpoint_auth_methods_supported: [
-      "client_secret_post",
-      "client_secret_basic",
-      "none",
-    ],
-    code_challenge_methods_supported: ["S256", "plain"],
-    claims_supported: [
-      "sub",
-      "name",
-      "preferred_username",
-      "picture",
-      "email",
-      "email_verified",
-    ],
-  });
-});
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function buildIdToken(
