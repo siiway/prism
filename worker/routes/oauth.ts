@@ -2208,21 +2208,25 @@ async function buildClaims(
     claims.email = user.email;
     claims.email_verified = user.email_verified === 1;
   }
-  if (scopes.includes("teams:read") && wants("teams")) {
+  if (scopes.includes("teams:read")) {
     const rows = await db
       .prepare(
         "SELECT t.id, t.name, tm.role FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.user_id = ?",
       )
       .bind(user.id)
       .all<{ id: string; name: string; role: string }>();
-    claims.teams = rows.results.map((r) => ({
-      id: r.id,
-      name: r.name,
-      role: r.role,
-    }));
+    // Flat claims always emitted with teams:read — required for Cloudflare Access policies
     for (const r of rows.results) {
       claims[`in_team_${r.id}`] = true;
       claims[`role_in_team_${r.id}`] = r.role;
+    }
+    // Structured array only when opted into via oidc_fields
+    if (wants("teams")) {
+      claims.teams = rows.results.map((r) => ({
+        id: r.id,
+        name: r.name,
+        role: r.role,
+      }));
     }
   }
   if (scopes.includes("apps:read") && wants("apps")) {
