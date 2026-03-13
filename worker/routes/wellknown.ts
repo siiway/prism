@@ -18,6 +18,8 @@ const SCOPES_SUPPORTED = [
   "domains:write",
   "gpg:read",
   "gpg:write",
+  "social:read",
+  "social:write",
   "admin:users:read",
   "admin:users:write",
   "admin:users:delete",

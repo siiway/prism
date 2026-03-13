@@ -301,6 +301,17 @@ curl https://your-prism-domain/users/alice.gpg
 
 请求/响应格式与上述会话认证端点一致。
 
+### OAuth 范围授权的社交连接端点
+
+以下端点接受 OAuth 访问令牌或 PAT，无需会话 Cookie：
+
+| 方法     | 路径                                   | 所需范围       |
+|----------|----------------------------------------|----------------|
+| `GET`    | `/api/oauth/me/social-connections`     | `social:read`  |
+| `DELETE` | `/api/oauth/me/social-connections/:id` | `social:write` |
+
+请求/响应格式与上述会话认证端点一致。
+
 ## 会话
 
 ### `GET /api/auth/sessions`

@@ -588,7 +588,11 @@
     "scopeWebhooksWriteLabel": "Manage your webhooks",
     "scopeWebhooksWriteDesc": "Create, update, delete, and test your personal webhooks",
     "scopeOfflineLabel": "Offline access",
-    "scopeOfflineDesc": "Access your data when you're not online"
+    "scopeOfflineDesc": "Access your data when you're not online",
+    "scopeSocialReadLabel": "Read social connections",
+    "scopeSocialReadDesc": "View your linked social provider accounts",
+    "scopeSocialWriteLabel": "Manage social connections",
+    "scopeSocialWriteDesc": "Disconnect social provider accounts from your profile"
   },
   "admin": {
     "title": "Admin Panel",

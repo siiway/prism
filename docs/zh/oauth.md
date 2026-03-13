@@ -56,6 +56,8 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 | `apps:read`      | 用户拥有的应用列表                       |
 | `gpg:read`       | 列出用户已注册的 GPG 公钥                |
 | `gpg:write`      | 添加或删除用户的 GPG 公钥                |
+| `social:read`    | 列出用户已关联的社交提供商账号           |
+| `social:write`   | 断开社交提供商账号关联                   |
 | `offline_access` | 启用刷新令牌颁发                         |
 
 ### 第二步 — 用户授权

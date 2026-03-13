@@ -302,6 +302,17 @@ These endpoints accept an OAuth access token or PAT with the appropriate scope i
 
 Request/response shapes match the session-auth equivalents above.
 
+### OAuth-scoped social connection endpoints
+
+These endpoints accept an OAuth access token or PAT with the appropriate scope instead of a session cookie.
+
+| Method   | Path                                   | Scope required |
+|----------|----------------------------------------|----------------|
+| `GET`    | `/api/oauth/me/social-connections`     | `social:read`  |
+| `DELETE` | `/api/oauth/me/social-connections/:id` | `social:write` |
+
+Request/response shapes match the session-auth equivalents above.
+
 ## Sessions
 
 ### `GET /api/auth/sessions`

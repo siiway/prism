@@ -38,6 +38,8 @@ const VALID_SCOPES = new Set([
   "domains:write",
   "gpg:read",
   "gpg:write",
+  "social:read",
+  "social:write",
   "admin:users:read",
   "admin:users:write",
   "admin:users:delete",
@@ -742,6 +744,49 @@ app.delete("/me/gpg-keys/:id", async (c) => {
     .run();
   if (!result.meta.changes) return c.json({ error: "Key not found" }, 404);
   return c.json({ message: "Key removed" });
+});
+
+// GET /api/oauth/me/social-connections — list the token owner's social connections (requires social:read)
+app.get("/me/social-connections", async (c) => {
+  const resolved = await resolveBearerToken(c, "social:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, provider, provider_user_id, profile_data, connected_at FROM social_connections WHERE user_id = ? ORDER BY connected_at ASC",
+  )
+    .bind(resolved.userId)
+    .all<{
+      id: string;
+      provider: string;
+      provider_user_id: string;
+      profile_data: string;
+      connected_at: number;
+    }>();
+
+  return c.json({
+    connections: results.map((r) => ({
+      id: r.id,
+      provider: r.provider,
+      provider_user_id: r.provider_user_id,
+      profile: JSON.parse(r.profile_data ?? "{}"),
+      connected_at: r.connected_at,
+    })),
+  });
+});
+
+// DELETE /api/oauth/me/social-connections/:id — disconnect a social connection (requires social:write)
+app.delete("/me/social-connections/:id", async (c) => {
+  const resolved = await resolveBearerToken(c, "social:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const result = await c.env.DB.prepare(
+    "DELETE FROM social_connections WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("id"), resolved.userId)
+    .run();
+  if (!result.meta.changes)
+    return c.json({ error: "Connection not found" }, 404);
+  return c.json({ message: "Connection removed" });
 });
 
 // POST /api/oauth/me/teams — create a team (requires teams:create)

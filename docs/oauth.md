@@ -57,6 +57,8 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 | `apps:read`      | List of apps the user owns                            |
 | `gpg:read`       | List the user's registered GPG public keys            |
 | `gpg:write`      | Add and remove GPG public keys                        |
+| `social:read`    | List the user's linked social provider accounts       |
+| `social:write`   | Disconnect social provider accounts                   |
 | `offline_access` | Enables refresh token issuance                        |
 
 ### Step 2 — User consents

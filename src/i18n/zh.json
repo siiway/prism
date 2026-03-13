@@ -588,7 +588,11 @@
     "scopeWebhooksWriteLabel": "管理您的 Webhook",
     "scopeWebhooksWriteDesc": "创建、更新、删除并测试您的个人 Webhook",
     "scopeOfflineLabel": "离线访问",
-    "scopeOfflineDesc": "在您不在线时访问您的数据"
+    "scopeOfflineDesc": "在您不在线时访问您的数据",
+    "scopeSocialReadLabel": "读取社交连接",
+    "scopeSocialReadDesc": "查看已关联的社交提供商账号",
+    "scopeSocialWriteLabel": "管理社交连接",
+    "scopeSocialWriteDesc": "从个人资料中断开社交提供商账号"
   },
   "admin": {
     "title": "管理面板",

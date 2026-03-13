@@ -239,6 +239,13 @@ All scopes that Prism-registered OAuth apps and personal access tokens can reque
 | `gpg:read`  | List the token owner's registered GPG public keys |
 | `gpg:write` | Add and remove the token owner's GPG public keys  |
 
+### Social connections
+
+| Scope          | Description                                              |
+|----------------|----------------------------------------------------------|
+| `social:read`  | List the token owner's linked social provider accounts   |
+| `social:write` | Disconnect social provider accounts from the token owner |
+
 ### Admin scopes (require `role = admin` on the token owner)
 
 | Scope                   | Description                                                  |
