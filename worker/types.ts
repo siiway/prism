@@ -73,6 +73,7 @@ export interface OAuthAppRow {
   is_official: number;
   is_first_party: number;
   team_id: string | null;
+  oidc_fields: string; // JSON string[]
   created_at: number;
   updated_at: number;
 }

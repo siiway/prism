@@ -209,17 +209,23 @@ Standard claims (always present when `openid` scope is requested):
 | `role`  | User role (`user` or `admin`)     |
 | `nonce` | Echoed from authorization request |
 
-Scope-gated claims (included when the corresponding scope is granted):
+Scope-gated claims — `profile` and `email` claims are included whenever the corresponding scope is granted. The remaining claims below also require the application to declare the field name in its `oidc_fields` configuration:
 
-| Scope | Claim(s) added to ID token |
-| --- | --- |
-| `profile` | `name`, `preferred_username`, `picture` |
-| `email` | `email`, `email_verified` |
-| `teams:read` | `teams` — array of `{ id, name, role }` objects for the user's team memberships |
-| `apps:read` | `apps` — array of `{ id, name, client_id, is_verified }` objects for the user's apps |
-| `domains:read` | `domains` — array of `{ id, domain, verified }` objects |
-| `gpg:read` | `gpg_keys` — array of `{ id, fingerprint, key_id, name }` objects |
-| `social:read` | `social_accounts` — array of `{ id, provider, provider_user_id }` objects |
+| Scope | Field name | Claim(s) added to ID token |
+| --- | --- | --- |
+| `profile` | _(always)_ | `name`, `preferred_username`, `picture` |
+| `email` | _(always)_ | `email`, `email_verified` |
+| `teams:read` | `teams` | `teams` — array of `{ id, name, role }` objects for the user's team memberships |
+| `apps:read` | `apps` | `apps` — array of `{ id, name, client_id, is_verified }` objects for the user's apps |
+| `domains:read` | `domains` | `domains` — array of `{ id, domain, verified }` objects |
+| `gpg:read` | `gpg_keys` | `gpg_keys` — array of `{ id, fingerprint, key_id, name }` objects |
+| `social:read` | `social_accounts` | `social_accounts` — array of `{ id, provider, provider_user_id }` objects |
+
+To opt an application into a custom claim, include the field name in the app's `oidc_fields` array when creating or updating it via the API:
+
+```json
+{ "oidc_fields": ["teams", "domains"] }
+```
 
 ## Error responses
 

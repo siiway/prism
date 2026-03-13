@@ -2195,6 +2195,18 @@ async function buildIdToken(
   db: D1Database,
 ): Promise<string> {
   const { signIdTokenRS256 } = await import("../lib/jwt");
+
+  // Fetch which extra claims this app has opted into
+  const appRow = await db
+    .prepare("SELECT oidc_fields FROM oauth_apps WHERE client_id = ?")
+    .bind(clientId)
+    .first<{ oidc_fields: string }>();
+  const oidcFields = new Set<string>(
+    JSON.parse(appRow?.oidc_fields ?? "[]") as string[],
+  );
+
+  const wants = (field: string) => oidcFields.has(field);
+
   const claims: Record<string, unknown> = {
     iss: issuer,
     aud: clientId,
@@ -2211,7 +2223,7 @@ async function buildIdToken(
     claims.email = user.email;
     claims.email_verified = user.email_verified === 1;
   }
-  if (scopes.includes("teams:read")) {
+  if (scopes.includes("teams:read") && wants("teams")) {
     const rows = await db
       .prepare(
         "SELECT t.id, t.name, tm.role FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.user_id = ?",
@@ -2224,7 +2236,7 @@ async function buildIdToken(
       role: r.role,
     }));
   }
-  if (scopes.includes("apps:read")) {
+  if (scopes.includes("apps:read") && wants("apps")) {
     const rows = await db
       .prepare(
         "SELECT id, name, client_id, is_verified FROM oauth_apps WHERE owner_id = ? AND team_id IS NULL ORDER BY created_at DESC",
@@ -2243,7 +2255,7 @@ async function buildIdToken(
       is_verified: r.is_verified === 1,
     }));
   }
-  if (scopes.includes("domains:read")) {
+  if (scopes.includes("domains:read") && wants("domains")) {
     const rows = await db
       .prepare(
         "SELECT id, domain, verified FROM domains WHERE user_id = ? ORDER BY created_at DESC",
@@ -2256,7 +2268,7 @@ async function buildIdToken(
       verified: r.verified === 1,
     }));
   }
-  if (scopes.includes("gpg:read")) {
+  if (scopes.includes("gpg:read") && wants("gpg_keys")) {
     const rows = await db
       .prepare(
         "SELECT id, fingerprint, key_id, name FROM user_gpg_keys WHERE user_id = ? ORDER BY created_at ASC",
@@ -2270,7 +2282,7 @@ async function buildIdToken(
       name: r.name,
     }));
   }
-  if (scopes.includes("social:read")) {
+  if (scopes.includes("social:read") && wants("social_accounts")) {
     const rows = await db
       .prepare(
         "SELECT id, provider, provider_user_id FROM social_connections WHERE user_id = ? ORDER BY connected_at ASC",

@@ -206,17 +206,23 @@ ID 令牌是一个签名的 JWT（RS256）。可通过 `/.well-known/jwks.json` 
 | `role` | 用户角色（`user` 或 `admin`） |
 | `nonce` | 从授权请求中原样返回 |
 
-范围关联声明（授予对应权限范围时包含）：
+范围关联声明 — `profile` 和 `email` 声明在授予对应权限范围时自动包含。下表中其余声明还需要应用在 `oidc_fields` 配置中声明对应的字段名：
 
-| 权限范围 | 添加到 ID 令牌的声明 |
-| --- | --- |
-| `profile` | `name`、`preferred_username`、`picture` |
-| `email` | `email`、`email_verified` |
-| `teams:read` | `teams` — `{ id, name, role }` 对象数组，表示用户的团队成员身份 |
-| `apps:read` | `apps` — `{ id, name, client_id, is_verified }` 对象数组，表示用户拥有的应用 |
-| `domains:read` | `domains` — `{ id, domain, verified }` 对象数组 |
-| `gpg:read` | `gpg_keys` — `{ id, fingerprint, key_id, name }` 对象数组 |
-| `social:read` | `social_accounts` — `{ id, provider, provider_user_id }` 对象数组 |
+| 权限范围 | 字段名 | 添加到 ID 令牌的声明 |
+| --- | --- | --- |
+| `profile` | _（始终包含）_ | `name`、`preferred_username`、`picture` |
+| `email` | _（始终包含）_ | `email`、`email_verified` |
+| `teams:read` | `teams` | `teams` — `{ id, name, role }` 对象数组，表示用户的团队成员身份 |
+| `apps:read` | `apps` | `apps` — `{ id, name, client_id, is_verified }` 对象数组，表示用户拥有的应用 |
+| `domains:read` | `domains` | `domains` — `{ id, domain, verified }` 对象数组 |
+| `gpg:read` | `gpg_keys` | `gpg_keys` — `{ id, fingerprint, key_id, name }` 对象数组 |
+| `social:read` | `social_accounts` | `social_accounts` — `{ id, provider, provider_user_id }` 对象数组 |
+
+通过 API 创建或更新应用时，在 `oidc_fields` 数组中声明所需字段，即可为该应用启用相应的自定义声明：
+
+```json
+{ "oidc_fields": ["teams", "domains"] }
+```
 
 ## 错误响应
 
