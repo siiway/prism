@@ -350,7 +350,7 @@ export function AppDetail() {
                 {SCOPES.map((s) => (
                   <Checkbox
                     key={s}
-                    id={`scope-${s}`}
+                    id={`app-scope-${s}`}
                     label={s}
                     checked={form.allowed_scopes.includes(s)}
                     onChange={(_, d) => {
