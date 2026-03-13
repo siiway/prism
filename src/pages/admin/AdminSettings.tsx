@@ -48,9 +48,26 @@ const useStyles = makeStyles({
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: "12px",
+    alignItems: "start",
+    "& > *": {
+      minWidth: 0,
+    },
+    "& input": {
+      width: "100%",
+      boxSizing: "border-box",
+    },
     "@media (max-width: 600px)": {
       gridTemplateColumns: "1fr",
     },
+  },
+  tabsWrap: {
+    minWidth: 0,
+    overflowX: "auto",
+    overflowY: "hidden",
+    WebkitOverflowScrolling: "touch",
+  },
+  tabs: {
+    minWidth: "max-content",
   },
   actions: { display: "flex", gap: "8px", marginTop: "4px" },
 });
@@ -187,18 +204,21 @@ export function AdminSettings() {
         </MessageBar>
       )}
 
-      <TabList
-        selectedValue={tab}
-        onTabSelect={(_, d) => setTab(d.value as string)}
-      >
-        <Tab value="general">{t("admin.generalTab")}</Tab>
-        <Tab value="auth">{t("admin.authTab")}</Tab>
-        <Tab value="captcha">{t("admin.captchaTab")}</Tab>
-        <Tab value="social">{t("admin.socialTab")}</Tab>
-        <Tab value="email">{t("admin.emailTab")}</Tab>
-        <Tab value="appearance">{t("admin.appearanceTab")}</Tab>
-        <Tab value="danger">{t("admin.dangerTab")}</Tab>
-      </TabList>
+      <div className={styles.tabsWrap}>
+        <TabList
+          className={styles.tabs}
+          selectedValue={tab}
+          onTabSelect={(_, d) => setTab(d.value as string)}
+        >
+          <Tab value="general">{t("admin.generalTab")}</Tab>
+          <Tab value="auth">{t("admin.authTab")}</Tab>
+          <Tab value="captcha">{t("admin.captchaTab")}</Tab>
+          <Tab value="social">{t("admin.socialTab")}</Tab>
+          <Tab value="email">{t("admin.emailTab")}</Tab>
+          <Tab value="appearance">{t("admin.appearanceTab")}</Tab>
+          <Tab value="danger">{t("admin.dangerTab")}</Tab>
+        </TabList>
+      </div>
 
       {tab === "general" && (
         <div className={styles.card}>
@@ -847,3 +867,4 @@ export function AdminSettings() {
     </div>
   );
 }
+

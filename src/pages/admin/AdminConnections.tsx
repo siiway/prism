@@ -40,15 +40,35 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthSource } from "../../lib/api";
 
 const useStyles = makeStyles({
-  section: { display: "flex", flexDirection: "column", gap: "16px" },
+  section: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    minWidth: 0,
+  },
   form: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     alignItems: "start",
     gap: "12px",
     padding: "16px",
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: "8px",
+    width: "100%",
+    minWidth: 0,
+    boxSizing: "border-box",
+    "& > *": {
+      minWidth: 0,
+    },
+    "& input": {
+      width: "100%",
+      boxSizing: "border-box",
+    },
+    "& [role='combobox']": {
+      width: "100%",
+      minWidth: 0,
+      boxSizing: "border-box",
+    },
     "@media (max-width: 600px)": {
       gridTemplateColumns: "1fr",
     },
@@ -59,8 +79,19 @@ const useStyles = makeStyles({
     display: "flex",
     justifyContent: "flex-end",
     gap: "8px",
+    flexWrap: "wrap",
   },
-  issuerRow: { display: "flex", gap: "8px", alignItems: "flex-end" },
+  issuerRow: {
+    display: "flex",
+    gap: "8px",
+    alignItems: "flex-end",
+    minWidth: 0,
+    flexWrap: "wrap",
+    "& > *:first-child": {
+      minWidth: 0,
+      flex: 1,
+    },
+  },
 });
 
 const PROVIDER_OPTIONS = [

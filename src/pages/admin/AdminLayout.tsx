@@ -1,10 +1,36 @@
 // Admin section layout with sub-navigation
 
-import { Tab, TabList, Text, Title2, tokens } from "@fluentui/react-components";
+import {
+  Tab,
+  TabList,
+  Text,
+  Title2,
+  makeStyles,
+  tokens,
+} from "@fluentui/react-components";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
+const useStyles = makeStyles({
+  root: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "24px",
+    minWidth: 0,
+  },
+  tabsWrap: {
+    minWidth: 0,
+    overflowX: "auto",
+    overflowY: "hidden",
+    WebkitOverflowScrolling: "touch",
+  },
+  tabs: {
+    minWidth: "max-content",
+  },
+});
+
 export function AdminLayout() {
+  const styles = useStyles();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { t } = useTranslation();
@@ -30,7 +56,7 @@ export function AdminLayout() {
     )?.value ?? "/admin";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className={styles.root}>
       <div>
         <Title2>{t("admin.title")}</Title2>
         <br />
@@ -39,16 +65,19 @@ export function AdminLayout() {
         </Text>
       </div>
 
-      <TabList
-        selectedValue={currentTab}
-        onTabSelect={(_, d) => navigate(d.value as string)}
-      >
-        {TABS.map((tab) => (
-          <Tab key={tab.value} value={tab.value}>
-            {tab.label}
-          </Tab>
-        ))}
-      </TabList>
+      <div className={styles.tabsWrap}>
+        <TabList
+          className={styles.tabs}
+          selectedValue={currentTab}
+          onTabSelect={(_, d) => navigate(d.value as string)}
+        >
+          {TABS.map((tab) => (
+            <Tab key={tab.value} value={tab.value}>
+              {tab.label}
+            </Tab>
+          ))}
+        </TabList>
+      </div>
 
       <Outlet />
     </div>

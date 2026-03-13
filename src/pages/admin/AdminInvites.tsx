@@ -32,14 +32,30 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError, type SiteInvite } from "../../lib/api";
 
 const useStyles = makeStyles({
-  section: { display: "flex", flexDirection: "column", gap: "16px" },
+  section: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    minWidth: 0,
+  },
   form: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    alignItems: "start",
     gap: "12px",
     padding: "16px",
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: "8px",
+    width: "100%",
+    minWidth: 0,
+    boxSizing: "border-box",
+    "& > *": {
+      minWidth: 0,
+    },
+    "& input": {
+      width: "100%",
+      boxSizing: "border-box",
+    },
     "@media (max-width: 600px)": {
       gridTemplateColumns: "1fr",
     },
@@ -49,6 +65,7 @@ const useStyles = makeStyles({
     gridColumn: "1 / -1",
     display: "flex",
     justifyContent: "flex-end",
+    flexWrap: "wrap",
   },
   copyRow: {
     display: "flex",
