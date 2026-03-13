@@ -867,4 +867,3 @@ export function AdminSettings() {
     </div>
   );
 }
-

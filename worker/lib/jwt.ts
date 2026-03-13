@@ -72,7 +72,11 @@ export async function signIdTokenRS256(
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = encodeBase64url({ alg: "RS256", typ: "JWT", kid });
-  const body = encodeBase64url({ ...payload, iat: now, exp: now + expiresInSeconds });
+  const body = encodeBase64url({
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds,
+  });
   const message = `${header}.${body}`;
   const sig = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",

@@ -153,7 +153,9 @@ export interface RsaKeyPair {
 export async function getRsaKeyPair(kv: KVNamespace): Promise<RsaKeyPair> {
   const stored = await kv.get(RSA_KEYPAIR_KEY);
   if (stored) {
-    const { kid, publicKeyJwk, privateKeyJwk } = JSON.parse(stored) as StoredKeyPair;
+    const { kid, publicKeyJwk, privateKeyJwk } = JSON.parse(
+      stored,
+    ) as StoredKeyPair;
     const [publicKey, privateKey] = await Promise.all([
       crypto.subtle.importKey(
         "jwk",
@@ -190,7 +192,10 @@ export async function getRsaKeyPair(kv: KVNamespace): Promise<RsaKeyPair> {
   ]);
 
   const kid = crypto.randomUUID();
-  await kv.put(RSA_KEYPAIR_KEY, JSON.stringify({ kid, publicKeyJwk, privateKeyJwk }));
+  await kv.put(
+    RSA_KEYPAIR_KEY,
+    JSON.stringify({ kid, publicKeyJwk, privateKeyJwk }),
+  );
 
   return {
     kid,
