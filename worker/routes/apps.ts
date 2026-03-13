@@ -357,7 +357,7 @@ function safeApp(row: OAuthAppRow, isVerified: boolean) {
     client_id: row.client_id,
     redirect_uris: JSON.parse(row.redirect_uris) as string[],
     allowed_scopes: JSON.parse(row.allowed_scopes) as string[],
-    oidc_fields: JSON.parse(row.oidc_fields) as string[],
+    oidc_fields: JSON.parse(row.oidc_fields ?? "[]") as string[],
     is_public: row.is_public === 1,
     is_active: row.is_active === 1,
     is_verified: isVerified,

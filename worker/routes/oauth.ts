@@ -2235,6 +2235,10 @@ async function buildIdToken(
       name: r.name,
       role: r.role,
     }));
+    for (const r of rows.results) {
+      claims[`in_team_${r.id}`] = true;
+      claims[`role_in_team_${r.id}`] = r.role;
+    }
   }
   if (scopes.includes("apps:read") && wants("apps")) {
     const rows = await db
