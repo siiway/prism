@@ -6,6 +6,7 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { Variables } from "./types";
 
+import { requestLogger } from "./lib/logger";
 import { runReverification } from "./cron/reverify";
 import { runImapPoll } from "./cron/imap-poll";
 import { handleEmailWorker } from "./handlers/email";
@@ -29,6 +30,7 @@ import proxyRoutes from "./routes/proxy";
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 app.use("*", secureHeaders());
+app.use("*", requestLogger);
 app.use(
   "/api/*",
   cors({

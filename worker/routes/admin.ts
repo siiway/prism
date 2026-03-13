@@ -759,6 +759,128 @@ app.get("/login-errors", async (c) => {
   return c.json({ errors: rows.results, total: count?.n ?? 0, page, limit });
 });
 
+// ─── Request logs ─────────────────────────────────────────────────────────────
+
+app.get("/request-logs", async (c) => {
+  const page = Math.max(1, parseInt(c.req.query("page") ?? "1"));
+  const limit = Math.min(
+    Math.max(1, parseInt(c.req.query("limit") ?? "50")),
+    200,
+  );
+  const offset = (page - 1) * limit;
+  const qMethod = c.req.query("method") ?? "";
+  const qPath = c.req.query("path") ?? "";
+  const qStatus = c.req.query("status") ?? "";
+  const qUserId = c.req.query("user_id") ?? "";
+
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (qMethod) {
+    conditions.push("method = ?");
+    params.push(qMethod.toUpperCase());
+  }
+  if (qPath) {
+    conditions.push("path LIKE ?");
+    params.push(`%${qPath}%`);
+  }
+  if (qStatus) {
+    const s = parseInt(qStatus);
+    if (!isNaN(s)) {
+      if (s === 200) {
+        conditions.push("status >= 200 AND status < 300");
+      } else if (s === 400) {
+        conditions.push("status >= 400 AND status < 500");
+      } else if (s === 500) {
+        conditions.push("status >= 500");
+      } else {
+        conditions.push("status = ?");
+        params.push(s);
+      }
+    }
+  }
+  if (qUserId) {
+    conditions.push("user_id = ?");
+    params.push(qUserId);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const [rows, count] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT id, method, path, status, duration_ms, ip_address, user_agent, user_id, created_at FROM request_logs ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...params, limit, offset)
+      .all<{
+        id: string;
+        method: string;
+        path: string;
+        status: number;
+        duration_ms: number;
+        ip_address: string | null;
+        user_agent: string | null;
+        user_id: string | null;
+        created_at: number;
+      }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM request_logs ${where}`)
+      .bind(...params)
+      .first<{ n: number }>(),
+  ]);
+
+  return c.json({ logs: rows.results, total: count?.n ?? 0, page, limit });
+});
+
+app.get("/request-logs/:id/details", async (c) => {
+  const row = await c.env.DB.prepare(
+    "SELECT details FROM request_logs WHERE id = ?",
+  )
+    .bind(c.req.param("id"))
+    .first<{ details: string | null }>();
+  if (!row) return c.json({ error: "Not found" }, 404);
+  try {
+    return c.json({ details: row.details ? JSON.parse(row.details) : null });
+  } catch {
+    return c.json({ details: null });
+  }
+});
+
+// ─── Debug config (logging toggle + spectate user) ────────────────────────────
+
+app.get("/debug", async (c) => {
+  const [enabled, spectateUserId] = await Promise.all([
+    c.env.KV_SESSIONS.get("system:request_logging_enabled"),
+    c.env.KV_SESSIONS.get("system:spectate_user_id"),
+  ]);
+  return c.json({
+    logging_enabled: enabled === "true",
+    spectate_user_id: spectateUserId ?? null,
+  });
+});
+
+app.post("/debug", async (c) => {
+  const body = await c.req.json<{
+    logging_enabled?: boolean;
+    spectate_user_id?: string | null;
+  }>();
+
+  await Promise.all([
+    body.logging_enabled !== undefined
+      ? c.env.KV_SESSIONS.put(
+          "system:request_logging_enabled",
+          body.logging_enabled ? "true" : "false",
+        )
+      : Promise.resolve(),
+    "spectate_user_id" in body
+      ? body.spectate_user_id
+        ? c.env.KV_SESSIONS.put(
+            "system:spectate_user_id",
+            body.spectate_user_id,
+          )
+        : c.env.KV_SESSIONS.delete("system:spectate_user_id")
+      : Promise.resolve(),
+  ]);
+
+  return c.json({ ok: true });
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function logAudit(

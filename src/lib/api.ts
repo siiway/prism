@@ -519,6 +519,45 @@ export const api = {
       getToken(),
     );
   },
+  adminRequestLogs: (
+    page = 1,
+    filters: {
+      method?: string;
+      path?: string;
+      status?: string;
+      user_id?: string;
+    } = {},
+  ) => {
+    const qs = new URLSearchParams({ page: String(page) });
+    if (filters.method) qs.set("method", filters.method);
+    if (filters.path) qs.set("path", filters.path);
+    if (filters.status) qs.set("status", filters.status);
+    if (filters.user_id) qs.set("user_id", filters.user_id);
+    return request<{ logs: unknown[]; total: number }>(
+      "GET",
+      `/admin/request-logs?${qs}`,
+      undefined,
+      getToken(),
+    );
+  },
+  adminRequestLogDetails: (id: string) =>
+    request<{ details: unknown }>(
+      "GET",
+      `/admin/request-logs/${id}/details`,
+      undefined,
+      getToken(),
+    ),
+  adminGetDebug: () =>
+    request<{ logging_enabled: boolean; spectate_user_id: string | null }>(
+      "GET",
+      "/admin/debug",
+      undefined,
+      getToken(),
+    ),
+  adminSetDebug: (body: {
+    logging_enabled?: boolean;
+    spectate_user_id?: string | null;
+  }) => request<{ ok: boolean }>("POST", "/admin/debug", body, getToken()),
   adminTestEmail: () =>
     request<{ message: string }>("POST", "/admin/test-email", {}, getToken()),
   adminTestEmailReceiving: () =>

@@ -46,6 +46,7 @@ export function AdminLayout() {
     { value: "/admin/audit", label: t("admin.auditLogTab") },
     { value: "/admin/webhooks", label: t("admin.webhooksTab") },
     { value: "/admin/login-errors", label: t("admin.loginErrorsTab") },
+    { value: "/admin/logs", label: t("admin.logsTab") },
   ];
 
   const currentTab =
