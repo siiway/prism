@@ -48,17 +48,38 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 **权限范围**
 
-| 范围             | 包含的声明                               |
-|------------------|------------------------------------------|
-| `openid`         | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
-| `profile`        | `name`、`preferred_username`、`picture`    |
-| `email`          | `email`、`email_verified`                 |
-| `apps:read`      | 用户拥有的应用列表                       |
-| `gpg:read`       | 列出用户已注册的 GPG 公钥                |
-| `gpg:write`      | 添加或删除用户的 GPG 公钥                |
-| `social:read`    | 列出用户已关联的社交提供商账号           |
-| `social:write`   | 断开社交提供商账号关联                   |
-| `offline_access` | 启用刷新令牌颁发                         |
+| 范围                    | 包含的声明 / 授权的访问                  |
+|-------------------------|------------------------------------------|
+| `openid`                | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
+| `profile`               | `name`、`preferred_username`、`picture`    |
+| `profile:write`         | 更新用户的个人资料（名称、头像）            |
+| `email`                 | `email`、`email_verified`                 |
+| `apps:read`             | 用户拥有的应用列表                       |
+| `apps:write`            | 创建、更新和删除用户的应用                |
+| `teams:read`            | 列出用户的团队                           |
+| `teams:write`           | 更新团队设置和管理成员                   |
+| `teams:create`          | 创建新团队                               |
+| `teams:delete`          | 删除团队                                 |
+| `domains:read`          | 列出用户的自定义域名                     |
+| `domains:write`         | 添加和删除自定义域名                     |
+| `gpg:read`              | 列出用户已注册的 GPG 公钥                |
+| `gpg:write`             | 添加或删除用户的 GPG 公钥                |
+| `social:read`           | 列出用户已关联的社交提供商账号           |
+| `social:write`          | 断开社交提供商账号关联                   |
+| `webhooks:read`         | 列出用户的 Webhook                       |
+| `webhooks:write`        | 创建、更新和删除 Webhook                  |
+| `admin:users:read`      | 读取所有用户账号（仅限管理员）             |
+| `admin:users:write`     | 修改用户账号（仅限管理员）                 |
+| `admin:users:delete`    | 删除用户账号（仅限管理员）                 |
+| `admin:config:read`     | 读取实例配置（仅限管理员）                 |
+| `admin:config:write`    | 更新实例配置（仅限管理员）                 |
+| `admin:invites:read`    | 列出邀请（仅限管理员）                     |
+| `admin:invites:create`  | 创建邀请（仅限管理员）                     |
+| `admin:invites:delete`  | 删除邀请（仅限管理员）                     |
+| `admin:webhooks:read`   | 列出实例级别的 Webhook（仅限管理员）       |
+| `admin:webhooks:write`  | 创建和更新实例级别的 Webhook（仅限管理员） |
+| `admin:webhooks:delete` | 删除实例级别的 Webhook（仅限管理员）       |
+| `offline_access`        | 启用刷新令牌颁发                         |
 
 ### 第二步 — 用户授权
 
