@@ -408,6 +408,7 @@ app.post("/token", async (c) => {
         rsaKeyPair.kid,
         atTtl,
         c.env.APP_URL,
+        c.env.DB,
       );
     }
     return c.json(response);
@@ -2191,12 +2192,14 @@ async function buildIdToken(
   kid: string,
   ttl: number,
   issuer: string,
+  db: D1Database,
 ): Promise<string> {
   const { signIdTokenRS256 } = await import("../lib/jwt");
   const claims: Record<string, unknown> = {
     iss: issuer,
     aud: clientId,
     sub: user.id,
+    role: user.role,
   };
   if (nonce) claims.nonce = nonce;
   if (scopes.includes("profile")) {
@@ -2207,6 +2210,78 @@ async function buildIdToken(
   if (scopes.includes("email")) {
     claims.email = user.email;
     claims.email_verified = user.email_verified === 1;
+  }
+  if (scopes.includes("teams:read")) {
+    const rows = await db
+      .prepare(
+        "SELECT t.id, t.name, tm.role FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.user_id = ?",
+      )
+      .bind(user.id)
+      .all<{ id: string; name: string; role: string }>();
+    claims.teams = rows.results.map((r) => ({
+      id: r.id,
+      name: r.name,
+      role: r.role,
+    }));
+  }
+  if (scopes.includes("apps:read")) {
+    const rows = await db
+      .prepare(
+        "SELECT id, name, client_id, is_verified FROM oauth_apps WHERE owner_id = ? AND team_id IS NULL ORDER BY created_at DESC",
+      )
+      .bind(user.id)
+      .all<{
+        id: string;
+        name: string;
+        client_id: string;
+        is_verified: number;
+      }>();
+    claims.apps = rows.results.map((r) => ({
+      id: r.id,
+      name: r.name,
+      client_id: r.client_id,
+      is_verified: r.is_verified === 1,
+    }));
+  }
+  if (scopes.includes("domains:read")) {
+    const rows = await db
+      .prepare(
+        "SELECT id, domain, verified FROM domains WHERE user_id = ? ORDER BY created_at DESC",
+      )
+      .bind(user.id)
+      .all<{ id: string; domain: string; verified: number }>();
+    claims.domains = rows.results.map((r) => ({
+      id: r.id,
+      domain: r.domain,
+      verified: r.verified === 1,
+    }));
+  }
+  if (scopes.includes("gpg:read")) {
+    const rows = await db
+      .prepare(
+        "SELECT id, fingerprint, key_id, name FROM user_gpg_keys WHERE user_id = ? ORDER BY created_at ASC",
+      )
+      .bind(user.id)
+      .all<{ id: string; fingerprint: string; key_id: string; name: string }>();
+    claims.gpg_keys = rows.results.map((r) => ({
+      id: r.id,
+      fingerprint: r.fingerprint,
+      key_id: r.key_id,
+      name: r.name,
+    }));
+  }
+  if (scopes.includes("social:read")) {
+    const rows = await db
+      .prepare(
+        "SELECT id, provider, provider_user_id FROM social_connections WHERE user_id = ? ORDER BY connected_at ASC",
+      )
+      .bind(user.id)
+      .all<{ id: string; provider: string; provider_user_id: string }>();
+    claims.social_accounts = rows.results.map((r) => ({
+      id: r.id,
+      provider: r.provider,
+      provider_user_id: r.provider_user_id,
+    }));
   }
   return signIdTokenRS256(claims, privateKey, kid, ttl);
 }

@@ -197,7 +197,7 @@ token=<ACCESS_OR_REFRESH_TOKEN>
 
 The ID token is a signed JWT (RS256). Verify it using the public key published at `/.well-known/jwks.json`, or use the introspection endpoint for server-side validation without parsing JWTs.
 
-Standard claims:
+Standard claims (always present when `openid` scope is requested):
 
 | Claim   | Value                             |
 |---------|-----------------------------------|
@@ -206,7 +206,20 @@ Standard claims:
 | `aud`   | Your `client_id`                  |
 | `iat`   | Issued-at timestamp               |
 | `exp`   | Expiry timestamp                  |
+| `role`  | User role (`user` or `admin`)     |
 | `nonce` | Echoed from authorization request |
+
+Scope-gated claims (included when the corresponding scope is granted):
+
+| Scope | Claim(s) added to ID token |
+| --- | --- |
+| `profile` | `name`, `preferred_username`, `picture` |
+| `email` | `email`, `email_verified` |
+| `teams:read` | `teams` — array of `{ id, name, role }` objects for the user's team memberships |
+| `apps:read` | `apps` — array of `{ id, name, client_id, is_verified }` objects for the user's apps |
+| `domains:read` | `domains` — array of `{ id, domain, verified }` objects |
+| `gpg:read` | `gpg_keys` — array of `{ id, fingerprint, key_id, name }` objects |
+| `social:read` | `social_accounts` — array of `{ id, provider, provider_user_id }` objects |
 
 ## Error responses
 

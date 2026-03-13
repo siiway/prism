@@ -194,7 +194,7 @@ token=<ACCESS_OR_REFRESH_TOKEN>
 
 ID 令牌是一个签名的 JWT（RS256）。可通过 `/.well-known/jwks.json` 发布的公钥进行验证，或使用内省端点进行服务端验证。
 
-标准声明：
+标准声明（请求 `openid` 权限范围时始终包含）：
 
 | 声明 | 值 |
 | --- | --- |
@@ -203,7 +203,20 @@ ID 令牌是一个签名的 JWT（RS256）。可通过 `/.well-known/jwks.json` 
 | `aud` | 你的 `client_id` |
 | `iat` | 颁发时间戳 |
 | `exp` | 过期时间戳 |
+| `role` | 用户角色（`user` 或 `admin`） |
 | `nonce` | 从授权请求中原样返回 |
+
+范围关联声明（授予对应权限范围时包含）：
+
+| 权限范围 | 添加到 ID 令牌的声明 |
+| --- | --- |
+| `profile` | `name`、`preferred_username`、`picture` |
+| `email` | `email`、`email_verified` |
+| `teams:read` | `teams` — `{ id, name, role }` 对象数组，表示用户的团队成员身份 |
+| `apps:read` | `apps` — `{ id, name, client_id, is_verified }` 对象数组，表示用户拥有的应用 |
+| `domains:read` | `domains` — `{ id, domain, verified }` 对象数组 |
+| `gpg:read` | `gpg_keys` — `{ id, fingerprint, key_id, name }` 对象数组 |
+| `social:read` | `social_accounts` — `{ id, provider, provider_user_id }` 对象数组 |
 
 ## 错误响应
 
