@@ -241,6 +241,7 @@ export function Tokens() {
                         {ALL_SCOPES.map((s) => (
                           <Checkbox
                             key={s}
+                            id={`scope-${s}`}
                             label={s}
                             checked={scopes.includes(s)}
                             onChange={(_, d) => {

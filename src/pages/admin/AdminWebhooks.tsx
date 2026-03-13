@@ -147,6 +147,7 @@ function EventSelector({
             {ALL_EVENTS.filter((e) => e.group === group).map((ev) => (
               <Checkbox
                 key={ev.value}
+                id={ev.value}
                 label={ev.value}
                 checked={selected.includes(ev.value)}
                 onChange={() => toggle(ev.value)}
