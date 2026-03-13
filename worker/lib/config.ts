@@ -175,7 +175,7 @@ export async function getRsaKeyPair(kv: KVNamespace): Promise<RsaKeyPair> {
     return { kid, publicKey, privateKey, publicKeyJwk };
   }
 
-  const keyPair = await crypto.subtle.generateKey(
+  const keyPair = (await crypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
       modulusLength: 2048,
@@ -184,12 +184,12 @@ export async function getRsaKeyPair(kv: KVNamespace): Promise<RsaKeyPair> {
     },
     true,
     ["sign", "verify"],
-  );
+  )) as CryptoKeyPair;
 
-  const [publicKeyJwk, privateKeyJwk] = await Promise.all([
+  const [publicKeyJwk, privateKeyJwk] = (await Promise.all([
     crypto.subtle.exportKey("jwk", keyPair.publicKey),
     crypto.subtle.exportKey("jwk", keyPair.privateKey),
-  ]);
+  ])) as [JsonWebKey, JsonWebKey];
 
   const kid = crypto.randomUUID();
   await kv.put(
