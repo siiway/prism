@@ -350,6 +350,7 @@ export function AppDetail() {
                 {SCOPES.map((s) => (
                   <Checkbox
                     key={s}
+                    id={`app-scope-${s}`}
                     label={s}
                     checked={form.allowed_scopes.includes(s)}
                     onChange={(_, d) => {
@@ -363,6 +364,7 @@ export function AppDetail() {
               </div>
             </Field>
             <Checkbox
+              id={"is-public"}
               label={t("apps.publicClient")}
               checked={form.is_public}
               onChange={(_, d) =>
