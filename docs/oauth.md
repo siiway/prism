@@ -259,26 +259,55 @@ You can use Prism as a generic OIDC identity provider for [Cloudflare Access](ht
    https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback
    ```
 
-3. Copy the **Client ID** and **Client Secret**
+3. Set **Allowed scopes** to include at minimum `openid` and `email`. Add `profile`, `teams:read`, etc. if you need those claims in Access policies.
+4. Set **OIDC fields** to the custom claims you want embedded in the ID token, e.g. `["role", "teams"]`. This controls which scope-gated claims Prism includes.
+5. Copy the **Client ID** and **Client Secret**.
 
 #### Step 2 — Add Prism as an identity provider in Cloudflare
 
-1. In the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/), go to **Settings → Authentication**
-2. Under **Login methods**, click **Add new** and select **OpenID Connect**
-3. Fill in the fields and click **Save**:
+In [Cloudflare Zero Trust](https://one.dash.cloudflare.com/), go to **Integrations → Identity providers → Add new → OpenID Connect** and fill in:
 
-| Field            | Value                                                     |
-|------------------|-----------------------------------------------------------|
-| Name             | Prism (or any label)                                      |
-| App ID           | Your Prism **Client ID**                                  |
-| Client secret    | Your Prism **Client Secret**                              |
-| Auth URL         | `https://your-prism-domain/api/oauth/authorize`           |
-| Token URL        | `https://your-prism-domain/api/oauth/token`               |
-| Certificate URL  | `https://your-prism-domain/.well-known/jwks.json`         |
-| OIDC Claims      | `email`                                                   |
+| Field | Value |
+| --- | --- |
+| Name | Prism (or any label) |
+| App ID | Your Prism **Client ID** |
+| Client secret | Your Prism **Client Secret** |
+| Auth URL | `https://your-prism-domain/api/oauth/authorize` |
+| Token URL | `https://your-prism-domain/api/oauth/token` |
+| Certificate URL | `https://your-prism-domain/.well-known/jwks.json` |
+| PKCE | Enabled (recommended) |
+| Scopes | `openid email` (add `profile teams:read` etc. as needed) |
+| OIDC Claims | One per line — the claim names you want usable in policies |
 
-#### Step 3 — Test and assign to an Access application
+Under **OIDC Claims**, enter the names of the custom claims Prism returns, for example:
 
-Use **Test** in the Cloudflare dashboard to verify the connection, then assign this identity provider to your Access applications as needed.
+```text
+role
+in_team_<team-id>
+role_in_team_<team-id>
+```
 
-> **Scopes requested by Cloudflare Access:** `openid`, `email`. No additional Prism scopes are needed for basic authentication.
+After saving, use **Test** to verify. A successful test shows the claims under `oidc_fields`:
+
+```json
+{
+  "email": "alice@example.com",
+  "oidc_fields": {
+    "role": "admin",
+    "in_team_abc123": true,
+    "role_in_team_abc123": "owner"
+  }
+}
+```
+
+#### Step 3 — Build Access policies using Prism claims
+
+In your Access application policy, use the **OIDC Claim** selector:
+
+| Selector | Claim name | Claim value | Effect |
+| --- | --- | --- | --- |
+| OIDC Claim | `role` | `admin` | Prism admins only |
+| OIDC Claim | `in_team_<team-id>` | `true` | Members of a specific team |
+| OIDC Claim | `role_in_team_<team-id>` | `owner` | Team owners only |
+
+> **Note:** Cloudflare Access reads custom claims from the **ID token** (RS256-signed JWT). The claim names listed under OIDC Claims in the dashboard must exactly match what Prism embeds in the token, which is controlled by the app's `oidc_fields` setting.

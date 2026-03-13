@@ -132,6 +132,11 @@ function DebugControls() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-debug"] }),
   });
 
+  const clearMut = useMutation({
+    mutationFn: api.adminClearRequestLogs,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-request-logs"] }),
+  });
+
   return (
     <div
       style={{
@@ -143,7 +148,23 @@ function DebugControls() {
         background: tokens.colorNeutralBackground3,
       }}
     >
-      <Text weight="semibold">{t("admin.logs.debugTitle")}</Text>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Text weight="semibold">{t("admin.logs.debugTitle")}</Text>
+        <Button
+          appearance="subtle"
+          size="small"
+          disabled={clearMut.isPending}
+          onClick={() => clearMut.mutate()}
+        >
+          {t("admin.logs.clearLogs")}
+        </Button>
+      </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Switch

@@ -743,6 +743,7 @@
       "viewDetails": "Details",
       "requestDetails": "Request Details",
       "noDetails": "No body details recorded. Enable spectate mode for this user to capture full request/response bodies.",
+      "clearLogs": "Clear logs",
       "noResults": "No request logs found. Enable logging in Debug Controls above."
     },
     "captchaTitle": "Captcha",

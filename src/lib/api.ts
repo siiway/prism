@@ -558,6 +558,13 @@ export const api = {
     logging_enabled?: boolean;
     spectate_user_id?: string | null;
   }) => request<{ ok: boolean }>("POST", "/admin/debug", body, getToken()),
+  adminClearRequestLogs: () =>
+    request<{ ok: boolean }>(
+      "DELETE",
+      "/admin/request-logs",
+      undefined,
+      getToken(),
+    ),
   adminTestEmail: () =>
     request<{ message: string }>("POST", "/admin/test-email", {}, getToken()),
   adminTestEmailReceiving: () =>

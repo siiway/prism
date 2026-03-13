@@ -743,6 +743,7 @@
       "viewDetails": "详情",
       "requestDetails": "请求详情",
       "noDetails": "无请求体详情。请为该用户启用旁观模式以捕获完整的请求/响应体。",
+      "clearLogs": "清空日志",
       "noResults": "暂无请求日志。请在上方调试控制中启用日志记录。"
     },
     "captchaTitle": "验证码",

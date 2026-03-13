@@ -844,6 +844,11 @@ app.get("/request-logs/:id/details", async (c) => {
 
 // ─── Debug config (logging toggle + spectate user) ────────────────────────────
 
+app.delete("/request-logs", async (c) => {
+  await c.env.DB.prepare("DELETE FROM request_logs").run();
+  return c.json({ ok: true });
+});
+
 app.get("/debug", async (c) => {
   const [enabled, spectateUserId] = await Promise.all([
     c.env.KV_SESSIONS.get("system:request_logging_enabled"),

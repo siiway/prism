@@ -484,16 +484,7 @@ app.get("/userinfo", async (c) => {
   if (!user) return c.json({ error: "invalid_token" }, 401);
 
   const scopes = JSON.parse(tokenRow.scopes) as string[];
-  const claims: Record<string, unknown> = { sub: user.id };
-  if (scopes.includes("profile")) {
-    claims.name = user.display_name;
-    claims.preferred_username = user.username;
-    claims.picture = user.avatar_url;
-  }
-  if (scopes.includes("email")) {
-    claims.email = user.email;
-    claims.email_verified = user.email_verified === 1;
-  }
+  const claims = await buildClaims(user, tokenRow.client_id, scopes, c.env.DB);
   return c.json(claims);
 });
 
@@ -2183,20 +2174,12 @@ app.get("/me/admin/webhooks/:id/deliveries", async (c) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function buildIdToken(
+async function buildClaims(
   user: UserRow,
   clientId: string,
   scopes: string[],
-  nonce: string | null,
-  privateKey: CryptoKey,
-  kid: string,
-  ttl: number,
-  issuer: string,
   db: D1Database,
-): Promise<string> {
-  const { signIdTokenRS256 } = await import("../lib/jwt");
-
-  // Fetch which extra claims this app has opted into
+): Promise<Record<string, unknown>> {
   const appRow = await db
     .prepare("SELECT oidc_fields FROM oauth_apps WHERE client_id = ?")
     .bind(clientId)
@@ -2204,16 +2187,12 @@ async function buildIdToken(
   const oidcFields = new Set<string>(
     JSON.parse(appRow?.oidc_fields ?? "[]") as string[],
   );
-
   const wants = (field: string) => oidcFields.has(field);
 
   const claims: Record<string, unknown> = {
-    iss: issuer,
-    aud: clientId,
     sub: user.id,
     role: user.role,
   };
-  if (nonce) claims.nonce = nonce;
   if (scopes.includes("profile")) {
     claims.name = user.display_name;
     claims.preferred_username = user.username;
@@ -2299,6 +2278,25 @@ async function buildIdToken(
       provider_user_id: r.provider_user_id,
     }));
   }
+  return claims;
+}
+
+async function buildIdToken(
+  user: UserRow,
+  clientId: string,
+  scopes: string[],
+  nonce: string | null,
+  privateKey: CryptoKey,
+  kid: string,
+  ttl: number,
+  issuer: string,
+  db: D1Database,
+): Promise<string> {
+  const { signIdTokenRS256 } = await import("../lib/jwt");
+  const claims = await buildClaims(user, clientId, scopes, db);
+  claims.iss = issuer;
+  claims.aud = clientId;
+  if (nonce) claims.nonce = nonce;
   return signIdTokenRS256(claims, privateKey, kid, ttl);
 }
 

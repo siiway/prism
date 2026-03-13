@@ -224,6 +224,74 @@ ID 令牌是一个签名的 JWT（RS256）。可通过 `/.well-known/jwks.json` 
 { "oidc_fields": ["teams", "domains"] }
 ```
 
+## 集成
+
+### Cloudflare Access
+
+你可以将 Prism 作为 [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/generic-oidc/) 的通用 OIDC 身份提供商，让用户使用 Prism 账号登录受 Cloudflare 保护的资源。
+
+#### 第一步 — 在 Prism 中创建 OAuth 应用
+
+1. 登录 Prism，前往 **Apps → New Application**
+2. 将重定向 URI 设置为：
+
+   ```text
+   https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback
+   ```
+
+3. **Allowed scopes** 至少包含 `openid` 和 `email`，如需在 Access 策略中使用其他声明，可添加 `profile`、`teams:read` 等。
+4. **OIDC fields** 设置为需要嵌入 ID 令牌的自定义声明字段名，例如 `["role", "teams"]`。
+5. 复制 **Client ID** 和 **Client Secret**。
+
+#### 第二步 — 在 Cloudflare 中添加 Prism 为身份提供商
+
+在 [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) 中，前往 **Integrations → Identity providers → Add new → OpenID Connect**，填写以下内容：
+
+| 字段 | 值 |
+| --- | --- |
+| Name | Prism（或任意名称） |
+| App ID | 你的 Prism **Client ID** |
+| Client secret | 你的 Prism **Client Secret** |
+| Auth URL | `https://your-prism-domain/api/oauth/authorize` |
+| Token URL | `https://your-prism-domain/api/oauth/token` |
+| Certificate URL | `https://your-prism-domain/.well-known/jwks.json` |
+| PKCE | 启用（推荐） |
+| Scopes | `openid email`（按需添加 `profile teams:read` 等） |
+| OIDC Claims | 每行一个 — 需要在策略中使用的声明名 |
+
+在 **OIDC Claims** 中填入 Prism 返回的自定义声明名，例如：
+
+```text
+role
+in_team_<team-id>
+role_in_team_<team-id>
+```
+
+保存后点击 **Test** 验证连接。成功后可在 `oidc_fields` 中看到声明：
+
+```json
+{
+  "email": "alice@example.com",
+  "oidc_fields": {
+    "role": "admin",
+    "in_team_abc123": true,
+    "role_in_team_abc123": "owner"
+  }
+}
+```
+
+#### 第三步 — 使用 Prism 声明构建 Access 策略
+
+在 Access 应用策略中使用 **OIDC Claim** 选择器：
+
+| 选择器 | Claim name | Claim value | 效果 |
+| --- | --- | --- | --- |
+| OIDC Claim | `role` | `admin` | 仅限 Prism 管理员 |
+| OIDC Claim | `in_team_<team-id>` | `true` | 指定团队成员 |
+| OIDC Claim | `role_in_team_<team-id>` | `owner` | 仅限团队所有者 |
+
+> **注意：** Cloudflare Access 从 **ID 令牌**（RS256 签名的 JWT）中读取自定义声明。Dashboard 中填写的声明名必须与 Prism 实际嵌入令牌的字段名完全一致，后者由应用的 `oidc_fields` 配置决定。
+
 ## 错误响应
 
 授权错误会重定向到你的 `redirect_uri`，附带：
