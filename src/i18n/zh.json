@@ -24,7 +24,9 @@
     "discard": "放弃更改",
     "pageOf": "{{page}} / {{total}}",
     "enabled": "已启用",
-    "saveFailed": "保存失败"
+    "saveFailed": "保存失败",
+    "copyId": "复制 ID",
+    "copied": "已复制！"
   },
   "nav": {
     "dashboard": "控制台",
@@ -743,7 +745,11 @@
       "viewDetails": "详情",
       "requestDetails": "请求详情",
       "noDetails": "无请求体详情。请为该用户启用旁观模式以捕获完整的请求/响应体。",
-      "clearLogs": "清空日志",
+      "clearLogs": "清空全部日志",
+      "spectateEndpoint": "旁观端点",
+      "spectateEndpointPlaceholder": "/api/oauth/token",
+      "spectateEndpointHint": "正在记录匹配该子字符串的路径的完整请求/响应体。",
+      "clearSpectateLogs": "清空旁观日志",
       "noResults": "暂无请求日志。请在上方调试控制中启用日志记录。"
     },
     "captchaTitle": "验证码",

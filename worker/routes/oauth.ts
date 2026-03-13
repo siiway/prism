@@ -485,6 +485,12 @@ app.get("/userinfo", async (c) => {
 
   const scopes = JSON.parse(tokenRow.scopes) as string[];
   const claims = await buildClaims(user, tokenRow.client_id, scopes, c.env.DB);
+  console.log("[OIDC] userinfo response", {
+    sub: user.id,
+    client_id: tokenRow.client_id,
+    scopes,
+    claim_keys: Object.keys(claims),
+  });
   return c.json(claims);
 });
 
@@ -2278,6 +2284,13 @@ async function buildClaims(
       provider_user_id: r.provider_user_id,
     }));
   }
+  console.log("[OIDC] buildClaims", {
+    sub: user.id,
+    client_id: clientId,
+    scopes,
+    oidc_fields: [...oidcFields],
+    claim_keys: Object.keys(claims),
+  });
   return claims;
 }
 
@@ -2297,6 +2310,14 @@ async function buildIdToken(
   claims.iss = issuer;
   claims.aud = clientId;
   if (nonce) claims.nonce = nonce;
+  console.log("[OIDC] issuing ID token", {
+    sub: user.id,
+    client_id: clientId,
+    iss: issuer,
+    scopes,
+    claim_keys: Object.keys(claims),
+    has_nonce: !!nonce,
+  });
   return signIdTokenRS256(claims, privateKey, kid, ttl);
 }
 

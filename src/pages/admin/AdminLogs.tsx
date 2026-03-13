@@ -126,6 +126,7 @@ function DebugControls() {
   });
 
   const [spectateInput, setSpectateInput] = useState("");
+  const [spectatePathInput, setSpectatePathInput] = useState("");
 
   const mut = useMutation({
     mutationFn: api.adminSetDebug,
@@ -134,6 +135,11 @@ function DebugControls() {
 
   const clearMut = useMutation({
     mutationFn: api.adminClearRequestLogs,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-request-logs"] }),
+  });
+
+  const clearSpectateMut = useMutation({
+    mutationFn: api.adminClearSpectrateLogs,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-request-logs"] }),
   });
 
@@ -228,6 +234,72 @@ function DebugControls() {
         {data?.spectate_user_id && (
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
             {t("admin.logs.spectateHint")}
+          </Text>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+          {t("admin.logs.spectateEndpoint")}
+        </Text>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {data?.spectate_path ? (
+            <>
+              <Badge appearance="filled" color="warning">
+                {t("admin.logs.spectating")}:{" "}
+                <span style={{ fontFamily: "monospace" }}>
+                  {data.spectate_path}
+                </span>
+              </Badge>
+              <Button
+                size="small"
+                appearance="subtle"
+                onClick={() => mut.mutate({ spectate_path: null })}
+              >
+                {t("admin.logs.stopSpectating")}
+              </Button>
+              <Button
+                size="small"
+                appearance="subtle"
+                disabled={clearSpectateMut.isPending}
+                onClick={() => clearSpectateMut.mutate()}
+              >
+                {t("admin.logs.clearSpectateLogs")}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Input
+                placeholder={t("admin.logs.spectateEndpointPlaceholder")}
+                value={spectatePathInput}
+                onChange={(e) => setSpectatePathInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && spectatePathInput) {
+                    mut.mutate({ spectate_path: spectatePathInput });
+                    setSpectatePathInput("");
+                  }
+                }}
+                style={{ minWidth: 280 }}
+              />
+              <Button
+                appearance="primary"
+                size="small"
+                disabled={!spectatePathInput}
+                onClick={() => {
+                  if (spectatePathInput) {
+                    mut.mutate({ spectate_path: spectatePathInput });
+                    setSpectatePathInput("");
+                  }
+                }}
+              >
+                {t("admin.logs.startSpectating")}
+              </Button>
+            </>
+          )}
+        </div>
+        {data?.spectate_path && (
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("admin.logs.spectateEndpointHint")}
           </Text>
         )}
       </div>

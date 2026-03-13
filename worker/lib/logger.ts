@@ -75,28 +75,35 @@ const FLAG_TTL_MS = 10_000; // re-check KV every 10 seconds
 
 let cachedLoggingEnabled: boolean = false;
 let cachedSpectateUserId: string | null = null;
+let cachedSpectatePathPattern: string | null = null;
 let cacheExpiry: number = 0;
 
-async function getFlags(
-  kv: KVNamespace,
-): Promise<{ loggingEnabled: boolean; spectateUserId: string | null }> {
+async function getFlags(kv: KVNamespace): Promise<{
+  loggingEnabled: boolean;
+  spectateUserId: string | null;
+  spectatePathPattern: string | null;
+}> {
   const now = Date.now();
   if (now < cacheExpiry) {
     return {
       loggingEnabled: cachedLoggingEnabled,
       spectateUserId: cachedSpectateUserId,
+      spectatePathPattern: cachedSpectatePathPattern,
     };
   }
-  const [enabled, spectate] = await Promise.all([
+  const [enabled, spectate, spectatePath] = await Promise.all([
     kv.get("system:request_logging_enabled"),
     kv.get("system:spectate_user_id"),
+    kv.get("system:spectate_path"),
   ]);
   cachedLoggingEnabled = enabled === "true";
   cachedSpectateUserId = spectate ?? null;
+  cachedSpectatePathPattern = spectatePath ?? null;
   cacheExpiry = now + FLAG_TTL_MS;
   return {
     loggingEnabled: cachedLoggingEnabled,
     spectateUserId: cachedSpectateUserId,
+    spectatePathPattern: cachedSpectatePathPattern,
   };
 }
 
@@ -139,10 +146,14 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
     }),
   );
 
-  const { loggingEnabled, spectateUserId } = await getFlags(c.env.KV_SESSIONS);
+  const { loggingEnabled, spectateUserId, spectatePathPattern } =
+    await getFlags(c.env.KV_SESSIONS);
   if (!loggingEnabled) return;
 
-  const isSpectating = spectateUserId !== null && userId === spectateUserId;
+  const isSpectatingUser = spectateUserId !== null && userId === spectateUserId;
+  const isSpectatingPath =
+    spectatePathPattern !== null && path.includes(spectatePathPattern);
+  const isSpectating = isSpectatingUser || isSpectatingPath;
 
   let details: string | null = null;
   if (isSpectating) {

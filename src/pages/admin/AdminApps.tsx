@@ -29,6 +29,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, proxyImageUrl } from "../../lib/api";
+import { CopyIdButton } from "../../components/CopyIdButton";
 
 const useStyles = makeStyles({
   detailGrid: {
@@ -198,6 +199,7 @@ export function AdminApps() {
                 </TableCell>
                 <TableCell>
                   <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <CopyIdButton id={app.id} />
                     <Button
                       size="small"
                       appearance="subtle"

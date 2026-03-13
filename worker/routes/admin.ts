@@ -849,14 +849,23 @@ app.delete("/request-logs", async (c) => {
   return c.json({ ok: true });
 });
 
+app.delete("/request-logs/spectate", async (c) => {
+  await c.env.DB.prepare(
+    "DELETE FROM request_logs WHERE details IS NOT NULL",
+  ).run();
+  return c.json({ ok: true });
+});
+
 app.get("/debug", async (c) => {
-  const [enabled, spectateUserId] = await Promise.all([
+  const [enabled, spectateUserId, spectatePath] = await Promise.all([
     c.env.KV_SESSIONS.get("system:request_logging_enabled"),
     c.env.KV_SESSIONS.get("system:spectate_user_id"),
+    c.env.KV_SESSIONS.get("system:spectate_path"),
   ]);
   return c.json({
     logging_enabled: enabled === "true",
     spectate_user_id: spectateUserId ?? null,
+    spectate_path: spectatePath ?? null,
   });
 });
 
@@ -864,6 +873,7 @@ app.post("/debug", async (c) => {
   const body = await c.req.json<{
     logging_enabled?: boolean;
     spectate_user_id?: string | null;
+    spectate_path?: string | null;
   }>();
 
   await Promise.all([
@@ -880,6 +890,11 @@ app.post("/debug", async (c) => {
             body.spectate_user_id,
           )
         : c.env.KV_SESSIONS.delete("system:spectate_user_id")
+      : Promise.resolve(),
+    "spectate_path" in body
+      ? body.spectate_path
+        ? c.env.KV_SESSIONS.put("system:spectate_path", body.spectate_path)
+        : c.env.KV_SESSIONS.delete("system:spectate_path")
       : Promise.resolve(),
   ]);
 

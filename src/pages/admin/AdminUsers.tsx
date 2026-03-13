@@ -35,6 +35,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { CopyIdButton } from "../../components/CopyIdButton";
 import { useAuthStore } from "../../store/auth";
 import type { UserProfile } from "../../lib/api";
 
@@ -202,6 +203,7 @@ export function AdminUsers() {
                         justifyContent: "flex-end",
                       }}
                     >
+                      <CopyIdButton id={u.id} />
                       <Button
                         size="small"
                         appearance="subtle"

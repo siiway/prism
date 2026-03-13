@@ -548,20 +548,27 @@ export const api = {
       getToken(),
     ),
   adminGetDebug: () =>
-    request<{ logging_enabled: boolean; spectate_user_id: string | null }>(
-      "GET",
-      "/admin/debug",
-      undefined,
-      getToken(),
-    ),
+    request<{
+      logging_enabled: boolean;
+      spectate_user_id: string | null;
+      spectate_path: string | null;
+    }>("GET", "/admin/debug", undefined, getToken()),
   adminSetDebug: (body: {
     logging_enabled?: boolean;
     spectate_user_id?: string | null;
+    spectate_path?: string | null;
   }) => request<{ ok: boolean }>("POST", "/admin/debug", body, getToken()),
   adminClearRequestLogs: () =>
     request<{ ok: boolean }>(
       "DELETE",
       "/admin/request-logs",
+      undefined,
+      getToken(),
+    ),
+  adminClearSpectrateLogs: () =>
+    request<{ ok: boolean }>(
+      "DELETE",
+      "/admin/request-logs/spectate",
       undefined,
       getToken(),
     ),

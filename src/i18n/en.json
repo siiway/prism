@@ -24,7 +24,9 @@
     "discard": "Discard changes",
     "pageOf": "{{page}} / {{total}}",
     "enabled": "Enabled",
-    "saveFailed": "Save failed"
+    "saveFailed": "Save failed",
+    "copyId": "Copy ID",
+    "copied": "Copied!"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -743,7 +745,11 @@
       "viewDetails": "Details",
       "requestDetails": "Request Details",
       "noDetails": "No body details recorded. Enable spectate mode for this user to capture full request/response bodies.",
-      "clearLogs": "Clear logs",
+      "clearLogs": "Clear all logs",
+      "spectateEndpoint": "Spectate endpoint",
+      "spectateEndpointPlaceholder": "/api/oauth/token",
+      "spectateEndpointHint": "Full request & response bodies are being recorded for paths matching this substring.",
+      "clearSpectateLogs": "Clear spectate logs",
       "noResults": "No request logs found. Enable logging in Debug Controls above."
     },
     "captchaTitle": "Captcha",
