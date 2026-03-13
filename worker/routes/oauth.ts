@@ -1,7 +1,7 @@
 // OAuth 2.0 Authorization Server (Authorization Code + PKCE, OpenID Connect)
 
 import { Hono } from "hono";
-import { getConfig, getJwtSecret } from "../lib/config";
+import { getConfig, getJwtSecret, getRsaKeyPair } from "../lib/config";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import {
@@ -398,12 +398,14 @@ app.post("/token", async (c) => {
     };
     if (refreshToken) response.refresh_token = refreshToken;
     if (scopes.includes("openid")) {
+      const rsaKeyPair = await getRsaKeyPair(c.env.KV_SESSIONS);
       response.id_token = await buildIdToken(
         user,
         clientId,
         scopes,
         codeRow.nonce,
-        await getJwtSecret(c.env.KV_SESSIONS),
+        rsaKeyPair.privateKey,
+        rsaKeyPair.kid,
         atTtl,
         c.env.APP_URL,
       );
@@ -2185,17 +2187,16 @@ async function buildIdToken(
   clientId: string,
   scopes: string[],
   nonce: string | null,
-  secret: string,
+  privateKey: CryptoKey,
+  kid: string,
   ttl: number,
   issuer: string,
 ): Promise<string> {
-  const { signJWT } = await import("../lib/jwt");
+  const { signIdTokenRS256 } = await import("../lib/jwt");
   const claims: Record<string, unknown> = {
     iss: issuer,
     aud: clientId,
     sub: user.id,
-    sessionId: "",
-    role: user.role,
   };
   if (nonce) claims.nonce = nonce;
   if (scopes.includes("profile")) {
@@ -2207,7 +2208,7 @@ async function buildIdToken(
     claims.email = user.email;
     claims.email_verified = user.email_verified === 1;
   }
-  return signJWT(claims as Parameters<typeof signJWT>[0], secret, ttl);
+  return signIdTokenRS256(claims, privateKey, kid, ttl);
 }
 
 export default app;

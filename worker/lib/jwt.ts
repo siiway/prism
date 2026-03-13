@@ -1,4 +1,6 @@
-// HS256 JWT implementation using Web Crypto API
+// HS256 / RS256 JWT implementation using Web Crypto API
+
+import { bufToBase64url } from "./crypto";
 
 function encodeBase64url(obj: unknown): string {
   const json = JSON.stringify(obj);
@@ -59,6 +61,25 @@ export async function signJWT(
     .replace(/=/g, "");
 
   return `${message}.${sigB64}`;
+}
+
+// RS256 signing — used exclusively for OIDC ID tokens
+export async function signIdTokenRS256(
+  payload: Record<string, unknown>,
+  privateKey: CryptoKey,
+  kid: string,
+  expiresInSeconds: number,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = encodeBase64url({ alg: "RS256", typ: "JWT", kid });
+  const body = encodeBase64url({ ...payload, iat: now, exp: now + expiresInSeconds });
+  const message = `${header}.${body}`;
+  const sig = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    privateKey,
+    new TextEncoder().encode(message),
+  );
+  return `${message}.${bufToBase64url(sig)}`;
 }
 
 export async function verifyJWT(

@@ -3,15 +3,13 @@ title: OAuth / OIDC Guide
 description: Integrate Prism as your OAuth 2.0 / OpenID Connect provider — authorization code flow, PKCE, scopes, token exchange, and introspection.
 ---
 
-# OAuth 2.0 / OIDC Integration Guide
-
 Prism is a standards-compliant OAuth 2.0 authorization server and OpenID Connect provider. Any application that supports OAuth 2.0 authorization code flow can use Prism as its identity provider.
 
 ## Discovery
 
 The OpenID Connect discovery document is available at:
 
-```
+```text
 https://your-prism-domain/.well-known/openid-configuration
 ```
 
@@ -30,7 +28,7 @@ If your app runs entirely in the browser (no server to keep the secret), enable
 
 ### Step 1 — Redirect the user
 
-```
+```text
 GET https://your-prism-domain/api/oauth/authorize
   ?response_type=code
   &client_id=<CLIENT_ID>
@@ -43,11 +41,11 @@ GET https://your-prism-domain/api/oauth/authorize
 
 **PKCE** — generate a `code_verifier` (43–128 random URL-safe characters), then:
 
-```
+```text
 code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 ```
 
-**Scopes**
+#### Scopes
 
 | Scope                   | Claims / access granted                                |
 |-------------------------|--------------------------------------------------------|
@@ -92,7 +90,7 @@ skipped automatically.
 
 Prism redirects to your `redirect_uri`:
 
-```
+```text
 https://yourapp.com/callback?code=<AUTH_CODE>&state=<STATE>
 ```
 
@@ -114,7 +112,7 @@ grant_type=authorization_code
 
 Public clients omit `client_secret` and must include `code_verifier`.
 
-**Response**
+#### Response
 
 ```json
 {
@@ -134,7 +132,7 @@ GET /api/oauth/userinfo
 Authorization: Bearer <ACCESS_TOKEN>
 ```
 
-**Response**
+#### UserInfo response
 
 ```json
 {
@@ -171,7 +169,7 @@ Authorization: Basic <base64(client_id:client_secret)>
 token=<ACCESS_TOKEN>
 ```
 
-**Response (active token)**
+### Response (active token)
 
 ```json
 {
@@ -197,8 +195,7 @@ token=<ACCESS_OR_REFRESH_TOKEN>
 
 ## ID token
 
-The ID token is a signed JWT (HS256). Validate it by fetching the JWKS at
-`/.well-known/jwks.json` or by calling the introspection endpoint.
+The ID token is a signed JWT (RS256). Verify it using the public key published at `/.well-known/jwks.json`, or use the introspection endpoint for server-side validation without parsing JWTs.
 
 Standard claims:
 
@@ -215,7 +212,7 @@ Standard claims:
 
 Authorization errors redirect to your `redirect_uri` with:
 
-```
+```text
 ?error=access_denied&error_description=User+denied+access
 ```
 
@@ -227,3 +224,42 @@ Token endpoint errors return HTTP 400:
 
 Common error codes: `invalid_request`, `invalid_client`, `invalid_grant`,
 `unauthorized_client`, `unsupported_grant_type`, `access_denied`.
+
+## Integrations
+
+### Cloudflare Access
+
+You can use Prism as a generic OIDC identity provider for [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/generic-oidc/), allowing users to authenticate to Cloudflare-protected resources with their Prism account.
+
+#### Step 1 — Create an OAuth app in Prism
+
+1. Log in to Prism and go to **Apps → New Application**
+2. Set the redirect URI to:
+
+   ```text
+   https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback
+   ```
+
+3. Copy the **Client ID** and **Client Secret**
+
+#### Step 2 — Add Prism as an identity provider in Cloudflare
+
+1. In the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/), go to **Settings → Authentication**
+2. Under **Login methods**, click **Add new** and select **OpenID Connect**
+3. Fill in the fields and click **Save**:
+
+| Field            | Value                                                     |
+|------------------|-----------------------------------------------------------|
+| Name             | Prism (or any label)                                      |
+| App ID           | Your Prism **Client ID**                                  |
+| Client secret    | Your Prism **Client Secret**                              |
+| Auth URL         | `https://your-prism-domain/api/oauth/authorize`           |
+| Token URL        | `https://your-prism-domain/api/oauth/token`               |
+| Certificate URL  | `https://your-prism-domain/.well-known/jwks.json`         |
+| OIDC Claims      | `email`                                                   |
+
+#### Step 3 — Test and assign to an Access application
+
+Use **Test** in the Cloudflare dashboard to verify the connection, then assign this identity provider to your Access applications as needed.
+
+> **Scopes requested by Cloudflare Access:** `openid`, `email`. No additional Prism scopes are needed for basic authentication.

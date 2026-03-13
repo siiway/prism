@@ -1,6 +1,7 @@
 // /.well-known/* endpoints
 
 import { Hono } from "hono";
+import { getRsaKeyPair } from "../lib/config";
 import type { Variables } from "../types";
 
 const SCOPES_SUPPORTED = [
@@ -52,7 +53,7 @@ app.get("/openid-configuration", (c) => {
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     subject_types_supported: ["public"],
-    id_token_signing_alg_values_supported: ["HS256"],
+    id_token_signing_alg_values_supported: ["RS256"],
     token_endpoint_auth_methods_supported: [
       "client_secret_post",
       "client_secret_basic",
@@ -66,6 +67,22 @@ app.get("/openid-configuration", (c) => {
       "picture",
       "email",
       "email_verified",
+    ],
+  });
+});
+
+app.get("/jwks.json", async (c) => {
+  const { kid, publicKeyJwk } = await getRsaKeyPair(c.env.KV_SESSIONS);
+  return c.json({
+    keys: [
+      {
+        kty: publicKeyJwk.kty,
+        use: "sig",
+        alg: "RS256",
+        kid,
+        n: publicKeyJwk.n,
+        e: publicKeyJwk.e,
+      },
     ],
   });
 });

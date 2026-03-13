@@ -132,3 +132,70 @@ export async function getJwtSecret(kv: KVNamespace): Promise<string> {
   await kv.put(JWT_SECRET_KEY, secret);
   return secret;
 }
+
+// ─── RSA keypair for ID token signing (RS256 / JWKS) ─────────────────────────
+
+const RSA_KEYPAIR_KEY = "system:rsa_keypair";
+
+interface StoredKeyPair {
+  kid: string;
+  publicKeyJwk: JsonWebKey;
+  privateKeyJwk: JsonWebKey;
+}
+
+export interface RsaKeyPair {
+  kid: string;
+  publicKey: CryptoKey;
+  privateKey: CryptoKey;
+  publicKeyJwk: JsonWebKey;
+}
+
+export async function getRsaKeyPair(kv: KVNamespace): Promise<RsaKeyPair> {
+  const stored = await kv.get(RSA_KEYPAIR_KEY);
+  if (stored) {
+    const { kid, publicKeyJwk, privateKeyJwk } = JSON.parse(stored) as StoredKeyPair;
+    const [publicKey, privateKey] = await Promise.all([
+      crypto.subtle.importKey(
+        "jwk",
+        publicKeyJwk,
+        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+        true,
+        ["verify"],
+      ),
+      crypto.subtle.importKey(
+        "jwk",
+        privateKeyJwk,
+        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+        true,
+        ["sign"],
+      ),
+    ]);
+    return { kid, publicKey, privateKey, publicKeyJwk };
+  }
+
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: "SHA-256",
+    },
+    true,
+    ["sign", "verify"],
+  );
+
+  const [publicKeyJwk, privateKeyJwk] = await Promise.all([
+    crypto.subtle.exportKey("jwk", keyPair.publicKey),
+    crypto.subtle.exportKey("jwk", keyPair.privateKey),
+  ]);
+
+  const kid = crypto.randomUUID();
+  await kv.put(RSA_KEYPAIR_KEY, JSON.stringify({ kid, publicKeyJwk, privateKeyJwk }));
+
+  return {
+    kid,
+    publicKey: keyPair.publicKey,
+    privateKey: keyPair.privateKey,
+    publicKeyJwk,
+  };
+}
