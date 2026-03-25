@@ -300,6 +300,16 @@ export function AdminSettings() {
               checked={get("allow_alt_email_login") ?? true}
               onChange={(_, d) => set("allow_alt_email_login", d.checked)}
             />
+            <Switch
+              label={t("admin.disableUserCreateTeam")}
+              checked={!!get("disable_user_create_team")}
+              onChange={(_, d) => set("disable_user_create_team", d.checked)}
+            />
+            <Switch
+              label={t("admin.disableUserCreateApp")}
+              checked={!!get("disable_user_create_app")}
+              onChange={(_, d) => set("disable_user_create_app", d.checked)}
+            />
             <Field
               label={t("admin.ipv6RateLimitPrefix")}
               hint={t("admin.ipv6RateLimitPrefixHint")}

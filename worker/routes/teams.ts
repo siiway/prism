@@ -141,6 +141,12 @@ app.get("/", async (c) => {
 // Create team
 app.post("/", async (c) => {
   const user = c.get("user");
+
+  if (user.role !== "admin") {
+    const disabled = await getConfigValue(c.env.DB, "disable_user_create_team");
+    if (disabled) return c.json({ error: "Team creation is disabled" }, 403);
+  }
+
   const body = await c.req.json<{
     name: string;
     description?: string;
@@ -947,6 +953,11 @@ app.get("/:id/apps", async (c) => {
 app.post("/:id/apps", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
+
+  if (user.role !== "admin") {
+    const disabled = await getConfigValue(c.env.DB, "disable_user_create_app");
+    if (disabled) return c.json({ error: "App creation is disabled" }, 403);
+  }
 
   const member = await getMember(c.env.DB, id, user.id);
   if (!member) return c.json({ error: "Not found" }, 404);

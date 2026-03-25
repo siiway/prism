@@ -691,6 +691,8 @@
     "socialVerifyTtl": "Social verification TTL (days)",
     "socialVerifyTtlHint": "Auto-verify email when a connected social provider confirms the same address. Set to 0 to never expire, or a number of days after which re-verification is required.",
     "allowAltEmailLogin": "Allow login with alternate emails (site default)",
+    "disableUserCreateTeam": "Disable users from creating teams (admins can bypass)",
+    "disableUserCreateApp": "Disable users from creating OAuth apps (admins can bypass)",
     "authTitle": "Auth & Token Settings",
     "sessionTtl": "Session TTL (days)",
     "accessTokenTtl": "Access Token TTL (minutes)",

@@ -691,6 +691,8 @@
     "socialVerifyTtl": "社交验证有效期（天）",
     "socialVerifyTtlHint": "当关联的社交账号确认了相同的邮箱地址时，自动验证邮箱。设为 0 表示永不过期，或设置天数后需要重新验证。",
     "allowAltEmailLogin": "允许使用备用邮箱登录（站点默认）",
+    "disableUserCreateTeam": "禁止用户创建团队（管理员可绕过）",
+    "disableUserCreateApp": "禁止用户创建 OAuth 应用（管理员可绕过）",
     "authTitle": "认证与令牌设置",
     "sessionTtl": "会话有效期（天）",
     "accessTokenTtl": "访问令牌有效期（分钟）",

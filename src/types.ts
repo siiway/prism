@@ -46,5 +46,7 @@ export interface SiteConfig {
   allow_alt_email_login: boolean;
   ipv6_rate_limit_prefix: number;
   gpg_challenge_prefix: string;
+  disable_user_create_team: boolean;
+  disable_user_create_app: boolean;
   initialized: boolean;
 }

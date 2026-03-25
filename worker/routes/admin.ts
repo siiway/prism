@@ -101,6 +101,8 @@ app.patch("/config", async (c) => {
     "allow_alt_email_login",
     "ipv6_rate_limit_prefix",
     "gpg_challenge_prefix",
+    "disable_user_create_team",
+    "disable_user_create_app",
   ]);
 
   const updates: Record<string, unknown> = {};

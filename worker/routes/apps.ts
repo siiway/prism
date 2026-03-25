@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
+import { getConfigValue } from "../lib/config";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
 import { deliverUserWebhooks } from "../lib/webhooks";
@@ -99,6 +100,12 @@ app.get("/:id", async (c) => {
 // Create personal app
 app.post("/", async (c) => {
   const user = c.get("user");
+
+  if (user.role !== "admin") {
+    const disabled = await getConfigValue(c.env.DB, "disable_user_create_app");
+    if (disabled) return c.json({ error: "App creation is disabled" }, 403);
+  }
+
   const body = await c.req.json<{
     name: string;
     description?: string;
