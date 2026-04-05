@@ -2,6 +2,7 @@
 
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
+import { proxyImageUrl } from "../lib/proxyImage";
 import type { Variables } from "../types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -31,7 +32,8 @@ app.get("/site", async (c) => {
   return c.json({
     site_name: config.site_name,
     site_description: config.site_description,
-    site_icon_url: config.site_icon_url,
+    site_icon_url: proxyImageUrl(config.site_icon_url),
+    unproxied_site_icon_url: config.site_icon_url,
     allow_registration: config.allow_registration,
     invite_only: config.invite_only,
     captcha_provider: config.captcha_provider,

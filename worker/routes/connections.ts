@@ -6,6 +6,7 @@ import { getConfig, getJwtSecret } from "../lib/config";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { signJWT } from "../lib/jwt";
 import { deliverUserEmailNotifications } from "../lib/notifications";
+import { proxyImageUrl } from "../lib/proxyImage";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -572,14 +573,27 @@ app.get("/pending/:key", async (c) => {
     provider: state.provider, // slug (used for display / URL)
     provider_name: source?.name ?? state.provider,
     profile_name: extractDisplayName(baseProvider, state.profileData),
-    profile_avatar: extractProviderAvatar(baseProvider, state.profileData),
+    profile_avatar: proxyImageUrl(
+      extractProviderAvatar(baseProvider, state.profileData),
+    ),
     suggested_username: extractUsername(
       baseProvider,
       state.profileData,
       state.providerEmail,
     ),
     suggested_display_name: extractDisplayName(baseProvider, state.profileData),
-    users: state.users,
+    users: state.users?.map(
+      (u: {
+        id: string;
+        username: string;
+        display_name: string;
+        avatar_url: string | null;
+      }) => ({
+        ...u,
+        avatar_url: proxyImageUrl(u.avatar_url),
+        unproxied_avatar_url: u.avatar_url,
+      }),
+    ),
   });
 });
 
@@ -1001,7 +1015,8 @@ async function issueJWT(
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: user.avatar_url,
+      avatar_url: proxyImageUrl(user.avatar_url),
+      unproxied_avatar_url: user.avatar_url,
       email_verified: user.email_verified === 1,
       sessionId,
     },
@@ -1024,7 +1039,8 @@ function userToProfile(user: UserRow) {
     email: user.email,
     username: user.username,
     display_name: user.display_name,
-    avatar_url: user.avatar_url,
+    avatar_url: proxyImageUrl(user.avatar_url),
+    unproxied_avatar_url: user.avatar_url,
     role: user.role,
     email_verified: user.email_verified === 1,
   };

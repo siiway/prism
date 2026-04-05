@@ -30,6 +30,7 @@ import { verifyClearsign } from "../lib/gpg";
 import { verifyCaptchaToken } from "../middleware/captcha";
 import { rateLimitIp } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/auth";
+import { proxyImageUrl } from "../lib/proxyImage";
 import type {
   AuthUser,
   PasskeyRow,
@@ -95,7 +96,8 @@ async function issueSession(
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: user.avatar_url,
+      avatar_url: proxyImageUrl(user.avatar_url),
+      unproxied_avatar_url: user.avatar_url,
       email_verified: user.email_verified === 1,
       sessionId,
     },
@@ -1349,13 +1351,16 @@ app.post("/gpg-login", async (c) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function safeUser(user: UserRow): AuthUser {
+function safeUser(
+  user: UserRow,
+): AuthUser & { unproxied_avatar_url: string | null } {
   return {
     id: user.id,
     email: user.email,
     username: user.username,
     display_name: user.display_name,
-    avatar_url: user.avatar_url,
+    avatar_url: proxyImageUrl(user.avatar_url),
+    unproxied_avatar_url: user.avatar_url,
     role: user.role,
     email_verified: user.email_verified === 1,
   };

@@ -25,7 +25,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, proxyImageUrl } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 import { ImageUrlInput } from "../components/ImageUrlInput";
 
@@ -185,9 +185,7 @@ export function Profile() {
           <Avatar
             name={me?.user.display_name}
             image={
-              me?.user.avatar_url
-                ? { src: proxyImageUrl(me.user.avatar_url) }
-                : undefined
+              me?.user.avatar_url ? { src: me.user.avatar_url } : undefined
             }
             size={72}
           />

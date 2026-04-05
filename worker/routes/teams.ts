@@ -6,6 +6,7 @@ import { requireAuth, optionalAuth } from "../middleware/auth";
 import { computeIsVerified } from "../lib/domainVerify";
 import { getConfigValue } from "../lib/config";
 import { validateImageUrl } from "../lib/imageValidation";
+import { proxyImageUrl } from "../lib/proxyImage";
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail } from "../lib/email";
@@ -73,7 +74,11 @@ app.get("/join/:token", optionalAuth, async (c) => {
   if (!team) return c.json({ error: "Team not found" }, 404);
 
   return c.json({
-    team,
+    team: {
+      ...team,
+      avatar_url: proxyImageUrl(team.avatar_url),
+      unproxied_avatar_url: team.avatar_url,
+    },
     invite: { role: invite.role, expires_at: invite.expires_at },
     user: c.get("user") ?? null,
   });
@@ -135,7 +140,13 @@ app.get("/", async (c) => {
     .bind(user.id)
     .all<TeamRow & { role: string }>();
 
-  return c.json({ teams: rows.results });
+  return c.json({
+    teams: rows.results.map((t) => ({
+      ...t,
+      avatar_url: proxyImageUrl(t.avatar_url),
+      unproxied_avatar_url: t.avatar_url,
+    })),
+  });
 });
 
 // Create team
@@ -217,8 +228,17 @@ app.get("/:id", async (c) => {
   if (!team) return c.json({ error: "Not found" }, 404);
 
   return c.json({
-    team: { ...team, my_role: member.role },
-    members: members.results,
+    team: {
+      ...team,
+      avatar_url: proxyImageUrl(team.avatar_url),
+      unproxied_avatar_url: team.avatar_url,
+      my_role: member.role,
+    },
+    members: members.results.map((m) => ({
+      ...m,
+      avatar_url: proxyImageUrl(m.avatar_url),
+      unproxied_avatar_url: m.avatar_url,
+    })),
   });
 });
 
@@ -1097,7 +1117,8 @@ function safeApp(row: OAuthAppRow, isVerified: boolean) {
     id: row.id,
     name: row.name,
     description: row.description,
-    icon_url: row.icon_url,
+    icon_url: proxyImageUrl(row.icon_url),
+    unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
     redirect_uris: JSON.parse(row.redirect_uris) as string[],

@@ -20,7 +20,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, proxyImageUrl } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 
 const useStyles = makeStyles({
@@ -266,7 +266,7 @@ export function Authorize() {
         <div className={styles.appRow}>
           {data.app.icon_url ? (
             <Avatar
-              image={{ src: proxyImageUrl(data.app.icon_url) }}
+              image={{ src: data.app.icon_url }}
               name={data.app.name}
               size={48}
             />
@@ -327,11 +327,7 @@ export function Authorize() {
           </Text>
           <Avatar
             name={user.display_name}
-            image={
-              user.avatar_url
-                ? { src: proxyImageUrl(user.avatar_url) }
-                : undefined
-            }
+            image={user.avatar_url ? { src: user.avatar_url } : undefined}
             size={20}
           />
           <Text size={200} weight="semibold">

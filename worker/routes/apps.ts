@@ -6,6 +6,7 @@ import { requireAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
+import { proxyImageUrl } from "../lib/proxyImage";
 import { deliverUserWebhooks } from "../lib/webhooks";
 import { deliverUserEmailNotifications } from "../lib/notifications";
 import type { OAuthAppRow, TeamMemberRow, Variables } from "../types";
@@ -359,7 +360,8 @@ function safeApp(row: OAuthAppRow, isVerified: boolean) {
     id: row.id,
     name: row.name,
     description: row.description,
-    icon_url: row.icon_url,
+    icon_url: proxyImageUrl(row.icon_url),
+    unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
     redirect_uris: JSON.parse(row.redirect_uris) as string[],

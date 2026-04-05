@@ -10,6 +10,7 @@ import {
   computeVerified,
 } from "../lib/domainVerify";
 import { hmacSign } from "../lib/webhooks";
+import { proxyImageUrl } from "../lib/proxyImage";
 import type {
   OAuthAppRow,
   OAuthCodeRow,
@@ -94,7 +95,8 @@ app.get("/consents", requireAuth, async (c) => {
       app: {
         name: r.name,
         description: r.description,
-        icon_url: r.icon_url,
+        icon_url: proxyImageUrl(r.icon_url),
+        unproxied_icon_url: r.icon_url,
         website_url: r.website_url,
         is_verified: computeVerified(
           domainsMap.get(r.owner_id) ?? new Set(),
@@ -168,7 +170,8 @@ app.get("/app-info", optionalAuth, async (c) => {
       id: oauthApp.id,
       name: oauthApp.name,
       description: oauthApp.description,
-      icon_url: oauthApp.icon_url,
+      icon_url: proxyImageUrl(oauthApp.icon_url),
+      unproxied_icon_url: oauthApp.icon_url,
       website_url: oauthApp.website_url,
       is_verified: await computeIsVerified(
         c.env.DB,
@@ -606,7 +609,13 @@ app.get("/me/apps", async (c) => {
       created_at: number;
     }>();
 
-  return c.json({ apps: results });
+  return c.json({
+    apps: results.map((a) => ({
+      ...a,
+      icon_url: proxyImageUrl(a.icon_url),
+      unproxied_icon_url: a.icon_url,
+    })),
+  });
 });
 
 // GET /api/oauth/me/teams — list the token owner's team memberships (requires teams:read)
@@ -633,7 +642,13 @@ app.get("/me/teams", async (c) => {
       joined_at: number;
     }>();
 
-  return c.json({ teams: results });
+  return c.json({
+    teams: results.map((t) => ({
+      ...t,
+      avatar_url: proxyImageUrl(t.avatar_url),
+      unproxied_avatar_url: t.avatar_url,
+    })),
+  });
 });
 
 // GET /api/oauth/me/domains — list the token owner's verified domains (requires domains:read)
@@ -1096,7 +1111,8 @@ app.get("/me/profile", async (c) => {
     id: user.id,
     username: user.username,
     display_name: user.display_name,
-    avatar_url: user.avatar_url,
+    avatar_url: proxyImageUrl(user.avatar_url),
+    unproxied_avatar_url: user.avatar_url,
     email: resolved.scopes.includes("email") ? user.email : undefined,
     email_verified: resolved.scopes.includes("email")
       ? user.email_verified === 1
@@ -1144,9 +1160,23 @@ app.patch("/me/profile", async (c) => {
     "SELECT id, username, display_name, avatar_url, role FROM users WHERE id = ?",
   )
     .bind(resolved.userId)
-    .first();
+    .first<{
+      id: string;
+      username: string;
+      display_name: string;
+      avatar_url: string | null;
+      role: string;
+    }>();
 
-  return c.json({ user });
+  return c.json({
+    user: user
+      ? {
+          ...user,
+          avatar_url: proxyImageUrl(user.avatar_url),
+          unproxied_avatar_url: user.avatar_url,
+        }
+      : null,
+  });
 });
 
 // POST /api/oauth/me/apps — create an OAuth app (requires apps:write)
@@ -1531,7 +1561,7 @@ app.get("/me/admin/users", async (c) => {
     .first<{ total: number }>();
 
   return c.json({
-    users: results,
+    users: results.map(proxyUserAvatar),
     total: countRow?.total ?? 0,
     page: pageNum,
     limit: pageSize,
@@ -1550,7 +1580,7 @@ app.get("/me/admin/users/:id", async (c) => {
     .first();
 
   if (!user) return c.json({ error: "User not found" }, 404);
-  return c.json({ user });
+  return c.json({ user: proxyUserAvatar(user) });
 });
 
 // PATCH /api/oauth/me/admin/users/:id — update a user (requires admin:users:write)
@@ -1602,7 +1632,7 @@ app.patch("/me/admin/users/:id", async (c) => {
     .bind(targetId)
     .first();
 
-  return c.json({ user });
+  return c.json({ user: user ? proxyUserAvatar(user) : null });
 });
 
 // DELETE /api/oauth/me/admin/users/:id — delete a user (requires admin:users:delete)
@@ -2202,7 +2232,7 @@ async function buildClaims(
   if (scopes.includes("profile")) {
     claims.name = user.display_name;
     claims.preferred_username = user.username;
-    claims.picture = user.avatar_url;
+    claims.picture = proxyImageUrl(user.avatar_url);
   }
   if (scopes.includes("email")) {
     claims.email = user.email;
@@ -2323,6 +2353,16 @@ async function buildIdToken(
     has_nonce: !!nonce,
   });
   return signIdTokenRS256(claims, privateKey, kid, ttl);
+}
+
+function proxyUserAvatar<T extends Record<string, unknown>>(
+  row: T,
+): T & { unproxied_avatar_url: unknown } {
+  return {
+    ...row,
+    avatar_url: proxyImageUrl(row.avatar_url as string | null),
+    unproxied_avatar_url: row.avatar_url,
+  };
 }
 
 export default app;

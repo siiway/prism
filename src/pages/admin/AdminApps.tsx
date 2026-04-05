@@ -28,7 +28,7 @@ import { EditRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, proxyImageUrl } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
 import { CopyIdButton } from "../../components/CopyIdButton";
 
 const useStyles = makeStyles({
@@ -132,7 +132,7 @@ export function AdminApps() {
                   >
                     {app.icon_url && (
                       <img
-                        src={proxyImageUrl(app.icon_url)}
+                        src={app.icon_url}
                         alt={app.name}
                         width={24}
                         height={24}

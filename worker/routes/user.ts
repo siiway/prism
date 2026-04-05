@@ -8,6 +8,7 @@ import {
   randomBase64url,
 } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
+import { proxyImageUrl } from "../lib/proxyImage";
 import { validateImageUrl } from "../lib/imageValidation";
 import { hmacSign, deliverUserWebhooks } from "../lib/webhooks";
 import {
@@ -235,7 +236,8 @@ function safeUser(row: UserRow) {
     email: row.email,
     username: row.username,
     display_name: row.display_name,
-    avatar_url: row.avatar_url,
+    avatar_url: proxyImageUrl(row.avatar_url),
+    unproxied_avatar_url: row.avatar_url,
     role: row.role,
     email_verified: row.email_verified === 1,
     alt_email_login: row.alt_email_login,

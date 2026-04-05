@@ -13,7 +13,7 @@ import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, proxyImageUrl } from "../lib/api";
+import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
@@ -150,11 +150,7 @@ export function SocialSelect() {
             >
               <Avatar
                 name={u.display_name}
-                image={
-                  u.avatar_url
-                    ? { src: proxyImageUrl(u.avatar_url) }
-                    : undefined
-                }
+                image={u.avatar_url ? { src: u.avatar_url } : undefined}
                 size={40}
               />
               <div>

@@ -5,6 +5,7 @@ import { getConfig, setConfigValues } from "../lib/config";
 import { sendEmail } from "../lib/email";
 import { requireAdmin } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
+import { proxyImageUrl } from "../lib/proxyImage";
 import {
   buildVerifiedDomainsMap,
   buildVerifiedTeamDomainsMap,
@@ -196,7 +197,8 @@ app.get("/users/:id", async (c) => {
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: user.avatar_url,
+      avatar_url: proxyImageUrl(user.avatar_url),
+      unproxied_avatar_url: user.avatar_url,
       role: user.role,
       email_verified: user.email_verified === 1,
       is_active: user.is_active === 1,
@@ -339,6 +341,8 @@ app.get("/apps", async (c) => {
       const merged = new Set([...ownerDomains, ...teamDomains]);
       return {
         ...a,
+        icon_url: proxyImageUrl(a.icon_url),
+        unproxied_icon_url: a.icon_url,
         is_verified: computeVerified(merged, a.website_url, a.redirect_uris),
       };
     }),
@@ -619,7 +623,16 @@ app.get("/teams", async (c) => {
     c.env.DB.prepare("SELECT COUNT(*) as n FROM teams").first<{ n: number }>(),
   ]);
 
-  return c.json({ teams: teams.results, total: count?.n ?? 0, page, limit });
+  return c.json({
+    teams: teams.results.map((t) => ({
+      ...t,
+      avatar_url: proxyImageUrl(t.avatar_url),
+      unproxied_avatar_url: t.avatar_url,
+    })),
+    total: count?.n ?? 0,
+    page,
+    limit,
+  });
 });
 
 app.delete("/teams/:id", async (c) => {

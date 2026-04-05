@@ -28,7 +28,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, proxyImageUrl } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
 
 const useStyles = makeStyles({
   header: {
@@ -203,7 +203,7 @@ export function TeamList() {
               image={
                 team.avatar_url ? (
                   <Avatar
-                    image={{ src: proxyImageUrl(team.avatar_url) }}
+                    image={{ src: team.avatar_url }}
                     name={team.name}
                     size={32}
                   />
