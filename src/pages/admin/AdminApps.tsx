@@ -148,12 +148,12 @@ export function AdminApps() {
                         }}
                       >
                         <Text weight="semibold">{app.name}</Text>
-                        {app.is_official && (
+                        {!!app.is_official && (
                           <Badge color="brand" appearance="tint" size="small">
                             {t("admin.officialHeader")}
                           </Badge>
                         )}
-                        {app.is_first_party && (
+                        {!!app.is_first_party && (
                           <Badge
                             color="informative"
                             appearance="tint"
