@@ -414,6 +414,8 @@
     "memberHeader": "成员",
     "roleHeader": "角色",
     "joinedHeader": "加入时间",
+    "promoteToCoOwner": "提升为共同所有者",
+    "demoteToAdmin": "降级为管理员",
     "promoteToAdmin": "提升为管理员",
     "demoteToMember": "降级为成员",
     "transferOwnership": "转让所有权",

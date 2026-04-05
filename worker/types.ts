@@ -90,7 +90,7 @@ export interface TeamRow {
 export interface TeamMemberRow {
   team_id: string;
   user_id: string;
-  role: "owner" | "admin" | "member";
+  role: "owner" | "co-owner" | "admin" | "member";
   joined_at: number;
 }
 

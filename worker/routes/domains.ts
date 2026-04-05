@@ -200,7 +200,12 @@ app.post("/:id/transfer", async (c) => {
   )
     .bind(body.team_id, user.id)
     .first<{ role: string }>();
-  if (!member || (member.role !== "owner" && member.role !== "admin"))
+  if (
+    !member ||
+    (member.role !== "owner" &&
+      member.role !== "co-owner" &&
+      member.role !== "admin")
+  )
     return c.json({ error: "Forbidden: must be team admin or owner" }, 403);
 
   // Team must not already have this domain
@@ -239,7 +244,12 @@ app.post("/:id/share", async (c) => {
   )
     .bind(body.team_id, user.id)
     .first<{ role: string }>();
-  if (!member || (member.role !== "owner" && member.role !== "admin"))
+  if (
+    !member ||
+    (member.role !== "owner" &&
+      member.role !== "co-owner" &&
+      member.role !== "admin")
+  )
     return c.json({ error: "Forbidden: must be team admin or owner" }, 403);
 
   // Target team must not already have this domain

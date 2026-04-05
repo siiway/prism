@@ -90,6 +90,7 @@ export function InviteDialog({ teamId, showMsg }: InviteDialogProps) {
                 >
                   <option value="member">Member</option>
                   <option value="admin">Admin</option>
+                  <option value="co-owner">Co-owner</option>
                 </Select>
               </Field>
               <Field

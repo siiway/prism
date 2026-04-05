@@ -18,8 +18,12 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 
-const ROLE_COLORS: Record<string, "brand" | "success" | "subtle"> = {
+const ROLE_COLORS: Record<
+  string,
+  "brand" | "success" | "subtle" | "informative"
+> = {
   owner: "brand",
+  "co-owner": "informative",
   admin: "success",
   member: "subtle",
 };

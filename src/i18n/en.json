@@ -414,6 +414,8 @@
     "memberHeader": "Member",
     "roleHeader": "Role",
     "joinedHeader": "Joined",
+    "promoteToCoOwner": "Promote to co-owner",
+    "demoteToAdmin": "Demote to admin",
     "promoteToAdmin": "Promote to admin",
     "demoteToMember": "Demote to member",
     "transferOwnership": "Transfer ownership",

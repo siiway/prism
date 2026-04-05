@@ -1185,7 +1185,7 @@ export interface TeamMember {
   username: string;
   display_name: string;
   avatar_url: string | null;
-  role: "owner" | "admin" | "member";
+  role: "owner" | "co-owner" | "admin" | "member";
   joined_at: number;
 }
 

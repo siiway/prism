@@ -854,7 +854,7 @@ app.patch("/me/teams/:id", async (c) => {
     .bind(teamId, resolved.userId)
     .first<{ role: string }>();
 
-  if (!member || !["owner", "admin"].includes(member.role))
+  if (!member || !["owner", "co-owner", "admin"].includes(member.role))
     return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{

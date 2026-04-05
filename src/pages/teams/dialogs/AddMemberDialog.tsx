@@ -86,6 +86,7 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
                 >
                   <option value="member">Member</option>
                   <option value="admin">Admin</option>
+                  <option value="co-owner">Co-owner</option>
                 </Select>
               </Field>
             </div>

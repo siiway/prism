@@ -18,7 +18,12 @@ app.use("*", requireAuth);
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-const ROLE_RANK: Record<string, number> = { owner: 3, admin: 2, member: 1 };
+const ROLE_RANK: Record<string, number> = {
+  owner: 4,
+  "co-owner": 3,
+  admin: 2,
+  member: 1,
+};
 
 async function getTeamMember(
   db: D1Database,

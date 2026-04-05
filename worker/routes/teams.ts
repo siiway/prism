@@ -17,11 +17,16 @@ const app = new Hono<AppEnv>();
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
 
-const ROLE_RANK: Record<string, number> = { owner: 3, admin: 2, member: 1 };
+const ROLE_RANK: Record<string, number> = {
+  owner: 4,
+  "co-owner": 3,
+  admin: 2,
+  member: 1,
+};
 
 function hasRole(
   memberRole: string,
-  required: "member" | "admin" | "owner",
+  required: "member" | "admin" | "co-owner" | "owner",
 ): boolean {
   return (ROLE_RANK[memberRole] ?? 0) >= ROLE_RANK[required];
 }
@@ -322,7 +327,9 @@ app.post("/:id/members", async (c) => {
     return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{ username: string; role?: string }>();
-  const role = body.role === "admin" ? "admin" : "member";
+  let role: string = "member";
+  if (body.role === "admin") role = "admin";
+  if (body.role === "co-owner" && member.role === "owner") role = "co-owner";
 
   const target = await c.env.DB.prepare(
     "SELECT id FROM users WHERE username = ?",
@@ -350,19 +357,25 @@ app.patch("/:id/members/:userId", async (c) => {
 
   const member = await getMember(c.env.DB, id, user.id);
   if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "owner"))
-    return c.json({ error: "Only owners can change roles" }, 403);
+  if (!hasRole(member.role, "co-owner"))
+    return c.json({ error: "Only owners and co-owners can change roles" }, 403);
   if (targetUserId === user.id)
     return c.json({ error: "Cannot change your own role" }, 400);
 
   const body = await c.req.json<{ role: string }>();
-  if (!["admin", "member"].includes(body.role))
-    return c.json({ error: "Role must be admin or member" }, 400);
+  if (!["co-owner", "admin", "member"].includes(body.role))
+    return c.json({ error: "Role must be co-owner, admin, or member" }, 400);
 
   const target = await getMember(c.env.DB, id, targetUserId);
   if (!target) return c.json({ error: "Member not found" }, 404);
   if (target.role === "owner")
     return c.json({ error: "Cannot change owner role" }, 403);
+  // Co-owners cannot change other co-owners' roles
+  if (target.role === "co-owner" && member.role !== "owner")
+    return c.json({ error: "Only the owner can change co-owner roles" }, 403);
+  // Only owners can assign co-owner role
+  if (body.role === "co-owner" && member.role !== "owner")
+    return c.json({ error: "Only the owner can assign co-owner role" }, 403);
 
   await c.env.DB.prepare(
     "UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ?",
@@ -392,6 +405,9 @@ app.delete("/:id/members/:userId", async (c) => {
 
   if (target.role === "owner" && !isSelf)
     return c.json({ error: "Cannot remove the team owner" }, 403);
+  // Only owner can remove co-owners
+  if (target.role === "co-owner" && !isSelf && member.role !== "owner")
+    return c.json({ error: "Only the owner can remove co-owners" }, 403);
 
   if (target.role === "owner" && isSelf) {
     // Leaving as owner: only allowed if no other members
@@ -447,7 +463,7 @@ app.post("/:id/transfer-ownership", async (c) => {
       "UPDATE team_members SET role = 'owner' WHERE team_id = ? AND user_id = ?",
     ).bind(id, body.user_id),
     c.env.DB.prepare(
-      "UPDATE team_members SET role = 'admin' WHERE team_id = ? AND user_id = ?",
+      "UPDATE team_members SET role = 'co-owner' WHERE team_id = ? AND user_id = ?",
     ).bind(id, user.id),
     c.env.DB.prepare("UPDATE teams SET updated_at = ? WHERE id = ?").bind(
       now,
@@ -500,7 +516,10 @@ app.post("/:id/invites", async (c) => {
     email?: string;
   }>();
 
-  const role = body.role === "admin" ? "admin" : "member";
+  let role: string = "member";
+  if (body.role === "admin") role = "admin";
+  if (body.role === "co-owner" && hasRole(member.role, "owner"))
+    role = "co-owner";
   const maxUses = body.max_uses ?? 0;
   const ttlHours = Math.min(body.expires_in_hours ?? 72, 720); // max 30 days
   const now = Math.floor(Date.now() / 1000);

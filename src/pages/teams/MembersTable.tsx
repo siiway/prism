@@ -32,8 +32,12 @@ import {
 import { useTranslation } from "react-i18next";
 import type { TeamInvite, TeamMember } from "../../lib/api";
 
-const ROLE_COLORS: Record<string, "brand" | "success" | "subtle"> = {
+const ROLE_COLORS: Record<
+  string,
+  "brand" | "success" | "subtle" | "informative"
+> = {
   owner: "brand",
+  "co-owner": "informative",
   admin: "success",
   member: "subtle",
 };
@@ -60,6 +64,8 @@ interface MembersTableProps {
   invitesLoading: boolean;
   canManage: boolean;
   isOwner: boolean;
+  isCoOwnerOrAbove: boolean;
+  myRole: string;
   meId: string | undefined;
   copiedToken: string | null;
   onChangeRole: (userId: string, role: string) => void;
@@ -75,6 +81,8 @@ export function MembersTable({
   invitesLoading,
   canManage,
   isOwner,
+  isCoOwnerOrAbove,
+  myRole,
   meId,
   copiedToken,
   onChangeRole,
@@ -134,51 +142,75 @@ export function MembersTable({
               </TableCell>
               {canManage && (
                 <TableCell>
-                  {m.user_id !== meId && m.role !== "owner" && (
-                    <Menu>
-                      <MenuTrigger disableButtonEnhancement>
-                        <Button
-                          appearance="subtle"
-                          icon={<MoreHorizontalRegular />}
-                          size="small"
-                        />
-                      </MenuTrigger>
-                      <MenuPopover>
-                        <MenuList>
-                          {isOwner && m.role === "member" && (
+                  {m.user_id !== meId &&
+                    m.role !== "owner" &&
+                    !(m.role === "co-owner" && myRole !== "owner") && (
+                      <Menu>
+                        <MenuTrigger disableButtonEnhancement>
+                          <Button
+                            appearance="subtle"
+                            icon={<MoreHorizontalRegular />}
+                            size="small"
+                          />
+                        </MenuTrigger>
+                        <MenuPopover>
+                          <MenuList>
+                            {isOwner && m.role !== "co-owner" && (
+                              <MenuItem
+                                onClick={() =>
+                                  onChangeRole(m.user_id, "co-owner")
+                                }
+                              >
+                                {t("teams.promoteToCoOwner")}
+                              </MenuItem>
+                            )}
+                            {isOwner && m.role === "co-owner" && (
+                              <MenuItem
+                                onClick={() => onChangeRole(m.user_id, "admin")}
+                              >
+                                {t("teams.demoteToAdmin")}
+                              </MenuItem>
+                            )}
+                            {isCoOwnerOrAbove &&
+                              m.role !== "co-owner" &&
+                              m.role !== "admin" && (
+                                <MenuItem
+                                  onClick={() =>
+                                    onChangeRole(m.user_id, "admin")
+                                  }
+                                >
+                                  {t("teams.promoteToAdmin")}
+                                </MenuItem>
+                              )}
+                            {isCoOwnerOrAbove && m.role === "admin" && (
+                              <MenuItem
+                                onClick={() =>
+                                  onChangeRole(m.user_id, "member")
+                                }
+                              >
+                                {t("teams.demoteToMember")}
+                              </MenuItem>
+                            )}
+                            {isOwner && (
+                              <MenuItem
+                                onClick={() => onTransferOwnership(m.user_id)}
+                              >
+                                {t("teams.transferOwnership")}
+                              </MenuItem>
+                            )}
                             <MenuItem
-                              onClick={() => onChangeRole(m.user_id, "admin")}
+                              icon={<DeleteRegular />}
+                              onClick={() => onRemoveMember(m.user_id)}
+                              style={{
+                                color: tokens.colorPaletteRedForeground1,
+                              }}
                             >
-                              {t("teams.promoteToAdmin")}
+                              {t("common.remove")}
                             </MenuItem>
-                          )}
-                          {isOwner && m.role === "admin" && (
-                            <MenuItem
-                              onClick={() => onChangeRole(m.user_id, "member")}
-                            >
-                              {t("teams.demoteToMember")}
-                            </MenuItem>
-                          )}
-                          {isOwner && (
-                            <MenuItem
-                              onClick={() => onTransferOwnership(m.user_id)}
-                            >
-                              {t("teams.transferOwnership")}
-                            </MenuItem>
-                          )}
-                          <MenuItem
-                            icon={<DeleteRegular />}
-                            onClick={() => onRemoveMember(m.user_id)}
-                            style={{
-                              color: tokens.colorPaletteRedForeground1,
-                            }}
-                          >
-                            {t("common.remove")}
-                          </MenuItem>
-                        </MenuList>
-                      </MenuPopover>
-                    </Menu>
-                  )}
+                          </MenuList>
+                        </MenuPopover>
+                      </Menu>
+                    )}
                   {m.user_id === meId && m.role !== "owner" && (
                     <Button
                       appearance="subtle"

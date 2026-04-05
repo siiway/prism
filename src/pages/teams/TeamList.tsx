@@ -54,8 +54,12 @@ const useStyles = makeStyles({
   },
 });
 
-const ROLE_COLORS: Record<string, "brand" | "success" | "subtle"> = {
+const ROLE_COLORS: Record<
+  string,
+  "brand" | "success" | "subtle" | "informative"
+> = {
   owner: "brand",
+  "co-owner": "informative",
   admin: "success",
   member: "subtle",
 };

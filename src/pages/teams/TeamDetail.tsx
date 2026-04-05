@@ -60,8 +60,12 @@ const useStyles = makeStyles({
   },
 });
 
-const ROLE_COLORS: Record<string, "brand" | "success" | "subtle"> = {
+const ROLE_COLORS: Record<
+  string,
+  "brand" | "success" | "subtle" | "informative"
+> = {
   owner: "brand",
+  "co-owner": "informative",
   admin: "success",
   member: "subtle",
 };
@@ -100,7 +104,9 @@ export function TeamDetail() {
     enabled:
       !!id &&
       tab === "members" &&
-      (data?.team?.my_role === "owner" || data?.team?.my_role === "admin"),
+      (data?.team?.my_role === "owner" ||
+        data?.team?.my_role === "co-owner" ||
+        data?.team?.my_role === "admin"),
   });
 
   const { data: myAppsData } = useQuery({
@@ -120,14 +126,18 @@ export function TeamDetail() {
     queryFn: api.listDomains,
     enabled:
       tab === "domains" &&
-      (data?.team?.my_role === "owner" || data?.team?.my_role === "admin"),
+      (data?.team?.my_role === "owner" ||
+        data?.team?.my_role === "co-owner" ||
+        data?.team?.my_role === "admin"),
   });
 
   const team = data?.team;
   const members = data?.members ?? [];
   const myRole = team?.my_role ?? "member";
-  const canManage = myRole === "owner" || myRole === "admin";
+  const canManage =
+    myRole === "owner" || myRole === "co-owner" || myRole === "admin";
   const isOwner = myRole === "owner";
+  const isCoOwnerOrAbove = myRole === "owner" || myRole === "co-owner";
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -346,6 +356,8 @@ export function TeamDetail() {
             invitesLoading={invitesLoading}
             canManage={canManage}
             isOwner={isOwner}
+            isCoOwnerOrAbove={isCoOwnerOrAbove}
+            myRole={myRole}
             meId={me?.id}
             copiedToken={copiedToken}
             onChangeRole={handleChangeRole}
