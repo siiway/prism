@@ -46,7 +46,7 @@
     "react-i18next-translation-checker": "^2.1.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.57.2",
-    "vite": "^8.0.2",
+    "vite": "^8.0.5",
     "vitepress": "^1.6.4",
     "wrangler": "^4.77.0"
   }
