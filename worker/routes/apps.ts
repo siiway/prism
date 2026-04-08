@@ -74,6 +74,7 @@ app.get("/", async (c) => {
   return c.json({
     apps: rows.results.map((row) =>
       safeApp(
+        c.env.APP_URL,
         row,
         computeVerified(verifiedDomains, row.website_url, row.redirect_uris),
       ),
@@ -100,7 +101,7 @@ app.get("/:id", async (c) => {
     row.redirect_uris,
     row.team_id,
   );
-  return c.json({ app: fullApp(row, isVerified) });
+  return c.json({ app: fullApp(c.env.APP_URL, row, isVerified) });
 });
 
 // Create personal app
@@ -196,7 +197,7 @@ app.post("/", async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ app: fullApp(row!, isVerified) }, 201);
+  return c.json({ app: fullApp(c.env.APP_URL, row!, isVerified) }, 201);
 });
 
 // Update app
@@ -291,7 +292,7 @@ app.patch("/:id", async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ app: fullApp(updatedRow!, isVerified) });
+  return c.json({ app: fullApp(c.env.APP_URL, updatedRow!, isVerified) });
 });
 
 // Rotate client secret
@@ -360,12 +361,12 @@ app.delete("/:id", async (c) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function safeApp(row: OAuthAppRow, isVerified: boolean) {
+function safeApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
-    icon_url: proxyImageUrl(row.icon_url),
+    icon_url: proxyImageUrl(baseUrl, row.icon_url),
     unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
@@ -383,8 +384,11 @@ function safeApp(row: OAuthAppRow, isVerified: boolean) {
   };
 }
 
-function fullApp(row: OAuthAppRow, isVerified: boolean) {
-  return { ...safeApp(row, isVerified), client_secret: row.client_secret };
+function fullApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
+  return {
+    ...safeApp(baseUrl, row, isVerified),
+    client_secret: row.client_secret,
+  };
 }
 
 export default app;

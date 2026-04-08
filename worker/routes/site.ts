@@ -32,7 +32,7 @@ app.get("/site", async (c) => {
   return c.json({
     site_name: config.site_name,
     site_description: config.site_description,
-    site_icon_url: proxyImageUrl(config.site_icon_url),
+    site_icon_url: proxyImageUrl(c.env.APP_URL, config.site_icon_url),
     unproxied_site_icon_url: config.site_icon_url,
     allow_registration: config.allow_registration,
     invite_only: config.invite_only,

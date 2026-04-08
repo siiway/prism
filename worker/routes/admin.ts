@@ -197,7 +197,7 @@ app.get("/users/:id", async (c) => {
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: proxyImageUrl(user.avatar_url),
+      avatar_url: proxyImageUrl(c.env.APP_URL, user.avatar_url),
       unproxied_avatar_url: user.avatar_url,
       role: user.role,
       email_verified: user.email_verified === 1,
@@ -341,7 +341,7 @@ app.get("/apps", async (c) => {
       const merged = new Set([...ownerDomains, ...teamDomains]);
       return {
         ...a,
-        icon_url: proxyImageUrl(a.icon_url),
+        icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
         unproxied_icon_url: a.icon_url,
         is_verified: computeVerified(merged, a.website_url, a.redirect_uris),
       };
@@ -626,7 +626,7 @@ app.get("/teams", async (c) => {
   return c.json({
     teams: teams.results.map((t) => ({
       ...t,
-      avatar_url: proxyImageUrl(t.avatar_url),
+      avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
       unproxied_avatar_url: t.avatar_url,
     })),
     total: count?.n ?? 0,

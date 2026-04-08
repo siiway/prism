@@ -95,7 +95,7 @@ app.get("/consents", requireAuth, async (c) => {
       app: {
         name: r.name,
         description: r.description,
-        icon_url: proxyImageUrl(r.icon_url),
+        icon_url: proxyImageUrl(c.env.APP_URL, r.icon_url),
         unproxied_icon_url: r.icon_url,
         website_url: r.website_url,
         is_verified: computeVerified(
@@ -170,7 +170,7 @@ app.get("/app-info", optionalAuth, async (c) => {
       id: oauthApp.id,
       name: oauthApp.name,
       description: oauthApp.description,
-      icon_url: proxyImageUrl(oauthApp.icon_url),
+      icon_url: proxyImageUrl(c.env.APP_URL, oauthApp.icon_url),
       unproxied_icon_url: oauthApp.icon_url,
       website_url: oauthApp.website_url,
       is_verified: await computeIsVerified(
@@ -487,7 +487,13 @@ app.get("/userinfo", async (c) => {
   if (!user) return c.json({ error: "invalid_token" }, 401);
 
   const scopes = JSON.parse(tokenRow.scopes) as string[];
-  const claims = await buildClaims(user, tokenRow.client_id, scopes, c.env.DB);
+  const claims = await buildClaims(
+    user,
+    tokenRow.client_id,
+    scopes,
+    c.env.DB,
+    c.env.APP_URL,
+  );
   console.log("[OIDC] userinfo response", {
     sub: user.id,
     client_id: tokenRow.client_id,
@@ -612,7 +618,7 @@ app.get("/me/apps", async (c) => {
   return c.json({
     apps: results.map((a) => ({
       ...a,
-      icon_url: proxyImageUrl(a.icon_url),
+      icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
       unproxied_icon_url: a.icon_url,
     })),
   });
@@ -645,7 +651,7 @@ app.get("/me/teams", async (c) => {
   return c.json({
     teams: results.map((t) => ({
       ...t,
-      avatar_url: proxyImageUrl(t.avatar_url),
+      avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
       unproxied_avatar_url: t.avatar_url,
     })),
   });
@@ -1111,7 +1117,7 @@ app.get("/me/profile", async (c) => {
     id: user.id,
     username: user.username,
     display_name: user.display_name,
-    avatar_url: proxyImageUrl(user.avatar_url),
+    avatar_url: proxyImageUrl(c.env.APP_URL, user.avatar_url),
     unproxied_avatar_url: user.avatar_url,
     email: resolved.scopes.includes("email") ? user.email : undefined,
     email_verified: resolved.scopes.includes("email")
@@ -1172,7 +1178,7 @@ app.patch("/me/profile", async (c) => {
     user: user
       ? {
           ...user,
-          avatar_url: proxyImageUrl(user.avatar_url),
+          avatar_url: proxyImageUrl(c.env.APP_URL, user.avatar_url),
           unproxied_avatar_url: user.avatar_url,
         }
       : null,
@@ -1561,7 +1567,7 @@ app.get("/me/admin/users", async (c) => {
     .first<{ total: number }>();
 
   return c.json({
-    users: results.map(proxyUserAvatar),
+    users: results.map((u) => proxyUserAvatar(c.env.APP_URL, u)),
     total: countRow?.total ?? 0,
     page: pageNum,
     limit: pageSize,
@@ -1580,7 +1586,7 @@ app.get("/me/admin/users/:id", async (c) => {
     .first();
 
   if (!user) return c.json({ error: "User not found" }, 404);
-  return c.json({ user: proxyUserAvatar(user) });
+  return c.json({ user: proxyUserAvatar(c.env.APP_URL, user) });
 });
 
 // PATCH /api/oauth/me/admin/users/:id — update a user (requires admin:users:write)
@@ -1632,7 +1638,7 @@ app.patch("/me/admin/users/:id", async (c) => {
     .bind(targetId)
     .first();
 
-  return c.json({ user: user ? proxyUserAvatar(user) : null });
+  return c.json({ user: user ? proxyUserAvatar(c.env.APP_URL, user) : null });
 });
 
 // DELETE /api/oauth/me/admin/users/:id — delete a user (requires admin:users:delete)
@@ -2215,6 +2221,7 @@ async function buildClaims(
   clientId: string,
   scopes: string[],
   db: D1Database,
+  appUrl: string,
 ): Promise<Record<string, unknown>> {
   const appRow = await db
     .prepare("SELECT oidc_fields FROM oauth_apps WHERE client_id = ?")
@@ -2232,7 +2239,7 @@ async function buildClaims(
   if (scopes.includes("profile")) {
     claims.name = user.display_name;
     claims.preferred_username = user.username;
-    claims.picture = proxyImageUrl(user.avatar_url);
+    claims.picture = proxyImageUrl(appUrl, user.avatar_url);
   }
   if (scopes.includes("email")) {
     claims.email = user.email;
@@ -2340,7 +2347,7 @@ async function buildIdToken(
   db: D1Database,
 ): Promise<string> {
   const { signIdTokenRS256 } = await import("../lib/jwt");
-  const claims = await buildClaims(user, clientId, scopes, db);
+  const claims = await buildClaims(user, clientId, scopes, db, issuer);
   claims.iss = issuer;
   claims.aud = clientId;
   if (nonce) claims.nonce = nonce;
@@ -2356,11 +2363,12 @@ async function buildIdToken(
 }
 
 function proxyUserAvatar<T extends Record<string, unknown>>(
+  baseUrl: string,
   row: T,
 ): T & { unproxied_avatar_url: unknown } {
   return {
     ...row,
-    avatar_url: proxyImageUrl(row.avatar_url as string | null),
+    avatar_url: proxyImageUrl(baseUrl, row.avatar_url as string | null),
     unproxied_avatar_url: row.avatar_url,
   };
 }

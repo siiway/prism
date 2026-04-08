@@ -81,7 +81,7 @@ app.get("/join/:token", optionalAuth, async (c) => {
   return c.json({
     team: {
       ...team,
-      avatar_url: proxyImageUrl(team.avatar_url),
+      avatar_url: proxyImageUrl(c.env.APP_URL, team.avatar_url),
       unproxied_avatar_url: team.avatar_url,
     },
     invite: { role: invite.role, expires_at: invite.expires_at },
@@ -148,7 +148,7 @@ app.get("/", async (c) => {
   return c.json({
     teams: rows.results.map((t) => ({
       ...t,
-      avatar_url: proxyImageUrl(t.avatar_url),
+      avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
       unproxied_avatar_url: t.avatar_url,
     })),
   });
@@ -235,13 +235,13 @@ app.get("/:id", async (c) => {
   return c.json({
     team: {
       ...team,
-      avatar_url: proxyImageUrl(team.avatar_url),
+      avatar_url: proxyImageUrl(c.env.APP_URL, team.avatar_url),
       unproxied_avatar_url: team.avatar_url,
       my_role: member.role,
     },
     members: members.results.map((m) => ({
       ...m,
-      avatar_url: proxyImageUrl(m.avatar_url),
+      avatar_url: proxyImageUrl(c.env.APP_URL, m.avatar_url),
       unproxied_avatar_url: m.avatar_url,
     })),
   });
@@ -981,7 +981,7 @@ app.get("/:id/apps", async (c) => {
         row.website_url,
         row.redirect_uris,
       );
-      return safeApp(row, isVerified);
+      return safeApp(c.env.APP_URL, row, isVerified);
     }),
   );
 
@@ -1067,7 +1067,7 @@ app.post("/:id/apps", async (c) => {
     body.website_url ?? null,
     JSON.stringify(body.redirect_uris),
   );
-  return c.json({ app: fullApp(row!, isVerified) }, 201);
+  return c.json({ app: fullApp(c.env.APP_URL, row!, isVerified) }, 201);
 });
 
 // Transfer a personal app into this team
@@ -1131,12 +1131,12 @@ app.delete("/:id/apps/:appId/transfer", async (c) => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function safeApp(row: OAuthAppRow, isVerified: boolean) {
+function safeApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
-    icon_url: proxyImageUrl(row.icon_url),
+    icon_url: proxyImageUrl(baseUrl, row.icon_url),
     unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
@@ -1153,8 +1153,11 @@ function safeApp(row: OAuthAppRow, isVerified: boolean) {
   };
 }
 
-function fullApp(row: OAuthAppRow, isVerified: boolean) {
-  return { ...safeApp(row, isVerified), client_secret: row.client_secret };
+function fullApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
+  return {
+    ...safeApp(baseUrl, row, isVerified),
+    client_secret: row.client_secret,
+  };
 }
 
 export default app;

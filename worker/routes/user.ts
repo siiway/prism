@@ -51,7 +51,7 @@ app.get("/me", async (c) => {
     .first<{ n: number }>();
 
   return c.json({
-    user: safeUser(row),
+    user: safeUser(c.env.APP_URL, row),
     totp_enabled: (totp?.n ?? 0) > 0,
     passkey_count: passkeyCount?.n ?? 0,
   });
@@ -117,7 +117,7 @@ app.patch("/me", async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ user: safeUser(row!) });
+  return c.json({ user: safeUser(c.env.APP_URL, row!) });
 });
 
 // Change password
@@ -230,13 +230,13 @@ app.delete("/me", async (c) => {
   return c.json({ message: "Account deleted" });
 });
 
-function safeUser(row: UserRow) {
+function safeUser(baseUrl: string, row: UserRow) {
   return {
     id: row.id,
     email: row.email,
     username: row.username,
     display_name: row.display_name,
-    avatar_url: proxyImageUrl(row.avatar_url),
+    avatar_url: proxyImageUrl(baseUrl, row.avatar_url),
     unproxied_avatar_url: row.avatar_url,
     role: row.role,
     email_verified: row.email_verified === 1,

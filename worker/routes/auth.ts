@@ -86,6 +86,7 @@ async function issueSession(
   secret: string,
   user: UserRow,
   ttlSeconds: number,
+  appUrl: string,
 ): Promise<string> {
   const sessionId = randomId(32);
   const now = Math.floor(Date.now() / 1000);
@@ -96,7 +97,7 @@ async function issueSession(
       email: user.email,
       username: user.username,
       display_name: user.display_name,
-      avatar_url: proxyImageUrl(user.avatar_url),
+      avatar_url: proxyImageUrl(appUrl, user.avatar_url),
       unproxied_avatar_url: user.avatar_url,
       email_verified: user.email_verified === 1,
       sessionId,
@@ -272,8 +273,9 @@ app.post("/register", async (c) => {
     await getJwtSecret(c.env.KV_SESSIONS),
     user,
     ttl,
+    c.env.APP_URL,
   );
-  return c.json({ token, user: safeUser(user) }, 201);
+  return c.json({ token, user: safeUser(c.env.APP_URL, user) }, 201);
 });
 
 // ─── Login ───────────────────────────────────────────────────────────────────
@@ -438,8 +440,9 @@ app.post("/login", async (c) => {
     await getJwtSecret(c.env.KV_SESSIONS),
     user,
     ttl,
+    c.env.APP_URL,
   );
-  return c.json({ token, user: safeUser(user) });
+  return c.json({ token, user: safeUser(c.env.APP_URL, user) });
 });
 
 // ─── Logout ──────────────────────────────────────────────────────────────────
@@ -1074,8 +1077,9 @@ app.post("/passkey/auth/finish", async (c) => {
     await getJwtSecret(c.env.KV_SESSIONS),
     user,
     ttl,
+    c.env.APP_URL,
   );
-  return c.json({ token, user: safeUser(user) });
+  return c.json({ token, user: safeUser(c.env.APP_URL, user) });
 });
 
 // ─── List passkeys ───────────────────────────────────────────────────────────
@@ -1345,13 +1349,15 @@ app.post("/gpg-login", async (c) => {
     await getJwtSecret(c.env.KV_SESSIONS),
     user,
     ttl,
+    c.env.APP_URL,
   );
-  return c.json({ token, user: safeUser(user) });
+  return c.json({ token, user: safeUser(c.env.APP_URL, user) });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function safeUser(
+  baseUrl: string,
   user: UserRow,
 ): AuthUser & { unproxied_avatar_url: string | null } {
   return {
@@ -1359,7 +1365,7 @@ function safeUser(
     email: user.email,
     username: user.username,
     display_name: user.display_name,
-    avatar_url: proxyImageUrl(user.avatar_url),
+    avatar_url: proxyImageUrl(baseUrl, user.avatar_url),
     unproxied_avatar_url: user.avatar_url,
     role: user.role,
     email_verified: user.email_verified === 1,
