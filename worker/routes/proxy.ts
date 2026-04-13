@@ -125,6 +125,7 @@ app.get("/", async (c) => {
     // Prevent the SVG from loading external resources or running scripts
     // even if the browser decides to render it as a document
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+    "Access-Control-Allow-Origin": "*",
   });
 
   if (ct === "image/svg+xml") {

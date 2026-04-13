@@ -13,6 +13,7 @@ app.get("/*", async (c) => {
   const headers = new Headers();
   obj.writeHttpMetadata(headers);
   headers.set("Cache-Control", "public, max-age=86400");
+  headers.set("Access-Control-Allow-Origin", "*");
   return new Response(obj.body, { headers });
 });
 
