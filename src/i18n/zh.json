@@ -478,7 +478,13 @@
     "signInToAccept": "登录以接受此邀请。",
     "signInToJoin": "登录以加入",
     "acceptInvite": "接受邀请",
-    "failedJoinTeam": "加入团队失败"
+    "failedJoinTeam": "加入团队失败",
+    "invitesTab": "邀请",
+    "inviteTypeHeader": "邀请",
+    "inviteUsesHeader": "使用次数",
+    "inviteExpiresHeader": "过期时间",
+    "inviteCreatedByHeader": "创建者",
+    "revokeInvite": "撤销邀请"
   },
   "connections": {
     "title": "关联账号",

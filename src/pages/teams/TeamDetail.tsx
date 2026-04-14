@@ -10,16 +10,26 @@ import {
   Spinner,
   Tab,
   TabList,
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
   Text,
   Title2,
   Textarea,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { CopyRegular } from "@fluentui/react-icons";
 import {
   AppsRegular,
   DeleteRegular,
   GlobeSearchRegular,
+  LinkRegular,
+  MailRegular,
   PeopleRegular,
   SettingsRegular,
 } from "@fluentui/react-icons";
@@ -27,7 +37,13 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type Domain, type OAuthApp } from "../../lib/api";
+import {
+  api,
+  ApiError,
+  type Domain,
+  type OAuthApp,
+  type TeamInvite,
+} from "../../lib/api";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { useAuthStore } from "../../store/auth";
 import { InviteDialog } from "./dialogs/InviteDialog";
@@ -70,7 +86,7 @@ const ROLE_COLORS: Record<
   member: "subtle",
 };
 
-type TabType = "members" | "apps" | "domains" | "settings";
+type TabType = "members" | "apps" | "domains" | "invites" | "settings";
 
 export function TeamDetail() {
   const styles = useStyles();
@@ -103,7 +119,7 @@ export function TeamDetail() {
     queryFn: () => api.listTeamInvites(id!),
     enabled:
       !!id &&
-      tab === "members" &&
+      tab === "invites" &&
       (data?.team?.my_role === "owner" ||
         data?.team?.my_role === "co-owner" ||
         data?.team?.my_role === "admin"),
@@ -327,6 +343,11 @@ export function TeamDetail() {
           {t("teams.domainsTab")}
         </Tab>
         {canManage && (
+          <Tab value="invites" icon={<LinkRegular />}>
+            {t("teams.invitesTab")}
+          </Tab>
+        )}
+        {canManage && (
           <Tab value="settings" icon={<SettingsRegular />}>
             {t("teams.settingsTab")}
           </Tab>
@@ -345,26 +366,20 @@ export function TeamDetail() {
                 marginBottom: 12,
               }}
             >
-              <InviteDialog teamId={id!} showMsg={showMsg} />
               <AddMemberDialog teamId={id!} showMsg={showMsg} />
             </div>
           )}
 
           <MembersTable
             members={members}
-            invites={invitesData?.invites ?? []}
-            invitesLoading={invitesLoading}
             canManage={canManage}
             isOwner={isOwner}
             isCoOwnerOrAbove={isCoOwnerOrAbove}
             myRole={myRole}
             meId={me?.id}
-            copiedToken={copiedToken}
             onChangeRole={handleChangeRole}
             onRemoveMember={handleRemoveMember}
             onTransferOwnership={handleTransferOwnership}
-            onRevokeInvite={handleRevokeInvite}
-            onCopyInviteLink={handleCopyInviteLink}
           />
         </div>
       )}
@@ -410,6 +425,156 @@ export function TeamDetail() {
             transferableDomains={transferableDomains}
             showMsg={showMsg}
           />
+        </div>
+      )}
+
+      {/* Invites tab */}
+      {tab === "invites" && canManage && (
+        <div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginBottom: 12,
+            }}
+          >
+            <InviteDialog teamId={id!} showMsg={showMsg} />
+          </div>
+
+          {invitesLoading && <Spinner size="small" />}
+
+          {!invitesLoading && (invitesData?.invites ?? []).length === 0 && (
+            <Text style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("teams.noActiveInvites")}
+            </Text>
+          )}
+
+          {!invitesLoading && (invitesData?.invites ?? []).length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>
+                    {t("teams.inviteTypeHeader")}
+                  </TableHeaderCell>
+                  <TableHeaderCell>{t("teams.roleHeader")}</TableHeaderCell>
+                  <TableHeaderCell>
+                    {t("teams.inviteUsesHeader")}
+                  </TableHeaderCell>
+                  <TableHeaderCell>
+                    {t("teams.inviteExpiresHeader")}
+                  </TableHeaderCell>
+                  <TableHeaderCell>
+                    {t("teams.inviteCreatedByHeader")}
+                  </TableHeaderCell>
+                  <TableHeaderCell />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(invitesData?.invites ?? []).map((inv: TeamInvite) => {
+                  const inviteUrl = `${window.location.origin}/teams/join/${inv.token}`;
+                  return (
+                    <TableRow key={inv.token}>
+                      <TableCell>
+                        {inv.email ? (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <MailRegular
+                              style={{ color: tokens.colorNeutralForeground3 }}
+                            />
+                            <Text size={300}>{inv.email}</Text>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <LinkRegular
+                              style={{ color: tokens.colorNeutralForeground3 }}
+                            />
+                            <Text
+                              size={200}
+                              style={{
+                                color: tokens.colorNeutralForeground3,
+                                fontFamily: "monospace",
+                                wordBreak: "break-all",
+                              }}
+                            >
+                              {inviteUrl}
+                            </Text>
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          color={ROLE_COLORS[inv.role] ?? "subtle"}
+                          appearance="filled"
+                          size="small"
+                        >
+                          {inv.role}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Text size={300}>
+                          {inv.uses} / {inv.max_uses === 0 ? "∞" : inv.max_uses}
+                        </Text>
+                      </TableCell>
+                      <TableCell>
+                        <Text size={300}>
+                          {new Date(inv.expires_at * 1000).toLocaleDateString()}
+                        </Text>
+                      </TableCell>
+                      <TableCell>
+                        <Text size={300}>@{inv.created_by_username}</Text>
+                      </TableCell>
+                      <TableCell>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {!inv.email && (
+                            <Tooltip
+                              content={
+                                copiedToken === inv.token
+                                  ? t("teams.copiedExclamation")
+                                  : t("teams.copyLink")
+                              }
+                              relationship="label"
+                            >
+                              <Button
+                                appearance="subtle"
+                                icon={<CopyRegular />}
+                                size="small"
+                                onClick={() => handleCopyInviteLink(inv.token)}
+                              />
+                            </Tooltip>
+                          )}
+                          <Tooltip
+                            content={t("teams.revokeInvite")}
+                            relationship="label"
+                          >
+                            <Button
+                              appearance="subtle"
+                              icon={<DeleteRegular />}
+                              size="small"
+                              style={{
+                                color: tokens.colorPaletteRedForeground1,
+                              }}
+                              onClick={() => handleRevokeInvite(inv.token)}
+                            />
+                          </Tooltip>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
         </div>
       )}
 

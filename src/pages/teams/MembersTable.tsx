@@ -1,4 +1,4 @@
-// Members table + active invites section for TeamDetail
+// Members table for TeamDetail
 
 import {
   Avatar,
@@ -9,7 +9,6 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
-  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -17,20 +16,11 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title3,
-  Tooltip,
-  makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  CopyRegular,
-  DeleteRegular,
-  LinkRegular,
-  MailRegular,
-  MoreHorizontalRegular,
-} from "@fluentui/react-icons";
+import { DeleteRegular, MoreHorizontalRegular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
-import type { TeamInvite, TeamMember } from "../../lib/api";
+import type { TeamMember } from "../../lib/api";
 
 const ROLE_COLORS: Record<
   string,
@@ -42,56 +32,29 @@ const ROLE_COLORS: Record<
   member: "subtle",
 };
 
-const useStyles = makeStyles({
-  section: {
-    marginTop: "24px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-  },
-  inviteRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px 0",
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
-  },
-});
-
 interface MembersTableProps {
   members: TeamMember[];
-  invites: TeamInvite[];
-  invitesLoading: boolean;
   canManage: boolean;
   isOwner: boolean;
   isCoOwnerOrAbove: boolean;
   myRole: string;
   meId: string | undefined;
-  copiedToken: string | null;
   onChangeRole: (userId: string, role: string) => void;
   onRemoveMember: (userId: string) => void;
   onTransferOwnership: (userId: string) => void;
-  onRevokeInvite: (token: string) => void;
-  onCopyInviteLink: (token: string) => void;
 }
 
 export function MembersTable({
   members,
-  invites,
-  invitesLoading,
   canManage,
   isOwner,
   isCoOwnerOrAbove,
   myRole,
   meId,
-  copiedToken,
   onChangeRole,
   onRemoveMember,
   onTransferOwnership,
-  onRevokeInvite,
-  onCopyInviteLink,
 }: MembersTableProps) {
-  const styles = useStyles();
   const { t } = useTranslation();
 
   return (
@@ -226,83 +189,6 @@ export function MembersTable({
           ))}
         </TableBody>
       </Table>
-
-      {/* Active invites */}
-      {canManage && (
-        <div className={styles.section}>
-          <Title3>{t("teams.activeInvites")}</Title3>
-          {invitesLoading && <Spinner size="small" />}
-          {!invitesLoading && invites.length === 0 && (
-            <Text style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("teams.noActiveInvites")}
-            </Text>
-          )}
-          {invites.map((inv) => (
-            <div key={inv.token} className={styles.inviteRow}>
-              <Badge
-                color={ROLE_COLORS[inv.role] ?? "subtle"}
-                appearance="filled"
-                size="small"
-              >
-                {inv.role}
-              </Badge>
-              <div style={{ flex: 1 }}>
-                {inv.email ? (
-                  <Text size={300}>
-                    <MailRegular
-                      style={{ verticalAlign: "middle", marginRight: 4 }}
-                    />
-                    {inv.email}
-                  </Text>
-                ) : (
-                  <Text
-                    size={300}
-                    style={{ color: tokens.colorNeutralForeground3 }}
-                  >
-                    <LinkRegular
-                      style={{ verticalAlign: "middle", marginRight: 4 }}
-                    />
-                    {t("teams.shareableLink")}
-                  </Text>
-                )}
-                <Text
-                  size={200}
-                  block
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {inv.uses}/{inv.max_uses === 0 ? "∞" : inv.max_uses} uses ·
-                  expires {new Date(inv.expires_at * 1000).toLocaleDateString()}{" "}
-                  · by @{inv.created_by_username}
-                </Text>
-              </div>
-              {!inv.email && (
-                <Tooltip
-                  content={
-                    copiedToken === inv.token
-                      ? t("teams.copiedExclamation")
-                      : t("teams.copyLink")
-                  }
-                  relationship="label"
-                >
-                  <Button
-                    appearance="subtle"
-                    icon={<CopyRegular />}
-                    size="small"
-                    onClick={() => onCopyInviteLink(inv.token)}
-                  />
-                </Tooltip>
-              )}
-              <Button
-                appearance="subtle"
-                icon={<DeleteRegular />}
-                size="small"
-                style={{ color: tokens.colorPaletteRedForeground1 }}
-                onClick={() => onRevokeInvite(inv.token)}
-              />
-            </div>
-          ))}
-        </div>
-      )}
     </>
   );
 }

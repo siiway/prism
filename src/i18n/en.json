@@ -478,7 +478,13 @@
     "signInToAccept": "Sign in to accept this invite.",
     "signInToJoin": "Sign in to join",
     "acceptInvite": "Accept invite",
-    "failedJoinTeam": "Failed to join team"
+    "failedJoinTeam": "Failed to join team",
+    "invitesTab": "Invites",
+    "inviteTypeHeader": "Invite",
+    "inviteUsesHeader": "Uses",
+    "inviteExpiresHeader": "Expires",
+    "inviteCreatedByHeader": "Created by",
+    "revokeInvite": "Revoke invite"
   },
   "connections": {
     "title": "Linked Accounts",
