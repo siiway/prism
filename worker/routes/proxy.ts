@@ -126,6 +126,7 @@ app.get("/", async (c) => {
     // even if the browser decides to render it as a document
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
     "Access-Control-Allow-Origin": "*",
+    "Cross-Origin-Resource-Policy": "cross-origin",
   });
 
   if (ct === "image/svg+xml") {
