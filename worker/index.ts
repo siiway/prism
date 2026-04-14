@@ -29,6 +29,16 @@ import proxyRoutes from "./routes/proxy";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
+// Must be registered before secureHeaders/cors so its post-next runs last,
+// overriding the CORP and CORS headers those middlewares set globally.
+app.use("/api/proxy/image", async (c, next) => {
+  await next();
+  c.res.headers.set("Cross-Origin-Resource-Policy", "cross-origin");
+  c.res.headers.set("Access-Control-Allow-Origin", "*");
+  c.res.headers.delete("Access-Control-Allow-Credentials");
+  c.res.headers.delete("Vary");
+});
+
 app.use("*", secureHeaders());
 app.use("*", requestLogger);
 app.use(
