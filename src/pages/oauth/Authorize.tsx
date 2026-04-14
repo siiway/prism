@@ -14,6 +14,7 @@ import {
   CheckmarkRegular,
   DismissRegular,
   GlobeRegular,
+  PlugConnectedRegular,
   ShieldRegular,
 } from "@fluentui/react-icons";
 import { useState, useEffect, useRef } from "react";
@@ -343,33 +344,90 @@ export function Authorize() {
             {t("oauth.requestingAccess", { appName: data.app.name })}
           </Text>
           <div className={styles.scopeList}>
-            {data.scopes.map((scope) => {
-              const info = SCOPE_INFO[scope];
-              return (
-                <div key={scope} className={styles.scopeItem}>
-                  <CheckmarkRegular
-                    style={{
-                      color: tokens.colorBrandForeground1,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <div>
-                    <Text weight="semibold" block size={300}>
-                      {info?.label ?? scope}
-                    </Text>
-                    {info?.desc && (
+            {data.scopes
+              .filter((s) => !s.startsWith("app:"))
+              .map((scope) => {
+                const info = SCOPE_INFO[scope];
+                return (
+                  <div key={scope} className={styles.scopeItem}>
+                    <CheckmarkRegular
+                      style={{
+                        color: tokens.colorBrandForeground1,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div>
+                      <Text weight="semibold" block size={300}>
+                        {info?.label ?? scope}
+                      </Text>
+                      {info?.desc && (
+                        <Text
+                          size={200}
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {info.desc}
+                        </Text>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* App-delegation scopes */}
+          {(data.app_scopes ?? []).length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <Text
+                size={200}
+                weight="semibold"
+                block
+                style={{
+                  color: tokens.colorNeutralForeground3,
+                  marginBottom: 8,
+                }}
+              >
+                {t("oauth.appPermissionsHeading")}
+              </Text>
+              <div className={styles.scopeList}>
+                {(data.app_scopes ?? []).map((as) => (
+                  <div key={as.scope} className={styles.scopeItem}>
+                    <PlugConnectedRegular
+                      style={{
+                        color: tokens.colorBrandForeground1,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div>
+                      <Text weight="semibold" block size={300}>
+                        {as.scope_title ?? as.app_name}
+                        <Text
+                          size={200}
+                          style={{
+                            color: tokens.colorNeutralForeground3,
+                            marginLeft: 6,
+                            fontWeight: "normal",
+                          }}
+                        >
+                          · {as.app_name} · {as.inner_scope}
+                        </Text>
+                      </Text>
                       <Text
                         size={200}
                         style={{ color: tokens.colorNeutralForeground3 }}
                       >
-                        {info.desc}
+                        {as.scope_desc ??
+                          t("oauth.appPermissionDesc", {
+                            appName: data.app.name,
+                            targetApp: as.app_name,
+                            scope: as.inner_scope,
+                          })}
                       </Text>
-                    )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {data.app.description && (

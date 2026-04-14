@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [switch]$SkipWasm,
-    [switch]$SkipFrontend
+    [switch]$SkipFrontend,
+    [string]$PackageManager = 'bun'
 )
 $ErrorActionPreference = 'Stop'
 
@@ -49,7 +50,6 @@ function Ensure-Rust {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Remove-Item $rustupExe -Force
 
-    # Add Cargo bin to current session PATH
     $cargoBin = "$env:USERPROFILE\.cargo\bin"
     if ($env:Path -notlike "*$cargoBin*") {
         $env:Path = "$cargoBin;$env:Path"
@@ -59,6 +59,37 @@ function Ensure-Rust {
 
     Info 'Adding wasm32-unknown-unknown target'
     rustup target add wasm32-unknown-unknown
+}
+
+# ── Toolchain: bun ────────────────────────────────────────────────────────────
+function Ensure-Bun {
+    Refresh-Path
+    if (Has 'bun') {
+        Ok "bun $(bun --version)"
+        return
+    }
+
+    Step 'Installing bun'
+
+    if (Has 'winget') {
+        winget install --id Oven-sh.Bun -e --accept-source-agreements --accept-package-agreements
+        Refresh-Path
+        if (Has 'bun') {
+            Ok "bun $(bun --version)"
+            return
+        }
+    }
+
+    Info 'winget unavailable — using PowerShell installer'
+    powershell -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1 | iex"
+
+    $bunBin = "$env:USERPROFILE\.bun\bin"
+    if ($env:Path -notlike "*$bunBin*") {
+        $env:Path = "$bunBin;$env:Path"
+    }
+
+    Refresh-Path
+    Ok "bun $(bun --version)"
 }
 
 # ── Toolchain: Node.js ────────────────────────────────────────────────────────
@@ -71,7 +102,6 @@ function Ensure-Node {
 
     Step 'Installing Node.js LTS'
 
-    # Try winget
     if (Has 'winget') {
         winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
         Refresh-Path
@@ -81,7 +111,6 @@ function Ensure-Node {
         }
     }
 
-    # Fallback: download MSI installer
     Info 'winget unavailable — downloading Node.js LTS MSI'
     $nodeJson = Invoke-RestMethod 'https://nodejs.org/dist/index.json'
     $lts = $nodeJson | Where-Object { $_.lts } | Select-Object -First 1
@@ -104,7 +133,6 @@ function Ensure-Pnpm {
 
     Step 'Installing pnpm'
 
-    # Prefer corepack (ships with Node 16+)
     if (Has 'corepack') {
         corepack enable pnpm
         corepack prepare pnpm@latest --activate
@@ -142,27 +170,48 @@ if (-not $SkipWasm) {
 
 # ── Frontend ───────────────────────────────────────────────────────────────────
 if (-not $SkipFrontend) {
-    Step 'Checking Node.js'
-    Ensure-Node
+    if ($PackageManager -eq 'pnpm') {
+        Step 'Checking Node.js'
+        Ensure-Node
 
-    Step 'Checking pnpm'
-    Ensure-Pnpm
+        Step 'Checking pnpm'
+        Ensure-Pnpm
 
-    Step 'Installing dependencies'
-    pnpm install --frozen-lockfile
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Step 'Installing dependencies'
+        pnpm install --frozen-lockfile
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    Step 'Type-checking (app)'
-    pnpm exec tsc -p tsconfig.app.json --noEmit
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Step 'Type-checking (app)'
+        pnpm exec tsc -p tsconfig.app.json --noEmit
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    Step 'Type-checking (worker)'
-    pnpm exec tsc -p tsconfig.worker.json --noEmit
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Step 'Type-checking (worker)'
+        pnpm exec tsc -p tsconfig.worker.json --noEmit
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    Step 'Building frontend'
-    pnpm exec vite build
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Step 'Building frontend'
+        pnpm exec vite build
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    } else {
+        Step 'Checking bun'
+        Ensure-Bun
+
+        Step 'Installing dependencies'
+        bun install --frozen-lockfile
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        Step 'Type-checking (app)'
+        bunx tsc -p tsconfig.app.json --noEmit
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        Step 'Type-checking (worker)'
+        bunx tsc -p tsconfig.worker.json --noEmit
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        Step 'Building frontend'
+        bunx vite build
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
 
     Write-Host "`nBuild complete. Output in dist/" -ForegroundColor Green
 }

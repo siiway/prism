@@ -49,8 +49,7 @@ wrangler r2 bucket create prism-assets
 # 4. Run migrations
 pnpm db:migrate
 
-# 5. Start dev servers (two terminals)
-pnpm worker:dev   # Wrangler on :8787
+# 5. Start dev server
 pnpm dev          # Vite on :5173
 ```
 

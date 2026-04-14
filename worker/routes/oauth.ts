@@ -11,6 +11,8 @@ import {
 } from "../lib/domainVerify";
 import { hmacSign } from "../lib/webhooks";
 import { proxyImageUrl } from "../lib/proxyImage";
+import { parseAppScope } from "../lib/scopes";
+import { deliverAppEvent } from "../lib/app-events";
 import type {
   OAuthAppRow,
   OAuthCodeRow,
@@ -56,6 +58,185 @@ const VALID_SCOPES = new Set([
   "webhooks:write",
   "offline_access",
 ]);
+
+// ─── Scope helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Resolves requested scopes against what the app is allowed to request.
+ * Regular platform scopes are checked against VALID_SCOPES.
+ * App-delegation scopes (app:<client_id>:<inner_scope>) are accepted when:
+ *   - the inner scope is a valid platform scope
+ *   - the scope is listed in the app's allowed_scopes
+ *   - the referenced target app exists and is active (DB check)
+ * Returns [validScopes, resolvedAppScopes] where resolvedAppScopes carries
+ * the target app name/icon for the consent UI.
+ */
+async function resolveRequestedScopes(
+  db: D1Database,
+  appUrl: string,
+  requestedScopes: string[],
+  allowedScopes: string[],
+  requestingClientId: string,
+): Promise<{
+  scopes: string[];
+  appScopes: Array<{
+    scope: string;
+    client_id: string;
+    inner_scope: string;
+    app_name: string;
+    app_icon_url: string | null;
+    scope_title: string | null;
+    scope_desc: string | null;
+  }>;
+}> {
+  const regular = requestedScopes.filter(
+    (s) => VALID_SCOPES.has(s) && allowedScopes.includes(s),
+  );
+
+  const appScopeRequests = requestedScopes.filter((s) => {
+    const parsed = parseAppScope(s);
+    return (
+      parsed && VALID_SCOPES.has(parsed.innerScope) && allowedScopes.includes(s)
+    );
+  });
+
+  if (appScopeRequests.length === 0) {
+    return { scopes: regular, appScopes: [] };
+  }
+
+  // Batch-lookup unique target client_ids
+  const targetClientIds = [
+    ...new Set(appScopeRequests.map((s) => parseAppScope(s)!.clientId)),
+  ];
+  const targetApps = await Promise.all(
+    targetClientIds.map((cid) =>
+      db
+        .prepare(
+          "SELECT id, client_id, name, icon_url FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+        )
+        .bind(cid)
+        .first<{
+          id: string;
+          client_id: string;
+          name: string;
+          icon_url: string | null;
+        }>(),
+    ),
+  );
+  const appsMap = new Map(
+    targetApps
+      .filter(Boolean)
+      .map((a) => [a!.client_id, a!] as [string, typeof a & {}]),
+  );
+
+  // Check app-level access rules for each target app and requesting app's client_id
+  // We need the requesting app's client_id — it's derived from the app row itself (passed in as appAllowedScopes parent)
+  // but we don't have it here. We'll filter in the caller or pass it in.
+  // For now, resolve per-target-app rules inline.
+
+  const appScopes: Array<{
+    scope: string;
+    client_id: string;
+    inner_scope: string;
+    app_name: string;
+    app_icon_url: string | null;
+    scope_title: string | null;
+    scope_desc: string | null;
+  }> = [];
+
+  // Batch-lookup scope definitions and access rules per target app
+  const targetAppIds = [...appsMap.values()].map((a) => a.id);
+  const [scopeDefsResult, accessRulesResult] = await Promise.all([
+    targetAppIds.length
+      ? db
+          .prepare(
+            `SELECT app_id, scope, title, description FROM app_scope_definitions WHERE app_id IN (${targetAppIds.map(() => "?").join(",")})`,
+          )
+          .bind(...targetAppIds)
+          .all<{
+            app_id: string;
+            scope: string;
+            title: string;
+            description: string;
+          }>()
+      : Promise.resolve({
+          results: [] as {
+            app_id: string;
+            scope: string;
+            title: string;
+            description: string;
+          }[],
+        }),
+    targetAppIds.length
+      ? db
+          .prepare(
+            `SELECT app_id, rule_type, target_id FROM app_scope_access_rules WHERE app_id IN (${targetAppIds.map(() => "?").join(",")}) AND rule_type IN ('app_allow','app_deny')`,
+          )
+          .bind(...targetAppIds)
+          .all<{ app_id: string; rule_type: string; target_id: string }>()
+      : Promise.resolve({
+          results: [] as {
+            app_id: string;
+            rule_type: string;
+            target_id: string;
+          }[],
+        }),
+  ]);
+
+  // Build lookup maps
+  const scopeDefsMap = new Map<
+    string,
+    Map<string, { title: string; description: string }>
+  >();
+  for (const d of scopeDefsResult.results) {
+    if (!scopeDefsMap.has(d.app_id)) scopeDefsMap.set(d.app_id, new Map());
+    scopeDefsMap
+      .get(d.app_id)!
+      .set(d.scope, { title: d.title, description: d.description });
+  }
+
+  const accessRulesMap = new Map<
+    string,
+    { allowList: string[]; denyList: string[] }
+  >();
+  for (const r of accessRulesResult.results) {
+    if (!accessRulesMap.has(r.app_id))
+      accessRulesMap.set(r.app_id, { allowList: [], denyList: [] });
+    const entry = accessRulesMap.get(r.app_id)!;
+    if (r.rule_type === "app_allow") entry.allowList.push(r.target_id);
+    else if (r.rule_type === "app_deny") entry.denyList.push(r.target_id);
+  }
+
+  for (const s of appScopeRequests) {
+    const parsed = parseAppScope(s)!;
+    const target = appsMap.get(parsed.clientId);
+    if (!target) continue;
+
+    // Check app-level access rules (requesting app's client_id vs target app's rules)
+    const rules = accessRulesMap.get(target.id);
+    if (rules) {
+      if (rules.denyList.includes(requestingClientId)) continue;
+      if (
+        rules.allowList.length > 0 &&
+        !rules.allowList.includes(requestingClientId)
+      )
+        continue;
+    }
+
+    const def = scopeDefsMap.get(target.id)?.get(parsed.innerScope);
+    appScopes.push({
+      scope: s,
+      client_id: parsed.clientId,
+      inner_scope: parsed.innerScope,
+      app_name: target.name,
+      app_icon_url: proxyImageUrl(appUrl, target.icon_url),
+      scope_title: def?.title ?? null,
+      scope_desc: def?.description ?? null,
+    });
+  }
+
+  return { scopes: [...regular, ...appScopes.map((a) => a.scope)], appScopes };
+}
 
 // ─── Authorization endpoint ───────────────────────────────────────────────────
 
@@ -113,6 +294,13 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
   const user = c.get("user");
   const clientId = c.req.param("client_id");
 
+  // Look up app id before deleting so we can notify it
+  const appRow = await c.env.DB.prepare(
+    "SELECT id FROM oauth_apps WHERE client_id = ?",
+  )
+    .bind(clientId)
+    .first<{ id: string }>();
+
   await c.env.DB.batch([
     c.env.DB.prepare(
       "DELETE FROM oauth_consents WHERE user_id = ? AND client_id = ?",
@@ -121,6 +309,14 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
       "DELETE FROM oauth_tokens WHERE user_id = ? AND client_id = ?",
     ).bind(user.id, clientId),
   ]);
+
+  if (appRow) {
+    c.executionCtx.waitUntil(
+      deliverAppEvent(c.env.DB, appRow.id, "user.token_revoked", {
+        user_id: user.id,
+      }).catch(() => {}),
+    );
+  }
 
   return c.json({ message: "Access revoked" });
 });
@@ -161,9 +357,22 @@ app.get("/app-info", optionalAuth, async (c) => {
 
   const requestedScopes = (scope ?? "").split(" ").filter(Boolean);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
-  const scopes = requestedScopes.filter(
-    (s) => VALID_SCOPES.has(s) && allowedScopes.includes(s),
-  );
+  const [{ scopes, appScopes }, isVerified] = await Promise.all([
+    resolveRequestedScopes(
+      c.env.DB,
+      c.env.APP_URL,
+      requestedScopes,
+      allowedScopes,
+      oauthApp.client_id,
+    ),
+    computeIsVerified(
+      c.env.DB,
+      oauthApp.owner_id,
+      oauthApp.website_url,
+      oauthApp.redirect_uris,
+      oauthApp.team_id,
+    ),
+  ]);
 
   return c.json({
     app: {
@@ -173,17 +382,12 @@ app.get("/app-info", optionalAuth, async (c) => {
       icon_url: proxyImageUrl(c.env.APP_URL, oauthApp.icon_url),
       unproxied_icon_url: oauthApp.icon_url,
       website_url: oauthApp.website_url,
-      is_verified: await computeIsVerified(
-        c.env.DB,
-        oauthApp.owner_id,
-        oauthApp.website_url,
-        oauthApp.redirect_uris,
-        oauthApp.team_id,
-      ),
+      is_verified: isVerified,
       is_official: oauthApp.is_official === 1,
       is_first_party: oauthApp.is_first_party === 1,
     },
     scopes,
+    app_scopes: appScopes,
     redirect_uri,
     state,
     code_challenge,
@@ -226,9 +430,13 @@ app.post("/authorize", requireAuth, async (c) => {
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
-  const scopes = (body.scope ?? "")
-    .split(" ")
-    .filter((s) => VALID_SCOPES.has(s) && allowedScopes.includes(s));
+  const { scopes } = await resolveRequestedScopes(
+    c.env.DB,
+    c.env.APP_URL,
+    (body.scope ?? "").split(" ").filter(Boolean),
+    allowedScopes,
+    oauthApp.client_id,
+  );
 
   // Store consent
   const now = Math.floor(Date.now() / 1000);
@@ -263,6 +471,16 @@ app.post("/authorize", requireAuth, async (c) => {
   const url = new URL(body.redirect_uri);
   url.searchParams.set("code", code);
   if (body.state) url.searchParams.set("state", body.state);
+
+  // Notify the app that a user just granted access
+  c.executionCtx.waitUntil(
+    deliverAppEvent(c.env.DB, oauthApp.id, "user.token_granted", {
+      user_id: user.id,
+      scopes,
+      granted_at: now,
+    }).catch(() => {}),
+  );
+
   return c.json({ redirect: url.toString() });
 });
 

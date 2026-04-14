@@ -9,6 +9,7 @@ import type { Variables } from "./types";
 import { requestLogger } from "./lib/logger";
 import { runReverification } from "./cron/reverify";
 import { runImapPoll } from "./cron/imap-poll";
+import { purgeAppEventQueue } from "./lib/app-events";
 import { handleEmailWorker } from "./handlers/email";
 
 import siteRoutes from "./routes/site";
@@ -94,6 +95,7 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runReverification(env.DB));
     ctx.waitUntil(runImapPoll(env.DB, env.KV_CACHE));
+    ctx.waitUntil(purgeAppEventQueue(env.DB).catch(() => {}));
   },
 
   email: handleEmailWorker,

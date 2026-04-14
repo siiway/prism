@@ -11,10 +11,11 @@ import {
   DialogSurface,
   DialogTitle,
   DialogTrigger,
+  Dropdown,
   Field,
   Input,
   MessageBar,
-  Select,
+  Option,
   Spinner,
   Tab,
   TabList,
@@ -26,16 +27,23 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowLeftRegular,
+  AddRegular,
   CopyRegular,
   DeleteRegular,
+  DismissRegular,
   PeopleRegular,
   ShieldRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import {
+  api,
+  ApiError,
+  type AppScopeDefinition,
+  type AppScopeAccessRule,
+} from "../../lib/api";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 
 const useStyles = makeStyles({
@@ -94,6 +102,512 @@ const SCOPES = [
   "admin:webhooks:delete",
   "offline_access",
 ];
+
+// ─── App-delegation permissions UI ───────────────────────────────────────────
+
+interface AppPermissionsFieldProps {
+  allowedScopes: string[];
+  onChange: (scopes: string[]) => void;
+}
+
+function AppPermissionsField({
+  allowedScopes,
+  onChange,
+}: AppPermissionsFieldProps) {
+  const { t } = useTranslation();
+  const [clientId, setClientId] = useState("");
+  const [innerScope, setInnerScope] = useState(SCOPES[0]);
+
+  const appScopes = allowedScopes.filter((s) => s.startsWith("app:"));
+
+  const add = () => {
+    const trimmed = clientId.trim();
+    if (!trimmed || !innerScope) return;
+    const scope = `app:${trimmed}:${innerScope}`;
+    if (allowedScopes.includes(scope)) return;
+    onChange([...allowedScopes, scope]);
+    setClientId("");
+  };
+
+  const remove = (scope: string) =>
+    onChange(allowedScopes.filter((s) => s !== scope));
+
+  return (
+    <Field
+      label={t("apps.appPermissionsField")}
+      hint={t("apps.appPermissionsHint")}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {appScopes.map((s) => {
+          const [, cid, ...rest] = s.split(":");
+          const inner = rest.join(":");
+          return (
+            <div
+              key={s}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "4px 8px",
+                background: tokens.colorNeutralBackground3,
+                borderRadius: 4,
+                fontFamily: "monospace",
+                fontSize: tokens.fontSizeBase200,
+              }}
+            >
+              <Text
+                size={200}
+                style={{
+                  flex: 1,
+                  fontFamily: "monospace",
+                  wordBreak: "break-all",
+                }}
+              >
+                {cid}
+                <Text
+                  size={200}
+                  style={{
+                    color: tokens.colorNeutralForeground3,
+                    marginLeft: 4,
+                  }}
+                >
+                  · {inner}
+                </Text>
+              </Text>
+              <Button
+                appearance="subtle"
+                icon={<DismissRegular />}
+                size="small"
+                onClick={() => remove(s)}
+              />
+            </div>
+          );
+        })}
+        <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+          <Field label={t("apps.appPermissionsClientId")} style={{ flex: 1 }}>
+            <Input
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="prism_..."
+              size="small"
+              onKeyDown={(e) => e.key === "Enter" && add()}
+            />
+          </Field>
+          <Field
+            label={t("apps.appPermissionsScope")}
+            style={{ minWidth: 160 }}
+          >
+            <Dropdown
+              value={innerScope}
+              selectedOptions={[innerScope]}
+              onOptionSelect={(_, d) =>
+                setInnerScope(d.optionValue ?? SCOPES[0])
+              }
+              size="small"
+            >
+              {SCOPES.filter((s) => s !== "offline_access").map((s) => (
+                <Option key={s} value={s}>
+                  {s}
+                </Option>
+              ))}
+            </Dropdown>
+          </Field>
+          <Button size="small" onClick={add} disabled={!clientId.trim()}>
+            {t("apps.appPermissionsAdd")}
+          </Button>
+        </div>
+      </div>
+    </Field>
+  );
+}
+
+// ─── Scope definitions panel ──────────────────────────────────────────────────
+
+function ScopeDefinitionsPanel({ appId }: { appId: string }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [newScope, setNewScope] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [err, setErr] = useState("");
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["app-scope-defs", appId],
+    queryFn: () => api.listScopeDefinitions(appId),
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      api.createScopeDefinition(appId, {
+        scope: newScope.trim(),
+        title: newTitle.trim(),
+        description: newDesc.trim(),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["app-scope-defs", appId] });
+      setNewScope("");
+      setNewTitle("");
+      setNewDesc("");
+      setErr("");
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: (defId: string) =>
+      api.updateScopeDefinition(appId, defId, {
+        title: editTitle.trim(),
+        description: editDesc.trim(),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["app-scope-defs", appId] });
+      setEditId(null);
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (defId: string) => api.deleteScopeDefinition(appId, defId),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["app-scope-defs", appId] }),
+  });
+
+  const startEdit = (def: AppScopeDefinition) => {
+    setEditId(def.id);
+    setEditTitle(def.title);
+    setEditDesc(def.description);
+  };
+
+  if (isLoading) return <Spinner size="small" />;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Text weight="semibold">{t("apps.scopeDefsTitle")}</Text>
+      <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+        {t("apps.scopeDefsHint")}
+      </Text>
+
+      {err && <MessageBar intent="error">{err}</MessageBar>}
+
+      {(data?.definitions ?? []).map((def) =>
+        editId === def.id ? (
+          <div
+            key={def.id}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              padding: "12px",
+              background: tokens.colorNeutralBackground3,
+              borderRadius: 6,
+            }}
+          >
+            <Field label={t("apps.scopeDefTitle")}>
+              <Input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                size="small"
+              />
+            </Field>
+            <Field label={t("apps.scopeDefDescription")}>
+              <Input
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                size="small"
+              />
+            </Field>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Button
+                size="small"
+                appearance="primary"
+                onClick={() => updateMut.mutate(def.id)}
+                disabled={updateMut.isPending}
+              >
+                {t("common.save")}
+              </Button>
+              <Button size="small" onClick={() => setEditId(null)}>
+                {t("common.cancel")}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div
+            key={def.id}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              padding: "10px 12px",
+              background: tokens.colorNeutralBackground3,
+              borderRadius: 6,
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <Text
+                weight="semibold"
+                size={300}
+                style={{ fontFamily: "monospace" }}
+              >
+                {def.scope}
+              </Text>
+              <Text block size={300}>
+                {def.title}
+              </Text>
+              {def.description && (
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {def.description}
+                </Text>
+              )}
+            </div>
+            <Button
+              size="small"
+              appearance="subtle"
+              onClick={() => startEdit(def)}
+            >
+              {t("common.edit")}
+            </Button>
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<DeleteRegular />}
+              onClick={() => deleteMut.mutate(def.id)}
+            />
+          </div>
+        ),
+      )}
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          padding: "12px",
+          border: `1px dashed ${tokens.colorNeutralStroke1}`,
+          borderRadius: 6,
+        }}
+      >
+        <Text size={200} weight="semibold">
+          {t("apps.scopeDefAdd")}
+        </Text>
+        <div style={{ display: "flex", gap: 6 }}>
+          <Field label={t("apps.scopeDefScopeId")} style={{ flex: 1 }}>
+            <Input
+              value={newScope}
+              onChange={(e) => setNewScope(e.target.value)}
+              placeholder="read_posts"
+              size="small"
+            />
+          </Field>
+          <Field label={t("apps.scopeDefTitle")} style={{ flex: 2 }}>
+            <Input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder={t("apps.scopeDefTitlePlaceholder")}
+              size="small"
+            />
+          </Field>
+        </div>
+        <Field label={t("apps.scopeDefDescription")}>
+          <Input
+            value={newDesc}
+            onChange={(e) => setNewDesc(e.target.value)}
+            placeholder={t("apps.scopeDefDescPlaceholder")}
+            size="small"
+          />
+        </Field>
+        <Button
+          size="small"
+          icon={<AddRegular />}
+          onClick={() => createMut.mutate()}
+          disabled={!newScope.trim() || !newTitle.trim() || createMut.isPending}
+        >
+          {t("apps.scopeDefAdd")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Scope access rules panel ─────────────────────────────────────────────────
+
+const RULE_TYPE_LABELS: Record<string, string> = {
+  owner_allow: "owner_allow",
+  owner_deny: "owner_deny",
+  app_allow: "app_allow",
+  app_deny: "app_deny",
+};
+
+function ScopeAccessRulesPanel({ appId }: { appId: string }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [ruleType, setRuleType] =
+    useState<AppScopeAccessRule["rule_type"]>("app_allow");
+  const [targetId, setTargetId] = useState("");
+  const [err, setErr] = useState("");
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["app-scope-rules", appId],
+    queryFn: () => api.listScopeAccessRules(appId),
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      api.createScopeAccessRule(appId, {
+        rule_type: ruleType,
+        target_id: targetId.trim(),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["app-scope-rules", appId] });
+      setTargetId("");
+      setErr("");
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (ruleId: string) => api.deleteScopeAccessRule(appId, ruleId),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["app-scope-rules", appId] }),
+  });
+
+  const rules = data?.rules ?? [];
+  const grouped = {
+    app_allow: rules.filter((r) => r.rule_type === "app_allow"),
+    app_deny: rules.filter((r) => r.rule_type === "app_deny"),
+    owner_allow: rules.filter((r) => r.rule_type === "owner_allow"),
+    owner_deny: rules.filter((r) => r.rule_type === "owner_deny"),
+  };
+
+  if (isLoading) return <Spinner size="small" />;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Text weight="semibold">{t("apps.scopeAccessRulesTitle")}</Text>
+      <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+        {t("apps.scopeAccessRulesHint")}
+      </Text>
+
+      {err && <MessageBar intent="error">{err}</MessageBar>}
+
+      {(["app_allow", "app_deny", "owner_allow", "owner_deny"] as const).map(
+        (rt) => (
+          <div key={rt}>
+            <Text
+              block
+              weight="semibold"
+              size={200}
+              style={{
+                textTransform: "uppercase",
+                letterSpacing: 1,
+                color: tokens.colorNeutralForeground3,
+                marginBottom: 4,
+              }}
+            >
+              {t(`apps.ruleType_${rt}`)}
+            </Text>
+            {grouped[rt].length === 0 ? (
+              <Text
+                block
+                size={200}
+                style={{ color: tokens.colorNeutralForeground4 }}
+              >
+                {t("apps.noRules")}
+              </Text>
+            ) : (
+              grouped[rt].map((rule) => (
+                <div
+                  key={rule.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "4px 0",
+                  }}
+                >
+                  <Text size={200} style={{ flex: 1, fontFamily: "monospace" }}>
+                    {rule.target_id}
+                  </Text>
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<DismissRegular />}
+                    onClick={() => deleteMut.mutate(rule.id)}
+                  />
+                </div>
+              ))
+            )}
+          </div>
+        ),
+      )}
+
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          alignItems: "flex-end",
+          padding: "12px",
+          border: `1px dashed ${tokens.colorNeutralStroke1}`,
+          borderRadius: 6,
+        }}
+      >
+        <Field label={t("apps.ruleType")} style={{ minWidth: 160 }}>
+          <Dropdown
+            value={t(`apps.ruleType_${ruleType}`)}
+            selectedOptions={[ruleType]}
+            onOptionSelect={(_, d) =>
+              setRuleType(
+                (d.optionValue ??
+                  "app_allow") as AppScopeAccessRule["rule_type"],
+              )
+            }
+            size="small"
+          >
+            {(
+              Object.keys(RULE_TYPE_LABELS) as Array<
+                keyof typeof RULE_TYPE_LABELS
+              >
+            ).map((rt) => (
+              <Option key={rt} value={rt}>
+                {t(`apps.ruleType_${rt}`)}
+              </Option>
+            ))}
+          </Dropdown>
+        </Field>
+        <Field label={t("apps.ruleTargetId")} style={{ flex: 1 }}>
+          <Input
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+            placeholder={
+              ruleType.startsWith("app_")
+                ? "prism_..."
+                : t("apps.ruleTargetUserIdPlaceholder")
+            }
+            size="small"
+            onKeyDown={(e) =>
+              e.key === "Enter" && targetId.trim() && createMut.mutate()
+            }
+          />
+        </Field>
+        <Button
+          size="small"
+          icon={<AddRegular />}
+          onClick={() => createMut.mutate()}
+          disabled={!targetId.trim() || createMut.isPending}
+        >
+          {t("apps.addRule")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function AppDetail() {
   const styles = useStyles();
@@ -210,7 +724,7 @@ export function AppDetail() {
   };
 
   // ── Team migration ──────────────────────────────────────────────────────────
-  const [moveOpen, setMoveOpen] = useState(false);
+  const [migrateOpen, setMigrateOpen] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState("");
   const [moving, setMoving] = useState(false);
 
@@ -226,7 +740,7 @@ export function AppDetail() {
       await api.transferAppToTeam(selectedTeamId, id);
       await qc.invalidateQueries({ queryKey: ["app", id] });
       await qc.invalidateQueries({ queryKey: ["apps"] });
-      setMoveOpen(false);
+      setMigrateOpen(false);
       setSelectedTeamId("");
       showMsg("success", t("apps.appMovedToTeam"));
     } catch (err) {
@@ -298,6 +812,7 @@ export function AppDetail() {
       >
         <Tab value="settings">{t("apps.settingsTab")}</Tab>
         <Tab value="credentials">{t("apps.credentialsTab")}</Tab>
+        <Tab value="permissions">{t("apps.permissionsTab")}</Tab>
         <Tab value="danger">{t("apps.dangerTab")}</Tab>
       </TabList>
 
@@ -363,6 +878,13 @@ export function AppDetail() {
                 ))}
               </div>
             </Field>
+
+            <AppPermissionsField
+              allowedScopes={form.allowed_scopes}
+              onChange={(scopes) =>
+                setForm((f) => ({ ...f!, allowed_scopes: scopes }))
+              }
+            />
             <Checkbox
               id={"is-public"}
               label={t("apps.publicClient")}
@@ -374,6 +896,17 @@ export function AppDetail() {
             <Button appearance="primary" onClick={handleSave} disabled={saving}>
               {saving ? <Spinner size="tiny" /> : t("common.saveChanges")}
             </Button>
+          </div>
+        </div>
+      )}
+
+      {tab === "permissions" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+          <div className={styles.card}>
+            <ScopeDefinitionsPanel appId={id!} />
+          </div>
+          <div className={styles.card}>
+            <ScopeAccessRulesPanel appId={id!} />
           </div>
         </div>
       )}
@@ -506,73 +1039,89 @@ export function AppDetail() {
               <Text style={{ color: tokens.colorNeutralForeground3 }}>
                 {t("apps.personalApp")}
               </Text>
-              {manageableTeams.length > 0 && (
-                <Dialog
-                  open={moveOpen}
-                  onOpenChange={(_, d) => setMoveOpen(d.open)}
-                >
-                  <DialogTrigger disableButtonEnhancement>
-                    <Button
-                      appearance="outline"
-                      size="small"
-                      icon={<PeopleRegular />}
-                    >
-                      {t("apps.moveToTeam")}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogSurface>
-                    <DialogBody>
-                      <DialogTitle>{t("apps.moveAppToTeam")}</DialogTitle>
-                      <DialogContent>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 12,
-                          }}
-                        >
-                          <Field label={t("apps.selectTeam")} required>
-                            <Select
-                              value={selectedTeamId}
-                              onChange={(_, d) => setSelectedTeamId(d.value)}
-                            >
-                              <option value="">{t("apps.chooseTeam")}</option>
-                              {manageableTeams.map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.name}
-                                </option>
-                              ))}
-                            </Select>
-                          </Field>
-                          <Text
-                            size={200}
-                            style={{ color: tokens.colorNeutralForeground3 }}
-                          >
-                            {t("apps.allAdminsCanManage")}
-                          </Text>
-                        </div>
-                      </DialogContent>
-                      <DialogActions>
-                        <DialogTrigger>
-                          <Button>{t("common.cancel")}</Button>
-                        </DialogTrigger>
-                        <Button
-                          appearance="primary"
-                          onClick={handleMoveToTeam}
-                          disabled={moving || !selectedTeamId}
-                        >
-                          {moving ? (
-                            <Spinner size="tiny" />
-                          ) : (
-                            t("apps.moveToTeam")
-                          )}
-                        </Button>
-                      </DialogActions>
-                    </DialogBody>
-                  </DialogSurface>
-                </Dialog>
-              )}
             </div>
+          )}
+
+          {/* Migrate app to team */}
+          {manageableTeams.filter((tm) => tm.id !== app.team_id).length > 0 && (
+            <Dialog
+              open={migrateOpen}
+              onOpenChange={(_, d) => {
+                setMigrateOpen(d.open);
+                if (!d.open) setSelectedTeamId("");
+              }}
+            >
+              <DialogTrigger disableButtonEnhancement>
+                <Button
+                  appearance="outline"
+                  icon={<PeopleRegular />}
+                  style={{ width: "fit-content" }}
+                >
+                  {t("apps.migrateToTeam")}
+                </Button>
+              </DialogTrigger>
+              <DialogSurface>
+                <DialogBody>
+                  <DialogTitle>{t("apps.migrateAppToTeam")}</DialogTitle>
+                  <DialogContent>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                      }}
+                    >
+                      <Field label={t("apps.selectTeam")} required>
+                        <Dropdown
+                          placeholder={t("apps.chooseTeam")}
+                          value={
+                            manageableTeams.find(
+                              (tm) => tm.id === selectedTeamId,
+                            )?.name ?? ""
+                          }
+                          selectedOptions={
+                            selectedTeamId ? [selectedTeamId] : []
+                          }
+                          onOptionSelect={(_, d) =>
+                            setSelectedTeamId(d.optionValue ?? "")
+                          }
+                        >
+                          {manageableTeams
+                            .filter((tm) => tm.id !== app.team_id)
+                            .map((tm) => (
+                              <Option key={tm.id} value={tm.id}>
+                                {tm.name}
+                              </Option>
+                            ))}
+                        </Dropdown>
+                      </Field>
+                      <Text
+                        size={200}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        {t("apps.migrateAppDesc")}
+                      </Text>
+                    </div>
+                  </DialogContent>
+                  <DialogActions>
+                    <DialogTrigger>
+                      <Button>{t("common.cancel")}</Button>
+                    </DialogTrigger>
+                    <Button
+                      appearance="primary"
+                      onClick={handleMoveToTeam}
+                      disabled={moving || !selectedTeamId}
+                    >
+                      {moving ? (
+                        <Spinner size="tiny" />
+                      ) : (
+                        t("apps.migrateToTeam")
+                      )}
+                    </Button>
+                  </DialogActions>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
           )}
 
           <Text
@@ -582,6 +1131,7 @@ export function AppDetail() {
           >
             {t("apps.dangerTab")}
           </Text>
+
           <Dialog>
             <DialogTrigger disableButtonEnhancement>
               <Button

@@ -1,42 +1,51 @@
 // Helpers for computing app is_verified from the owner's verified domains.
-// An app is considered verified when at least one of its redirect URI hostnames
-// or its website URL hostname matches a verified domain owned by the same user
+// An app is considered verified when EVERY non-localhost redirect URI hostname
+// is covered by a verified domain owned by the same user
 // (exact match or subdomain: sub.example.com matches example.com).
+// Localhost / 127.0.0.1 / ::1 redirect URIs are excluded from this requirement.
 
 function hostnameMatchesDomain(hostname: string, domain: string): boolean {
   return hostname === domain || hostname.endsWith(`.${domain}`);
 }
 
-function extractHostnames(
-  websiteUrl: string | null,
-  redirectUrisJson: string,
-): string[] {
-  let uris: string[] = [];
-  try {
-    uris = JSON.parse(redirectUrisJson) as string[];
-  } catch {
-    /* ignore bad JSON */
-  }
-  if (websiteUrl) uris = [websiteUrl, ...uris];
-  return uris.flatMap((url) => {
-    try {
-      return [new URL(url).hostname];
-    } catch {
-      return [];
-    }
-  });
+function isLocalhostHostname(hostname: string): boolean {
+  return (
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+  );
 }
 
 /** Compute is_verified for a single app using a pre-fetched domain set. */
 export function computeVerified(
   verifiedDomains: Set<string>,
-  websiteUrl: string | null,
+  _websiteUrl: string | null,
   redirectUrisJson: string,
 ): boolean {
   if (!verifiedDomains.size) return false;
-  const hostnames = extractHostnames(websiteUrl, redirectUrisJson);
-  return hostnames.some((host) =>
-    [...verifiedDomains].some((d) => hostnameMatchesDomain(host, d)),
+
+  let uris: string[] = [];
+  try {
+    uris = JSON.parse(redirectUrisJson) as string[];
+  } catch {
+    return false;
+  }
+
+  // Extract non-localhost redirect URI hostnames
+  const verifiableHosts = uris.flatMap((url) => {
+    try {
+      const host = new URL(url).hostname;
+      return isLocalhostHostname(host) ? [] : [host];
+    } catch {
+      return [];
+    }
+  });
+
+  // Must have at least one non-localhost redirect URI to be verifiable
+  if (verifiableHosts.length === 0) return false;
+
+  const domainList = [...verifiedDomains];
+  // ALL non-localhost redirect URI hostnames must match a verified domain
+  return verifiableHosts.every((host) =>
+    domainList.some((d) => hostnameMatchesDomain(host, d)),
   );
 }
 

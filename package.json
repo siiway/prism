@@ -5,9 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "worker:dev": "wrangler dev",
     "build": "tsc -b && vite build",
-    "deploy": "pnpm run build && wrangler deploy",
+    "deploy": "bun run build && wrangler deploy",
     "lint": "eslint .",
     "preview": "vite preview",
     "db:migrate": "wrangler d1 migrations apply prism-db --local",
@@ -42,6 +41,7 @@
     }
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.32.2",
     "@cloudflare/workers-types": "^4.20260317.1",
     "@eslint/js": "^10.0.1",
     "@types/react": "^19.2.14",

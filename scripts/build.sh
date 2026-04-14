@@ -7,12 +7,21 @@ cd "$ROOT"
 # ── Flags ──────────────────────────────────────────────────────────────────────
 SKIP_WASM=false
 SKIP_FRONTEND=false
+PM="bun"
 
-for arg in "$@"; do
+args=("$@")
+i=0
+while [ $i -lt ${#args[@]} ]; do
+  arg="${args[$i]}"
   case $arg in
-    --skip-wasm)     SKIP_WASM=true ;;
-    --skip-frontend) SKIP_FRONTEND=true ;;
+    --skip-wasm)         SKIP_WASM=true ;;
+    --skip-frontend)     SKIP_FRONTEND=true ;;
+    --package-manager=*) PM="${arg#--package-manager=}" ;;
+    --package-manager)
+      i=$((i + 1))
+      PM="${args[$i]}" ;;
   esac
+  i=$((i + 1))
 done
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -60,6 +69,28 @@ ensure_rust() {
   rustup target add wasm32-unknown-unknown
 }
 
+# ── Toolchain: bun ────────────────────────────────────────────────────────────
+ensure_bun() {
+  if has bun; then
+    ok "bun $(bun --version)"
+    return
+  fi
+
+  step "Installing bun"
+  if has curl; then
+    curl -fsSL https://bun.sh/install | bash
+  elif has wget; then
+    wget -qO- https://bun.sh/install | bash
+  else
+    echo "ERROR: need curl or wget to install bun" >&2
+    exit 1
+  fi
+
+  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+  export PATH="$BUN_INSTALL/bin:$PATH"
+  ok "bun $(bun --version)"
+}
+
 # ── Toolchain: Node.js ────────────────────────────────────────────────────────
 ensure_node() {
   if has node; then
@@ -76,7 +107,6 @@ ensure_node() {
       echo "       Install Node.js manually: https://nodejs.org" >&2
       exit 1
     fi
-    # Add fnm to PATH for this session
     export PATH="${HOME}/.local/share/fnm:${PATH}"
     eval "$(fnm env --shell bash 2>/dev/null || true)"
   fi
@@ -95,7 +125,6 @@ ensure_pnpm() {
 
   step "Installing pnpm"
 
-  # Prefer corepack if available (ships with Node 16+)
   if has corepack; then
     corepack enable pnpm
     corepack prepare pnpm@latest --activate
@@ -103,7 +132,6 @@ ensure_pnpm() {
     npm install -g pnpm
   elif has curl; then
     curl -fsSL https://get.pnpm.io/install.sh | sh -
-    # Source the updated profile
     export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
     export PATH="$PNPM_HOME:$PATH"
   else
@@ -136,23 +164,40 @@ fi
 
 # ── Frontend ───────────────────────────────────────────────────────────────────
 if [ "$SKIP_FRONTEND" = false ]; then
-  step "Checking Node.js"
-  ensure_node
+  if [ "$PM" = "pnpm" ]; then
+    step "Checking Node.js"
+    ensure_node
 
-  step "Checking pnpm"
-  ensure_pnpm
+    step "Checking pnpm"
+    ensure_pnpm
 
-  step "Installing dependencies"
-  pnpm install --frozen-lockfile
+    step "Installing dependencies"
+    pnpm install --frozen-lockfile
 
-  step "Type-checking (app)"
-  pnpm exec tsc -p tsconfig.app.json --noEmit
+    step "Type-checking (app)"
+    pnpm exec tsc -p tsconfig.app.json --noEmit
 
-  step "Type-checking (worker)"
-  pnpm exec tsc -p tsconfig.worker.json --noEmit
+    step "Type-checking (worker)"
+    pnpm exec tsc -p tsconfig.worker.json --noEmit
 
-  step "Building frontend"
-  pnpm exec vite build
+    step "Building frontend"
+    pnpm exec vite build
+  else
+    step "Checking bun"
+    ensure_bun
+
+    step "Installing dependencies"
+    bun install --frozen-lockfile
+
+    step "Type-checking (app)"
+    bunx tsc -p tsconfig.app.json --noEmit
+
+    step "Type-checking (worker)"
+    bunx tsc -p tsconfig.worker.json --noEmit
+
+    step "Building frontend"
+    bunx vite build
+  fi
 
   echo
   echo "Build complete. Output in dist/"

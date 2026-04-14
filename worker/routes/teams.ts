@@ -1088,8 +1088,6 @@ app.post("/:id/apps/transfer", async (c) => {
   if (!appRow) return c.json({ error: "App not found" }, 404);
   if (appRow.owner_id !== user.id)
     return c.json({ error: "You can only transfer apps you created" }, 403);
-  if (appRow.team_id)
-    return c.json({ error: "App already belongs to a team" }, 400);
 
   const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(

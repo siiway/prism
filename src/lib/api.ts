@@ -350,6 +350,69 @@ export const api = {
       getToken(),
     ),
 
+  // ─── App scope definitions ───────────────────────────────────────────────
+  listScopeDefinitions: (appId: string) =>
+    request<{ definitions: AppScopeDefinition[] }>(
+      "GET",
+      `/apps/${appId}/scope-definitions`,
+      undefined,
+      getToken(),
+    ),
+  createScopeDefinition: (
+    appId: string,
+    body: { scope: string; title: string; description?: string },
+  ) =>
+    request<{ definition: AppScopeDefinition }>(
+      "POST",
+      `/apps/${appId}/scope-definitions`,
+      body,
+      getToken(),
+    ),
+  updateScopeDefinition: (
+    appId: string,
+    defId: string,
+    body: { title?: string; description?: string },
+  ) =>
+    request<{ definition: AppScopeDefinition }>(
+      "PATCH",
+      `/apps/${appId}/scope-definitions/${defId}`,
+      body,
+      getToken(),
+    ),
+  deleteScopeDefinition: (appId: string, defId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/apps/${appId}/scope-definitions/${defId}`,
+      undefined,
+      getToken(),
+    ),
+
+  // ─── App scope access rules ──────────────────────────────────────────────
+  listScopeAccessRules: (appId: string) =>
+    request<{ rules: AppScopeAccessRule[] }>(
+      "GET",
+      `/apps/${appId}/scope-access-rules`,
+      undefined,
+      getToken(),
+    ),
+  createScopeAccessRule: (
+    appId: string,
+    body: { rule_type: AppScopeAccessRule["rule_type"]; target_id: string },
+  ) =>
+    request<{ rule: AppScopeAccessRule }>(
+      "POST",
+      `/apps/${appId}/scope-access-rules`,
+      body,
+      getToken(),
+    ),
+  deleteScopeAccessRule: (appId: string, ruleId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/apps/${appId}/scope-access-rules/${ruleId}`,
+      undefined,
+      getToken(),
+    ),
+
   // ─── Domains ─────────────────────────────────────────────────────────────
   listDomains: () =>
     request<{ domains: Domain[] }>("GET", "/domains", undefined, getToken()),
@@ -1312,6 +1375,15 @@ export interface OAuthAuthorizeInfo {
     is_first_party: boolean;
   };
   scopes: string[];
+  app_scopes: Array<{
+    scope: string;
+    client_id: string;
+    inner_scope: string;
+    app_name: string;
+    app_icon_url: string | null;
+    scope_title: string | null;
+    scope_desc: string | null;
+  }>;
   redirect_uri: string;
   state: string | null;
   user: UserProfile | null;
@@ -1373,5 +1445,23 @@ export interface SiteInvite {
   created_by: string;
   created_by_username: string | null;
   expires_at: number | null;
+  created_at: number;
+}
+
+export interface AppScopeDefinition {
+  id: string;
+  app_id: string;
+  scope: string;
+  title: string;
+  description: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AppScopeAccessRule {
+  id: string;
+  app_id: string;
+  rule_type: "owner_allow" | "owner_deny" | "app_allow" | "app_deny";
+  target_id: string;
   created_at: number;
 }

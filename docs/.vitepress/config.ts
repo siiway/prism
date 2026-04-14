@@ -69,6 +69,10 @@ export default defineConfig({
             items: [
               { text: "API Reference", link: "/api" },
               { text: "OAuth / OIDC Guide", link: "/oauth" },
+              { text: "Webhooks", link: "/webhooks" },
+              { text: "App Notifications", link: "/app-notifications" },
+              { text: "Cross-App Permissions", link: "/app-permissions" },
+              { text: "Personal Access Tokens", link: "/personal-access-tokens" },
             ],
           },
         ],
@@ -130,6 +134,10 @@ export default defineConfig({
             items: [
               { text: "API 参考", link: "/zh/api" },
               { text: "OAuth / OIDC 指南", link: "/zh/oauth" },
+              { text: "Webhooks", link: "/zh/webhooks" },
+              { text: "应用通知", link: "/zh/app-notifications" },
+              { text: "跨应用权限", link: "/zh/app-permissions" },
+              { text: "个人访问令牌", link: "/zh/personal-access-tokens" },
             ],
           },
         ],

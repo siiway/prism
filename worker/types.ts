@@ -243,6 +243,24 @@ export interface WebhookDeliveryRow {
   delivered_at: number;
 }
 
+export interface AppScopeDefinitionRow {
+  id: string;
+  app_id: string;
+  scope: string;
+  title: string;
+  description: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AppScopeAccessRuleRow {
+  id: string;
+  app_id: string;
+  rule_type: "owner_allow" | "owner_deny" | "app_allow" | "app_deny";
+  target_id: string;
+  created_at: number;
+}
+
 export interface LoginErrorRow {
   id: string;
   error_code: string;

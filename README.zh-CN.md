@@ -49,9 +49,8 @@ wrangler r2 bucket create prism-assets
 # 4. 执行数据库迁移
 pnpm db:migrate
 
-# 5. 启动开发服务器（两个终端）
-pnpm worker:dev   # Wrangler 监听 :8787
-pnpm dev          # Vite 监听 :5173
+# 5. 启动开发服务器
+pnpm dev   # Wrangler 监听 :8787
 ```
 
 打开 <http://localhost:5173>，系统会自动跳转到首次运行配置页面以创建管理员账号。

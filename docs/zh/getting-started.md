@@ -66,19 +66,9 @@ pnpm db:migrate:prod     # 生产 D1
 
 ## 5. 启动开发服务器
 
-在第一个终端中：
-
 ```bash
-pnpm worker:dev    # Wrangler，监听 http://localhost:8787
+pnpm dev                 # Vite，监听 http://localhost:5173
 ```
-
-在第二个终端中：
-
-```bash
-pnpm dev           # Vite，监听 http://localhost:5173
-```
-
-Vite 会将所有 `/api/*` 请求代理到 Wrangler 进程，因此只需打开 <http://localhost:5173>。
 
 ## 6. 首次初始化
 

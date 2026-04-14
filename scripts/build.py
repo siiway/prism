@@ -42,10 +42,12 @@ def has(cmd: str) -> bool:
 def refresh_path() -> None:
     """Re-add common toolchain dirs to PATH for this process."""
     additions = [
-        Path.home() / ".cargo" / "bin",        # Rust
-        Path.home() / ".local" / "share" / "pnpm",  # pnpm (Linux)
-        Path.home() / "AppData" / "Roaming" / "pnpm",  # pnpm (Windows)
-        Path.home() / ".fnm",                  # fnm
+        Path.home() / ".cargo" / "bin",                        # Rust
+        Path.home() / ".bun" / "bin",                          # bun (Unix)
+        Path.home() / "AppData" / "Roaming" / "bun",           # bun (Windows)
+        Path.home() / ".local" / "share" / "pnpm",             # pnpm (Linux)
+        Path.home() / "AppData" / "Roaming" / "pnpm",          # pnpm (Windows)
+        Path.home() / ".fnm",                                   # fnm
         Path("/usr/local/bin"),
     ]
     current = os.environ.get("PATH", "")
@@ -97,6 +99,52 @@ def ensure_rust() -> None:
     run("rustup", "target", "add", "wasm32-unknown-unknown")
 
 
+# ── Toolchain: bun ────────────────────────────────────────────────────────────
+
+def ensure_bun() -> None:
+    refresh_path()
+    if has("bun"):
+        ver = subprocess.check_output(["bun", "--version"]).decode().strip()
+        ok(f"bun {ver}")
+        return
+
+    step("Installing bun")
+
+    if IS_WIN:
+        if has("winget"):
+            code = run(
+                "winget", "install", "--id", "Oven-sh.Bun",
+                "-e", "--accept-source-agreements", "--accept-package-agreements",
+                check=False,
+            )
+            refresh_path()
+            if code == 0 and has("bun"):
+                ok(f"bun {subprocess.check_output(['bun', '--version']).decode().strip()}")
+                return
+
+        info("winget unavailable — using PowerShell installer")
+        code = shell_run(
+            'powershell -ExecutionPolicy Bypass -Command "irm bun.sh/install.ps1 | iex"'
+        )
+        if code != 0:
+            sys.exit(code)
+    elif has("curl"):
+        code = shell_run("curl -fsSL https://bun.sh/install | bash")
+        if code != 0:
+            sys.exit(code)
+    elif has("wget"):
+        code = shell_run("wget -qO- https://bun.sh/install | bash")
+        if code != 0:
+            sys.exit(code)
+    else:
+        print("ERROR: cannot install bun — no winget, curl, or wget found", file=sys.stderr)
+        sys.exit(1)
+
+    refresh_path()
+    ver = subprocess.check_output(["bun", "--version"]).decode().strip()
+    ok(f"bun {ver}")
+
+
 # ── Toolchain: Node.js ────────────────────────────────────────────────────────
 
 def ensure_node() -> None:
@@ -120,7 +168,6 @@ def ensure_node() -> None:
                 ok(f"node {subprocess.check_output(['node','--version']).decode().strip()}")
                 return
 
-        # Fallback: download MSI via Node's release API
         import json as _json
         info("Fetching Node.js LTS version list...")
         with urllib.request.urlopen("https://nodejs.org/dist/index.json") as r:
@@ -138,7 +185,6 @@ def ensure_node() -> None:
         if has("brew"):
             run("brew", "install", "node@lts")
         elif has("curl"):
-            # Use fnm
             if not has("fnm"):
                 shell_run("curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell")
                 refresh_path()
@@ -152,7 +198,6 @@ def ensure_node() -> None:
             print("ERROR: install Node.js manually: https://nodejs.org", file=sys.stderr)
             sys.exit(1)
     else:
-        # Linux
         if not has("fnm"):
             if has("curl"):
                 shell_run("curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell")
@@ -233,24 +278,40 @@ def build_wasm() -> None:
         warn(f"expected {src} — skipping copy")
 
 
-def build_frontend() -> None:
-    step("Checking Node.js")
-    ensure_node()
+def build_frontend(pm: str) -> None:
+    if pm == "pnpm":
+        step("Checking Node.js")
+        ensure_node()
 
-    step("Checking pnpm")
-    ensure_pnpm()
+        step("Checking pnpm")
+        ensure_pnpm()
 
-    step("Installing dependencies")
-    run("pnpm", "install", "--frozen-lockfile")
+        step("Installing dependencies")
+        run("pnpm", "install", "--frozen-lockfile")
 
-    step("Type-checking (app)")
-    run("pnpm", "exec", "tsc", "-p", "tsconfig.app.json", "--noEmit")
+        step("Type-checking (app)")
+        run("pnpm", "exec", "tsc", "-p", "tsconfig.app.json", "--noEmit")
 
-    step("Type-checking (worker)")
-    run("pnpm", "exec", "tsc", "-p", "tsconfig.worker.json", "--noEmit")
+        step("Type-checking (worker)")
+        run("pnpm", "exec", "tsc", "-p", "tsconfig.worker.json", "--noEmit")
 
-    step("Building frontend")
-    run("pnpm", "exec", "vite", "build")
+        step("Building frontend")
+        run("pnpm", "exec", "vite", "build")
+    else:
+        step("Checking bun")
+        ensure_bun()
+
+        step("Installing dependencies")
+        run("bun", "install", "--frozen-lockfile")
+
+        step("Type-checking (app)")
+        run("bunx", "tsc", "-p", "tsconfig.app.json", "--noEmit")
+
+        step("Type-checking (worker)")
+        run("bunx", "tsc", "-p", "tsconfig.worker.json", "--noEmit")
+
+        step("Building frontend")
+        run("bunx", "vite", "build")
 
     print("\nBuild complete. Output in dist/")
 
@@ -259,14 +320,16 @@ def build_frontend() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build Prism")
-    parser.add_argument("--skip-wasm",     action="store_true", help="Skip PoW WASM build")
-    parser.add_argument("--skip-frontend", action="store_true", help="Skip frontend build")
+    parser.add_argument("--skip-wasm",        action="store_true", help="Skip PoW WASM build")
+    parser.add_argument("--skip-frontend",    action="store_true", help="Skip frontend build")
+    parser.add_argument("--package-manager",  default="bun", metavar="PM",
+                        help="Package manager to use (default: bun)")
     args = parser.parse_args()
 
     if not args.skip_wasm:
         build_wasm()
     if not args.skip_frontend:
-        build_frontend()
+        build_frontend(args.package_manager)
 
 
 if __name__ == "__main__":

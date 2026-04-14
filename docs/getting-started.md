@@ -69,20 +69,9 @@ pnpm db:migrate:prod     # production D1
 
 ## 5. Start development servers
 
-In one terminal:
-
 ```bash
-pnpm worker:dev    # Wrangler on http://localhost:8787
+pnpm dev                 # Vite on http://localhost:5173
 ```
-
-In another terminal:
-
-```bash
-pnpm dev           # Vite on http://localhost:5173
-```
-
-Vite proxies all `/api/*` requests to the Wrangler process, so you only need to
-open <http://localhost:5173>.
 
 ## 6. First-run setup
 
