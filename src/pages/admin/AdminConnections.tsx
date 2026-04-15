@@ -38,6 +38,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthSource } from "../../lib/api";
+import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
   section: {
@@ -527,7 +528,7 @@ export function AdminConnections() {
 
       {/* Source list */}
       {isLoading ? (
-        <Spinner />
+        <SkeletonTableRows rows={5} cols={5} />
       ) : !data?.sources.length ? (
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
           {t("admin.oauthNoSources")}

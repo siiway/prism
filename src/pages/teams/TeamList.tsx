@@ -29,6 +29,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { SkeletonAppCards } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
   header: {
@@ -179,7 +180,7 @@ export function TeamList() {
         </Dialog>
       </div>
 
-      {isLoading && <Spinner />}
+      {isLoading && <SkeletonAppCards count={4} />}
 
       {!isLoading && data?.teams.length === 0 && (
         <div style={{ textAlign: "center", padding: "60px 0" }}>

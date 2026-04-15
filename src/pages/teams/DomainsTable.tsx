@@ -34,6 +34,7 @@ import {
 import { TransferFromPersonalDialog } from "./dialogs/TransferFromPersonalDialog";
 import { TeamDomainDetailDialog } from "./dialogs/TeamDomainDetailDialog";
 import { DeleteTeamDomainDialog } from "./dialogs/DeleteTeamDomainDialog";
+import { SkeletonTableRows } from "../../components/Skeletons";
 
 interface DomainsTableProps {
   teamId: string;
@@ -228,7 +229,7 @@ export function DomainsTable({
         </div>
       )}
 
-      {loading && <Spinner />}
+      {loading && <SkeletonTableRows rows={5} cols={4} />}
       {!loading && domains.length === 0 && (
         <Text
           style={{

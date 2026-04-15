@@ -74,6 +74,7 @@ export interface OAuthAppRow {
   is_first_party: number;
   team_id: string | null;
   oidc_fields: string; // JSON string[]
+  use_jwt_tokens: number;
   created_at: number;
   updated_at: number;
 }

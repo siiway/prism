@@ -34,6 +34,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthConsent, type OAuthToken } from "../lib/api";
+import { SkeletonConsentCards } from "../components/Skeletons";
 
 const useStyles = makeStyles({
   list: {
@@ -412,7 +413,7 @@ export function ConnectedApps() {
       )}
 
       {isLoading ? (
-        <Spinner size="small" />
+        <SkeletonConsentCards count={3} />
       ) : consents.length === 0 ? (
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
           {t("connectedApps.noApps")}

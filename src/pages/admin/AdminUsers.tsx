@@ -38,6 +38,7 @@ import { api, ApiError } from "../../lib/api";
 import { CopyIdButton } from "../../components/CopyIdButton";
 import { useAuthStore } from "../../store/auth";
 import type { UserProfile } from "../../lib/api";
+import { SkeletonTableRows } from "../../components/Skeletons";
 
 type AdminUser = UserProfile & { app_count: number; is_active: boolean };
 
@@ -164,7 +165,7 @@ export function AdminUsers() {
       </div>
 
       {isLoading ? (
-        <Spinner />
+        <SkeletonTableRows rows={8} cols={3} />
       ) : (
         <Table style={{ tableLayout: "auto" }}>
           <TableHeader>

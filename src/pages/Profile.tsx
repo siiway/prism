@@ -28,6 +28,11 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 import { ImageUrlInput } from "../components/ImageUrlInput";
+import {
+  SkeletonProfileCard,
+  SkeletonEmailCard,
+  SkeletonFormCard,
+} from "../components/Skeletons";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: "32px" },
@@ -164,7 +169,14 @@ export function Profile() {
     }
   };
 
-  if (isLoading) return <Spinner />;
+  if (isLoading)
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+        <SkeletonProfileCard />
+        <SkeletonEmailCard />
+        <SkeletonFormCard rows={2} />
+      </div>
+    );
 
   return (
     <div className={styles.page}>

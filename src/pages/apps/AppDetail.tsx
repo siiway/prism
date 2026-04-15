@@ -45,6 +45,10 @@ import {
   type AppScopeAccessRule,
 } from "../../lib/api";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
+import {
+  SkeletonFormCard,
+  SkeletonTableRows,
+} from "../../components/Skeletons";
 
 const useStyles = makeStyles({
   header: {
@@ -281,7 +285,7 @@ function ScopeDefinitionsPanel({ appId }: { appId: string }) {
     setEditDesc(def.description);
   };
 
-  if (isLoading) return <Spinner size="small" />;
+  if (isLoading) return <SkeletonTableRows rows={3} cols={2} />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -484,7 +488,7 @@ function ScopeAccessRulesPanel({ appId }: { appId: string }) {
     owner_deny: rules.filter((r) => r.rule_type === "owner_deny"),
   };
 
-  if (isLoading) return <Spinner size="small" />;
+  if (isLoading) return <SkeletonTableRows rows={4} cols={2} />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -636,6 +640,7 @@ export function AppDetail() {
     redirect_uris: string;
     allowed_scopes: string[];
     is_public: boolean;
+    use_jwt_tokens: boolean;
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [secretRotating, setSecretRotating] = useState(false);
@@ -667,6 +672,7 @@ export function AppDetail() {
       redirect_uris: app.redirect_uris.join("\n"),
       allowed_scopes: app.allowed_scopes,
       is_public: app.is_public,
+      use_jwt_tokens: app.use_jwt_tokens,
     });
   };
 
@@ -685,6 +691,7 @@ export function AppDetail() {
           .filter(Boolean),
         allowed_scopes: form.allowed_scopes,
         is_public: form.is_public,
+        use_jwt_tokens: form.use_jwt_tokens,
       });
       await qc.invalidateQueries({ queryKey: ["app", id] });
       showMsg("success", t("apps.appUpdated"));
@@ -768,7 +775,7 @@ export function AppDetail() {
     }
   };
 
-  if (isLoading) return <Spinner />;
+  if (isLoading) return <SkeletonFormCard rows={6} />;
   if (!app) return <Text>{t("apps.appNotFound")}</Text>;
 
   if (!form) initForm();
@@ -891,6 +898,14 @@ export function AppDetail() {
               checked={form.is_public}
               onChange={(_, d) =>
                 setForm((f) => ({ ...f!, is_public: !!d.checked }))
+              }
+            />
+            <Checkbox
+              id={"use-jwt-tokens"}
+              label={t("apps.useJwtTokens")}
+              checked={form.use_jwt_tokens}
+              onChange={(_, d) =>
+                setForm((f) => ({ ...f!, use_jwt_tokens: !!d.checked }))
               }
             />
             <Button appearance="primary" onClick={handleSave} disabled={saving}>

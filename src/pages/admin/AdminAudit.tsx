@@ -2,7 +2,6 @@
 
 import {
   Button,
-  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -16,6 +15,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { SkeletonTableRows } from "../../components/Skeletons";
 
 export function AdminAudit() {
   const [page, setPage] = useState(1);
@@ -41,7 +41,7 @@ export function AdminAudit() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {isLoading ? (
-        <Spinner />
+        <SkeletonTableRows rows={8} cols={5} />
       ) : (
         <Table>
           <TableHeader>

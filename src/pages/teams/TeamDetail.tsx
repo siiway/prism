@@ -53,6 +53,10 @@ import { NewTeamAppDialog } from "./dialogs/NewTeamAppDialog";
 import { MembersTable } from "./MembersTable";
 import { AppsGrid } from "./AppsGrid";
 import { DomainsTable } from "./DomainsTable";
+import {
+  SkeletonFormCard,
+  SkeletonTableRows,
+} from "../../components/Skeletons";
 
 const useStyles = makeStyles({
   header: {
@@ -285,7 +289,7 @@ export function TeamDetail() {
     }
   };
 
-  if (isLoading) return <Spinner />;
+  if (isLoading) return <SkeletonFormCard rows={5} />;
   if (!team) return <Text>{t("teams.teamNotFound")}</Text>;
 
   return (
@@ -441,7 +445,7 @@ export function TeamDetail() {
             <InviteDialog teamId={id!} showMsg={showMsg} />
           </div>
 
-          {invitesLoading && <Spinner size="small" />}
+          {invitesLoading && <SkeletonTableRows rows={3} cols={4} />}
 
           {!invitesLoading && (invitesData?.invites ?? []).length === 0 && (
             <Text style={{ color: tokens.colorNeutralForeground3 }}>

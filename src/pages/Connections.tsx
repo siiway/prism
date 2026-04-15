@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { SkeletonAppCards } from "../components/Skeletons";
 
 const useStyles = makeStyles({
   grid: {
@@ -94,15 +95,17 @@ export function Connections() {
   const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();
-  const { data: connectionsData } = useQuery({
+  const { data: connectionsData, isLoading: connsLoading } = useQuery({
     queryKey: ["connections"],
     queryFn: api.listConnections,
   });
-  const { data: site } = useQuery({
+  const { data: site, isLoading: siteLoading } = useQuery({
     queryKey: ["site"],
     queryFn: api.site,
     staleTime: 60_000,
   });
+
+  const isLoading = connsLoading || siteLoading;
 
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -186,7 +189,9 @@ export function Connections() {
         </MessageBar>
       )}
 
-      <div className={styles.grid}>
+      {isLoading ? <SkeletonAppCards count={4} /> : null}
+
+      <div className={styles.grid} style={isLoading ? { display: "none" } : {}}>
         {providers.map((p) => {
           const conns = getConnections(p.slug);
           const color = PROVIDER_COLORS[p.provider] ?? "#666";

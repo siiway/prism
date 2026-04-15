@@ -306,6 +306,7 @@ app.patch("/:id", async (c) => {
     allowed_scopes?: string[];
     oidc_fields?: string[];
     is_public?: boolean;
+    use_jwt_tokens?: boolean;
   }>();
 
   if (body.icon_url) {
@@ -351,10 +352,16 @@ app.patch("/:id", async (c) => {
       : row.oidc_fields,
     is_public:
       body.is_public !== undefined ? (body.is_public ? 1 : 0) : row.is_public,
+    use_jwt_tokens:
+      body.use_jwt_tokens !== undefined
+        ? body.use_jwt_tokens
+          ? 1
+          : 0
+        : row.use_jwt_tokens,
   };
 
   await c.env.DB.prepare(
-    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, oidc_fields=?, is_public=?, updated_at=? WHERE id=?`,
+    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, updated_at=? WHERE id=?`,
   )
     .bind(
       updated.name,
@@ -365,6 +372,7 @@ app.patch("/:id", async (c) => {
       updated.allowed_scopes,
       updated.oidc_fields,
       updated.is_public,
+      updated.use_jwt_tokens,
       now,
       id,
     )
@@ -1183,6 +1191,7 @@ function safeApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
     is_verified: isVerified,
     is_official: row.is_official === 1,
     is_first_party: row.is_first_party === 1,
+    use_jwt_tokens: row.use_jwt_tokens === 1,
     team_id: row.team_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,

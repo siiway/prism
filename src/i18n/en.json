@@ -296,6 +296,7 @@
     "appPermissionsScope": "Scope",
     "appPermissionsAdd": "Add",
     "publicClient": "Public client (no client secret, PKCE required)",
+    "useJwtTokens": "Issue ML-DSA-65 JWT access tokens (post-quantum, opt-in)",
     "appUpdated": "App updated",
     "clientCredentials": "Client Credentials",
     "clientId": "Client ID",

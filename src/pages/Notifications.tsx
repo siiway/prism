@@ -15,6 +15,7 @@ import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
+import { SkeletonToggleRows } from "../components/Skeletons";
 
 // ─── Event catalogue (rich descriptions, not raw IDs) ────────────────────────
 
@@ -205,7 +206,7 @@ export function Notifications() {
     mutation.mutate([...selected]);
   }
 
-  if (isLoading) return <Spinner size="small" />;
+  if (isLoading) return <SkeletonToggleRows rows={8} />;
 
   return (
     <div className={styles.root}>

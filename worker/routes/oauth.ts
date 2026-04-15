@@ -642,20 +642,25 @@ app.post("/token", async (c) => {
     const refreshToken = hasOffline ? randomBase64url(48) : null;
 
     const jti = randomId();
-    const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
-    const accessToken = signAccessToken(
-      {
-        iss: c.env.APP_URL,
-        sub: user.id,
-        aud: extractAud(scopes, c.env.APP_URL),
-        client_id: clientId,
-        jti,
-        scope: scopes.join(" "),
-      },
-      mldsaKey.secretKey,
-      mldsaKey.kid,
-      atTtl,
-    );
+    let accessToken: string;
+    if (oauthApp.use_jwt_tokens) {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      accessToken = signAccessToken(
+        {
+          iss: c.env.APP_URL,
+          sub: user.id,
+          aud: extractAud(scopes, c.env.APP_URL),
+          client_id: clientId,
+          jti,
+          scope: scopes.join(" "),
+        },
+        mldsaKey.secretKey,
+        mldsaKey.kid,
+        atTtl,
+      );
+    } else {
+      accessToken = randomBase64url(48);
+    }
 
     await c.env.DB.prepare(
       `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, expires_at, refresh_expires_at, created_at)
@@ -725,20 +730,25 @@ app.post("/token", async (c) => {
     const scopes = JSON.parse(tokenRow.scopes) as string[];
     const atTtl = config.access_token_ttl_minutes * 60;
 
-    const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
-    const newAccessToken = signAccessToken(
-      {
-        iss: c.env.APP_URL,
-        sub: tokenRow.user_id,
-        aud: extractAud(scopes, c.env.APP_URL),
-        client_id: tokenRow.client_id,
-        jti: tokenRow.id,
-        scope: scopes.join(" "),
-      },
-      mldsaKey.secretKey,
-      mldsaKey.kid,
-      atTtl,
-    );
+    let newAccessToken: string;
+    if (oauthApp.use_jwt_tokens) {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      newAccessToken = signAccessToken(
+        {
+          iss: c.env.APP_URL,
+          sub: tokenRow.user_id,
+          aud: extractAud(scopes, c.env.APP_URL),
+          client_id: tokenRow.client_id,
+          jti: tokenRow.id,
+          scope: scopes.join(" "),
+        },
+        mldsaKey.secretKey,
+        mldsaKey.kid,
+        atTtl,
+      );
+    } else {
+      newAccessToken = randomBase64url(48);
+    }
 
     await c.env.DB.prepare(
       "UPDATE oauth_tokens SET access_token = ?, expires_at = ? WHERE id = ?",

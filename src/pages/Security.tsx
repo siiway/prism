@@ -40,6 +40,7 @@ import { startRegistration } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import type { GpgKeyInfo, PasskeyInfo, SessionInfo } from "../lib/api";
+import { SkeletonSecurityCard } from "../components/Skeletons";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: "32px" },
@@ -90,20 +91,39 @@ export function Security() {
   const qc = useQueryClient();
   const { t } = useTranslation();
 
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
-  const { data: totpData, refetch: refetchTotp } = useQuery({
+  const { data: me, isLoading: meLoading } = useQuery({
+    queryKey: ["me"],
+    queryFn: api.me,
+  });
+  const {
+    data: totpData,
+    refetch: refetchTotp,
+    isLoading: totpQueryLoading,
+  } = useQuery({
     queryKey: ["totp-list"],
     queryFn: api.totpList,
   });
-  const { data: passkeysData, refetch: refetchPasskeys } = useQuery({
+  const {
+    data: passkeysData,
+    refetch: refetchPasskeys,
+    isLoading: passkeysLoading,
+  } = useQuery({
     queryKey: ["passkeys"],
     queryFn: api.listPasskeys,
   });
-  const { data: gpgData, refetch: refetchGpg } = useQuery({
+  const {
+    data: gpgData,
+    refetch: refetchGpg,
+    isLoading: gpgQueryLoading,
+  } = useQuery({
     queryKey: ["gpg-keys"],
     queryFn: api.listGpgKeys,
   });
-  const { data: sessionsData, refetch: refetchSessions } = useQuery({
+  const {
+    data: sessionsData,
+    refetch: refetchSessions,
+    isLoading: sessionsLoading,
+  } = useQuery({
     queryKey: ["sessions"],
     queryFn: api.listSessions,
   });
@@ -320,6 +340,12 @@ export function Security() {
   };
 
   const backupCodesRemaining = totpData?.backup_codes_remaining ?? 0;
+  const isPageLoading =
+    meLoading ||
+    totpQueryLoading ||
+    passkeysLoading ||
+    gpgQueryLoading ||
+    sessionsLoading;
 
   return (
     <div className={styles.page}>
@@ -331,8 +357,20 @@ export function Security() {
         </MessageBar>
       )}
 
+      {isPageLoading && (
+        <>
+          <SkeletonSecurityCard rows={2} />
+          <SkeletonSecurityCard rows={3} />
+          <SkeletonSecurityCard rows={2} />
+          <SkeletonSecurityCard rows={4} />
+        </>
+      )}
+
       {/* TOTP */}
-      <div className={styles.card}>
+      <div
+        className={styles.card}
+        style={isPageLoading ? { display: "none" } : {}}
+      >
         <div className={styles.cardHeader}>
           <div>
             <Text weight="semibold" size={400} block>
@@ -661,7 +699,10 @@ export function Security() {
       </div>
 
       {/* Passkeys */}
-      <div className={styles.card}>
+      <div
+        className={styles.card}
+        style={isPageLoading ? { display: "none" } : {}}
+      >
         <div className={styles.cardHeader}>
           <div>
             <Text weight="semibold" size={400} block>
@@ -805,7 +846,10 @@ export function Security() {
       </div>
 
       {/* GPG Keys */}
-      <div className={styles.card}>
+      <div
+        className={styles.card}
+        style={isPageLoading ? { display: "none" } : {}}
+      >
         <div className={styles.cardHeader}>
           <div>
             <Text weight="semibold" size={400} block>
@@ -956,7 +1000,10 @@ export function Security() {
       </div>
 
       {/* Sessions */}
-      <div className={styles.card}>
+      <div
+        className={styles.card}
+        style={isPageLoading ? { display: "none" } : {}}
+      >
         <Text weight="semibold" size={400} block>
           {t("security.sessionsTitle")}
         </Text>

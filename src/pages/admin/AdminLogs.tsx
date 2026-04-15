@@ -27,6 +27,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { SkeletonTableRows } from "../../components/Skeletons";
 
 type RequestLog = {
   id: string;
@@ -470,7 +471,7 @@ export function AdminLogs() {
       )}
 
       {isLoading ? (
-        <Spinner />
+        <SkeletonTableRows rows={8} cols={4} />
       ) : (
         <Table>
           <TableHeader>

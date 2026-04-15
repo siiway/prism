@@ -32,6 +32,7 @@ import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
 import type { SiteConfig } from "../../types";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
+import { SkeletonFormCard } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
   card: {
@@ -194,7 +195,7 @@ export function AdminSettings() {
     }
   };
 
-  if (isLoading) return <Spinner />;
+  if (isLoading) return <SkeletonFormCard rows={6} />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>

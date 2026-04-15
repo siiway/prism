@@ -13,7 +13,6 @@ import {
   Field,
   Input,
   MessageBar,
-  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -30,6 +29,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { CopyIdButton } from "../../components/CopyIdButton";
+import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
   detailGrid: {
@@ -86,7 +86,7 @@ export function AdminTeams() {
       )}
 
       {isLoading ? (
-        <Spinner />
+        <SkeletonTableRows rows={8} cols={4} />
       ) : (
         <Table style={{ tableLayout: "auto" }}>
           <TableHeader>

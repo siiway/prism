@@ -3,11 +3,11 @@
 import {
   Card,
   CardHeader,
-  Spinner,
   Text,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { SkeletonAppCards } from "../../components/Skeletons";
 import { GlobeRegular } from "@fluentui/react-icons";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -37,7 +37,7 @@ export function AppsGrid({ apps, loading }: AppsGridProps) {
   const navigate = useNavigate();
   const { t } = useTranslation();
 
-  if (loading) return <Spinner />;
+  if (loading) return <SkeletonAppCards count={4} />;
 
   if (apps.length === 0) {
     return (

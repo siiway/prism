@@ -1324,6 +1324,7 @@ export interface OAuthApp {
   is_verified: boolean;
   is_official: boolean;
   is_first_party: boolean;
+  use_jwt_tokens: boolean;
   team_id: string | null;
   created_at: number;
   updated_at: number;
@@ -1338,6 +1339,7 @@ export interface CreateAppBody {
   redirect_uris: string[];
   allowed_scopes?: string[];
   is_public?: boolean;
+  use_jwt_tokens?: boolean;
 }
 
 export interface Domain {

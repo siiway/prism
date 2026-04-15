@@ -24,6 +24,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
+import { SkeletonStatCards } from "../components/Skeletons";
 
 const useStyles = makeStyles({
   grid: {
@@ -73,19 +74,25 @@ export function Dashboard() {
   const { user } = useAuthStore();
   const { t } = useTranslation();
 
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
-  const { data: appsData } = useQuery({
+  const { data: me, isLoading: meLoading } = useQuery({
+    queryKey: ["me"],
+    queryFn: api.me,
+  });
+  const { data: appsData, isLoading: appsLoading } = useQuery({
     queryKey: ["apps"],
     queryFn: api.listApps,
   });
-  const { data: domainsData } = useQuery({
+  const { data: domainsData, isLoading: domainsLoading } = useQuery({
     queryKey: ["domains"],
     queryFn: api.listDomains,
   });
-  const { data: connectionsData } = useQuery({
+  const { data: connectionsData, isLoading: connectionsLoading } = useQuery({
     queryKey: ["connections"],
     queryFn: api.listConnections,
   });
+
+  const isLoading =
+    meLoading || appsLoading || domainsLoading || connectionsLoading;
 
   const showEmailBanner = me?.user.email_verified === false;
   const showSecurityWarning =
@@ -150,136 +157,165 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className={styles.grid}>
-        <Card className={styles.statCard} onClick={() => navigate("/apps")}>
-          <CardHeader
-            image={
-              <AppsRegular fontSize={24} color={tokens.colorBrandForeground1} />
-            }
-            header={
-              <Text weight="semibold">{t("dashboard.applications")}</Text>
-            }
-          />
-          <div style={{ padding: "0 16px 16px" }}>
-            <Title3>{appsData?.apps.length ?? 0}</Title3>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("dashboard.oauthAppsRegistered")}
-            </Text>
-          </div>
-        </Card>
-
-        <Card className={styles.statCard} onClick={() => navigate("/domains")}>
-          <CardHeader
-            image={
-              <GlobeRegular
-                fontSize={24}
-                color={tokens.colorBrandForeground1}
-              />
-            }
-            header={<Text weight="semibold">{t("dashboard.domainsCard")}</Text>}
-          />
-          <div style={{ padding: "0 16px 16px" }}>
-            <Title3>
-              {domainsData?.domains.filter((d) => d.verified).length ?? 0}
+      {isLoading ? (
+        <SkeletonStatCards count={4} />
+      ) : (
+        <div className={styles.grid}>
+          <Card className={styles.statCard} onClick={() => navigate("/apps")}>
+            <CardHeader
+              image={
+                <AppsRegular
+                  fontSize={24}
+                  color={tokens.colorBrandForeground1}
+                />
+              }
+              header={
+                <Text weight="semibold">{t("dashboard.applications")}</Text>
+              }
+            />
+            <div style={{ padding: "0 16px 16px" }}>
+              <Title3>{appsData?.apps.length ?? 0}</Title3>
               <Text
-                size={300}
+                size={200}
                 style={{ color: tokens.colorNeutralForeground3 }}
               >
-                /{domainsData?.domains.length ?? 0}
+                {t("dashboard.oauthAppsRegistered")}
               </Text>
-            </Title3>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("dashboard.verifiedDomains")}
-            </Text>
-          </div>
-        </Card>
+            </div>
+          </Card>
 
-        <Card
-          className={styles.statCard}
-          onClick={() => navigate("/connections")}
-        >
-          <CardHeader
-            image={
-              <LinkRegular fontSize={24} color={tokens.colorBrandForeground1} />
-            }
-            header={
-              <Text weight="semibold">{t("dashboard.linkedAccountsCard")}</Text>
-            }
-          />
-          <div style={{ padding: "0 16px 16px" }}>
-            <Title3>{connectionsData?.connections.length ?? 0}</Title3>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("dashboard.connectedPlatforms")}
-            </Text>
-          </div>
-        </Card>
-
-        <Card className={styles.statCard} onClick={() => navigate("/security")}>
-          <CardHeader
-            image={
-              <ShieldPersonRegular
-                fontSize={24}
-                color={tokens.colorBrandForeground1}
-              />
-            }
-            header={
-              <Text weight="semibold">{t("dashboard.securityCard")}</Text>
-            }
-          />
-          <div
-            style={{
-              padding: "0 16px 16px",
-              display: "flex",
-              gap: "6px",
-              flexWrap: "wrap",
-            }}
+          <Card
+            className={styles.statCard}
+            onClick={() => navigate("/domains")}
           >
-            <Badge
-              color={me?.totp_enabled ? "success" : "subtle"}
-              appearance="filled"
-            >
-              {me?.totp_enabled
-                ? t("security.twoFaEnabled")
-                : t("security.twoFaOff")}
-            </Badge>
-            <Badge
-              color={passkeyCount > 0 ? "success" : "subtle"}
-              appearance="filled"
-            >
-              {passkeyCount === 1
-                ? t("security.passkeyCount", { count: passkeyCount })
-                : t("security.passkeysCount", { count: passkeyCount })}
-            </Badge>
-          </div>
-        </Card>
+            <CardHeader
+              image={
+                <GlobeRegular
+                  fontSize={24}
+                  color={tokens.colorBrandForeground1}
+                />
+              }
+              header={
+                <Text weight="semibold">{t("dashboard.domainsCard")}</Text>
+              }
+            />
+            <div style={{ padding: "0 16px 16px" }}>
+              <Title3>
+                {domainsData?.domains.filter((d) => d.verified).length ?? 0}
+                <Text
+                  size={300}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  /{domainsData?.domains.length ?? 0}
+                </Text>
+              </Title3>
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                {t("dashboard.verifiedDomains")}
+              </Text>
+            </div>
+          </Card>
 
-        {me?.passkey_count === 0 && (
+          <Card
+            className={styles.statCard}
+            onClick={() => navigate("/connections")}
+          >
+            <CardHeader
+              image={
+                <LinkRegular
+                  fontSize={24}
+                  color={tokens.colorBrandForeground1}
+                />
+              }
+              header={
+                <Text weight="semibold">
+                  {t("dashboard.linkedAccountsCard")}
+                </Text>
+              }
+            />
+            <div style={{ padding: "0 16px 16px" }}>
+              <Title3>{connectionsData?.connections.length ?? 0}</Title3>
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                {t("dashboard.connectedPlatforms")}
+              </Text>
+            </div>
+          </Card>
+
           <Card
             className={styles.statCard}
             onClick={() => navigate("/security")}
           >
             <CardHeader
               image={
-                <KeyRegular
+                <ShieldPersonRegular
                   fontSize={24}
                   color={tokens.colorBrandForeground1}
                 />
               }
               header={
-                <Text weight="semibold">{t("dashboard.addPasskeyCard")}</Text>
+                <Text weight="semibold">{t("dashboard.securityCard")}</Text>
               }
             />
-            <div style={{ padding: "0 16px 16px" }}>
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground3 }}
+            <div
+              style={{
+                padding: "0 16px 16px",
+                display: "flex",
+                gap: "6px",
+                flexWrap: "wrap",
+              }}
+            >
+              <Badge
+                color={me?.totp_enabled ? "success" : "subtle"}
+                appearance="filled"
               >
-                {t("dashboard.addPasskeyDesc")}
-              </Text>
+                {me?.totp_enabled
+                  ? t("security.twoFaEnabled")
+                  : t("security.twoFaOff")}
+              </Badge>
+              <Badge
+                color={passkeyCount > 0 ? "success" : "subtle"}
+                appearance="filled"
+              >
+                {passkeyCount === 1
+                  ? t("security.passkeyCount", { count: passkeyCount })
+                  : t("security.passkeysCount", { count: passkeyCount })}
+              </Badge>
             </div>
           </Card>
-        )}
-      </div>
+
+          {me?.passkey_count === 0 && (
+            <Card
+              className={styles.statCard}
+              onClick={() => navigate("/security")}
+            >
+              <CardHeader
+                image={
+                  <KeyRegular
+                    fontSize={24}
+                    color={tokens.colorBrandForeground1}
+                  />
+                }
+                header={
+                  <Text weight="semibold">{t("dashboard.addPasskeyCard")}</Text>
+                }
+              />
+              <div style={{ padding: "0 16px 16px" }}>
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {t("dashboard.addPasskeyDesc")}
+                </Text>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }

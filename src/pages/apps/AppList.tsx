@@ -28,6 +28,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { SkeletonAppCards } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
   header: {
@@ -194,7 +195,7 @@ export function AppList() {
         </Dialog>
       </div>
 
-      {isLoading && <Spinner />}
+      {isLoading && <SkeletonAppCards count={6} />}
 
       {!isLoading && data?.apps.length === 0 && (
         <div style={{ textAlign: "center", padding: "60px 0" }}>

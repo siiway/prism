@@ -22,6 +22,7 @@ import {
 } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import type { Domain, Team } from "../../lib/api";
+import { SkeletonTableRows } from "../../components/Skeletons";
 import { DeleteDomainDialog } from "./dialogs/DeleteDomainDialog";
 
 const useStyles = makeStyles({
@@ -60,7 +61,7 @@ export function DomainsTable({
   const styles = useStyles();
   const { t } = useTranslation();
 
-  if (loading) return <Spinner />;
+  if (loading) return <SkeletonTableRows rows={5} cols={4} />;
 
   if (domains.length === 0) {
     return (

@@ -32,6 +32,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { SkeletonTableRows } from "../components/Skeletons";
 
 const useStyles = makeStyles({
   header: {
@@ -291,7 +292,7 @@ export function Tokens() {
 
       <div className={styles.card}>
         {isLoading ? (
-          <Spinner />
+          <SkeletonTableRows rows={5} cols={5} />
         ) : !data?.tokens.length ? (
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
             {t("tokens.noTokens")}

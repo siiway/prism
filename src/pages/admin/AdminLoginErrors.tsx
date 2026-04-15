@@ -6,7 +6,6 @@ import {
   Dropdown,
   Input,
   Option,
-  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -20,6 +19,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { SkeletonTableRows } from "../../components/Skeletons";
 
 type LoginError = {
   id: string;
@@ -178,7 +178,7 @@ export function AdminLoginErrors() {
       )}
 
       {isLoading ? (
-        <Spinner />
+        <SkeletonTableRows rows={8} cols={6} />
       ) : (
         <Table>
           <TableHeader>

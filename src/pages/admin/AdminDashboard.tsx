@@ -3,7 +3,6 @@
 import {
   Card,
   CardHeader,
-  Spinner,
   Text,
   Title3,
   tokens,
@@ -17,6 +16,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { SkeletonStatCards } from "../../components/Skeletons";
 
 export function AdminDashboard() {
   const { t } = useTranslation();
@@ -49,7 +49,7 @@ export function AdminDashboard() {
     queryFn: api.adminStats,
   });
 
-  if (isLoading) return <Spinner />;
+  if (isLoading) return <SkeletonStatCards count={4} />;
 
   return (
     <div
