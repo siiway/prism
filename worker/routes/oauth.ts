@@ -2,6 +2,8 @@
 
 import { Hono } from "hono";
 import { getConfig, getJwtSecret, getRsaKeyPair } from "../lib/config";
+import { getMLDSAKey } from "../lib/mldsa";
+import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import {
@@ -588,18 +590,33 @@ app.post("/token", async (c) => {
       return c.json({ error: "invalid_grant" }, 400);
 
     const scopes = JSON.parse(codeRow.scopes) as string[];
-    const accessToken = randomBase64url(48);
     const hasOffline = scopes.includes("offline_access");
-    const refreshToken = hasOffline ? randomBase64url(48) : null;
     const atTtl = config.access_token_ttl_minutes * 60;
     const rtTtl = config.refresh_token_ttl_days * 24 * 60 * 60;
+    const refreshToken = hasOffline ? randomBase64url(48) : null;
+
+    const jti = randomId();
+    const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+    const accessToken = signAccessToken(
+      {
+        iss: c.env.APP_URL,
+        sub: user.id,
+        aud: extractAud(scopes, c.env.APP_URL),
+        client_id: clientId,
+        jti,
+        scope: scopes.join(" "),
+      },
+      mldsaKey.secretKey,
+      mldsaKey.kid,
+      atTtl,
+    );
 
     await c.env.DB.prepare(
       `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, expires_at, refresh_expires_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
-        randomId(),
+        jti,
         accessToken,
         refreshToken,
         clientId,
@@ -660,8 +677,22 @@ app.post("/token", async (c) => {
       return c.json({ error: "invalid_grant" }, 400);
 
     const scopes = JSON.parse(tokenRow.scopes) as string[];
-    const newAccessToken = randomBase64url(48);
     const atTtl = config.access_token_ttl_minutes * 60;
+
+    const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+    const newAccessToken = signAccessToken(
+      {
+        iss: c.env.APP_URL,
+        sub: tokenRow.user_id,
+        aud: extractAud(scopes, c.env.APP_URL),
+        client_id: tokenRow.client_id,
+        jti: tokenRow.id,
+        scope: scopes.join(" "),
+      },
+      mldsaKey.secretKey,
+      mldsaKey.kid,
+      atTtl,
+    );
 
     await c.env.DB.prepare(
       "UPDATE oauth_tokens SET access_token = ?, expires_at = ? WHERE id = ?",
@@ -730,11 +761,29 @@ app.post("/introspect", async (c) => {
   if (!token) return c.json({ active: false });
 
   const now = Math.floor(Date.now() / 1000);
-  const tokenRow = await c.env.DB.prepare(
-    "SELECT * FROM oauth_tokens WHERE access_token = ?",
-  )
-    .bind(token)
-    .first<OAuthTokenRow>();
+
+  let tokenRow: OAuthTokenRow | null = null;
+
+  if (token.split(".").length === 3) {
+    // JWT — verify signature first, then look up by jti for revocation
+    try {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      const payload = verifyAccessToken(token, mldsaKey.publicKey);
+      tokenRow = await c.env.DB.prepare(
+        "SELECT * FROM oauth_tokens WHERE id = ?",
+      )
+        .bind(payload.jti)
+        .first<OAuthTokenRow>();
+    } catch {
+      return c.json({ active: false });
+    }
+  } else {
+    tokenRow = await c.env.DB.prepare(
+      "SELECT * FROM oauth_tokens WHERE access_token = ?",
+    )
+      .bind(token)
+      .first<OAuthTokenRow>();
+  }
 
   if (!tokenRow || tokenRow.expires_at < now) return c.json({ active: false });
 
@@ -799,7 +848,28 @@ async function resolveBearerToken(
     return { userId: pat.user_id, scopes };
   }
 
-  // Standard OAuth access token
+  // JWT access token (three dot-separated segments)
+  if (raw.split(".").length === 3) {
+    let payload;
+    try {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      payload = verifyAccessToken(raw, mldsaKey.publicKey);
+    } catch {
+      return null;
+    }
+    // Revocation check: look up by jti (= oauth_tokens.id)
+    const tokenRow = await c.env.DB.prepare(
+      "SELECT user_id, scopes, expires_at FROM oauth_tokens WHERE id = ?",
+    )
+      .bind(payload.jti)
+      .first<{ user_id: string; scopes: string; expires_at: number }>();
+    if (!tokenRow || tokenRow.expires_at < now) return null;
+    const scopes = JSON.parse(tokenRow.scopes) as string[];
+    if (!scopes.includes(requiredScope)) return null;
+    return { userId: tokenRow.user_id, scopes };
+  }
+
+  // Legacy opaque access token (kept for backward compatibility)
   const tokenRow = await c.env.DB.prepare(
     "SELECT user_id, scopes, expires_at FROM oauth_tokens WHERE access_token = ?",
   )

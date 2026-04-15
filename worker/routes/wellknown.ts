@@ -2,6 +2,8 @@
 
 import { Hono } from "hono";
 import { getRsaKeyPair } from "../lib/config";
+import { getMLDSAKey } from "../lib/mldsa";
+import { bufToBase64url } from "../lib/crypto";
 import type { Variables } from "../types";
 
 const SCOPES_SUPPORTED = [
@@ -54,6 +56,7 @@ app.get("/openid-configuration", (c) => {
     grant_types_supported: ["authorization_code", "refresh_token"],
     subject_types_supported: ["public"],
     id_token_signing_alg_values_supported: ["RS256"],
+    access_token_signing_alg_values_supported: ["ML-DSA-65"],
     token_endpoint_auth_methods_supported: [
       "client_secret_post",
       "client_secret_basic",
@@ -72,16 +75,28 @@ app.get("/openid-configuration", (c) => {
 });
 
 app.get("/jwks.json", async (c) => {
-  const { kid, publicKeyJwk } = await getRsaKeyPair(c.env.KV_SESSIONS);
+  const [rsa, mldsa] = await Promise.all([
+    getRsaKeyPair(c.env.KV_SESSIONS),
+    getMLDSAKey(c.env.KV_SESSIONS),
+  ]);
   return c.json({
     keys: [
+      // RS256 — OIDC ID tokens (backward compatible)
       {
-        kty: publicKeyJwk.kty,
+        kty: rsa.publicKeyJwk.kty,
         use: "sig",
         alg: "RS256",
-        kid,
-        n: publicKeyJwk.n,
-        e: publicKeyJwk.e,
+        kid: rsa.kid,
+        n: rsa.publicKeyJwk.n,
+        e: rsa.publicKeyJwk.e,
+      },
+      // ML-DSA-65 (NIST FIPS 204) — OAuth access tokens (post-quantum)
+      {
+        kty: "ML-DSA",
+        use: "sig",
+        alg: "ML-DSA-65",
+        kid: mldsa.kid,
+        pub: bufToBase64url(mldsa.publicKey),
       },
     ],
   });

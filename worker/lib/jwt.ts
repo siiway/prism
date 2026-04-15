@@ -1,6 +1,7 @@
-// HS256 / RS256 JWT implementation using Web Crypto API
+// HS256 / RS256 / ML-DSA-65 JWT implementation
 
-import { bufToBase64url } from "./crypto";
+import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
+import { bufToBase64url, base64urlToBuf } from "./crypto";
 
 function encodeBase64url(obj: unknown): string {
   const json = JSON.stringify(obj);
@@ -63,7 +64,7 @@ export async function signJWT(
   return `${message}.${sigB64}`;
 }
 
-// RS256 signing — used exclusively for OIDC ID tokens
+// RS256 signing — kept for backward compatibility with existing OIDC clients
 export async function signIdTokenRS256(
   payload: Record<string, unknown>,
   privateKey: CryptoKey,
@@ -84,6 +85,96 @@ export async function signIdTokenRS256(
     new TextEncoder().encode(message),
   );
   return `${message}.${bufToBase64url(sig)}`;
+}
+
+// ML-DSA-65 OIDC ID token signing (post-quantum, typ: "JWT" per OIDC spec)
+export function signIdToken(
+  payload: Record<string, unknown>,
+  secretKey: Uint8Array,
+  kid: string,
+  expiresInSeconds: number,
+): string {
+  const now = Math.floor(Date.now() / 1000);
+  const header = encodeBase64url({ alg: "ML-DSA-65", typ: "JWT", kid });
+  const body = encodeBase64url({
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds,
+  });
+  const msg = new TextEncoder().encode(`${header}.${body}`);
+  const sig = ml_dsa65.sign(secretKey, msg);
+  return `${header}.${body}.${bufToBase64url(sig)}`;
+}
+
+// ── ML-DSA-65 access token (RFC 9068 at+JWT, post-quantum) ────────────────────
+
+export interface AccessTokenPayload {
+  iss: string;
+  sub: string;
+  aud: string[];
+  /** OAuth client that requested the token */
+  client_id: string;
+  /** Token ID — matches oauth_tokens.id for revocation lookup */
+  jti: string;
+  scope: string;
+  iat: number;
+  exp: number;
+}
+
+/**
+ * Extract the unique audience entries from a scope list.
+ * Regular scopes use the issuer as audience; cross-app scopes (`app:<cid>:*`)
+ * also add the target app's client_id so App A can verify the token was meant for it.
+ */
+export function extractAud(scopes: string[], issuer: string): string[] {
+  const aud = new Set([issuer]);
+  for (const s of scopes) {
+    const m = s.match(/^app:([^:]+):/);
+    if (m) aud.add(m[1]);
+  }
+  return [...aud];
+}
+
+export function signAccessToken(
+  payload: Omit<AccessTokenPayload, "iat" | "exp">,
+  secretKey: Uint8Array,
+  kid: string,
+  expiresInSeconds: number,
+): string {
+  const now = Math.floor(Date.now() / 1000);
+  const header = encodeBase64url({ alg: "ML-DSA-65", typ: "at+JWT", kid });
+  const body = encodeBase64url({
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds,
+  });
+  const msg = new TextEncoder().encode(`${header}.${body}`);
+  const sig = ml_dsa65.sign(secretKey, msg);
+  return `${header}.${body}.${bufToBase64url(sig)}`;
+}
+
+export function verifyAccessToken(
+  token: string,
+  publicKey: Uint8Array,
+): AccessTokenPayload {
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("Invalid JWT format");
+  const [headerB64, bodyB64, sigB64] = parts;
+
+  const msg = new TextEncoder().encode(`${headerB64}.${bodyB64}`);
+  const sig = base64urlToBuf(sigB64);
+
+  if (!ml_dsa65.verify(publicKey, msg, sig))
+    throw new Error("Invalid JWT signature");
+
+  const payload = JSON.parse(
+    new TextDecoder().decode(base64urlToBuf(bodyB64)),
+  ) as AccessTokenPayload;
+
+  if (payload.exp < Math.floor(Date.now() / 1000))
+    throw new Error("JWT expired");
+
+  return payload;
 }
 
 export async function verifyJWT(
