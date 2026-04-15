@@ -1,6 +1,7 @@
 import { defineConfig } from "vitepress";
+import { withMermaid } from "vitepress-plugin-mermaid";
 
-export default defineConfig({
+export default withMermaid(defineConfig({
   cleanUrls: true,
   ignoreDeadLinks: true,
   lastUpdated: true,
@@ -186,4 +187,4 @@ export default defineConfig({
       provider: "local",
     },
   },
-});
+}));

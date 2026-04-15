@@ -209,31 +209,31 @@ const res = await fetch("https://appa.example/api/posts", {
 
 ## 完整流程图
 
-```
-应用 B 所有者         Prism                      应用 A 所有者
-────────────          ─────                      ─────────────
-                                                 1. 定义权限范围 "read_posts"
-                                                    含标题和描述
-                                                 2. （可选）设置访问控制规则
+```mermaid
+sequenceDiagram
+  participant AppBOwner as 应用 B 所有者
+  participant Prism
+  participant User as 用户
+  participant AppA as 应用 A
 
-3. 将 app:prism_xxxxx:read_posts
-   加入应用 B 的 allowed_scopes
-   ──────────────────────────────►
-   （检查所有者访问规则）
+  Note over AppA: 1. 定义权限范围 "read_posts"<br/>含标题和描述
+  Note over AppA: 2. （可选）设置访问控制规则
 
-                      用户访问应用 B
-4. 构建含范围的授权 URL ──────────►
-5.                    向用户显示授权界面
-                      （应用 A 的标题和描述）
-6.                                用户确认授权
-7.                    签发授权码 ──►
-8. 交换授权码 ────────────────────►
-9.                    返回访问令牌（含权限范围）
+  AppBOwner->>Prism: 3. 将 app:prism_xxxxx:read_posts<br/>注册到应用 B 的 allowed_scopes
+  Note over Prism: 检查所有者访问规则
 
-10. 应用 B 携带 Bearer 令牌调用应用 A 的 API
-    ──────────────────────────────────────────►
-11.                               自省令牌，验证权限范围
-12.                               返回响应
+  User->>AppBOwner: 访问应用 B
+  AppBOwner->>Prism: 4. 构建含范围的授权 URL
+  Prism->>User: 5. 显示授权界面（应用 A 的标题和描述）
+  User->>Prism: 6. 用户确认授权
+  Prism->>AppBOwner: 7. 签发授权码
+  AppBOwner->>Prism: 8. 交换授权码
+  Prism-->>AppBOwner: 9. 访问令牌（含权限范围）
+
+  AppBOwner->>AppA: 10. 携带 Bearer 令牌调用 API
+  AppA->>Prism: 11. 自省令牌，验证权限范围
+  Prism-->>AppA: 活跃 + 权限范围已确认
+  AppA-->>AppBOwner: 12. 返回响应
 ```
 
 ---

@@ -25,6 +25,24 @@ https://your-prism-domain/.well-known/openid-configuration
 
 ## 授权码流程（含 PKCE）
 
+```mermaid
+sequenceDiagram
+  participant App as 应用
+  participant Browser as 浏览器
+  participant Prism
+
+  App->>Browser: 1. 重定向到 /api/oauth/authorize
+  Browser->>Prism: 授权请求 + PKCE challenge
+  Prism->>Browser: 2. 授权界面
+  Browser->>Browser: 用户确认授权
+  Prism->>Browser: 3. 重定向到 redirect_uri?code=…
+  Browser->>App: 授权码
+  App->>Prism: 4. POST /api/oauth/token（code + verifier）
+  Prism-->>App: access_token、id_token、refresh_token
+  App->>Prism: 5. GET /api/oauth/userinfo
+  Prism-->>App: 用户信息
+```
+
 ### 第一步 — 重定向用户
 
 ```text

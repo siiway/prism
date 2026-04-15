@@ -12,18 +12,13 @@ Prism is a monorepo with two main parts:
 - **Backend** (`worker/`) — a Cloudflare Worker written in TypeScript with [Hono](https://hono.dev)
 - **Frontend** (`src/`) — a React SPA built with Vite and served from Cloudflare Assets
 
-```text
-                     ┌─────────────────────────────────────────┐
-                     │          Cloudflare Edge Network          │
-                     │                                           │
-  Browser  ────────▶ │  CF Assets (SPA)  ──▶  Worker (Hono)    │
-                     │                            │              │
-                     │                      ┌─────┴──────┐      │
-                     │                      │     D1     │      │
-                     │                      │  KV Caches │      │
-                     │                      │    R2      │      │
-                     │                      └────────────┘      │
-                     └─────────────────────────────────────────┘
+```mermaid
+graph LR
+  Browser["Browser"] -->|"HTTP request"| CF["Cloudflare Edge Network"]
+  subgraph CF["Cloudflare Edge Network"]
+    Assets["CF Assets (SPA)"] -->|"API calls"| Worker["Worker (Hono)"]
+    Worker --> Storage["D1 / KV / R2"]
+  end
 ```
 
 A single `wrangler deploy` publishes both the Worker and the built frontend assets.
@@ -31,11 +26,13 @@ Cloudflare's asset serving handles SPA fallback (all unknown paths serve `index.
 
 ## Request flow
 
-```text
-Browser → /api/*        → Worker (Hono routes)
-Browser → /             → Cloudflare Assets → index.html
-Browser → /some/route   → Cloudflare Assets → index.html (SPA fallback)
-Browser → /.well-known/ → Worker
+```mermaid
+flowchart LR
+  B["Browser"]
+  B -->|"/api/*"| W["Worker (Hono routes)"]
+  B -->|"/"| A["CF Assets → index.html"]
+  B -->|"/some/route"| A2["CF Assets → index.html (SPA fallback)"]
+  B -->|"/.well-known/*"| W
 ```
 
 Vite proxies `/api/*` to `http://localhost:8787` in development, so the same
@@ -144,26 +141,33 @@ Append-only log of significant actions (login, registration, config changes, etc
 
 ## Authentication flow
 
-```text
-POST /api/auth/login
-  │
-  ├─ verify password (PBKDF2)
-  ├─ check TOTP if enabled
-  │
-  └─ signJWT({ sub, role, sessionId, ... })
-       │
-       └─ store session row in D1
+```mermaid
+sequenceDiagram
+  participant Client
+  participant Worker
+  participant D1
+
+  Client->>Worker: POST /api/auth/login
+  Worker->>Worker: verify password (PBKDF2)
+  Worker->>Worker: check TOTP (if enabled)
+  Worker->>Worker: signJWT({ sub, role, sessionId })
+  Worker->>D1: store session row
+  Worker-->>Client: { token }
 ```
 
 On each authenticated request:
 
-```text
-requireAuth middleware
-  │
-  ├─ extract Bearer token
-  ├─ verifyJWT (checks signature + expiry)
-  ├─ look up session in D1 (validates it hasn't been revoked)
-  └─ set c.var.user
+```mermaid
+sequenceDiagram
+  participant Client
+  participant requireAuth
+  participant D1
+
+  Client->>requireAuth: Bearer token
+  requireAuth->>requireAuth: verifyJWT (signature + expiry)
+  requireAuth->>D1: look up session (revocation check)
+  D1-->>requireAuth: session row
+  requireAuth->>requireAuth: set c.var.user
 ```
 
 ## PoW (Proof of Work)

@@ -26,6 +26,24 @@ If your app runs entirely in the browser (no server to keep the secret), enable
 
 ## Authorization code flow (with PKCE)
 
+```mermaid
+sequenceDiagram
+  participant App
+  participant Browser
+  participant Prism
+
+  App->>Browser: 1. Redirect to /api/oauth/authorize
+  Browser->>Prism: authorization request + PKCE challenge
+  Prism->>Browser: 2. Consent screen
+  Browser->>Browser: user approves
+  Prism->>Browser: 3. Redirect to redirect_uri?code=…
+  Browser->>App: authorization code
+  App->>Prism: 4. POST /api/oauth/token (code + verifier)
+  Prism-->>App: access_token, id_token, refresh_token
+  App->>Prism: 5. GET /api/oauth/userinfo
+  Prism-->>App: user claims
+```
+
 ### Step 1 — Redirect the user
 
 ```text

@@ -223,31 +223,31 @@ serves the response if the scope is present.
 
 ## Full flow diagram
 
-```
-App B owner          Prism dashboard          App A owner
-──────────           ───────────────          ───────────
-                                              1. Define scope "read_posts"
-                                                 with title + description
-                                              2. (Optionally) set access rules
+```mermaid
+sequenceDiagram
+  participant AppBOwner as App B owner
+  participant Prism
+  participant User
+  participant AppA as App A
 
-3. Add app:prism_xxxxx:read_posts
-   to App B's allowed_scopes
-   ──────────────────────────────►
-   (owner access rules checked)
+  Note over AppA: 1. Define scope "read_posts"<br/>with title + description
+  Note over AppA: 2. (Optionally) set access rules
 
-                     User visits App B
-4. Authorization URL with scope ──►
-5.                 Consent screen shown to user
-                   (App A's title + description)
-6.                               User approves
-7.                 Code issued ──►
-8. Token exchange ──────────────►
-9.                 Access token returned (includes scope)
+  AppBOwner->>Prism: 3. Register app:prism_xxxxx:read_posts<br/>in App B's allowed_scopes
+  Note over Prism: owner access rules checked
 
-10. App B calls App A's API with Bearer token
-    ─────────────────────────────────────────►
-11.                              Introspect token, verify scope
-12.                              Serve response
+  User->>AppBOwner: visits App B
+  AppBOwner->>Prism: 4. Authorization URL with scope
+  Prism->>User: 5. Consent screen (App A's title + description)
+  User->>Prism: 6. Approves
+  Prism->>AppBOwner: 7. Authorization code
+  AppBOwner->>Prism: 8. Token exchange
+  Prism-->>AppBOwner: 9. Access token (includes scope)
+
+  AppBOwner->>AppA: 10. API request with Bearer token
+  AppA->>Prism: 11. Introspect token, verify scope
+  Prism-->>AppA: active + scope confirmed
+  AppA-->>AppBOwner: 12. Response
 ```
 
 ---
