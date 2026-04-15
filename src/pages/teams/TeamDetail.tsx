@@ -327,7 +327,7 @@ export function TeamDetail() {
             setSettingsForm({
               name: team.name,
               description: team.description,
-              avatar_url: team.avatar_url ?? "",
+              avatar_url: team.unproxied_avatar_url ?? "",
             });
           }
         }}

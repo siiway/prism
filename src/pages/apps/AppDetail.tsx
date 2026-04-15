@@ -662,7 +662,7 @@ export function AppDetail() {
     setForm({
       name: app.name,
       description: app.description,
-      icon_url: app.icon_url ?? "",
+      icon_url: app.unproxied_icon_url ?? "",
       website_url: app.website_url ?? "",
       redirect_uris: app.redirect_uris.join("\n"),
       allowed_scopes: app.allowed_scopes,

@@ -94,7 +94,7 @@ export function Profile() {
   });
 
   const [displayName, setDisplayName] = useState(user?.display_name ?? "");
-  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url ?? "");
+  const [avatarUrl, setAvatarUrl] = useState(user?.unproxied_avatar_url ?? "");
   const [saveLoading, setSaveLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [pwForm, setPwForm] = useState({ current: "", next: "" });

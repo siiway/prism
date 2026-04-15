@@ -1180,6 +1180,7 @@ export interface UserProfile {
   username: string;
   display_name: string;
   avatar_url: string | null;
+  unproxied_avatar_url: string | null;
   role: "admin" | "user";
   email_verified: boolean;
   alt_email_login: number | null;
@@ -1237,6 +1238,7 @@ export interface Team {
   name: string;
   description: string;
   avatar_url: string | null;
+  unproxied_avatar_url: string | null;
   role: string; // current user's role
   my_role?: string;
   created_at: number;
@@ -1295,6 +1297,7 @@ export interface OAuthApp {
   name: string;
   description: string;
   icon_url: string | null;
+  unproxied_icon_url: string | null;
   website_url: string | null;
   client_id: string;
   client_secret?: string;
