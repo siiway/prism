@@ -496,6 +496,13 @@ export const api = {
       undefined,
       getToken(),
     ),
+  revokeToken: (tokenId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/oauth/me/tokens/${encodeURIComponent(tokenId)}`,
+      undefined,
+      getToken(),
+    ),
 
   // ─── OAuth authorize ─────────────────────────────────────────────────────
   oauthAuthorizeInfo: (params: Record<string, string>) =>
@@ -1116,7 +1123,7 @@ export const api = {
       expires_at: number | null;
       created_at: number;
     }>("POST", "/user/tokens", body, getToken()),
-  revokeToken: (id: string) =>
+  revokePat: (id: string) =>
     request<{ message: string }>(
       "DELETE",
       `/user/tokens/${id}`,
@@ -1220,6 +1227,14 @@ export interface SessionInfo {
   is_current: boolean;
 }
 
+export interface OAuthToken {
+  id: string;
+  scopes: string[];
+  created_at: number;
+  expires_at: number;
+  is_persistent: boolean;
+}
+
 export interface OAuthConsent {
   client_id: string;
   scopes: string[];
@@ -1231,6 +1246,7 @@ export interface OAuthConsent {
     website_url: string | null;
     is_verified: boolean;
   };
+  tokens: OAuthToken[];
 }
 
 export interface Team {

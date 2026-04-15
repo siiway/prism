@@ -245,33 +245,60 @@ async function resolveRequestedScopes(
 // GET /api/oauth/consents — list apps the user has granted access to
 app.get("/consents", requireAuth, async (c) => {
   const user = c.get("user");
-  const rows = await c.env.DB.prepare(
-    `SELECT oc.client_id, oc.scopes, oc.granted_at,
-            oa.name, oa.description, oa.icon_url, oa.website_url,
-            oa.owner_id, oa.redirect_uris
-     FROM oauth_consents oc
-     JOIN oauth_apps oa ON oa.client_id = oc.client_id
-     WHERE oc.user_id = ?
-     ORDER BY oc.granted_at DESC`,
-  )
-    .bind(user.id)
-    .all<{
-      client_id: string;
-      scopes: string;
-      granted_at: number;
-      name: string;
-      description: string;
-      icon_url: string | null;
-      website_url: string | null;
-      owner_id: string;
-      redirect_uris: string;
-    }>();
+  const now = Math.floor(Date.now() / 1000);
 
-  const ownerIds = [...new Set(rows.results.map((r) => r.owner_id))];
+  const [consentRows, tokenRows] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT oc.client_id, oc.scopes, oc.granted_at,
+              oa.name, oa.description, oa.icon_url, oa.website_url,
+              oa.owner_id, oa.redirect_uris
+       FROM oauth_consents oc
+       JOIN oauth_apps oa ON oa.client_id = oc.client_id
+       WHERE oc.user_id = ?
+       ORDER BY oc.granted_at DESC`,
+    )
+      .bind(user.id)
+      .all<{
+        client_id: string;
+        scopes: string;
+        granted_at: number;
+        name: string;
+        description: string;
+        icon_url: string | null;
+        website_url: string | null;
+        owner_id: string;
+        redirect_uris: string;
+      }>(),
+    c.env.DB.prepare(
+      `SELECT id, client_id, scopes, created_at, expires_at, refresh_expires_at
+       FROM oauth_tokens
+       WHERE user_id = ? AND expires_at > ?
+       ORDER BY created_at DESC`,
+    )
+      .bind(user.id, now)
+      .all<{
+        id: string;
+        client_id: string;
+        scopes: string;
+        created_at: number;
+        expires_at: number;
+        refresh_expires_at: number | null;
+      }>(),
+  ]);
+
+  const ownerIds = [...new Set(consentRows.results.map((r) => r.owner_id))];
   const domainsMap = await buildVerifiedDomainsMap(c.env.DB, ownerIds);
 
+  // Group tokens by client_id
+  const tokensByApp = new Map<string, typeof tokenRows.results>();
+  for (const t of tokenRows.results) {
+    const list = tokensByApp.get(t.client_id) ?? [];
+    list.push(t);
+    tokensByApp.set(t.client_id, list);
+  }
+
   return c.json({
-    consents: rows.results.map((r) => ({
+    consents: consentRows.results.map((r) => ({
       client_id: r.client_id,
       scopes: JSON.parse(r.scopes) as string[],
       granted_at: r.granted_at,
@@ -287,8 +314,27 @@ app.get("/consents", requireAuth, async (c) => {
           r.redirect_uris,
         ),
       },
+      tokens: (tokensByApp.get(r.client_id) ?? []).map((t) => ({
+        id: t.id,
+        scopes: JSON.parse(t.scopes) as string[],
+        created_at: t.created_at,
+        expires_at: t.expires_at,
+        is_persistent: t.refresh_expires_at !== null,
+      })),
     })),
   });
+});
+
+// DELETE /api/oauth/me/tokens/:id — revoke a single token by jti
+app.delete("/me/tokens/:id", requireAuth, async (c) => {
+  const user = c.get("user");
+  const tokenId = c.req.param("id");
+  await c.env.DB.prepare(
+    "DELETE FROM oauth_tokens WHERE id = ? AND user_id = ?",
+  )
+    .bind(tokenId, user.id)
+    .run();
+  return c.json({ message: "Token revoked" });
 });
 
 // DELETE /api/oauth/consents/:client_id — revoke consent and associated tokens

@@ -562,7 +562,17 @@
     "revokeTitle": "Revoke access for \"{{name}}\"?",
     "revokeDesc": "This will sign you out of {{name}} and delete all active tokens. The app will need your authorization again to access your account.",
     "revokeAccess": "Revoke access",
-    "verified": "Verified"
+    "revokeAll": "Revoke all access",
+    "revokeToken": "Revoke",
+    "verified": "Verified",
+    "tokenCount": "{{count}} token",
+    "tokenCount_other": "{{count}} tokens",
+    "activeSessions": "{{count}} active session",
+    "activeSessions_other": "{{count}} active sessions",
+    "persistent": "Persistent session",
+    "session": "Session",
+    "issuedAgo": "Issued {{time}}",
+    "expiresAgo": "Expires {{time}}"
   },
   "oauth": {
     "authorizationRequest": "Authorization Request",

@@ -146,7 +146,7 @@ export function Tokens() {
 
   const handleRevoke = async (id: string) => {
     try {
-      await api.revokeToken(id);
+      await api.revokePat(id);
       await qc.invalidateQueries({ queryKey: ["pat"] });
     } catch {
       // ignore

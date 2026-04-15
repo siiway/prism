@@ -562,7 +562,15 @@
     "revokeTitle": "撤销\"{{name}}\"的访问权限？",
     "revokeDesc": "这将使您从 {{name}} 退出登录并删除所有活跃令牌。该应用需要再次获得您的授权才能访问您的账号。",
     "revokeAccess": "撤销访问",
-    "verified": "已验证"
+    "revokeAll": "撤销所有访问",
+    "revokeToken": "撤销",
+    "verified": "已验证",
+    "tokenCount": "{{count}} 个令牌",
+    "activeSessions": "{{count}} 个活跃会话",
+    "persistent": "持久会话",
+    "session": "会话",
+    "issuedAgo": "签发于 {{time}}",
+    "expiresAgo": "到期于 {{time}}"
   },
   "oauth": {
     "authorizationRequest": "授权请求",
