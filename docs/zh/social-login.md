@@ -203,10 +203,10 @@ https://your-prism-domain/api/connections/<slug>/callback
 
 ## 本地开发
 
-本地测试时，使用 `http://localhost:8787` 作为域名注册 OAuth 应用，slug 与生产环境保持一致：
+本地测试时，使用 `http://localhost:5173` 作为域名注册 OAuth 应用，slug 与生产环境保持一致：
 
 ```
-http://localhost:8787/api/connections/<slug>/callback
+http://localhost:5173/api/connections/<slug>/callback
 ```
 
 ::: tip

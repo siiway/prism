@@ -203,10 +203,10 @@ All enabled sources appear as separate buttons on the login and registration pag
 
 ## Local Development
 
-For local testing, register OAuth apps using `http://localhost:8787` as the domain. Use the slug you plan to use in production:
+For local testing, register OAuth apps using `http://localhost:5173` as the domain. Use the slug you plan to use in production:
 
 ```
-http://localhost:8787/api/connections/<slug>/callback
+http://localhost:5173/api/connections/<slug>/callback
 ```
 
 ::: tip

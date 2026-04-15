@@ -35,8 +35,7 @@ flowchart LR
   B -->|"/.well-known/*"| W
 ```
 
-Vite proxies `/api/*` to `http://localhost:8787` in development, so the same
-codebase works locally and in production without any URL changes.
+The [Cloudflare Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/) runs the Worker in-process alongside Vite during development (`bun dev`), so API requests hit the real Worker runtime without a separate `wrangler dev` process.
 
 ## Worker structure
 

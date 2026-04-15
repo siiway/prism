@@ -7,8 +7,8 @@ description: Set up Prism on Cloudflare Workers from scratch — provisioning re
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org) 20+ and [pnpm](https://pnpm.io) 9+
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) (`pnpm add -g wrangler`)
+- [Bun](https://bun.sh) 1.1+
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) (`bun add -g wrangler`)
 - A Cloudflare account (free tier is sufficient)
 - _(Optional)_ Rust + wasm-pack for the PoW WASM accelerator
 
@@ -18,7 +18,7 @@ toolchain components automatically.
 ## 1. Install dependencies
 
 ```bash
-pnpm install
+bun install
 ```
 
 ## 2. Provision Cloudflare resources
@@ -63,15 +63,17 @@ The bucket name is already set in `wrangler.jsonc` as `prism-assets`.
 ## 3. Run migrations
 
 ```bash
-pnpm db:migrate          # local D1 (wrangler dev)
-pnpm db:migrate:prod     # production D1
+bun db:migrate          # local D1
+bun db:migrate:prod     # production D1
 ```
 
-## 5. Start development servers
+## 5. Start development server
 
 ```bash
-pnpm dev                 # Vite on http://localhost:5173
+bun dev
 ```
+
+Vite starts on `http://localhost:5173`. The [Cloudflare Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/) runs the Worker in-process alongside Vite — no separate `wrangler dev` needed.
 
 ## 6. First-run setup
 
@@ -106,7 +108,7 @@ bash scripts/build.sh --skip-frontend
 ## 8. Deploy to production
 
 ```bash
-pnpm deploy
+bun deploy
 ```
 
 This runs `tsc -b && vite build` then `wrangler deploy`. The Cloudflare Assets

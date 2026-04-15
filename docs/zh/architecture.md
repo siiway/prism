@@ -34,7 +34,7 @@ flowchart LR
   B -->|"/.well-known/*"| W
 ```
 
-开发环境中，Vite 将 `/api/*` 代理到 `http://localhost:8787`，因此无需修改任何 URL，本地和生产环境使用同一套代码。
+开发时（`bun dev`），[Cloudflare Vite 插件](https://developers.cloudflare.com/workers/vite-plugin/)在 Vite 进程内直接运行 Worker，API 请求命中真实的 Worker 运行时，无需单独启动 `wrangler dev`。
 
 ## Worker 结构
 
