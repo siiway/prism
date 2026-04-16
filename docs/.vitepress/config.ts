@@ -1,10 +1,52 @@
 import { defineConfig } from "vitepress";
 import { withMermaid } from "vitepress-plugin-mermaid";
 
+const AI_REVIEW_NOTICE =
+  "> This document was written by AI and has been manually reviewed.";
+
+function injectAiReviewNotice(markdown: string): string {
+  if (markdown.includes(AI_REVIEW_NOTICE)) {
+    return markdown;
+  }
+
+  const frontmatterMatch = markdown.match(/^---\n[\s\S]*?\n---(?:\n|$)/);
+  if (!frontmatterMatch) {
+    return `${AI_REVIEW_NOTICE}\n\n${markdown}`;
+  }
+
+  const frontmatterBlock = frontmatterMatch[0];
+  const body = markdown.slice(frontmatterBlock.length);
+  return `${frontmatterBlock}\n${AI_REVIEW_NOTICE}\n\n${body}`;
+}
+
 export default withMermaid(defineConfig({
   cleanUrls: true,
   ignoreDeadLinks: true,
   lastUpdated: true,
+
+  vite: {
+    plugins: [
+      {
+        name: "prism-docs-ai-review-notice",
+        apply: "build",
+        enforce: "pre",
+        transform(code, id) {
+          const cleanId = id.split("?")[0];
+          if (!cleanId.endsWith(".md")) {
+            return null;
+          }
+
+          const isDocsPage = cleanId.includes("/docs/");
+          const isHomePage = /\/docs\/(zh\/)?index\.md$/.test(cleanId);
+          if (!isDocsPage || isHomePage) {
+            return null;
+          }
+
+          return injectAiReviewNotice(code);
+        },
+      },
+    ],
+  },
 
   sitemap: {
     hostname: "https://prism.wss.moe",
