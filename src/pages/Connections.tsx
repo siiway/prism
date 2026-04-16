@@ -99,6 +99,56 @@ function getDisplayName(profile: unknown): string | null {
   );
 }
 
+function getProfileTextField(profile: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = profile[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" || typeof value === "bigint") {
+      return String(value);
+    }
+  }
+  return null;
+}
+
+function getConnectionDetails(conn: { profile: unknown; provider_user_id: string }) {
+  const profile =
+    conn.profile && typeof conn.profile === "object"
+      ? (conn.profile as Record<string, unknown>)
+      : null;
+  const telegramNickname = profile
+    ? [profile.first_name, profile.last_name]
+        .filter((part): part is string => typeof part === "string" && !!part)
+        .join(" ")
+        .trim() || null
+    : null;
+  const nickname = profile
+    ? getProfileTextField(profile, [
+        "nickname",
+        "display_name",
+        "name",
+        "global_name",
+      ]) ?? telegramNickname
+    : null;
+  const username = profile
+    ? getProfileTextField(profile, [
+        "username",
+        "login",
+        "preferred_username",
+        "user_name",
+      ])
+    : null;
+  const platformId =
+    (profile
+      ? getProfileTextField(profile, ["id", "sub", "user_id", "uid"])
+      : null) ?? conn.provider_user_id;
+  return {
+    nickname,
+    username,
+    platformId,
+    display: nickname ?? username ?? getDisplayName(conn.profile) ?? platformId,
+  };
+}
+
 export function Connections() {
   const styles = useStyles();
   const qc = useQueryClient();
@@ -242,7 +292,8 @@ export function Connections() {
               </div>
 
               {conns.map((conn) => {
-                const displayName = getDisplayName(conn.profile);
+                const details = getConnectionDetails(conn);
+                const displayName = details.display;
                 return (
                   <div key={conn.id} className={styles.connRow}>
                     <div style={{ minWidth: 0 }}>
@@ -258,6 +309,39 @@ export function Connections() {
                       >
                         {displayName ?? conn.provider_user_id}
                       </Text>
+                      {details.nickname ? (
+                        <Text
+                          size={100}
+                          block
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {t("connections.detailNickname", {
+                            value: details.nickname,
+                          })}
+                        </Text>
+                      ) : null}
+                      {details.username ? (
+                        <Text
+                          size={100}
+                          block
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {t("connections.detailUsername", {
+                            value: details.username,
+                          })}
+                        </Text>
+                      ) : null}
+                      {details.platformId ? (
+                        <Text
+                          size={100}
+                          block
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {t("connections.detailId", {
+                            value: details.platformId,
+                          })}
+                        </Text>
+                      ) : null}
                       <Text
                         size={100}
                         style={{ color: tokens.colorNeutralForeground3 }}

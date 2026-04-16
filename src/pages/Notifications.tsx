@@ -229,6 +229,32 @@ function getUniformTgLevel(
   return uniformLevel(levels);
 }
 
+function getUniformEmailAccountLevel(
+  eventKeys: string[],
+  rules: NotificationRules,
+  emailId: string,
+): "brief" | "full" | null | "mixed" {
+  const levels: Array<"brief" | "full" | null> = [];
+  for (const ev of eventKeys) {
+    const entry = (rules[ev]?.email ?? []).find((r) => r.email_id === emailId);
+    levels.push(entry?.level ?? null);
+  }
+  return uniformLevel(levels);
+}
+
+function getUniformTgAccountLevel(
+  eventKeys: string[],
+  rules: NotificationRules,
+  connectionId: string,
+): "brief" | "full" | null | "mixed" {
+  const levels: Array<"brief" | "full" | null> = [];
+  for (const ev of eventKeys) {
+    const entry = (rules[ev]?.tg ?? []).find((r) => r.connection_id === connectionId);
+    levels.push(entry?.level ?? null);
+  }
+  return uniformLevel(levels);
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const useStyles = makeStyles({
@@ -323,16 +349,16 @@ const useStyles = makeStyles({
     gap: "6px",
   },
   channelLabel: {
-    fontSize: tokens.fontSizeBase100,
+    fontSize: tokens.fontSizeBase300,
     color: tokens.colorNeutralForeground3,
-    width: "14px",
+    width: "20px",
     textAlign: "center",
     flexShrink: 0,
   },
   accountLabel: {
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorNeutralForeground2,
-    maxWidth: "110px",
+    maxWidth: "160px",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -369,7 +395,7 @@ function AccountLevelRow({
 }: {
   icon: string;
   label: string;
-  level: "brief" | "full" | null;
+  level: "brief" | "full" | null | "mixed";
   onChange: (l: "brief" | "full" | null) => void;
 }) {
   const styles = useStyles();
@@ -454,11 +480,13 @@ function TgChannelPicker({
   connections: NotifTgConnection[];
   onChange: (v: NotificationTgRule[]) => void;
 }) {
+  const { t } = useTranslation();
   if (connections.length === 0) return null;
   return (
     <>
       {connections.map((conn) => {
-        const label = conn.username ? `@${conn.username}` : conn.name;
+        const handle = conn.username ? `@${conn.username}` : conn.name;
+        const label = t("notifications.tgAccountLabel", { account: handle });
         const rule = value.find((r) => r.connection_id === conn.id);
         return (
           <AccountLevelRow
@@ -488,6 +516,8 @@ const BULK_LEVELS = [
 ] as const;
 
 function BulkLevelControls({
+  eventKeys,
+  rules,
   emailLevel,
   tgLevel,
   emails,
@@ -495,7 +525,11 @@ function BulkLevelControls({
   showTg,
   onEmail,
   onTg,
+  onEmailAccount,
+  onTgAccount,
 }: {
+  eventKeys: string[];
+  rules: NotificationRules;
   emailLevel: "brief" | "full" | null | "mixed";
   tgLevel: "brief" | "full" | null | "mixed";
   emails: NotifEmail[];
@@ -503,6 +537,11 @@ function BulkLevelControls({
   showTg: boolean;
   onEmail: (level: "brief" | "full" | null) => void;
   onTg: (level: "brief" | "full" | null) => void;
+  onEmailAccount: (emailId: string, level: "brief" | "full" | null) => void;
+  onTgAccount: (
+    connectionId: string,
+    level: "brief" | "full" | null,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
@@ -559,6 +598,33 @@ function BulkLevelControls({
           </div>
         </div>
       )}
+      {emails.map((email) => {
+        const level = getUniformEmailAccountLevel(eventKeys, rules, email.id);
+        return (
+          <AccountLevelRow
+            key={`bulk-email-${email.id}`}
+            icon="✉"
+            label={email.email}
+            level={level}
+            onChange={(nextLevel) => onEmailAccount(email.id, nextLevel)}
+          />
+        );
+      })}
+      {showTg &&
+        connections.map((conn) => {
+          const handle = conn.username ? `@${conn.username}` : conn.name;
+          const label = t("notifications.tgAccountLabel", { account: handle });
+          const level = getUniformTgAccountLevel(eventKeys, rules, conn.id);
+          return (
+            <AccountLevelRow
+              key={`bulk-tg-${conn.id}`}
+              icon="✈"
+              label={label}
+              level={level}
+              onChange={(nextLevel) => onTgAccount(conn.id, nextLevel)}
+            />
+          );
+        })}
     </div>
   );
 }
@@ -634,6 +700,48 @@ export function Notifications() {
             ? tgConnections.map((c) => ({ connection_id: c.id, level }))
             : [],
         };
+      return next;
+    });
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function applyBulkEmailAccount(
+    eventKeys: string[],
+    emailId: string,
+    level: "brief" | "full" | null,
+  ) {
+    setRules((prev) => {
+      const next = { ...prev };
+      for (const ev of eventKeys) {
+        const curr = next[ev] ?? {};
+        const rest = (curr.email ?? []).filter((r) => r.email_id !== emailId);
+        next[ev] = {
+          ...curr,
+          email: level ? [...rest, { email_id: emailId, level }] : rest,
+        };
+      }
+      return next;
+    });
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function applyBulkTgAccount(
+    eventKeys: string[],
+    connectionId: string,
+    level: "brief" | "full" | null,
+  ) {
+    setRules((prev) => {
+      const next = { ...prev };
+      for (const ev of eventKeys) {
+        const curr = next[ev] ?? {};
+        const rest = (curr.tg ?? []).filter((r) => r.connection_id !== connectionId);
+        next[ev] = {
+          ...curr,
+          tg: level ? [...rest, { connection_id: connectionId, level }] : rest,
+        };
+      }
       return next;
     });
     setDirty(true);
@@ -775,6 +883,8 @@ export function Notifications() {
             {t("notifications.selectAll")}
           </span>
           <BulkLevelControls
+            eventKeys={ALL_EVENT_KEYS}
+            rules={rules}
             emailLevel={getUniformEmailLevel(ALL_EVENT_KEYS, rules, emails)}
             tgLevel={getUniformTgLevel(ALL_EVENT_KEYS, rules, tgConnections)}
             emails={emails}
@@ -782,6 +892,12 @@ export function Notifications() {
             showTg={showTg}
             onEmail={(l) => applyBulkEmail(ALL_EVENT_KEYS, l)}
             onTg={(l) => applyBulkTg(ALL_EVENT_KEYS, l)}
+            onEmailAccount={(emailId, l) =>
+              applyBulkEmailAccount(ALL_EVENT_KEYS, emailId, l)
+            }
+            onTgAccount={(connectionId, l) =>
+              applyBulkTgAccount(ALL_EVENT_KEYS, connectionId, l)
+            }
           />
         </div>
       )}
@@ -793,6 +909,8 @@ export function Notifications() {
             <div className={styles.groupHeader}>
               <Text className={styles.groupLabel}>{t(group.groupKey)}</Text>
               <BulkLevelControls
+                eventKeys={groupKeys}
+                rules={rules}
                 emailLevel={getUniformEmailLevel(groupKeys, rules, emails)}
                 tgLevel={getUniformTgLevel(groupKeys, rules, tgConnections)}
                 emails={emails}
@@ -800,6 +918,12 @@ export function Notifications() {
                 showTg={showTg}
                 onEmail={(l) => applyBulkEmail(groupKeys, l)}
                 onTg={(l) => applyBulkTg(groupKeys, l)}
+                onEmailAccount={(emailId, l) =>
+                  applyBulkEmailAccount(groupKeys, emailId, l)
+                }
+                onTgAccount={(connectionId, l) =>
+                  applyBulkTgAccount(groupKeys, connectionId, l)
+                }
               />
             </div>
             {group.events.map((entry) => {

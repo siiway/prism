@@ -532,7 +532,10 @@
     "disconnectTitle": "Disconnect {{provider}}?",
     "disconnectDesc": "{{name}} will be disconnected from your account. ",
     "disconnectWarning": "Make sure you have another sign-in method available.",
-    "disconnectAction": "Disconnect"
+    "disconnectAction": "Disconnect",
+    "detailNickname": "Nickname: {{value}}",
+    "detailUsername": "Username: {{value}}",
+    "detailId": "ID: {{value}}"
   },
   "tokens": {
     "title": "Personal Access Tokens",
@@ -985,6 +988,7 @@
     "tgToggleTooltip": "Send a Telegram message for this event",
     "emailChannel": "Email",
     "tgChannel": "Telegram",
+    "tgAccountLabel": "TG {{account}}",
     "selectAll": "Select all",
     "jsonEdit": "JSON",
     "jsonApply": "Apply",

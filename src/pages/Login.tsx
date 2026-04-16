@@ -208,10 +208,12 @@ export function Login() {
     }
   };
 
-  const getGpgCommand = () =>
-    gpgSignMode === "clearsign"
-      ? `gpg --clearsign <<'EOF'\n${gpgChallengeText}\nEOF`
-      : `gpg --sign --armor <<'EOF'\n${gpgChallengeText}\nEOF`;
+  const getGpgCommand = () => {
+    const quotedChallenge = `'${gpgChallengeText.replace(/'/g, "'\\''")}'`;
+    return gpgSignMode === "clearsign"
+      ? `echo ${quotedChallenge} | gpg --clearsign`
+      : `echo ${quotedChallenge} | gpg --sign --armor`;
+  };
 
   const handleGpgAutoSign = async () => {
     setError("");

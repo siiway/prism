@@ -532,7 +532,10 @@
     "disconnectTitle": "断开 {{provider}} 连接？",
     "disconnectDesc": "{{name}} 将从您的账号断开连接。",
     "disconnectWarning": "请确保您有其他登录方式可用。",
-    "disconnectAction": "断开连接"
+    "disconnectAction": "断开连接",
+    "detailNickname": "平台昵称：{{value}}",
+    "detailUsername": "用户名：{{value}}",
+    "detailId": "ID：{{value}}"
   },
   "tokens": {
     "title": "个人访问令牌",
@@ -985,6 +988,7 @@
     "tgToggleTooltip": "为此事件发送 Telegram 消息",
     "emailChannel": "邮件",
     "tgChannel": "Telegram",
+    "tgAccountLabel": "TG {{account}}",
     "selectAll": "全选",
     "jsonEdit": "JSON",
     "jsonApply": "应用",
