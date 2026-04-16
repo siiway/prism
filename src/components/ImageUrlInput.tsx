@@ -2,8 +2,8 @@
 
 import { Field, Input, Text, tokens } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
-import { useState } from "react";
-import { proxyImageUrl } from "../lib/api";
+import { useEffect, useState } from "react";
+import { proxyImageUrl, unproxyImageUrl } from "../lib/api";
 
 interface Props {
   label: string;
@@ -23,13 +23,20 @@ function isValidHttpsUrl(url: string): boolean {
 export function ImageUrlInput({ label, value, onChange, placeholder }: Props) {
   const { t } = useTranslation();
   const [loadError, setLoadError] = useState(false);
+  const normalizedValue = unproxyImageUrl(value);
 
-  const isLocal = value.startsWith("/");
-  const showPreview = !!value && (isLocal || isValidHttpsUrl(value));
-  const httpsError = value && !isLocal && !isValidHttpsUrl(value);
+  useEffect(() => {
+    if (normalizedValue !== value) onChange(normalizedValue);
+  }, [normalizedValue, onChange, value]);
+
+  const isLocal = normalizedValue.startsWith("/");
+  const showPreview =
+    !!normalizedValue && (isLocal || isValidHttpsUrl(normalizedValue));
+  const httpsError =
+    normalizedValue && !isLocal && !isValidHttpsUrl(normalizedValue);
 
   // Always preview through the proxy so SVGs are sanitized before display
-  const previewSrc = proxyImageUrl(value);
+  const previewSrc = proxyImageUrl(normalizedValue);
 
   return (
     <Field
@@ -40,7 +47,7 @@ export function ImageUrlInput({ label, value, onChange, placeholder }: Props) {
     >
       <Input
         style={{ width: "100%" }}
-        value={value}
+        value={normalizedValue}
         onChange={(e) => {
           setLoadError(false);
           onChange(e.target.value);

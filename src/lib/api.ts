@@ -11,9 +11,29 @@ const BASE = "/api";
  */
 export function proxyImageUrl(url: string | null | undefined): string {
   if (!url) return "";
+  const normalized = unproxyImageUrl(url);
   // Already a local asset — no need to proxy
-  if (url.startsWith("/")) return url;
-  return `${BASE}/proxy/image?url=${btoa(url)}`;
+  if (normalized.startsWith("/")) return normalized;
+  return `${BASE}/proxy/image?url=${btoa(normalized)}`;
+}
+
+/**
+ * Converts a proxied image URL (e.g. /api/proxy/image?url=BASE64) back to the
+ * original external URL for form inputs.
+ */
+export function unproxyImageUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+    if (!parsed.pathname.endsWith("/api/proxy/image")) return trimmed;
+    const encoded = parsed.searchParams.get("url");
+    if (!encoded) return trimmed;
+    return atob(encoded);
+  } catch {
+    return trimmed;
+  }
 }
 
 export class ApiError extends Error {
