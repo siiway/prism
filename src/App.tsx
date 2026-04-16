@@ -51,6 +51,7 @@ import { UserWebhooks } from "./pages/UserWebhooks";
 import { Notifications } from "./pages/Notifications";
 import { VerifyEmail } from "./pages/VerifyEmail";
 import { VerifyChoose } from "./pages/VerifyChoose";
+import { TgAuthCallback } from "./pages/TgAuthCallback";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -146,6 +147,7 @@ export default function App() {
               }
             />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/auth/tg-callback" element={<TgAuthCallback />} />
             <Route path="/social-confirm" element={<SocialConfirm />} />
             <Route path="/social-select" element={<SocialSelect />} />
 

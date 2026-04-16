@@ -298,14 +298,6 @@ export interface SiteConfig {
   session_ttl_days: number;
   access_token_ttl_minutes: number;
   refresh_token_ttl_days: number;
-  github_client_id: string;
-  github_client_secret: string;
-  google_client_id: string;
-  google_client_secret: string;
-  microsoft_client_id: string;
-  microsoft_client_secret: string;
-  discord_client_id: string;
-  discord_client_secret: string;
   email_provider: "none" | "resend" | "mailchannels" | "smtp";
   email_verify_methods: "link" | "send" | "both";
   email_receive_host: string;

@@ -214,7 +214,6 @@ export function AdminSettings() {
           <Tab value="general">{t("admin.generalTab")}</Tab>
           <Tab value="auth">{t("admin.authTab")}</Tab>
           <Tab value="captcha">{t("admin.captchaTab")}</Tab>
-          <Tab value="social">{t("admin.socialTab")}</Tab>
           <Tab value="email">{t("admin.emailTab")}</Tab>
           <Tab value="appearance">{t("admin.appearanceTab")}</Tab>
           <Tab value="danger">{t("admin.dangerTab")}</Tab>
@@ -451,61 +450,6 @@ export function AdminSettings() {
                 />
               </Field>
             )}
-          </div>
-        </div>
-      )}
-
-      {tab === "social" && (
-        <div className={styles.card}>
-          <Title3>{t("admin.socialTitle")}</Title3>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("admin.socialLeaveBlank")}
-          </Text>
-          <div className={styles.form}>
-            {[
-              {
-                label: "GitHub",
-                idKey: "github_client_id" as const,
-                secretKey: "github_client_secret" as const,
-              },
-              {
-                label: "Google",
-                idKey: "google_client_id" as const,
-                secretKey: "google_client_secret" as const,
-              },
-              {
-                label: "Microsoft",
-                idKey: "microsoft_client_id" as const,
-                secretKey: "microsoft_client_secret" as const,
-              },
-              {
-                label: "Discord",
-                idKey: "discord_client_id" as const,
-                secretKey: "discord_client_secret" as const,
-              },
-            ].map(({ label, idKey, secretKey }) => (
-              <div key={label}>
-                <Text weight="semibold" block style={{ marginBottom: 8 }}>
-                  {label}
-                </Text>
-                <div className={styles.row}>
-                  <Field label={t("admin.clientId")}>
-                    <Input
-                      value={get(idKey) ?? ""}
-                      onChange={(e) => set(idKey, e.target.value)}
-                    />
-                  </Field>
-                  <Field label={t("admin.clientSecret")}>
-                    <Input
-                      type="password"
-                      value={get(secretKey) ?? ""}
-                      onChange={(e) => set(secretKey, e.target.value)}
-                      placeholder={t("admin.unchanged")}
-                    />
-                  </Field>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       )}

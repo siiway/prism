@@ -100,6 +100,7 @@ const PROVIDER_OPTIONS = [
   { value: "google", label: "Google" },
   { value: "microsoft", label: "Microsoft" },
   { value: "discord", label: "Discord" },
+  { value: "telegram", label: "Telegram" },
   { value: "oidc", label: "Generic OpenID Connect" },
   { value: "oauth2", label: "Generic OAuth 2" },
 ];

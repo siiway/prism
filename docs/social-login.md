@@ -1,6 +1,6 @@
 ---
 title: Social Login Setup
-description: Configure OAuth sources in Prism — built-in providers (GitHub, Google, Microsoft, Discord) and custom Generic OIDC / OAuth 2.0 providers.
+description: Configure OAuth sources in Prism — built-in providers (GitHub, Google, Microsoft, Discord, Telegram) and custom Generic OIDC / OAuth 2.0 providers.
 ---
 
 # Social Login Setup
@@ -12,6 +12,8 @@ OAuth Sources are managed in **Admin → OAuth Sources** (not in Settings). Each
 ```
 https://<your-prism-domain>/api/connections/<slug>/callback
 ```
+
+> **Note:** Telegram's flow is different from standard OAuth — instead of a redirect callback URL, it uses a verified origin domain. The callback URL format above does not apply to Telegram. See the [Telegram section](#telegram) for details.
 
 ## Built-in Providers
 
@@ -133,6 +135,50 @@ Go to **Admin → OAuth Sources → Add source**, choose **Provider: Discord**, 
 - If a Discord user has no email set, Prism rejects the login with an error.
 - Discord does not support OpenID Connect. Prism uses `/users/@me`.
 
+### Telegram
+
+Telegram uses a widget-based authentication flow instead of standard OAuth. There is no authorization code exchange — after the user confirms login in Telegram, their profile data is sent directly to the callback URL as query parameters signed with an HMAC derived from your bot token.
+
+#### 1. Create a Telegram Bot
+
+1. Open a chat with [@BotFather](https://t.me/BotFather) and run `/newbot`.
+2. Follow the prompts to set a name and username for the bot.
+3. BotFather will give you a **bot token** in the format `123456789:ABCdef-GHIjkl...`. Copy it — this is the **Client Secret** in Prism.
+4. The **numeric part before the colon** (e.g. `123456789`) is the **Bot ID** — this is the **Client ID** in Prism.
+
+#### 2. Whitelist your domain
+
+Telegram requires the origin domain to be registered with BotFather before it allows logins:
+
+1. In the same BotFather chat, run `/setdomain`.
+2. Select your bot.
+3. Enter your Prism domain (without path), e.g. `https://your-prism-domain`.
+
+::: warning
+You must set the domain in BotFather **before** attempting a Telegram login. Logins from unregistered origins will fail with an invalid signature error.
+:::
+
+#### 3. Add the source in Prism
+
+Go to **Admin → OAuth Sources → Add source**:
+
+| Field         | Value                                             |
+|---------------|---------------------------------------------------|
+| Slug          | `telegram` (or any unique key)                    |
+| Provider      | **Telegram**                                      |
+| Display name  | `Telegram` (shown on login button)                |
+| Client ID     | Bot numeric ID (the number before `:` in the token) |
+| Client Secret | Full bot token (`123456789:ABCdef...`)             |
+
+Save. The button appears on the login page immediately.
+
+#### Notes
+
+- **Telegram does not provide an email address.** Users who register through Telegram will have a placeholder email (`telegram_<id>@prism.local`) and no email verification. They can add and verify a real email from their profile settings after registering.
+- The auth data timestamp (`auth_date`) is verified server-side — sessions older than 24 hours are rejected.
+- Unlike other providers, there is no redirect callback URL to register with the provider. Telegram routes via the whitelisted origin domain set in BotFather, not a registered redirect URI.
+- Telegram does not support multiple account linking with the same bot by default. Each user's Telegram account can be linked to one Prism account per source slug.
+
 ## Generic OpenID Connect
 
 Use **Provider: Generic OpenID Connect** to add any OIDC-compliant identity provider (Keycloak, Okta, Auth0, Authentik, Zitadel, etc.).
@@ -213,6 +259,10 @@ http://localhost:5173/api/connections/<slug>/callback
 Google and Microsoft require HTTPS for production redirect URIs but allow `http://localhost` for development. GitHub and Discord allow plain HTTP localhost URIs.
 :::
 
+::: warning Telegram and localhost
+Telegram requires HTTPS origins and does not allow plain `http://localhost`. For local Telegram testing you need a public HTTPS URL — use a tunneling tool such as [cloudflared tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) or ngrok, and register that URL with BotFather (`/setdomain`).
+:::
+
 ## Troubleshooting
 
 **Redirect URI mismatch** — The callback URL registered with the provider must match exactly (slug included, no trailing slash difference, correct scheme). Check that the slug in the OAuth Source matches what you registered.
@@ -220,5 +270,9 @@ Google and Microsoft require HTTPS for production redirect URIs but allow `http:
 **User gets a new account on every login** — Social connections are matched by `(source_slug, provider_user_id)`. If the slug changed, old connections become orphaned. Use **Profile → Linked Accounts** to reconnect.
 
 **Email already taken on first social login** — If an account with the same email exists from password registration, Prism rejects the social login with a conflict. The user must log in with their password first, then connect the provider from **Profile → Linked Accounts**.
+
+**Telegram: invalid signature** — The HMAC check on the auth data failed. This usually means the **Client Secret** in Prism does not match the bot token, or the origin domain has not been registered with BotFather (`/setdomain`). Confirm both and try again.
+
+**Telegram: auth expired** — The Telegram auth session is older than 24 hours. This can happen if the user left the auth tab open for a long time. Ask the user to start the login flow again.
 
 **Generic OIDC discovery fails** — Ensure the issuer URL uses HTTPS and the provider publishes `{issuer}/.well-known/openid-configuration`. The worker fetches this server-side (no CORS issue), but an unreachable or slow provider will cause a timeout.

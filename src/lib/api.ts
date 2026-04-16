@@ -453,6 +453,16 @@ export const api = {
     ),
   connectionIntent: () =>
     request<{ token: string }>("POST", "/connections/intent", {}, getToken()),
+  verifyTelegramAuth: (
+    slug: string,
+    body: { nonce: string; tg_data: Record<string, string> },
+  ) =>
+    request<{ type: string; token?: string; pending_key?: string }>(
+      "POST",
+      `/connections/${slug}/tg-verify`,
+      body,
+      getToken(),
+    ),
   connectionPending: (key: string) =>
     request<SocialPendingInfo>(
       "GET",

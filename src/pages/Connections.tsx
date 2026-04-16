@@ -55,6 +55,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   google: "#4285f4",
   microsoft: "#0078d4",
   discord: "#5865f2",
+  telegram: "#2AABEE",
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -76,13 +77,20 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Account creation failed. Please contact an administrator.",
   already_connected: "This account is already linked to your profile.",
   account_taken: "This account is already linked to another user.",
+  invalid_signature:
+    "The response from Telegram could not be verified. Please try again.",
+  auth_expired:
+    "The Telegram authentication session expired. Please try again.",
 };
 
 function getDisplayName(profile: unknown): string | null {
   if (!profile || typeof profile !== "object") return null;
   const p = profile as Record<string, unknown>;
+  const telegramName =
+    [p.first_name, p.last_name].filter(Boolean).join(" ") || null;
   return (
     (p.name as string) ||
+    telegramName ||
     (p.login as string) ||
     (p.username as string) ||
     (p.global_name as string) ||

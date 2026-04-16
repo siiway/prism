@@ -11,23 +11,9 @@ app.get("/health", (c) => c.json({ ok: true }));
 
 app.get("/site", async (c) => {
   const config = await getConfig(c.env.DB);
-  const { results } = await c.env.DB.prepare(
+  const { results: enabled_providers } = await c.env.DB.prepare(
     "SELECT slug, name, provider FROM oauth_sources WHERE enabled = 1 ORDER BY created_at ASC",
   ).all<{ slug: string; name: string; provider: string }>();
-
-  const enabled_providers =
-    results.length > 0
-      ? results
-      : (["github", "google", "microsoft", "discord"] as const)
-          .filter(
-            (p) =>
-              !!(config as unknown as Record<string, string>)[`${p}_client_id`],
-          )
-          .map((p) => ({
-            slug: p,
-            name: p.charAt(0).toUpperCase() + p.slice(1),
-            provider: p,
-          }));
 
   return c.json({
     site_name: config.site_name,

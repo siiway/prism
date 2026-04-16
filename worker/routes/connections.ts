@@ -1,4 +1,4 @@
-// Social platform connections (GitHub, Google, Microsoft, Discord, generic OIDC/OAuth2)
+// Social platform connections (GitHub, Google, Microsoft, Discord, Telegram, generic OIDC/OAuth2)
 
 import { Hono } from "hono";
 import { randomId, randomBase64url, sha256Hex } from "../lib/crypto";
@@ -15,7 +15,7 @@ interface PendingState {
   provider: string;
   providerUserId: string;
   providerEmail: string | null;
-  accessToken: string;
+  accessToken: string | null;
   profileData: Record<string, unknown>;
   users?: Array<{
     id: string;
@@ -41,9 +41,6 @@ interface ProviderDef {
   tokenUrl: string;
   userUrl: string;
   scopes: string;
-  // Legacy site_config key names for backward-compatibility
-  clientIdKey: string;
-  clientSecretKey: string;
 }
 
 const PROVIDER_DEFS: Record<string, ProviderDef> = {
@@ -52,32 +49,31 @@ const PROVIDER_DEFS: Record<string, ProviderDef> = {
     tokenUrl: "https://github.com/login/oauth/access_token",
     userUrl: "https://api.github.com/user",
     scopes: "read:user user:email",
-    clientIdKey: "github_client_id",
-    clientSecretKey: "github_client_secret",
   },
   google: {
     authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
     userUrl: "https://www.googleapis.com/oauth2/v3/userinfo",
     scopes: "openid email profile",
-    clientIdKey: "google_client_id",
-    clientSecretKey: "google_client_secret",
   },
   microsoft: {
     authUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
     tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     userUrl: "https://graph.microsoft.com/v1.0/me",
     scopes: "openid email profile User.Read",
-    clientIdKey: "microsoft_client_id",
-    clientSecretKey: "microsoft_client_secret",
   },
   discord: {
     authUrl: "https://discord.com/api/oauth2/authorize",
     tokenUrl: "https://discord.com/api/oauth2/token",
     userUrl: "https://discord.com/api/users/@me",
     scopes: "identify email",
-    clientIdKey: "discord_client_id",
-    clientSecretKey: "discord_client_secret",
+  },
+  // Telegram uses oauth.telegram.org — no token exchange, data arrives in callback params
+  telegram: {
+    authUrl: "https://oauth.telegram.org/auth",
+    tokenUrl: "",
+    userUrl: "",
+    scopes: "",
   },
   // Generic providers — all URLs/scopes are configured per-source in oauth_sources table
   oidc: {
@@ -85,16 +81,12 @@ const PROVIDER_DEFS: Record<string, ProviderDef> = {
     tokenUrl: "",
     userUrl: "",
     scopes: "openid email profile",
-    clientIdKey: "",
-    clientSecretKey: "",
   },
   oauth2: {
     authUrl: "",
     tokenUrl: "",
     userUrl: "",
     scopes: "",
-    clientIdKey: "",
-    clientSecretKey: "",
   },
 };
 
@@ -112,80 +104,42 @@ interface ResolvedSource {
 }
 
 /**
- * Look up an OAuth source by slug.
- * Priority: oauth_sources table → legacy site_config keys.
- * Returns null if the slug is unknown or unconfigured.
+ * Look up an OAuth source by slug from the oauth_sources table.
+ * Returns null if the slug is unknown, disabled, or misconfigured.
  */
 async function resolveSource(
   db: D1Database,
   slug: string,
-  config: import("../types").SiteConfig,
 ): Promise<ResolvedSource | null> {
-  // 1. Check the explicit oauth_sources table
   const row = await db
     .prepare("SELECT * FROM oauth_sources WHERE slug = ? AND enabled = 1")
     .bind(slug)
     .first<OAuthSourceRow>();
 
-  if (row) {
-    const def = PROVIDER_DEFS[row.provider];
-    if (!def) return null; // unknown base provider type
+  if (!row) return null;
 
-    // For generic providers (oidc/oauth2), URLs are stored per-row
-    const isGeneric = row.provider === "oidc" || row.provider === "oauth2";
-    const authUrl = isGeneric ? (row.auth_url ?? "") : def.authUrl;
-    const tokenUrl = isGeneric ? (row.token_url ?? "") : def.tokenUrl;
-    const userUrl = isGeneric ? (row.userinfo_url ?? "") : def.userUrl;
-    const scopes = row.scopes ?? def.scopes;
+  const def = PROVIDER_DEFS[row.provider];
+  if (!def) return null; // unknown base provider type
 
-    console.log(
-      `[resolveSource] slug=${slug} provider=${row.provider} isGeneric=${isGeneric}`,
-    );
-    console.log(
-      `[resolveSource] row.auth_url=${row.auth_url} row.token_url=${row.token_url} row.userinfo_url=${row.userinfo_url}`,
-    );
-    console.log(
-      `[resolveSource] resolved authUrl=${authUrl} tokenUrl=${tokenUrl} userUrl=${userUrl} scopes=${scopes}`,
-    );
+  // For generic providers (oidc/oauth2), URLs are stored per-row
+  const isGeneric = row.provider === "oidc" || row.provider === "oauth2";
+  const authUrl = isGeneric ? (row.auth_url ?? "") : def.authUrl;
+  const tokenUrl = isGeneric ? (row.token_url ?? "") : def.tokenUrl;
+  const userUrl = isGeneric ? (row.userinfo_url ?? "") : def.userUrl;
+  const scopes = row.scopes ?? def.scopes;
 
-    if (isGeneric && (!authUrl || !tokenUrl || !userUrl)) {
-      console.warn(
-        `[resolveSource] REJECTED — generic source missing URLs: authUrl=${authUrl} tokenUrl=${tokenUrl} userUrl=${userUrl}`,
-      );
-      return null; // misconfigured generic source
-    }
-
-    return {
-      slug: row.slug,
-      provider: row.provider,
-      name: row.name,
-      clientId: row.client_id,
-      clientSecret: row.client_secret,
-      authUrl,
-      tokenUrl,
-      userUrl,
-      scopes,
-    };
-  }
-
-  // 2. Fall back to legacy site_config keys (slug must equal a base provider name)
-  const def = PROVIDER_DEFS[slug];
-  if (!def) return null;
-
-  const cfg = config as unknown as Record<string, string>;
-  const clientId = cfg[def.clientIdKey];
-  if (!clientId) return null;
+  if (isGeneric && (!authUrl || !tokenUrl || !userUrl)) return null;
 
   return {
-    slug,
-    provider: slug,
-    name: slug.charAt(0).toUpperCase() + slug.slice(1),
-    clientId,
-    clientSecret: cfg[def.clientSecretKey] ?? "",
-    authUrl: def.authUrl,
-    tokenUrl: def.tokenUrl,
-    userUrl: def.userUrl,
-    scopes: def.scopes,
+    slug: row.slug,
+    provider: row.provider,
+    name: row.name,
+    clientId: row.client_id,
+    clientSecret: row.client_secret,
+    authUrl,
+    tokenUrl,
+    userUrl,
+    scopes,
   };
 }
 
@@ -239,18 +193,11 @@ app.post("/intent", requireAuth, async (c) => {
 
 app.get("/:provider/begin", optionalAuth, async (c) => {
   const slug = c.req.param("provider") ?? "";
-  console.log(`[begin] slug=${slug} APP_URL=${c.env.APP_URL}`);
-  const config = await getConfig(c.env.DB);
-  const source = await resolveSource(c.env.DB, slug, config);
-  if (!source) {
-    console.warn(`[begin] resolveSource returned null for slug=${slug}`);
+  const source = await resolveSource(c.env.DB, slug);
+  if (!source)
     return c.json({ error: "Unknown or unconfigured provider" }, 400);
-  }
-  console.log(
-    `[begin] resolved source: provider=${source.provider} authUrl=${source.authUrl} tokenUrl=${source.tokenUrl} scopes=${source.scopes}`,
-  );
 
-  const state = randomBase64url(24);
+  const nonce = randomBase64url(24);
   const mode = c.req.query("mode") ?? "login"; // 'login' | 'connect'
 
   // For connect mode, userId comes from a pre-issued intent token stored in KV
@@ -267,50 +214,264 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
   }
 
   await c.env.KV_CACHE.put(
-    `social:state:${state}`,
+    `social:state:${nonce}`,
     JSON.stringify({ slug, provider: source.provider, mode, userId }),
     { expirationTtl: 600 },
   );
 
+  // ── Telegram: redirect to oauth.telegram.org ───────────────────────────────
+  // Telegram sends auth results as a URL fragment (#tgAuthResult=BASE64_JSON),
+  // not as query params. Fragments are never sent to the server, so return_to
+  // must be a frontend URL. The frontend page reads the fragment and POSTs the
+  // decoded data to POST /api/connections/:slug/tg-verify for server verification.
+  if (source.provider === "telegram") {
+    const returnTo = `${c.env.APP_URL}/auth/tg-callback?tg_nonce=${nonce}&tg_slug=${slug}`;
+    const params = new URLSearchParams({
+      bot_id: source.clientId,
+      origin: c.env.APP_URL,
+      embed: "0",
+      request_access: "write",
+      return_to: returnTo,
+    });
+    return c.json({ redirect: `${source.authUrl}?${params}` });
+  }
+
+  // ── Standard OAuth2: redirect to provider authorization endpoint ───────────
   const redirectUri = `${c.env.APP_URL}/api/connections/${slug}/callback`;
   const params = new URLSearchParams({
     client_id: source.clientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: source.scopes,
-    state,
+    state: nonce,
   });
 
   if (source.provider === "google") params.set("access_type", "offline");
   if (source.provider === "microsoft") params.set("response_mode", "query");
 
-  const finalRedirect = `${source.authUrl}?${params}`;
-  console.log(`[begin] redirecting to: ${finalRedirect}`);
-  return c.json({ redirect: finalRedirect });
+  return c.json({ redirect: `${source.authUrl}?${params}` });
 });
 
-// ─── OAuth callback ───────────────────────────────────────────────────────────
+// ─── Telegram verify (:provider/tg-verify) ───────────────────────────────────
+// The frontend reads #tgAuthResult=BASE64_JSON from the URL fragment (which
+// the server never sees) and POSTs the decoded data here for HMAC verification.
+
+app.post("/:provider/tg-verify", async (c) => {
+  const slug = c.req.param("provider") ?? "";
+
+  const body = await c.req
+    .json<{ nonce: string; tg_data: Record<string, string> }>()
+    .catch(() => null);
+  if (!body?.nonce || !body?.tg_data)
+    return c.json({ error: "Invalid request body" }, 400);
+
+  const config = await getConfig(c.env.DB);
+  const source = await resolveSource(c.env.DB, slug);
+  if (!source || source.provider !== "telegram")
+    return c.json({ error: "provider_not_configured" }, 400);
+
+  const stateData = await c.env.KV_CACHE.get(`social:state:${body.nonce}`);
+  if (!stateData) return c.json({ error: "invalid_state" }, 400);
+  await c.env.KV_CACHE.delete(`social:state:${body.nonce}`);
+
+  const { mode, userId } = JSON.parse(stateData) as {
+    mode: string;
+    userId: string | null;
+  };
+
+  // Verify HMAC-SHA256(data_check_string, SHA256(bot_token))
+  const tgData = body.tg_data;
+  const telegramHash = tgData.hash;
+  if (!telegramHash) return c.json({ error: "invalid_signature" }, 400);
+
+  const checkParams = { ...tgData };
+  delete checkParams.hash;
+  const dataCheckString = Object.keys(checkParams)
+    .sort()
+    .map((k) => `${k}=${checkParams[k]}`)
+    .join("\n");
+  const enc = new TextEncoder();
+  const secretKey = await crypto.subtle.digest(
+    "SHA-256",
+    enc.encode(source.clientSecret),
+  );
+  const hmacKey = await crypto.subtle.importKey(
+    "raw",
+    secretKey,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    hmacKey,
+    enc.encode(dataCheckString),
+  );
+  const expectedHash = Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  if (expectedHash !== telegramHash)
+    return c.json({ error: "invalid_signature" }, 400);
+
+  // Reject stale auth (> 24 h)
+  const authDate = parseInt(tgData.auth_date ?? "0", 10);
+  if (Math.floor(Date.now() / 1000) - authDate > 86400)
+    return c.json({ error: "auth_expired" }, 400);
+
+  const profileData: Record<string, unknown> = {
+    id: tgData.id ? parseInt(tgData.id, 10) : undefined,
+    first_name: tgData.first_name,
+    last_name: tgData.last_name,
+    username: tgData.username,
+    photo_url: tgData.photo_url,
+    auth_date: authDate,
+  };
+  const providerUserId = String(tgData.id ?? "");
+  if (!providerUserId) return c.json({ error: "no_user_id" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+
+  if (mode === "connect" && userId) {
+    const alreadyLinked = await c.env.DB.prepare(
+      "SELECT id FROM social_connections WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
+    )
+      .bind(userId, slug, providerUserId)
+      .first();
+    if (alreadyLinked) return c.json({ error: "already_connected" }, 409);
+
+    await c.env.DB.prepare(
+      "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+      .bind(
+        randomId(),
+        userId,
+        slug,
+        providerUserId,
+        null,
+        JSON.stringify(profileData),
+        now,
+      )
+      .run();
+
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env.DB,
+        userId,
+        "connection.added",
+        { provider_name: source.name },
+        c.env.APP_URL,
+      ).catch(() => {}),
+    );
+    return c.json({ type: "connect" });
+  }
+
+  // Login mode
+  const linkedRows = await c.env.DB.prepare(
+    "SELECT u.* FROM users u JOIN social_connections sc ON sc.user_id = u.id WHERE sc.provider = ? AND sc.provider_user_id = ?",
+  )
+    .bind(slug, providerUserId)
+    .all<UserRow>();
+
+  const linkedUsers = linkedRows.results;
+
+  if (linkedUsers.length === 0) {
+    if (!config.allow_registration)
+      return c.json({ error: "registration_disabled" }, 403);
+
+    const pendingKey = `social:pending:${randomBase64url(24)}`;
+    await c.env.KV_CACHE.put(
+      pendingKey,
+      JSON.stringify({
+        type: "register",
+        provider: slug,
+        providerUserId,
+        providerEmail: null,
+        accessToken: null,
+        profileData,
+      } satisfies PendingState),
+      { expirationTtl: 600 },
+    );
+    return c.json({ type: "register", pending_key: pendingKey });
+  }
+
+  if (linkedUsers.length === 1) {
+    const user = linkedUsers[0];
+    await c.env.DB.prepare(
+      "UPDATE social_connections SET profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
+    )
+      .bind(JSON.stringify(profileData), user.id, slug, providerUserId)
+      .run();
+
+    await checkSocialVerifyExpiry(
+      c.env.DB,
+      user.id,
+      config.social_verify_ttl_days,
+    );
+
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env.DB,
+        user.id,
+        "connection.login",
+        { provider_name: source.name },
+        c.env.APP_URL,
+      ).catch(() => {}),
+    );
+    return c.json({
+      type: "login",
+      token: await issueJWT(user, c.env.DB, c.env.KV_SESSIONS, c.env.APP_URL),
+    });
+  }
+
+  const pendingKey = `social:pending:${randomBase64url(24)}`;
+  await c.env.KV_CACHE.put(
+    pendingKey,
+    JSON.stringify({
+      type: "select",
+      provider: slug,
+      providerUserId,
+      providerEmail: null,
+      accessToken: null,
+      profileData,
+      users: linkedUsers.map((u: UserRow) => ({
+        id: u.id,
+        username: u.username,
+        display_name: u.display_name,
+        avatar_url: u.avatar_url,
+      })),
+    } satisfies PendingState),
+    { expirationTtl: 600 },
+  );
+  return c.json({ type: "select", pending_key: pendingKey });
+});
+
+// ─── Standard OAuth2 callback (:provider/callback) ───────────────────────────
 
 app.get("/:provider/callback", async (c) => {
   const slug = c.req.param("provider") ?? "";
-  const code = c.req.query("code");
-  const state = c.req.query("state");
   const error = c.req.query("error");
-
   if (error)
     return c.redirect(
       `${c.env.APP_URL}/connections?error=${encodeURIComponent(error)}`,
     );
+
+  const config = await getConfig(c.env.DB);
+  const source = await resolveSource(c.env.DB, slug);
+  if (!source)
+    return c.redirect(
+      `${c.env.APP_URL}/connections?error=provider_not_configured`,
+    );
+
+  // ── Standard OAuth2 callback ─────────────────────────────────────────────────
+  const code = c.req.query("code");
+  const state = c.req.query("state");
   if (!code || !state)
     return c.redirect(`${c.env.APP_URL}/connections?error=missing_params`);
 
   const stateData = await c.env.KV_CACHE.get(`social:state:${state}`);
-  if (!stateData) {
-    console.error(
-      `[connections] invalid_state — key not found for state=${state} slug=${slug}`,
-    );
+  if (!stateData)
     return c.redirect(`${c.env.APP_URL}/connections?error=invalid_state`);
-  }
   await c.env.KV_CACHE.delete(`social:state:${state}`);
 
   const { provider, mode, userId } = JSON.parse(stateData) as {
@@ -319,13 +480,6 @@ app.get("/:provider/callback", async (c) => {
     mode: string;
     userId: string | null;
   };
-
-  const config = await getConfig(c.env.DB);
-  const source = await resolveSource(c.env.DB, slug, config);
-  if (!source)
-    return c.redirect(
-      `${c.env.APP_URL}/connections?error=provider_not_configured`,
-    );
 
   const redirectUri = `${c.env.APP_URL}/api/connections/${slug}/callback`;
 
@@ -564,8 +718,7 @@ app.get("/pending/:key", async (c) => {
 
   const state = JSON.parse(raw) as PendingState;
   // state.provider holds the slug; resolve the base provider type for helpers
-  const config = await getConfig(c.env.DB);
-  const source = await resolveSource(c.env.DB, state.provider, config);
+  const source = await resolveSource(c.env.DB, state.provider);
   const baseProvider = source?.provider ?? state.provider;
 
   return c.json({
@@ -621,11 +774,7 @@ app.post("/complete", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   // Resolve base provider type for display-name helpers
   const completeCfg = await getConfig(c.env.DB);
-  const completeSource = await resolveSource(
-    c.env.DB,
-    state.provider,
-    completeCfg,
-  );
+  const completeSource = await resolveSource(c.env.DB, state.provider);
   const baseProvider = completeSource?.provider ?? state.provider;
 
   if (body.action === "login") {
@@ -776,8 +925,7 @@ app.delete("/:id", requireAuth, async (c) => {
     .run();
 
   // Resolve provider name for the notification
-  const config = await getConfig(c.env.DB);
-  const source = await resolveSource(c.env.DB, conn.provider, config);
+  const source = await resolveSource(c.env.DB, conn.provider);
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
       c.env.DB,
@@ -892,14 +1040,13 @@ function extractProviderUserId(
 ): string | null {
   switch (provider) {
     case "github":
+    case "microsoft":
+    case "discord":
+    case "telegram":
       return String(profile.id ?? "");
     case "google":
     case "oidc":
       return String(profile.sub ?? "");
-    case "microsoft":
-      return String(profile.id ?? "");
-    case "discord":
-      return String(profile.id ?? "");
     default:
       // oauth2 and unknown — try sub first (OIDC-style), then id
       return String(profile.sub ?? profile.id ?? "");
@@ -910,6 +1057,7 @@ function extractProviderEmail(
   provider: string,
   profile: Record<string, unknown>,
 ): string | null {
+  if (provider === "telegram") return null; // Telegram does not provide email
   const email = (profile.email as string) ?? null;
   if (provider === "microsoft")
     return (
@@ -940,6 +1088,12 @@ function extractDisplayName(
         (profile.username as string) ||
         "User"
       );
+    case "telegram": {
+      const parts = [profile.first_name as string, profile.last_name as string]
+        .filter(Boolean)
+        .join(" ");
+      return parts || (profile.username as string) || "User";
+    }
     default:
       // oauth2 and unknown
       return (
@@ -959,7 +1113,7 @@ function extractUsername(
   let base: string;
   if (provider === "github") {
     base = (profile.login as string) || email?.split("@")[0] || "user";
-  } else if (provider === "discord") {
+  } else if (provider === "discord" || provider === "telegram") {
     base = (profile.username as string) || email?.split("@")[0] || "user";
   } else {
     // google, microsoft, oidc, oauth2, unknown — prefer preferred_username, then email prefix
@@ -993,6 +1147,8 @@ function extractProviderAvatar(
         ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.png`
         : null;
     }
+    case "telegram":
+      return (profile.photo_url as string) ?? null;
     default:
       // oauth2 and unknown — try common field names
       return (
