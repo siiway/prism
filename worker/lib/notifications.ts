@@ -668,110 +668,135 @@ function buildTelegramMessage(
   siteName: string,
   appUrl: string,
   displayName: string,
+  level: "brief" | "full",
 ): string | null {
   const sn = tgEsc(siteName);
   const dn = tgEsc(displayName);
   const notifUrl = `${appUrl}/notifications`;
+  const brief = level === "brief";
 
   switch (event) {
     case "app.created": {
       const name = tgEsc((data.name as string | undefined) ?? "an application");
+      if (brief) return `<b>${sn}</b>\n\n🆕 App created: <b>${name}</b>`;
       return `<b>${sn}</b>\n\n🆕 App created\n\nHi ${dn}, your OAuth application <b>${name}</b> has been created.\n\n<a href="${notifUrl}">Manage notifications</a>`;
     }
     case "app.updated": {
       const rawName = data.name as string | undefined;
-      const name = rawName
-        ? `<b>${tgEsc(rawName)}</b>`
-        : "one of your applications";
-      return `<b>${sn}</b>\n\n✏️ App updated\n\nHi ${dn}, ${name} was updated.\n\n<a href="${notifUrl}">Manage notifications</a>`;
+      const name = rawName ? tgEsc(rawName) : null;
+      if (brief)
+        return `<b>${sn}</b>\n\n✏️ App updated${name ? `: <b>${name}</b>` : ""}`;
+      return `<b>${sn}</b>\n\n✏️ App updated\n\nHi ${dn}, ${name ? `<b>${name}</b>` : "one of your applications"} was updated.\n\n<a href="${notifUrl}">Manage notifications</a>`;
     }
     case "app.deleted": {
       const rawName = data.name as string | undefined;
-      const name = rawName
-        ? `<b>${tgEsc(rawName)}</b>`
-        : "one of your OAuth applications";
-      return `<b>${sn}</b>\n\n🗑 App deleted\n\nHi ${dn}, ${name} was permanently deleted from your account.\n\n<a href="${notifUrl}">Manage notifications</a>`;
+      const name = rawName ? tgEsc(rawName) : null;
+      if (brief)
+        return `<b>${sn}</b>\n\n🗑 App deleted${name ? `: <b>${name}</b>` : ""}`;
+      return `<b>${sn}</b>\n\n🗑 App deleted\n\nHi ${dn}, ${name ? `<b>${name}</b>` : "one of your OAuth applications"} was permanently deleted from your account.\n\n<a href="${notifUrl}">Manage notifications</a>`;
     }
     case "domain.added": {
       const domain = tgEsc((data.domain as string | undefined) ?? "a domain");
+      if (brief) return `<b>${sn}</b>\n\n🌐 Domain added: <b>${domain}</b>`;
       return `<b>${sn}</b>\n\n🌐 Domain added\n\nHi ${dn}, the domain <b>${domain}</b> has been added to your account and is awaiting verification.\n\n<a href="${appUrl}/domains">Verify domain</a>`;
     }
     case "domain.verified": {
       const domain = tgEsc((data.domain as string | undefined) ?? "a domain");
+      if (brief) return `<b>${sn}</b>\n\n✅ Domain verified: <b>${domain}</b>`;
       return `<b>${sn}</b>\n\n✅ Domain verified\n\nHi ${dn}, your domain <b>${domain}</b> has been verified and is ready to use.\n\n<a href="${appUrl}/domains">View domains</a>`;
     }
     case "domain.deleted": {
       const domain = tgEsc((data.domain as string | undefined) ?? "a domain");
+      if (brief) return `<b>${sn}</b>\n\n🗑 Domain removed: <b>${domain}</b>`;
       return `<b>${sn}</b>\n\n🗑 Domain removed\n\nHi ${dn}, the domain <b>${domain}</b> has been removed from your account.`;
     }
     case "connection.added": {
       const provider = tgEsc(
         (data.provider_name as string | undefined) ?? "a provider",
       );
+      if (brief)
+        return `<b>${sn}</b>\n\n🔗 Connection added: <b>${provider}</b>`;
       return `<b>${sn}</b>\n\n🔗 Connection added\n\nHi ${dn}, your account has been linked to <b>${provider}</b>.\n\nIf you did not do this, review your connections immediately.\n\n<a href="${appUrl}/connections">View connections</a>`;
     }
     case "connection.removed": {
       const provider = tgEsc(
         (data.provider_name as string | undefined) ?? "a provider",
       );
+      if (brief)
+        return `<b>${sn}</b>\n\n🔓 Connection removed: <b>${provider}</b>`;
       return `<b>${sn}</b>\n\n🔓 Connection removed\n\nHi ${dn}, the connection to <b>${provider}</b> has been removed from your account.`;
     }
     case "connection.login": {
       const provider = tgEsc(
         (data.provider_name as string | undefined) ?? "a provider",
       );
+      if (brief) return `<b>${sn}</b>\n\n🔐 New login via <b>${provider}</b>`;
       return `<b>${sn}</b>\n\n🔐 New login\n\nHi ${dn}, your account was signed in via <b>${provider}</b>.\n\nIf this was not you, change your password immediately.`;
     }
     case "profile.updated": {
+      if (brief) return `<b>${sn}</b>\n\n👤 Profile updated`;
       return `<b>${sn}</b>\n\n👤 Profile updated\n\nHi ${dn}, changes were made to your profile.\n\nIf you did not make this change, review your account security.\n\n<a href="${appUrl}/profile">View profile</a>`;
     }
     case "security.passkey_added": {
       const name = tgEsc((data.name as string | undefined) ?? "a passkey");
+      if (brief) return `<b>${sn}</b>\n\n🔑 Passkey added: <b>${name}</b>`;
       return `<b>${sn}</b>\n\n🔑 Passkey added\n\nHi ${dn}, a passkey named <b>${name}</b> was added to your account.\n\nIf you did not do this, remove it immediately.\n\n<a href="${appUrl}/security">Manage passkeys</a>`;
     }
     case "security.passkey_removed": {
       const name = tgEsc((data.name as string | undefined) ?? "a passkey");
+      if (brief) return `<b>${sn}</b>\n\n🗑 Passkey removed: <b>${name}</b>`;
       return `<b>${sn}</b>\n\n🗑 Passkey removed\n\nHi ${dn}, the passkey <b>${name}</b> was removed from your account.\n\n<a href="${appUrl}/security">Manage security</a>`;
     }
     case "security.totp_enabled": {
       const name = tgEsc(
         (data.name as string | undefined) ?? "an authenticator",
       );
+      if (brief) return `<b>${sn}</b>\n\n🔐 2FA enabled: <b>${name}</b>`;
       return `<b>${sn}</b>\n\n🔐 2FA enabled\n\nHi ${dn}, two-factor authentication was enabled using <b>${name}</b>.\n\n<a href="${appUrl}/security">Manage 2FA</a>`;
     }
     case "security.totp_disabled": {
       const name = tgEsc(
         (data.name as string | undefined) ?? "an authenticator",
       );
+      if (brief) return `<b>${sn}</b>\n\n⚠️ 2FA removed: <b>${name}</b>`;
       return `<b>${sn}</b>\n\n⚠️ 2FA removed\n\nHi ${dn}, the two-factor authenticator <b>${name}</b> was removed from your account.\n\nIf you did not do this, secure your account immediately.\n\n<a href="${appUrl}/security">Manage 2FA</a>`;
     }
     case "token.created": {
       const name = tgEsc((data.name as string | undefined) ?? "a token");
+      if (brief)
+        return `<b>${sn}</b>\n\n🔑 Access token created: <b>${name}</b>`;
       return `<b>${sn}</b>\n\n🔑 Access token created\n\nHi ${dn}, a new access token named <b>${name}</b> was created.\n\n<a href="${appUrl}/tokens">Manage tokens</a>`;
     }
     case "token.revoked": {
       const name = tgEsc((data.name as string | undefined) ?? "a token");
+      if (brief)
+        return `<b>${sn}</b>\n\n🚫 Access token revoked: <b>${name}</b>`;
       return `<b>${sn}</b>\n\n🚫 Access token revoked\n\nHi ${dn}, the access token <b>${name}</b> was revoked.\n\n<a href="${appUrl}/tokens">Manage tokens</a>`;
     }
     case "team.member_added": {
       const team = tgEsc((data.team_name as string | undefined) ?? "a team");
       const role = tgEsc((data.role as string | undefined) ?? "member");
+      if (brief)
+        return `<b>${sn}</b>\n\n👥 Added to <b>${team}</b> as <b>${role}</b>`;
       return `<b>${sn}</b>\n\n👥 Added to team\n\nHi ${dn}, you have been added to <b>${team}</b> as <b>${role}</b>.\n\n<a href="${appUrl}/teams">View teams</a>`;
     }
     case "team.member_removed": {
       const team = tgEsc((data.team_name as string | undefined) ?? "a team");
+      if (brief) return `<b>${sn}</b>\n\n👋 Removed from <b>${team}</b>`;
       return `<b>${sn}</b>\n\n👋 Removed from team\n\nHi ${dn}, you have been removed from <b>${team}</b>.`;
     }
     case "oauth.consent_granted": {
       const app = tgEsc(
         (data.app_name as string | undefined) ?? "an application",
       );
+      if (brief) return `<b>${sn}</b>\n\n🤝 App access granted: <b>${app}</b>`;
       return `<b>${sn}</b>\n\n🤝 App access granted\n\nHi ${dn}, you granted <b>${app}</b> access to your account.\n\n<a href="${appUrl}/connected-apps">Manage connected apps</a>`;
     }
     case "oauth.consent_revoked": {
       const app = tgEsc(
         (data.app_name as string | undefined) ?? "an application",
       );
+      if (brief) return `<b>${sn}</b>\n\n🚫 App access revoked: <b>${app}</b>`;
       return `<b>${sn}</b>\n\n🚫 App access revoked\n\nHi ${dn}, access for <b>${app}</b> has been revoked from your account.`;
     }
     default:
@@ -779,64 +804,96 @@ function buildTelegramMessage(
   }
 }
 
+// ─── Rules helpers ────────────────────────────────────────────────────────────
+
+import type { NotificationRules } from "../types";
+
+/**
+ * Parse notification_rules JSON, falling back to migrating the legacy
+ * events + tg_events columns when the rules column is still empty.
+ */
+export function parseNotificationRules(
+  rulesJson: string,
+  legacyEventsJson: string,
+  legacyTgEventsJson: string,
+  firstTgConnectionId: string | null,
+): NotificationRules {
+  try {
+    const parsed = JSON.parse(rulesJson) as NotificationRules;
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      Object.keys(parsed).length > 0
+    )
+      return parsed;
+  } catch {
+    // fall through to migration
+  }
+
+  // Migrate from legacy columns
+  const rules: NotificationRules = {};
+  const emailMap = parsePrefsEvents(legacyEventsJson);
+  for (const [ev, level] of Object.entries(emailMap)) {
+    rules[ev] = {
+      ...(rules[ev] ?? {}),
+      email: [{ email_id: "primary", level }],
+    };
+  }
+
+  let tgEvents: string[] = [];
+  try {
+    const parsed = JSON.parse(legacyTgEventsJson);
+    if (Array.isArray(parsed)) tgEvents = parsed as string[];
+  } catch {
+    // ignore
+  }
+  if (firstTgConnectionId) {
+    for (const ev of tgEvents) {
+      rules[ev] = {
+        ...(rules[ev] ?? {}),
+        tg: [{ connection_id: firstTgConnectionId, level: "full" }],
+      };
+    }
+  }
+  return rules;
+}
+
 // ─── Telegram delivery ────────────────────────────────────────────────────────
 
-export async function deliverUserTelegramNotifications(
+async function sendTelegramNotification(
   db: D1Database,
   userId: string,
+  connectionId: string,
+  level: "brief" | "full",
   event: string,
   data: Record<string, unknown>,
   appUrl: string,
 ): Promise<void> {
-  // Load Telegram prefs
-  const row = await db
-    .prepare("SELECT tg_events FROM user_notification_prefs WHERE user_id = ?")
-    .bind(userId)
-    .first<{ tg_events: string }>();
-
-  if (!row) return;
-
-  let tgEvents: string[];
-  try {
-    tgEvents = JSON.parse(row.tg_events) as string[];
-  } catch {
-    return;
-  }
-  if (!Array.isArray(tgEvents) || !tgEvents.includes(event)) return;
-
-  // Load config — need site_name and tg_notify_source_slug
   const config = await getConfig(db);
   const sourceSlug = config.tg_notify_source_slug;
   if (!sourceSlug) return;
 
-  // Get bot token from oauth_sources
   const source = await db
     .prepare(
       "SELECT client_secret FROM oauth_sources WHERE slug = ? AND provider = 'telegram' AND enabled = 1",
     )
     .bind(sourceSlug)
     .first<{ client_secret: string }>();
-
   if (!source) return;
-  const botToken = source.client_secret;
 
-  // Get user's Telegram chat ID (provider_user_id) — any linked telegram account
   const conn = await db
     .prepare(
-      "SELECT provider_user_id FROM social_connections WHERE user_id = ? AND provider = 'telegram' LIMIT 1",
+      "SELECT provider_user_id FROM social_connections WHERE id = ? AND user_id = ? AND provider = 'telegram'",
     )
-    .bind(userId)
+    .bind(connectionId, userId)
     .first<{ provider_user_id: string }>();
-
   if (!conn) return;
-  const chatId = conn.provider_user_id;
 
-  // Get user display name
   const user = await db
     .prepare("SELECT display_name FROM users WHERE id = ?")
     .bind(userId)
     .first<{ display_name: string }>();
-
   if (!user) return;
 
   const text = buildTelegramMessage(
@@ -845,19 +902,23 @@ export async function deliverUserTelegramNotifications(
     config.site_name,
     appUrl,
     user.display_name,
+    level,
   );
   if (!text) return;
 
-  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    }),
-  });
+  await fetch(
+    `https://api.telegram.org/bot${source.client_secret}/sendMessage`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: conn.provider_user_id,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+    },
+  );
 }
 
 // ─── Main delivery function ───────────────────────────────────────────────────
@@ -869,53 +930,116 @@ export async function deliverUserEmailNotifications(
   data: Record<string, unknown>,
   appUrl: string,
 ): Promise<void> {
-  // Load user's notification preferences
-  const prefs = await db
-    .prepare("SELECT events FROM user_notification_prefs WHERE user_id = ?")
-    .bind(userId)
-    .first<{ events: string }>();
-
-  const prefsMap = parsePrefsEvents(prefs?.events ?? "[]");
-  const level = prefsMap[event];
-  if (!level) return; // not subscribed
-
-  // Get user info
-  const user = await db
+  // Load prefs row (all three columns for migration support)
+  const prefsRow = await db
     .prepare(
-      "SELECT email, display_name, email_verified FROM users WHERE id = ?",
+      "SELECT events, tg_events, notification_rules FROM user_notification_prefs WHERE user_id = ?",
     )
     .bind(userId)
-    .first<{ email: string; display_name: string; email_verified: number }>();
+    .first<{ events: string; tg_events: string; notification_rules: string }>();
 
-  if (!user || !user.email_verified) return;
+  if (!prefsRow) return;
 
-  // Load email config
-  const config = await getConfig(db);
-  if (config.email_provider === "none") return;
+  // Resolve first telegram connection for legacy migration path
+  const firstTg = await db
+    .prepare(
+      "SELECT id FROM social_connections WHERE user_id = ? AND provider = 'telegram' ORDER BY connected_at ASC LIMIT 1",
+    )
+    .bind(userId)
+    .first<{ id: string }>();
 
-  const { subject, html, text } = buildEmail(
-    event,
-    data,
-    config.site_name,
-    appUrl,
-    user.display_name,
-    level,
+  const rules = parseNotificationRules(
+    prefsRow.notification_rules,
+    prefsRow.events,
+    prefsRow.tg_events,
+    firstTg?.id ?? null,
   );
 
-  await Promise.all([
-    sendEmail(
-      { to: user.email, subject, html, text },
-      {
-        provider: config.email_provider,
-        from: config.email_from,
-        apiKey: config.email_api_key,
-        smtpHost: config.smtp_host,
-        smtpPort: config.smtp_port,
-        smtpSecure: config.smtp_secure,
-        smtpUser: config.smtp_user,
-        smtpPassword: config.smtp_password,
-      },
-    ),
-    deliverUserTelegramNotifications(db, userId, event, data, appUrl),
-  ]);
+  const emailRules = rules[event]?.email ?? [];
+  const tgRules = rules[event]?.tg ?? [];
+  if (!emailRules.length && !tgRules.length) return;
+
+  const config = await getConfig(db);
+  const tasks: Promise<unknown>[] = [];
+
+  // ── Email deliveries ────────────────────────────────────────────────────────
+
+  if (emailRules.length && config.email_provider !== "none") {
+    const user = await db
+      .prepare("SELECT display_name FROM users WHERE id = ?")
+      .bind(userId)
+      .first<{ display_name: string }>();
+
+    // Cache primary email to avoid re-querying for multiple rules
+    let primaryEmail: string | null = null;
+    let primaryFetched = false;
+
+    for (const emailRule of emailRules) {
+      let emailAddress: string | null = null;
+
+      if (emailRule.email_id === "primary") {
+        if (!primaryFetched) {
+          const row = await db
+            .prepare("SELECT email, email_verified FROM users WHERE id = ?")
+            .bind(userId)
+            .first<{ email: string; email_verified: number }>();
+          if (row?.email_verified) primaryEmail = row.email;
+          primaryFetched = true;
+        }
+        emailAddress = primaryEmail;
+      } else {
+        const altRow = await db
+          .prepare(
+            "SELECT email FROM user_emails WHERE id = ? AND user_id = ? AND verified = 1",
+          )
+          .bind(emailRule.email_id, userId)
+          .first<{ email: string }>();
+        if (altRow) emailAddress = altRow.email;
+      }
+
+      if (emailAddress && user) {
+        const { subject, html, text } = buildEmail(
+          event,
+          data,
+          config.site_name,
+          appUrl,
+          user.display_name,
+          emailRule.level,
+        );
+        tasks.push(
+          sendEmail(
+            { to: emailAddress, subject, html, text },
+            {
+              provider: config.email_provider,
+              from: config.email_from,
+              apiKey: config.email_api_key,
+              smtpHost: config.smtp_host,
+              smtpPort: config.smtp_port,
+              smtpSecure: config.smtp_secure,
+              smtpUser: config.smtp_user,
+              smtpPassword: config.smtp_password,
+            },
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Telegram deliveries ─────────────────────────────────────────────────────
+
+  for (const tgRule of tgRules) {
+    tasks.push(
+      sendTelegramNotification(
+        db,
+        userId,
+        tgRule.connection_id,
+        tgRule.level,
+        event,
+        data,
+        appUrl,
+      ),
+    );
+  }
+
+  await Promise.all(tasks);
 }

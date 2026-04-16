@@ -26,7 +26,8 @@
     "enabled": "已启用",
     "saveFailed": "保存失败",
     "copyId": "复制 ID",
-    "copied": "已复制！"
+    "copied": "已复制！",
+    "edit": "编辑"
   },
   "nav": {
     "dashboard": "控制台",
@@ -567,7 +568,9 @@
     "revokeToken": "撤销",
     "verified": "已验证",
     "tokenCount": "{{count}} 个令牌",
+    "tokenCount_other": "{{count}} 个令牌",
     "activeSessions": "{{count}} 个活跃会话",
+    "activeSessions_other": "{{count}} 个活跃会话",
     "persistent": "持久会话",
     "session": "会话",
     "issuedAgo": "签发于 {{time}}",
@@ -980,6 +983,12 @@
     "noEmail": "此服务器未配置邮件通知。",
     "tgNoAccount": "请在「个人资料 → 关联账号」中关联 Telegram 账号，以接收 Telegram 通知。",
     "tgToggleTooltip": "为此事件发送 Telegram 消息",
+    "emailChannel": "邮件",
+    "tgChannel": "Telegram",
+    "selectAll": "全选",
+    "jsonEdit": "JSON",
+    "jsonApply": "应用",
+    "jsonError": "解析错误：{{error}}",
     "levelLegend": "详细程度：",
     "levelOff": "关闭",
     "levelOffHint": "不接收邮件",

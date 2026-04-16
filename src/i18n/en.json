@@ -26,7 +26,8 @@
     "enabled": "Enabled",
     "saveFailed": "Save failed",
     "copyId": "Copy ID",
-    "copied": "Copied!"
+    "copied": "Copied!",
+    "edit": "Edit"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -982,6 +983,12 @@
     "noEmail": "Email notifications are not configured on this server.",
     "tgNoAccount": "Link a Telegram account under Profile → Linked Accounts to receive Telegram notifications.",
     "tgToggleTooltip": "Send a Telegram message for this event",
+    "emailChannel": "Email",
+    "tgChannel": "Telegram",
+    "selectAll": "Select all",
+    "jsonEdit": "JSON",
+    "jsonApply": "Apply",
+    "jsonError": "Parse error: {{error}}",
     "levelLegend": "Detail level:",
     "levelOff": "Off",
     "levelOffHint": "no email",

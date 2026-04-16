@@ -15,8 +15,10 @@ import {
   deliverUserEmailNotifications,
   USER_NOTIFICATION_EVENTS,
   parsePrefsEvents,
+  parseNotificationRules,
   type NotificationPrefsMap,
 } from "../lib/notifications";
+import type { NotificationRules } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail, verifyEmailTemplate } from "../lib/email";
 import type {
@@ -902,23 +904,79 @@ app.get("/webhooks/:id/deliveries", async (c) => {
 // GET /api/user/me/notifications
 app.get("/me/notifications", async (c) => {
   const user = c.get("user");
+
+  // Load prefs row for rules + legacy migration data
   const row = await c.env.DB.prepare(
-    "SELECT events, tg_events FROM user_notification_prefs WHERE user_id = ?",
+    "SELECT events, tg_events, notification_rules FROM user_notification_prefs WHERE user_id = ?",
   )
     .bind(user.id)
-    .first<Pick<UserNotificationPrefsRow, "events" | "tg_events">>();
-  // parsePrefsEvents handles legacy string[] → map conversion
-  const events = row ? parsePrefsEvents(row.events) : {};
-  let tgEvents: string[] = [];
-  try {
-    const parsed = JSON.parse(row?.tg_events ?? "[]");
-    if (Array.isArray(parsed)) tgEvents = parsed as string[];
-  } catch {
-    // ignore
+    .first<
+      Pick<
+        UserNotificationPrefsRow,
+        "events" | "tg_events" | "notification_rules"
+      >
+    >();
+
+  // First telegram connection for legacy migration
+  const firstTg = await c.env.DB.prepare(
+    "SELECT id FROM social_connections WHERE user_id = ? AND provider = 'telegram' ORDER BY connected_at ASC LIMIT 1",
+  )
+    .bind(user.id)
+    .first<{ id: string }>();
+
+  const rules = row
+    ? parseNotificationRules(
+        row.notification_rules,
+        row.events,
+        row.tg_events,
+        firstTg?.id ?? null,
+      )
+    : {};
+
+  // Build email list: primary + verified alternates
+  const primaryRow = await c.env.DB.prepare(
+    "SELECT email, email_verified FROM users WHERE id = ?",
+  )
+    .bind(user.id)
+    .first<{ email: string; email_verified: number }>();
+
+  const emails: { id: string; email: string }[] = [];
+  if (primaryRow?.email_verified) {
+    emails.push({ id: "primary", email: primaryRow.email });
   }
+  const { results: altEmails } = await c.env.DB.prepare(
+    "SELECT id, email FROM user_emails WHERE user_id = ? AND verified = 1 ORDER BY created_at ASC",
+  )
+    .bind(user.id)
+    .all<{ id: string; email: string }>();
+  emails.push(...altEmails);
+
+  // Build telegram connection list
+  const { results: tgConns } = await c.env.DB.prepare(
+    "SELECT id, provider_user_id, profile_data FROM social_connections WHERE user_id = ? AND provider = 'telegram' ORDER BY connected_at ASC",
+  )
+    .bind(user.id)
+    .all<{ id: string; provider_user_id: string; profile_data: string }>();
+
+  const tg_connections = tgConns.map((conn) => {
+    let name = conn.provider_user_id;
+    let username: string | null = null;
+    try {
+      const p = JSON.parse(conn.profile_data) as Record<string, unknown>;
+      const fn = p.first_name as string | undefined;
+      const ln = p.last_name as string | undefined;
+      name = [fn, ln].filter(Boolean).join(" ") || conn.provider_user_id;
+      username = (p.username as string | undefined) ?? null;
+    } catch {
+      // ignore
+    }
+    return { id: conn.id, name, username };
+  });
+
   return c.json({
-    events,
-    tg_events: tgEvents,
+    rules,
+    emails,
+    tg_connections,
     available: USER_NOTIFICATION_EVENTS,
   });
 });
@@ -926,43 +984,63 @@ app.get("/me/notifications", async (c) => {
 // PUT /api/user/me/notifications
 app.put("/me/notifications", async (c) => {
   const user = c.get("user");
-  const body = await c.req.json<{
-    events: NotificationPrefsMap;
-    tg_events?: string[];
-  }>();
+  const body = await c.req.json<{ rules: NotificationRules }>();
 
   if (
-    !body.events ||
-    typeof body.events !== "object" ||
-    Array.isArray(body.events)
+    !body.rules ||
+    typeof body.rules !== "object" ||
+    Array.isArray(body.rules)
   )
-    return c.json({ error: "events must be an object" }, 400);
+    return c.json({ error: "rules must be an object" }, 400);
 
-  // Filter to valid event keys and valid level values
-  const valid: NotificationPrefsMap = {};
-  for (const [k, v] of Object.entries(body.events)) {
-    if (
-      (USER_NOTIFICATION_EVENTS as readonly string[]).includes(k) &&
-      (v === "brief" || v === "full")
-    ) {
-      valid[k] = v;
+  // Validate and filter rules
+  const valid: NotificationRules = {};
+  const validEvents = USER_NOTIFICATION_EVENTS as readonly string[];
+
+  for (const [ev, rule] of Object.entries(body.rules)) {
+    if (!validEvents.includes(ev)) continue;
+    const cleaned: NonNullable<(typeof valid)[string]> = {};
+
+    if (Array.isArray(rule.email)) {
+      const emailEntries: typeof cleaned.email = [];
+      for (const entry of rule.email) {
+        const { email_id, level } = entry as unknown as Record<string, unknown>;
+        if (
+          typeof email_id === "string" &&
+          email_id.length > 0 &&
+          (level === "brief" || level === "full")
+        ) {
+          emailEntries.push({ email_id, level });
+        }
+      }
+      if (emailEntries.length) cleaned.email = emailEntries;
     }
+
+    if (Array.isArray(rule.tg)) {
+      const tgEntries: typeof cleaned.tg = [];
+      for (const entry of rule.tg) {
+        const { connection_id, level } = entry as unknown as Record<string, unknown>;
+        if (
+          typeof connection_id === "string" &&
+          connection_id.length > 0 &&
+          (level === "brief" || level === "full")
+        ) {
+          tgEntries.push({ connection_id, level });
+        }
+      }
+      if (tgEntries.length) cleaned.tg = tgEntries;
+    }
+
+    valid[ev] = cleaned;
   }
 
-  // Filter tg_events to valid event keys
-  const validTg: string[] = Array.isArray(body.tg_events)
-    ? (body.tg_events as string[]).filter((k) =>
-        (USER_NOTIFICATION_EVENTS as readonly string[]).includes(k),
-      )
-    : [];
-
   await c.env.DB.prepare(
-    "INSERT INTO user_notification_prefs (user_id, events, tg_events) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET events = excluded.events, tg_events = excluded.tg_events",
+    "INSERT INTO user_notification_prefs (user_id, notification_rules) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET notification_rules = excluded.notification_rules",
   )
-    .bind(user.id, JSON.stringify(valid), JSON.stringify(validTg))
+    .bind(user.id, JSON.stringify(valid))
     .run();
 
-  return c.json({ events: valid, tg_events: validTg });
+  return c.json({ rules: valid });
 });
 
 export default app;

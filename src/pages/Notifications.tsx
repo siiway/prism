@@ -1,12 +1,12 @@
-// Email and Telegram notification preference management
+// Notification preference management — per-event email address and Telegram account routing
 
 import {
   Button,
   MessageBar,
   MessageBarBody,
   Spinner,
-  Switch,
   Text,
+  Textarea,
   Tooltip,
   makeStyles,
   tokens,
@@ -16,10 +16,14 @@ import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
+import type {
+  NotificationRules,
+  NotificationEmailRule,
+  NotificationTgRule,
+  NotifEmail,
+  NotifTgConnection,
+} from "../lib/api";
 import { SkeletonToggleRows } from "../components/Skeletons";
-
-type NotificationLevel = "brief" | "full";
-type PrefsMap = Record<string, NotificationLevel>;
 
 // ─── Event catalogue ─────────────────────────────────────────────────────────
 
@@ -177,11 +181,59 @@ const EVENT_GROUPS: EventGroup[] = [
   },
 ];
 
+const ALL_EVENT_KEYS = EVENT_GROUPS.flatMap((g) =>
+  g.events.map((e) => e.value),
+);
+
+// ─── Bulk-level helpers ───────────────────────────────────────────────────────
+
+function uniformLevel(
+  levels: Array<"brief" | "full" | null>,
+): "brief" | "full" | null | "mixed" {
+  if (levels.length === 0) return null;
+  const first = levels[0];
+  return levels.every((l) => l === first) ? first : "mixed";
+}
+
+function getUniformEmailLevel(
+  eventKeys: string[],
+  rules: NotificationRules,
+  emails: NotifEmail[],
+): "brief" | "full" | null | "mixed" {
+  if (!emails.length) return null;
+  const levels: Array<"brief" | "full" | null> = [];
+  for (const ev of eventKeys)
+    for (const email of emails) {
+      const entry = (rules[ev]?.email ?? []).find(
+        (r) => r.email_id === email.id,
+      );
+      levels.push(entry?.level ?? null);
+    }
+  return uniformLevel(levels);
+}
+
+function getUniformTgLevel(
+  eventKeys: string[],
+  rules: NotificationRules,
+  connections: NotifTgConnection[],
+): "brief" | "full" | null | "mixed" {
+  if (!connections.length) return null;
+  const levels: Array<"brief" | "full" | null> = [];
+  for (const ev of eventKeys)
+    for (const conn of connections) {
+      const entry = (rules[ev]?.tg ?? []).find(
+        (r) => r.connection_id === conn.id,
+      );
+      levels.push(entry?.level ?? null);
+    }
+  return uniformLevel(levels);
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const useStyles = makeStyles({
   root: {
-    maxWidth: "640px",
+    maxWidth: "700px",
     display: "flex",
     flexDirection: "column",
     gap: tokens.spacingVerticalL,
@@ -200,13 +252,46 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: tokens.spacingVerticalXS,
   },
+  groupHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: tokens.spacingHorizontalS,
+  },
   groupLabel: {
     fontWeight: tokens.fontWeightSemibold,
     color: tokens.colorNeutralForeground3,
     fontSize: tokens.fontSizeBase200,
     textTransform: "uppercase",
     letterSpacing: "0.05em",
-    paddingBottom: tokens.spacingVerticalXS,
+  },
+  selectAllRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: tokens.spacingHorizontalS,
+    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: tokens.colorNeutralBackground2,
+  },
+  selectAllLabel: {
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground3,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  },
+  jsonPanel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalS,
+    padding: tokens.spacingHorizontalM,
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: tokens.colorNeutralBackground2,
   },
   eventRow: {
     display: "flex",
@@ -223,17 +308,34 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: tokens.spacingVerticalXXS,
     flex: 1,
+    minWidth: 0,
+  },
+  channelStack: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    flexShrink: 0,
+    alignItems: "flex-end",
   },
   channelRow: {
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalS,
+    gap: "6px",
+  },
+  channelLabel: {
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorNeutralForeground3,
+    width: "14px",
+    textAlign: "center",
     flexShrink: 0,
   },
-  tgToggle: {
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
+  accountLabel: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground2,
+    maxWidth: "110px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
   levelPicker: {
     display: "flex",
@@ -246,7 +348,7 @@ const useStyles = makeStyles({
     borderRadius: "0",
     border: "none",
     borderRight: `1px solid ${tokens.colorNeutralStroke1}`,
-    minWidth: "52px",
+    minWidth: "46px",
     ":last-child": { borderRight: "none" },
   },
   actions: {
@@ -257,37 +359,206 @@ const useStyles = makeStyles({
   },
 });
 
-// ─── Level picker ─────────────────────────────────────────────────────────────
+// ─── Shared per-account level row ────────────────────────────────────────────
 
-function LevelPicker({
-  value,
+function AccountLevelRow({
+  icon,
+  label,
+  level,
   onChange,
 }: {
-  value: NotificationLevel | null;
-  onChange: (v: NotificationLevel | null) => void;
+  icon: string;
+  label: string;
+  level: "brief" | "full" | null;
+  onChange: (l: "brief" | "full" | null) => void;
 }) {
   const styles = useStyles();
   const { t } = useTranslation();
-
-  const levels: Array<{ v: NotificationLevel | null; key: string }> = [
-    { v: null, key: "notifications.levelOff" },
-    { v: "brief", key: "notifications.levelBrief" },
-    { v: "full", key: "notifications.levelFull" },
-  ];
-
   return (
-    <div className={styles.levelPicker}>
-      {levels.map(({ v, key }) => (
+    <div className={styles.channelRow}>
+      <Tooltip content={label} relationship="label">
+        <span className={styles.channelLabel}>{icon}</span>
+      </Tooltip>
+      <span className={styles.accountLabel}>{label}</span>
+      <div className={styles.levelPicker}>
         <Button
-          key={key}
           className={styles.levelBtn}
           size="small"
-          appearance={value === v ? "primary" : "subtle"}
-          onClick={() => onChange(v)}
+          appearance={level === null ? "primary" : "subtle"}
+          onClick={() => onChange(null)}
         >
-          {t(key)}
+          {t("notifications.levelOff")}
         </Button>
-      ))}
+        <Button
+          className={styles.levelBtn}
+          size="small"
+          appearance={level === "brief" ? "primary" : "subtle"}
+          onClick={() => onChange("brief")}
+        >
+          {t("notifications.levelBrief")}
+        </Button>
+        <Button
+          className={styles.levelBtn}
+          size="small"
+          appearance={level === "full" ? "primary" : "subtle"}
+          onClick={() => onChange("full")}
+        >
+          {t("notifications.levelFull")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Email channel picker ─────────────────────────────────────────────────────
+
+function EmailChannelPicker({
+  value,
+  emails,
+  onChange,
+}: {
+  value: NotificationEmailRule[];
+  emails: NotifEmail[];
+  onChange: (v: NotificationEmailRule[]) => void;
+}) {
+  if (emails.length === 0) return null;
+  return (
+    <>
+      {emails.map((email) => {
+        const rule = value.find((r) => r.email_id === email.id);
+        return (
+          <AccountLevelRow
+            key={email.id}
+            icon="✉"
+            label={email.email}
+            level={rule?.level ?? null}
+            onChange={(l) => {
+              const rest = value.filter((r) => r.email_id !== email.id);
+              onChange(l ? [...rest, { email_id: email.id, level: l }] : rest);
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+// ─── Telegram channel picker ──────────────────────────────────────────────────
+
+function TgChannelPicker({
+  value,
+  connections,
+  onChange,
+}: {
+  value: NotificationTgRule[];
+  connections: NotifTgConnection[];
+  onChange: (v: NotificationTgRule[]) => void;
+}) {
+  if (connections.length === 0) return null;
+  return (
+    <>
+      {connections.map((conn) => {
+        const label = conn.username ? `@${conn.username}` : conn.name;
+        const rule = value.find((r) => r.connection_id === conn.id);
+        return (
+          <AccountLevelRow
+            key={conn.id}
+            icon="✈"
+            label={label}
+            level={rule?.level ?? null}
+            onChange={(l) => {
+              const rest = value.filter((r) => r.connection_id !== conn.id);
+              onChange(
+                l ? [...rest, { connection_id: conn.id, level: l }] : rest,
+              );
+            }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+// ─── Bulk level controls ─────────────────────────────────────────────────────
+
+const BULK_LEVELS = [
+  [null, "notifications.levelOff"],
+  ["brief", "notifications.levelBrief"],
+  ["full", "notifications.levelFull"],
+] as const;
+
+function BulkLevelControls({
+  emailLevel,
+  tgLevel,
+  emails,
+  connections,
+  showTg,
+  onEmail,
+  onTg,
+}: {
+  emailLevel: "brief" | "full" | null | "mixed";
+  tgLevel: "brief" | "full" | null | "mixed";
+  emails: NotifEmail[];
+  connections: NotifTgConnection[];
+  showTg: boolean;
+  onEmail: (level: "brief" | "full" | null) => void;
+  onTg: (level: "brief" | "full" | null) => void;
+}) {
+  const { t } = useTranslation();
+  const styles = useStyles();
+  return (
+    <div className={styles.channelStack}>
+      {emails.length > 0 && (
+        <div className={styles.channelRow}>
+          <Tooltip
+            content={t("notifications.emailChannel")}
+            relationship="label"
+          >
+            <span className={styles.channelLabel}>✉</span>
+          </Tooltip>
+          <div className={styles.levelPicker}>
+            {BULK_LEVELS.map(([level, key]) => (
+              <Button
+                key={String(level)}
+                className={styles.levelBtn}
+                size="small"
+                appearance={
+                  emailLevel !== "mixed" && emailLevel === level
+                    ? "primary"
+                    : "subtle"
+                }
+                onClick={() => onEmail(level)}
+              >
+                {t(key)}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+      {showTg && connections.length > 0 && (
+        <div className={styles.channelRow}>
+          <Tooltip content={t("notifications.tgChannel")} relationship="label">
+            <span className={styles.channelLabel}>✈</span>
+          </Tooltip>
+          <div className={styles.levelPicker}>
+            {BULK_LEVELS.map(([level, key]) => (
+              <Button
+                key={String(level)}
+                className={styles.levelBtn}
+                size="small"
+                appearance={
+                  tgLevel !== "mixed" && tgLevel === level
+                    ? "primary"
+                    : "subtle"
+                }
+                onClick={() => onTg(level)}
+              >
+                {t(key)}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -310,40 +581,27 @@ export function Notifications() {
     staleTime: 60_000,
   });
 
-  const { data: connectionsData } = useQuery({
-    queryKey: ["connections"],
-    queryFn: api.listConnections,
-  });
+  const hasTgBot = !!site?.tg_notify_source_slug;
+  const emails: NotifEmail[] = data?.emails ?? [];
+  const tgConnections: NotifTgConnection[] = data?.tg_connections ?? [];
+  const showTg = tgConnections.length > 0;
 
-  // Whether Telegram notifications are available: admin configured a bot AND user has a linked Telegram account
-  const hasTgBot = !!(site as { tg_notify_source_slug?: string } | undefined)
-    ?.tg_notify_source_slug;
-  const hasTgAccount = !!(connectionsData?.connections ?? []).some(
-    (c) => c.provider === "telegram",
-  );
-  const tgAvailable = hasTgBot && hasTgAccount;
-
-  const [prefs, setPrefs] = useState<PrefsMap>({});
-  const [tgPrefs, setTgPrefs] = useState<string[]>([]);
+  const [rules, setRules] = useState<NotificationRules>({});
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [jsonOpen, setJsonOpen] = useState(false);
+  const [jsonText, setJsonText] = useState("");
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
   useEffect(() => {
     if (data) {
-      setPrefs(data.events as PrefsMap);
-      setTgPrefs(data.tg_events ?? []);
+      setRules(data.rules ?? {});
       setDirty(false);
     }
   }, [data]);
 
   const mutation = useMutation({
-    mutationFn: ({
-      events,
-      tg_events,
-    }: {
-      events: PrefsMap;
-      tg_events: string[];
-    }) => api.updateNotificationPrefs(events, tg_events),
+    mutationFn: (r: NotificationRules) => api.updateNotificationPrefs(r),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notification-prefs"] });
       setDirty(false);
@@ -352,32 +610,77 @@ export function Notifications() {
     },
   });
 
-  function setLevel(event: string, level: NotificationLevel | null) {
-    setPrefs((prev) => {
+  function applyBulkEmail(eventKeys: string[], level: "brief" | "full" | null) {
+    setRules((prev) => {
       const next = { ...prev };
-      if (level === null) {
-        delete next[event];
-      } else {
-        next[event] = level;
-      }
+      for (const ev of eventKeys)
+        next[ev] = {
+          ...(next[ev] ?? {}),
+          email: level ? emails.map((e) => ({ email_id: e.id, level })) : [],
+        };
       return next;
     });
     setDirty(true);
     setSaved(false);
   }
 
-  function toggleTg(event: string, on: boolean) {
-    setTgPrefs((prev) =>
-      on
-        ? [...prev.filter((e) => e !== event), event]
-        : prev.filter((e) => e !== event),
-    );
+  function applyBulkTg(eventKeys: string[], level: "brief" | "full" | null) {
+    setRules((prev) => {
+      const next = { ...prev };
+      for (const ev of eventKeys)
+        next[ev] = {
+          ...(next[ev] ?? {}),
+          tg: level
+            ? tgConnections.map((c) => ({ connection_id: c.id, level }))
+            : [],
+        };
+      return next;
+    });
     setDirty(true);
     setSaved(false);
   }
 
-  function save() {
-    mutation.mutate({ events: prefs, tg_events: tgPrefs });
+  function openJson() {
+    setJsonText(JSON.stringify(rules, null, 2));
+    setJsonError(null);
+    setJsonOpen(true);
+  }
+
+  function applyJson() {
+    try {
+      const parsed = JSON.parse(jsonText) as NotificationRules;
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      )
+        throw new Error("root must be an object");
+      setRules(parsed);
+      setDirty(true);
+      setSaved(false);
+      setJsonOpen(false);
+      setJsonError(null);
+    } catch (e) {
+      setJsonError((e as Error).message);
+    }
+  }
+
+  function setEmailChannel(event: string, value: NotificationEmailRule[]) {
+    setRules((prev) => ({
+      ...prev,
+      [event]: { ...(prev[event] ?? {}), email: value },
+    }));
+    setDirty(true);
+    setSaved(false);
+  }
+
+  function setTgChannel(event: string, value: NotificationTgRule[]) {
+    setRules((prev) => ({
+      ...prev,
+      [event]: { ...(prev[event] ?? {}), tg: value },
+    }));
+    setDirty(true);
+    setSaved(false);
   }
 
   if (isLoading) return <SkeletonToggleRows rows={8} />;
@@ -396,58 +699,59 @@ export function Notifications() {
         </div>
       </div>
 
-      {/* Legend */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-          flexWrap: "wrap",
-        }}
-      >
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("notifications.levelLegend")}
-        </Text>
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {(["off", "brief", "full"] as const).map((l) => (
-            <div
-              key={l}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                padding: "2px 8px",
-                borderRadius: 4,
-                border: `1px solid ${tokens.colorNeutralStroke2}`,
-                background: tokens.colorNeutralBackground2,
-              }}
-            >
-              <Text size={200} weight="semibold">
-                {t(
-                  `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}`,
-                )}
-              </Text>
-              <Text
-                size={100}
-                style={{ color: tokens.colorNeutralForeground3 }}
+      {emails.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("notifications.levelLegend")}
+          </Text>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {(["off", "brief", "full"] as const).map((l) => (
+              <div
+                key={l}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  border: `1px solid ${tokens.colorNeutralStroke2}`,
+                  background: tokens.colorNeutralBackground2,
+                }}
               >
-                —{" "}
-                {t(
-                  `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}Hint`,
-                )}
-              </Text>
-            </div>
-          ))}
+                <Text size={200} weight="semibold">
+                  {t(
+                    `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}`,
+                  )}
+                </Text>
+                <Text
+                  size={100}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  —{" "}
+                  {t(
+                    `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}Hint`,
+                  )}
+                </Text>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {data && (data as { available?: unknown[] }).available?.length === 0 && (
+      {emails.length === 0 && (
         <MessageBar intent="warning">
           <MessageBarBody>{t("notifications.noEmail")}</MessageBarBody>
         </MessageBar>
       )}
 
-      {hasTgBot && !hasTgAccount && (
+      {hasTgBot && !showTg && (
         <MessageBar intent="info">
           <MessageBarBody>{t("notifications.tgNoAccount")}</MessageBarBody>
         </MessageBar>
@@ -465,63 +769,136 @@ export function Notifications() {
         </MessageBar>
       )}
 
-      {EVENT_GROUPS.map((group) => (
-        <div key={group.groupKey} className={styles.group}>
-          <Text className={styles.groupLabel}>{t(group.groupKey)}</Text>
-          {group.events.map((entry) => (
-            <div key={entry.value} className={styles.eventRow}>
-              <div className={styles.eventText}>
-                <Text weight="semibold" size={300}>
-                  {t(entry.labelKey)}
-                </Text>
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {t(entry.descKey)}
-                </Text>
-              </div>
-              <div className={styles.channelRow}>
-                <LevelPicker
-                  value={prefs[entry.value] ?? null}
-                  onChange={(v) => setLevel(entry.value, v)}
-                />
-                {tgAvailable && (
-                  <Tooltip
-                    content={t("notifications.tgToggleTooltip")}
-                    relationship="label"
-                  >
-                    <div className={styles.tgToggle}>
-                      <Text
-                        size={100}
-                        style={{ color: tokens.colorNeutralForeground3 }}
-                      >
-                        TG
-                      </Text>
-                      <Switch
-                        checked={tgPrefs.includes(entry.value)}
-                        onChange={(_, d) => toggleTg(entry.value, d.checked)}
-                      />
-                    </div>
-                  </Tooltip>
-                )}
-              </div>
-            </div>
-          ))}
+      {(emails.length > 0 || showTg) && (
+        <div className={styles.selectAllRow}>
+          <span className={styles.selectAllLabel}>
+            {t("notifications.selectAll")}
+          </span>
+          <BulkLevelControls
+            emailLevel={getUniformEmailLevel(ALL_EVENT_KEYS, rules, emails)}
+            tgLevel={getUniformTgLevel(ALL_EVENT_KEYS, rules, tgConnections)}
+            emails={emails}
+            connections={tgConnections}
+            showTg={showTg}
+            onEmail={(l) => applyBulkEmail(ALL_EVENT_KEYS, l)}
+            onTg={(l) => applyBulkTg(ALL_EVENT_KEYS, l)}
+          />
         </div>
-      ))}
+      )}
+
+      {EVENT_GROUPS.map((group) => {
+        const groupKeys = group.events.map((e) => e.value);
+        return (
+          <div key={group.groupKey} className={styles.group}>
+            <div className={styles.groupHeader}>
+              <Text className={styles.groupLabel}>{t(group.groupKey)}</Text>
+              <BulkLevelControls
+                emailLevel={getUniformEmailLevel(groupKeys, rules, emails)}
+                tgLevel={getUniformTgLevel(groupKeys, rules, tgConnections)}
+                emails={emails}
+                connections={tgConnections}
+                showTg={showTg}
+                onEmail={(l) => applyBulkEmail(groupKeys, l)}
+                onTg={(l) => applyBulkTg(groupKeys, l)}
+              />
+            </div>
+            {group.events.map((entry) => {
+              const rule = rules[entry.value] ?? {};
+              return (
+                <div key={entry.value} className={styles.eventRow}>
+                  <div className={styles.eventText}>
+                    <Text weight="semibold" size={300}>
+                      {t(entry.labelKey)}
+                    </Text>
+                    <Text
+                      size={200}
+                      style={{ color: tokens.colorNeutralForeground3 }}
+                    >
+                      {t(entry.descKey)}
+                    </Text>
+                  </div>
+                  <div className={styles.channelStack}>
+                    <EmailChannelPicker
+                      value={rule.email ?? []}
+                      emails={emails}
+                      onChange={(v) => setEmailChannel(entry.value, v)}
+                    />
+                    {showTg && (
+                      <TgChannelPicker
+                        value={rule.tg ?? []}
+                        connections={tgConnections}
+                        onChange={(v) => setTgChannel(entry.value, v)}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+
+      {jsonOpen && (
+        <div className={styles.jsonPanel}>
+          <Textarea
+            value={jsonText}
+            onChange={(e) => {
+              setJsonText(e.target.value);
+              setJsonError(null);
+            }}
+            rows={20}
+            resize="vertical"
+            style={{ fontFamily: "monospace", fontSize: "12px" }}
+          />
+          {jsonError && (
+            <Text
+              size={200}
+              style={{ color: tokens.colorStatusDangerForeground1 }}
+            >
+              {t("notifications.jsonError", { error: jsonError })}
+            </Text>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button appearance="primary" size="small" onClick={applyJson}>
+              {t("notifications.jsonApply")}
+            </Button>
+            <Button
+              size="small"
+              onClick={() => {
+                setJsonOpen(false);
+                setJsonError(null);
+              }}
+            >
+              {t("common.close")}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className={styles.actions}>
         <Button
           appearance="primary"
           disabled={!dirty || mutation.isPending}
-          onClick={save}
+          onClick={() => mutation.mutate(rules)}
         >
           {mutation.isPending ? (
             <Spinner size="tiny" />
           ) : (
             t("common.saveChanges")
           )}
+        </Button>
+        <Button
+          appearance="subtle"
+          onClick={
+            jsonOpen
+              ? () => {
+                  setJsonOpen(false);
+                  setJsonError(null);
+                }
+              : openJson
+          }
+        >
+          {t("notifications.jsonEdit")}
         </Button>
       </div>
     </div>

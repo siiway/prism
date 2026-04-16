@@ -790,18 +790,16 @@ export const api = {
   // ─── Notification preferences ─────────────────────────────────────────────
   getNotificationPrefs: () =>
     request<{
-      events: Record<string, "brief" | "full">;
-      tg_events: string[];
+      rules: NotificationRules;
+      emails: NotifEmail[];
+      tg_connections: NotifTgConnection[];
       available: string[];
     }>("GET", "/user/me/notifications", undefined, getToken()),
-  updateNotificationPrefs: (
-    events: Record<string, "brief" | "full">,
-    tg_events: string[],
-  ) =>
-    request<{ events: Record<string, "brief" | "full">; tg_events: string[] }>(
+  updateNotificationPrefs: (rules: NotificationRules) =>
+    request<{ rules: NotificationRules }>(
       "PUT",
       "/user/me/notifications",
-      { events, tg_events },
+      { rules },
       getToken(),
     ),
 
@@ -1454,6 +1452,36 @@ export interface AdminUserDetail {
   connections: unknown[];
   sessions: unknown[];
 }
+
+// ─── Notification rule types ──────────────────────────────────────────────────
+
+export interface NotifEmail {
+  id: string; // "primary" or UUID from user_emails
+  email: string;
+}
+
+export interface NotifTgConnection {
+  id: string;
+  name: string;
+  username: string | null;
+}
+
+export interface NotificationEmailRule {
+  email_id: string;
+  level: "brief" | "full";
+}
+
+export interface NotificationTgRule {
+  connection_id: string;
+  level: "brief" | "full";
+}
+
+export interface NotificationRule {
+  email?: NotificationEmailRule[];
+  tg?: NotificationTgRule[];
+}
+
+export type NotificationRules = Record<string, NotificationRule>;
 
 export interface OAuthSource {
   id: string;

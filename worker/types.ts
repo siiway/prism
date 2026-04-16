@@ -231,8 +231,26 @@ export interface WebhookRow {
 export interface UserNotificationPrefsRow {
   user_id: string;
   events: string; // JSON Record<string, "brief"|"full"> — legacy: string[]
-  tg_events: string; // JSON string[] — subscribed event keys for Telegram
+  tg_events: string; // JSON string[] — legacy Telegram event keys
+  notification_rules: string; // JSON NotificationRules — current canonical format
 }
+
+export interface NotificationEmailRule {
+  email_id: string; // "primary" or UUID from user_emails
+  level: "brief" | "full";
+}
+
+export interface NotificationTgRule {
+  connection_id: string; // UUID from social_connections
+  level: "brief" | "full";
+}
+
+export interface NotificationRule {
+  email?: NotificationEmailRule[];
+  tg?: NotificationTgRule[];
+}
+
+export type NotificationRules = Record<string, NotificationRule>;
 
 export interface WebhookDeliveryRow {
   id: string;
