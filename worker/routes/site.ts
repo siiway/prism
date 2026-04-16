@@ -31,6 +31,7 @@ app.get("/site", async (c) => {
     custom_css: config.custom_css,
     initialized: config.initialized,
     r2_enabled: !!c.env.R2_ASSETS,
+    tg_notify_source_slug: config.tg_notify_source_slug,
     enabled_providers,
   });
 });

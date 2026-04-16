@@ -1,11 +1,13 @@
-// Email notification preference management
+// Email and Telegram notification preference management
 
 import {
   Button,
   MessageBar,
   MessageBarBody,
   Spinner,
+  Switch,
   Text,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -222,6 +224,17 @@ const useStyles = makeStyles({
     gap: tokens.spacingVerticalXXS,
     flex: 1,
   },
+  channelRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalS,
+    flexShrink: 0,
+  },
+  tgToggle: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+  },
   levelPicker: {
     display: "flex",
     flexShrink: 0,
@@ -291,19 +304,46 @@ export function Notifications() {
     queryFn: () => api.getNotificationPrefs(),
   });
 
+  const { data: site } = useQuery({
+    queryKey: ["site"],
+    queryFn: api.site,
+    staleTime: 60_000,
+  });
+
+  const { data: connectionsData } = useQuery({
+    queryKey: ["connections"],
+    queryFn: api.listConnections,
+  });
+
+  // Whether Telegram notifications are available: admin configured a bot AND user has a linked Telegram account
+  const hasTgBot = !!(site as { tg_notify_source_slug?: string } | undefined)
+    ?.tg_notify_source_slug;
+  const hasTgAccount = !!(connectionsData?.connections ?? []).some(
+    (c) => c.provider === "telegram",
+  );
+  const tgAvailable = hasTgBot && hasTgAccount;
+
   const [prefs, setPrefs] = useState<PrefsMap>({});
+  const [tgPrefs, setTgPrefs] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (data) {
       setPrefs(data.events as PrefsMap);
+      setTgPrefs(data.tg_events ?? []);
       setDirty(false);
     }
   }, [data]);
 
   const mutation = useMutation({
-    mutationFn: (events: PrefsMap) => api.updateNotificationPrefs(events),
+    mutationFn: ({
+      events,
+      tg_events,
+    }: {
+      events: PrefsMap;
+      tg_events: string[];
+    }) => api.updateNotificationPrefs(events, tg_events),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notification-prefs"] });
       setDirty(false);
@@ -326,8 +366,18 @@ export function Notifications() {
     setSaved(false);
   }
 
+  function toggleTg(event: string, on: boolean) {
+    setTgPrefs((prev) =>
+      on
+        ? [...prev.filter((e) => e !== event), event]
+        : prev.filter((e) => e !== event),
+    );
+    setDirty(true);
+    setSaved(false);
+  }
+
   function save() {
-    mutation.mutate(prefs);
+    mutation.mutate({ events: prefs, tg_events: tgPrefs });
   }
 
   if (isLoading) return <SkeletonToggleRows rows={8} />;
@@ -397,6 +447,12 @@ export function Notifications() {
         </MessageBar>
       )}
 
+      {hasTgBot && !hasTgAccount && (
+        <MessageBar intent="info">
+          <MessageBarBody>{t("notifications.tgNoAccount")}</MessageBarBody>
+        </MessageBar>
+      )}
+
       {saved && (
         <MessageBar intent="success">
           <MessageBarBody>{t("notifications.saved")}</MessageBarBody>
@@ -425,10 +481,31 @@ export function Notifications() {
                   {t(entry.descKey)}
                 </Text>
               </div>
-              <LevelPicker
-                value={prefs[entry.value] ?? null}
-                onChange={(v) => setLevel(entry.value, v)}
-              />
+              <div className={styles.channelRow}>
+                <LevelPicker
+                  value={prefs[entry.value] ?? null}
+                  onChange={(v) => setLevel(entry.value, v)}
+                />
+                {tgAvailable && (
+                  <Tooltip
+                    content={t("notifications.tgToggleTooltip")}
+                    relationship="label"
+                  >
+                    <div className={styles.tgToggle}>
+                      <Text
+                        size={100}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        TG
+                      </Text>
+                      <Switch
+                        checked={tgPrefs.includes(entry.value)}
+                        onChange={(_, d) => toggleTg(entry.value, d.checked)}
+                      />
+                    </div>
+                  </Tooltip>
+                )}
+              </div>
             </div>
           ))}
         </div>

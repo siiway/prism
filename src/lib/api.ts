@@ -789,17 +789,19 @@ export const api = {
 
   // ─── Notification preferences ─────────────────────────────────────────────
   getNotificationPrefs: () =>
-    request<{ events: Record<string, "brief" | "full">; available: string[] }>(
-      "GET",
-      "/user/me/notifications",
-      undefined,
-      getToken(),
-    ),
-  updateNotificationPrefs: (events: Record<string, "brief" | "full">) =>
-    request<{ events: Record<string, "brief" | "full"> }>(
+    request<{
+      events: Record<string, "brief" | "full">;
+      tg_events: string[];
+      available: string[];
+    }>("GET", "/user/me/notifications", undefined, getToken()),
+  updateNotificationPrefs: (
+    events: Record<string, "brief" | "full">,
+    tg_events: string[],
+  ) =>
+    request<{ events: Record<string, "brief" | "full">; tg_events: string[] }>(
       "PUT",
       "/user/me/notifications",
-      { events },
+      { events, tg_events },
       getToken(),
     ),
 
@@ -1159,6 +1161,7 @@ export interface SitePublicConfig {
   custom_css: string;
   initialized: boolean;
   r2_enabled: boolean;
+  tg_notify_source_slug: string;
   enabled_providers: { slug: string; name: string; provider: string }[];
 }
 

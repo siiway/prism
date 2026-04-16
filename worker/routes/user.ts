@@ -903,19 +903,33 @@ app.get("/webhooks/:id/deliveries", async (c) => {
 app.get("/me/notifications", async (c) => {
   const user = c.get("user");
   const row = await c.env.DB.prepare(
-    "SELECT events FROM user_notification_prefs WHERE user_id = ?",
+    "SELECT events, tg_events FROM user_notification_prefs WHERE user_id = ?",
   )
     .bind(user.id)
-    .first<Pick<UserNotificationPrefsRow, "events">>();
+    .first<Pick<UserNotificationPrefsRow, "events" | "tg_events">>();
   // parsePrefsEvents handles legacy string[] → map conversion
   const events = row ? parsePrefsEvents(row.events) : {};
-  return c.json({ events, available: USER_NOTIFICATION_EVENTS });
+  let tgEvents: string[] = [];
+  try {
+    const parsed = JSON.parse(row?.tg_events ?? "[]");
+    if (Array.isArray(parsed)) tgEvents = parsed as string[];
+  } catch {
+    // ignore
+  }
+  return c.json({
+    events,
+    tg_events: tgEvents,
+    available: USER_NOTIFICATION_EVENTS,
+  });
 });
 
 // PUT /api/user/me/notifications
 app.put("/me/notifications", async (c) => {
   const user = c.get("user");
-  const body = await c.req.json<{ events: NotificationPrefsMap }>();
+  const body = await c.req.json<{
+    events: NotificationPrefsMap;
+    tg_events?: string[];
+  }>();
 
   if (
     !body.events ||
@@ -935,13 +949,20 @@ app.put("/me/notifications", async (c) => {
     }
   }
 
+  // Filter tg_events to valid event keys
+  const validTg: string[] = Array.isArray(body.tg_events)
+    ? (body.tg_events as string[]).filter((k) =>
+        (USER_NOTIFICATION_EVENTS as readonly string[]).includes(k),
+      )
+    : [];
+
   await c.env.DB.prepare(
-    "INSERT INTO user_notification_prefs (user_id, events) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET events = excluded.events",
+    "INSERT INTO user_notification_prefs (user_id, events, tg_events) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET events = excluded.events, tg_events = excluded.tg_events",
   )
-    .bind(user.id, JSON.stringify(valid))
+    .bind(user.id, JSON.stringify(valid), JSON.stringify(validTg))
     .run();
 
-  return c.json({ events: valid });
+  return c.json({ events: valid, tg_events: validTg });
 });
 
 export default app;

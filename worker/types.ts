@@ -231,6 +231,7 @@ export interface WebhookRow {
 export interface UserNotificationPrefsRow {
   user_id: string;
   events: string; // JSON Record<string, "brief"|"full"> — legacy: string[]
+  tg_events: string; // JSON string[] — subscribed event keys for Telegram
 }
 
 export interface WebhookDeliveryRow {
@@ -323,6 +324,7 @@ export interface SiteConfig {
   gpg_challenge_prefix: string; // extra lines inserted after the site header in the GPG challenge text
   disable_user_create_team: boolean;
   disable_user_create_app: boolean;
+  tg_notify_source_slug: string;
   initialized: boolean;
 }
 

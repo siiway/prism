@@ -84,6 +84,14 @@ export function AdminSettings() {
     queryKey: ["admin-config"],
     queryFn: api.adminConfig,
   });
+
+  const { data: oauthSourcesData } = useQuery({
+    queryKey: ["admin-oauth-sources"],
+    queryFn: api.adminListOAuthSources,
+  });
+  const telegramSources = (oauthSourcesData?.sources ?? []).filter(
+    (s) => s.provider === "telegram" && s.enabled,
+  );
   const config = data?.config as SiteConfig | undefined;
 
   const [localConfig, setLocalConfig] = useState<Partial<SiteConfig>>({});
@@ -465,6 +473,7 @@ export function AdminSettings() {
           >
             <Tab value="send">{t("admin.emailSendTab")}</Tab>
             <Tab value="receive">{t("admin.emailReceiveTab")}</Tab>
+            <Tab value="telegram">{t("admin.emailTelegramTab")}</Tab>
           </TabList>
 
           {emailSubTab === "send" && (
@@ -691,6 +700,42 @@ export function AdminSettings() {
                   )}
                 </Button>
               </div>
+            </div>
+          )}
+
+          {emailSubTab === "telegram" && (
+            <div className={styles.form}>
+              <Text style={{ color: tokens.colorNeutralForeground3 }}>
+                {t("admin.tgNotifyDesc")}
+              </Text>
+              <Field label={t("admin.tgNotifyBot")}>
+                <Dropdown
+                  value={
+                    telegramSources.find(
+                      (s) => s.slug === (get("tg_notify_source_slug") ?? ""),
+                    )?.name ?? t("admin.tgNotifyNone")
+                  }
+                  selectedOptions={[get("tg_notify_source_slug") ?? ""]}
+                  onOptionSelect={(_, d) =>
+                    set("tg_notify_source_slug", d.optionValue)
+                  }
+                >
+                  <Option value="">{t("admin.tgNotifyNone")}</Option>
+                  {telegramSources.map((s) => (
+                    <Option key={s.slug} value={s.slug}>
+                      {s.name}
+                    </Option>
+                  ))}
+                </Dropdown>
+              </Field>
+              {telegramSources.length === 0 && (
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {t("admin.tgNotifyNoSources")}
+                </Text>
+              )}
             </div>
           )}
         </div>
