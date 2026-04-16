@@ -15,6 +15,7 @@ import { hmacSign } from "../lib/webhooks";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { parseAppScope } from "../lib/scopes";
 import { deliverAppEvent } from "../lib/app-events";
+import { deliverUserEmailNotifications } from "../lib/notifications";
 import type {
   OAuthAppRow,
   OAuthCodeRow,
@@ -342,12 +343,12 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
   const user = c.get("user");
   const clientId = c.req.param("client_id");
 
-  // Look up app id before deleting so we can notify it
+  // Look up app id and name before deleting so we can notify
   const appRow = await c.env.DB.prepare(
-    "SELECT id FROM oauth_apps WHERE client_id = ?",
+    "SELECT id, name FROM oauth_apps WHERE client_id = ?",
   )
     .bind(clientId)
-    .first<{ id: string }>();
+    .first<{ id: string; name: string }>();
 
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -360,9 +361,20 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
 
   if (appRow) {
     c.executionCtx.waitUntil(
-      deliverAppEvent(c.env.DB, appRow.id, "user.token_revoked", {
-        user_id: user.id,
-      }).catch(() => {}),
+      Promise.all([
+        deliverAppEvent(c.env.DB, appRow.id, "user.token_revoked", {
+          user_id: user.id,
+        }).catch(() => {}),
+        deliverUserEmailNotifications(
+          c.env.DB,
+          user.id,
+          "oauth.consent_revoked",
+          {
+            app_name: appRow.name,
+          },
+          c.env.APP_URL,
+        ).catch(() => {}),
+      ]),
     );
   }
 
@@ -495,6 +507,19 @@ app.post("/authorize", requireAuth, async (c) => {
   )
     .bind(randomId(), user.id, body.client_id, JSON.stringify(scopes), now)
     .run();
+
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "oauth.consent_granted",
+      {
+        app_name: oauthApp.name,
+        scopes,
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
 
   // Issue authorization code (10 minute TTL)
   const code = randomBase64url(32);

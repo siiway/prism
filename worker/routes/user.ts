@@ -14,6 +14,8 @@ import { hmacSign, deliverUserWebhooks } from "../lib/webhooks";
 import {
   deliverUserEmailNotifications,
   USER_NOTIFICATION_EVENTS,
+  parsePrefsEvents,
+  type NotificationPrefsMap,
 } from "../lib/notifications";
 import { getConfig } from "../lib/config";
 import { sendEmail, verifyEmailTemplate } from "../lib/email";
@@ -103,6 +105,13 @@ app.patch("/me", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(user.id)
     .first<UserRow>();
+  // Collect human-readable changes for the notification
+  const changedFields: Record<string, string> = {};
+  if (body.display_name !== undefined)
+    changedFields.display_name = body.display_name;
+  if (body.avatar_url !== undefined)
+    changedFields.avatar_url = body.avatar_url ?? "";
+
   c.executionCtx.waitUntil(
     deliverUserWebhooks(c.env.DB, user.id, "profile.updated", {}).catch(
       () => {},
@@ -113,7 +122,7 @@ app.patch("/me", async (c) => {
       c.env.DB,
       user.id,
       "profile.updated",
-      {},
+      { changed_fields: changedFields },
       c.env.APP_URL,
     ).catch(() => {}),
   );
@@ -568,6 +577,19 @@ app.post("/tokens", async (c) => {
     )
     .run();
 
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "token.created",
+      {
+        name: body.name.trim(),
+        scopes,
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
+
   return c.json(
     {
       id,
@@ -587,16 +609,28 @@ app.delete("/tokens/:id", async (c) => {
   const id = c.req.param("id");
 
   const row = await c.env.DB.prepare(
-    "SELECT id FROM personal_access_tokens WHERE id = ? AND user_id = ?",
+    "SELECT id, name FROM personal_access_tokens WHERE id = ? AND user_id = ?",
   )
     .bind(id, user.id)
-    .first();
+    .first<{ id: string; name: string }>();
 
   if (!row) return c.json({ error: "Token not found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM personal_access_tokens WHERE id = ?")
     .bind(id)
     .run();
+
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "token.revoked",
+      {
+        name: row.name,
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
 
   return c.json({ message: "Token revoked" });
 });
@@ -873,23 +907,33 @@ app.get("/me/notifications", async (c) => {
   )
     .bind(user.id)
     .first<Pick<UserNotificationPrefsRow, "events">>();
-  return c.json({
-    events: row ? (JSON.parse(row.events) as string[]) : [],
-    available: USER_NOTIFICATION_EVENTS,
-  });
+  // parsePrefsEvents handles legacy string[] → map conversion
+  const events = row ? parsePrefsEvents(row.events) : {};
+  return c.json({ events, available: USER_NOTIFICATION_EVENTS });
 });
 
 // PUT /api/user/me/notifications
 app.put("/me/notifications", async (c) => {
   const user = c.get("user");
-  const body = await c.req.json<{ events: string[] }>();
+  const body = await c.req.json<{ events: NotificationPrefsMap }>();
 
-  if (!Array.isArray(body.events))
-    return c.json({ error: "events must be an array" }, 400);
+  if (
+    !body.events ||
+    typeof body.events !== "object" ||
+    Array.isArray(body.events)
+  )
+    return c.json({ error: "events must be an object" }, 400);
 
-  const valid = body.events.filter((e) =>
-    (USER_NOTIFICATION_EVENTS as readonly string[]).includes(e),
-  );
+  // Filter to valid event keys and valid level values
+  const valid: NotificationPrefsMap = {};
+  for (const [k, v] of Object.entries(body.events)) {
+    if (
+      (USER_NOTIFICATION_EVENTS as readonly string[]).includes(k) &&
+      (v === "brief" || v === "full")
+    ) {
+      valid[k] = v;
+    }
+  }
 
   await c.env.DB.prepare(
     "INSERT INTO user_notification_prefs (user_id, events) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET events = excluded.events",

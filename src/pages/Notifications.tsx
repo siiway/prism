@@ -5,7 +5,6 @@ import {
   MessageBar,
   MessageBarBody,
   Spinner,
-  Switch,
   Text,
   makeStyles,
   tokens,
@@ -17,7 +16,10 @@ import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { SkeletonToggleRows } from "../components/Skeletons";
 
-// ─── Event catalogue (rich descriptions, not raw IDs) ────────────────────────
+type NotificationLevel = "brief" | "full";
+type PrefsMap = Record<string, NotificationLevel>;
+
+// ─── Event catalogue ─────────────────────────────────────────────────────────
 
 interface EventEntry {
   value: string;
@@ -101,6 +103,76 @@ const EVENT_GROUPS: EventGroup[] = [
       },
     ],
   },
+  {
+    groupKey: "notifications.groupSecurity",
+    events: [
+      {
+        value: "security.passkey_added",
+        labelKey: "notifications.passkeyAddedLabel",
+        descKey: "notifications.passkeyAddedDesc",
+      },
+      {
+        value: "security.passkey_removed",
+        labelKey: "notifications.passkeyRemovedLabel",
+        descKey: "notifications.passkeyRemovedDesc",
+      },
+      {
+        value: "security.totp_enabled",
+        labelKey: "notifications.totpEnabledLabel",
+        descKey: "notifications.totpEnabledDesc",
+      },
+      {
+        value: "security.totp_disabled",
+        labelKey: "notifications.totpDisabledLabel",
+        descKey: "notifications.totpDisabledDesc",
+      },
+    ],
+  },
+  {
+    groupKey: "notifications.groupTokens",
+    events: [
+      {
+        value: "token.created",
+        labelKey: "notifications.tokenCreatedLabel",
+        descKey: "notifications.tokenCreatedDesc",
+      },
+      {
+        value: "token.revoked",
+        labelKey: "notifications.tokenRevokedLabel",
+        descKey: "notifications.tokenRevokedDesc",
+      },
+    ],
+  },
+  {
+    groupKey: "notifications.groupTeams",
+    events: [
+      {
+        value: "team.member_added",
+        labelKey: "notifications.teamMemberAddedLabel",
+        descKey: "notifications.teamMemberAddedDesc",
+      },
+      {
+        value: "team.member_removed",
+        labelKey: "notifications.teamMemberRemovedLabel",
+        descKey: "notifications.teamMemberRemovedDesc",
+      },
+    ],
+  },
+  {
+    groupKey: "notifications.groupOAuth",
+    events: [
+      {
+        value: "oauth.consent_granted",
+        labelKey: "notifications.consentGrantedLabel",
+        descKey: "notifications.consentGrantedDesc",
+      },
+      {
+        value: "oauth.consent_revoked",
+        labelKey: "notifications.consentRevokedLabel",
+        descKey: "notifications.consentRevokedDesc",
+      },
+    ],
+  },
 ];
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -141,7 +213,7 @@ const useStyles = makeStyles({
     padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalM}`,
     borderRadius: tokens.borderRadiusMedium,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
-    gap: tokens.spacingHorizontalM,
+    gap: tokens.spacingHorizontalL,
     background: tokens.colorNeutralBackground1,
   },
   eventText: {
@@ -150,6 +222,20 @@ const useStyles = makeStyles({
     gap: tokens.spacingVerticalXXS,
     flex: 1,
   },
+  levelPicker: {
+    display: "flex",
+    flexShrink: 0,
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    overflow: "hidden",
+  },
+  levelBtn: {
+    borderRadius: "0",
+    border: "none",
+    borderRight: `1px solid ${tokens.colorNeutralStroke1}`,
+    minWidth: "52px",
+    ":last-child": { borderRight: "none" },
+  },
   actions: {
     display: "flex",
     alignItems: "center",
@@ -157,6 +243,41 @@ const useStyles = makeStyles({
     paddingTop: tokens.spacingVerticalXS,
   },
 });
+
+// ─── Level picker ─────────────────────────────────────────────────────────────
+
+function LevelPicker({
+  value,
+  onChange,
+}: {
+  value: NotificationLevel | null;
+  onChange: (v: NotificationLevel | null) => void;
+}) {
+  const styles = useStyles();
+  const { t } = useTranslation();
+
+  const levels: Array<{ v: NotificationLevel | null; key: string }> = [
+    { v: null, key: "notifications.levelOff" },
+    { v: "brief", key: "notifications.levelBrief" },
+    { v: "full", key: "notifications.levelFull" },
+  ];
+
+  return (
+    <div className={styles.levelPicker}>
+      {levels.map(({ v, key }) => (
+        <Button
+          key={key}
+          className={styles.levelBtn}
+          size="small"
+          appearance={value === v ? "primary" : "subtle"}
+          onClick={() => onChange(v)}
+        >
+          {t(key)}
+        </Button>
+      ))}
+    </div>
+  );
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -170,19 +291,19 @@ export function Notifications() {
     queryFn: () => api.getNotificationPrefs(),
   });
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [prefs, setPrefs] = useState<PrefsMap>({});
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (data) {
-      setSelected(new Set(data.events as string[]));
+      setPrefs(data.events as PrefsMap);
       setDirty(false);
     }
   }, [data]);
 
   const mutation = useMutation({
-    mutationFn: (events: string[]) => api.updateNotificationPrefs(events),
+    mutationFn: (events: PrefsMap) => api.updateNotificationPrefs(events),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notification-prefs"] });
       setDirty(false);
@@ -191,11 +312,14 @@ export function Notifications() {
     },
   });
 
-  function toggle(value: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
+  function setLevel(event: string, level: NotificationLevel | null) {
+    setPrefs((prev) => {
+      const next = { ...prev };
+      if (level === null) {
+        delete next[event];
+      } else {
+        next[event] = level;
+      }
       return next;
     });
     setDirty(true);
@@ -203,7 +327,7 @@ export function Notifications() {
   }
 
   function save() {
-    mutation.mutate([...selected]);
+    mutation.mutate(prefs);
   }
 
   if (isLoading) return <SkeletonToggleRows rows={8} />;
@@ -219,6 +343,51 @@ export function Notifications() {
           <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
             {t("notifications.subtitle")}
           </Text>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+          {t("notifications.levelLegend")}
+        </Text>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {(["off", "brief", "full"] as const).map((l) => (
+            <div
+              key={l}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "2px 8px",
+                borderRadius: 4,
+                border: `1px solid ${tokens.colorNeutralStroke2}`,
+                background: tokens.colorNeutralBackground2,
+              }}
+            >
+              <Text size={200} weight="semibold">
+                {t(
+                  `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}`,
+                )}
+              </Text>
+              <Text
+                size={100}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                —{" "}
+                {t(
+                  `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}Hint`,
+                )}
+              </Text>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -256,9 +425,9 @@ export function Notifications() {
                   {t(entry.descKey)}
                 </Text>
               </div>
-              <Switch
-                checked={selected.has(entry.value)}
-                onChange={() => toggle(entry.value)}
+              <LevelPicker
+                value={prefs[entry.value] ?? null}
+                onChange={(v) => setLevel(entry.value, v)}
               />
             </div>
           ))}

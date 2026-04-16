@@ -230,7 +230,7 @@ export interface WebhookRow {
 
 export interface UserNotificationPrefsRow {
   user_id: string;
-  events: string; // JSON string[]
+  events: string; // JSON Record<string, "brief"|"full"> — legacy: string[]
 }
 
 export interface WebhookDeliveryRow {

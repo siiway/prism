@@ -31,6 +31,7 @@ import { verifyCaptchaToken } from "../middleware/captcha";
 import { rateLimitIp } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
+import { deliverUserEmailNotifications } from "../lib/notifications";
 import type {
   AuthUser,
   PasskeyRow,
@@ -792,6 +793,18 @@ app.post("/totp/verify", requireAuth, async (c) => {
     .bind(body.id)
     .run();
 
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "security.totp_enabled",
+      {
+        name: auth.name,
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
+
   // Generate backup codes only on the first enabled authenticator
   const existing = await c.env.DB.prepare(
     "SELECT user_id FROM user_totp_recovery WHERE user_id = ?",
@@ -820,10 +833,10 @@ app.delete("/totp/:id", requireAuth, async (c) => {
   const body = await c.req.json<{ code: string }>();
 
   const auth = await c.env.DB.prepare(
-    "SELECT id FROM totp_authenticators WHERE id = ? AND user_id = ? AND enabled = 1",
+    "SELECT id, name FROM totp_authenticators WHERE id = ? AND user_id = ? AND enabled = 1",
   )
     .bind(id, user.id)
-    .first<{ id: string }>();
+    .first<{ id: string; name: string }>();
   if (!auth) return c.json({ error: "Authenticator not found" }, 404);
 
   const ok = await verifyAnyTotp(c.env.DB, user.id, body.code);
@@ -849,6 +862,18 @@ app.delete("/totp/:id", requireAuth, async (c) => {
       .bind(user.id)
       .run();
   }
+
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "security.totp_disabled",
+      {
+        name: auth.name,
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
 
   return c.json({ message: "Authenticator removed" });
 });
@@ -970,6 +995,18 @@ app.post("/passkey/register/finish", requireAuth, async (c) => {
       now,
     )
     .run();
+
+  c.executionCtx.waitUntil(
+    deliverUserEmailNotifications(
+      c.env.DB,
+      user.id,
+      "security.passkey_added",
+      {
+        name,
+      },
+      c.env.APP_URL,
+    ).catch(() => {}),
+  );
 
   return c.json({ message: "Passkey registered", id: passkeyId });
 });
@@ -1107,9 +1144,27 @@ app.get("/passkeys", requireAuth, async (c) => {
 app.delete("/passkeys/:id", requireAuth, async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
+  const row = await c.env.DB.prepare(
+    "SELECT name FROM passkeys WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, user.id)
+    .first<{ name: string }>();
   await c.env.DB.prepare("DELETE FROM passkeys WHERE id = ? AND user_id = ?")
     .bind(id, user.id)
     .run();
+  if (row) {
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env.DB,
+        user.id,
+        "security.passkey_removed",
+        {
+          name: row.name,
+        },
+        c.env.APP_URL,
+      ).catch(() => {}),
+    );
+  }
   return c.json({ message: "Passkey deleted" });
 });
 

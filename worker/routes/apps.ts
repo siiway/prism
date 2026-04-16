@@ -401,7 +401,7 @@ app.patch("/:id", async (c) => {
       c.env.DB,
       user.id,
       "app.updated",
-      { app_id: id },
+      { app_id: id, name: updated.name },
       c.env.APP_URL,
     ).catch(() => {}),
   );
@@ -465,7 +465,7 @@ app.delete("/:id", async (c) => {
       c.env.DB,
       user.id,
       "app.deleted",
-      { app_id: id },
+      { app_id: id, name: row.name },
       c.env.APP_URL,
     ).catch(() => {}),
   );

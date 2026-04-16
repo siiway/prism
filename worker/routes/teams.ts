@@ -10,6 +10,7 @@ import { proxyImageUrl } from "../lib/proxyImage";
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail } from "../lib/email";
+import { deliverUserEmailNotifications } from "../lib/notifications";
 import type { OAuthAppRow, TeamMemberRow, TeamRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -347,6 +348,25 @@ app.post("/:id/members", async (c) => {
     .bind(id, target.id, role, Math.floor(Date.now() / 1000))
     .run();
 
+  // Notify the added user
+  const teamRow = await c.env.DB.prepare("SELECT name FROM teams WHERE id = ?")
+    .bind(id)
+    .first<{ name: string }>();
+  if (teamRow) {
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env.DB,
+        target.id,
+        "team.member_added",
+        {
+          team_name: teamRow.name,
+          role,
+        },
+        c.env.APP_URL,
+      ).catch(() => {}),
+    );
+  }
+
   return c.json({ message: "Member added" }, 201);
 });
 
@@ -436,6 +456,28 @@ app.delete("/:id/members/:userId", async (c) => {
   )
     .bind(id, targetUserId)
     .run();
+
+  // Notify the removed user (only if it wasn't a self-leave)
+  if (!isSelf) {
+    const teamRow = await c.env.DB.prepare(
+      "SELECT name FROM teams WHERE id = ?",
+    )
+      .bind(id)
+      .first<{ name: string }>();
+    if (teamRow) {
+      c.executionCtx.waitUntil(
+        deliverUserEmailNotifications(
+          c.env.DB,
+          targetUserId,
+          "team.member_removed",
+          {
+            team_name: teamRow.name,
+          },
+          c.env.APP_URL,
+        ).catch(() => {}),
+      );
+    }
+  }
 
   return c.json({ message: "Member removed" });
 });

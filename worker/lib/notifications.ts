@@ -6,19 +6,63 @@ import { sendEmail } from "./email";
 // ─── Event catalogue ─────────────────────────────────────────────────────────
 
 export const USER_NOTIFICATION_EVENTS = [
+  // Apps
   "app.created",
   "app.updated",
   "app.deleted",
+  // Domains
   "domain.added",
   "domain.verified",
   "domain.deleted",
+  // Social connections
   "connection.added",
   "connection.removed",
   "connection.login",
+  // Account / profile
   "profile.updated",
+  // Security
+  "security.passkey_added",
+  "security.passkey_removed",
+  "security.totp_enabled",
+  "security.totp_disabled",
+  // Access tokens
+  "token.created",
+  "token.revoked",
+  // Teams
+  "team.member_added",
+  "team.member_removed",
+  // OAuth consents
+  "oauth.consent_granted",
+  "oauth.consent_revoked",
 ] as const;
 
 export type UserNotificationEvent = (typeof USER_NOTIFICATION_EVENTS)[number];
+
+/** Per-event detail level. Absent key = off (not subscribed). */
+export type NotificationLevel = "brief" | "full";
+export type NotificationPrefsMap = Record<string, NotificationLevel>;
+
+/**
+ * Parse the stored `events` JSON from user_notification_prefs.
+ * Handles the old `string[]` format (all treated as "full") and the new
+ * `Record<string, "brief"|"full">` format.
+ */
+export function parsePrefsEvents(raw: string): NotificationPrefsMap {
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      // Legacy format — convert to map with "full" level
+      const map: NotificationPrefsMap = {};
+      for (const e of parsed as string[]) map[e] = "full";
+      return map;
+    }
+    if (parsed && typeof parsed === "object")
+      return parsed as NotificationPrefsMap;
+  } catch {
+    // ignore
+  }
+  return {};
+}
 
 // ─── HTML safety helpers ──────────────────────────────────────────────────────
 
@@ -106,14 +150,11 @@ function buildEmail(
   siteName: string,
   appUrl: string,
   displayName: string,
-  appName?: string | null,
+  level: NotificationLevel,
 ): EmailContent {
   const manageUrl = `${appUrl}/notifications`;
   const appsUrl = `${appUrl}/apps`;
   const domainsUrl = `${appUrl}/domains`;
-
-  // Escape all user-controlled values that will appear in HTML.
-  // Subjects are plain text — use raw values there.
   const dn = esc(displayName);
 
   switch (event) {
@@ -121,51 +162,64 @@ function buildEmail(
       const rawName = (data.name as string | undefined) ?? "an application";
       const name = esc(rawName);
       const appId = data.app_id ? esc(data.app_id as string) : "";
+      const subject = `App created — ${rawName}`;
+      const core = p(
+        `Hi ${dn}, your OAuth application <strong>${name}</strong> has been created successfully.`,
+      );
+      const html = wrap(
+        siteName,
+        "New application created",
+        level === "full"
+          ? core +
+              table(
+                detail("App name", name) +
+                  (appId ? detail("App ID", appId) : ""),
+              ) +
+              btn(appsUrl, "View your apps")
+          : core,
+        manageUrl,
+      );
       return {
-        subject: `App created — ${rawName}`,
-        html: wrap(
-          siteName,
-          "New application created",
-          p(
-            `Hi ${dn}, your OAuth application <strong>${name}</strong> has been created successfully.`,
-          ) +
-            table(
-              detail("App name", name) + (appId ? detail("App ID", appId) : ""),
-            ) +
-            btn(appsUrl, "View your apps"),
-          manageUrl,
-        ),
+        subject,
+        html,
         text: `Hi ${displayName},\n\nYour OAuth application "${rawName}" has been created.\n\nApp ID: ${data.app_id ?? ""}\n\nView your apps: ${appsUrl}`,
       };
     }
 
     case "app.updated": {
-      const rawName = appName ?? (data.name as string | undefined);
+      const rawName = data.name as string | undefined;
       const name = rawName ? esc(rawName) : null;
       const nameHtml = name
         ? `&ldquo;${name}&rdquo;`
         : "one of your applications";
       const nameText = rawName ? `"${rawName}"` : "one of your applications";
       const appId = data.app_id ? esc(data.app_id as string) : "";
+      const subject = rawName
+        ? `App updated — ${rawName}`
+        : "An app was updated";
+      const core = p(`Hi ${dn}, ${nameHtml} was updated.`);
+      const html = wrap(
+        siteName,
+        "Application updated",
+        level === "full"
+          ? core +
+              table(
+                (appId ? detail("App ID", appId) : "") +
+                  (name ? detail("App name", name) : ""),
+              ) +
+              btn(`${appsUrl}/${data.app_id ?? ""}`, "View application")
+          : core,
+        manageUrl,
+      );
       return {
-        subject: rawName ? `App updated — ${rawName}` : "An app was updated",
-        html: wrap(
-          siteName,
-          "Application updated",
-          p(`Hi ${dn}, ${nameHtml} was updated.`) +
-            table(
-              (appId ? detail("App ID", appId) : "") +
-                (name ? detail("App name", name) : ""),
-            ) +
-            btn(`${appsUrl}/${appId}`, "View application"),
-          manageUrl,
-        ),
+        subject,
+        html,
         text: `Hi ${displayName},\n\n${nameText} was updated.\n\nView application: ${appsUrl}/${data.app_id ?? ""}`,
       };
     }
 
     case "app.deleted": {
-      const rawName = appName ?? (data.name as string | undefined);
+      const rawName = data.name as string | undefined;
       const name = rawName ? esc(rawName) : null;
       const nameHtml = name
         ? `&ldquo;${name}&rdquo;`
@@ -173,14 +227,18 @@ function buildEmail(
       const nameText = rawName
         ? `"${rawName}"`
         : "one of your OAuth applications";
+      const subject = rawName
+        ? `App deleted — ${rawName}`
+        : "An app was deleted";
+      const html = wrap(
+        siteName,
+        "Application deleted",
+        p(`Hi ${dn}, ${nameHtml} was permanently deleted from your account.`),
+        manageUrl,
+      );
       return {
-        subject: rawName ? `App deleted — ${rawName}` : "An app was deleted",
-        html: wrap(
-          siteName,
-          "Application deleted",
-          p(`Hi ${dn}, ${nameHtml} was permanently deleted from your account.`),
-          manageUrl,
-        ),
+        subject,
+        html,
         text: `Hi ${displayName},\n\n${nameText} was deleted from your account.`,
       };
     }
@@ -188,20 +246,24 @@ function buildEmail(
     case "domain.added": {
       const rawDomain = (data.domain as string | undefined) ?? "a domain";
       const domain = esc(rawDomain);
+      const core = p(
+        `Hi ${dn}, the domain <strong>${domain}</strong> has been added to your account and is awaiting verification.`,
+      );
+      const html = wrap(
+        siteName,
+        "Domain added",
+        level === "full"
+          ? core +
+              p(
+                "Complete verification by adding the required DNS TXT record to your domain.",
+              ) +
+              btn(domainsUrl, "Verify domain")
+          : core,
+        manageUrl,
+      );
       return {
         subject: `Domain added — ${rawDomain}`,
-        html: wrap(
-          siteName,
-          "Domain added",
-          p(
-            `Hi ${dn}, the domain <strong>${domain}</strong> has been added to your account and is awaiting verification.`,
-          ) +
-            p(
-              "Complete verification by adding the required DNS TXT record to your domain.",
-            ) +
-            btn(domainsUrl, "Verify domain"),
-          manageUrl,
-        ),
+        html,
         text: `Hi ${displayName},\n\nThe domain "${rawDomain}" was added to your account and is awaiting verification.\n\nVerify your domain: ${domainsUrl}`,
       };
     }
@@ -209,16 +271,18 @@ function buildEmail(
     case "domain.verified": {
       const rawDomain = (data.domain as string | undefined) ?? "a domain";
       const domain = esc(rawDomain);
+      const core = p(
+        `Hi ${dn}, your domain <strong>${domain}</strong> has been successfully verified and is ready to use.`,
+      );
+      const html = wrap(
+        siteName,
+        "Domain verified",
+        level === "full" ? core + btn(domainsUrl, "View your domains") : core,
+        manageUrl,
+      );
       return {
         subject: `Domain verified — ${rawDomain}`,
-        html: wrap(
-          siteName,
-          "Domain verified",
-          p(
-            `Hi ${dn}, your domain <strong>${domain}</strong> has been successfully verified and is ready to use.`,
-          ) + btn(domainsUrl, "View your domains"),
-          manageUrl,
-        ),
+        html,
         text: `Hi ${displayName},\n\nYour domain "${rawDomain}" has been verified and is ready to use.\n\nView your domains: ${domainsUrl}`,
       };
     }
@@ -245,20 +309,24 @@ function buildEmail(
         (data.provider_name as string | undefined) ?? "a provider";
       const provider = esc(rawProvider);
       const connectionsUrl = `${appUrl}/connections`;
+      const core = p(
+        `Hi ${dn}, your account has been linked to <strong>${provider}</strong>.`,
+      );
+      const html = wrap(
+        siteName,
+        "Connection added",
+        level === "full"
+          ? core +
+              p(
+                "If you did not perform this action, please review your connected accounts immediately.",
+              ) +
+              btn(connectionsUrl, "View connections")
+          : core,
+        manageUrl,
+      );
       return {
         subject: `Connection added — ${rawProvider}`,
-        html: wrap(
-          siteName,
-          "Connection added",
-          p(
-            `Hi ${dn}, your account has been linked to <strong>${provider}</strong>.`,
-          ) +
-            p(
-              "If you did not perform this action, please review your connected accounts immediately.",
-            ) +
-            btn(connectionsUrl, "View connections"),
-          manageUrl,
-        ),
+        html,
         text: `Hi ${displayName},\n\nYour account has been linked to "${rawProvider}".\n\nIf you did not perform this action, please review your connected accounts.\n\nView connections: ${connectionsUrl}`,
       };
     }
@@ -277,7 +345,7 @@ function buildEmail(
           ),
           manageUrl,
         ),
-        text: `Hi ${displayName},\n\nThe connection to "${rawProvider}" has been removed from your account.`,
+        text: `Hi ${displayName},\n\nThe connection to "${rawProvider}" was removed from your account.`,
       };
     }
 
@@ -285,35 +353,291 @@ function buildEmail(
       const rawProvider =
         (data.provider_name as string | undefined) ?? "a provider";
       const provider = esc(rawProvider);
+      const core = p(
+        `Hi ${dn}, your account was signed in via <strong>${provider}</strong>.`,
+      );
+      const html = wrap(
+        siteName,
+        "New login detected",
+        level === "full"
+          ? core +
+              p(
+                "If this was not you, please change your password and review your connected accounts.",
+              )
+          : core,
+        manageUrl,
+      );
       return {
         subject: `New login via ${rawProvider}`,
-        html: wrap(
-          siteName,
-          "New login detected",
-          p(
-            `Hi ${dn}, your account was signed in via <strong>${provider}</strong>.`,
-          ) +
-            p(
-              "If this was not you, please change your password and review your connected accounts.",
-            ),
-          manageUrl,
-        ),
+        html,
         text: `Hi ${displayName},\n\nYour account was signed in via "${rawProvider}".\n\nIf this was not you, please change your password and review your connected accounts.`,
       };
     }
 
     case "profile.updated": {
+      const changed =
+        (data.changed_fields as Record<string, string> | undefined) ?? {};
+      // Build human-readable list of what changed
+      const changeLines: string[] = [];
+      if (changed.display_name !== undefined)
+        changeLines.push(
+          `Display name changed to <strong>${esc(changed.display_name)}</strong>`,
+        );
+      if (changed.avatar_url !== undefined)
+        changeLines.push(
+          changed.avatar_url
+            ? "Profile picture updated"
+            : "Profile picture removed",
+        );
+      const changeListHtml = changeLines.length
+        ? changeLines.map((l) => p(l)).join("")
+        : p("Your profile information was updated.");
+      const changeListText = changeLines.length
+        ? changeLines.map((l) => l.replace(/<[^>]+>/g, "")).join("\n")
+        : "Your profile information was updated.";
+      const core = p(`Hi ${dn}, changes were made to your profile:`);
+      const html = wrap(
+        siteName,
+        "Profile updated",
+        level === "full"
+          ? core +
+              changeListHtml +
+              p(
+                "If you did not make this change, please review your account security.",
+              ) +
+              btn(`${appUrl}/profile`, "View profile")
+          : core + changeListHtml,
+        manageUrl,
+      );
       return {
         subject: "Profile updated",
+        html,
+        text: `Hi ${displayName},\n\n${changeListText}\n\nIf you did not make this change, review your account security.\n\nView profile: ${appUrl}/profile`,
+      };
+    }
+
+    case "security.passkey_added": {
+      const rawName = (data.name as string | undefined) ?? "a passkey";
+      const name = esc(rawName);
+      const securityUrl = `${appUrl}/security`;
+      const core = p(
+        `Hi ${dn}, a passkey named <strong>${name}</strong> was added to your account.`,
+      );
+      const html = wrap(
+        siteName,
+        "Passkey added",
+        level === "full"
+          ? core +
+              p(
+                "If you did not add this passkey, remove it immediately and review your account security.",
+              ) +
+              btn(securityUrl, "Manage passkeys")
+          : core,
+        manageUrl,
+      );
+      return {
+        subject: `Passkey added — ${rawName}`,
+        html,
+        text: `Hi ${displayName},\n\nA passkey named "${rawName}" was added to your account.\n\nManage passkeys: ${securityUrl}`,
+      };
+    }
+
+    case "security.passkey_removed": {
+      const rawName = (data.name as string | undefined) ?? "a passkey";
+      const name = esc(rawName);
+      const securityUrl = `${appUrl}/security`;
+      const core = p(
+        `Hi ${dn}, the passkey <strong>${name}</strong> was removed from your account.`,
+      );
+      const html = wrap(
+        siteName,
+        "Passkey removed",
+        level === "full" ? core + btn(securityUrl, "Manage passkeys") : core,
+        manageUrl,
+      );
+      return {
+        subject: `Passkey removed — ${rawName}`,
+        html,
+        text: `Hi ${displayName},\n\nThe passkey "${rawName}" was removed from your account.\n\nManage security: ${securityUrl}`,
+      };
+    }
+
+    case "security.totp_enabled": {
+      const rawName = (data.name as string | undefined) ?? "an authenticator";
+      const name = esc(rawName);
+      const securityUrl = `${appUrl}/security`;
+      const core = p(
+        `Hi ${dn}, two-factor authentication was enabled using <strong>${name}</strong>.`,
+      );
+      const html = wrap(
+        siteName,
+        "Two-factor authentication enabled",
+        level === "full"
+          ? core +
+              p(
+                "Keep your backup codes in a safe place. If you did not enable this, secure your account immediately.",
+              ) +
+              btn(securityUrl, "Manage 2FA")
+          : core,
+        manageUrl,
+      );
+      return {
+        subject: "Two-factor authentication enabled",
+        html,
+        text: `Hi ${displayName},\n\nTwo-factor authentication was enabled using "${rawName}".\n\nManage 2FA: ${securityUrl}`,
+      };
+    }
+
+    case "security.totp_disabled": {
+      const rawName = (data.name as string | undefined) ?? "an authenticator";
+      const name = esc(rawName);
+      const securityUrl = `${appUrl}/security`;
+      const core = p(
+        `Hi ${dn}, the two-factor authenticator <strong>${name}</strong> was removed from your account.`,
+      );
+      const html = wrap(
+        siteName,
+        "Two-factor authenticator removed",
+        level === "full"
+          ? core +
+              p(
+                "If you did not remove this authenticator, secure your account immediately.",
+              ) +
+              btn(securityUrl, "Manage 2FA")
+          : core,
+        manageUrl,
+      );
+      return {
+        subject: "Two-factor authenticator removed",
+        html,
+        text: `Hi ${displayName},\n\nThe two-factor authenticator "${rawName}" was removed from your account.\n\nManage 2FA: ${securityUrl}`,
+      };
+    }
+
+    case "token.created": {
+      const rawName = (data.name as string | undefined) ?? "a token";
+      const name = esc(rawName);
+      const tokensUrl = `${appUrl}/tokens`;
+      const rawScopes = (data.scopes as string[] | undefined) ?? [];
+      const scopesStr = rawScopes.map(esc).join(", ");
+      const core = p(
+        `Hi ${dn}, a new access token named <strong>${name}</strong> was created.`,
+      );
+      const html = wrap(
+        siteName,
+        "Access token created",
+        level === "full"
+          ? core +
+              table(
+                detail("Token name", name) +
+                  (scopesStr ? detail("Scopes", scopesStr) : ""),
+              ) +
+              btn(tokensUrl, "Manage tokens")
+          : core,
+        manageUrl,
+      );
+      return {
+        subject: `Access token created — ${rawName}`,
+        html,
+        text: `Hi ${displayName},\n\nA new access token named "${rawName}" was created.\n\nManage tokens: ${tokensUrl}`,
+      };
+    }
+
+    case "token.revoked": {
+      const rawName = (data.name as string | undefined) ?? "a token";
+      const name = esc(rawName);
+      const tokensUrl = `${appUrl}/tokens`;
+      const core = p(
+        `Hi ${dn}, the access token <strong>${name}</strong> was revoked.`,
+      );
+      const html = wrap(
+        siteName,
+        "Access token revoked",
+        level === "full" ? core + btn(tokensUrl, "Manage tokens") : core,
+        manageUrl,
+      );
+      return {
+        subject: `Access token revoked — ${rawName}`,
+        html,
+        text: `Hi ${displayName},\n\nThe access token "${rawName}" was revoked.\n\nManage tokens: ${tokensUrl}`,
+      };
+    }
+
+    case "team.member_added": {
+      const rawTeam = (data.team_name as string | undefined) ?? "a team";
+      const teamName = esc(rawTeam);
+      const rawRole = (data.role as string | undefined) ?? "member";
+      const teamsUrl = `${appUrl}/teams`;
+      const core = p(
+        `Hi ${dn}, you have been added to the team <strong>${teamName}</strong> as <strong>${esc(rawRole)}</strong>.`,
+      );
+      const html = wrap(
+        siteName,
+        "Added to a team",
+        level === "full" ? core + btn(teamsUrl, "View your teams") : core,
+        manageUrl,
+      );
+      return {
+        subject: `Added to team — ${rawTeam}`,
+        html,
+        text: `Hi ${displayName},\n\nYou have been added to the team "${rawTeam}" as ${rawRole}.\n\nView your teams: ${teamsUrl}`,
+      };
+    }
+
+    case "team.member_removed": {
+      const rawTeam = (data.team_name as string | undefined) ?? "a team";
+      const teamName = esc(rawTeam);
+      const core = p(
+        `Hi ${dn}, you have been removed from the team <strong>${teamName}</strong>.`,
+      );
+      const html = wrap(siteName, "Removed from a team", core, manageUrl);
+      return {
+        subject: `Removed from team — ${rawTeam}`,
+        html,
+        text: `Hi ${displayName},\n\nYou have been removed from the team "${rawTeam}".`,
+      };
+    }
+
+    case "oauth.consent_granted": {
+      const rawApp = (data.app_name as string | undefined) ?? "an application";
+      const app = esc(rawApp);
+      const rawScopes = (data.scopes as string[] | undefined) ?? [];
+      const scopesStr = rawScopes.map(esc).join(", ");
+      const connAppsUrl = `${appUrl}/connected-apps`;
+      const core = p(
+        `Hi ${dn}, you granted <strong>${app}</strong> access to your account.`,
+      );
+      const html = wrap(
+        siteName,
+        "App access granted",
+        level === "full"
+          ? core +
+              (scopesStr ? table(detail("Permissions", scopesStr)) : "") +
+              btn(connAppsUrl, "Manage connected apps")
+          : core,
+        manageUrl,
+      );
+      return {
+        subject: `App access granted — ${rawApp}`,
+        html,
+        text: `Hi ${displayName},\n\nYou granted "${rawApp}" access to your account.\n\nManage connected apps: ${connAppsUrl}`,
+      };
+    }
+
+    case "oauth.consent_revoked": {
+      const rawApp = (data.app_name as string | undefined) ?? "an application";
+      const app = esc(rawApp);
+      return {
+        subject: `App access revoked — ${rawApp}`,
         html: wrap(
           siteName,
-          "Profile updated",
+          "App access revoked",
           p(
-            `Hi ${dn}, your profile information was recently updated. If you did not make this change, please review your account security.`,
-          ) + btn(`${appUrl}/profile`, "View profile"),
+            `Hi ${dn}, access for <strong>${app}</strong> has been revoked from your account.`,
+          ),
           manageUrl,
         ),
-        text: `Hi ${displayName},\n\nYour profile information was recently updated.\n\nIf you did not make this change, please review your account security.\n\nView profile: ${appUrl}/profile`,
+        text: `Hi ${displayName},\n\nAccess for "${rawApp}" has been revoked from your account.`,
       };
     }
 
@@ -340,14 +664,15 @@ export async function deliverUserEmailNotifications(
   data: Record<string, unknown>,
   appUrl: string,
 ): Promise<void> {
-  // Check user's subscribed events
+  // Load user's notification preferences
   const prefs = await db
     .prepare("SELECT events FROM user_notification_prefs WHERE user_id = ?")
     .bind(userId)
     .first<{ events: string }>();
 
-  const subscribed: string[] = JSON.parse(prefs?.events ?? "[]");
-  if (!subscribed.includes(event)) return;
+  const prefsMap = parsePrefsEvents(prefs?.events ?? "[]");
+  const level = prefsMap[event];
+  if (!level) return; // not subscribed
 
   // Get user info
   const user = await db
@@ -363,23 +688,13 @@ export async function deliverUserEmailNotifications(
   const config = await getConfig(db);
   if (config.email_provider === "none") return;
 
-  // For app.updated, look up the app name
-  let appName: string | null = null;
-  if (event === "app.updated" && data.app_id) {
-    const row = await db
-      .prepare("SELECT name FROM oauth_apps WHERE id = ?")
-      .bind(data.app_id)
-      .first<{ name: string }>();
-    appName = row?.name ?? null;
-  }
-
   const { subject, html, text } = buildEmail(
     event,
     data,
     config.site_name,
     appUrl,
     user.display_name,
-    appName,
+    level,
   );
 
   await sendEmail(

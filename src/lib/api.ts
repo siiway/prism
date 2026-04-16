@@ -779,14 +779,14 @@ export const api = {
 
   // ─── Notification preferences ─────────────────────────────────────────────
   getNotificationPrefs: () =>
-    request<{ events: string[]; available: string[] }>(
+    request<{ events: Record<string, "brief" | "full">; available: string[] }>(
       "GET",
       "/user/me/notifications",
       undefined,
       getToken(),
     ),
-  updateNotificationPrefs: (events: string[]) =>
-    request<{ events: string[] }>(
+  updateNotificationPrefs: (events: Record<string, "brief" | "full">) =>
+    request<{ events: Record<string, "brief" | "full"> }>(
       "PUT",
       "/user/me/notifications",
       { events },
