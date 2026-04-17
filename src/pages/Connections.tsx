@@ -110,7 +110,10 @@ function getProfileTextField(profile: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
-function getConnectionDetails(conn: { profile: unknown; provider_user_id: string }) {
+function getConnectionDetails(conn: {
+  profile: unknown;
+  provider_user_id: string;
+}) {
   const profile =
     conn.profile && typeof conn.profile === "object"
       ? (conn.profile as Record<string, unknown>)
@@ -122,12 +125,12 @@ function getConnectionDetails(conn: { profile: unknown; provider_user_id: string
         .trim() || null
     : null;
   const nickname = profile
-    ? getProfileTextField(profile, [
+    ? (getProfileTextField(profile, [
         "nickname",
         "display_name",
         "name",
         "global_name",
-      ]) ?? telegramNickname
+      ]) ?? telegramNickname)
     : null;
   const username = profile
     ? getProfileTextField(profile, [

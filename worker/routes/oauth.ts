@@ -5,6 +5,7 @@ import { getConfig, getJwtSecret, getRsaKeyPair } from "../lib/config";
 import { getMLDSAKey } from "../lib/mldsa";
 import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
+import { verifyAnyTotp } from "../lib/totp";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import {
   computeIsVerified,
@@ -60,7 +61,35 @@ const VALID_SCOPES = new Set([
   "webhooks:read",
   "webhooks:write",
   "offline_access",
+  // Site-level scopes — full cross-user access, admin-only grant, requires 2FA + confirmation
+  "site:user:read",
+  "site:user:write",
+  "site:user:delete",
+  "site:team:read",
+  "site:team:write",
+  "site:team:delete",
+  "site:config:read",
+  "site:config:write",
+  "site:token:revoke",
 ]);
+
+const SITE_SCOPES = new Set([
+  "site:user:read",
+  "site:user:write",
+  "site:user:delete",
+  "site:team:read",
+  "site:team:write",
+  "site:team:delete",
+  "site:config:read",
+  "site:config:write",
+  "site:token:revoke",
+]);
+
+const SITE_SCOPE_CONFIRM_PHRASE = "grant site access";
+
+function hasSiteScopes(scopes: string[]): boolean {
+  return scopes.some((s) => SITE_SCOPES.has(s));
+}
 
 // ─── Scope helpers ───────────────────────────────────────────────────────────
 
@@ -454,6 +483,10 @@ app.get("/app-info", optionalAuth, async (c) => {
     code_challenge_method,
     nonce,
     user: c.get("user") ?? null,
+    requires_site_grant: hasSiteScopes(scopes),
+    site_scope_confirm_phrase: hasSiteScopes(scopes)
+      ? SITE_SCOPE_CONFIRM_PHRASE
+      : null,
   });
 });
 
@@ -469,6 +502,9 @@ app.post("/authorize", requireAuth, async (c) => {
     code_challenge_method?: string;
     nonce?: string;
     action: "approve" | "deny";
+    totp_code?: string;
+    passkey_verify_token?: string;
+    confirm_text?: string;
   }>();
 
   if (body.action === "deny") {
@@ -498,8 +534,57 @@ app.post("/authorize", requireAuth, async (c) => {
     oauthApp.client_id,
   );
 
+  // Site-scope gate: admin-only, requires 2FA (TOTP or passkey) and confirmation phrase
+  if (hasSiteScopes(scopes)) {
+    if (user.role !== "admin") {
+      return c.json(
+        {
+          error: "site_scope_admin_required",
+          message:
+            "Site-level scopes can only be granted by a site administrator.",
+        },
+        403,
+      );
+    }
+
+    let twoFaOk = false;
+    if (body.passkey_verify_token) {
+      const kvKey = `passkey_site_verify:${user.id}:${body.passkey_verify_token}`;
+      const stored = await c.env.KV_CACHE.get(kvKey);
+      if (stored) {
+        await c.env.KV_CACHE.delete(kvKey);
+        twoFaOk = true;
+      }
+    } else if (body.totp_code) {
+      twoFaOk = await verifyAnyTotp(c.env.DB, user.id, body.totp_code);
+    }
+
+    if (!twoFaOk) {
+      return c.json(
+        {
+          error: "site_scope_totp_invalid",
+          message:
+            body.totp_code || body.passkey_verify_token
+              ? "Invalid 2FA credential."
+              : "A 2FA verification is required to grant site-level scopes.",
+        },
+        400,
+      );
+    }
+    if (body.confirm_text?.trim().toLowerCase() !== SITE_SCOPE_CONFIRM_PHRASE) {
+      return c.json(
+        {
+          error: "site_scope_confirm_required",
+          message: `Type "${SITE_SCOPE_CONFIRM_PHRASE}" to confirm.`,
+        },
+        400,
+      );
+    }
+  }
+
   // Store consent
   const now = Math.floor(Date.now() / 1000);
+  const siteScopes = scopes.filter((s) => SITE_SCOPES.has(s));
   await c.env.DB.prepare(
     `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at)
      VALUES (?, ?, ?, ?, ?)
@@ -507,6 +592,22 @@ app.post("/authorize", requireAuth, async (c) => {
   )
     .bind(randomId(), user.id, body.client_id, JSON.stringify(scopes), now)
     .run();
+
+  if (siteScopes.length > 0) {
+    await c.env.DB.prepare(
+      `INSERT INTO site_scope_grants (id, admin_user_id, grantee_user_id, client_id, scopes, granted_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        randomId(),
+        user.id,
+        user.id,
+        body.client_id,
+        JSON.stringify(siteScopes),
+        now,
+      )
+      .run();
+  }
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
@@ -2043,6 +2144,64 @@ app.delete("/me/admin/users/:id", async (c) => {
   ]);
 
   return c.json({ message: "User deleted" });
+});
+
+// GET /api/oauth/me/site/users — list all users (requires site:user:read, token owner must be admin)
+app.get("/me/site/users", async (c) => {
+  const resolved = await requireAdminToken(c, "site:user:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { page = "1", limit = "50", q } = c.req.query();
+  const pageNum = Math.max(1, parseInt(page, 10));
+  const pageSize = Math.min(100, Math.max(1, parseInt(limit, 10)));
+  const offset = (pageNum - 1) * pageSize;
+
+  let query =
+    "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users";
+  const binds: unknown[] = [];
+
+  if (q) {
+    query += " WHERE (username LIKE ? OR email LIKE ? OR display_name LIKE ?)";
+    const like = `%${q}%`;
+    binds.push(like, like, like);
+  }
+
+  query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+  binds.push(pageSize, offset);
+
+  const { results } = await c.env.DB.prepare(query)
+    .bind(...binds)
+    .all();
+
+  const countQuery = q
+    ? "SELECT COUNT(*) AS total FROM users WHERE username LIKE ? OR email LIKE ? OR display_name LIKE ?"
+    : "SELECT COUNT(*) AS total FROM users";
+  const countBinds = q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [];
+  const countRow = await c.env.DB.prepare(countQuery)
+    .bind(...countBinds)
+    .first<{ total: number }>();
+
+  return c.json({
+    users: results.map((u) => proxyUserAvatar(c.env.APP_URL, u)),
+    total: countRow?.total ?? 0,
+    page: pageNum,
+    limit: pageSize,
+  });
+});
+
+// GET /api/oauth/me/site/users/:id — get a user by id (requires site:user:read, token owner must be admin)
+app.get("/me/site/users/:id", async (c) => {
+  const resolved = await requireAdminToken(c, "site:user:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const user = await c.env.DB.prepare(
+    "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users WHERE id = ?",
+  )
+    .bind(c.req.param("id"))
+    .first();
+
+  if (!user) return c.json({ error: "User not found" }, 404);
+  return c.json({ user: proxyUserAvatar(c.env.APP_URL, user) });
 });
 
 // GET /api/oauth/me/admin/config — read site config (requires admin:config:read)

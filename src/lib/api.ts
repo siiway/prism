@@ -542,6 +542,15 @@ export const api = {
     ),
   oauthApprove: (body: OAuthApproveBody) =>
     request<{ redirect: string }>("POST", "/oauth/authorize", body, getToken()),
+  passkeyVerifyBegin: () =>
+    request<unknown>("POST", "/auth/passkey/verify/begin", {}, getToken()),
+  passkeyVerifyFinish: (challenge: string, response: unknown) =>
+    request<{ verify_token: string }>(
+      "POST",
+      "/auth/passkey/verify/finish",
+      { challenge, response },
+      getToken(),
+    ),
 
   // ─── Admin ────────────────────────────────────────────────────────────────
   adminConfig: () =>
@@ -1439,6 +1448,8 @@ export interface OAuthAuthorizeInfo {
   redirect_uri: string;
   state: string | null;
   user: UserProfile | null;
+  requires_site_grant: boolean;
+  site_scope_confirm_phrase: string | null;
 }
 
 export interface OAuthApproveBody {
@@ -1450,6 +1461,8 @@ export interface OAuthApproveBody {
   code_challenge_method?: string;
   nonce?: string;
   action: "approve" | "deny";
+  totp_code?: string;
+  confirm_text?: string;
 }
 
 export interface AdminStats {

@@ -128,6 +128,65 @@ export async function hashBackupCodes(codes: string[]): Promise<string[]> {
   );
 }
 
+/**
+ * Verify a TOTP code against any of the user's enabled authenticators or backup codes.
+ * Consumes a backup code if matched (single-use).
+ */
+export async function verifyAnyTotp(
+  db: D1Database,
+  userId: string,
+  code: string,
+): Promise<boolean> {
+  const recovery = await db
+    .prepare("SELECT * FROM user_totp_recovery WHERE user_id = ?")
+    .bind(userId)
+    .first<{ user_id: string; backup_codes: string; updated_at: number }>();
+  if (recovery) {
+    const codes = JSON.parse(recovery.backup_codes) as string[];
+    const normalized = code.replace(/-/g, "").toUpperCase();
+    let idx = -1;
+    for (let i = 0; i < codes.length; i++) {
+      const stored = codes[i];
+      if (stored.startsWith("$sha256$")) {
+        if (stored === (await hashBackupCode(normalized))) {
+          idx = i;
+          break;
+        }
+      } else if (stored.replace(/-/g, "").toUpperCase() === normalized) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx !== -1) {
+      codes.splice(idx, 1);
+      await db
+        .prepare(
+          "UPDATE user_totp_recovery SET backup_codes = ? WHERE user_id = ?",
+        )
+        .bind(JSON.stringify(codes), userId)
+        .run();
+      return true;
+    }
+  }
+  const totps = await db
+    .prepare(
+      "SELECT * FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
+    )
+    .bind(userId)
+    .all<{
+      id: string;
+      user_id: string;
+      name: string;
+      secret: string;
+      enabled: number;
+      created_at: number;
+    }>();
+  for (const t of totps.results) {
+    if (await verifyTotp(code, t.secret)) return true;
+  }
+  return false;
+}
+
 export function totpUri(secret: string, email: string, issuer: string): string {
   const params = new URLSearchParams({
     secret,

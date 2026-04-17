@@ -1119,6 +1119,100 @@ app.post("/passkey/auth/finish", async (c) => {
   return c.json({ token, user: safeUser(c.env.APP_URL, user) });
 });
 
+// ─── Passkey verify (for site-scope 2FA gate) ────────────────────────────────
+
+// Begin a passkey challenge for the current authenticated user.
+// Returns WebAuthn options targeting only the user's own passkeys.
+app.post("/passkey/verify/begin", requireAuth, async (c) => {
+  const user = c.get("user");
+  const rpId = new URL(c.env.APP_URL).hostname;
+
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM passkeys WHERE user_id = ?",
+  )
+    .bind(user.id)
+    .all<PasskeyRow>();
+
+  if (rows.results.length === 0) {
+    return c.json({ error: "No passkeys registered for this account" }, 400);
+  }
+
+  const options = await beginPasskeyAuthentication(
+    rows.results.map(rowToPasskey),
+    rpId,
+  );
+
+  const challengeKey = `passkey:verify:${options.challenge}:${user.id}`;
+  await c.env.KV_CACHE.put(challengeKey, JSON.stringify(options), {
+    expirationTtl: 300,
+  });
+
+  return c.json(options);
+});
+
+// Finish passkey verification and return a short-lived one-time verify token.
+app.post("/passkey/verify/finish", requireAuth, async (c) => {
+  const user = c.get("user");
+  const rpId = new URL(c.env.APP_URL).hostname;
+  const origin = c.env.APP_URL;
+
+  const body = await c.req.json<{ challenge?: string; response?: unknown }>();
+  if (!body.challenge) return c.json({ error: "challenge required" }, 400);
+
+  const challengeKey = `passkey:verify:${body.challenge}:${user.id}`;
+  const stored = await c.env.KV_CACHE.get(challengeKey);
+  if (!stored) return c.json({ error: "Verification session expired" }, 400);
+
+  const options = JSON.parse(stored) as { challenge: string };
+
+  const response = body.response as { id?: string };
+  if (!response?.id) return c.json({ error: "Invalid response" }, 400);
+
+  const passkeyRow = await c.env.DB.prepare(
+    "SELECT * FROM passkeys WHERE credential_id = ? AND user_id = ?",
+  )
+    .bind(response.id, user.id)
+    .first<PasskeyRow>();
+  if (!passkeyRow) return c.json({ error: "Passkey not found" }, 400);
+
+  let verification;
+  try {
+    verification = await finishPasskeyAuthentication(
+      body.response as Parameters<typeof finishPasskeyAuthentication>[0],
+      options.challenge,
+      rowToPasskey(passkeyRow),
+      rpId,
+      origin,
+    );
+  } catch (err) {
+    return c.json({ error: `Verification failed: ${String(err)}` }, 400);
+  }
+
+  if (!verification.verified)
+    return c.json({ error: "Verification failed" }, 400);
+
+  await c.env.KV_CACHE.delete(challengeKey);
+
+  // Update counter
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.prepare(
+    "UPDATE passkeys SET counter = ?, last_used_at = ? WHERE id = ?",
+  )
+    .bind(verification.authenticationInfo.newCounter, now, passkeyRow.id)
+    .run();
+
+  // Issue a one-time verify token (5 min TTL) consumed by the OAuth authorize endpoint
+  const { randomId } = await import("../lib/crypto");
+  const verifyToken = randomId();
+  await c.env.KV_CACHE.put(
+    `passkey_site_verify:${user.id}:${verifyToken}`,
+    "1",
+    { expirationTtl: 300 },
+  );
+
+  return c.json({ verify_token: verifyToken });
+});
+
 // ─── List passkeys ───────────────────────────────────────────────────────────
 
 app.get("/passkeys", requireAuth, async (c) => {

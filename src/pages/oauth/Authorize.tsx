@@ -4,6 +4,7 @@ import {
   Avatar,
   Badge,
   Button,
+  Input,
   Spinner,
   Text,
   Title2,
@@ -14,9 +15,13 @@ import {
   CheckmarkRegular,
   DismissRegular,
   GlobeRegular,
+  KeyRegular,
+  LockClosedRegular,
   PlugConnectedRegular,
   ShieldRegular,
+  WarningRegular,
 } from "@fluentui/react-icons";
+import { startAuthentication } from "@simplewebauthn/browser";
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -73,6 +78,29 @@ const useStyles = makeStyles({
     borderTop: `1px solid ${tokens.colorNeutralStroke1}`,
     margin: "0 -40px",
   },
+  siteScopeWarning: {
+    padding: "16px",
+    borderRadius: "8px",
+    border: `1.5px solid ${tokens.colorPaletteRedBorder1}`,
+    background: tokens.colorPaletteRedBackground1,
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  },
+  siteScopeFields: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    padding: "16px",
+    borderRadius: "8px",
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    background: tokens.colorNeutralBackground3,
+  },
+  siteField: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
 });
 
 export function Authorize() {
@@ -91,10 +119,27 @@ export function Authorize() {
   });
 
   const [loading, setLoading] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
+  const [confirmText, setConfirmText] = useState("");
+  const [siteError, setSiteError] = useState<string | null>(null);
+  const [twoFaMode, setTwoFaMode] = useState<"totp" | "passkey">("totp");
+  const [passkeyVerifyToken, setPasskeyVerifyToken] = useState("");
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
   const autoApproved = useRef(false);
+
+  const confirmPhrase = data?.site_scope_confirm_phrase ?? "grant site access";
+  const requiresSiteGrant = data?.requires_site_grant ?? false;
+  const twoFaDone =
+    twoFaMode === "passkey"
+      ? passkeyVerifyToken.length > 0
+      : totpCode.trim().length > 0;
+  const siteGrantReady =
+    !requiresSiteGrant ||
+    (twoFaDone && confirmText.trim().toLowerCase() === confirmPhrase);
 
   const handleDecision = async (action: "approve" | "deny") => {
     if (!data) return;
+    setSiteError(null);
     setLoading(true);
     try {
       const res = await api.oauthApprove({
@@ -106,24 +151,88 @@ export function Authorize() {
         code_challenge_method: params.code_challenge_method,
         nonce: params.nonce,
         action,
+        ...(requiresSiteGrant && action === "approve"
+          ? {
+              ...(twoFaMode === "passkey"
+                ? { passkey_verify_token: passkeyVerifyToken }
+                : { totp_code: totpCode.trim() }),
+              confirm_text: confirmText.trim(),
+            }
+          : {}),
       });
       window.location.href = res.redirect;
     } catch (err) {
-      const msg =
-        err instanceof ApiError ? err.message : "Authorization failed";
-      const url = new URL(params.redirect_uri);
-      url.searchParams.set("error", "server_error");
-      url.searchParams.set("error_description", msg);
-      if (params.state) url.searchParams.set("state", params.state);
-      window.location.href = url.toString();
+      if (err instanceof ApiError) {
+        const errorCode = err.message; // ApiError.message = the "error" field from JSON
+        const humanMsg =
+          typeof err.data === "object" &&
+          err.data !== null &&
+          "message" in (err.data as object)
+            ? String((err.data as Record<string, unknown>).message)
+            : err.message;
+        if (
+          errorCode === "site_scope_totp_invalid" ||
+          errorCode === "site_scope_totp_required" ||
+          errorCode === "site_scope_confirm_required" ||
+          errorCode === "site_scope_admin_required"
+        ) {
+          setSiteError(humanMsg);
+          setLoading(false);
+          return;
+        }
+        const url = new URL(params.redirect_uri);
+        url.searchParams.set("error", "server_error");
+        url.searchParams.set("error_description", humanMsg);
+        if (params.state) url.searchParams.set("state", params.state);
+        window.location.href = url.toString();
+      } else {
+        const url = new URL(params.redirect_uri);
+        url.searchParams.set("error", "server_error");
+        if (params.state) url.searchParams.set("state", params.state);
+        window.location.href = url.toString();
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Auto-approve first-party apps without showing the consent screen
+  const handlePasskeyVerify = async () => {
+    setSiteError(null);
+    setPasskeyLoading(true);
+    try {
+      const beginData = await api.passkeyVerifyBegin();
+      const authResponse = await startAuthentication({
+        optionsJSON: beginData as Parameters<
+          typeof startAuthentication
+        >[0]["optionsJSON"],
+      });
+      const result = await api.passkeyVerifyFinish(
+        (beginData as { challenge: string }).challenge,
+        authResponse,
+      );
+      setPasskeyVerifyToken(result.verify_token);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? typeof err.data === "object" &&
+            err.data !== null &&
+            "message" in (err.data as object)
+            ? String((err.data as Record<string, unknown>).message)
+            : err.message
+          : t("oauth.siteScopePasskeyFailed");
+      setSiteError(msg);
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
+
+  // Auto-approve first-party apps — but never skip consent for site-level scopes
   useEffect(() => {
-    if (data?.app.is_first_party && !autoApproved.current) {
+    if (
+      data?.app.is_first_party &&
+      !data.requires_site_grant &&
+      !autoApproved.current
+    ) {
       autoApproved.current = true;
       handleDecision("approve");
     }
@@ -256,7 +365,45 @@ export function Authorize() {
       label: t("oauth.scopeOfflineLabel"),
       desc: t("oauth.scopeOfflineDesc"),
     },
+    "site:user:read": {
+      label: t("oauth.scopeSiteUserReadLabel"),
+      desc: t("oauth.scopeSiteUserReadDesc"),
+    },
+    "site:user:write": {
+      label: t("oauth.scopeSiteUserWriteLabel"),
+      desc: t("oauth.scopeSiteUserWriteDesc"),
+    },
+    "site:user:delete": {
+      label: t("oauth.scopeSiteUserDeleteLabel"),
+      desc: t("oauth.scopeSiteUserDeleteDesc"),
+    },
+    "site:team:read": {
+      label: t("oauth.scopeSiteTeamReadLabel"),
+      desc: t("oauth.scopeSiteTeamReadDesc"),
+    },
+    "site:team:write": {
+      label: t("oauth.scopeSiteTeamWriteLabel"),
+      desc: t("oauth.scopeSiteTeamWriteDesc"),
+    },
+    "site:team:delete": {
+      label: t("oauth.scopeSiteTeamDeleteLabel"),
+      desc: t("oauth.scopeSiteTeamDeleteDesc"),
+    },
+    "site:config:read": {
+      label: t("oauth.scopeSiteConfigReadLabel"),
+      desc: t("oauth.scopeSiteConfigReadDesc"),
+    },
+    "site:config:write": {
+      label: t("oauth.scopeSiteConfigWriteLabel"),
+      desc: t("oauth.scopeSiteConfigWriteDesc"),
+    },
+    "site:token:revoke": {
+      label: t("oauth.scopeSiteTokenRevokeLabel"),
+      desc: t("oauth.scopeSiteTokenRevokeDesc"),
+    },
   };
+
+  const isSiteScope = (s: string) => s.startsWith("site:");
 
   return (
     <div className={styles.page}>
@@ -345,7 +492,7 @@ export function Authorize() {
           </Text>
           <div className={styles.scopeList}>
             {data.scopes
-              .filter((s) => !s.startsWith("app:"))
+              .filter((s) => !s.startsWith("app:") && !isSiteScope(s))
               .map((scope) => {
                 const info = SCOPE_INFO[scope];
                 return (
@@ -373,6 +520,222 @@ export function Authorize() {
                 );
               })}
           </div>
+
+          {/* Site-level scopes — danger section */}
+          {requiresSiteGrant && (
+            <div style={{ marginTop: 16 }}>
+              <div className={styles.siteScopeWarning}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <WarningRegular
+                    fontSize={20}
+                    style={{
+                      color: tokens.colorPaletteRedForeground1,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <Text
+                    weight="semibold"
+                    style={{ color: tokens.colorPaletteRedForeground1 }}
+                  >
+                    {t("oauth.siteScopeWarningTitle")}
+                  </Text>
+                </div>
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorPaletteRedForeground1 }}
+                >
+                  {t("oauth.siteScopeWarningDesc")}
+                </Text>
+                <div className={styles.scopeList} style={{ marginTop: 4 }}>
+                  {data.scopes.filter(isSiteScope).map((scope) => {
+                    const info = SCOPE_INFO[scope];
+                    return (
+                      <div key={scope} className={styles.scopeItem}>
+                        <ShieldRegular
+                          style={{
+                            color: tokens.colorPaletteRedForeground1,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <div>
+                          <Text weight="semibold" block size={300}>
+                            {info?.label ?? scope}
+                          </Text>
+                          {info?.desc && (
+                            <Text
+                              size={200}
+                              style={{ color: tokens.colorNeutralForeground3 }}
+                            >
+                              {info.desc}
+                            </Text>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {user.role !== "admin" ? (
+                <Text
+                  size={200}
+                  style={{
+                    color: tokens.colorPaletteRedForeground1,
+                    marginTop: 8,
+                    display: "block",
+                  }}
+                >
+                  {t("oauth.siteScopeAdminOnly")}
+                </Text>
+              ) : (
+                <div
+                  className={styles.siteScopeFields}
+                  style={{ marginTop: 12 }}
+                >
+                  <div className={styles.siteField}>
+                    {twoFaMode === "totp" ? (
+                      <>
+                        <Text
+                          size={200}
+                          weight="semibold"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          <LockClosedRegular fontSize={14} />
+                          {t("oauth.siteScopeRequires2FA")}
+                        </Text>
+                        <Text
+                          size={100}
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {t("oauth.siteScopeRequires2FAHint")}
+                        </Text>
+                        <Input
+                          value={totpCode}
+                          onChange={(_, d) => {
+                            setTotpCode(d.value);
+                            setSiteError(null);
+                          }}
+                          placeholder="000000"
+                          maxLength={8}
+                          style={{ fontFamily: "monospace", letterSpacing: 4 }}
+                        />
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          icon={<KeyRegular />}
+                          style={{ alignSelf: "flex-start", marginTop: 2 }}
+                          onClick={() => {
+                            setTwoFaMode("passkey");
+                            setTotpCode("");
+                            setSiteError(null);
+                          }}
+                        >
+                          {t("oauth.siteScopeUsePasskey")}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Text
+                          size={200}
+                          weight="semibold"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          <KeyRegular fontSize={14} />
+                          {t("oauth.siteScopePasskeyVerify")}
+                        </Text>
+                        {passkeyVerifyToken ? (
+                          <Text
+                            size={200}
+                            style={{
+                              color: tokens.colorPaletteGreenForeground1,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <CheckmarkRegular />
+                            {t("oauth.siteScopePasskeyVerified")}
+                          </Text>
+                        ) : (
+                          <Button
+                            appearance="primary"
+                            icon={
+                              passkeyLoading ? (
+                                <Spinner size="tiny" />
+                              ) : (
+                                <KeyRegular />
+                              )
+                            }
+                            disabled={passkeyLoading}
+                            onClick={handlePasskeyVerify}
+                          >
+                            {t("oauth.siteScopePasskeyVerify")}
+                          </Button>
+                        )}
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          icon={<LockClosedRegular />}
+                          style={{ alignSelf: "flex-start", marginTop: 2 }}
+                          onClick={() => {
+                            setTwoFaMode("totp");
+                            setPasskeyVerifyToken("");
+                            setSiteError(null);
+                          }}
+                        >
+                          {t("oauth.siteScopeUseTotp")}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  <div className={styles.siteField}>
+                    <Text size={200} weight="semibold">
+                      {t("oauth.siteScopeConfirmLabel")}
+                    </Text>
+                    <Text
+                      size={100}
+                      style={{ color: tokens.colorNeutralForeground3 }}
+                    >
+                      {t("oauth.siteScopeConfirmHint")}
+                    </Text>
+                    <Input
+                      value={confirmText}
+                      onChange={(_, d) => {
+                        setConfirmText(d.value);
+                        setSiteError(null);
+                      }}
+                      placeholder={t("oauth.siteScopeConfirmPlaceholder")}
+                    />
+                    {confirmText.length > 0 &&
+                      confirmText.trim().toLowerCase() !== confirmPhrase && (
+                        <Text
+                          size={100}
+                          style={{ color: tokens.colorPaletteRedForeground1 }}
+                        >
+                          {t("oauth.siteScopeConfirmMismatch")}
+                        </Text>
+                      )}
+                  </div>
+                  {siteError && (
+                    <Text
+                      size={200}
+                      style={{ color: tokens.colorPaletteRedForeground1 }}
+                    >
+                      {siteError}
+                    </Text>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* App-delegation scopes */}
           {(data.app_scopes ?? []).length > 0 && (
@@ -448,7 +811,11 @@ export function Authorize() {
           <Button
             appearance="primary"
             icon={loading ? <Spinner size="tiny" /> : <CheckmarkRegular />}
-            disabled={loading}
+            disabled={
+              loading ||
+              !siteGrantReady ||
+              (requiresSiteGrant && user.role !== "admin")
+            }
             onClick={() => handleDecision("approve")}
           >
             {t("oauth.authorize", { appName: data.app.name })}

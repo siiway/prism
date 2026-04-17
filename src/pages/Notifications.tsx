@@ -249,7 +249,9 @@ function getUniformTgAccountLevel(
 ): "brief" | "full" | null | "mixed" {
   const levels: Array<"brief" | "full" | null> = [];
   for (const ev of eventKeys) {
-    const entry = (rules[ev]?.tg ?? []).find((r) => r.connection_id === connectionId);
+    const entry = (rules[ev]?.tg ?? []).find(
+      (r) => r.connection_id === connectionId,
+    );
     levels.push(entry?.level ?? null);
   }
   return uniformLevel(levels);
@@ -538,10 +540,7 @@ function BulkLevelControls({
   onEmail: (level: "brief" | "full" | null) => void;
   onTg: (level: "brief" | "full" | null) => void;
   onEmailAccount: (emailId: string, level: "brief" | "full" | null) => void;
-  onTgAccount: (
-    connectionId: string,
-    level: "brief" | "full" | null,
-  ) => void;
+  onTgAccount: (connectionId: string, level: "brief" | "full" | null) => void;
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
@@ -736,7 +735,9 @@ export function Notifications() {
       const next = { ...prev };
       for (const ev of eventKeys) {
         const curr = next[ev] ?? {};
-        const rest = (curr.tg ?? []).filter((r) => r.connection_id !== connectionId);
+        const rest = (curr.tg ?? []).filter(
+          (r) => r.connection_id !== connectionId,
+        );
         next[ev] = {
           ...curr,
           tg: level ? [...rest, { connection_id: connectionId, level }] : rest,
