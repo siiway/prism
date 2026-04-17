@@ -54,12 +54,13 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "mermaid": "^11.14.0",
+    "prettier": "^3.8.3",
     "react-i18next-translation-checker": "^2.1.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.57.2",
     "vite": "^8.0.5",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
-    "wrangler": "^4.77.0"
+    "wrangler": "^4.83.0"
   }
 }

@@ -1019,7 +1019,10 @@ app.put("/me/notifications", async (c) => {
     if (Array.isArray(rule.tg)) {
       const tgEntries: typeof cleaned.tg = [];
       for (const entry of rule.tg) {
-        const { connection_id, level } = entry as unknown as Record<string, unknown>;
+        const { connection_id, level } = entry as unknown as Record<
+          string,
+          unknown
+        >;
         if (
           typeof connection_id === "string" &&
           connection_id.length > 0 &&
