@@ -67,6 +67,7 @@ export interface OAuthAppRow {
   client_secret: string;
   redirect_uris: string; // JSON string[]
   allowed_scopes: string; // JSON string[]
+  optional_scopes: string; // JSON string[]
   is_public: number;
   is_active: number;
   is_verified: number;

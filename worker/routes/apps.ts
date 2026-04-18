@@ -50,6 +50,21 @@ const VALID_PLATFORM_SCOPES = new Set([
   "admin:webhooks:delete",
   "webhooks:read",
   "webhooks:write",
+  "site:user:read",
+  "site:user:write",
+  "site:user:delete",
+  "site:team:read",
+  "site:team:write",
+  "site:team:delete",
+  "site:config:read",
+  "site:config:write",
+  "site:token:revoke",
+  "team:read",
+  "team:write",
+  "team:delete",
+  "team:member:read",
+  "team:member:write",
+  "team:member:profile:read",
   "offline_access",
 ]);
 
@@ -204,6 +219,7 @@ app.post("/", async (c) => {
     website_url?: string;
     redirect_uris: string[];
     allowed_scopes?: string[];
+    optional_scopes?: string[];
     oidc_fields?: string[];
     is_public?: boolean;
   }>();
@@ -222,8 +238,9 @@ app.post("/", async (c) => {
 
   const allowedScopes = (
     body.allowed_scopes ?? ["openid", "profile", "email"]
-  ).filter((s) =>
-    ["openid", "profile", "email", "apps:read", "offline_access"].includes(s),
+  ).filter(isAllowedScope);
+  const optionalScopes = (body.optional_scopes ?? []).filter((s) =>
+    allowedScopes.includes(s),
   );
 
   const id = randomId();
@@ -234,8 +251,8 @@ app.post("/", async (c) => {
   await c.env.DB.prepare(
     `INSERT INTO oauth_apps
        (id, owner_id, name, description, website_url, client_id, client_secret,
-        redirect_uris, allowed_scopes, oidc_fields, is_public, is_active, is_verified, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
+        redirect_uris, allowed_scopes, optional_scopes, oidc_fields, is_public, is_active, is_verified, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
   )
     .bind(
       id,
@@ -247,6 +264,7 @@ app.post("/", async (c) => {
       clientSecret,
       JSON.stringify(body.redirect_uris),
       JSON.stringify(allowedScopes),
+      JSON.stringify(optionalScopes),
       JSON.stringify(body.oidc_fields ?? []),
       body.is_public ? 1 : 0,
       now,
@@ -304,6 +322,7 @@ app.patch("/:id", async (c) => {
     website_url?: string;
     redirect_uris?: string[];
     allowed_scopes?: string[];
+    optional_scopes?: string[];
     oidc_fields?: string[];
     is_public?: boolean;
     use_jwt_tokens?: boolean;
@@ -335,6 +354,9 @@ app.patch("/:id", async (c) => {
   }
 
   const now = Math.floor(Date.now() / 1000);
+  const newAllowedScopes = body.allowed_scopes
+    ? body.allowed_scopes.filter(isAllowedScope)
+    : (JSON.parse(row.allowed_scopes) as string[]);
   const updated = {
     name: body.name ?? row.name,
     description: body.description ?? row.description,
@@ -344,9 +366,13 @@ app.patch("/:id", async (c) => {
     redirect_uris: body.redirect_uris
       ? JSON.stringify(body.redirect_uris)
       : row.redirect_uris,
-    allowed_scopes: body.allowed_scopes
-      ? JSON.stringify(body.allowed_scopes.filter(isAllowedScope))
-      : row.allowed_scopes,
+    allowed_scopes: JSON.stringify(newAllowedScopes),
+    optional_scopes:
+      body.optional_scopes !== undefined
+        ? JSON.stringify(
+            body.optional_scopes.filter((s) => newAllowedScopes.includes(s)),
+          )
+        : (row.optional_scopes ?? "[]"),
     oidc_fields: body.oidc_fields
       ? JSON.stringify(body.oidc_fields)
       : row.oidc_fields,
@@ -361,7 +387,7 @@ app.patch("/:id", async (c) => {
   };
 
   await c.env.DB.prepare(
-    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, updated_at=? WHERE id=?`,
+    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, updated_at=? WHERE id=?`,
   )
     .bind(
       updated.name,
@@ -370,6 +396,7 @@ app.patch("/:id", async (c) => {
       updated.website_url,
       updated.redirect_uris,
       updated.allowed_scopes,
+      updated.optional_scopes,
       updated.oidc_fields,
       updated.is_public,
       updated.use_jwt_tokens,
@@ -1185,6 +1212,7 @@ function safeApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
     client_id: row.client_id,
     redirect_uris: JSON.parse(row.redirect_uris) as string[],
     allowed_scopes: JSON.parse(row.allowed_scopes) as string[],
+    optional_scopes: JSON.parse(row.optional_scopes ?? "[]") as string[],
     oidc_fields: JSON.parse(row.oidc_fields ?? "[]") as string[],
     is_public: row.is_public === 1,
     is_active: row.is_active === 1,

@@ -14,7 +14,14 @@ import {
 } from "../lib/domainVerify";
 import { hmacSign } from "../lib/webhooks";
 import { proxyImageUrl } from "../lib/proxyImage";
-import { parseAppScope } from "../lib/scopes";
+import {
+  parseAppScope,
+  parseUnboundTeamScope,
+  parseBoundTeamScope,
+  bindTeamScopes,
+  UNBOUND_TEAM_SCOPES,
+  TEAM_PERMISSIONS,
+} from "../lib/scopes";
 import { deliverAppEvent } from "../lib/app-events";
 import { deliverUserEmailNotifications } from "../lib/notifications";
 import type {
@@ -91,6 +98,16 @@ function hasSiteScopes(scopes: string[]): boolean {
   return scopes.some((s) => SITE_SCOPES.has(s));
 }
 
+function hasUnboundTeamScopes(scopes: string[]): boolean {
+  return scopes.some((s) => UNBOUND_TEAM_SCOPES.has(s));
+}
+
+function unboundTeamPermissions(scopes: string[]): string[] {
+  return scopes
+    .map((s) => parseUnboundTeamScope(s))
+    .filter((p): p is string => p !== null);
+}
+
 // ─── Scope helpers ───────────────────────────────────────────────────────────
 
 /**
@@ -122,7 +139,9 @@ async function resolveRequestedScopes(
   }>;
 }> {
   const regular = requestedScopes.filter(
-    (s) => VALID_SCOPES.has(s) && allowedScopes.includes(s),
+    (s) =>
+      (VALID_SCOPES.has(s) || UNBOUND_TEAM_SCOPES.has(s)) &&
+      allowedScopes.includes(s),
   );
 
   const appScopeRequests = requestedScopes.filter((s) => {
@@ -422,6 +441,7 @@ app.get("/app-info", optionalAuth, async (c) => {
     client_id,
     redirect_uri,
     scope,
+    optional_scope,
     state,
     response_type,
     code_challenge,
@@ -463,6 +483,68 @@ app.get("/app-info", optionalAuth, async (c) => {
     ),
   ]);
 
+  // If the app requests team-scoped permissions, load the teams where the
+  // authenticated user is owner or admin so the consent UI can show a picker.
+  const needsTeamGrant = hasUnboundTeamScopes(scopes);
+  let userAdminTeams: Array<{
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    role: string;
+  }> = [];
+  if (needsTeamGrant && c.get("user")) {
+    const { results } = await c.env.DB.prepare(
+      `SELECT t.id, t.name, t.avatar_url, tm.role
+       FROM team_members tm JOIN teams t ON t.id = tm.team_id
+       WHERE tm.user_id = ? AND tm.role IN ('owner','co-owner','admin')
+       ORDER BY CASE tm.role WHEN 'owner' THEN 0 WHEN 'co-owner' THEN 1 ELSE 2 END, t.name ASC`,
+    )
+      .bind(c.get("user")!.id)
+      .all<{
+        id: string;
+        name: string;
+        avatar_url: string | null;
+        role: string;
+      }>();
+    userAdminTeams = results.map((t) => ({
+      ...t,
+      avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
+    }));
+  }
+
+  // Merge per-request optional_scope param with the app's stored optional_scopes.
+  // Only scopes actually present in the resolved request are kept.
+  const appOptionalScopes = JSON.parse(
+    oauthApp.optional_scopes ?? "[]",
+  ) as string[];
+  const requestOptionalScopes = (optional_scope ?? "")
+    .split(" ")
+    .filter(Boolean);
+  const optionalScopeSet = new Set([
+    ...appOptionalScopes,
+    ...requestOptionalScopes,
+  ]);
+  const optionalScopes = scopes.filter((s) => optionalScopeSet.has(s));
+
+  // Site-level scopes require admin role + 2FA enrolled.
+  let sitesScopesGrantable = false;
+  const currentUser = c.get("user");
+  if (hasSiteScopes(scopes) && currentUser?.role === "admin") {
+    const [totpRow, passkeyRow] = await Promise.all([
+      c.env.DB.prepare(
+        "SELECT id FROM totp_authenticators WHERE user_id = ? AND enabled = 1 LIMIT 1",
+      )
+        .bind(currentUser.id)
+        .first<{ id: string }>(),
+      c.env.DB.prepare(
+        "SELECT credential_id FROM passkeys WHERE user_id = ? LIMIT 1",
+      )
+        .bind(currentUser.id)
+        .first<{ credential_id: string }>(),
+    ]);
+    sitesScopesGrantable = !!(totpRow ?? passkeyRow);
+  }
+
   return c.json({
     app: {
       id: oauthApp.id,
@@ -476,6 +558,7 @@ app.get("/app-info", optionalAuth, async (c) => {
       is_first_party: oauthApp.is_first_party === 1,
     },
     scopes,
+    optional_scopes: optionalScopes,
     app_scopes: appScopes,
     redirect_uri,
     state,
@@ -487,6 +570,12 @@ app.get("/app-info", optionalAuth, async (c) => {
     site_scope_confirm_phrase: hasSiteScopes(scopes)
       ? SITE_SCOPE_CONFIRM_PHRASE
       : null,
+    site_scopes_grantable: sitesScopesGrantable,
+    requires_team_grant: needsTeamGrant,
+    team_grant_permissions: needsTeamGrant
+      ? unboundTeamPermissions(scopes)
+      : [],
+    user_admin_teams: userAdminTeams,
   });
 });
 
@@ -505,6 +594,7 @@ app.post("/authorize", requireAuth, async (c) => {
     totp_code?: string;
     passkey_verify_token?: string;
     confirm_text?: string;
+    team_id?: string;
   }>();
 
   if (body.action === "deny") {
@@ -534,7 +624,7 @@ app.post("/authorize", requireAuth, async (c) => {
     oauthApp.client_id,
   );
 
-  // Site-scope gate: admin-only, requires 2FA (TOTP or passkey) and confirmation phrase
+  // Site-scope gate: admin only, requires 2FA (TOTP or passkey) and confirmation phrase
   if (hasSiteScopes(scopes)) {
     if (user.role !== "admin") {
       return c.json(
@@ -582,15 +672,81 @@ app.post("/authorize", requireAuth, async (c) => {
     }
   }
 
+  // Team-scope gate: bind unbound team:* → team:<teamId>:* and validate membership
+  let boundScopes = scopes;
+  if (hasUnboundTeamScopes(scopes)) {
+    if (!body.team_id) {
+      return c.json(
+        {
+          error: "team_id_required",
+          message: "Select a team to grant access to.",
+        },
+        400,
+      );
+    }
+    // Verify the user is owner/admin/co-owner of the selected team
+    const membership = await c.env.DB.prepare(
+      "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
+    )
+      .bind(body.team_id, user.id)
+      .first<{ role: string }>();
+
+    if (
+      !membership ||
+      !["owner", "co-owner", "admin"].includes(membership.role)
+    ) {
+      return c.json(
+        {
+          error: "team_scope_forbidden",
+          message: "You must be a team owner or admin to grant team access.",
+        },
+        403,
+      );
+    }
+
+    // team:delete requires owner or co-owner
+    const requestsDelete = scopes.includes("team:delete");
+    if (requestsDelete && !["owner", "co-owner"].includes(membership.role)) {
+      return c.json(
+        {
+          error: "team_scope_owner_required",
+          message: "Only team owners can grant team deletion access.",
+        },
+        403,
+      );
+    }
+
+    boundScopes = bindTeamScopes(scopes, body.team_id);
+
+    // Audit log
+    const grantedPerms = scopes
+      .map((s) => parseUnboundTeamScope(s))
+      .filter((p): p is string => p !== null);
+    const grantNow = Math.floor(Date.now() / 1000);
+    await c.env.DB.prepare(
+      `INSERT INTO team_scope_grants (id, grantor_user_id, team_id, client_id, permissions, granted_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        randomId(),
+        user.id,
+        body.team_id,
+        body.client_id,
+        JSON.stringify(grantedPerms),
+        grantNow,
+      )
+      .run();
+  }
+
   // Store consent
   const now = Math.floor(Date.now() / 1000);
-  const siteScopes = scopes.filter((s) => SITE_SCOPES.has(s));
+  const siteScopes = boundScopes.filter((s) => SITE_SCOPES.has(s));
   await c.env.DB.prepare(
     `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(user_id, client_id) DO UPDATE SET scopes = excluded.scopes, granted_at = excluded.granted_at`,
   )
-    .bind(randomId(), user.id, body.client_id, JSON.stringify(scopes), now)
+    .bind(randomId(), user.id, body.client_id, JSON.stringify(boundScopes), now)
     .run();
 
   if (siteScopes.length > 0) {
@@ -616,7 +772,7 @@ app.post("/authorize", requireAuth, async (c) => {
       "oauth.consent_granted",
       {
         app_name: oauthApp.name,
-        scopes,
+        scopes: boundScopes,
       },
       c.env.APP_URL,
     ).catch(() => {}),
@@ -633,7 +789,7 @@ app.post("/authorize", requireAuth, async (c) => {
       body.client_id,
       user.id,
       body.redirect_uri,
-      JSON.stringify(scopes),
+      JSON.stringify(boundScopes),
       body.code_challenge ?? null,
       body.code_challenge_method ?? null,
       body.nonce ?? null,
@@ -650,7 +806,7 @@ app.post("/authorize", requireAuth, async (c) => {
   c.executionCtx.waitUntil(
     deliverAppEvent(c.env.DB, oauthApp.id, "user.token_granted", {
       user_id: user.id,
-      scopes,
+      scopes: boundScopes,
       granted_at: now,
     }).catch(() => {}),
   );
@@ -2202,6 +2358,204 @@ app.get("/me/site/users/:id", async (c) => {
 
   if (!user) return c.json({ error: "User not found" }, 404);
   return c.json({ user: proxyUserAvatar(c.env.APP_URL, user) });
+});
+
+// ─── Team-scoped OAuth routes ─────────────────────────────────────────────────
+// All routes below require a bound team scope: team:<teamId>:<permission>
+
+async function resolveTeamToken(
+  c: { req: { header(name: string): string | undefined }; env: Env },
+  teamId: string,
+  permission: string,
+): Promise<{ userId: string; scopes: string[] } | null> {
+  return resolveBearerToken(c, `team:${teamId}:${permission}`);
+}
+
+// GET /api/oauth/me/team/:teamId/info
+app.get("/me/team/:teamId/info", async (c) => {
+  const teamId = c.req.param("teamId");
+  const resolved = await resolveTeamToken(c, teamId, "read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const team = await c.env.DB.prepare(
+    "SELECT id, name, description, avatar_url, created_at FROM teams WHERE id = ?",
+  )
+    .bind(teamId)
+    .first<{
+      id: string;
+      name: string;
+      description: string | null;
+      avatar_url: string | null;
+      created_at: number;
+    }>();
+
+  if (!team) return c.json({ error: "Team not found" }, 404);
+  return c.json({
+    team: {
+      ...team,
+      avatar_url: proxyImageUrl(c.env.APP_URL, team.avatar_url),
+      unproxied_avatar_url: team.avatar_url,
+    },
+  });
+});
+
+// PATCH /api/oauth/me/team/:teamId/info
+app.patch("/me/team/:teamId/info", async (c) => {
+  const teamId = c.req.param("teamId");
+  const resolved = await resolveTeamToken(c, teamId, "write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<{
+    name?: string;
+    description?: string;
+    avatar_url?: string | null;
+  }>();
+  const updates: string[] = [];
+  const values: unknown[] = [];
+
+  if (body.name !== undefined) {
+    updates.push("name = ?");
+    values.push(body.name.trim());
+  }
+  if (body.description !== undefined) {
+    updates.push("description = ?");
+    values.push(body.description ?? null);
+  }
+  if ("avatar_url" in body) {
+    updates.push("avatar_url = ?");
+    values.push(body.avatar_url ?? null);
+  }
+
+  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  updates.push("updated_at = ?");
+  values.push(now, teamId);
+
+  await c.env.DB.prepare(`UPDATE teams SET ${updates.join(", ")} WHERE id = ?`)
+    .bind(...values)
+    .run();
+
+  const team = await c.env.DB.prepare(
+    "SELECT id, name, description, avatar_url, created_at FROM teams WHERE id = ?",
+  )
+    .bind(teamId)
+    .first();
+
+  return c.json({ team });
+});
+
+// GET /api/oauth/me/team/:teamId/members
+app.get("/me/team/:teamId/members", async (c) => {
+  const teamId = c.req.param("teamId");
+  const resolved = await resolveTeamToken(c, teamId, "member:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT tm.user_id, tm.role, tm.joined_at
+     FROM team_members tm WHERE tm.team_id = ? ORDER BY tm.joined_at ASC`,
+  )
+    .bind(teamId)
+    .all<{ user_id: string; role: string; joined_at: number }>();
+
+  return c.json({ members: results });
+});
+
+// GET /api/oauth/me/team/:teamId/members/:userId/profile
+app.get("/me/team/:teamId/members/:userId/profile", async (c) => {
+  const teamId = c.req.param("teamId");
+  const userId = c.req.param("userId");
+  const resolved = await resolveTeamToken(c, teamId, "member:profile:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const row = await c.env.DB.prepare(
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, tm.role, tm.joined_at
+     FROM team_members tm JOIN users u ON u.id = tm.user_id
+     WHERE tm.team_id = ? AND tm.user_id = ?`,
+  )
+    .bind(teamId, userId)
+    .first<{
+      id: string;
+      username: string;
+      display_name: string | null;
+      avatar_url: string | null;
+      role: string;
+      joined_at: number;
+    }>();
+
+  if (!row) return c.json({ error: "Member not found" }, 404);
+  return c.json({
+    member: {
+      ...row,
+      avatar_url: proxyImageUrl(c.env.APP_URL, row.avatar_url),
+      unproxied_avatar_url: row.avatar_url,
+    },
+  });
+});
+
+// POST /api/oauth/me/team/:teamId/members
+app.post("/me/team/:teamId/members", async (c) => {
+  const teamId = c.req.param("teamId");
+  const resolved = await resolveTeamToken(c, teamId, "member:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<{ user_id: string; role?: string }>();
+  if (!body.user_id) return c.json({ error: "user_id is required" }, 400);
+
+  const role = body.role === "admin" ? "admin" : "member";
+  const now = Math.floor(Date.now() / 1000);
+
+  const existing = await c.env.DB.prepare(
+    "SELECT user_id FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(teamId, body.user_id)
+    .first();
+  if (existing) return c.json({ error: "User is already a member" }, 409);
+
+  await c.env.DB.prepare(
+    "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+  )
+    .bind(teamId, body.user_id, role, now)
+    .run();
+
+  return c.json({ message: "Member added", user_id: body.user_id, role });
+});
+
+// PATCH /api/oauth/me/team/:teamId/members/:userId/role
+app.patch("/me/team/:teamId/members/:userId/role", async (c) => {
+  const teamId = c.req.param("teamId");
+  const userId = c.req.param("userId");
+  const resolved = await resolveTeamToken(c, teamId, "member:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const body = await c.req.json<{ role: string }>();
+  const allowed = ["member", "admin"];
+  if (!allowed.includes(body.role))
+    return c.json({ error: "Invalid role" }, 400);
+
+  await c.env.DB.prepare(
+    "UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(body.role, teamId, userId)
+    .run();
+
+  return c.json({ message: "Role updated", user_id: userId, role: body.role });
+});
+
+// DELETE /api/oauth/me/team/:teamId/members/:userId
+app.delete("/me/team/:teamId/members/:userId", async (c) => {
+  const teamId = c.req.param("teamId");
+  const userId = c.req.param("userId");
+  const resolved = await resolveTeamToken(c, teamId, "member:write");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  await c.env.DB.prepare(
+    "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(teamId, userId)
+    .run();
+
+  return c.json({ message: "Member removed" });
 });
 
 // GET /api/oauth/me/admin/config — read site config (requires admin:config:read)

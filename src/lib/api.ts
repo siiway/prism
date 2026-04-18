@@ -1359,6 +1359,7 @@ export interface OAuthApp {
   client_secret?: string;
   redirect_uris: string[];
   allowed_scopes: string[];
+  optional_scopes: string[];
   is_public: boolean;
   is_active: boolean;
   is_verified: boolean;
@@ -1378,6 +1379,7 @@ export interface CreateAppBody {
   website_url?: string;
   redirect_uris: string[];
   allowed_scopes?: string[];
+  optional_scopes?: string[];
   is_public?: boolean;
   use_jwt_tokens?: boolean;
 }
@@ -1436,6 +1438,7 @@ export interface OAuthAuthorizeInfo {
     is_first_party: boolean;
   };
   scopes: string[];
+  optional_scopes: string[];
   app_scopes: Array<{
     scope: string;
     client_id: string;
@@ -1450,6 +1453,15 @@ export interface OAuthAuthorizeInfo {
   user: UserProfile | null;
   requires_site_grant: boolean;
   site_scope_confirm_phrase: string | null;
+  site_scopes_grantable: boolean;
+  requires_team_grant: boolean;
+  team_grant_permissions: string[];
+  user_admin_teams: Array<{
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    role: string;
+  }>;
 }
 
 export interface OAuthApproveBody {
@@ -1462,7 +1474,9 @@ export interface OAuthApproveBody {
   nonce?: string;
   action: "approve" | "deny";
   totp_code?: string;
+  passkey_verify_token?: string;
   confirm_text?: string;
+  team_id?: string;
 }
 
 export interface AdminStats {

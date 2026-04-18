@@ -4,7 +4,10 @@ import {
   Avatar,
   Badge,
   Button,
+  Checkbox,
+  Dropdown,
   Input,
+  Option,
   Spinner,
   Text,
   Title2,
@@ -17,12 +20,13 @@ import {
   GlobeRegular,
   KeyRegular,
   LockClosedRegular,
+  PeopleRegular,
   PlugConnectedRegular,
   ShieldRegular,
   WarningRegular,
 } from "@fluentui/react-icons";
 import { startAuthentication } from "@simplewebauthn/browser";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -101,6 +105,15 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "4px",
   },
+  teamScopeSection: {
+    padding: "16px",
+    borderRadius: "8px",
+    border: `1.5px solid ${tokens.colorPaletteMarigoldBorder1}`,
+    background: tokens.colorPaletteMarigoldBackground1,
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  },
 });
 
 export function Authorize() {
@@ -127,25 +140,52 @@ export function Authorize() {
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const autoApproved = useRef(false);
 
+  const [selectedTeamId, setSelectedTeamId] = useState<string>("");
+  const [teamScopeError, setTeamScopeError] = useState<string | null>(null);
+  const [declinedScopes, setDeclinedScopes] = useState<Set<string>>(new Set());
+
+  const isSiteScope = useCallback((s: string) => s.startsWith("site:"), []);
+
+  // Auto-decline all site scopes when user has no 2FA enrolled
+  useEffect(() => {
+    if (!data?.requires_site_grant || data.site_scopes_grantable) return;
+    setDeclinedScopes((prev) => {
+      const next = new Set(prev);
+      data.scopes.filter(isSiteScope).forEach((s) => next.add(s));
+      return next;
+    });
+  }, [data?.requires_site_grant, data?.site_scopes_grantable]);
+
   const confirmPhrase = data?.site_scope_confirm_phrase ?? "grant site access";
   const requiresSiteGrant = data?.requires_site_grant ?? false;
+  const siteScoresGrantable = data?.site_scopes_grantable ?? false;
+  const requiresTeamGrant = data?.requires_team_grant ?? false;
+  // Site grant is "pending" only if there are still site scopes not yet declined
+  const hasPendingSiteScopes =
+    requiresSiteGrant &&
+    (data?.scopes ?? [])
+      .filter(isSiteScope)
+      .some((s) => !declinedScopes.has(s));
   const twoFaDone =
     twoFaMode === "passkey"
       ? passkeyVerifyToken.length > 0
       : totpCode.trim().length > 0;
   const siteGrantReady =
-    !requiresSiteGrant ||
+    !hasPendingSiteScopes ||
     (twoFaDone && confirmText.trim().toLowerCase() === confirmPhrase);
+  const teamGrantReady = !requiresTeamGrant || selectedTeamId.length > 0;
 
   const handleDecision = async (action: "approve" | "deny") => {
     if (!data) return;
     setSiteError(null);
+    setTeamScopeError(null);
     setLoading(true);
     try {
+      const approvedScopes = data.scopes.filter((s) => !declinedScopes.has(s));
       const res = await api.oauthApprove({
         client_id: params.client_id,
         redirect_uri: params.redirect_uri,
-        scope: data.scopes.join(" "),
+        scope: approvedScopes.join(" "),
         state: params.state,
         code_challenge: params.code_challenge,
         code_challenge_method: params.code_challenge_method,
@@ -158,6 +198,9 @@ export function Authorize() {
                 : { totp_code: totpCode.trim() }),
               confirm_text: confirmText.trim(),
             }
+          : {}),
+        ...(requiresTeamGrant && action === "approve"
+          ? { team_id: selectedTeamId }
           : {}),
       });
       window.location.href = res.redirect;
@@ -177,6 +220,15 @@ export function Authorize() {
           errorCode === "site_scope_admin_required"
         ) {
           setSiteError(humanMsg);
+          setLoading(false);
+          return;
+        }
+        if (
+          errorCode === "team_id_required" ||
+          errorCode === "team_scope_forbidden" ||
+          errorCode === "team_scope_owner_required"
+        ) {
+          setTeamScopeError(humanMsg);
           setLoading(false);
           return;
         }
@@ -226,11 +278,12 @@ export function Authorize() {
     }
   };
 
-  // Auto-approve first-party apps — but never skip consent for site-level scopes
+  // Auto-approve first-party apps — but never skip consent for site/team-level scopes
   useEffect(() => {
     if (
       data?.app.is_first_party &&
       !data.requires_site_grant &&
+      !data.requires_team_grant &&
       !autoApproved.current
     ) {
       autoApproved.current = true;
@@ -403,8 +456,6 @@ export function Authorize() {
     },
   };
 
-  const isSiteScope = (s: string) => s.startsWith("site:");
-
   return (
     <div className={styles.page}>
       <div className={styles.card}>
@@ -495,18 +546,43 @@ export function Authorize() {
               .filter((s) => !s.startsWith("app:") && !isSiteScope(s))
               .map((scope) => {
                 const info = SCOPE_INFO[scope];
+                const isOptional = (data.optional_scopes ?? []).includes(scope);
+                const isDeclined = declinedScopes.has(scope);
                 return (
                   <div key={scope} className={styles.scopeItem}>
-                    <CheckmarkRegular
-                      style={{
-                        color: tokens.colorBrandForeground1,
-                        flexShrink: 0,
-                      }}
-                    />
-                    <div>
+                    {isOptional ? (
+                      <Checkbox
+                        checked={!isDeclined}
+                        onChange={(_, d) => {
+                          setDeclinedScopes((prev) => {
+                            const next = new Set(prev);
+                            if (d.checked) next.delete(scope);
+                            else next.add(scope);
+                            return next;
+                          });
+                        }}
+                        style={{ flexShrink: 0 }}
+                      />
+                    ) : (
+                      <CheckmarkRegular
+                        style={{
+                          color: tokens.colorBrandForeground1,
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <div style={{ opacity: isDeclined ? 0.45 : 1 }}>
                       <Text weight="semibold" block size={300}>
                         {info?.label ?? scope}
                       </Text>
+                      {isOptional && (
+                        <Text
+                          size={100}
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {t("oauth.optionalScopeHint")}
+                        </Text>
+                      )}
                       {info?.desc && (
                         <Text
                           size={200}
@@ -521,8 +597,8 @@ export function Authorize() {
               })}
           </div>
 
-          {/* Site-level scopes — danger section */}
-          {requiresSiteGrant && (
+          {/* Site-level scopes — danger section (only visible when user has 2FA) */}
+          {requiresSiteGrant && siteScoresGrantable && (
             <div style={{ marginTop: 16 }}>
               <div className={styles.siteScopeWarning}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -549,15 +625,23 @@ export function Authorize() {
                 <div className={styles.scopeList} style={{ marginTop: 4 }}>
                   {data.scopes.filter(isSiteScope).map((scope) => {
                     const info = SCOPE_INFO[scope];
+                    const isDeclined = declinedScopes.has(scope);
                     return (
                       <div key={scope} className={styles.scopeItem}>
-                        <ShieldRegular
-                          style={{
-                            color: tokens.colorPaletteRedForeground1,
-                            flexShrink: 0,
+                        <Checkbox
+                          checked={!isDeclined}
+                          onChange={(_, d) => {
+                            setDeclinedScopes((prev) => {
+                              const next = new Set(prev);
+                              if (d.checked) next.delete(scope);
+                              else next.add(scope);
+                              return next;
+                            });
+                            setSiteError(null);
                           }}
+                          style={{ flexShrink: 0 }}
                         />
-                        <div>
+                        <div style={{ opacity: isDeclined ? 0.45 : 1 }}>
                           <Text weight="semibold" block size={300}>
                             {info?.label ?? scope}
                           </Text>
@@ -576,18 +660,7 @@ export function Authorize() {
                 </div>
               </div>
 
-              {user.role !== "admin" ? (
-                <Text
-                  size={200}
-                  style={{
-                    color: tokens.colorPaletteRedForeground1,
-                    marginTop: 8,
-                    display: "block",
-                  }}
-                >
-                  {t("oauth.siteScopeAdminOnly")}
-                </Text>
-              ) : (
+              {hasPendingSiteScopes && (
                 <div
                   className={styles.siteScopeFields}
                   style={{ marginTop: 12 }}
@@ -737,6 +810,128 @@ export function Authorize() {
             </div>
           )}
 
+          {/* Team-scoped permissions */}
+          {requiresTeamGrant && (
+            <div style={{ marginTop: 16 }}>
+              <div className={styles.teamScopeSection}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <PeopleRegular
+                    fontSize={20}
+                    style={{
+                      color: tokens.colorPaletteMarigoldForeground1,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <Text
+                    weight="semibold"
+                    style={{ color: tokens.colorPaletteMarigoldForeground1 }}
+                  >
+                    {t("oauth.teamScopeTitle")}
+                  </Text>
+                </div>
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground2 }}
+                >
+                  {t("oauth.teamScopeDesc")}
+                </Text>
+
+                {/* Requested permissions list */}
+                <div className={styles.scopeList}>
+                  {(data.team_grant_permissions ?? []).map((perm) => {
+                    const labelKey = `teamScopePerm${perm
+                      .split(":")
+                      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+                      .join("")}` as Parameters<typeof t>[0];
+                    return (
+                      <div key={perm} className={styles.scopeItem}>
+                        <CheckmarkRegular
+                          style={{
+                            color: tokens.colorPaletteMarigoldForeground1,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Text size={300}>
+                          {t(`oauth.${labelKey}` as Parameters<typeof t>[0])}
+                        </Text>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Team picker */}
+                {(data.user_admin_teams ?? []).length === 0 ? (
+                  <Text
+                    size={200}
+                    style={{ color: tokens.colorPaletteRedForeground1 }}
+                  >
+                    {t("oauth.teamScopeNoTeams")}
+                  </Text>
+                ) : (
+                  <div className={styles.siteField}>
+                    <Text size={200} weight="semibold">
+                      {t("oauth.teamScopeSelectLabel")}
+                    </Text>
+                    <Dropdown
+                      placeholder={t("oauth.teamScopeSelectPlaceholder")}
+                      value={
+                        data.user_admin_teams.find(
+                          (t) => t.id === selectedTeamId,
+                        )?.name ?? ""
+                      }
+                      selectedOptions={selectedTeamId ? [selectedTeamId] : []}
+                      onOptionSelect={(_, d) => {
+                        setSelectedTeamId(d.optionValue ?? "");
+                        setTeamScopeError(null);
+                      }}
+                    >
+                      {data.user_admin_teams.map((team) => (
+                        <Option key={team.id} value={team.id} text={team.name}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            {team.avatar_url ? (
+                              <Avatar
+                                image={{ src: team.avatar_url }}
+                                name={team.name}
+                                size={20}
+                              />
+                            ) : (
+                              <Avatar name={team.name} size={20} />
+                            )}
+                            <span>{team.name}</span>
+                            <Text
+                              size={100}
+                              style={{
+                                color: tokens.colorNeutralForeground3,
+                                marginLeft: 4,
+                              }}
+                            >
+                              {team.role}
+                            </Text>
+                          </div>
+                        </Option>
+                      ))}
+                    </Dropdown>
+                  </div>
+                )}
+
+                {teamScopeError && (
+                  <Text
+                    size={200}
+                    style={{ color: tokens.colorPaletteRedForeground1 }}
+                  >
+                    {teamScopeError}
+                  </Text>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* App-delegation scopes */}
           {(data.app_scopes ?? []).length > 0 && (
             <div style={{ marginTop: 12 }}>
@@ -811,11 +1006,7 @@ export function Authorize() {
           <Button
             appearance="primary"
             icon={loading ? <Spinner size="tiny" /> : <CheckmarkRegular />}
-            disabled={
-              loading ||
-              !siteGrantReady ||
-              (requiresSiteGrant && user.role !== "admin")
-            }
+            disabled={loading || !siteGrantReady || !teamGrantReady}
             onClick={() => handleDecision("approve")}
           >
             {t("oauth.authorize", { appName: data.app.name })}

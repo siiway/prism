@@ -77,14 +77,14 @@ const useStyles = makeStyles({
     fontFamily: "monospace",
     fontSize: tokens.fontSizeBase200,
   },
-  scopeGrid: { display: "flex", flexWrap: "wrap", gap: "8px" },
 });
 
-const SCOPES = [
+const PLATFORM_SCOPES = [
   "openid",
   "profile",
   "profile:write",
   "email",
+  "offline_access",
   "apps:read",
   "apps:write",
   "teams:read",
@@ -93,6 +93,12 @@ const SCOPES = [
   "teams:delete",
   "domains:read",
   "domains:write",
+  "gpg:read",
+  "gpg:write",
+  "social:read",
+  "social:write",
+  "webhooks:read",
+  "webhooks:write",
   "admin:users:read",
   "admin:users:write",
   "admin:users:delete",
@@ -104,8 +110,25 @@ const SCOPES = [
   "admin:webhooks:read",
   "admin:webhooks:write",
   "admin:webhooks:delete",
-  "offline_access",
+  "site:user:read",
+  "site:user:write",
+  "site:user:delete",
+  "site:team:read",
+  "site:team:write",
+  "site:team:delete",
+  "site:config:read",
+  "site:config:write",
+  "site:token:revoke",
+  "team:read",
+  "team:write",
+  "team:delete",
+  "team:member:read",
+  "team:member:write",
+  "team:member:profile:read",
 ];
+
+// Keep SCOPES alias for the app-permissions field (needs all non-offline scopes)
+const SCOPES = PLATFORM_SCOPES;
 
 // ─── App-delegation permissions UI ───────────────────────────────────────────
 
@@ -220,6 +243,80 @@ function AppPermissionsField({
             {t("apps.appPermissionsAdd")}
           </Button>
         </div>
+      </div>
+    </Field>
+  );
+}
+
+// ─── Scope picker field ───────────────────────────────────────────────────────
+
+interface ScopePickerFieldProps {
+  label: string;
+  hint?: string;
+  scopes: string[];
+  availableScopes: string[];
+  onChange: (scopes: string[]) => void;
+}
+
+function ScopePickerField({
+  label,
+  hint,
+  scopes,
+  availableScopes,
+  onChange,
+}: ScopePickerFieldProps) {
+  const { t } = useTranslation();
+  const addScope = (s: string) => {
+    if (!scopes.includes(s)) onChange([...scopes, s]);
+  };
+  const removeScope = (s: string) => onChange(scopes.filter((x) => x !== s));
+  const platformOpts = availableScopes.filter((s) => !scopes.includes(s));
+
+  return (
+    <Field label={label} hint={hint}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {scopes
+          .filter((s) => !s.startsWith("app:"))
+          .map((s) => (
+            <div
+              key={s}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "4px 8px",
+                background: tokens.colorNeutralBackground3,
+                borderRadius: 4,
+              }}
+            >
+              <Text size={200} style={{ flex: 1, fontFamily: "monospace" }}>
+                {s}
+              </Text>
+              <Button
+                appearance="subtle"
+                icon={<DismissRegular />}
+                size="small"
+                onClick={() => removeScope(s)}
+              />
+            </div>
+          ))}
+        {platformOpts.length > 0 && (
+          <Dropdown
+            placeholder={t("apps.allowedScopesPlaceholder")}
+            onOptionSelect={(_, d) => {
+              if (d.optionValue) addScope(d.optionValue);
+            }}
+            size="small"
+            selectedOptions={[]}
+            value=""
+          >
+            {platformOpts.map((s) => (
+              <Option key={s} value={s}>
+                {s}
+              </Option>
+            ))}
+          </Dropdown>
+        )}
       </div>
     </Field>
   );
@@ -639,6 +736,7 @@ export function AppDetail() {
     website_url: string;
     redirect_uris: string;
     allowed_scopes: string[];
+    optional_scopes: string[];
     is_public: boolean;
     use_jwt_tokens: boolean;
   } | null>(null);
@@ -671,6 +769,7 @@ export function AppDetail() {
       website_url: app.website_url ?? "",
       redirect_uris: app.redirect_uris.join("\n"),
       allowed_scopes: app.allowed_scopes,
+      optional_scopes: app.optional_scopes ?? [],
       is_public: app.is_public,
       use_jwt_tokens: app.use_jwt_tokens,
     });
@@ -690,6 +789,7 @@ export function AppDetail() {
           .map((s) => s.trim())
           .filter(Boolean),
         allowed_scopes: form.allowed_scopes,
+        optional_scopes: form.optional_scopes,
         is_public: form.is_public,
         use_jwt_tokens: form.use_jwt_tokens,
       });
@@ -867,24 +967,36 @@ export function AppDetail() {
                 rows={4}
               />
             </Field>
-            <Field label={t("apps.allowedScopes")}>
-              <div className={styles.scopeGrid}>
-                {SCOPES.map((s) => (
-                  <Checkbox
-                    key={s}
-                    id={`app-scope-${s}`}
-                    label={s}
-                    checked={form.allowed_scopes.includes(s)}
-                    onChange={(_, d) => {
-                      const scopes = d.checked
-                        ? [...form.allowed_scopes, s]
-                        : form.allowed_scopes.filter((x) => x !== s);
-                      setForm((f) => ({ ...f!, allowed_scopes: scopes }));
-                    }}
-                  />
-                ))}
-              </div>
-            </Field>
+            <ScopePickerField
+              label={t("apps.allowedScopes")}
+              hint={t("apps.allowedScopesHint")}
+              scopes={form.allowed_scopes.filter((s) => !s.startsWith("app:"))}
+              availableScopes={PLATFORM_SCOPES}
+              onChange={(scopes) =>
+                setForm((f) => ({
+                  ...f!,
+                  allowed_scopes: [
+                    ...scopes,
+                    ...f!.allowed_scopes.filter((s) => s.startsWith("app:")),
+                  ],
+                  optional_scopes: f!.optional_scopes.filter((s) =>
+                    scopes.includes(s),
+                  ),
+                }))
+              }
+            />
+
+            <ScopePickerField
+              label={t("apps.optionalScopes")}
+              hint={t("apps.optionalScopesHint")}
+              scopes={form.optional_scopes}
+              availableScopes={form.allowed_scopes.filter(
+                (s) => !s.startsWith("app:"),
+              )}
+              onChange={(scopes) =>
+                setForm((f) => ({ ...f!, optional_scopes: scopes }))
+              }
+            />
 
             <AppPermissionsField
               allowedScopes={form.allowed_scopes}
