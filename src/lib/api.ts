@@ -539,6 +539,8 @@ export const api = {
     request<OAuthAuthorizeInfo>(
       "GET",
       `/oauth/app-info?${new URLSearchParams(params)}`,
+      undefined,
+      getToken(),
     ),
   oauthApprove: (body: OAuthApproveBody) =>
     request<{ redirect: string }>("POST", "/oauth/authorize", body, getToken()),
