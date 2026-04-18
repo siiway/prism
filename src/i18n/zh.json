@@ -869,7 +869,9 @@
       "spectateEndpointPlaceholder": "/api/oauth/token",
       "spectateEndpointHint": "正在记录匹配该子字符串的路径的完整请求/响应体。",
       "clearSpectateLogs": "清空旁观日志",
-      "noResults": "暂无请求日志。请在上方调试控制中启用日志记录。"
+      "noResults": "暂无请求日志。请在上方调试控制中启用日志记录。",
+      "exportJson": "导出 JSON",
+      "exportCsv": "导出 CSV"
     },
     "captchaTitle": "验证码",
     "captchaProvider": "提供商",

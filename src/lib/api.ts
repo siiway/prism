@@ -658,6 +658,33 @@ export const api = {
       undefined,
       getToken(),
     ),
+  adminExportRequestLogs: async (
+    format: "json" | "csv",
+    filters: {
+      method?: string;
+      path?: string;
+      status?: string;
+      user_id?: string;
+    } = {},
+  ): Promise<void> => {
+    const qs = new URLSearchParams({ format });
+    if (filters.method) qs.set("method", filters.method);
+    if (filters.path) qs.set("path", filters.path);
+    if (filters.status) qs.set("status", filters.status);
+    if (filters.user_id) qs.set("user_id", filters.user_id);
+    const token = getToken();
+    const res = await fetch(`${BASE}/admin/request-logs/export?${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("Export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `request-logs-${Date.now()}.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   adminGetDebug: () =>
     request<{
       logging_enabled: boolean;

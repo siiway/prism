@@ -453,6 +453,7 @@ export function AdminLogs() {
   const [appliedPath, setAppliedPath] = useState("");
   const [appliedStatus, setAppliedStatus] = useState("");
   const [appliedUserId, setAppliedUserId] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: [
@@ -598,9 +599,51 @@ export function AdminLogs() {
       </div>
 
       {data && (
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          {data.total} {t("admin.logs.totalResults")}
-        </Text>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {data.total} {t("admin.logs.totalResults")}
+          </Text>
+          <Button
+            size="small"
+            appearance="subtle"
+            disabled={exporting || data.total === 0}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                await api.adminExportRequestLogs("json", {
+                  method: appliedMethod || undefined,
+                  path: appliedPath || undefined,
+                  status: appliedStatus || undefined,
+                  user_id: appliedUserId || undefined,
+                });
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {t("admin.logs.exportJson")}
+          </Button>
+          <Button
+            size="small"
+            appearance="subtle"
+            disabled={exporting || data.total === 0}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                await api.adminExportRequestLogs("csv", {
+                  method: appliedMethod || undefined,
+                  path: appliedPath || undefined,
+                  status: appliedStatus || undefined,
+                  user_id: appliedUserId || undefined,
+                });
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {t("admin.logs.exportCsv")}
+          </Button>
+        </div>
       )}
 
       {isLoading ? (

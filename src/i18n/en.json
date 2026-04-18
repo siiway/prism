@@ -869,7 +869,9 @@
       "spectateEndpointPlaceholder": "/api/oauth/token",
       "spectateEndpointHint": "Full request & response bodies are being recorded for paths matching this substring.",
       "clearSpectateLogs": "Clear spectate logs",
-      "noResults": "No request logs found. Enable logging in Debug Controls above."
+      "noResults": "No request logs found. Enable logging in Debug Controls above.",
+      "exportJson": "Export JSON",
+      "exportCsv": "Export CSV"
     },
     "captchaTitle": "Captcha",
     "captchaProvider": "Provider",

@@ -843,6 +843,114 @@ app.get("/request-logs", async (c) => {
   return c.json({ logs: rows.results, total: count?.n ?? 0, page, limit });
 });
 
+app.get("/request-logs/export", async (c) => {
+  const format = c.req.query("format") === "csv" ? "csv" : "json";
+  const qMethod = c.req.query("method") ?? "";
+  const qPath = c.req.query("path") ?? "";
+  const qStatus = c.req.query("status") ?? "";
+  const qUserId = c.req.query("user_id") ?? "";
+
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (qMethod) {
+    conditions.push("method = ?");
+    params.push(qMethod.toUpperCase());
+  }
+  if (qPath) {
+    conditions.push("path LIKE ?");
+    params.push(`%${qPath}%`);
+  }
+  if (qStatus) {
+    const s = parseInt(qStatus);
+    if (!isNaN(s)) {
+      if (s === 200) conditions.push("status >= 200 AND status < 300");
+      else if (s === 400) conditions.push("status >= 400 AND status < 500");
+      else if (s === 500) conditions.push("status >= 500");
+      else {
+        conditions.push("status = ?");
+        params.push(s);
+      }
+    }
+  }
+  if (qUserId) {
+    conditions.push("user_id = ?");
+    params.push(qUserId);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const rows = await c.env.DB.prepare(
+    `SELECT id, method, path, status, duration_ms, ip_address, user_agent, user_id, details, created_at FROM request_logs ${where} ORDER BY created_at DESC LIMIT 5000`,
+  )
+    .bind(...params)
+    .all<{
+      id: string;
+      method: string;
+      path: string;
+      status: number;
+      duration_ms: number;
+      ip_address: string | null;
+      user_agent: string | null;
+      user_id: string | null;
+      details: string | null;
+      created_at: number;
+    }>();
+
+  if (format === "csv") {
+    const escape = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+    const header =
+      "id,time,method,path,status,duration_ms,ip_address,user_id,user_agent,has_details\n";
+    const body = rows.results
+      .map((r) =>
+        [
+          r.id,
+          new Date(r.created_at * 1000).toISOString(),
+          r.method,
+          r.path,
+          r.status,
+          r.duration_ms,
+          r.ip_address ?? "",
+          r.user_id ?? "",
+          r.user_agent ?? "",
+          r.details ? "true" : "false",
+        ]
+          .map(escape)
+          .join(","),
+      )
+      .join("\n");
+    return new Response(header + body, {
+      headers: {
+        "Content-Type": "text/csv",
+        "Content-Disposition": `attachment; filename="request-logs-${Date.now()}.csv"`,
+      },
+    });
+  }
+
+  const data = rows.results.map((r) => ({
+    ...r,
+    time: new Date(r.created_at * 1000).toISOString(),
+    details: r.details
+      ? (() => {
+          try {
+            return JSON.parse(r.details!);
+          } catch {
+            return r.details;
+          }
+        })()
+      : null,
+  }));
+  return new Response(JSON.stringify(data, null, 2), {
+    headers: {
+      "Content-Type": "application/json",
+      "Content-Disposition": `attachment; filename="request-logs-${Date.now()}.json"`,
+    },
+  });
+});
+
 app.get("/request-logs/:id/details", async (c) => {
   const row = await c.env.DB.prepare(
     "SELECT details FROM request_logs WHERE id = ?",
