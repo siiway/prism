@@ -578,6 +578,7 @@ export function Authorize() {
                       {isOptional && (
                         <Text
                           size={100}
+                          block
                           style={{ color: tokens.colorNeutralForeground3 }}
                         >
                           {t("oauth.optionalScopeHint")}
@@ -586,7 +587,11 @@ export function Authorize() {
                       {info?.desc && (
                         <Text
                           size={200}
-                          style={{ color: tokens.colorNeutralForeground3 }}
+                          block
+                          style={{
+                            color: tokens.colorNeutralForeground3,
+                            ...(isOptional ? { marginTop: 2 } : {}),
+                          }}
                         >
                           {info.desc}
                         </Text>
@@ -597,8 +602,8 @@ export function Authorize() {
               })}
           </div>
 
-          {/* Site-level scopes — danger section (only visible when user has 2FA) */}
-          {requiresSiteGrant && siteScoresGrantable && (
+          {/* Site-level scopes — danger section */}
+          {requiresSiteGrant && (
             <div style={{ marginTop: 16 }}>
               <div className={styles.siteScopeWarning}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -630,6 +635,9 @@ export function Authorize() {
                       <div key={scope} className={styles.scopeItem}>
                         <Checkbox
                           checked={!isDeclined}
+                          disabled={
+                            user?.role !== "admin" || !siteScoresGrantable
+                          }
                           onChange={(_, d) => {
                             setDeclinedScopes((prev) => {
                               const next = new Set(prev);
@@ -660,153 +668,182 @@ export function Authorize() {
                 </div>
               </div>
 
-              {hasPendingSiteScopes && (
-                <div
-                  className={styles.siteScopeFields}
-                  style={{ marginTop: 12 }}
+              {user?.role !== "admin" && (
+                <Text
+                  size={200}
+                  style={{
+                    color: tokens.colorPaletteRedForeground1,
+                    marginTop: 8,
+                  }}
                 >
-                  <div className={styles.siteField}>
-                    {twoFaMode === "totp" ? (
-                      <>
-                        <Text
-                          size={200}
-                          weight="semibold"
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                          }}
-                        >
-                          <LockClosedRegular fontSize={14} />
-                          {t("oauth.siteScopeRequires2FA")}
-                        </Text>
-                        <Text
-                          size={100}
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          {t("oauth.siteScopeRequires2FAHint")}
-                        </Text>
-                        <Input
-                          value={totpCode}
-                          onChange={(_, d) => {
-                            setTotpCode(d.value);
-                            setSiteError(null);
-                          }}
-                          placeholder="000000"
-                          maxLength={8}
-                          style={{ fontFamily: "monospace", letterSpacing: 4 }}
-                        />
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          icon={<KeyRegular />}
-                          style={{ alignSelf: "flex-start", marginTop: 2 }}
-                          onClick={() => {
-                            setTwoFaMode("passkey");
-                            setTotpCode("");
-                            setSiteError(null);
-                          }}
-                        >
-                          {t("oauth.siteScopeUsePasskey")}
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Text
-                          size={200}
-                          weight="semibold"
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                          }}
-                        >
-                          <KeyRegular fontSize={14} />
-                          {t("oauth.siteScopePasskeyVerify")}
-                        </Text>
-                        {passkeyVerifyToken ? (
+                  {t("oauth.siteScopeAdminOnly")}
+                </Text>
+              )}
+
+              {user?.role === "admin" && !siteScoresGrantable && (
+                <Text
+                  size={200}
+                  style={{
+                    color: tokens.colorPaletteRedForeground1,
+                    marginTop: 8,
+                  }}
+                >
+                  {t("oauth.siteScopeNeeds2FA")}
+                </Text>
+              )}
+
+              {user?.role === "admin" &&
+                siteScoresGrantable &&
+                hasPendingSiteScopes && (
+                  <div
+                    className={styles.siteScopeFields}
+                    style={{ marginTop: 12 }}
+                  >
+                    <div className={styles.siteField}>
+                      {twoFaMode === "totp" ? (
+                        <>
                           <Text
                             size={200}
+                            weight="semibold"
                             style={{
-                              color: tokens.colorPaletteGreenForeground1,
                               display: "flex",
                               alignItems: "center",
                               gap: 6,
                             }}
                           >
-                            <CheckmarkRegular />
-                            {t("oauth.siteScopePasskeyVerified")}
+                            <LockClosedRegular fontSize={14} />
+                            {t("oauth.siteScopeRequires2FA")}
                           </Text>
-                        ) : (
-                          <Button
-                            appearance="primary"
-                            icon={
-                              passkeyLoading ? (
-                                <Spinner size="tiny" />
-                              ) : (
-                                <KeyRegular />
-                              )
-                            }
-                            disabled={passkeyLoading}
-                            onClick={handlePasskeyVerify}
+                          <Text
+                            size={100}
+                            style={{ color: tokens.colorNeutralForeground3 }}
                           >
-                            {t("oauth.siteScopePasskeyVerify")}
+                            {t("oauth.siteScopeRequires2FAHint")}
+                          </Text>
+                          <Input
+                            value={totpCode}
+                            onChange={(_, d) => {
+                              setTotpCode(d.value);
+                              setSiteError(null);
+                            }}
+                            placeholder="000000"
+                            maxLength={8}
+                            style={{
+                              fontFamily: "monospace",
+                              letterSpacing: 4,
+                            }}
+                          />
+                          <Button
+                            appearance="subtle"
+                            size="small"
+                            icon={<KeyRegular />}
+                            style={{ alignSelf: "flex-start", marginTop: 2 }}
+                            onClick={() => {
+                              setTwoFaMode("passkey");
+                              setTotpCode("");
+                              setSiteError(null);
+                            }}
+                          >
+                            {t("oauth.siteScopeUsePasskey")}
                           </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Text
+                            size={200}
+                            weight="semibold"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}
+                          >
+                            <KeyRegular fontSize={14} />
+                            {t("oauth.siteScopePasskeyVerify")}
+                          </Text>
+                          {passkeyVerifyToken ? (
+                            <Text
+                              size={200}
+                              style={{
+                                color: tokens.colorPaletteGreenForeground1,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <CheckmarkRegular />
+                              {t("oauth.siteScopePasskeyVerified")}
+                            </Text>
+                          ) : (
+                            <Button
+                              appearance="primary"
+                              icon={
+                                passkeyLoading ? (
+                                  <Spinner size="tiny" />
+                                ) : (
+                                  <KeyRegular />
+                                )
+                              }
+                              disabled={passkeyLoading}
+                              onClick={handlePasskeyVerify}
+                            >
+                              {t("oauth.siteScopePasskeyVerify")}
+                            </Button>
+                          )}
+                          <Button
+                            appearance="subtle"
+                            size="small"
+                            icon={<LockClosedRegular />}
+                            style={{ alignSelf: "flex-start", marginTop: 2 }}
+                            onClick={() => {
+                              setTwoFaMode("totp");
+                              setPasskeyVerifyToken("");
+                              setSiteError(null);
+                            }}
+                          >
+                            {t("oauth.siteScopeUseTotp")}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    <div className={styles.siteField}>
+                      <Text size={200} weight="semibold">
+                        {t("oauth.siteScopeConfirmLabel")}
+                      </Text>
+                      <Text
+                        size={100}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        {t("oauth.siteScopeConfirmHint")}
+                      </Text>
+                      <Input
+                        value={confirmText}
+                        onChange={(_, d) => {
+                          setConfirmText(d.value);
+                          setSiteError(null);
+                        }}
+                        placeholder={t("oauth.siteScopeConfirmPlaceholder")}
+                      />
+                      {confirmText.length > 0 &&
+                        confirmText.trim().toLowerCase() !== confirmPhrase && (
+                          <Text
+                            size={100}
+                            style={{ color: tokens.colorPaletteRedForeground1 }}
+                          >
+                            {t("oauth.siteScopeConfirmMismatch")}
+                          </Text>
                         )}
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          icon={<LockClosedRegular />}
-                          style={{ alignSelf: "flex-start", marginTop: 2 }}
-                          onClick={() => {
-                            setTwoFaMode("totp");
-                            setPasskeyVerifyToken("");
-                            setSiteError(null);
-                          }}
-                        >
-                          {t("oauth.siteScopeUseTotp")}
-                        </Button>
-                      </>
+                    </div>
+                    {siteError && (
+                      <Text
+                        size={200}
+                        style={{ color: tokens.colorPaletteRedForeground1 }}
+                      >
+                        {siteError}
+                      </Text>
                     )}
                   </div>
-                  <div className={styles.siteField}>
-                    <Text size={200} weight="semibold">
-                      {t("oauth.siteScopeConfirmLabel")}
-                    </Text>
-                    <Text
-                      size={100}
-                      style={{ color: tokens.colorNeutralForeground3 }}
-                    >
-                      {t("oauth.siteScopeConfirmHint")}
-                    </Text>
-                    <Input
-                      value={confirmText}
-                      onChange={(_, d) => {
-                        setConfirmText(d.value);
-                        setSiteError(null);
-                      }}
-                      placeholder={t("oauth.siteScopeConfirmPlaceholder")}
-                    />
-                    {confirmText.length > 0 &&
-                      confirmText.trim().toLowerCase() !== confirmPhrase && (
-                        <Text
-                          size={100}
-                          style={{ color: tokens.colorPaletteRedForeground1 }}
-                        >
-                          {t("oauth.siteScopeConfirmMismatch")}
-                        </Text>
-                      )}
-                  </div>
-                  {siteError && (
-                    <Text
-                      size={200}
-                      style={{ color: tokens.colorPaletteRedForeground1 }}
-                    >
-                      {siteError}
-                    </Text>
-                  )}
-                </div>
-              )}
+                )}
             </div>
           )}
 

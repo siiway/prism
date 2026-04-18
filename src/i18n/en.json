@@ -674,6 +674,7 @@
     "siteScopeWarningTitle": "Site-level access requested",
     "siteScopeWarningDesc": "This app is requesting unrestricted, site-wide access. These permissions bypass all per-user restrictions. Only grant this to applications you fully trust.",
     "siteScopeAdminOnly": "Only site administrators can authorize site-level scopes.",
+    "siteScopeNeeds2FA": "You must enroll in two-factor authentication (TOTP or passkey) before you can grant site-level permissions.",
     "optionalScopeHint": "Optional — you can decline this permission",
     "siteScopeRequires2FA": "Authenticator code",
     "siteScopeRequires2FAHint": "Enter your authenticator app code to proceed.",

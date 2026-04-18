@@ -674,6 +674,7 @@
     "siteScopeWarningTitle": "请求站点级访问权限",
     "siteScopeWarningDesc": "该应用请求不受限制的站点级访问权限，将绕过所有用户级限制。请仅向完全信任的应用授予此权限。",
     "siteScopeAdminOnly": "仅站点管理员可授权站点级权限。",
+    "siteScopeNeeds2FA": "您必须先启用双因素认证（TOTP 或通行密钥），才能授予站点级权限。",
     "optionalScopeHint": "可选 — 你可以拒绝此权限",
     "siteScopeRequires2FA": "验证器代码",
     "siteScopeRequires2FAHint": "请输入您的验证器应用代码以继续。",
