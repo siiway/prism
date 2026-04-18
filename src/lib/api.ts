@@ -659,13 +659,19 @@ export const api = {
   adminGetDebug: () =>
     request<{
       logging_enabled: boolean;
+      force_log_all: boolean;
       spectate_user_id: string | null;
       spectate_path: string | null;
+      log_except_pattern: string | null;
+      log_ip: string | null;
     }>("GET", "/admin/debug", undefined, getToken()),
   adminSetDebug: (body: {
     logging_enabled?: boolean;
+    force_log_all?: boolean;
     spectate_user_id?: string | null;
     spectate_path?: string | null;
+    log_except_pattern?: string | null;
+    log_ip?: string | null;
   }) => request<{ ok: boolean }>("POST", "/admin/debug", body, getToken()),
   adminClearRequestLogs: () =>
     request<{ ok: boolean }>(

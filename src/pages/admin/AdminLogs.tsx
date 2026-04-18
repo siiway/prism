@@ -128,6 +128,8 @@ function DebugControls() {
 
   const [spectateInput, setSpectateInput] = useState("");
   const [spectatePathInput, setSpectatePathInput] = useState("");
+  const [exceptInput, setExceptInput] = useState("");
+  const [logIpInput, setLogIpInput] = useState("");
 
   const mut = useMutation({
     mutationFn: api.adminSetDebug,
@@ -173,14 +175,144 @@ function DebugControls() {
         </Button>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      {/* Enable / Force log all */}
+      <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
         <Switch
           label={t("admin.logs.enableLogging")}
           checked={data?.logging_enabled ?? false}
           onChange={(_, d) => mut.mutate({ logging_enabled: d.checked })}
         />
+        <Switch
+          label={t("admin.logs.forceLogAll")}
+          checked={data?.force_log_all ?? false}
+          disabled={!(data?.logging_enabled ?? false)}
+          onChange={(_, d) => mut.mutate({ force_log_all: d.checked })}
+        />
+      </div>
+      {data?.force_log_all && (
+        <Text
+          size={200}
+          style={{ color: tokens.colorPaletteMarigoldForeground1 }}
+        >
+          {t("admin.logs.forceLogAllHint")}
+        </Text>
+      )}
+
+      {/* Except path */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+          {t("admin.logs.exceptPattern")}
+        </Text>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {data?.log_except_pattern ? (
+            <>
+              <Badge appearance="filled" color="subtle">
+                <span style={{ fontFamily: "monospace" }}>
+                  {data.log_except_pattern}
+                </span>
+              </Badge>
+              <Button
+                size="small"
+                appearance="subtle"
+                onClick={() => mut.mutate({ log_except_pattern: null })}
+              >
+                {t("admin.logs.clearExceptPattern")}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Input
+                placeholder={t("admin.logs.exceptPatternPlaceholder")}
+                value={exceptInput}
+                onChange={(e) => setExceptInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && exceptInput) {
+                    mut.mutate({ log_except_pattern: exceptInput });
+                    setExceptInput("");
+                  }
+                }}
+                style={{ minWidth: 220 }}
+              />
+              <Button
+                appearance="secondary"
+                size="small"
+                disabled={!exceptInput}
+                onClick={() => {
+                  if (exceptInput) {
+                    mut.mutate({ log_except_pattern: exceptInput });
+                    setExceptInput("");
+                  }
+                }}
+              >
+                {t("admin.logs.apply")}
+              </Button>
+            </>
+          )}
+        </div>
+        {data?.log_except_pattern && (
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("admin.logs.exceptPatternHint")}
+          </Text>
+        )}
       </div>
 
+      {/* IP filter */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+          {t("admin.logs.logIp")}
+        </Text>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {data?.log_ip ? (
+            <>
+              <Badge appearance="filled" color="brand">
+                <span style={{ fontFamily: "monospace" }}>{data.log_ip}</span>
+              </Badge>
+              <Button
+                size="small"
+                appearance="subtle"
+                onClick={() => mut.mutate({ log_ip: null })}
+              >
+                {t("admin.logs.clearIpFilter")}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Input
+                placeholder={t("admin.logs.logIpPlaceholder")}
+                value={logIpInput}
+                onChange={(e) => setLogIpInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && logIpInput) {
+                    mut.mutate({ log_ip: logIpInput });
+                    setLogIpInput("");
+                  }
+                }}
+                style={{ minWidth: 160 }}
+              />
+              <Button
+                appearance="secondary"
+                size="small"
+                disabled={!logIpInput}
+                onClick={() => {
+                  if (logIpInput) {
+                    mut.mutate({ log_ip: logIpInput });
+                    setLogIpInput("");
+                  }
+                }}
+              >
+                {t("admin.logs.apply")}
+              </Button>
+            </>
+          )}
+        </div>
+        {data?.log_ip && (
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("admin.logs.logIpHint")}
+          </Text>
+        )}
+      </div>
+
+      {/* Spectate user */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
           {t("admin.logs.spectateUser")}
@@ -239,6 +371,7 @@ function DebugControls() {
         )}
       </div>
 
+      {/* Spectate endpoint */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
           {t("admin.logs.spectateEndpoint")}

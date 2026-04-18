@@ -1,6 +1,9 @@
 // Request / response logger middleware
 // Disabled by default — enable via KV key "system:request_logging_enabled" = "true"
 // Spectate mode   — set KV key "system:spectate_user_id" to a user ID for full body logging
+// Force log all   — set KV key "system:force_log_all" = "true" to capture bodies for every request
+// Except pattern  — set KV key "system:log_except_pattern" to skip logging for matching paths
+// IP filter       — set KV key "system:log_ip" to restrict full-detail logging to one IP
 
 import type { MiddlewareHandler } from "hono";
 import type { Variables } from "../types";
@@ -69,41 +72,72 @@ function parseBody(text: string, contentType: string | null): unknown {
   return text.slice(0, 512);
 }
 
+function parseResBody(text: string, contentType: string | null): unknown {
+  if (!text) return undefined;
+  if (contentType?.includes("application/json")) {
+    try {
+      return redactObject(JSON.parse(text) as Record<string, unknown>);
+    } catch {
+      return text.slice(0, 2048);
+    }
+  }
+  return text.slice(0, 2048);
+}
+
 // ─── Module-level KV flag cache (avoids a KV read on every request) ───────────
 
 const FLAG_TTL_MS = 10_000; // re-check KV every 10 seconds
 
 let cachedLoggingEnabled: boolean = false;
+let cachedForceLogAll: boolean = false;
 let cachedSpectateUserId: string | null = null;
 let cachedSpectatePathPattern: string | null = null;
+let cachedExceptPattern: string | null = null;
+let cachedLogIp: string | null = null;
 let cacheExpiry: number = 0;
 
 async function getFlags(kv: KVNamespace): Promise<{
   loggingEnabled: boolean;
+  forceLogAll: boolean;
   spectateUserId: string | null;
   spectatePathPattern: string | null;
+  exceptPattern: string | null;
+  logIp: string | null;
 }> {
   const now = Date.now();
   if (now < cacheExpiry) {
     return {
       loggingEnabled: cachedLoggingEnabled,
+      forceLogAll: cachedForceLogAll,
       spectateUserId: cachedSpectateUserId,
       spectatePathPattern: cachedSpectatePathPattern,
+      exceptPattern: cachedExceptPattern,
+      logIp: cachedLogIp,
     };
   }
-  const [enabled, spectate, spectatePath] = await Promise.all([
-    kv.get("system:request_logging_enabled"),
-    kv.get("system:spectate_user_id"),
-    kv.get("system:spectate_path"),
-  ]);
+  const [enabled, forceAll, spectate, spectatePath, except_, logIp] =
+    await Promise.all([
+      kv.get("system:request_logging_enabled"),
+      kv.get("system:force_log_all"),
+      kv.get("system:spectate_user_id"),
+      kv.get("system:spectate_path"),
+      kv.get("system:log_except_pattern"),
+      kv.get("system:log_ip"),
+    ]);
   cachedLoggingEnabled = enabled === "true";
+  cachedForceLogAll = forceAll === "true";
   cachedSpectateUserId = spectate ?? null;
   cachedSpectatePathPattern = spectatePath ?? null;
+  cachedExceptPattern = except_ ?? null;
+  cachedLogIp = logIp ?? null;
   cacheExpiry = now + FLAG_TTL_MS;
   return {
     loggingEnabled: cachedLoggingEnabled,
+    forceLogAll: cachedForceLogAll,
     spectateUserId: cachedSpectateUserId,
     spectatePathPattern: cachedSpectatePathPattern,
+    exceptPattern: cachedExceptPattern,
+    logIp: cachedLogIp,
   };
 }
 
@@ -112,7 +146,6 @@ async function getFlags(kv: KVNamespace): Promise<{
 export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
   const start = Date.now();
 
-  // Read body before Hono consumes it (only needed for spectate details)
   const reqContentType = c.req.raw.headers.get("content-type");
   const reqBodyText = await c.req.raw
     .clone()
@@ -146,17 +179,32 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
     }),
   );
 
-  const { loggingEnabled, spectateUserId, spectatePathPattern } =
-    await getFlags(c.env.KV_SESSIONS);
+  const {
+    loggingEnabled,
+    forceLogAll,
+    spectateUserId,
+    spectatePathPattern,
+    exceptPattern,
+    logIp,
+  } = await getFlags(c.env.KV_SESSIONS);
+
   if (!loggingEnabled) return;
+
+  // Skip logging for excluded paths
+  if (exceptPattern && path.includes(exceptPattern)) return;
+
+  // IP filter: when set, only log requests from that IP
+  if (logIp && ip !== logIp) return;
 
   const isSpectatingUser = spectateUserId !== null && userId === spectateUserId;
   const isSpectatingPath =
     spectatePathPattern !== null && path.includes(spectatePathPattern);
   const isSpectating = isSpectatingUser || isSpectatingPath;
 
+  const captureDetails = forceLogAll || isSpectating;
+
   let details: string | null = null;
-  if (isSpectating) {
+  if (captureDetails) {
     const resContentType = c.res.headers.get("content-type");
     const resBodyText = await c.res
       .clone()
@@ -170,18 +218,7 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
       },
       res: {
         headers: redactHeaders(c.res.headers),
-        body:
-          resContentType?.includes("application/json") && resBodyText
-            ? (() => {
-                try {
-                  return redactObject(
-                    JSON.parse(resBodyText) as Record<string, unknown>,
-                  );
-                } catch {
-                  return resBodyText.slice(0, 2048);
-                }
-              })()
-            : resBodyText.slice(0, 2048),
+        body: parseResBody(resBodyText, resContentType),
       },
     });
   }

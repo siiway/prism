@@ -872,23 +872,39 @@ app.delete("/request-logs/spectate", async (c) => {
 });
 
 app.get("/debug", async (c) => {
-  const [enabled, spectateUserId, spectatePath] = await Promise.all([
+  const [
+    enabled,
+    forceAll,
+    spectateUserId,
+    spectatePath,
+    exceptPattern,
+    logIp,
+  ] = await Promise.all([
     c.env.KV_SESSIONS.get("system:request_logging_enabled"),
+    c.env.KV_SESSIONS.get("system:force_log_all"),
     c.env.KV_SESSIONS.get("system:spectate_user_id"),
     c.env.KV_SESSIONS.get("system:spectate_path"),
+    c.env.KV_SESSIONS.get("system:log_except_pattern"),
+    c.env.KV_SESSIONS.get("system:log_ip"),
   ]);
   return c.json({
     logging_enabled: enabled === "true",
+    force_log_all: forceAll === "true",
     spectate_user_id: spectateUserId ?? null,
     spectate_path: spectatePath ?? null,
+    log_except_pattern: exceptPattern ?? null,
+    log_ip: logIp ?? null,
   });
 });
 
 app.post("/debug", async (c) => {
   const body = await c.req.json<{
     logging_enabled?: boolean;
+    force_log_all?: boolean;
     spectate_user_id?: string | null;
     spectate_path?: string | null;
+    log_except_pattern?: string | null;
+    log_ip?: string | null;
   }>();
 
   await Promise.all([
@@ -896,6 +912,12 @@ app.post("/debug", async (c) => {
       ? c.env.KV_SESSIONS.put(
           "system:request_logging_enabled",
           body.logging_enabled ? "true" : "false",
+        )
+      : Promise.resolve(),
+    body.force_log_all !== undefined
+      ? c.env.KV_SESSIONS.put(
+          "system:force_log_all",
+          body.force_log_all ? "true" : "false",
         )
       : Promise.resolve(),
     "spectate_user_id" in body
@@ -910,6 +932,19 @@ app.post("/debug", async (c) => {
       ? body.spectate_path
         ? c.env.KV_SESSIONS.put("system:spectate_path", body.spectate_path)
         : c.env.KV_SESSIONS.delete("system:spectate_path")
+      : Promise.resolve(),
+    "log_except_pattern" in body
+      ? body.log_except_pattern
+        ? c.env.KV_SESSIONS.put(
+            "system:log_except_pattern",
+            body.log_except_pattern,
+          )
+        : c.env.KV_SESSIONS.delete("system:log_except_pattern")
+      : Promise.resolve(),
+    "log_ip" in body
+      ? body.log_ip
+        ? c.env.KV_SESSIONS.put("system:log_ip", body.log_ip)
+        : c.env.KV_SESSIONS.delete("system:log_ip")
       : Promise.resolve(),
   ]);
 
