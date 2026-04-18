@@ -3148,6 +3148,27 @@ async function buildClaims(
       }));
     }
   }
+
+  // Emit flat claims for explicitly bound team scopes (team:<teamId>:*)
+  const boundTeamIds = new Set<string>();
+  for (const s of scopes) {
+    const parsed = parseBoundTeamScope(s);
+    if (parsed) boundTeamIds.add(parsed.teamId);
+  }
+  if (boundTeamIds.size > 0) {
+    const placeholders = [...boundTeamIds].map(() => "?").join(", ");
+    const boundRows = await db
+      .prepare(
+        `SELECT t.id, tm.role FROM team_members tm JOIN teams t ON t.id = tm.team_id WHERE tm.user_id = ? AND t.id IN (${placeholders})`,
+      )
+      .bind(user.id, ...[...boundTeamIds])
+      .all<{ id: string; role: string }>();
+    for (const r of boundRows.results) {
+      claims[`in_team_${r.id}`] = true;
+      claims[`role_in_team_${r.id}`] = r.role;
+    }
+  }
+
   if (scopes.includes("apps:read") && wants("apps")) {
     const rows = await db
       .prepare(
