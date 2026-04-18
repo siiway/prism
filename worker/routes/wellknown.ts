@@ -2,8 +2,6 @@
 
 import { Hono } from "hono";
 import { getRsaKeyPair } from "../lib/config";
-import { getMLDSAKey } from "../lib/mldsa";
-import { bufToBase64url } from "../lib/crypto";
 import type { Variables } from "../types";
 
 const SCOPES_SUPPORTED = [
@@ -75,13 +73,9 @@ app.get("/openid-configuration", (c) => {
 });
 
 app.get("/jwks.json", async (c) => {
-  const [rsa, mldsa] = await Promise.all([
-    getRsaKeyPair(c.env.KV_SESSIONS),
-    getMLDSAKey(c.env.KV_SESSIONS),
-  ]);
+  const rsa = await getRsaKeyPair(c.env.KV_SESSIONS);
   return c.json({
     keys: [
-      // RS256 — OIDC ID tokens (backward compatible)
       {
         kty: rsa.publicKeyJwk.kty,
         use: "sig",
@@ -89,14 +83,6 @@ app.get("/jwks.json", async (c) => {
         kid: rsa.kid,
         n: rsa.publicKeyJwk.n,
         e: rsa.publicKeyJwk.e,
-      },
-      // ML-DSA-65 (NIST FIPS 204) — OAuth access tokens (post-quantum)
-      {
-        kty: "ML-DSA",
-        use: "sig",
-        alg: "ML-DSA-65",
-        kid: mldsa.kid,
-        pub: bufToBase64url(mldsa.publicKey),
       },
     ],
   });
