@@ -444,7 +444,11 @@ curl https://your-prism-domain/users/alice.gpg
 
 OAuth 回调自动处理。成功时重定向到 `/auth/callback?token=...`，失败时重定向到 `/connections?error=...`。
 
-### `DELETE /api/connections/:provider`
+### `POST /api/connections/:id/refresh`
+
+按连接 ID 刷新该关联账号的资料数据。适用于平台侧昵称 / 显示名变更后手动同步。
+
+### `DELETE /api/connections/:id`
 
 断开当前账号与提供商的关联。需要认证。
 

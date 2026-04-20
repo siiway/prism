@@ -905,6 +905,73 @@ app.post("/complete", async (c) => {
   return c.json({ error: "Invalid action" }, 400);
 });
 
+// Refresh profile data for a specific connection by ID
+app.post("/:id/refresh", requireAuth, async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const conn = await c.env.DB.prepare(
+    "SELECT id, provider, provider_user_id, access_token, connected_at FROM social_connections WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, user.id)
+    .first<
+      Pick<
+        SocialConnectionRow,
+        "id" | "provider" | "provider_user_id" | "access_token" | "connected_at"
+      >
+    >();
+  if (!conn) return c.json({ error: "Connection not found" }, 404);
+
+  const source = await resolveSource(c.env.DB, conn.provider);
+  if (!source) return c.json({ error: "provider_not_configured" }, 400);
+  if (source.provider === "telegram")
+    return c.json({ error: "unsupported_refresh" }, 400);
+  if (!conn.access_token) return c.json({ error: "no_access_token" }, 400);
+
+  let profileData: Record<string, unknown>;
+  try {
+    const userRes = await fetch(source.userUrl, {
+      headers: {
+        Authorization: `Bearer ${conn.access_token}`,
+        Accept: "application/json",
+        "User-Agent": "Prism/1.0",
+      },
+    });
+    if (!userRes.ok) {
+      const body = await userRes.text();
+      console.error(
+        `[connections] refresh profile fetch ${userRes.status} for ${source.provider}: ${body}`,
+      );
+      return c.json({ error: "profile_fetch_failed" }, 502);
+    }
+    profileData = (await userRes.json()) as Record<string, unknown>;
+  } catch (err) {
+    console.error("[connections] refresh profile fetch threw:", err);
+    return c.json({ error: "profile_fetch_failed" }, 502);
+  }
+
+  const providerUserId = extractProviderUserId(source.provider, profileData);
+  if (!providerUserId) return c.json({ error: "no_user_id" }, 502);
+  if (providerUserId !== conn.provider_user_id)
+    return c.json({ error: "account_mismatch" }, 409);
+
+  await c.env.DB.prepare(
+    "UPDATE social_connections SET profile_data = ? WHERE id = ? AND user_id = ?",
+  )
+    .bind(JSON.stringify(profileData), conn.id, user.id)
+    .run();
+
+  return c.json({
+    connection: {
+      id: conn.id,
+      provider: conn.provider,
+      provider_user_id: conn.provider_user_id,
+      profile: profileData,
+      connected_at: conn.connected_at,
+    },
+  });
+});
+
 // Disconnect a specific connection by ID
 app.delete("/:id", requireAuth, async (c) => {
   const user = c.get("user");

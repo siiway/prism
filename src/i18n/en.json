@@ -538,6 +538,9 @@
     "disconnectDesc": "{{name}} will be disconnected from your account. ",
     "disconnectWarning": "Make sure you have another sign-in method available.",
     "disconnectAction": "Disconnect",
+    "refreshAction": "Refresh linked info",
+    "refreshFailed": "Failed to refresh linked info",
+    "refreshedFrom": "Refreshed {{provider}} account info.",
     "detailNickname": "Nickname: {{value}}",
     "detailUsername": "Username: {{value}}",
     "detailId": "ID: {{value}}"

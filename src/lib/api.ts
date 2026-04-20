@@ -503,6 +503,13 @@ export const api = {
       "/connections/complete",
       body,
     ),
+  refreshConnection: (id: string) =>
+    request<{ connection: SocialConnection }>(
+      "POST",
+      `/connections/${id}/refresh`,
+      {},
+      getToken(),
+    ),
   disconnectConnection: (id: string) =>
     request<{ message: string }>(
       "DELETE",

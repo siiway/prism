@@ -445,7 +445,11 @@ Query params:
 
 OAuth callback handled automatically. Redirects to `/auth/callback?token=...` on success or `/connections?error=...` on failure.
 
-### `DELETE /api/connections/:provider`
+### `POST /api/connections/:id/refresh`
+
+Refreshes profile data for a linked account by connection ID. Useful when the provider-side nickname / display name changed.
+
+### `DELETE /api/connections/:id`
 
 Disconnects the provider from the current account. Requires auth.
 

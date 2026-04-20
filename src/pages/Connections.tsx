@@ -14,9 +14,14 @@ import {
   Text,
   Title2,
   makeStyles,
+  Spinner,
   tokens,
 } from "@fluentui/react-components";
-import { AddRegular, DeleteRegular } from "@fluentui/react-icons";
+import {
+  AddRegular,
+  ArrowClockwiseRegular,
+  DeleteRegular,
+} from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -81,6 +86,10 @@ const ERROR_MESSAGES: Record<string, string> = {
     "The response from Telegram could not be verified. Please try again.",
   auth_expired:
     "The Telegram authentication session expired. Please try again.",
+  unsupported_refresh:
+    "This provider does not support refreshing linked profile data.",
+  account_mismatch:
+    "Could not refresh this connection because the provider returned a different account.",
 };
 
 function getDisplayName(profile: unknown): string | null {
@@ -172,6 +181,9 @@ export function Connections() {
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [refreshingConnectionId, setRefreshingConnectionId] = useState<
+    string | null
+  >(null);
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -232,6 +244,24 @@ export function Connections() {
           ? err.message
           : t("connections.disconnectFailed"),
       );
+    }
+  };
+
+  const handleRefresh = async (id: string, providerName: string) => {
+    setRefreshingConnectionId(id);
+    try {
+      await api.refreshConnection(id);
+      await qc.invalidateQueries({ queryKey: ["connections"] });
+      showMsg("success", t("connections.refreshedFrom", { provider: providerName }));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? (ERROR_MESSAGES[err.message] ?? err.message)
+          : t("connections.refreshFailed"),
+      );
+    } finally {
+      setRefreshingConnectionId((curr) => (curr === id ? null : curr));
     }
   };
 
@@ -357,44 +387,60 @@ export function Connections() {
                       </Text>
                     </div>
 
-                    <Dialog>
-                      <DialogTrigger disableButtonEnhancement>
-                        <Button
-                          icon={<DeleteRegular />}
-                          appearance="subtle"
-                          size="small"
-                          title={t("connections.disconnectAction")}
-                        />
-                      </DialogTrigger>
-                      <DialogSurface>
-                        <DialogBody>
-                          <DialogTitle>
-                            {t("connections.disconnectTitle", {
-                              provider: p.name,
-                            })}
-                          </DialogTitle>
-                          <DialogContent>
-                            {displayName
-                              ? t("connections.disconnectDesc", {
-                                  name: displayName,
-                                })
-                              : null}{" "}
-                            {t("connections.disconnectWarning")}
-                          </DialogContent>
-                          <DialogActions>
-                            <DialogTrigger>
-                              <Button>{t("common.cancel")}</Button>
-                            </DialogTrigger>
-                            <Button
-                              appearance="primary"
-                              onClick={() => handleDisconnect(conn.id, p.name)}
-                            >
-                              {t("connections.disconnectAction")}
-                            </Button>
-                          </DialogActions>
-                        </DialogBody>
-                      </DialogSurface>
-                    </Dialog>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <Button
+                        icon={
+                          refreshingConnectionId === conn.id ? (
+                            <Spinner size="tiny" />
+                          ) : (
+                            <ArrowClockwiseRegular />
+                          )
+                        }
+                        appearance="subtle"
+                        size="small"
+                        title={t("connections.refreshAction")}
+                        onClick={() => handleRefresh(conn.id, p.name)}
+                        disabled={refreshingConnectionId === conn.id}
+                      />
+                      <Dialog>
+                        <DialogTrigger disableButtonEnhancement>
+                          <Button
+                            icon={<DeleteRegular />}
+                            appearance="subtle"
+                            size="small"
+                            title={t("connections.disconnectAction")}
+                          />
+                        </DialogTrigger>
+                        <DialogSurface>
+                          <DialogBody>
+                            <DialogTitle>
+                              {t("connections.disconnectTitle", {
+                                provider: p.name,
+                              })}
+                            </DialogTitle>
+                            <DialogContent>
+                              {displayName
+                                ? t("connections.disconnectDesc", {
+                                    name: displayName,
+                                  })
+                                : null}{" "}
+                              {t("connections.disconnectWarning")}
+                            </DialogContent>
+                            <DialogActions>
+                              <DialogTrigger>
+                                <Button>{t("common.cancel")}</Button>
+                              </DialogTrigger>
+                              <Button
+                                appearance="primary"
+                                onClick={() => handleDisconnect(conn.id, p.name)}
+                              >
+                                {t("connections.disconnectAction")}
+                              </Button>
+                            </DialogActions>
+                          </DialogBody>
+                        </DialogSurface>
+                      </Dialog>
+                    </div>
                   </div>
                 );
               })}

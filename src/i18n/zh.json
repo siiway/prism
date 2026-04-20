@@ -538,6 +538,9 @@
     "disconnectDesc": "{{name}} 将从您的账号断开连接。",
     "disconnectWarning": "请确保您有其他登录方式可用。",
     "disconnectAction": "断开连接",
+    "refreshAction": "刷新关联信息",
+    "refreshFailed": "刷新关联信息失败",
+    "refreshedFrom": "已刷新 {{provider}} 关联信息。",
     "detailNickname": "平台昵称：{{value}}",
     "detailUsername": "用户名：{{value}}",
     "detailId": "ID：{{value}}"
