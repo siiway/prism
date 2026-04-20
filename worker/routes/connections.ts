@@ -5,7 +5,10 @@ import { randomId, randomBase64url, sha256Hex } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { signJWT } from "../lib/jwt";
-import { deliverUserEmailNotifications } from "../lib/notifications";
+import {
+  deliverUserEmailNotifications,
+  notificationActorMetaFromHeaders,
+} from "../lib/notifications";
 import { proxyImageUrl } from "../lib/proxyImage";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -359,7 +362,10 @@ app.post("/:provider/tg-verify", async (c) => {
         c.env.DB,
         userId,
         "connection.added",
-        { provider_name: source.name },
+        {
+          provider_name: source.name,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
+        },
         c.env.APP_URL,
       ).catch(() => {}),
     );
@@ -414,7 +420,10 @@ app.post("/:provider/tg-verify", async (c) => {
         c.env.DB,
         user.id,
         "connection.login",
-        { provider_name: source.name },
+        {
+          provider_name: source.name,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
+        },
         c.env.APP_URL,
       ).catch(() => {}),
     );
@@ -597,7 +606,10 @@ app.get("/:provider/callback", async (c) => {
         c.env.DB,
         userId,
         "connection.added",
-        { provider_name: source.name },
+        {
+          provider_name: source.name,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
+        },
         c.env.APP_URL,
       ).catch(() => {}),
     );
@@ -675,7 +687,10 @@ app.get("/:provider/callback", async (c) => {
         c.env.DB,
         user.id,
         "connection.login",
-        { provider_name: source.name },
+        {
+          provider_name: source.name,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
+        },
         c.env.APP_URL,
       ).catch(() => {}),
     );
@@ -821,7 +836,10 @@ app.post("/complete", async (c) => {
         c.env.DB,
         user.id,
         "connection.login",
-        { provider_name: completeSource?.name ?? state.provider },
+        {
+          provider_name: completeSource?.name ?? state.provider,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
+        },
         c.env.APP_URL,
       ).catch(() => {}),
     );
@@ -998,7 +1016,10 @@ app.delete("/:id", requireAuth, async (c) => {
       c.env.DB,
       user.id,
       "connection.removed",
-      { provider_name: source?.name ?? conn.provider },
+      {
+        provider_name: source?.name ?? conn.provider,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
+      },
       c.env.APP_URL,
     ).catch(() => {}),
   );

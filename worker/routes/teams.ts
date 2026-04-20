@@ -10,7 +10,10 @@ import { proxyImageUrl } from "../lib/proxyImage";
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
 import { sendEmail } from "../lib/email";
-import { deliverUserEmailNotifications } from "../lib/notifications";
+import {
+  deliverUserEmailNotifications,
+  notificationActorMetaFromHeaders,
+} from "../lib/notifications";
 import type { OAuthAppRow, TeamMemberRow, TeamRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -361,6 +364,7 @@ app.post("/:id/members", async (c) => {
         {
           team_name: teamRow.name,
           role,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
         },
         c.env.APP_URL,
       ).catch(() => {}),
@@ -472,6 +476,7 @@ app.delete("/:id/members/:userId", async (c) => {
           "team.member_removed",
           {
             team_name: teamRow.name,
+            ...notificationActorMetaFromHeaders(c.req.raw.headers),
           },
           c.env.APP_URL,
         ).catch(() => {}),

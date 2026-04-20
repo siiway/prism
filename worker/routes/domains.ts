@@ -5,7 +5,10 @@ import { randomBase64url, randomId } from "../lib/crypto";
 import { getConfigValue } from "../lib/config";
 import { requireAuth } from "../middleware/auth";
 import { deliverUserWebhooks } from "../lib/webhooks";
-import { deliverUserEmailNotifications } from "../lib/notifications";
+import {
+  deliverUserEmailNotifications,
+  notificationActorMetaFromHeaders,
+} from "../lib/notifications";
 import type { DomainRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -93,6 +96,7 @@ app.post("/", async (c) => {
       {
         domain_id: id,
         domain,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
       },
       c.env.APP_URL,
     ).catch(() => {}),
@@ -163,6 +167,7 @@ app.post("/:id/verify", async (c) => {
         {
           domain_id: id,
           domain: row.domain,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
         },
         c.env.APP_URL,
       ).catch(() => {}),
@@ -313,6 +318,7 @@ app.delete("/:id", async (c) => {
       {
         domain_id: id,
         domain: row.domain,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
       },
       c.env.APP_URL,
     ).catch(() => {}),

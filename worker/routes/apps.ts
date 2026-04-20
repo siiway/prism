@@ -10,7 +10,10 @@ import { proxyImageUrl } from "../lib/proxyImage";
 import { parseAppScope } from "../lib/scopes";
 import { deliverAppEvent, APP_EVENT_TYPES } from "../lib/app-events";
 import { deliverUserWebhooks } from "../lib/webhooks";
-import { deliverUserEmailNotifications } from "../lib/notifications";
+import {
+  deliverUserEmailNotifications,
+  notificationActorMetaFromHeaders,
+} from "../lib/notifications";
 import type {
   OAuthAppRow,
   TeamMemberRow,
@@ -296,6 +299,7 @@ app.post("/", async (c) => {
       {
         app_id: id,
         name: body.name,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
       },
       c.env.APP_URL,
     ).catch(() => {}),
@@ -428,7 +432,11 @@ app.patch("/:id", async (c) => {
       c.env.DB,
       user.id,
       "app.updated",
-      { app_id: id, name: updated.name },
+      {
+        app_id: id,
+        name: updated.name,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
+      },
       c.env.APP_URL,
     ).catch(() => {}),
   );
@@ -492,7 +500,11 @@ app.delete("/:id", async (c) => {
       c.env.DB,
       user.id,
       "app.deleted",
-      { app_id: id, name: row.name },
+      {
+        app_id: id,
+        name: row.name,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
+      },
       c.env.APP_URL,
     ).catch(() => {}),
   );

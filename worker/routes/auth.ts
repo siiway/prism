@@ -31,7 +31,10 @@ import { verifyCaptchaToken } from "../middleware/captcha";
 import { rateLimitIp } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
-import { deliverUserEmailNotifications } from "../lib/notifications";
+import {
+  deliverUserEmailNotifications,
+  notificationActorMetaFromHeaders,
+} from "../lib/notifications";
 import type {
   AuthUser,
   PasskeyRow,
@@ -800,6 +803,7 @@ app.post("/totp/verify", requireAuth, async (c) => {
       "security.totp_enabled",
       {
         name: auth.name,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
       },
       c.env.APP_URL,
     ).catch(() => {}),
@@ -870,6 +874,7 @@ app.delete("/totp/:id", requireAuth, async (c) => {
       "security.totp_disabled",
       {
         name: auth.name,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
       },
       c.env.APP_URL,
     ).catch(() => {}),
@@ -1003,6 +1008,7 @@ app.post("/passkey/register/finish", requireAuth, async (c) => {
       "security.passkey_added",
       {
         name,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
       },
       c.env.APP_URL,
     ).catch(() => {}),
@@ -1254,6 +1260,7 @@ app.delete("/passkeys/:id", requireAuth, async (c) => {
         "security.passkey_removed",
         {
           name: row.name,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
         },
         c.env.APP_URL,
       ).catch(() => {}),

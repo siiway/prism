@@ -87,6 +87,71 @@ function safeUrl(url: string): string {
   }
 }
 
+/** Extract operator metadata from request headers for notification payloads. */
+export function notificationActorMetaFromHeaders(
+  headers: Headers,
+): Record<string, string> {
+  const ip = headers.get("CF-Connecting-IP");
+  const userAgent = headers.get("user-agent") ?? null;
+  const meta: Record<string, string> = {};
+  if (ip) meta.operator_ip = ip;
+  if (userAgent) meta.operator_user_agent = userAgent;
+  return meta;
+}
+
+type OperatorMeta = { ip: string | null; userAgent: string | null };
+
+function normalizeMetaValue(value: unknown, maxLen = 512): string | null {
+  if (typeof value !== "string") return null;
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (!compact) return null;
+  return compact.length > maxLen ? `${compact.slice(0, maxLen - 1)}…` : compact;
+}
+
+function getOperatorMeta(data: Record<string, unknown>): OperatorMeta {
+  return {
+    ip: normalizeMetaValue(data.operator_ip ?? data.ip_address ?? data.ip),
+    userAgent: normalizeMetaValue(
+      data.operator_user_agent ?? data.user_agent ?? data.userAgent,
+    ),
+  };
+}
+
+function withEmailOperatorMeta(
+  content: EmailContent,
+  data: Record<string, unknown>,
+  level: NotificationLevel,
+): EmailContent {
+  const meta = getOperatorMeta(data);
+  if (!meta.ip && !meta.userAgent) return content;
+
+  const rows =
+    (meta.ip ? detail("Operator IP", esc(meta.ip)) : "") +
+    (meta.userAgent ? detail("Operator User-Agent", esc(meta.userAgent)) : "");
+  const htmlMeta =
+    level === "full"
+      ? p("Operator metadata:") + table(rows)
+      : p(
+          `Operator metadata: ${meta.ip ? `IP ${esc(meta.ip)}` : ""}${meta.ip && meta.userAgent ? " · " : ""}${meta.userAgent ? `User-Agent ${esc(meta.userAgent)}` : ""}`,
+        );
+
+  const footerDivider =
+    '<hr style="border:none;border-top:1px solid #e4e4e7;margin:32px 0 16px">';
+  const html = content.html.includes(footerDivider)
+    ? content.html.replace(footerDivider, `${htmlMeta}${footerDivider}`)
+    : `${content.html}${htmlMeta}`;
+  const textMeta = [
+    "Operator metadata:",
+    ...(meta.ip ? [`IP: ${meta.ip}`] : []),
+    ...(meta.userAgent ? [`User-Agent: ${meta.userAgent}`] : []),
+  ].join("\n");
+  return {
+    ...content,
+    html,
+    text: `${content.text}\n\n${textMeta}`,
+  };
+}
+
 // ─── HTML template helpers ────────────────────────────────────────────────────
 
 function wrap(
@@ -804,6 +869,19 @@ function buildTelegramMessage(
   }
 }
 
+function withTelegramOperatorMeta(
+  message: string,
+  data: Record<string, unknown>,
+): string {
+  const meta = getOperatorMeta(data);
+  if (!meta.ip && !meta.userAgent) return message;
+  const lines: string[] = [];
+  if (meta.ip) lines.push(`• IP: <code>${tgEsc(meta.ip)}</code>`);
+  if (meta.userAgent)
+    lines.push(`• User-Agent: <code>${tgEsc(meta.userAgent)}</code>`);
+  return `${message}\n\n🧭 Operator metadata\n${lines.join("\n")}`;
+}
+
 // ─── Rules helpers ────────────────────────────────────────────────────────────
 
 import type { NotificationRules } from "../types";
@@ -896,7 +974,7 @@ async function sendTelegramNotification(
     .first<{ display_name: string }>();
   if (!user) return;
 
-  const text = buildTelegramMessage(
+  const baseText = buildTelegramMessage(
     event,
     data,
     config.site_name,
@@ -904,7 +982,8 @@ async function sendTelegramNotification(
     user.display_name,
     level,
   );
-  if (!text) return;
+  if (!baseText) return;
+  const text = withTelegramOperatorMeta(baseText, data);
 
   await fetch(
     `https://api.telegram.org/bot${source.client_secret}/sendMessage`,
@@ -998,14 +1077,19 @@ export async function deliverUserEmailNotifications(
       }
 
       if (emailAddress && user) {
-        const { subject, html, text } = buildEmail(
-          event,
+        const content = withEmailOperatorMeta(
+          buildEmail(
+            event,
+            data,
+            config.site_name,
+            appUrl,
+            user.display_name,
+            emailRule.level,
+          ),
           data,
-          config.site_name,
-          appUrl,
-          user.display_name,
           emailRule.level,
         );
+        const { subject, html, text } = content;
         tasks.push(
           sendEmail(
             { to: emailAddress, subject, html, text },

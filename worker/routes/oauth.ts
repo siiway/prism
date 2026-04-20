@@ -23,7 +23,10 @@ import {
   TEAM_PERMISSIONS,
 } from "../lib/scopes";
 import { deliverAppEvent } from "../lib/app-events";
-import { deliverUserEmailNotifications } from "../lib/notifications";
+import {
+  deliverUserEmailNotifications,
+  notificationActorMetaFromHeaders,
+} from "../lib/notifications";
 import type {
   OAuthAppRow,
   OAuthCodeRow,
@@ -419,6 +422,7 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
           "oauth.consent_revoked",
           {
             app_name: appRow.name,
+            ...notificationActorMetaFromHeaders(c.req.raw.headers),
           },
           c.env.APP_URL,
         ).catch(() => {}),
@@ -773,6 +777,7 @@ app.post("/authorize", requireAuth, async (c) => {
       {
         app_name: oauthApp.name,
         scopes: boundScopes,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
       },
       c.env.APP_URL,
     ).catch(() => {}),

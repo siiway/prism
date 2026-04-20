@@ -13,6 +13,7 @@ import { validateImageUrl } from "../lib/imageValidation";
 import { hmacSign, deliverUserWebhooks } from "../lib/webhooks";
 import {
   deliverUserEmailNotifications,
+  notificationActorMetaFromHeaders,
   USER_NOTIFICATION_EVENTS,
   parsePrefsEvents,
   parseNotificationRules,
@@ -124,7 +125,10 @@ app.patch("/me", async (c) => {
       c.env.DB,
       user.id,
       "profile.updated",
-      { changed_fields: changedFields },
+      {
+        changed_fields: changedFields,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
+      },
       c.env.APP_URL,
     ).catch(() => {}),
   );
@@ -587,6 +591,7 @@ app.post("/tokens", async (c) => {
       {
         name: body.name.trim(),
         scopes,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
       },
       c.env.APP_URL,
     ).catch(() => {}),
@@ -629,6 +634,7 @@ app.delete("/tokens/:id", async (c) => {
       "token.revoked",
       {
         name: row.name,
+        ...notificationActorMetaFromHeaders(c.req.raw.headers),
       },
       c.env.APP_URL,
     ).catch(() => {}),
