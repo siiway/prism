@@ -1030,6 +1030,25 @@ export function AppDetail() {
       {tab === "permissions" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
           <div className={styles.card}>
+            <Field label={t("apps.scopeIdLabel")} hint={t("apps.scopeIdHint")}>
+              <div className={styles.secretRow}>
+                <Text style={{ flex: 1, fontFamily: "monospace" }}>
+                  {app.client_id}
+                </Text>
+                <Button
+                  icon={<CopyRegular />}
+                  size="small"
+                  appearance="subtle"
+                  onClick={() => copy(app.client_id, "scope-id")}
+                >
+                  {copied === "scope-id"
+                    ? t("apps.copied")
+                    : t("apps.copyScopeId")}
+                </Button>
+              </div>
+            </Field>
+          </div>
+          <div className={styles.card}>
             <ScopeDefinitionsPanel appId={id!} />
           </div>
           <div className={styles.card}>
