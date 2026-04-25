@@ -15,7 +15,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
-import type { Domain, DomainAddResponse } from "../lib/api";
+import type { Domain, DomainAddResponse, VerificationMethod } from "../lib/api";
 import { DomainDetailDialog } from "./domains/dialogs/DomainDetailDialog";
 import { TransferDomainDialog } from "./domains/dialogs/TransferDomainDialog";
 import { ShareDomainDialog } from "./domains/dialogs/ShareDomainDialog";
@@ -72,15 +72,15 @@ export function Domains() {
     }
   };
 
-  const handleVerify = async (id: string) => {
+  const handleVerify = async (id: string, method?: VerificationMethod) => {
     setVerifying(id);
     try {
-      const res = await api.verifyDomain(id);
+      const res = await api.verifyDomain(id, method);
       if (res.verified) {
         showMsg("success", t("domains.domainVerified"));
         await qc.invalidateQueries({ queryKey: ["domains"] });
       } else {
-        showMsg("error", t("domains.txtRecordNotFound"));
+        showMsg("error", t("domains.verificationCheckFailed"));
       }
     } catch (err) {
       showMsg(

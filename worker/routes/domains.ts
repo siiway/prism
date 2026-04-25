@@ -9,6 +9,13 @@ import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
+import {
+  checkMethod,
+  isVerificationMethod,
+  methodInstructions,
+  tryAnyMethod,
+  type VerificationMethod,
+} from "../lib/domainOwnership";
 import type { DomainRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -58,6 +65,8 @@ app.post("/", async (c) => {
     .bind(id, user.id, body.app_id ?? null, domain, verificationToken, now)
     .run();
 
+  const instructions = methodInstructions(domain, verificationToken);
+
   // Auto-verify if the user already owns a verified parent domain
   const parent = await verifiedParentDomain(c.env.DB, user.id, domain);
   if (parent) {
@@ -73,8 +82,7 @@ app.post("/", async (c) => {
         id,
         domain,
         verification_token: verificationToken,
-        txt_record: `_prism-verify.${domain}`,
-        txt_value: `prism-verify=${verificationToken}`,
+        ...instructions,
         verified: true,
         verified_by_parent: parent,
       },
@@ -106,15 +114,15 @@ app.post("/", async (c) => {
       id,
       domain,
       verification_token: verificationToken,
-      txt_record: `_prism-verify.${domain}`,
-      txt_value: `prism-verify=${verificationToken}`,
+      ...instructions,
       verified: false,
     },
     201,
   );
 });
 
-// Verify domain (check DNS TXT record)
+// Verify domain. Body: { method?: "dns-txt" | "http-file" | "html-meta" }
+// If method is omitted, every method is tried until one succeeds.
 app.post("/:id/verify", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -126,6 +134,22 @@ app.post("/:id/verify", async (c) => {
     .first<DomainRow>();
   if (!row) return c.json({ error: "Domain not found" }, 404);
 
+  let requestedMethod: VerificationMethod | null = null;
+  try {
+    const body = (await c.req
+      .json<{ method?: unknown }>()
+      .catch(() => ({}))) as {
+      method?: unknown;
+    };
+    if (body.method !== undefined) {
+      if (!isVerificationMethod(body.method))
+        return c.json({ error: "Invalid verification method" }, 400);
+      requestedMethod = body.method;
+    }
+  } catch {
+    // empty body — treat as auto
+  }
+
   const reverifyDays = await getConfigValue(c.env.DB, "domain_reverify_days");
   const now = Math.floor(Date.now() / 1000);
   const nextReverify = now + reverifyDays * 24 * 60 * 60;
@@ -134,7 +158,7 @@ app.post("/:id/verify", async (c) => {
   const parent = await verifiedParentDomain(c.env.DB, user.id, row.domain);
   if (parent) {
     await c.env.DB.prepare(
-      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ?, verification_method = NULL WHERE id = ?",
     )
       .bind(now, nextReverify, id)
       .run();
@@ -145,18 +169,23 @@ app.post("/:id/verify", async (c) => {
     });
   }
 
-  const verified = await checkDnsTxtRecord(row.domain, row.verification_token);
+  const succeededMethod: VerificationMethod | null = requestedMethod
+    ? (await checkMethod(requestedMethod, row.domain, row.verification_token))
+      ? requestedMethod
+      : null
+    : await tryAnyMethod(row.domain, row.verification_token);
 
-  if (verified) {
+  if (succeededMethod) {
     await c.env.DB.prepare(
-      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ?, verification_method = ? WHERE id = ?",
     )
-      .bind(now, nextReverify, id)
+      .bind(now, nextReverify, succeededMethod, id)
       .run();
     c.executionCtx.waitUntil(
       deliverUserWebhooks(c.env.DB, user.id, "domain.verified", {
         domain_id: id,
         domain: row.domain,
+        verification_method: succeededMethod,
       }).catch(() => {}),
     );
     c.executionCtx.waitUntil(
@@ -167,18 +196,25 @@ app.post("/:id/verify", async (c) => {
         {
           domain_id: id,
           domain: row.domain,
+          verification_method: succeededMethod,
           ...notificationActorMetaFromHeaders(c.req.raw.headers),
         },
         c.env.APP_URL,
       ).catch(() => {}),
     );
-    return c.json({ verified: true, next_reverify_at: nextReverify });
+    return c.json({
+      verified: true,
+      next_reverify_at: nextReverify,
+      verification_method: succeededMethod,
+    });
   }
 
+  const instructions = methodInstructions(row.domain, row.verification_token);
   return c.json(
     {
       verified: false,
-      message: `Add TXT record: _prism-verify.${row.domain} = prism-verify=${row.verification_token}`,
+      attempted_method: requestedMethod,
+      instructions,
     },
     200,
   );
@@ -348,33 +384,6 @@ async function verifiedParentDomain(
     if (row) return row.domain;
   }
   return null;
-}
-
-// ─── DNS verification ─────────────────────────────────────────────────────────
-
-async function checkDnsTxtRecord(
-  domain: string,
-  expectedToken: string,
-): Promise<boolean> {
-  try {
-    const hostname = `_prism-verify.${domain}`;
-    const res = await fetch(
-      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=TXT`,
-      { headers: { Accept: "application/dns-json" } },
-    );
-    if (!res.ok) return false;
-
-    const data = (await res.json()) as {
-      Answer?: Array<{ type: number; data: string }>;
-    };
-
-    const expectedValue = `"prism-verify=${expectedToken}"`;
-    return (data.Answer ?? []).some(
-      (record) => record.type === 16 && record.data === expectedValue,
-    );
-  } catch {
-    return false;
-  }
 }
 
 export default app;

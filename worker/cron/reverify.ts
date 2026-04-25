@@ -1,8 +1,14 @@
 // Periodic domain re-verification cron task.
-// Finds domains whose next_reverify_at has passed, re-checks DNS,
-// and marks them unverified if the TXT record is gone.
+// Finds domains whose next_reverify_at has passed, re-checks ownership,
+// and marks them unverified if no method still passes.
 
 import { getConfigValue } from "../lib/config";
+import {
+  checkMethod,
+  isVerificationMethod,
+  tryAnyMethod,
+  type VerificationMethod,
+} from "../lib/domainOwnership";
 import type { DomainRow } from "../types";
 
 const BATCH_SIZE = 100;
@@ -25,20 +31,32 @@ export async function runReverification(db: D1Database): Promise<void> {
   if (!due.length) return;
 
   for (const row of due) {
-    const stillVerified = await checkStillVerified(db, row, now);
+    const stillMethod = await checkStillVerified(db, row);
 
-    if (stillVerified) {
-      // Extend the window
+    if (stillMethod) {
+      // Extend the window. Update verification_method only when we have an
+      // explicit-method result (not parent inheritance, which is "implicit").
       const nextReverify = now + reverifyDays * 24 * 60 * 60;
-      await db
-        .prepare("UPDATE domains SET next_reverify_at = ? WHERE id = ?")
-        .bind(nextReverify, row.id)
-        .run();
+      if (stillMethod === "parent") {
+        await db
+          .prepare(
+            "UPDATE domains SET next_reverify_at = ?, verification_method = NULL WHERE id = ?",
+          )
+          .bind(nextReverify, row.id)
+          .run();
+      } else {
+        await db
+          .prepare(
+            "UPDATE domains SET next_reverify_at = ?, verification_method = ? WHERE id = ?",
+          )
+          .bind(nextReverify, stillMethod, row.id)
+          .run();
+      }
     } else {
       // Revoke verification
       await db
         .prepare(
-          "UPDATE domains SET verified = 0, verified_at = NULL, next_reverify_at = NULL WHERE id = ?",
+          "UPDATE domains SET verified = 0, verified_at = NULL, next_reverify_at = NULL, verification_method = NULL WHERE id = ?",
         )
         .bind(row.id)
         .run();
@@ -46,13 +64,15 @@ export async function runReverification(db: D1Database): Promise<void> {
   }
 }
 
-/** Returns true if the domain still passes verification (parent or DNS). */
+/**
+ * Returns the method that still passes ("parent" or a VerificationMethod),
+ * or null if nothing passes. Tries the stored method first to avoid wasted I/O.
+ */
 async function checkStillVerified(
   db: D1Database,
   row: DomainRow,
-  now: number,
-): Promise<boolean> {
-  // Check parent-domain inheritance first (fast, no DNS round-trip)
+): Promise<VerificationMethod | "parent" | null> {
+  // Parent inheritance is fast and often the cheapest path.
   if (row.team_id) {
     const parent = await verifiedTeamParent(
       db,
@@ -60,7 +80,7 @@ async function checkStillVerified(
       row.domain,
       row.id,
     );
-    if (parent) return true;
+    if (parent) return "parent";
   } else {
     const parent = await verifiedPersonalParent(
       db,
@@ -68,11 +88,21 @@ async function checkStillVerified(
       row.domain,
       row.id,
     );
-    if (parent) return true;
+    if (parent) return "parent";
   }
 
-  // Fall back to DNS TXT check
-  return checkDnsTxtRecord(row.domain, row.verification_token);
+  // Try the previously-successful method first
+  if (isVerificationMethod(row.verification_method)) {
+    const ok = await checkMethod(
+      row.verification_method,
+      row.domain,
+      row.verification_token,
+    );
+    if (ok) return row.verification_method;
+  }
+
+  // Fall back to all methods (skipping the one we just tried)
+  return tryAnyMethod(row.domain, row.verification_token);
 }
 
 // ─── Parent-domain helpers ────────────────────────────────────────────────────
@@ -117,29 +147,4 @@ async function verifiedTeamParent(
     if (row) return row.domain;
   }
   return null;
-}
-
-// ─── DNS verification ─────────────────────────────────────────────────────────
-
-async function checkDnsTxtRecord(
-  domain: string,
-  expectedToken: string,
-): Promise<boolean> {
-  try {
-    const hostname = `_prism-verify.${domain}`;
-    const res = await fetch(
-      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=TXT`,
-      { headers: { Accept: "application/dns-json" } },
-    );
-    if (!res.ok) return false;
-    const data = (await res.json()) as {
-      Answer?: Array<{ type: number; data: string }>;
-    };
-    const expected = `"prism-verify=${expectedToken}"`;
-    return (data.Answer ?? []).some(
-      (r) => r.type === 16 && r.data === expected,
-    );
-  } catch {
-    return false;
-  }
 }

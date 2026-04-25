@@ -410,6 +410,18 @@
     "verifiedLabel": "验证时间",
     "nextReverifyLabel": "下次重新验证",
     "addDnsTxtRecord": "添加此 DNS TXT 记录：",
+    "addHttpFile": "在以下 URL 托管此文件：",
+    "httpUrl": "URL",
+    "httpContent": "内容",
+    "addHtmlMeta": "将此 <meta> 标签添加到主页的 <head> 中：",
+    "htmlMetaHint": "请放置在 https://{{domain}}/ 的 <head> 内",
+    "methodLabel": "验证方式",
+    "verificationCheckFailed": "验证检查失败。请确认记录 / 文件 / 标签已就位后重试。",
+    "method": {
+      "dns-txt": "DNS TXT",
+      "http-file": "HTTP 文件",
+      "html-meta": "HTML meta 标签"
+    },
     "moveDomainToTeam": "将域名移动到团队",
     "moveDomainDesc": "将 {{domain}} 移动到团队。该域名将从您的个人域名中移除，并由团队管理。",
     "selectTeam": "选择团队",

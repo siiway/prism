@@ -4,6 +4,13 @@ import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { computeIsVerified } from "../lib/domainVerify";
+import {
+  checkMethod,
+  isVerificationMethod,
+  methodInstructions,
+  tryAnyMethod,
+  type VerificationMethod,
+} from "../lib/domainOwnership";
 import { getConfigValue } from "../lib/config";
 import { validateImageUrl } from "../lib/imageValidation";
 import { proxyImageUrl } from "../lib/proxyImage";
@@ -702,6 +709,8 @@ app.post(":id/domains", async (c) => {
     .bind(domainId, user.id, user.id, id, domain, verificationToken, now)
     .run();
 
+  const instructions = methodInstructions(domain, verificationToken);
+
   // Auto-verify if the team already owns a verified parent domain
   const parent = await verifiedTeamParentDomain(c.env.DB, id, domain);
   if (parent) {
@@ -717,8 +726,7 @@ app.post(":id/domains", async (c) => {
         id: domainId,
         domain,
         verification_token: verificationToken,
-        txt_record: `_prism-verify.${domain}`,
-        txt_value: `prism-verify=${verificationToken}`,
+        ...instructions,
         verified: true,
         verified_by_parent: parent,
       },
@@ -731,15 +739,15 @@ app.post(":id/domains", async (c) => {
       id: domainId,
       domain,
       verification_token: verificationToken,
-      txt_record: `_prism-verify.${domain}`,
-      txt_value: `prism-verify=${verificationToken}`,
+      ...instructions,
       verified: false,
     },
     201,
   );
 });
 
-// Verify team domain (check DNS TXT record)
+// Verify team domain. Body: { method?: "dns-txt" | "http-file" | "html-meta" }
+// If method is omitted, every method is tried until one succeeds.
 app.post(":id/domains/:domainId/verify", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -755,6 +763,22 @@ app.post(":id/domains/:domainId/verify", async (c) => {
     .first<DomainRow>();
   if (!row) return c.json({ error: "Domain not found" }, 404);
 
+  let requestedMethod: VerificationMethod | null = null;
+  try {
+    const body = (await c.req
+      .json<{ method?: unknown }>()
+      .catch(() => ({}))) as {
+      method?: unknown;
+    };
+    if (body.method !== undefined) {
+      if (!isVerificationMethod(body.method))
+        return c.json({ error: "Invalid verification method" }, 400);
+      requestedMethod = body.method;
+    }
+  } catch {
+    // empty body — treat as auto
+  }
+
   const reverifyDays = await getConfigValue(c.env.DB, "domain_reverify_days");
   const now = Math.floor(Date.now() / 1000);
   const nextReverify = now + reverifyDays * 24 * 60 * 60;
@@ -762,7 +786,7 @@ app.post(":id/domains/:domainId/verify", async (c) => {
   const parent = await verifiedTeamParentDomain(c.env.DB, id, row.domain);
   if (parent) {
     await c.env.DB.prepare(
-      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ?, verification_method = NULL WHERE id = ?",
     )
       .bind(now, nextReverify, domainId)
       .run();
@@ -773,19 +797,30 @@ app.post(":id/domains/:domainId/verify", async (c) => {
     });
   }
 
-  const verified = await checkDnsTxtRecord(row.domain, row.verification_token);
-  if (verified) {
+  const succeededMethod: VerificationMethod | null = requestedMethod
+    ? (await checkMethod(requestedMethod, row.domain, row.verification_token))
+      ? requestedMethod
+      : null
+    : await tryAnyMethod(row.domain, row.verification_token);
+
+  if (succeededMethod) {
     await c.env.DB.prepare(
-      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
+      "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ?, verification_method = ? WHERE id = ?",
     )
-      .bind(now, nextReverify, domainId)
+      .bind(now, nextReverify, succeededMethod, domainId)
       .run();
-    return c.json({ verified: true, next_reverify_at: nextReverify });
+    return c.json({
+      verified: true,
+      next_reverify_at: nextReverify,
+      verification_method: succeededMethod,
+    });
   }
 
+  const instructions = methodInstructions(row.domain, row.verification_token);
   return c.json({
     verified: false,
-    message: `Add TXT record: _prism-verify.${row.domain} = prism-verify=${row.verification_token}`,
+    attempted_method: requestedMethod,
+    instructions,
   });
 });
 
@@ -979,29 +1014,6 @@ async function verifiedTeamParentDomain(
     if (row) return row.domain;
   }
   return null;
-}
-
-async function checkDnsTxtRecord(
-  domain: string,
-  expectedToken: string,
-): Promise<boolean> {
-  try {
-    const hostname = `_prism-verify.${domain}`;
-    const res = await fetch(
-      `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=TXT`,
-      { headers: { Accept: "application/dns-json" } },
-    );
-    if (!res.ok) return false;
-    const data = (await res.json()) as {
-      Answer?: Array<{ type: number; data: string }>;
-    };
-    const expectedValue = `"prism-verify=${expectedToken}"`;
-    return (data.Answer ?? []).some(
-      (r) => r.type === 16 && r.data === expectedValue,
-    );
-  } catch {
-    return false;
-  }
 }
 
 // ─── Team apps ────────────────────────────────────────────────────────────────

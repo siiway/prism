@@ -443,11 +443,11 @@ export const api = {
       { domain, app_id },
       getToken(),
     ),
-  verifyDomain: (id: string) =>
-    request<{ verified: boolean; next_reverify_at?: number }>(
+  verifyDomain: (id: string, method?: VerificationMethod) =>
+    request<DomainVerifyResponse>(
       "POST",
       `/domains/${id}/verify`,
-      {},
+      method ? { method } : {},
       getToken(),
     ),
   deleteDomain: (id: string) =>
@@ -972,11 +972,15 @@ export const api = {
       { domain },
       getToken(),
     ),
-  verifyTeamDomain: (teamId: string, domainId: string) =>
-    request<{ verified: boolean; next_reverify_at?: number }>(
+  verifyTeamDomain: (
+    teamId: string,
+    domainId: string,
+    method?: VerificationMethod,
+  ) =>
+    request<DomainVerifyResponse>(
       "POST",
       `/teams/${teamId}/domains/${domainId}/verify`,
-      undefined,
+      method ? { method } : undefined,
       getToken(),
     ),
   deleteTeamDomain: (teamId: string, domainId: string) =>
@@ -1428,6 +1432,8 @@ export interface CreateAppBody {
   allow_self_manage_exported_permissions?: boolean;
 }
 
+export type VerificationMethod = "dns-txt" | "http-file" | "html-meta";
+
 export interface Domain {
   id: string;
   domain: string;
@@ -1435,6 +1441,7 @@ export interface Domain {
   verified: number;
   verified_at: number | null;
   next_reverify_at: number | null;
+  verification_method: VerificationMethod | null;
   created_at: number;
 }
 
@@ -1444,7 +1451,27 @@ export interface DomainAddResponse {
   verification_token: string;
   txt_record: string;
   txt_value: string;
+  http_path: string;
+  http_url: string;
+  http_value: string;
+  meta_tag: string;
   verified: boolean;
+}
+
+export interface DomainVerifyResponse {
+  verified: boolean;
+  next_reverify_at?: number;
+  verification_method?: VerificationMethod;
+  verified_by_parent?: string;
+  attempted_method?: VerificationMethod | null;
+  instructions?: {
+    txt_record: string;
+    txt_value: string;
+    http_path: string;
+    http_url: string;
+    http_value: string;
+    meta_tag: string;
+  };
 }
 
 export interface SocialPendingInfo {

@@ -30,6 +30,7 @@ import {
   ApiError,
   type Domain,
   type DomainAddResponse,
+  type VerificationMethod,
 } from "../../lib/api";
 import { TransferFromPersonalDialog } from "./dialogs/TransferFromPersonalDialog";
 import { TeamDomainDetailDialog } from "./dialogs/TeamDomainDetailDialog";
@@ -86,15 +87,18 @@ export function DomainsTable({
     }
   };
 
-  const handleVerifyDomain = async (domainId: string) => {
+  const handleVerifyDomain = async (
+    domainId: string,
+    method?: VerificationMethod,
+  ) => {
     setVerifyingDomain(domainId);
     try {
-      const res = await api.verifyTeamDomain(teamId, domainId);
+      const res = await api.verifyTeamDomain(teamId, domainId, method);
       if (res.verified) {
         showMsg("success", t("domains.domainVerified"));
         await qc.invalidateQueries({ queryKey: ["team-domains", teamId] });
       } else {
-        showMsg("error", t("domains.txtRecordNotFound"));
+        showMsg("error", t("domains.verificationCheckFailed"));
       }
     } catch (err) {
       showMsg(

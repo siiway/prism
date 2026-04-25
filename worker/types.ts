@@ -133,6 +133,7 @@ export interface DomainRow {
   verified: number;
   verified_at: number | null;
   next_reverify_at: number | null;
+  verification_method: string | null;
   created_at: number;
 }
 

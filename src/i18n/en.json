@@ -410,6 +410,18 @@
     "verifiedLabel": "Verified",
     "nextReverifyLabel": "Next re-verify",
     "addDnsTxtRecord": "Add this DNS TXT record:",
+    "addHttpFile": "Host this file at the URL below:",
+    "httpUrl": "URL",
+    "httpContent": "Content",
+    "addHtmlMeta": "Add this <meta> tag to your homepage's <head>:",
+    "htmlMetaHint": "Place inside <head> on https://{{domain}}/",
+    "methodLabel": "Method",
+    "verificationCheckFailed": "Verification check failed. Make sure the record/file/tag is in place and try again.",
+    "method": {
+      "dns-txt": "DNS TXT",
+      "http-file": "HTTP file",
+      "html-meta": "HTML meta tag"
+    },
     "moveDomainToTeam": "Move domain to team",
     "moveDomainDesc": "Move {{domain}} to a team. The domain will be removed from your personal domains and managed by the team.",
     "selectTeam": "Select team",

@@ -8,6 +8,8 @@ import {
   DialogSurface,
   DialogTitle,
   Spinner,
+  Tab,
+  TabList,
   Text,
   tokens,
 } from "@fluentui/react-components";
@@ -15,15 +17,16 @@ import {
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
 } from "@fluentui/react-icons";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Domain } from "../../../lib/api";
+import type { Domain, VerificationMethod } from "../../../lib/api";
 
 interface TeamDomainDetailDialogProps {
   domain: Domain | null;
   canManage: boolean;
   verifyingDomain: string | null;
   onClose: () => void;
-  onVerify: (domainId: string) => Promise<void>;
+  onVerify: (domainId: string, method: VerificationMethod) => Promise<void>;
 }
 
 export function TeamDomainDetailDialog({
@@ -34,6 +37,7 @@ export function TeamDomainDetailDialog({
   onVerify,
 }: TeamDomainDetailDialogProps) {
   const { t } = useTranslation();
+  const [method, setMethod] = useState<VerificationMethod>("dns-txt");
   return (
     <Dialog
       open={!!domain}
@@ -64,28 +68,83 @@ export function TeamDomainDetailDialog({
                   {new Date(domain.verified_at * 1000).toLocaleDateString()}
                 </Text>
               )}
-              {!domain?.verified && (
+              {domain?.verified && domain.verification_method && (
+                <Text size={200}>
+                  <strong>{t("domains.methodLabel")}:</strong>{" "}
+                  {t(`domains.method.${domain.verification_method}`)}
+                </Text>
+              )}
+              {!domain?.verified && domain && (
                 <div
                   style={{
                     display: "flex",
                     flexDirection: "column",
-                    gap: 4,
+                    gap: 8,
                     padding: "10px 12px",
                     borderRadius: 6,
                     background: tokens.colorNeutralBackground3,
                   }}
                 >
-                  <Text size={200} weight="semibold">
-                    {t("domains.addDnsTxtRecord")}
-                  </Text>
-                  <Text size={200}>
-                    <strong>{t("domains.dnsName")}:</strong>{" "}
-                    <code>_prism-verify.{domain?.domain}</code>
-                  </Text>
-                  <Text size={200}>
-                    <strong>{t("domains.dnsValue")}:</strong>{" "}
-                    <code>prism-verify={domain?.verification_token}</code>
-                  </Text>
+                  <TabList
+                    size="small"
+                    selectedValue={method}
+                    onTabSelect={(_, d) =>
+                      setMethod(d.value as VerificationMethod)
+                    }
+                  >
+                    <Tab value="dns-txt">{t("domains.method.dns-txt")}</Tab>
+                    <Tab value="http-file">{t("domains.method.http-file")}</Tab>
+                    <Tab value="html-meta">{t("domains.method.html-meta")}</Tab>
+                  </TabList>
+
+                  {method === "dns-txt" && (
+                    <>
+                      <Text size={200} weight="semibold">
+                        {t("domains.addDnsTxtRecord")}
+                      </Text>
+                      <Text size={200}>
+                        <strong>{t("domains.dnsName")}:</strong>{" "}
+                        <code>_prism-verify.{domain.domain}</code>
+                      </Text>
+                      <Text size={200}>
+                        <strong>{t("domains.dnsValue")}:</strong>{" "}
+                        <code>prism-verify={domain.verification_token}</code>
+                      </Text>
+                    </>
+                  )}
+
+                  {method === "http-file" && (
+                    <>
+                      <Text size={200} weight="semibold">
+                        {t("domains.addHttpFile")}
+                      </Text>
+                      <Text size={200}>
+                        <strong>{t("domains.httpUrl")}:</strong>{" "}
+                        <code>
+                          https://{domain.domain}/.well-known/prism-verify-
+                          {domain.verification_token}.txt
+                        </code>
+                      </Text>
+                      <Text size={200}>
+                        <strong>{t("domains.httpContent")}:</strong>{" "}
+                        <code>prism-verify={domain.verification_token}</code>
+                      </Text>
+                    </>
+                  )}
+
+                  {method === "html-meta" && (
+                    <>
+                      <Text size={200} weight="semibold">
+                        {t("domains.addHtmlMeta")}
+                      </Text>
+                      <Text size={200}>
+                        {t("domains.htmlMetaHint", { domain: domain.domain })}
+                      </Text>
+                      <Text size={200}>
+                        <code>{`<meta name="prism-verify" content="${domain.verification_token}">`}</code>
+                      </Text>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -99,7 +158,7 @@ export function TeamDomainDetailDialog({
                 disabled={verifyingDomain === domain?.id}
                 onClick={async () => {
                   if (!domain) return;
-                  await onVerify(domain.id);
+                  await onVerify(domain.id, method);
                   onClose();
                 }}
               >
