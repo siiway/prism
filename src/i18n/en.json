@@ -237,7 +237,18 @@
     "gpgPrivacyNote": "Your private key never leaves this browser.",
     "gpgModeClearsign": "Cleartext (--clearsign)",
     "gpgModeSign": "Inline signed (--sign --armor)",
-    "gpgAutoSignHide": "Hide in-browser signing"
+    "gpgAutoSignHide": "Hide in-browser signing",
+    "tokenTtlTitle": "OAuth Token Lifetime",
+    "tokenTtlDesc": "Override the default lifetime of OAuth access and refresh tokens issued for your account. Leave blank to use the site default.",
+    "accessTokenTtlLabel": "Access token lifetime (minutes)",
+    "accessTokenTtlHint": "Site default: {{siteDefault}} minutes",
+    "refreshTokenTtlLabel": "Refresh token lifetime (days)",
+    "refreshTokenTtlHint": "Site default: {{siteDefault}} days",
+    "tokenTtlPlaceholder": "Site default ({{value}})",
+    "tokenTtlUseSiteDefault": "Use site default",
+    "tokenTtlSaved": "Token lifetimes saved",
+    "tokenTtlSaveFailed": "Failed to save token lifetimes",
+    "tokenTtlInvalid": "Token lifetime must be a positive integer or blank"
   },
   "dashboard": {
     "welcomeBack": "Welcome back, {{name}}!",

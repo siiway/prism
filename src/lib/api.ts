@@ -278,6 +278,8 @@ export const api = {
       display_name: string;
       avatar_url: string;
       alt_email_login: boolean | null;
+      access_token_ttl_minutes: number | null;
+      refresh_token_ttl_days: number | null;
     }>,
   ) => request<{ user: UserProfile }>("PATCH", "/user/me", body, getToken()),
   changePassword: (current_password: string, new_password: string) =>
@@ -1277,6 +1279,8 @@ export interface UserProfile {
   role: "admin" | "user";
   email_verified: boolean;
   alt_email_login: number | null;
+  access_token_ttl_minutes: number | null;
+  refresh_token_ttl_days: number | null;
   created_at?: number;
 }
 
@@ -1284,6 +1288,8 @@ export interface MeResponse {
   user: UserProfile;
   totp_enabled: boolean;
   passkey_count: number;
+  site_access_token_ttl_minutes: number;
+  site_refresh_token_ttl_days: number;
 }
 
 export interface PasskeyInfo {

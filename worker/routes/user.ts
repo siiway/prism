@@ -52,11 +52,14 @@ app.get("/me", async (c) => {
   )
     .bind(user.id)
     .first<{ n: number }>();
+  const config = await getConfig(c.env.DB);
 
   return c.json({
     user: safeUser(c.env.APP_URL, row),
     totp_enabled: (totp?.n ?? 0) > 0,
     passkey_count: passkeyCount?.n ?? 0,
+    site_access_token_ttl_minutes: config.access_token_ttl_minutes,
+    site_refresh_token_ttl_days: config.refresh_token_ttl_days,
   });
 });
 
@@ -67,6 +70,8 @@ app.patch("/me", async (c) => {
     display_name?: string;
     avatar_url?: string;
     alt_email_login?: boolean | null;
+    access_token_ttl_minutes?: number | null;
+    refresh_token_ttl_days?: number | null;
   }>();
 
   const now = Math.floor(Date.now() / 1000);
@@ -92,6 +97,34 @@ app.patch("/me", async (c) => {
     values.push(
       body.alt_email_login === null ? null : body.alt_email_login ? 1 : 0,
     );
+  }
+  if (body.access_token_ttl_minutes !== undefined) {
+    if (body.access_token_ttl_minutes !== null) {
+      if (
+        !Number.isInteger(body.access_token_ttl_minutes) ||
+        body.access_token_ttl_minutes < 1
+      )
+        return c.json(
+          { error: "access_token_ttl_minutes must be a positive integer" },
+          400,
+        );
+    }
+    updates.push("access_token_ttl_minutes = ?");
+    values.push(body.access_token_ttl_minutes);
+  }
+  if (body.refresh_token_ttl_days !== undefined) {
+    if (body.refresh_token_ttl_days !== null) {
+      if (
+        !Number.isInteger(body.refresh_token_ttl_days) ||
+        body.refresh_token_ttl_days < 1
+      )
+        return c.json(
+          { error: "refresh_token_ttl_days must be a positive integer" },
+          400,
+        );
+    }
+    updates.push("refresh_token_ttl_days = ?");
+    values.push(body.refresh_token_ttl_days);
   }
 
   if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
@@ -254,6 +287,8 @@ function safeUser(baseUrl: string, row: UserRow) {
     role: row.role,
     email_verified: row.email_verified === 1,
     alt_email_login: row.alt_email_login,
+    access_token_ttl_minutes: row.access_token_ttl_minutes,
+    refresh_token_ttl_days: row.refresh_token_ttl_days,
     created_at: row.created_at,
   };
 }

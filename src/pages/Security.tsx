@@ -34,7 +34,7 @@ import {
   DeleteRegular,
   KeyRegular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startRegistration } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
@@ -135,6 +135,56 @@ export function Security() {
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 6000);
+  };
+
+  // ─── Token TTL prefs ─────────────────────────────────────────────────────
+  const [accessTtlInput, setAccessTtlInput] = useState("");
+  const [refreshTtlInput, setRefreshTtlInput] = useState("");
+  const [savingTtl, setSavingTtl] = useState(false);
+
+  useEffect(() => {
+    if (!me?.user) return;
+    setAccessTtlInput(me.user.access_token_ttl_minutes?.toString() ?? "");
+    setRefreshTtlInput(me.user.refresh_token_ttl_days?.toString() ?? "");
+  }, [
+    me?.user.access_token_ttl_minutes,
+    me?.user.refresh_token_ttl_days,
+    me?.user,
+  ]);
+
+  const parseTtlInput = (v: string): number | null | "invalid" => {
+    const trimmed = v.trim();
+    if (trimmed === "") return null;
+    const n = Number(trimmed);
+    if (!Number.isInteger(n) || n < 1) return "invalid";
+    return n;
+  };
+
+  const handleSaveTokenTtl = async () => {
+    const access = parseTtlInput(accessTtlInput);
+    const refresh = parseTtlInput(refreshTtlInput);
+    if (access === "invalid" || refresh === "invalid") {
+      showMsg("error", t("security.tokenTtlInvalid"));
+      return;
+    }
+    setSavingTtl(true);
+    try {
+      await api.updateMe({
+        access_token_ttl_minutes: access,
+        refresh_token_ttl_days: refresh,
+      });
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      showMsg("success", t("security.tokenTtlSaved"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("security.tokenTtlSaveFailed"),
+      );
+    } finally {
+      setSavingTtl(false);
+    }
   };
 
   // ─── TOTP ────────────────────────────────────────────────────────────────
@@ -1147,6 +1197,74 @@ export function Security() {
             </DialogSurface>
           </Dialog>
         </>
+      </div>
+
+      {/* Token TTL prefs */}
+      <div
+        className={styles.card}
+        style={isPageLoading ? { display: "none" } : {}}
+      >
+        <div className={styles.cardHeader}>
+          <div>
+            <Text weight="semibold" size={400} block>
+              {t("security.tokenTtlTitle")}
+            </Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("security.tokenTtlDesc")}
+            </Text>
+          </div>
+        </div>
+        <Field
+          label={t("security.accessTokenTtlLabel")}
+          hint={t("security.accessTokenTtlHint", {
+            siteDefault: me?.site_access_token_ttl_minutes ?? 60,
+          })}
+        >
+          <Input
+            type="number"
+            min={1}
+            value={accessTtlInput}
+            onChange={(_, d) => setAccessTtlInput(d.value)}
+            placeholder={t("security.tokenTtlPlaceholder", {
+              value: me?.site_access_token_ttl_minutes ?? 60,
+            })}
+          />
+        </Field>
+        <Field
+          label={t("security.refreshTokenTtlLabel")}
+          hint={t("security.refreshTokenTtlHint", {
+            siteDefault: me?.site_refresh_token_ttl_days ?? 30,
+          })}
+        >
+          <Input
+            type="number"
+            min={1}
+            value={refreshTtlInput}
+            onChange={(_, d) => setRefreshTtlInput(d.value)}
+            placeholder={t("security.tokenTtlPlaceholder", {
+              value: me?.site_refresh_token_ttl_days ?? 30,
+            })}
+          />
+        </Field>
+        <div className={styles.actions}>
+          <Button
+            appearance="primary"
+            disabled={savingTtl}
+            onClick={handleSaveTokenTtl}
+          >
+            {savingTtl ? <Spinner size="tiny" /> : t("common.save")}
+          </Button>
+          <Button
+            appearance="subtle"
+            disabled={savingTtl}
+            onClick={() => {
+              setAccessTtlInput("");
+              setRefreshTtlInput("");
+            }}
+          >
+            {t("security.tokenTtlUseSiteDefault")}
+          </Button>
+        </div>
       </div>
     </div>
   );

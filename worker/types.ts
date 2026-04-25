@@ -12,6 +12,8 @@ export interface UserRow {
   email_verify_token: string | null;
   is_active: number;
   alt_email_login: number | null;
+  access_token_ttl_minutes: number | null;
+  refresh_token_ttl_days: number | null;
   created_at: number;
   updated_at: number;
 }

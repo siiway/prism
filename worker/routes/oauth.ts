@@ -1010,8 +1010,13 @@ app.post("/token", async (c) => {
 
     const scopes = JSON.parse(codeRow.scopes) as string[];
     const hasOffline = scopes.includes("offline_access");
-    const atTtl = config.access_token_ttl_minutes * 60;
-    const rtTtl = config.refresh_token_ttl_days * 24 * 60 * 60;
+    const atTtl =
+      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
+    const rtTtl =
+      (user.refresh_token_ttl_days ?? config.refresh_token_ttl_days) *
+      24 *
+      60 *
+      60;
     const refreshToken = hasOffline ? randomBase64url(48) : null;
 
     const jti = randomId();
@@ -1101,7 +1106,8 @@ app.post("/token", async (c) => {
       return c.json({ error: "invalid_grant" }, 400);
 
     const scopes = JSON.parse(tokenRow.scopes) as string[];
-    const atTtl = config.access_token_ttl_minutes * 60;
+    const atTtl =
+      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
 
     let newAccessToken: string;
     if (oauthApp.use_jwt_tokens) {

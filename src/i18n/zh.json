@@ -237,7 +237,18 @@
     "gpgPrivacyNote": "您的私钥不会离开此浏览器。",
     "gpgModeClearsign": "明文签名 (--clearsign)",
     "gpgModeSign": "内联签名 (--sign --armor)",
-    "gpgAutoSignHide": "隐藏浏览器内签名"
+    "gpgAutoSignHide": "隐藏浏览器内签名",
+    "tokenTtlTitle": "OAuth 令牌有效期",
+    "tokenTtlDesc": "覆盖为您账户签发的 OAuth 访问令牌与刷新令牌的默认有效期。留空则使用站点默认值。",
+    "accessTokenTtlLabel": "访问令牌有效期（分钟）",
+    "accessTokenTtlHint": "站点默认值：{{siteDefault}} 分钟",
+    "refreshTokenTtlLabel": "刷新令牌有效期（天）",
+    "refreshTokenTtlHint": "站点默认值：{{siteDefault}} 天",
+    "tokenTtlPlaceholder": "站点默认值（{{value}}）",
+    "tokenTtlUseSiteDefault": "使用站点默认值",
+    "tokenTtlSaved": "令牌有效期已保存",
+    "tokenTtlSaveFailed": "保存令牌有效期失败",
+    "tokenTtlInvalid": "令牌有效期必须是正整数或留空"
   },
   "dashboard": {
     "welcomeBack": "欢迎回来，{{name}}！",
