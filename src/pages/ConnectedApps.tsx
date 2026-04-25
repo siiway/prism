@@ -114,14 +114,36 @@ const useStyles = makeStyles({
   },
 });
 
-function formatRelative(ts: number): string {
-  const diff = Date.now() - ts * 1000;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return new Date(ts * 1000).toLocaleDateString();
+function formatRelative(
+  ts: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  locale?: string,
+): string {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const diffSec = ts - nowSec;
+  const absSec = Math.abs(diffSec);
+
+  if (absSec < 60) {
+    return diffSec >= 0
+      ? t("connectedApps.inLessThanMinute")
+      : t("connectedApps.justNow");
+  }
+
+  const absMins = Math.floor(absSec / 60);
+  if (absMins < 60) {
+    return diffSec >= 0
+      ? t("connectedApps.inMinutes", { count: absMins })
+      : t("connectedApps.minutesAgo", { count: absMins });
+  }
+
+  const absHours = Math.floor(absMins / 60);
+  if (absHours < 24) {
+    return diffSec >= 0
+      ? t("connectedApps.inHours", { count: absHours })
+      : t("connectedApps.hoursAgo", { count: absHours });
+  }
+
+  return new Date(ts * 1000).toLocaleDateString(locale);
 }
 
 function TokenRow({
@@ -134,7 +156,7 @@ function TokenRow({
   revoking: string | null;
 }) {
   const styles = useStyles();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   return (
     <div className={styles.tokenRow}>
@@ -169,11 +191,11 @@ function TokenRow({
         </Text>
         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
           {t("connectedApps.issuedAgo", {
-            time: formatRelative(token.created_at),
+            time: formatRelative(token.created_at, t, i18n.resolvedLanguage),
           })}
           {" · "}
           {t("connectedApps.expiresAgo", {
-            time: formatRelative(token.expires_at),
+            time: formatRelative(token.expires_at, t, i18n.resolvedLanguage),
           })}
         </Text>
       </div>
