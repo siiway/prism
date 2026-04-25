@@ -86,6 +86,21 @@ export async function verifyPassword(
   return diff === 0;
 }
 
+/** Length-independent constant-time string comparison.
+ *  Use whenever comparing a user-supplied secret-like value to a stored one
+ *  (client_secret, opaque tokens, signatures, etc.) to avoid leaking length
+ *  or content via timing. */
+export function timingSafeStrEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a);
+  const bBytes = new TextEncoder().encode(b);
+  const len = Math.max(aBytes.length, bBytes.length);
+  let diff = aBytes.length ^ bBytes.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
+  }
+  return diff === 0;
+}
+
 // SHA-256 of a string, returns hex
 export async function sha256Hex(str: string): Promise<string> {
   const buf = await crypto.subtle.digest(

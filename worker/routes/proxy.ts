@@ -3,6 +3,7 @@
 
 import { Hono } from "hono";
 import type { Variables } from "../types";
+import { isBlockedHost } from "../lib/safeFetch";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -17,18 +18,6 @@ const ALLOWED_TYPES = new Set([
   "image/avif",
   "image/svg+xml",
 ]);
-
-// Block obvious SSRF targets — hostnames / prefixes we never want to reach
-const BLOCKED_HOST_RE =
-  /^(localhost|.*\.local|.*\.internal|metadata\.google\.internal|169\.254\.|127\.|10\.|192\.168\.)$/i;
-
-function isBlockedHost(host: string): boolean {
-  if (BLOCKED_HOST_RE.test(host)) return true;
-  // RFC-1918 172.16–172.31
-  const m = host.match(/^172\.(\d+)\./);
-  if (m && parseInt(m[1], 10) >= 16 && parseInt(m[1], 10) <= 31) return true;
-  return false;
-}
 
 /**
  * Sanitize an SVG string by stripping all known script execution vectors:

@@ -1,7 +1,7 @@
 // OAuth application management (CRUD for user-owned apps)
 
 import { Hono, type Context, type Next } from "hono";
-import { randomId, randomBase64url } from "../lib/crypto";
+import { randomId, randomBase64url, timingSafeStrEqual } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
@@ -147,20 +147,6 @@ async function getTeamMember(
     .prepare("SELECT * FROM team_members WHERE team_id = ? AND user_id = ?")
     .bind(teamId, userId)
     .first<TeamMemberRow>();
-}
-
-/** Length-independent constant-time string comparison. */
-function timingSafeStrEqual(a: string, b: string): boolean {
-  const aBytes = new TextEncoder().encode(a);
-  const bBytes = new TextEncoder().encode(b);
-  // Always compare a fixed number of bytes (the longer length) so the loop
-  // body is constant. Length mismatch still fails.
-  const len = Math.max(aBytes.length, bBytes.length);
-  let diff = aBytes.length ^ bBytes.length;
-  for (let i = 0; i < len; i++) {
-    diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
-  }
-  return diff === 0;
 }
 
 /** Try to authenticate the request as the app itself via HTTP Basic.

@@ -4,7 +4,12 @@ import { Hono } from "hono";
 import { getConfig, getJwtSecret, getRsaKeyPair } from "../lib/config";
 import { getMLDSAKey } from "../lib/mldsa";
 import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
-import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
+import {
+  randomBase64url,
+  randomId,
+  verifyPkce,
+  timingSafeStrEqual,
+} from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import {
@@ -619,6 +624,19 @@ app.post("/authorize", requireAuth, async (c) => {
   if (!redirectUris.includes(body.redirect_uri))
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
+  // OAuth 2.0 Security BCP §2.1.1: public clients MUST use PKCE.
+  // Refuse to issue an authorization code without code_challenge so a code
+  // intercepted at the redirect URI cannot be redeemed.
+  if (oauthApp.is_public === 1 && !body.code_challenge) {
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge is required for public clients",
+      },
+      400,
+    );
+  }
+
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
   const { scopes } = await resolveRequestedScopes(
     c.env.DB,
@@ -860,9 +878,18 @@ app.post("/token", async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
 
-  // For public clients (PKCE), secret not required; for confidential clients, verify secret
-  if (!oauthApp.is_public && oauthApp.client_secret !== clientSecret) {
-    return c.json({ error: "invalid_client" }, 401);
+  // For public clients (PKCE), secret not required; for confidential clients,
+  // verify the secret in constant time. Refuse if either side is empty so a
+  // confidential client with an unset stored secret can never authenticate
+  // by sending an empty secret.
+  if (!oauthApp.is_public) {
+    if (
+      !oauthApp.client_secret ||
+      !clientSecret ||
+      !timingSafeStrEqual(oauthApp.client_secret, clientSecret)
+    ) {
+      return c.json({ error: "invalid_client" }, 401);
+    }
   }
 
   const config = await getConfig(c.env.DB);
@@ -885,6 +912,20 @@ app.post("/token", async (c) => {
       );
     if (codeRow.redirect_uri !== redirect_uri)
       return c.json({ error: "invalid_grant" }, 400);
+
+    // Public clients (no client secret) MUST use PKCE — without it, an
+    // attacker who intercepts the authorization code (e.g. via a custom-scheme
+    // handler hijack on mobile, or browser referer leaks) can redeem it.
+    // OAuth 2.0 Security BCP §2.1.1.
+    if (oauthApp.is_public && !codeRow.code_challenge) {
+      return c.json(
+        {
+          error: "invalid_grant",
+          error_description: "PKCE is required for public clients",
+        },
+        400,
+      );
+    }
 
     // Verify PKCE
     if (codeRow.code_challenge) {

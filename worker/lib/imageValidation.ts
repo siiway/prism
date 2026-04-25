@@ -3,6 +3,8 @@
 // Returns an error string on failure, null on success.
 // An empty string is treated as "no image" and is always valid.
 
+import { isBlockedHost } from "./safeFetch";
+
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export async function validateImageUrl(url: string): Promise<string | null> {
@@ -17,6 +19,14 @@ export async function validateImageUrl(url: string): Promise<string | null> {
 
   if (parsed.protocol !== "https:") {
     return "Image URL must use HTTPS";
+  }
+
+  // Refuse to issue a HEAD against internal / loopback / link-local hosts so
+  // an attacker who can set this URL (e.g. an app icon_url) cannot use the
+  // server's response (status / content-type / latency) to probe internal
+  // services.
+  if (isBlockedHost(parsed.hostname)) {
+    return "Host not allowed";
   }
 
   let res: Response;
