@@ -27,6 +27,7 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowLeftRegular,
+  ArrowImportRegular,
   AddRegular,
   CopyRegular,
   DeleteRegular,
@@ -248,6 +249,157 @@ function AppPermissionsField({
   );
 }
 
+// ─── Allowed-scopes importer ─────────────────────────────────────────────────
+
+function AllowedScopesImporter({
+  current,
+  onMerge,
+}: {
+  current: string[];
+  onMerge: (next: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [result, setResult] = useState<{
+    added: number;
+    skipped: number;
+    invalid: string[];
+  } | null>(null);
+
+  const parsed = (() => {
+    if (!text.trim()) return null;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch (e) {
+      return {
+        error: t("apps.scopeDefImportInvalidJson", {
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      };
+    }
+    if (!Array.isArray(raw) || raw.some((s) => typeof s !== "string")) {
+      return { error: t("apps.allowedScopesImportInvalidShape") };
+    }
+    return { scopes: (raw as string[]).map((s) => s.trim()).filter(Boolean) };
+  })();
+
+  const runImport = () => {
+    if (!parsed || "error" in parsed) return;
+    const valid: string[] = [];
+    const invalid: string[] = [];
+    let skipped = 0;
+    for (const s of parsed.scopes) {
+      // Same shape rule used everywhere: a known platform scope or an app:* scope
+      const ok =
+        /^[a-zA-Z0-9:_\-\.]+$/.test(s) &&
+        (s.startsWith("app:") || !s.includes(" "));
+      if (!ok) {
+        invalid.push(s);
+        continue;
+      }
+      if (current.includes(s) || valid.includes(s)) {
+        skipped += 1;
+        continue;
+      }
+      valid.push(s);
+    }
+    onMerge([...current, ...valid]);
+    setResult({ added: valid.length, skipped, invalid });
+  };
+
+  return (
+    <>
+      <Button
+        size="small"
+        appearance="secondary"
+        icon={<ArrowImportRegular />}
+        onClick={() => {
+          setOpen(true);
+          setResult(null);
+        }}
+      >
+        {t("apps.allowedScopesImport")}
+      </Button>
+      <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("apps.allowedScopesImportTitle")}</DialogTitle>
+            <DialogContent
+              style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            >
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                {t("apps.allowedScopesImportHint")}
+              </Text>
+              <Textarea
+                value={text}
+                onChange={(_, d) => {
+                  setText(d.value);
+                  setResult(null);
+                }}
+                placeholder={t("apps.allowedScopesImportPlaceholder")}
+                rows={10}
+                resize="vertical"
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              />
+              {parsed && "error" in parsed && (
+                <MessageBar intent="error">{parsed.error}</MessageBar>
+              )}
+              {result && (
+                <MessageBar
+                  intent={result.invalid.length === 0 ? "success" : "warning"}
+                >
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                  >
+                    <Text size={200}>
+                      {t("apps.allowedScopesImportResult", {
+                        added: result.added,
+                        skipped: result.skipped,
+                      })}
+                    </Text>
+                    {result.invalid.length > 0 && (
+                      <ul style={{ margin: "4px 0 0 18px", padding: 0 }}>
+                        {result.invalid.map((s, i) => (
+                          <li key={i}>
+                            <code>{s}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </MessageBar>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <DialogTrigger disableButtonEnhancement>
+                <Button appearance="secondary">{t("common.close")}</Button>
+              </DialogTrigger>
+              <Button
+                appearance="primary"
+                icon={<ArrowImportRegular />}
+                disabled={
+                  !parsed || "error" in parsed || parsed.scopes.length === 0
+                }
+                onClick={runImport}
+              >
+                {t("apps.allowedScopesImportButton", {
+                  count:
+                    parsed && !("error" in parsed) ? parsed.scopes.length : 0,
+                })}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+    </>
+  );
+}
+
 // ─── Scope picker field ───────────────────────────────────────────────────────
 
 interface ScopePickerFieldProps {
@@ -341,6 +493,52 @@ function ScopeDefinitionsPanel({
   const [editDesc, setEditDesc] = useState("");
   const [err, setErr] = useState("");
   const [copiedScope, setCopiedScope] = useState<string>("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importRunning, setImportRunning] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    ok: number;
+    total: number;
+    failures: { scope: string; error: string }[];
+  } | null>(null);
+
+  const parsedImport = (() => {
+    if (!importText.trim()) return null;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(importText);
+    } catch (e) {
+      return {
+        error: t("apps.scopeDefImportInvalidJson", {
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      };
+    }
+    const arr = Array.isArray(raw) ? raw : [raw];
+    const defs: { scope: string; title: string; description?: string }[] = [];
+    for (const entry of arr) {
+      if (
+        !entry ||
+        typeof entry !== "object" ||
+        typeof (entry as { scope?: unknown }).scope !== "string" ||
+        typeof (entry as { title?: unknown }).title !== "string"
+      ) {
+        return { error: t("apps.scopeDefImportInvalidShape") };
+      }
+      const e = entry as {
+        scope: string;
+        title: string;
+        description?: unknown;
+      };
+      defs.push({
+        scope: e.scope.trim(),
+        title: e.title.trim(),
+        description:
+          typeof e.description === "string" ? e.description.trim() : undefined,
+      });
+    }
+    return { defs };
+  })();
 
   const copyFullScope = (scope: string) => {
     void navigator.clipboard.writeText(`app:${clientId}:${scope}`);
@@ -395,11 +593,56 @@ function ScopeDefinitionsPanel({
     setEditDesc(def.description);
   };
 
+  const runImport = async () => {
+    if (!parsedImport || "error" in parsedImport) return;
+    setImportRunning(true);
+    setImportResult(null);
+    const failures: { scope: string; error: string }[] = [];
+    let ok = 0;
+    for (const def of parsedImport.defs) {
+      try {
+        await api.createScopeDefinition(appId, def);
+        ok += 1;
+      } catch (e) {
+        failures.push({
+          scope: def.scope,
+          error: e instanceof ApiError ? e.message : "Failed",
+        });
+      }
+    }
+    setImportRunning(false);
+    setImportResult({ ok, total: parsedImport.defs.length, failures });
+    qc.invalidateQueries({ queryKey: ["app-scope-defs", appId] });
+    if (failures.length === 0) {
+      setImportText("");
+    }
+  };
+
   if (isLoading) return <SkeletonTableRows rows={3} cols={2} />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Text weight="semibold">{t("apps.scopeDefsTitle")}</Text>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <Text weight="semibold">{t("apps.scopeDefsTitle")}</Text>
+        <Button
+          size="small"
+          appearance="secondary"
+          icon={<ArrowImportRegular />}
+          onClick={() => {
+            setImportOpen(true);
+            setImportResult(null);
+          }}
+        >
+          {t("apps.scopeDefImport")}
+        </Button>
+      </div>
       <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
         {t("apps.scopeDefsHint")}
       </Text>
@@ -555,6 +798,101 @@ function ScopeDefinitionsPanel({
           {t("apps.scopeDefAdd")}
         </Button>
       </div>
+
+      <Dialog open={importOpen} onOpenChange={(_, d) => setImportOpen(d.open)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("apps.scopeDefImportTitle")}</DialogTitle>
+            <DialogContent
+              style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            >
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                {t("apps.scopeDefImportHint")}
+              </Text>
+              <Textarea
+                value={importText}
+                onChange={(_, d) => {
+                  setImportText(d.value);
+                  setImportResult(null);
+                }}
+                placeholder={t("apps.scopeDefImportPlaceholder")}
+                rows={12}
+                resize="vertical"
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              />
+              {parsedImport && "error" in parsedImport && (
+                <MessageBar intent="error">{parsedImport.error}</MessageBar>
+              )}
+              {importResult && (
+                <MessageBar
+                  intent={
+                    importResult.failures.length === 0 ? "success" : "warning"
+                  }
+                >
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                  >
+                    <Text size={200}>
+                      {importResult.failures.length === 0
+                        ? t("apps.scopeDefImportResultOk", {
+                            total: importResult.total,
+                          })
+                        : t("apps.scopeDefImportResultPartial", {
+                            ok: importResult.ok,
+                            total: importResult.total,
+                            failed: importResult.failures.length,
+                          })}
+                    </Text>
+                    {importResult.failures.length > 0 && (
+                      <ul style={{ margin: "4px 0 0 18px", padding: 0 }}>
+                        {importResult.failures.map((f) => (
+                          <li key={f.scope}>
+                            <code>{f.scope}</code>: {f.error}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </MessageBar>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <DialogTrigger disableButtonEnhancement>
+                <Button appearance="secondary">{t("common.close")}</Button>
+              </DialogTrigger>
+              <Button
+                appearance="primary"
+                icon={
+                  importRunning ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    <ArrowImportRegular />
+                  )
+                }
+                disabled={
+                  importRunning ||
+                  !parsedImport ||
+                  "error" in parsedImport ||
+                  parsedImport.defs.length === 0
+                }
+                onClick={runImport}
+              >
+                {importRunning
+                  ? t("apps.scopeDefImportRunning")
+                  : t("apps.scopeDefImportButton", {
+                      count:
+                        parsedImport && !("error" in parsedImport)
+                          ? parsedImport.defs.length
+                          : 0,
+                    })}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }
@@ -996,24 +1334,36 @@ export function AppDetail() {
                 rows={4}
               />
             </Field>
-            <ScopePickerField
-              label={t("apps.allowedScopes")}
-              hint={t("apps.allowedScopesHint")}
-              scopes={form.allowed_scopes.filter((s) => !s.startsWith("app:"))}
-              availableScopes={PLATFORM_SCOPES}
-              onChange={(scopes) =>
-                setForm((f) => ({
-                  ...f!,
-                  allowed_scopes: [
-                    ...scopes,
-                    ...f!.allowed_scopes.filter((s) => s.startsWith("app:")),
-                  ],
-                  optional_scopes: f!.optional_scopes.filter((s) =>
-                    scopes.includes(s),
-                  ),
-                }))
-              }
-            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <ScopePickerField
+                label={t("apps.allowedScopes")}
+                hint={t("apps.allowedScopesHint")}
+                scopes={form.allowed_scopes.filter(
+                  (s) => !s.startsWith("app:"),
+                )}
+                availableScopes={PLATFORM_SCOPES}
+                onChange={(scopes) =>
+                  setForm((f) => ({
+                    ...f!,
+                    allowed_scopes: [
+                      ...scopes,
+                      ...f!.allowed_scopes.filter((s) => s.startsWith("app:")),
+                    ],
+                    optional_scopes: f!.optional_scopes.filter((s) =>
+                      scopes.includes(s),
+                    ),
+                  }))
+                }
+              />
+              <div style={{ alignSelf: "flex-start" }}>
+                <AllowedScopesImporter
+                  current={form.allowed_scopes}
+                  onMerge={(scopes) =>
+                    setForm((f) => ({ ...f!, allowed_scopes: scopes }))
+                  }
+                />
+              </div>
+            </div>
 
             <ScopePickerField
               label={t("apps.optionalScopes")}
