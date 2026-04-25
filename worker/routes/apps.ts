@@ -221,7 +221,10 @@ async function tryAppSelfAuthForScopeDefs(
 
   // Scope the authentication to the requested app: presenting app A's
   // credentials must not grant access to app B's scope-definitions.
-  if (row.id !== c.req.param("id")) return await next();
+  // The URL :id may be either the database id or the client_id — apps
+  // authenticating as themselves naturally know themselves by client_id.
+  const urlId = c.req.param("id");
+  if (urlId !== row.id && urlId !== row.client_id) return await next();
 
   c.set("appSelfAuth", { appId: row.id, clientId: row.client_id });
   return await next();
@@ -1103,30 +1106,34 @@ async function authorizeScopeDefsAccess(
 
 // GET /:id/scope-definitions — list all scope metadata defined by this app
 app.get("/:id/scope-definitions", async (c) => {
-  const id = c.req.param("id");
-  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
-    .bind(id)
+  const urlId = c.req.param("id");
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE id = ? OR client_id = ?",
+  )
+    .bind(urlId, urlId)
     .first<OAuthAppRow>();
   if (!row) return c.json({ error: "Not found" }, 404);
-  const denied = await authorizeScopeDefsAccess(c, row, id, false);
+  const denied = await authorizeScopeDefsAccess(c, row, row.id, false);
   if (denied) return denied;
 
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM app_scope_definitions WHERE app_id = ? ORDER BY scope ASC",
   )
-    .bind(id)
+    .bind(row.id)
     .all<AppScopeDefinitionRow>();
   return c.json({ definitions: results });
 });
 
 // POST /:id/scope-definitions — create or update a scope definition
 app.post("/:id/scope-definitions", async (c) => {
-  const id = c.req.param("id");
-  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
-    .bind(id)
+  const urlId = c.req.param("id");
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE id = ? OR client_id = ?",
+  )
+    .bind(urlId, urlId)
     .first<OAuthAppRow>();
   if (!row) return c.json({ error: "Not found" }, 404);
-  const denied = await authorizeScopeDefsAccess(c, row, id, true);
+  const denied = await authorizeScopeDefsAccess(c, row, row.id, true);
   if (denied) return denied;
 
   const body = await c.req.json<{
@@ -1154,7 +1161,7 @@ app.post("/:id/scope-definitions", async (c) => {
   )
     .bind(
       defId,
-      id,
+      row.id,
       body.scope.trim(),
       body.title.trim(),
       body.description?.trim() ?? "",
@@ -1166,7 +1173,7 @@ app.post("/:id/scope-definitions", async (c) => {
   const def = await c.env.DB.prepare(
     "SELECT * FROM app_scope_definitions WHERE app_id = ? AND scope = ?",
   )
-    .bind(id, body.scope.trim())
+    .bind(row.id, body.scope.trim())
     .first<AppScopeDefinitionRow>();
 
   return c.json({ definition: def }, 201);
@@ -1174,18 +1181,20 @@ app.post("/:id/scope-definitions", async (c) => {
 
 // PATCH /:id/scope-definitions/:defId — update a scope definition
 app.patch("/:id/scope-definitions/:defId", async (c) => {
-  const { id, defId } = c.req.param();
-  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
-    .bind(id)
+  const { id: urlId, defId } = c.req.param();
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE id = ? OR client_id = ?",
+  )
+    .bind(urlId, urlId)
     .first<OAuthAppRow>();
   if (!row) return c.json({ error: "Not found" }, 404);
-  const denied = await authorizeScopeDefsAccess(c, row, id, true);
+  const denied = await authorizeScopeDefsAccess(c, row, row.id, true);
   if (denied) return denied;
 
   const def = await c.env.DB.prepare(
     "SELECT * FROM app_scope_definitions WHERE id = ? AND app_id = ?",
   )
-    .bind(defId, id)
+    .bind(defId, row.id)
     .first<AppScopeDefinitionRow>();
   if (!def) return c.json({ error: "Not found" }, 404);
 
@@ -1214,18 +1223,20 @@ app.patch("/:id/scope-definitions/:defId", async (c) => {
 
 // DELETE /:id/scope-definitions/:defId — delete a scope definition
 app.delete("/:id/scope-definitions/:defId", async (c) => {
-  const { id, defId } = c.req.param();
-  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
-    .bind(id)
+  const { id: urlId, defId } = c.req.param();
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE id = ? OR client_id = ?",
+  )
+    .bind(urlId, urlId)
     .first<OAuthAppRow>();
   if (!row) return c.json({ error: "Not found" }, 404);
-  const denied = await authorizeScopeDefsAccess(c, row, id, true);
+  const denied = await authorizeScopeDefsAccess(c, row, row.id, true);
   if (denied) return denied;
 
   await c.env.DB.prepare(
     "DELETE FROM app_scope_definitions WHERE id = ? AND app_id = ?",
   )
-    .bind(defId, id)
+    .bind(defId, row.id)
     .run();
   return c.json({ message: "Deleted" });
 });
