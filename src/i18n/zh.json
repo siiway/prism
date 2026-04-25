@@ -304,6 +304,7 @@
     "publicClient": "公开客户端（无客户端密钥，需要 PKCE）",
     "useJwtTokens": "签发 ML-DSA-65 JWT 访问令牌（后量子，需手动启用）",
     "allowSelfManageExportedPermissions": "允许此应用使用自身客户端凭据管理其导出的权限范围定义",
+    "copyFullScopeId": "复制完整 scope id",
     "appUpdated": "应用已更新",
     "clientCredentials": "客户端凭据",
     "clientId": "客户端 ID",

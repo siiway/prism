@@ -304,6 +304,7 @@
     "publicClient": "Public client (no client secret, PKCE required)",
     "useJwtTokens": "Issue ML-DSA-65 JWT access tokens (post-quantum, opt-in)",
     "allowSelfManageExportedPermissions": "Let this app manage its own exported permission scope definitions via client credentials",
+    "copyFullScopeId": "Copy full scope id",
     "appUpdated": "App updated",
     "clientCredentials": "Client Credentials",
     "clientId": "Client ID",

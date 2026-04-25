@@ -324,7 +324,13 @@ function ScopePickerField({
 
 // ─── Scope definitions panel ──────────────────────────────────────────────────
 
-function ScopeDefinitionsPanel({ appId }: { appId: string }) {
+function ScopeDefinitionsPanel({
+  appId,
+  clientId,
+}: {
+  appId: string;
+  clientId: string;
+}) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [newScope, setNewScope] = useState("");
@@ -334,6 +340,13 @@ function ScopeDefinitionsPanel({ appId }: { appId: string }) {
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [err, setErr] = useState("");
+  const [copiedScope, setCopiedScope] = useState<string>("");
+
+  const copyFullScope = (scope: string) => {
+    void navigator.clipboard.writeText(`app:${clientId}:${scope}`);
+    setCopiedScope(scope);
+    setTimeout(() => setCopiedScope((s) => (s === scope ? "" : s)), 2000);
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ["app-scope-defs", appId],
@@ -466,6 +479,17 @@ function ScopeDefinitionsPanel({ appId }: { appId: string }) {
                 </Text>
               )}
             </div>
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<CopyRegular />}
+              title={t("apps.copyFullScopeId")}
+              onClick={() => copyFullScope(def.scope)}
+            >
+              {copiedScope === def.scope
+                ? t("apps.copied")
+                : t("apps.copyFullScopeId")}
+            </Button>
             <Button
               size="small"
               appearance="subtle"
@@ -1065,7 +1089,7 @@ export function AppDetail() {
             </Field>
           </div>
           <div className={styles.card}>
-            <ScopeDefinitionsPanel appId={id!} />
+            <ScopeDefinitionsPanel appId={id!} clientId={app.client_id} />
           </div>
           <div className={styles.card}>
             <ScopeAccessRulesPanel appId={id!} />
