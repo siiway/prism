@@ -1480,6 +1480,7 @@ export interface OAuthAuthorizeInfo {
     is_verified: boolean;
     is_official: boolean;
     is_first_party: boolean;
+    is_public: boolean;
   };
   scopes: string[];
   optional_scopes: string[];

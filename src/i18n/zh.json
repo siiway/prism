@@ -605,6 +605,8 @@
     "footerNote": "授权后，您允许 {{appName}} 从您的 Prism 账号访问所请求的信息。",
     "official": "官方",
     "verified": "已验证",
+    "publicClientWarningTitle": "公开客户端",
+    "publicClientWarningDesc": "此应用无需客户端密钥即可认证，任何人都可以发布它的副本。授权前请确认您是从官方渠道下载的此应用。",
     "scopeIdentityLabel": "身份",
     "scopeIdentityDesc": "知道您是谁",
     "scopeProfileLabel": "个人资料",

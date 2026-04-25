@@ -565,6 +565,7 @@ app.get("/app-info", optionalAuth, async (c) => {
       is_verified: isVerified,
       is_official: oauthApp.is_official === 1,
       is_first_party: oauthApp.is_first_party === 1,
+      is_public: oauthApp.is_public === 1,
     },
     scopes,
     optional_scopes: optionalScopes,

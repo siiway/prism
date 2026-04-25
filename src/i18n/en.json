@@ -605,6 +605,8 @@
     "footerNote": "By authorizing, you allow {{appName}} to access the requested information from your Prism account.",
     "official": "Official",
     "verified": "Verified",
+    "publicClientWarningTitle": "Public client",
+    "publicClientWarningDesc": "This app authenticates without a client secret, so anyone can ship a copy of it. Make sure you downloaded this app from its official source before authorizing.",
     "scopeIdentityLabel": "Identity",
     "scopeIdentityDesc": "Know who you are",
     "scopeProfileLabel": "Profile",

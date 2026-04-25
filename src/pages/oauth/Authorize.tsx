@@ -91,6 +91,15 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "8px",
   },
+  publicClientWarning: {
+    padding: "12px 14px",
+    borderRadius: "8px",
+    border: `1px solid ${tokens.colorPaletteMarigoldBorder1}`,
+    background: tokens.colorPaletteMarigoldBackground1,
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "10px",
+  },
   siteScopeFields: {
     display: "flex",
     flexDirection: "column",
@@ -518,6 +527,35 @@ export function Authorize() {
             )}
           </div>
         </div>
+
+        {/* Public-client warning */}
+        {data.app.is_public && (
+          <div className={styles.publicClientWarning}>
+            <WarningRegular
+              fontSize={20}
+              style={{
+                color: tokens.colorPaletteMarigoldForeground1,
+                flexShrink: 0,
+                marginTop: 2,
+              }}
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <Text
+                weight="semibold"
+                size={300}
+                style={{ color: tokens.colorPaletteMarigoldForeground1 }}
+              >
+                {t("oauth.publicClientWarningTitle")}
+              </Text>
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground2 }}
+              >
+                {t("oauth.publicClientWarningDesc")}
+              </Text>
+            </div>
+          </div>
+        )}
 
         {/* Logged in as */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
