@@ -1493,6 +1493,14 @@ export interface OAuthAuthorizeInfo {
     scope_title: string | null;
     scope_desc: string | null;
   }>;
+  /** Scopes the client requested in the authorize URL but that were filtered
+   *  out — surfaced so the user can see what was asked for vs what's actually
+   *  being granted. `reason` distinguishes "not in the app's allowed_scopes"
+   *  from "unknown scope" / "denied by target app" / "target app missing". */
+  rejected_scopes: Array<{
+    scope: string;
+    reason: "not_allowed" | "unknown" | "app_denied" | "target_missing";
+  }>;
   redirect_uri: string;
   state: string | null;
   user: UserProfile | null;

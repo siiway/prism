@@ -128,6 +128,19 @@ function unboundTeamPermissions(scopes: string[]): string[] {
  * Returns [validScopes, resolvedAppScopes] where resolvedAppScopes carries
  * the target app name/icon for the consent UI.
  */
+/** Why a requested scope was filtered out of the consent screen. Surfaced
+ *  back to the user so they can see what an app asked for vs what was granted. */
+export type RejectedScopeReason =
+  /** Not registered in the app's `allowed_scopes` whitelist. */
+  | "not_allowed"
+  /** Unknown / malformed scope (not a platform scope, team scope, or `app:*` form). */
+  | "unknown"
+  /** Cross-app `app:*` scope, but the target app's owner has explicitly denied
+   *  this requesting app via `app_deny` or omitted it from an `app_allow` list. */
+  | "app_denied"
+  /** Cross-app `app:*` scope, but the target app no longer exists / is inactive. */
+  | "target_missing";
+
 async function resolveRequestedScopes(
   db: D1Database,
   appUrl: string,
@@ -145,22 +158,38 @@ async function resolveRequestedScopes(
     scope_title: string | null;
     scope_desc: string | null;
   }>;
+  rejected: Array<{ scope: string; reason: RejectedScopeReason }>;
 }> {
-  const regular = requestedScopes.filter(
-    (s) =>
-      (VALID_SCOPES.has(s) || UNBOUND_TEAM_SCOPES.has(s)) &&
-      allowedScopes.includes(s),
-  );
+  const regular: string[] = [];
+  const appScopeRequests: string[] = [];
+  const rejected: Array<{ scope: string; reason: RejectedScopeReason }> = [];
 
-  const appScopeRequests = requestedScopes.filter((s) => {
+  for (const s of requestedScopes) {
     const parsed = parseAppScope(s);
-    return (
-      parsed && VALID_SCOPES.has(parsed.innerScope) && allowedScopes.includes(s)
-    );
-  });
+    if (parsed) {
+      // Cross-app scope: inner part must be a real scope; full string must be allowlisted.
+      if (!VALID_SCOPES.has(parsed.innerScope)) {
+        rejected.push({ scope: s, reason: "unknown" });
+      } else if (!allowedScopes.includes(s)) {
+        rejected.push({ scope: s, reason: "not_allowed" });
+      } else {
+        appScopeRequests.push(s);
+      }
+      continue;
+    }
+    if (VALID_SCOPES.has(s) || UNBOUND_TEAM_SCOPES.has(s)) {
+      if (!allowedScopes.includes(s)) {
+        rejected.push({ scope: s, reason: "not_allowed" });
+      } else {
+        regular.push(s);
+      }
+    } else {
+      rejected.push({ scope: s, reason: "unknown" });
+    }
+  }
 
   if (appScopeRequests.length === 0) {
-    return { scopes: regular, appScopes: [] };
+    return { scopes: regular, appScopes: [], rejected };
   }
 
   // Batch-lookup unique target client_ids
@@ -269,17 +298,25 @@ async function resolveRequestedScopes(
   for (const s of appScopeRequests) {
     const parsed = parseAppScope(s)!;
     const target = appsMap.get(parsed.clientId);
-    if (!target) continue;
+    if (!target) {
+      rejected.push({ scope: s, reason: "target_missing" });
+      continue;
+    }
 
     // Check app-level access rules (requesting app's client_id vs target app's rules)
     const rules = accessRulesMap.get(target.id);
     if (rules) {
-      if (rules.denyList.includes(requestingClientId)) continue;
+      if (rules.denyList.includes(requestingClientId)) {
+        rejected.push({ scope: s, reason: "app_denied" });
+        continue;
+      }
       if (
         rules.allowList.length > 0 &&
         !rules.allowList.includes(requestingClientId)
-      )
+      ) {
+        rejected.push({ scope: s, reason: "app_denied" });
         continue;
+      }
     }
 
     const def = scopeDefsMap.get(target.id)?.get(parsed.innerScope);
@@ -294,7 +331,11 @@ async function resolveRequestedScopes(
     });
   }
 
-  return { scopes: [...regular, ...appScopes.map((a) => a.scope)], appScopes };
+  return {
+    scopes: [...regular, ...appScopes.map((a) => a.scope)],
+    appScopes,
+    rejected,
+  };
 }
 
 // ─── Authorization endpoint ───────────────────────────────────────────────────
@@ -475,7 +516,7 @@ app.get("/app-info", optionalAuth, async (c) => {
 
   const requestedScopes = (scope ?? "").split(" ").filter(Boolean);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
-  const [{ scopes, appScopes }, isVerified] = await Promise.all([
+  const [{ scopes, appScopes, rejected }, isVerified] = await Promise.all([
     resolveRequestedScopes(
       c.env.DB,
       c.env.APP_URL,
@@ -570,6 +611,7 @@ app.get("/app-info", optionalAuth, async (c) => {
     scopes,
     optional_scopes: optionalScopes,
     app_scopes: appScopes,
+    rejected_scopes: rejected,
     redirect_uri,
     state,
     code_challenge,

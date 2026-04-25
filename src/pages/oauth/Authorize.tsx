@@ -1007,6 +1007,70 @@ export function Authorize() {
             </div>
           )}
 
+          {/* Scopes the app asked for but isn't allowed to receive — surfaced
+              so the user can see the gap between what was requested and what
+              the app is registered to use. */}
+          {(data.rejected_scopes ?? []).length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <Text
+                size={200}
+                weight="semibold"
+                block
+                style={{
+                  color: tokens.colorPaletteDarkOrangeForeground1,
+                  marginBottom: 4,
+                }}
+              >
+                {t("oauth.rejectedScopesHeading")}
+              </Text>
+              <Text
+                size={200}
+                block
+                style={{
+                  color: tokens.colorNeutralForeground3,
+                  marginBottom: 8,
+                }}
+              >
+                {t("oauth.rejectedScopesHint")}
+              </Text>
+              <div className={styles.scopeList}>
+                {(data.rejected_scopes ?? []).map((rs) => (
+                  <div
+                    key={rs.scope}
+                    className={styles.scopeItem}
+                    style={{ alignItems: "flex-start" }}
+                  >
+                    <DismissRegular
+                      style={{
+                        color: tokens.colorPaletteDarkOrangeForeground1,
+                        flexShrink: 0,
+                        marginTop: 2,
+                      }}
+                    />
+                    <div>
+                      <Text
+                        size={300}
+                        style={{
+                          fontFamily: "monospace",
+                          wordBreak: "break-all",
+                        }}
+                      >
+                        {rs.scope}
+                      </Text>
+                      <Text
+                        block
+                        size={200}
+                        style={{ color: tokens.colorNeutralForeground3 }}
+                      >
+                        {t(`oauth.rejectedScopeReason_${rs.reason}`)}
+                      </Text>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* App-delegation scopes */}
           {(data.app_scopes ?? []).length > 0 && (
             <div style={{ marginTop: 12 }}>
