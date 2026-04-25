@@ -15,9 +15,7 @@ import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
   USER_NOTIFICATION_EVENTS,
-  parsePrefsEvents,
   parseNotificationRules,
-  type NotificationPrefsMap,
 } from "../lib/notifications";
 import type { NotificationRules } from "../types";
 import { getConfig } from "../lib/config";
@@ -841,7 +839,7 @@ app.post("/webhooks/:id/test", async (c) => {
 
   const sig = await hmacSign(wh.secret, payload);
   let status: number | null = null;
-  let response: string | null = null;
+  let response: string | null;
   let success = false;
 
   try {

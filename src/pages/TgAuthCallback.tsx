@@ -85,6 +85,7 @@ export function TgAuthCallback() {
             : "token_exchange_failed";
         navigate(`/login?error=${code}`, { replace: true });
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount with the current params
   }, []);
 
   return (

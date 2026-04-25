@@ -8,7 +8,7 @@ import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { parseAppScope } from "../lib/scopes";
-import { deliverAppEvent, APP_EVENT_TYPES } from "../lib/app-events";
+import { APP_EVENT_TYPES } from "../lib/app-events";
 import { deliverUserWebhooks } from "../lib/webhooks";
 import {
   deliverUserEmailNotifications,
@@ -615,10 +615,12 @@ type AppWebhookRow = {
 async function verifyClientAuth(
   db: D1Database,
   authHeader: string | undefined,
-): Promise<
-  | (AppWebhookRow & { id: string; client_id: string; client_secret: string })
-  | null
-> {
+): Promise<{
+  id: string;
+  client_id: string;
+  client_secret: string;
+  is_active: number;
+} | null> {
   if (!authHeader?.startsWith("Basic ")) return null;
   let decoded: string;
   try {
@@ -643,7 +645,7 @@ async function verifyClientAuth(
     }>();
   if (!row || row.is_active !== 1 || row.client_secret !== clientSecret)
     return null;
-  return row as any;
+  return row;
 }
 
 // GET /:id/webhooks — list app webhooks (app owner / team admin / site admin)
@@ -993,7 +995,6 @@ app.get("/:id/events/ws", async (c) => {
   const appId = c.req.param("id");
   if (appRow.id !== appId) return c.json({ error: "Forbidden" }, 403);
 
-  // @ts-ignore — Cloudflare Workers-specific WebSocket API
   const pair = new WebSocketPair();
   const [client, server] = Object.values(pair) as [
     WebSocket,
@@ -1064,7 +1065,6 @@ app.get("/:id/events/ws", async (c) => {
 
   poll();
 
-  // @ts-ignore
   return new Response(null, { status: 101, webSocket: client });
 });
 
@@ -1131,7 +1131,7 @@ app.post("/:id/scope-definitions", async (c) => {
   if (!body.title?.trim()) return c.json({ error: "title is required" }, 400);
 
   // Scope must be a non-empty identifier (no whitespace, no colons)
-  if (!/^[a-zA-Z0-9_\-\.]+$/.test(body.scope.trim()))
+  if (!/^[a-zA-Z0-9_.-]+$/.test(body.scope.trim()))
     return c.json(
       { error: "scope must be an alphanumeric identifier (a-z, 0-9, _, -, .)" },
       400,

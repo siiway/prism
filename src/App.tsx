@@ -106,6 +106,7 @@ function AuthCallback() {
         localStorage.removeItem("token");
         navigate("/login?error=invalid_token");
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount with the current params
   }, []);
 
   return null;

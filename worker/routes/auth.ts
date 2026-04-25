@@ -12,7 +12,6 @@ import { sendEmail, verifyEmailTemplate } from "../lib/email";
 import { signJWT } from "../lib/jwt";
 import {
   generateBackupCodes,
-  generateTotp,
   generateTotpSecret,
   hashBackupCode,
   hashBackupCodes,

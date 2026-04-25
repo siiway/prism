@@ -22,7 +22,7 @@ export function computeVerified(
 ): boolean {
   if (!verifiedDomains.size) return false;
 
-  let uris: string[] = [];
+  let uris: string[];
   try {
     uris = JSON.parse(redirectUrisJson) as string[];
   } catch {

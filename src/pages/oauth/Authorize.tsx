@@ -163,6 +163,7 @@ export function Authorize() {
       data.scopes.filter(isSiteScope).forEach((s) => next.add(s));
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when grant flags change; data.scopes/isSiteScope are stable when those flags don't
   }, [data?.requires_site_grant, data?.site_scopes_grantable]);
 
   const confirmPhrase = data?.site_scope_confirm_phrase ?? "grant site access";
@@ -298,6 +299,7 @@ export function Authorize() {
       autoApproved.current = true;
       handleDecision("approve");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleDecision is intentionally not a dep; the autoApproved ref guards against double-fire
   }, [data]);
 
   // If not logged in, redirect to login

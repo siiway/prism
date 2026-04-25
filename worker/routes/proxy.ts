@@ -84,7 +84,6 @@ app.get("/", async (c) => {
       method: "GET",
       headers: { Accept: "image/*" },
       // Ask Cloudflare to cache the upstream response
-      // @ts-ignore — cf is a CF-specific fetch option
       cf: { cacheTtl: 3600, cacheEverything: true },
     });
   } catch {

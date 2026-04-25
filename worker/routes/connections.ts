@@ -596,7 +596,6 @@ app.get("/:provider/callback", async (c) => {
           connectingUser.email_verified,
           providerEmail,
           slug,
-          config.social_verify_ttl_days,
         ).catch(() => {}),
       );
     }
@@ -674,7 +673,6 @@ app.get("/:provider/callback", async (c) => {
       user.email_verified,
       providerEmail,
       slug,
-      config.social_verify_ttl_days,
     );
     await checkSocialVerifyExpiry(
       c.env.DB,
@@ -823,7 +821,6 @@ app.post("/complete", async (c) => {
       user.email_verified,
       state.providerEmail,
       state.provider,
-      completeCfg.social_verify_ttl_days,
     );
     await checkSocialVerifyExpiry(
       c.env.DB,
@@ -1040,7 +1037,6 @@ async function trySocialEmailVerify(
   userEmailVerified: number,
   providerEmail: string | null,
   providerSlug: string,
-  socialVerifyTtlDays: number,
 ): Promise<void> {
   if (!providerEmail) return;
   if (userEmail.toLowerCase() !== providerEmail.toLowerCase()) return;

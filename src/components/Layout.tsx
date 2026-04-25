@@ -205,6 +205,7 @@ export function Layout() {
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing UI state to route changes; rerender cost is negligible vs. tracking with refs
     setSidebarOpen(false);
   }, [location.pathname]);
   const { data: site } = useQuery({

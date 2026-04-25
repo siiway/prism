@@ -1,7 +1,7 @@
 // OAuth 2.0 Authorization Server (Authorization Code + PKCE, OpenID Connect)
 
 import { Hono } from "hono";
-import { getConfig, getJwtSecret, getRsaKeyPair } from "../lib/config";
+import { getConfig, getRsaKeyPair } from "../lib/config";
 import { getMLDSAKey } from "../lib/mldsa";
 import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
 import {
@@ -25,7 +25,6 @@ import {
   parseBoundTeamScope,
   bindTeamScopes,
   UNBOUND_TEAM_SCOPES,
-  TEAM_PERMISSIONS,
 } from "../lib/scopes";
 import { deliverAppEvent } from "../lib/app-events";
 import {
@@ -1192,7 +1191,7 @@ app.post("/introspect", async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
 
-  let tokenRow: OAuthTokenRow | null = null;
+  let tokenRow: OAuthTokenRow | null;
 
   if (token.split(".").length === 3) {
     // JWT — verify signature first, then look up by jti for revocation
@@ -2106,7 +2105,7 @@ app.post("/me/domains/:domain/verify", async (c) => {
     return c.json({ message: "Already verified", verified: true });
 
   // DNS TXT lookup via Cloudflare DNS-over-HTTPS
-  let verified = false;
+  let verified: boolean;
   try {
     const resp = await fetch(
       `https://cloudflare-dns.com/dns-query?name=_prism-verify.${domain}&type=TXT`,
@@ -2659,23 +2658,20 @@ app.get("/me/admin/config", async (c) => {
   const config = await getConfig(c.env.DB);
 
   // Strip sensitive credential fields
-  const {
-    github_client_secret,
-    google_client_secret,
-    microsoft_client_secret,
-    discord_client_secret,
-    captcha_secret_key,
-    smtp_password,
-    email_api_key,
-    ...safe
-  } = config as unknown as Record<string, unknown>;
-  (void github_client_secret,
-    google_client_secret,
-    microsoft_client_secret,
-    discord_client_secret,
-    captcha_secret_key,
-    smtp_password,
-    email_api_key);
+  const SENSITIVE_KEYS = [
+    "github_client_secret",
+    "google_client_secret",
+    "microsoft_client_secret",
+    "discord_client_secret",
+    "captcha_secret_key",
+    "smtp_password",
+    "email_api_key",
+  ];
+  const safe = Object.fromEntries(
+    Object.entries(config as unknown as Record<string, unknown>).filter(
+      ([k]) => !SENSITIVE_KEYS.includes(k),
+    ),
+  );
 
   return c.json({ config: safe });
 });
@@ -3124,7 +3120,7 @@ app.post("/me/admin/webhooks/:id/test", async (c) => {
 
   const sig = await hmacSign(wh.secret, payload);
   let status: number | null = null;
-  let response: string | null = null;
+  let response: string | null;
   let success = false;
 
   try {

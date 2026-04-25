@@ -293,7 +293,7 @@ function AllowedScopesImporter({
     for (const s of parsed.scopes) {
       // Same shape rule used everywhere: a known platform scope or an app:* scope
       const ok =
-        /^[a-zA-Z0-9:_\-\.]+$/.test(s) &&
+        /^[a-zA-Z0-9:_.-]+$/.test(s) &&
         (s.startsWith("app:") || !s.includes(" "));
       if (!ok) {
         invalid.push(s);

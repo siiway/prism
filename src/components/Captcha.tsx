@@ -116,6 +116,7 @@ export function Captcha({
   }, [onVerified, onError]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- triggering an async task on provider change; setState happens inside the async flow, not synchronously
     if (provider === "pow") solveChallenge();
   }, [provider, solveChallenge]);
 

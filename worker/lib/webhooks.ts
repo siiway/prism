@@ -36,7 +36,7 @@ export async function deliverOnce(
 ): Promise<DeliveryResult> {
   const sig = await hmacSign(secret, body);
   let status: number | null = null;
-  let response: string | null = null;
+  let response: string | null;
 
   try {
     const res = await fetch(url, {

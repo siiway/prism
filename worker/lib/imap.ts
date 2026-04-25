@@ -259,8 +259,6 @@ function parseFetchLine(lines: string[]): ImapMessage[] {
         }
       }
       from = parseAddressList(inner.slice(start, pos));
-    } else if (inner.slice(pos, pos + 3) === "NIL") {
-      pos += 3;
     }
 
     if (from && subject) {
@@ -273,23 +271,6 @@ function parseFetchLine(lines: string[]): ImapMessage[] {
 
 function skipWhitespace(s: string, pos: number): number {
   while (pos < s.length && (s[pos] === " " || s[pos] === "\t")) pos++;
-  return pos;
-}
-
-function skipQuotedString(s: string, pos: number): number {
-  if (s[pos] !== '"') return pos;
-  pos++; // skip opening quote
-  while (pos < s.length) {
-    if (s[pos] === "\\") {
-      pos += 2;
-      continue;
-    }
-    if (s[pos] === '"') {
-      pos++;
-      break;
-    }
-    pos++;
-  }
   return pos;
 }
 
