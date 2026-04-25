@@ -1,6 +1,6 @@
 // OAuth application management (CRUD for user-owned apps)
 
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { requireAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
@@ -117,6 +117,16 @@ async function checkOwnerScopeAccess(
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
+// Opt-in: let an app authenticate as itself (HTTP Basic with client_id:client_secret)
+// against its own scope-definitions endpoints. Must run BEFORE requireAuth so that
+// requireAuth can see the populated appSelfAuth context and skip user-token checks.
+//
+// Security gates enforced below: app must be active, NOT public (public apps have
+// no meaningful secret), have `allow_self_manage_exported_permissions=1`, and present a
+// secret that matches via a length-independent constant-time compare.
+app.use("/:id/scope-definitions", tryAppSelfAuthForScopeDefs);
+app.use("/:id/scope-definitions/*", tryAppSelfAuthForScopeDefs);
+
 app.use("*", requireAuth);
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -137,6 +147,84 @@ async function getTeamMember(
     .prepare("SELECT * FROM team_members WHERE team_id = ? AND user_id = ?")
     .bind(teamId, userId)
     .first<TeamMemberRow>();
+}
+
+/** Length-independent constant-time string comparison. */
+function timingSafeStrEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a);
+  const bBytes = new TextEncoder().encode(b);
+  // Always compare a fixed number of bytes (the longer length) so the loop
+  // body is constant. Length mismatch still fails.
+  const len = Math.max(aBytes.length, bBytes.length);
+  let diff = aBytes.length ^ bBytes.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
+  }
+  return diff === 0;
+}
+
+/** Try to authenticate the request as the app itself via HTTP Basic.
+ *
+ * Only succeeds when ALL of these hold:
+ *   - Authorization: Basic <base64(client_id:client_secret)> is present and parseable
+ *   - The app row exists, is_active=1, is_public=0 (public apps have no real secret)
+ *   - allow_self_manage_exported_permissions=1 (owner has opted in)
+ *   - A non-empty client_secret that matches in constant time
+ *   - The authenticated app's id matches the URL ":id" parameter
+ *
+ * On success, sets c.get("appSelfAuth") and lets the request through.
+ * On any failure, leaves context untouched so requireAuth can fall back to
+ * standard user-session auth (Bearer / X-Session-Token).
+ */
+async function tryAppSelfAuthForScopeDefs(
+  c: Context<AppEnv>,
+  next: Next,
+): Promise<Response | void> {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Basic ")) return await next();
+
+  let decoded: string;
+  try {
+    decoded = atob(authHeader.slice(6));
+  } catch {
+    return await next();
+  }
+  const sep = decoded.indexOf(":");
+  if (sep < 1) return await next();
+  const clientId = decoded.slice(0, sep);
+  const clientSecret = decoded.slice(sep + 1);
+  if (!clientSecret) return await next();
+
+  const row = await c.env.DB.prepare(
+    "SELECT id, client_id, client_secret, is_active, is_public, allow_self_manage_exported_permissions FROM oauth_apps WHERE client_id = ?",
+  )
+    .bind(clientId)
+    .first<{
+      id: string;
+      client_id: string;
+      client_secret: string;
+      is_active: number;
+      is_public: number;
+      allow_self_manage_exported_permissions: number;
+    }>();
+
+  if (
+    !row ||
+    row.is_active !== 1 ||
+    row.is_public === 1 ||
+    row.allow_self_manage_exported_permissions !== 1 ||
+    !row.client_secret ||
+    !timingSafeStrEqual(row.client_secret, clientSecret)
+  ) {
+    return await next();
+  }
+
+  // Scope the authentication to the requested app: presenting app A's
+  // credentials must not grant access to app B's scope-definitions.
+  if (row.id !== c.req.param("id")) return await next();
+
+  c.set("appSelfAuth", { appId: row.id, clientId: row.client_id });
+  return await next();
 }
 
 /** Returns true if the user may access the app (read or write). */
@@ -330,6 +418,7 @@ app.patch("/:id", async (c) => {
     oidc_fields?: string[];
     is_public?: boolean;
     use_jwt_tokens?: boolean;
+    allow_self_manage_exported_permissions?: boolean;
   }>();
 
   if (body.icon_url) {
@@ -388,10 +477,16 @@ app.patch("/:id", async (c) => {
           ? 1
           : 0
         : row.use_jwt_tokens,
+    allow_self_manage_exported_permissions:
+      body.allow_self_manage_exported_permissions !== undefined
+        ? body.allow_self_manage_exported_permissions
+          ? 1
+          : 0
+        : row.allow_self_manage_exported_permissions,
   };
 
   await c.env.DB.prepare(
-    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, updated_at=? WHERE id=?`,
+    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, allow_self_manage_exported_permissions=?, updated_at=? WHERE id=?`,
   )
     .bind(
       updated.name,
@@ -404,6 +499,7 @@ app.patch("/:id", async (c) => {
       updated.oidc_fields,
       updated.is_public,
       updated.use_jwt_tokens,
+      updated.allow_self_manage_exported_permissions,
       now,
       id,
     )
@@ -985,16 +1081,35 @@ app.get("/:id/events/ws", async (c) => {
 
 // ─── Scope definitions ────────────────────────────────────────────────────────
 
+/** Authorization check for scope-definitions endpoints.
+ *  Accepts either app-self auth (scoped to this appId) or user auth with
+ *  the normal team/owner permission model. Returns null on allow, or a
+ *  Response to return on deny. */
+async function authorizeScopeDefsAccess(
+  c: Context<AppEnv>,
+  row: OAuthAppRow,
+  appId: string,
+  write: boolean,
+): Promise<Response | null> {
+  const appSelf = c.get("appSelfAuth");
+  if (appSelf && appSelf.appId === appId) return null;
+
+  const user = c.get("user");
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  if (!(await canAccess(c.env.DB, row, user.id, user.role, write)))
+    return c.json({ error: "Forbidden" }, 403);
+  return null;
+}
+
 // GET /:id/scope-definitions — list all scope metadata defined by this app
 app.get("/:id/scope-definitions", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
   if (!row) return c.json({ error: "Not found" }, 404);
-  if (!(await canAccess(c.env.DB, row, user.id, user.role, false)))
-    return c.json({ error: "Forbidden" }, 403);
+  const denied = await authorizeScopeDefsAccess(c, row, id, false);
+  if (denied) return denied;
 
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM app_scope_definitions WHERE app_id = ? ORDER BY scope ASC",
@@ -1006,14 +1121,13 @@ app.get("/:id/scope-definitions", async (c) => {
 
 // POST /:id/scope-definitions — create or update a scope definition
 app.post("/:id/scope-definitions", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
   if (!row) return c.json({ error: "Not found" }, 404);
-  if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+  const denied = await authorizeScopeDefsAccess(c, row, id, true);
+  if (denied) return denied;
 
   const body = await c.req.json<{
     scope: string;
@@ -1060,14 +1174,13 @@ app.post("/:id/scope-definitions", async (c) => {
 
 // PATCH /:id/scope-definitions/:defId — update a scope definition
 app.patch("/:id/scope-definitions/:defId", async (c) => {
-  const user = c.get("user");
   const { id, defId } = c.req.param();
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
   if (!row) return c.json({ error: "Not found" }, 404);
-  if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+  const denied = await authorizeScopeDefsAccess(c, row, id, true);
+  if (denied) return denied;
 
   const def = await c.env.DB.prepare(
     "SELECT * FROM app_scope_definitions WHERE id = ? AND app_id = ?",
@@ -1101,14 +1214,13 @@ app.patch("/:id/scope-definitions/:defId", async (c) => {
 
 // DELETE /:id/scope-definitions/:defId — delete a scope definition
 app.delete("/:id/scope-definitions/:defId", async (c) => {
-  const user = c.get("user");
   const { id, defId } = c.req.param();
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
   if (!row) return c.json({ error: "Not found" }, 404);
-  if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+  const denied = await authorizeScopeDefsAccess(c, row, id, true);
+  if (denied) return denied;
 
   await c.env.DB.prepare(
     "DELETE FROM app_scope_definitions WHERE id = ? AND app_id = ?",
@@ -1232,6 +1344,8 @@ function safeApp(baseUrl: string, row: OAuthAppRow, isVerified: boolean) {
     is_official: row.is_official === 1,
     is_first_party: row.is_first_party === 1,
     use_jwt_tokens: row.use_jwt_tokens === 1,
+    allow_self_manage_exported_permissions:
+      row.allow_self_manage_exported_permissions === 1,
     team_id: row.team_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,

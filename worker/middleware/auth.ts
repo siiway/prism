@@ -8,6 +8,10 @@ import type { Variables } from "../types";
 type AppEnv = { Bindings: Env; Variables: Variables };
 
 export async function requireAuth(c: Context<AppEnv>, next: Next) {
+  // An earlier middleware may have authenticated this request via an alternate
+  // scheme (e.g. app client credentials). Don't clobber that.
+  if (c.get("user") || c.get("appSelfAuth")) return await next();
+
   const authHeader = c.req.header("Authorization");
   const token = authHeader?.startsWith("Bearer ")
     ? authHeader.slice(7)

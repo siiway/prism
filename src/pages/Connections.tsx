@@ -252,7 +252,10 @@ export function Connections() {
     try {
       await api.refreshConnection(id);
       await qc.invalidateQueries({ queryKey: ["connections"] });
-      showMsg("success", t("connections.refreshedFrom", { provider: providerName }));
+      showMsg(
+        "success",
+        t("connections.refreshedFrom", { provider: providerName }),
+      );
     } catch (err) {
       showMsg(
         "error",
@@ -432,7 +435,9 @@ export function Connections() {
                               </DialogTrigger>
                               <Button
                                 appearance="primary"
-                                onClick={() => handleDisconnect(conn.id, p.name)}
+                                onClick={() =>
+                                  handleDisconnect(conn.id, p.name)
+                                }
                               >
                                 {t("connections.disconnectAction")}
                               </Button>

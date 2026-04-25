@@ -393,7 +393,12 @@ curl https://your-prism-domain/users/alice.gpg
 
 ### `PATCH /api/apps/:id`
 
-部分更新——字段与创建时相同。
+部分更新——字段与创建时相同，以及：
+
+- `allow_self_manage_exported_permissions`（布尔值）——可选项：允许该应用
+  使用 HTTP Basic 客户端凭据管理其导出的权限范围定义，无需用户令牌。对
+  公开客户端（Public Client）无效。详见
+  [跨应用权限](./app-permissions.md)。
 
 ### `POST /api/apps/:id/rotate-secret`
 

@@ -394,7 +394,12 @@ Lists apps owned by the current user.
 
 ### `PATCH /api/apps/:id`
 
-Partial update — same fields as create.
+Partial update — same fields as create, plus:
+
+- `allow_self_manage_exported_permissions` (boolean) — opt-in: let the app
+  manage its own exported scope definitions using HTTP Basic client
+  credentials (no user token). Has no effect on public clients. See
+  [Cross-App Permissions](./app-permissions.md) for the full flow.
 
 ### `POST /api/apps/:id/rotate-secret`
 

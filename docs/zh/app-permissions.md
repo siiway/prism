@@ -50,6 +50,45 @@ curl -X POST https://your-prism.example/api/apps/<appA_id>/scope-definitions \
   }'
 ```
 
+#### 应用自管理（可选）
+
+若在应用 A 的设置中开启 **允许此应用使用自身客户端凭据管理其导出的权限范围定义**
+（`allow_self_manage_exported_permissions` 标志），应用 A 便可直接使用 HTTP
+Basic 认证调用 `scope-definitions` 端点，无需用户令牌。适用于部署时或后端
+任务中自行注册/更新/删除其导出的权限范围。
+
+作用域被严格限定：仅限应用 A 自己的 `/scope-definitions` 端点，且认证身份
+必须与 URL 中的应用 ID 一致。公开客户端（PKCE，无密钥）无法使用此模式。
+访问控制规则端点（`/scope-access-rules`）仍需用户令牌。
+
+```bash
+curl -X POST https://your-prism.example/api/apps/<appA_id>/scope-definitions \
+  -u '<appA_client_id>:<appA_client_secret>' \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "read_posts",
+    "title": "读取文章",
+    "description": "查看用户已发布和草稿状态的文章"
+  }'
+```
+
+或通过 `@siiway/prism`：
+
+```ts
+const prism = new PrismClient({
+  baseUrl: "https://your-prism.example",
+  clientId: appA_client_id,
+  clientSecret: appA_client_secret,
+  redirectUri: "...",
+});
+
+await prism.appScopePermissions.upsertDefinitionAsSelf(appA_id, {
+  scope: "read_posts",
+  title: "读取文章",
+  description: "查看用户已发布和草稿状态的文章",
+});
+```
+
 ### 2. 设置访问控制规则（可选）
 
 默认情况下，任何应用所有者都可以注册您的权限范围，任何应用都可以在 OAuth 流程中请求它们。可通过访问规则来限制这一行为。

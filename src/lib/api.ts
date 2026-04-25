@@ -1408,6 +1408,7 @@ export interface OAuthApp {
   is_official: boolean;
   is_first_party: boolean;
   use_jwt_tokens: boolean;
+  allow_self_manage_exported_permissions: boolean;
   team_id: string | null;
   created_at: number;
   updated_at: number;
@@ -1424,6 +1425,7 @@ export interface CreateAppBody {
   optional_scopes?: string[];
   is_public?: boolean;
   use_jwt_tokens?: boolean;
+  allow_self_manage_exported_permissions?: boolean;
 }
 
 export interface Domain {

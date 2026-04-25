@@ -739,6 +739,7 @@ export function AppDetail() {
     optional_scopes: string[];
     is_public: boolean;
     use_jwt_tokens: boolean;
+    allow_self_manage_exported_permissions: boolean;
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [secretRotating, setSecretRotating] = useState(false);
@@ -772,6 +773,8 @@ export function AppDetail() {
       optional_scopes: app.optional_scopes ?? [],
       is_public: app.is_public,
       use_jwt_tokens: app.use_jwt_tokens,
+      allow_self_manage_exported_permissions:
+        app.allow_self_manage_exported_permissions,
     });
   };
 
@@ -792,6 +795,8 @@ export function AppDetail() {
         optional_scopes: form.optional_scopes,
         is_public: form.is_public,
         use_jwt_tokens: form.use_jwt_tokens,
+        allow_self_manage_exported_permissions:
+          form.allow_self_manage_exported_permissions,
       });
       await qc.invalidateQueries({ queryKey: ["app", id] });
       showMsg("success", t("apps.appUpdated"));
@@ -1018,6 +1023,17 @@ export function AppDetail() {
               checked={form.use_jwt_tokens}
               onChange={(_, d) =>
                 setForm((f) => ({ ...f!, use_jwt_tokens: !!d.checked }))
+              }
+            />
+            <Checkbox
+              id={"allow-self-manage-exported-permissions"}
+              label={t("apps.allowSelfManageExportedPermissions")}
+              checked={form.allow_self_manage_exported_permissions}
+              onChange={(_, d) =>
+                setForm((f) => ({
+                  ...f!,
+                  allow_self_manage_exported_permissions: !!d.checked,
+                }))
               }
             />
             <Button appearance="primary" onClick={handleSave} disabled={saving}>

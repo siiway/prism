@@ -54,6 +54,48 @@ curl -X POST https://your-prism.example/api/apps/<appA_id>/scope-definitions \
   }'
 ```
 
+#### App-self management (optional)
+
+If you turn on **Let this app manage its own exported permission scope
+definitions via client credentials** in App A's settings (the
+`allow_self_manage_exported_permissions` flag), App A can call the same
+`scope-definitions` endpoints directly with HTTP Basic auth — no user token
+required. This lets the app register/update/delete its own exported scopes at
+deploy time or from a backend job.
+
+Scope is strictly limited: only App A's own `/scope-definitions` endpoints, and
+the authenticated app's id must match the URL. Public clients (PKCE, no
+secret) cannot use this mode. Access-rule management
+(`/scope-access-rules`) still requires a user token.
+
+```bash
+curl -X POST https://your-prism.example/api/apps/<appA_id>/scope-definitions \
+  -u '<appA_client_id>:<appA_client_secret>' \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope": "read_posts",
+    "title": "Read posts",
+    "description": "View the user'\''s published and draft posts"
+  }'
+```
+
+Or via `@siiway/prism`:
+
+```ts
+const prism = new PrismClient({
+  baseUrl: "https://your-prism.example",
+  clientId: appA_client_id,
+  clientSecret: appA_client_secret,
+  redirectUri: "...",
+});
+
+await prism.appScopePermissions.upsertDefinitionAsSelf(appA_id, {
+  scope: "read_posts",
+  title: "Read posts",
+  description: "View the user's published and draft posts",
+});
+```
+
 ### 2. Set access rules (optional)
 
 By default any app owner can register your scopes and any app can request them.

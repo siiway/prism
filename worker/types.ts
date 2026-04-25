@@ -76,6 +76,7 @@ export interface OAuthAppRow {
   team_id: string | null;
   oidc_fields: string; // JSON string[]
   use_jwt_tokens: number;
+  allow_self_manage_exported_permissions: number;
   created_at: number;
   updated_at: number;
 }
@@ -361,4 +362,8 @@ export interface AuthUser {
 export type Variables = {
   user: AuthUser;
   sessionId: string;
+  /** Set when a request is authenticated as an OAuth app using client credentials
+   *  (HTTP Basic) rather than a user session. Only populated for endpoints that
+   *  opt into app-self authentication. */
+  appSelfAuth?: { appId: string; clientId: string };
 };
