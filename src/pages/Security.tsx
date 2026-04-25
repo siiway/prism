@@ -14,6 +14,7 @@ import {
   Input,
   MessageBar,
   Spinner,
+  SpinButton,
   Table,
   TableBody,
   TableCell,
@@ -138,40 +139,33 @@ export function Security() {
   };
 
   // ─── Token TTL prefs ─────────────────────────────────────────────────────
-  const [accessTtlInput, setAccessTtlInput] = useState("");
-  const [refreshTtlInput, setRefreshTtlInput] = useState("");
+  const [accessTtl, setAccessTtl] = useState<number | null>(null);
+  const [refreshTtl, setRefreshTtl] = useState<number | null>(null);
   const [savingTtl, setSavingTtl] = useState(false);
 
   useEffect(() => {
     if (!me?.user) return;
-    setAccessTtlInput(me.user.access_token_ttl_minutes?.toString() ?? "");
-    setRefreshTtlInput(me.user.refresh_token_ttl_days?.toString() ?? "");
+    setAccessTtl(me.user.access_token_ttl_minutes);
+    setRefreshTtl(me.user.refresh_token_ttl_days);
   }, [
     me?.user.access_token_ttl_minutes,
     me?.user.refresh_token_ttl_days,
     me?.user,
   ]);
 
-  const parseTtlInput = (v: string): number | null | "invalid" => {
-    const trimmed = v.trim();
-    if (trimmed === "") return null;
-    const n = Number(trimmed);
-    if (!Number.isInteger(n) || n < 1) return "invalid";
-    return n;
-  };
+  const isValidTtl = (v: number | null): boolean =>
+    v === null || (Number.isInteger(v) && v >= 1);
 
   const handleSaveTokenTtl = async () => {
-    const access = parseTtlInput(accessTtlInput);
-    const refresh = parseTtlInput(refreshTtlInput);
-    if (access === "invalid" || refresh === "invalid") {
+    if (!isValidTtl(accessTtl) || !isValidTtl(refreshTtl)) {
       showMsg("error", t("security.tokenTtlInvalid"));
       return;
     }
     setSavingTtl(true);
     try {
       await api.updateMe({
-        access_token_ttl_minutes: access,
-        refresh_token_ttl_days: refresh,
+        access_token_ttl_minutes: accessTtl,
+        refresh_token_ttl_days: refreshTtl,
       });
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("security.tokenTtlSaved"));
@@ -1220,14 +1214,14 @@ export function Security() {
             siteDefault: me?.site_access_token_ttl_minutes ?? 60,
           })}
         >
-          <Input
-            type="number"
+          <SpinButton
             min={1}
-            value={accessTtlInput}
-            onChange={(_, d) => setAccessTtlInput(d.value)}
-            placeholder={t("security.tokenTtlPlaceholder", {
-              value: me?.site_access_token_ttl_minutes ?? 60,
-            })}
+            step={1}
+            value={accessTtl}
+            displayValue={accessTtl === null ? "" : String(accessTtl)}
+            onChange={(_, d) => {
+              if (d.value !== undefined) setAccessTtl(d.value);
+            }}
           />
         </Field>
         <Field
@@ -1236,14 +1230,14 @@ export function Security() {
             siteDefault: me?.site_refresh_token_ttl_days ?? 30,
           })}
         >
-          <Input
-            type="number"
+          <SpinButton
             min={1}
-            value={refreshTtlInput}
-            onChange={(_, d) => setRefreshTtlInput(d.value)}
-            placeholder={t("security.tokenTtlPlaceholder", {
-              value: me?.site_refresh_token_ttl_days ?? 30,
-            })}
+            step={1}
+            value={refreshTtl}
+            displayValue={refreshTtl === null ? "" : String(refreshTtl)}
+            onChange={(_, d) => {
+              if (d.value !== undefined) setRefreshTtl(d.value);
+            }}
           />
         </Field>
         <div className={styles.actions}>
@@ -1258,8 +1252,8 @@ export function Security() {
             appearance="subtle"
             disabled={savingTtl}
             onClick={() => {
-              setAccessTtlInput("");
-              setRefreshTtlInput("");
+              setAccessTtl(null);
+              setRefreshTtl(null);
             }}
           >
             {t("security.tokenTtlUseSiteDefault")}

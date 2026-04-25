@@ -2,7 +2,7 @@
 
 import { Hono, type Context, type Next } from "hono";
 import { randomId, randomBase64url, timingSafeStrEqual } from "../lib/crypto";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, tryPatAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
@@ -126,6 +126,10 @@ const app = new Hono<AppEnv>();
 // secret that matches via a length-independent constant-time compare.
 app.use("/:id/scope-definitions", tryAppSelfAuthForScopeDefs);
 app.use("/:id/scope-definitions/*", tryAppSelfAuthForScopeDefs);
+
+// Personal Access Tokens with apps:read / apps:write scopes can manage apps too,
+// so the API surface is reachable without a session cookie.
+app.use("*", tryPatAuth({ read: "apps:read", write: "apps:write" }));
 
 app.use("*", requireAuth);
 
