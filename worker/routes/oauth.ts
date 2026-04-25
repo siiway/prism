@@ -122,9 +122,12 @@ function unboundTeamPermissions(scopes: string[]): string[] {
  * Resolves requested scopes against what the app is allowed to request.
  * Regular platform scopes are checked against VALID_SCOPES.
  * App-delegation scopes (app:<client_id>:<inner_scope>) are accepted when:
- *   - the inner scope is a valid platform scope
- *   - the scope is listed in the app's allowed_scopes
+ *   - the inner scope is non-empty (it may be a platform scope OR an
+ *     app-defined identifier registered in app_scope_definitions, e.g.
+ *     `read_posts`)
+ *   - the full scope string is listed in the app's allowed_scopes
  *   - the referenced target app exists and is active (DB check)
+ *   - the target app's access rules permit the requesting client
  * Returns [validScopes, resolvedAppScopes] where resolvedAppScopes carries
  * the target app name/icon for the consent UI.
  */
@@ -167,10 +170,10 @@ async function resolveRequestedScopes(
   for (const s of requestedScopes) {
     const parsed = parseAppScope(s);
     if (parsed) {
-      // Cross-app scope: inner part must be a real scope; full string must be allowlisted.
-      if (!VALID_SCOPES.has(parsed.innerScope)) {
-        rejected.push({ scope: s, reason: "unknown" });
-      } else if (!allowedScopes.includes(s)) {
+      // Cross-app scope: inner part may be a platform scope OR an app-defined
+      // identifier (registered via app_scope_definitions). parseAppScope
+      // already enforces non-empty clientId and non-empty innerScope.
+      if (!allowedScopes.includes(s)) {
         rejected.push({ scope: s, reason: "not_allowed" });
       } else {
         appScopeRequests.push(s);
