@@ -14,7 +14,6 @@ import {
   Input,
   MessageBar,
   Spinner,
-  SpinButton,
   Table,
   TableBody,
   TableCell,
@@ -42,6 +41,7 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import type { GpgKeyInfo, PasskeyInfo, SessionInfo } from "../lib/api";
 import { SkeletonSecurityCard } from "../components/Skeletons";
+import { DurationInput } from "../components/DurationInput";
 
 const useStyles = makeStyles({
   page: { display: "flex", flexDirection: "column", gap: "32px" },
@@ -1214,14 +1214,13 @@ export function Security() {
             siteDefault: me?.site_access_token_ttl_minutes ?? 60,
           })}
         >
-          <SpinButton
-            min={1}
-            step={1}
+          <DurationInput
             value={accessTtl}
-            displayValue={accessTtl === null ? "" : String(accessTtl)}
-            onChange={(_, d) => {
-              if (d.value !== undefined) setAccessTtl(d.value);
-            }}
+            unit="minutes"
+            onChange={setAccessTtl}
+            placeholder={t("security.tokenTtlPlaceholder", {
+              value: `${me?.site_access_token_ttl_minutes ?? 60} min`,
+            })}
           />
         </Field>
         <Field
@@ -1230,14 +1229,13 @@ export function Security() {
             siteDefault: me?.site_refresh_token_ttl_days ?? 30,
           })}
         >
-          <SpinButton
-            min={1}
-            step={1}
+          <DurationInput
             value={refreshTtl}
-            displayValue={refreshTtl === null ? "" : String(refreshTtl)}
-            onChange={(_, d) => {
-              if (d.value !== undefined) setRefreshTtl(d.value);
-            }}
+            unit="days"
+            onChange={setRefreshTtl}
+            placeholder={t("security.tokenTtlPlaceholder", {
+              value: `${me?.site_refresh_token_ttl_days ?? 30} days`,
+            })}
           />
         </Field>
         <div className={styles.actions}>
