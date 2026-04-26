@@ -6,6 +6,14 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib"]
 
+[dependencies]
+# Drop std-only conveniences; we only need the pure-Rust SHA-256 implementation.
+sha2 = { version = "0.10", default-features = false }
+
 [profile.release]
-opt-level = "s"
-lto = true
+# opt-level=3 for the inner hash loop. Binary size goes up by a few KB but
+# the hot path runs noticeably faster than at "s".
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true

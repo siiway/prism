@@ -132,28 +132,6 @@ export async function verifyPkce(
   return false;
 }
 
-// Proof-of-Work verification: SHA-256(challenge + nonce) must have `difficulty` leading zero bits
-export async function verifyPoW(
-  challenge: string,
-  nonce: number,
-  difficulty: number,
-): Promise<boolean> {
-  const buf = new ArrayBuffer(challenge.length + 4);
-  const view = new DataView(buf);
-  const enc = new TextEncoder().encode(challenge);
-  for (let i = 0; i < enc.length; i++) new DataView(buf).setUint8(i, enc[i]);
-  view.setUint32(enc.length, nonce, false);
-  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", buf));
-
-  let remaining = difficulty;
-  for (const byte of hash) {
-    if (remaining >= 8) {
-      if (byte !== 0) return false;
-      remaining -= 8;
-    } else {
-      const mask = 0xff << (8 - remaining);
-      return (byte & mask) === 0;
-    }
-  }
-  return true;
-}
+// Proof-of-Work verification has moved to lib/pow.ts. The previous
+// verifier here was state-free and replay-vulnerable; the new one binds
+// challenges with HMAC + expiry + single-use claims.

@@ -27,6 +27,7 @@ import {
 } from "../lib/webauthn";
 import { verifyClearsign } from "../lib/gpg";
 import { verifyCaptchaToken } from "../middleware/captcha";
+import { issuePowChallenge } from "../lib/pow";
 import { rateLimitIp } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
@@ -182,6 +183,7 @@ app.post("/register", async (c) => {
     body.pow_challenge,
     body.pow_nonce,
     ip,
+    c.env,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
@@ -317,6 +319,7 @@ app.post("/login", async (c) => {
     body.pow_challenge,
     body.pow_nonce,
     ip,
+    c.env,
   );
   if (!captchaOk.success) {
     c.executionCtx.waitUntil(
@@ -526,6 +529,7 @@ app.post("/email-verify-code", requireAuth, async (c) => {
     body.pow_challenge,
     body.pow_nonce,
     ip,
+    c.env,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);
@@ -626,6 +630,7 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
     body.pow_challenge,
     body.pow_nonce,
     ip,
+    c.env,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);
@@ -1272,10 +1277,12 @@ app.delete("/passkeys/:id", requireAuth, async (c) => {
 
 app.get("/pow-challenge", async (c) => {
   const difficulty = await getConfigValue(c.env.DB, "pow_difficulty");
-  const challenge = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return c.json({ challenge, difficulty });
+  const issued = await issuePowChallenge(c.env);
+  return c.json({
+    challenge: issued.challenge,
+    difficulty,
+    expires_at: issued.expires_at,
+  });
 });
 
 // ─── Sessions list ───────────────────────────────────────────────────────────

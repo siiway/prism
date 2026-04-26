@@ -1,12 +1,20 @@
 // Captcha verification middleware (Turnstile, hCaptcha, reCAPTCHA, PoW)
 
 import { getConfig } from "../lib/config";
-import { verifyPoW } from "../lib/crypto";
+import { verifyPowChallenge } from "../lib/pow";
 
 interface CaptchaResult {
   success: boolean;
   error?: string;
 }
+
+const POW_ERROR_MESSAGES: Record<string, string> = {
+  malformed: "PoW challenge is malformed",
+  bad_signature: "PoW challenge was not issued by this server",
+  expired: "PoW challenge expired — request a new one",
+  replayed: "PoW challenge already used",
+  wrong_difficulty: "Invalid PoW solution",
+};
 
 async function verifyTurnstile(
   token: string,
@@ -75,6 +83,7 @@ export async function verifyCaptchaToken(
   powChallenge: string | undefined,
   powNonce: number | undefined,
   ip: string,
+  env?: Env,
 ): Promise<CaptchaResult> {
   const config = await getConfig(db);
 
@@ -83,11 +92,25 @@ export async function verifyCaptchaToken(
   }
 
   if (config.captcha_provider === "pow") {
+    if (!env) {
+      // Should never happen — every callsite passes env. Defensive check.
+      return { success: false, error: "PoW verification unavailable" };
+    }
     if (!powChallenge || powNonce === undefined) {
       return { success: false, error: "PoW solution required" };
     }
-    const ok = await verifyPoW(powChallenge, powNonce, config.pow_difficulty);
-    return { success: ok, error: ok ? undefined : "Invalid PoW solution" };
+    const result = await verifyPowChallenge(
+      env,
+      powChallenge,
+      powNonce,
+      config.pow_difficulty,
+    );
+    return result.ok
+      ? { success: true }
+      : {
+          success: false,
+          error: POW_ERROR_MESSAGES[result.reason] ?? "Invalid PoW solution",
+        };
   }
 
   if (!token) {

@@ -266,7 +266,7 @@ export const api = {
       getToken(),
     ),
   powChallenge: () =>
-    request<{ challenge: string; difficulty: number }>(
+    request<{ challenge: string; difficulty: number; expires_at: number }>(
       "GET",
       "/auth/pow-challenge",
     ),

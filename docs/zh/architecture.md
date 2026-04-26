@@ -48,7 +48,8 @@ worker/
 │
 ├── lib/
 │   ├── config.ts         # getConfig()、setConfigValues() — 基于 D1 的键值存储
-│   ├── crypto.ts         # randomId、hashPassword/verifyPassword（PBKDF2）、verifyPoW
+│   ├── crypto.ts         # randomId、hashPassword/verifyPassword（PBKDF2）
+│   ├── pow.ts            # 已签名挑战的颁发与校验（HMAC + 过期 + 单次使用）
 │   ├── email.ts          # sendEmail() — Resend / Mailchannels 适配器
 │   ├── jwt.ts            # signJWT / verifyJWT — 基于 Web Crypto 的 HS256
 │   ├── totp.ts           # TOTP / HOTP（RFC 6238）、备用码
@@ -157,12 +158,10 @@ sequenceDiagram
 
 PoW 系统是第三方验证码服务的替代方案。
 
-1. `GET /api/auth/pow-challenge` — 服务端生成 32 字节随机挑战，存入 KV（TTL 10 分钟），返回 `{ challenge, difficulty }`
-2. 客户端在 Web Worker 中调用 `solvePoW(challenge, difficulty)` — 尝试 nonce，直到 `SHA-256(challenge + nonce_be32)` 具有 `difficulty` 个前导零位
-3. 客户端将 `{ pow_challenge, pow_nonce }` 与注册/登录请求一并提交
-4. 服务端调用 `verifyPoW()` 并在 KV 中检查挑战（使用后删除以防重放攻击）
-
-从 `pow/src/lib.rs` 编译的 WASM 模块（`public/pow.wasm`）可将求解速度提升约 10 倍。纯 JS 回退（`src/lib/pow.ts`）用于 WASM 不可用的情况。
+1. `GET /api/auth/pow-challenge` — 服务端返回 `{ challenge, difficulty, expires_at }`。`challenge` 为 `base64url(payload || HMAC-SHA256(secret, payload))`，其中 `payload = version(1) || expiry_be64(8) || random(16)`。HMAC 密钥由 JWT 密钥派生（追加 `\0pow-v1` 域分隔串）。颁发时不写入任何服务端状态。
+2. 客户端调用 `solvePoW(challenge, difficulty)`。求解器会按逻辑核数（`navigator.hardwareConcurrency`，上限 8）启动 Web Worker；第 `k` 个 worker 在 `N` 个 worker 中尝试 nonce `k, k+N, k+2N, …`。每个 worker 优先使用 WASM（`pow/src/lib.rs`，sha2 crate，`Sha256::clone()` 实现 midstate 复用），不可用时回退到内联同步 JS SHA-256（同样复用 midstate）。第一个找到解的 worker 胜出，其余被立即终止。
+3. 客户端将 `{ pow_challenge, pow_nonce }` 与注册/登录请求一并提交。
+4. 服务端调用 `verifyPowChallenge()`（位于 `worker/lib/pow.ts`）：解码 → 重算 HMAC 并恒定时间比较 → 校验过期 → 通过 `INSERT OR IGNORE` 在 `pow_used` 表中原子认领 16 字节 payload nonce（防重放）→ 最终校验 `SHA-256(challenge_string || nonce_be32)` 是否具有 `difficulty` 个前导零位。计划任务会清理过期的 `pow_used` 行。
 
 ## 安全说明
 

@@ -9,6 +9,7 @@ import type { Variables } from "./types";
 import { requestLogger } from "./lib/logger";
 import { runReverification } from "./cron/reverify";
 import { runImapPoll } from "./cron/imap-poll";
+import { sweepExpiredPowUsed } from "./lib/pow";
 import { purgeAppEventQueue } from "./lib/app-events";
 import { handleEmailWorker } from "./handlers/email";
 
@@ -100,6 +101,7 @@ export default {
     ctx.waitUntil(runReverification(env.DB));
     ctx.waitUntil(runImapPoll(env.DB, env.KV_CACHE));
     ctx.waitUntil(purgeAppEventQueue(env.DB).catch(() => {}));
+    ctx.waitUntil(sweepExpiredPowUsed(env.DB).catch(() => {}));
   },
 
   email: handleEmailWorker,

@@ -49,7 +49,8 @@ worker/
 │
 ├── lib/
 │   ├── config.ts         # getConfig(), setConfigValues() — D1-backed key/value store
-│   ├── crypto.ts         # randomId, hashPassword/verifyPassword (PBKDF2), verifyPoW
+│   ├── crypto.ts         # randomId, hashPassword/verifyPassword (PBKDF2)
+│   ├── pow.ts            # signed challenge issue + verify (HMAC + expiry + single-use)
 │   ├── email.ts          # sendEmail() — Resend / Mailchannels adapters
 │   ├── jwt.ts            # signJWT / verifyJWT — HS256 via Web Crypto
 │   ├── totp.ts           # TOTP / HOTP (RFC 6238), backup codes
@@ -173,12 +174,10 @@ sequenceDiagram
 
 The PoW system is an alternative to third-party captcha services.
 
-1. `GET /api/auth/pow-challenge` — server generates a random 32-byte challenge, stores it in KV (10 min TTL), returns `{ challenge, difficulty }`
-2. Client calls `solvePoW(challenge, difficulty)` in a Web Worker — tries nonces until `SHA-256(challenge + nonce_be32)` has `difficulty` leading zero bits
-3. Client submits `{ pow_challenge, pow_nonce }` with the registration/login request
-4. Server calls `verifyPoW()` and checks the KV store for the challenge (deletes it after use to prevent replay)
-
-The WASM module (`public/pow.wasm`) compiled from `pow/src/lib.rs` accelerates solving ~10×. The pure-JS fallback (`src/lib/pow.ts`) handles cases where WASM is unavailable.
+1. `GET /api/auth/pow-challenge` — server returns `{ challenge, difficulty, expires_at }`. The `challenge` is `base64url(payload || HMAC-SHA256(secret, payload))` where `payload = version(1) || expiry_be64(8) || random(16)`. The HMAC key is derived from the JWT secret with a `\0pow-v1` suffix. No server-side state is written at issue time.
+2. Client calls `solvePoW(challenge, difficulty)`. The solver spawns one Web Worker per logical core (`navigator.hardwareConcurrency`, capped at 8); worker `k` of `N` searches nonces `k, k+N, k+2N, …`. Each worker prefers WASM (`pow/src/lib.rs`, sha2 crate, `Sha256::clone()` for midstate caching) and falls back to a synchronous JS SHA-256 with the same midstate trick. First worker to find a hit wins; the rest are terminated.
+3. Client submits `{ pow_challenge, pow_nonce }` with the registration/login request.
+4. Server calls `verifyPowChallenge()` (in `worker/lib/pow.ts`): decode → recompute HMAC and constant-time compare → check expiry → atomically claim the 16-byte payload nonce in `pow_used` via `INSERT OR IGNORE` (replay protection) → finally check `SHA-256(challenge_string || nonce_be32)` has `difficulty` leading zero bits. The cron sweep prunes expired `pow_used` rows.
 
 ## Security notes
 

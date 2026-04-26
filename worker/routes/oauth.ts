@@ -1351,6 +1351,7 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
       body.pow_challenge,
       body.pow_nonce,
       ip,
+      c.env,
     );
     if (!captchaResult.success) {
       return c.json(
