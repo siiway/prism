@@ -170,6 +170,24 @@ export function Authorize() {
   const requiresSiteGrant = data?.requires_site_grant ?? false;
   const siteScoresGrantable = data?.site_scopes_grantable ?? false;
   const requiresTeamGrant = data?.requires_team_grant ?? false;
+
+  // "Log back in" — offered when the user already has a token for this app
+  // and the scopes they're about to grant match the prior consent exactly,
+  // so the new token cleanly replaces the old one. Skipped for team grants
+  // because the user could pick a different team than they did last time.
+  const approvedScopesSorted = (data?.scopes ?? [])
+    .filter((s) => !declinedScopes.has(s))
+    .slice()
+    .sort();
+  const priorScopesSorted = (data?.existing_consent_scopes ?? [])
+    .slice()
+    .sort();
+  const canLogBackIn =
+    !requiresTeamGrant &&
+    (data?.existing_token_count ?? 0) > 0 &&
+    data?.existing_consent_scopes != null &&
+    approvedScopesSorted.length === priorScopesSorted.length &&
+    approvedScopesSorted.every((s, i) => s === priorScopesSorted[i]);
   // Site grant is "pending" only if there are still site scopes not yet declined
   const hasPendingSiteScopes =
     requiresSiteGrant &&
@@ -211,6 +229,9 @@ export function Authorize() {
           : {}),
         ...(requiresTeamGrant && action === "approve"
           ? { team_id: selectedTeamId }
+          : {}),
+        ...(action === "approve" && canLogBackIn
+          ? { revoke_existing_tokens: true }
           : {}),
       });
       window.location.href = res.redirect;
@@ -1150,8 +1171,24 @@ export function Authorize() {
             disabled={loading || !siteGrantReady || !teamGrantReady}
             onClick={() => handleDecision("approve")}
           >
-            {t("oauth.authorize", { appName: data.app.name })}
+            {canLogBackIn
+              ? t("oauth.logBackIn", { appName: data.app.name })
+              : t("oauth.authorize", { appName: data.app.name })}
           </Button>
+          {canLogBackIn && (
+            <Text
+              size={100}
+              style={{
+                color: tokens.colorNeutralForeground3,
+                textAlign: "center",
+                marginTop: -4,
+              }}
+            >
+              {t("oauth.logBackInHint", {
+                count: data.existing_token_count,
+              })}
+            </Text>
+          )}
           <Button
             appearance="outline"
             icon={<DismissRegular />}

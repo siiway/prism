@@ -599,6 +599,41 @@ app.get("/app-info", optionalAuth, async (c) => {
     sitesScopesGrantable = !!(totpRow ?? passkeyRow);
   }
 
+  // If the user already authorized this app, surface the prior consent's
+  // scopes and the count of still-valid tokens. The SPA uses this to offer
+  // a "Log back in" affordance — replacing prior tokens with a fresh one —
+  // when the requested permissions exactly match the previous grant.
+  let existingConsentScopes: string[] | null = null;
+  let existingTokenCount = 0;
+  if (currentUser) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const [consentRow, tokenCountRow] = await Promise.all([
+      c.env.DB.prepare(
+        "SELECT scopes FROM oauth_consents WHERE user_id = ? AND client_id = ?",
+      )
+        .bind(currentUser.id, oauthApp.client_id)
+        .first<{ scopes: string }>(),
+      c.env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM oauth_tokens WHERE user_id = ? AND client_id = ? AND expires_at > ?",
+      )
+        .bind(currentUser.id, oauthApp.client_id, nowSec)
+        .first<{ n: number }>(),
+    ]);
+    if (consentRow) {
+      try {
+        const parsed = JSON.parse(consentRow.scopes);
+        if (Array.isArray(parsed)) {
+          existingConsentScopes = parsed.filter(
+            (s): s is string => typeof s === "string",
+          );
+        }
+      } catch {
+        existingConsentScopes = null;
+      }
+    }
+    existingTokenCount = tokenCountRow?.n ?? 0;
+  }
+
   return c.json({
     app: {
       id: oauthApp.id,
@@ -632,6 +667,8 @@ app.get("/app-info", optionalAuth, async (c) => {
       ? unboundTeamPermissions(scopes)
       : [],
     user_admin_teams: userAdminTeams,
+    existing_consent_scopes: existingConsentScopes,
+    existing_token_count: existingTokenCount,
   });
 });
 
@@ -651,6 +688,7 @@ app.post("/authorize", requireAuth, async (c) => {
     passkey_verify_token?: string;
     confirm_text?: string;
     team_id?: string;
+    revoke_existing_tokens?: boolean;
   }>();
 
   if (body.action === "deny") {
@@ -807,6 +845,38 @@ app.post("/authorize", requireAuth, async (c) => {
       .run();
   }
 
+  // "Log back in" — when the user explicitly opts in and the scopes being
+  // granted match an existing consent exactly, drop the old tokens so a single
+  // fresh token replaces them. The actual DELETE runs after the new auth code
+  // is committed so a mid-flight failure can't strand the user with no token.
+  // Mismatched scopes are a security signal (the grant is changing), so we
+  // silently fall through to the normal flow without touching old tokens.
+  let shouldRevokeOldTokens = false;
+  if (body.revoke_existing_tokens && body.action === "approve") {
+    const priorConsent = await c.env.DB.prepare(
+      "SELECT scopes FROM oauth_consents WHERE user_id = ? AND client_id = ?",
+    )
+      .bind(user.id, body.client_id)
+      .first<{ scopes: string }>();
+    if (priorConsent) {
+      let priorScopes: string[] = [];
+      try {
+        const parsed = JSON.parse(priorConsent.scopes);
+        if (Array.isArray(parsed)) {
+          priorScopes = parsed.filter(
+            (s): s is string => typeof s === "string",
+          );
+        }
+      } catch {
+        priorScopes = [];
+      }
+      shouldRevokeOldTokens =
+        priorScopes.length === boundScopes.length &&
+        new Set(priorScopes).size === priorScopes.length &&
+        priorScopes.every((s) => boundScopes.includes(s));
+    }
+  }
+
   // Store consent
   const now = Math.floor(Date.now() / 1000);
   const siteScopes = boundScopes.filter((s) => SITE_SCOPES.has(s));
@@ -867,6 +937,16 @@ app.post("/authorize", requireAuth, async (c) => {
       now,
     )
     .run();
+
+  // Now that the new auth code is safely committed, drop the prior tokens if
+  // the user opted into "log back in" with matching scopes.
+  if (shouldRevokeOldTokens) {
+    await c.env.DB.prepare(
+      "DELETE FROM oauth_tokens WHERE user_id = ? AND client_id = ?",
+    )
+      .bind(user.id, body.client_id)
+      .run();
+  }
 
   const url = new URL(body.redirect_uri);
   url.searchParams.set("code", code);

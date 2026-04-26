@@ -1565,6 +1565,13 @@ export interface OAuthAuthorizeInfo {
     avatar_url: string | null;
     role: string;
   }>;
+  /** Scopes the user previously granted to this app, or null if no prior
+   *  consent. Used to gate the "Log back in" affordance: when these match
+   *  the currently-selected scopes exactly, the user can replace existing
+   *  tokens with a single fresh one. */
+  existing_consent_scopes: string[] | null;
+  /** Count of still-valid tokens this user has for this app. */
+  existing_token_count: number;
 }
 
 export interface OAuth2FAInfo {
@@ -1639,6 +1646,10 @@ export interface OAuthApproveBody {
   passkey_verify_token?: string;
   confirm_text?: string;
   team_id?: string;
+  /** When true and the granted scopes match a prior consent exactly, the
+   *  server revokes existing tokens for this app before issuing the new
+   *  authorization code — a "log back in" rather than a parallel session. */
+  revoke_existing_tokens?: boolean;
 }
 
 export interface AdminStats {
