@@ -43,5 +43,22 @@ export interface SiteConfig {
   tg_notify_source_slug: string;
   sudo_mode_ttl_minutes: number;
   require_captcha_for_2fa: boolean;
+  enable_public_profiles: boolean;
+  default_profile_show_display_name: boolean;
+  default_profile_show_avatar: boolean;
+  default_profile_show_email: boolean;
+  default_profile_show_joined_at: boolean;
+  default_profile_show_gpg_keys: boolean;
+  default_profile_show_authorized_apps: boolean;
+  default_profile_show_owned_apps: boolean;
+  default_profile_show_domains: boolean;
+  default_profile_show_joined_teams: boolean;
+  default_team_profile_show_description: boolean;
+  default_team_profile_show_avatar: boolean;
+  default_team_profile_show_owner: boolean;
+  default_team_profile_show_member_count: boolean;
+  default_team_profile_show_apps: boolean;
+  default_team_profile_show_domains: boolean;
+  default_team_profile_show_members: boolean;
   initialized: boolean;
 }

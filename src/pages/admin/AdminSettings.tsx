@@ -337,6 +337,159 @@ export function AdminSettings() {
         </div>
       )}
 
+      {tab === "general" && (
+        <div className={styles.card}>
+          <Title3>{t("admin.publicProfilesTitle")}</Title3>
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("admin.publicProfilesDesc")}
+          </Text>
+          <div className={styles.form}>
+            <Switch
+              label={t("admin.enablePublicProfiles")}
+              checked={get("enable_public_profiles") ?? true}
+              onChange={(_, d) => set("enable_public_profiles", d.checked)}
+            />
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.publicProfilesFieldDefaultsHint")}
+            </Text>
+            <Switch
+              label={t("admin.defaultProfileShowDisplayName")}
+              checked={get("default_profile_show_display_name") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_profile_show_display_name", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultProfileShowAvatar")}
+              checked={get("default_profile_show_avatar") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) => set("default_profile_show_avatar", d.checked)}
+            />
+            <Switch
+              label={t("admin.defaultProfileShowEmail")}
+              checked={get("default_profile_show_email") ?? false}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) => set("default_profile_show_email", d.checked)}
+            />
+            <Switch
+              label={t("admin.defaultProfileShowJoinedAt")}
+              checked={get("default_profile_show_joined_at") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_profile_show_joined_at", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultProfileShowGpgKeys")}
+              checked={get("default_profile_show_gpg_keys") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_profile_show_gpg_keys", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultProfileShowAuthorizedApps")}
+              checked={get("default_profile_show_authorized_apps") ?? false}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_profile_show_authorized_apps", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultProfileShowOwnedApps")}
+              checked={get("default_profile_show_owned_apps") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_profile_show_owned_apps", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultProfileShowDomains")}
+              checked={get("default_profile_show_domains") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_profile_show_domains", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultProfileShowJoinedTeams")}
+              checked={get("default_profile_show_joined_teams") ?? false}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_profile_show_joined_teams", d.checked)
+              }
+            />
+            <Text
+              size={200}
+              style={{
+                color: tokens.colorNeutralForeground3,
+                marginTop: 8,
+                marginBottom: -4,
+              }}
+            >
+              {t("admin.teamProfileDefaultsHint")}
+            </Text>
+            <Switch
+              label={t("admin.defaultTeamProfileShowDescription")}
+              checked={get("default_team_profile_show_description") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_team_profile_show_description", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultTeamProfileShowAvatar")}
+              checked={get("default_team_profile_show_avatar") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_team_profile_show_avatar", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultTeamProfileShowOwner")}
+              checked={get("default_team_profile_show_owner") ?? false}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_team_profile_show_owner", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultTeamProfileShowMemberCount")}
+              checked={get("default_team_profile_show_member_count") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_team_profile_show_member_count", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultTeamProfileShowApps")}
+              checked={get("default_team_profile_show_apps") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_team_profile_show_apps", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultTeamProfileShowDomains")}
+              checked={get("default_team_profile_show_domains") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_team_profile_show_domains", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultTeamProfileShowMembers")}
+              checked={get("default_team_profile_show_members") ?? false}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) =>
+                set("default_team_profile_show_members", d.checked)
+              }
+            />
+          </div>
+        </div>
+      )}
+
       {tab === "auth" && (
         <div className={styles.card}>
           <Title3>{t("admin.authTitle")}</Title3>

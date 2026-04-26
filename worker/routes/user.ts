@@ -72,6 +72,16 @@ app.patch("/me", async (c) => {
     alt_email_login?: boolean | null;
     access_token_ttl_minutes?: number | null;
     refresh_token_ttl_days?: number | null;
+    profile_is_public?: boolean;
+    profile_show_display_name?: boolean | null;
+    profile_show_avatar?: boolean | null;
+    profile_show_email?: boolean | null;
+    profile_show_joined_at?: boolean | null;
+    profile_show_gpg_keys?: boolean | null;
+    profile_show_authorized_apps?: boolean | null;
+    profile_show_owned_apps?: boolean | null;
+    profile_show_domains?: boolean | null;
+    profile_show_joined_teams?: boolean | null;
   }>();
 
   const now = Math.floor(Date.now() / 1000);
@@ -125,6 +135,27 @@ app.patch("/me", async (c) => {
     }
     updates.push("refresh_token_ttl_days = ?");
     values.push(body.refresh_token_ttl_days);
+  }
+  if (body.profile_is_public !== undefined) {
+    updates.push("profile_is_public = ?");
+    values.push(body.profile_is_public ? 1 : 0);
+  }
+  for (const field of [
+    "profile_show_display_name",
+    "profile_show_avatar",
+    "profile_show_email",
+    "profile_show_joined_at",
+    "profile_show_gpg_keys",
+    "profile_show_authorized_apps",
+    "profile_show_owned_apps",
+    "profile_show_domains",
+    "profile_show_joined_teams",
+  ] as const) {
+    const v = body[field];
+    if (v !== undefined) {
+      updates.push(`${field} = ?`);
+      values.push(v === null ? null : v ? 1 : 0);
+    }
   }
 
   if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
@@ -289,8 +320,25 @@ function safeUser(baseUrl: string, row: UserRow) {
     alt_email_login: row.alt_email_login,
     access_token_ttl_minutes: row.access_token_ttl_minutes,
     refresh_token_ttl_days: row.refresh_token_ttl_days,
+    profile_is_public: row.profile_is_public === 1,
+    profile_show_display_name: nullableBool(row.profile_show_display_name),
+    profile_show_avatar: nullableBool(row.profile_show_avatar),
+    profile_show_email: nullableBool(row.profile_show_email),
+    profile_show_joined_at: nullableBool(row.profile_show_joined_at),
+    profile_show_gpg_keys: nullableBool(row.profile_show_gpg_keys),
+    profile_show_authorized_apps: nullableBool(
+      row.profile_show_authorized_apps,
+    ),
+    profile_show_owned_apps: nullableBool(row.profile_show_owned_apps),
+    profile_show_domains: nullableBool(row.profile_show_domains),
+    profile_show_joined_teams: nullableBool(row.profile_show_joined_teams),
     created_at: row.created_at,
   };
+}
+
+function nullableBool(v: number | null): boolean | null {
+  if (v === null) return null;
+  return v === 1;
 }
 
 // ─── Alternate Emails ─────────────────────────────────────────────────────────

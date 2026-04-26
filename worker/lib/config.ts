@@ -45,6 +45,34 @@ const DEFAULT_CONFIG: SiteConfig = {
   tg_notify_source_slug: "",
   sudo_mode_ttl_minutes: 5,
   require_captcha_for_2fa: false,
+  enable_public_profiles: true,
+  default_profile_show_display_name: true,
+  default_profile_show_avatar: true,
+  default_profile_show_email: false,
+  default_profile_show_joined_at: true,
+  default_profile_show_gpg_keys: true,
+  // Authorized apps reveal which third-party services the user has connected
+  // to — sensitive enough to default off, even if the user opts their profile
+  // public.
+  default_profile_show_authorized_apps: false,
+  default_profile_show_owned_apps: true,
+  default_profile_show_domains: true,
+  // Joined teams reveal social/employer affiliations — opt-in per user, and
+  // doubles as the per-user gate for appearing in team member lists.
+  default_profile_show_joined_teams: false,
+  default_team_profile_show_description: true,
+  default_team_profile_show_avatar: true,
+  // Owner has to be opted in explicitly per team — the owner's username
+  // would otherwise leak via the team page even if the user has a private
+  // profile.
+  default_team_profile_show_owner: false,
+  default_team_profile_show_member_count: true,
+  default_team_profile_show_apps: true,
+  default_team_profile_show_domains: true,
+  // Member list is sensitive — even teams that publish a count usually
+  // don't want to publish every name. Still subject to each member's own
+  // profile_show_joined_teams flag.
+  default_team_profile_show_members: false,
   initialized: false,
 };
 

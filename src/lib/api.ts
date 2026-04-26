@@ -280,6 +280,16 @@ export const api = {
       alt_email_login: boolean | null;
       access_token_ttl_minutes: number | null;
       refresh_token_ttl_days: number | null;
+      profile_is_public: boolean;
+      profile_show_display_name: boolean | null;
+      profile_show_avatar: boolean | null;
+      profile_show_email: boolean | null;
+      profile_show_joined_at: boolean | null;
+      profile_show_gpg_keys: boolean | null;
+      profile_show_authorized_apps: boolean | null;
+      profile_show_owned_apps: boolean | null;
+      profile_show_domains: boolean | null;
+      profile_show_joined_teams: boolean | null;
     }>,
   ) => request<{ user: UserProfile }>("PATCH", "/user/me", body, getToken()),
   changePassword: (current_password: string, new_password: string) =>
@@ -304,6 +314,13 @@ export const api = {
       "DELETE",
       "/user/me",
       { password, confirm: "DELETE" },
+      getToken(),
+    ),
+  getPublicProfile: (username: string) =>
+    request<{ profile: PublicUserProfile }>(
+      "GET",
+      `/users/${encodeURIComponent(username)}`,
+      undefined,
       getToken(),
     ),
 
@@ -910,8 +927,34 @@ export const api = {
     ),
   updateTeam: (
     id: string,
-    body: { name?: string; description?: string; avatar_url?: string },
+    body: {
+      name?: string;
+      description?: string;
+      avatar_url?: string;
+      profile_is_public?: boolean;
+      profile_show_description?: boolean | null;
+      profile_show_avatar?: boolean | null;
+      profile_show_owner?: boolean | null;
+      profile_show_member_count?: boolean | null;
+      profile_show_apps?: boolean | null;
+      profile_show_domains?: boolean | null;
+      profile_show_members?: boolean | null;
+    },
   ) => request<{ team: Team }>("PATCH", `/teams/${id}`, body, getToken()),
+  setTeamShowOnProfile: (id: string, value: boolean | null) =>
+    request<{ show_on_profile: boolean | null }>(
+      "PATCH",
+      `/teams/${encodeURIComponent(id)}/membership/show-on-profile`,
+      { show_on_profile: value },
+      getToken(),
+    ),
+  getPublicTeamProfile: (id: string) =>
+    request<{ team: PublicTeamProfile }>(
+      "GET",
+      `/public/teams/${encodeURIComponent(id)}`,
+      undefined,
+      getToken(),
+    ),
   deleteTeam: (id: string) =>
     request<{ message: string }>(
       "DELETE",
@@ -1254,6 +1297,23 @@ export interface SitePublicConfig {
   initialized: boolean;
   r2_enabled: boolean;
   tg_notify_source_slug: string;
+  enable_public_profiles: boolean;
+  default_profile_show_display_name: boolean;
+  default_profile_show_avatar: boolean;
+  default_profile_show_email: boolean;
+  default_profile_show_joined_at: boolean;
+  default_profile_show_gpg_keys: boolean;
+  default_profile_show_authorized_apps: boolean;
+  default_profile_show_owned_apps: boolean;
+  default_profile_show_domains: boolean;
+  default_profile_show_joined_teams: boolean;
+  default_team_profile_show_description: boolean;
+  default_team_profile_show_avatar: boolean;
+  default_team_profile_show_owner: boolean;
+  default_team_profile_show_member_count: boolean;
+  default_team_profile_show_apps: boolean;
+  default_team_profile_show_domains: boolean;
+  default_team_profile_show_members: boolean;
   enabled_providers: { slug: string; name: string; provider: string }[];
 }
 
@@ -1298,7 +1358,59 @@ export interface UserProfile {
   alt_email_login: number | null;
   access_token_ttl_minutes: number | null;
   refresh_token_ttl_days: number | null;
+  profile_is_public: boolean;
+  /** Per-field overrides — null means "follow the site default". */
+  profile_show_display_name: boolean | null;
+  profile_show_avatar: boolean | null;
+  profile_show_email: boolean | null;
+  profile_show_joined_at: boolean | null;
+  profile_show_gpg_keys: boolean | null;
+  profile_show_authorized_apps: boolean | null;
+  profile_show_owned_apps: boolean | null;
+  profile_show_domains: boolean | null;
+  profile_show_joined_teams: boolean | null;
   created_at?: number;
+}
+
+export interface PublicUserProfile {
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  unproxied_avatar_url: string | null;
+  email: string | null;
+  joined_at: number | null;
+  gpg_keys: Array<{
+    fingerprint: string;
+    key_id: string;
+    name: string;
+    created_at: number;
+  }> | null;
+  authorized_apps: Array<{
+    client_id: string;
+    name: string;
+    icon_url: string | null;
+    website_url: string | null;
+    granted_at: number;
+  }> | null;
+  owned_apps: Array<{
+    id: string;
+    client_id: string;
+    name: string;
+    description: string;
+    icon_url: string | null;
+    website_url: string | null;
+    created_at: number;
+  }> | null;
+  domains: Array<{
+    domain: string;
+    verified_at: number | null;
+  }> | null;
+  joined_teams: Array<{
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    role: "owner" | "co-owner" | "admin" | "member";
+  }> | null;
 }
 
 export interface MeResponse {
@@ -1366,8 +1478,54 @@ export interface Team {
   unproxied_avatar_url: string | null;
   role: string; // current user's role
   my_role?: string;
+  profile_is_public: boolean;
+  /** Per-section overrides — null means "follow the site default". */
+  profile_show_description: boolean | null;
+  profile_show_avatar: boolean | null;
+  profile_show_owner: boolean | null;
+  profile_show_member_count: boolean | null;
+  profile_show_apps: boolean | null;
+  profile_show_domains: boolean | null;
+  profile_show_members: boolean | null;
+  /** Per-team override of the user's profile_show_joined_teams toggle —
+   *  surfaced from the user's own membership row (`team_members` join). */
+  show_on_profile?: boolean | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface PublicTeamProfile {
+  id: string;
+  name: string;
+  description: string | null;
+  avatar_url: string | null;
+  unproxied_avatar_url: string | null;
+  created_at: number;
+  owner: {
+    username: string | null;
+    display_name: string;
+    avatar_url: string | null;
+  } | null;
+  member_count: number | null;
+  apps: Array<{
+    id: string;
+    client_id: string;
+    name: string;
+    description: string;
+    icon_url: string | null;
+    website_url: string | null;
+    created_at: number;
+  }> | null;
+  domains: Array<{
+    domain: string;
+    verified_at: number | null;
+  }> | null;
+  members: Array<{
+    username: string;
+    display_name: string;
+    avatar_url: string | null;
+    role: "owner" | "co-owner" | "admin" | "member";
+  }> | null;
 }
 
 export interface TeamMember {

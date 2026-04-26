@@ -7,9 +7,11 @@ import {
   Dropdown,
   Field,
   Input,
+  Link,
   MessageBar,
   Option,
   Spinner,
+  Switch,
   Text,
   Title2,
   makeStyles,
@@ -19,6 +21,7 @@ import {
   AddRegular,
   ArrowUpRegular,
   DeleteRegular,
+  GlobeRegular,
   MailRegular,
 } from "@fluentui/react-icons";
 import { useRef, useState } from "react";
@@ -98,6 +101,28 @@ export function Profile() {
     queryFn: api.listEmails,
   });
 
+  const { data: myTeamsData } = useQuery({
+    queryKey: ["my-teams"],
+    queryFn: api.listTeams,
+    enabled: !!me?.user.profile_is_public,
+  });
+  const myTeams = myTeamsData?.teams ?? [];
+
+  const handleTeamShowOnProfile = async (
+    teamId: string,
+    value: boolean | null,
+  ) => {
+    setSavingVisibility(`team:${teamId}`);
+    try {
+      await api.setTeamShowOnProfile(teamId, value);
+      await qc.invalidateQueries({ queryKey: ["my-teams"] });
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+    } finally {
+      setSavingVisibility(null);
+    }
+  };
+
   const [displayName, setDisplayName] = useState(user?.display_name ?? "");
   const [avatarUrl, setAvatarUrl] = useState(user?.unproxied_avatar_url ?? "");
   const [saveLoading, setSaveLoading] = useState(false);
@@ -106,6 +131,7 @@ export function Profile() {
   const [pwLoading, setPwLoading] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [emailLoading, setEmailLoading] = useState(false);
+  const [savingVisibility, setSavingVisibility] = useState<string | null>(null);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -147,6 +173,32 @@ export function Profile() {
       showMsg("error", err instanceof ApiError ? err.message : "Upload failed");
     } finally {
       setAvatarLoading(false);
+    }
+  };
+
+  const handleVisibilityChange = async (
+    field:
+      | "profile_is_public"
+      | "profile_show_display_name"
+      | "profile_show_avatar"
+      | "profile_show_email"
+      | "profile_show_joined_at"
+      | "profile_show_gpg_keys"
+      | "profile_show_authorized_apps"
+      | "profile_show_owned_apps"
+      | "profile_show_domains"
+      | "profile_show_joined_teams",
+    value: boolean,
+  ) => {
+    setSavingVisibility(field);
+    try {
+      const res = await api.updateMe({ [field]: value });
+      if (token && res.user) setAuth(token, res.user);
+      await qc.invalidateQueries({ queryKey: ["me"] });
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+    } finally {
+      setSavingVisibility(null);
     }
   };
 
@@ -298,6 +350,216 @@ export function Profile() {
           </div>
         </div>
       </div>
+
+      {/* Public profile visibility */}
+      {(site?.enable_public_profiles ?? true) && me && (
+        <div className={styles.card}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 12,
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Text weight="semibold" size={400} block>
+                {t("profile.publicProfileTitle")}
+              </Text>
+              <Text
+                size={200}
+                block
+                style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
+              >
+                {t("profile.publicProfileDesc")}
+              </Text>
+            </div>
+            {me.user.profile_is_public && (
+              <Link
+                href={`/u/${me.user.username}`}
+                target="_blank"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  flexShrink: 0,
+                }}
+              >
+                <GlobeRegular fontSize={14} />
+                {t("profile.viewPublicProfile")}
+              </Link>
+            )}
+          </div>
+          <Switch
+            label={t("profile.makeProfilePublic")}
+            checked={me.user.profile_is_public}
+            disabled={savingVisibility === "profile_is_public"}
+            onChange={(_, d) =>
+              handleVisibilityChange("profile_is_public", d.checked)
+            }
+          />
+          {me.user.profile_is_public && site && (
+            <div
+              className={styles.form}
+              style={{
+                paddingLeft: 12,
+                borderLeft: `2px solid ${tokens.colorNeutralStroke2}`,
+              }}
+            >
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                {t("profile.publicProfileFieldsHint")}
+              </Text>
+              {(
+                [
+                  [
+                    "profile_show_display_name",
+                    "default_profile_show_display_name",
+                    "profile.publicProfileShowDisplayName",
+                  ],
+                  [
+                    "profile_show_avatar",
+                    "default_profile_show_avatar",
+                    "profile.publicProfileShowAvatar",
+                  ],
+                  [
+                    "profile_show_email",
+                    "default_profile_show_email",
+                    "profile.publicProfileShowEmail",
+                  ],
+                  [
+                    "profile_show_joined_at",
+                    "default_profile_show_joined_at",
+                    "profile.publicProfileShowJoinedAt",
+                  ],
+                  [
+                    "profile_show_gpg_keys",
+                    "default_profile_show_gpg_keys",
+                    "profile.publicProfileShowGpgKeys",
+                  ],
+                  [
+                    "profile_show_authorized_apps",
+                    "default_profile_show_authorized_apps",
+                    "profile.publicProfileShowAuthorizedApps",
+                  ],
+                  [
+                    "profile_show_owned_apps",
+                    "default_profile_show_owned_apps",
+                    "profile.publicProfileShowOwnedApps",
+                  ],
+                  [
+                    "profile_show_domains",
+                    "default_profile_show_domains",
+                    "profile.publicProfileShowDomains",
+                  ],
+                  [
+                    "profile_show_joined_teams",
+                    "default_profile_show_joined_teams",
+                    "profile.publicProfileShowJoinedTeams",
+                  ],
+                ] as const
+              ).map(([userKey, siteKey, labelKey]) => {
+                const userValue = me.user[userKey];
+                const siteDefault = site[siteKey];
+                const effective = userValue ?? siteDefault;
+                return (
+                  <Switch
+                    key={userKey}
+                    label={
+                      userValue === null
+                        ? `${t(labelKey)} (${t("profile.publicProfileFollowingDefault")})`
+                        : t(labelKey)
+                    }
+                    checked={effective}
+                    disabled={savingVisibility === userKey}
+                    onChange={(_, d) =>
+                      handleVisibilityChange(userKey, d.checked)
+                    }
+                  />
+                );
+              })}
+              {/* Per-team override list. Surfaced even when the master toggle
+                  is off so users can pin specific teams. */}
+              {myTeams.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+                  }}
+                >
+                  <Text
+                    size={200}
+                    style={{ color: tokens.colorNeutralForeground3 }}
+                  >
+                    {t("profile.publicProfilePerTeamHint")}
+                  </Text>
+                  {myTeams.map((team) => {
+                    const masterEffective =
+                      me.user.profile_show_joined_teams ??
+                      site.default_profile_show_joined_teams;
+                    const override = team.show_on_profile;
+                    const resolved =
+                      override === null || override === undefined
+                        ? masterEffective
+                        : override;
+                    const labelSuffix =
+                      override === null || override === undefined
+                        ? ` (${t("profile.publicProfileFollowingDefault")})`
+                        : "";
+                    return (
+                      <div
+                        key={team.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <Switch
+                          label={`${team.name}${labelSuffix}`}
+                          checked={resolved}
+                          disabled={
+                            savingVisibility === `team:${team.id}` ||
+                            !team.profile_is_public
+                          }
+                          onChange={(_, d) =>
+                            handleTeamShowOnProfile(team.id, d.checked)
+                          }
+                        />
+                        {(override === true || override === false) && (
+                          <Button
+                            appearance="subtle"
+                            size="small"
+                            onClick={() =>
+                              handleTeamShowOnProfile(team.id, null)
+                            }
+                          >
+                            {t("profile.publicProfileResetOverride")}
+                          </Button>
+                        )}
+                        {!team.profile_is_public && (
+                          <Text
+                            size={100}
+                            style={{ color: tokens.colorNeutralForeground3 }}
+                          >
+                            {t("profile.publicProfileTeamPrivate")}
+                          </Text>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Email addresses */}
       <div className={styles.card}>

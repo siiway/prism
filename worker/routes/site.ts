@@ -32,6 +32,26 @@ app.get("/site", async (c) => {
     initialized: config.initialized,
     r2_enabled: !!c.env.R2_ASSETS,
     tg_notify_source_slug: config.tg_notify_source_slug,
+    enable_public_profiles: config.enable_public_profiles,
+    default_profile_show_display_name: config.default_profile_show_display_name,
+    default_profile_show_avatar: config.default_profile_show_avatar,
+    default_profile_show_email: config.default_profile_show_email,
+    default_profile_show_joined_at: config.default_profile_show_joined_at,
+    default_profile_show_gpg_keys: config.default_profile_show_gpg_keys,
+    default_profile_show_authorized_apps:
+      config.default_profile_show_authorized_apps,
+    default_profile_show_owned_apps: config.default_profile_show_owned_apps,
+    default_profile_show_domains: config.default_profile_show_domains,
+    default_profile_show_joined_teams: config.default_profile_show_joined_teams,
+    default_team_profile_show_description:
+      config.default_team_profile_show_description,
+    default_team_profile_show_avatar: config.default_team_profile_show_avatar,
+    default_team_profile_show_owner: config.default_team_profile_show_owner,
+    default_team_profile_show_member_count:
+      config.default_team_profile_show_member_count,
+    default_team_profile_show_apps: config.default_team_profile_show_apps,
+    default_team_profile_show_domains: config.default_team_profile_show_domains,
+    default_team_profile_show_members: config.default_team_profile_show_members,
     enabled_providers,
   });
 });

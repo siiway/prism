@@ -53,6 +53,8 @@ import { Notifications } from "./pages/Notifications";
 import { VerifyEmail } from "./pages/VerifyEmail";
 import { VerifyChoose } from "./pages/VerifyChoose";
 import { TgAuthCallback } from "./pages/TgAuthCallback";
+import { PublicProfile } from "./pages/PublicProfile";
+import { PublicTeam } from "./pages/PublicTeam";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -163,6 +165,10 @@ export default function App() {
             {/* OAuth consent */}
             <Route path="/oauth/authorize" element={<Authorize />} />
             <Route path="/oauth/2fa" element={<Verify2FA />} />
+
+            {/* Public user/team profiles — accessible without login */}
+            <Route path="/u/:username" element={<PublicProfile />} />
+            <Route path="/t/:id" element={<PublicTeam />} />
 
             {/* Protected app shell */}
             <Route

@@ -14,6 +14,20 @@ export interface UserRow {
   alt_email_login: number | null;
   access_token_ttl_minutes: number | null;
   refresh_token_ttl_days: number | null;
+  /** 0 = private (default), 1 = public — explicit opt-in only. */
+  profile_is_public: number;
+  /** NULL = follow site default; 0/1 = user-set preference. */
+  profile_show_display_name: number | null;
+  profile_show_avatar: number | null;
+  profile_show_email: number | null;
+  profile_show_joined_at: number | null;
+  profile_show_gpg_keys: number | null;
+  profile_show_authorized_apps: number | null;
+  profile_show_owned_apps: number | null;
+  profile_show_domains: number | null;
+  /** Also gates whether this user is included in any team's public member
+   *  list (the setting follows the user across team profiles). */
+  profile_show_joined_teams: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -88,6 +102,16 @@ export interface TeamRow {
   name: string;
   description: string;
   avatar_url: string | null;
+  /** 0 = private (default), 1 = public — explicit owner opt-in only. */
+  profile_is_public: number;
+  /** NULL = follow site default; 0/1 = team-set preference. */
+  profile_show_description: number | null;
+  profile_show_avatar: number | null;
+  profile_show_owner: number | null;
+  profile_show_member_count: number | null;
+  profile_show_apps: number | null;
+  profile_show_domains: number | null;
+  profile_show_members: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -96,6 +120,10 @@ export interface TeamMemberRow {
   team_id: string;
   user_id: string;
   role: "owner" | "co-owner" | "admin" | "member";
+  /** NULL = follow user's profile_show_joined_teams; 0/1 = per-team override.
+   *  Applies to both directions (hide on user profile + hide from team's
+   *  member list). */
+  show_on_profile: number | null;
   joined_at: number;
 }
 
@@ -388,6 +416,38 @@ export interface SiteConfig {
    *  step-up screen. Apps can also opt-in per challenge. The site's
    *  configured `captcha_provider` is used; if that's "none", this is a no-op. */
   require_captcha_for_2fa: boolean;
+  /** Master kill switch for public user profiles. When false, the
+   *  /api/users/:username endpoint returns 404 regardless of any user's
+   *  individual opt-in. */
+  enable_public_profiles: boolean;
+  /** Defaults for users who have not explicitly set a per-field preference.
+   *  Changing these propagates to every user with a NULL preference. */
+  default_profile_show_display_name: boolean;
+  default_profile_show_avatar: boolean;
+  default_profile_show_email: boolean;
+  default_profile_show_joined_at: boolean;
+  default_profile_show_gpg_keys: boolean;
+  default_profile_show_authorized_apps: boolean;
+  default_profile_show_owned_apps: boolean;
+  default_profile_show_domains: boolean;
+  /** Defaults to off — team membership is socially sensitive (employer,
+   *  client list, group memberships) and should be opt-in even when other
+   *  profile sections default on. Also gates whether the user appears in
+   *  any team's public member list. */
+  default_profile_show_joined_teams: boolean;
+  /** Defaults for the team public-profile feature. The team is always
+   *  the source of truth for `profile_is_public` (no site default for
+   *  the master switch — privacy-first). */
+  default_team_profile_show_description: boolean;
+  default_team_profile_show_avatar: boolean;
+  default_team_profile_show_owner: boolean;
+  default_team_profile_show_member_count: boolean;
+  default_team_profile_show_apps: boolean;
+  default_team_profile_show_domains: boolean;
+  /** The full member list (separate from member_count). Defaults to off:
+   *  even teams that show their member count usually don't want to expose
+   *  every individual member by default. */
+  default_team_profile_show_members: boolean;
   initialized: boolean;
 }
 

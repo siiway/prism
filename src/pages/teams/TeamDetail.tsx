@@ -6,8 +6,10 @@ import {
   Button,
   Field,
   Input,
+  Link,
   MessageBar,
   Spinner,
+  Switch,
   Tab,
   TabList,
   Table,
@@ -27,6 +29,7 @@ import { CopyRegular } from "@fluentui/react-icons";
 import {
   AppsRegular,
   DeleteRegular,
+  GlobeRegular,
   GlobeSearchRegular,
   LinkRegular,
   MailRegular,
@@ -272,6 +275,41 @@ export function TeamDetail() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const [savingVisibility, setSavingVisibility] = useState<string | null>(null);
+
+  const { data: site } = useQuery({
+    queryKey: ["site"],
+    queryFn: api.site,
+    staleTime: 60_000,
+  });
+
+  const handleVisibilityChange = async (
+    field:
+      | "profile_is_public"
+      | "profile_show_description"
+      | "profile_show_avatar"
+      | "profile_show_owner"
+      | "profile_show_member_count"
+      | "profile_show_apps"
+      | "profile_show_domains"
+      | "profile_show_members",
+    value: boolean,
+  ) => {
+    if (!id) return;
+    setSavingVisibility(field);
+    try {
+      await api.updateTeam(id, { [field]: value });
+      await qc.invalidateQueries({ queryKey: ["team", id] });
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("teams.failedUpdateTeam"),
+      );
+    } finally {
+      setSavingVisibility(null);
     }
   };
 
@@ -623,6 +661,143 @@ export function TeamDetail() {
               </Button>
             </div>
           </div>
+
+          {(site?.enable_public_profiles ?? true) && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                padding: 16,
+                border: `1px solid ${tokens.colorNeutralStroke1}`,
+                borderRadius: 8,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 12,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Text weight="semibold" size={400} block>
+                    {t("teams.publicProfileTitle")}
+                  </Text>
+                  <Text
+                    size={200}
+                    block
+                    style={{
+                      color: tokens.colorNeutralForeground3,
+                      marginTop: 4,
+                    }}
+                  >
+                    {t("teams.publicProfileDesc")}
+                  </Text>
+                </div>
+                {team.profile_is_public && (
+                  <Link
+                    href={`/t/${team.id}`}
+                    target="_blank"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <GlobeRegular fontSize={14} />
+                    {t("teams.viewPublicProfile")}
+                  </Link>
+                )}
+              </div>
+              <Switch
+                label={t("teams.makeProfilePublic")}
+                checked={team.profile_is_public}
+                disabled={savingVisibility === "profile_is_public"}
+                onChange={(_, d) =>
+                  handleVisibilityChange("profile_is_public", d.checked)
+                }
+              />
+              {team.profile_is_public && site && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    paddingLeft: 12,
+                    borderLeft: `2px solid ${tokens.colorNeutralStroke2}`,
+                  }}
+                >
+                  <Text
+                    size={200}
+                    style={{ color: tokens.colorNeutralForeground3 }}
+                  >
+                    {t("teams.publicProfileFieldsHint")}
+                  </Text>
+                  {(
+                    [
+                      [
+                        "profile_show_description",
+                        "default_team_profile_show_description",
+                        "teams.publicProfileShowDescription",
+                      ],
+                      [
+                        "profile_show_avatar",
+                        "default_team_profile_show_avatar",
+                        "teams.publicProfileShowAvatar",
+                      ],
+                      [
+                        "profile_show_owner",
+                        "default_team_profile_show_owner",
+                        "teams.publicProfileShowOwner",
+                      ],
+                      [
+                        "profile_show_member_count",
+                        "default_team_profile_show_member_count",
+                        "teams.publicProfileShowMemberCount",
+                      ],
+                      [
+                        "profile_show_apps",
+                        "default_team_profile_show_apps",
+                        "teams.publicProfileShowApps",
+                      ],
+                      [
+                        "profile_show_domains",
+                        "default_team_profile_show_domains",
+                        "teams.publicProfileShowDomains",
+                      ],
+                      [
+                        "profile_show_members",
+                        "default_team_profile_show_members",
+                        "teams.publicProfileShowMembers",
+                      ],
+                    ] as const
+                  ).map(([teamKey, siteKey, labelKey]) => {
+                    const teamValue = team[teamKey];
+                    const siteDefault = site[siteKey];
+                    const effective = teamValue ?? siteDefault;
+                    return (
+                      <Switch
+                        key={teamKey}
+                        label={
+                          teamValue === null
+                            ? `${t(labelKey)} (${t("teams.publicProfileFollowingDefault")})`
+                            : t(labelKey)
+                        }
+                        checked={effective}
+                        disabled={savingVisibility === teamKey}
+                        onChange={(_, d) =>
+                          handleVisibilityChange(teamKey, d.checked)
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {isOwner && (
             <div className={styles.danger}>

@@ -147,22 +147,49 @@ app.use("*", requireAuth);
 app.get("/", async (c) => {
   const user = c.get("user");
   const rows = await c.env.DB.prepare(
-    `SELECT t.*, tm.role
+    `SELECT t.*, tm.role, tm.show_on_profile
      FROM teams t
      JOIN team_members tm ON tm.team_id = t.id
      WHERE tm.user_id = ?
      ORDER BY t.created_at DESC`,
   )
     .bind(user.id)
-    .all<TeamRow & { role: string }>();
+    .all<TeamRow & { role: string; show_on_profile: number | null }>();
 
   return c.json({
     teams: rows.results.map((t) => ({
       ...t,
       avatar_url: proxyImageUrl(c.env.APP_URL, t.avatar_url),
       unproxied_avatar_url: t.avatar_url,
+      show_on_profile:
+        t.show_on_profile === null ? null : t.show_on_profile === 1,
     })),
   });
+});
+
+// Per-team override of profile_show_joined_teams. Caller must be a member.
+// Body: { show_on_profile: true | false | null } — null reverts to following
+// the user's master profile_show_joined_teams toggle.
+app.patch("/:id/membership/show-on-profile", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const body = await c.req.json<{ show_on_profile: boolean | null }>();
+
+  const member = await c.env.DB.prepare(
+    "SELECT 1 AS x FROM team_members WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(id, user.id)
+    .first<{ x: number }>();
+  if (!member) return c.json({ error: "Not a member of this team" }, 404);
+
+  const stored =
+    body.show_on_profile === null ? null : body.show_on_profile ? 1 : 0;
+  await c.env.DB.prepare(
+    "UPDATE team_members SET show_on_profile = ? WHERE team_id = ? AND user_id = ?",
+  )
+    .bind(stored, id, user.id)
+    .run();
+  return c.json({ show_on_profile: body.show_on_profile });
 });
 
 // Create team
@@ -272,6 +299,14 @@ app.patch("/:id", async (c) => {
     name?: string;
     description?: string;
     avatar_url?: string;
+    profile_is_public?: boolean;
+    profile_show_description?: boolean | null;
+    profile_show_avatar?: boolean | null;
+    profile_show_owner?: boolean | null;
+    profile_show_member_count?: boolean | null;
+    profile_show_apps?: boolean | null;
+    profile_show_domains?: boolean | null;
+    profile_show_members?: boolean | null;
   }>();
 
   if (body.avatar_url) {
@@ -284,17 +319,42 @@ app.patch("/:id", async (c) => {
     .first<TeamRow>();
   if (!team) return c.json({ error: "Not found" }, 404);
 
-  const now = Math.floor(Date.now() / 1000);
-  await c.env.DB.prepare(
-    "UPDATE teams SET name=?, description=?, avatar_url=?, updated_at=? WHERE id=?",
-  )
-    .bind(
-      body.name?.trim() ?? team.name,
-      body.description ?? team.description,
-      body.avatar_url !== undefined ? body.avatar_url : team.avatar_url,
-      now,
-      id,
-    )
+  const updates: string[] = [
+    "name = ?",
+    "description = ?",
+    "avatar_url = ?",
+    "updated_at = ?",
+  ];
+  const values: unknown[] = [
+    body.name?.trim() ?? team.name,
+    body.description ?? team.description,
+    body.avatar_url !== undefined ? body.avatar_url : team.avatar_url,
+    Math.floor(Date.now() / 1000),
+  ];
+
+  if (body.profile_is_public !== undefined) {
+    updates.push("profile_is_public = ?");
+    values.push(body.profile_is_public ? 1 : 0);
+  }
+  for (const field of [
+    "profile_show_description",
+    "profile_show_avatar",
+    "profile_show_owner",
+    "profile_show_member_count",
+    "profile_show_apps",
+    "profile_show_domains",
+    "profile_show_members",
+  ] as const) {
+    const v = body[field];
+    if (v !== undefined) {
+      updates.push(`${field} = ?`);
+      values.push(v === null ? null : v ? 1 : 0);
+    }
+  }
+
+  values.push(id);
+  await c.env.DB.prepare(`UPDATE teams SET ${updates.join(", ")} WHERE id = ?`)
+    .bind(...values)
     .run();
 
   const updated = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")

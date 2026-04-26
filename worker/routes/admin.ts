@@ -106,6 +106,23 @@ app.patch("/config", async (c) => {
     "disable_user_create_app",
     "sudo_mode_ttl_minutes",
     "require_captcha_for_2fa",
+    "enable_public_profiles",
+    "default_profile_show_display_name",
+    "default_profile_show_avatar",
+    "default_profile_show_email",
+    "default_profile_show_joined_at",
+    "default_profile_show_gpg_keys",
+    "default_profile_show_authorized_apps",
+    "default_profile_show_owned_apps",
+    "default_profile_show_domains",
+    "default_profile_show_joined_teams",
+    "default_team_profile_show_description",
+    "default_team_profile_show_avatar",
+    "default_team_profile_show_owner",
+    "default_team_profile_show_member_count",
+    "default_team_profile_show_apps",
+    "default_team_profile_show_domains",
+    "default_team_profile_show_members",
   ]);
 
   const updates: Record<string, unknown> = {};
