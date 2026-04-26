@@ -43,6 +43,13 @@ app.get("/site", async (c) => {
     default_profile_show_owned_apps: config.default_profile_show_owned_apps,
     default_profile_show_domains: config.default_profile_show_domains,
     default_profile_show_joined_teams: config.default_profile_show_joined_teams,
+    default_profile_show_readme: config.default_profile_show_readme,
+    profile_readme_max_bytes: config.profile_readme_max_bytes,
+    // Token value itself is never exposed; the boolean lets the UI tell the
+    // user whether the site has a fallback token (so a personal PAT is
+    // optional) or not (so without one, fetches use the 60/hr unauth limit).
+    github_readme_has_site_token: !!config.github_readme_token,
+    github_readme_cache_ttl_seconds: config.github_readme_cache_ttl_seconds,
     default_team_profile_show_description:
       config.default_team_profile_show_description,
     default_team_profile_show_avatar: config.default_team_profile_show_avatar,

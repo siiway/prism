@@ -10,9 +10,12 @@ import {
   Link,
   MessageBar,
   Option,
+  Radio,
+  RadioGroup,
   Spinner,
   Switch,
   Text,
+  Textarea,
   Title2,
   makeStyles,
   tokens,
@@ -24,7 +27,7 @@ import {
   GlobeRegular,
   MailRegular,
 } from "@fluentui/react-icons";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -108,6 +111,18 @@ export function Profile() {
   });
   const myTeams = myTeamsData?.teams ?? [];
 
+  // Surface GitHub social connections so the user can pick which one drives
+  // the readme. Other providers are ignored — this is a GitHub-specific
+  // feature today.
+  const { data: connectionsData } = useQuery({
+    queryKey: ["connections"],
+    queryFn: api.listConnections,
+    enabled: !!me?.user.profile_is_public,
+  });
+  const githubConnections = (connectionsData?.connections ?? []).filter(
+    (c) => c.provider === "github",
+  );
+
   const handleTeamShowOnProfile = async (
     teamId: string,
     value: boolean | null,
@@ -132,6 +147,12 @@ export function Profile() {
   const [newEmail, setNewEmail] = useState("");
   const [emailLoading, setEmailLoading] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState<string | null>(null);
+  const [readme, setReadme] = useState<string>("");
+  const [readmeLoaded, setReadmeLoaded] = useState(false);
+  const [readmeSaving, setReadmeSaving] = useState(false);
+  const [readmeSyncing, setReadmeSyncing] = useState(false);
+  const [ghTokenInput, setGhTokenInput] = useState<string>("");
+  const readmeFileRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -141,6 +162,16 @@ export function Profile() {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 5000);
   };
+
+  // Seed the readme textarea from /me on first load. We don't keep the
+  // textarea in sync with later refetches because that would clobber the
+  // user's in-progress edits.
+  useEffect(() => {
+    if (me && !readmeLoaded) {
+      setReadme(me.user.profile_readme ?? "");
+      setReadmeLoaded(true);
+    }
+  }, [me, readmeLoaded]);
 
   const handleSave = async () => {
     setSaveLoading(true);
@@ -187,7 +218,8 @@ export function Profile() {
       | "profile_show_authorized_apps"
       | "profile_show_owned_apps"
       | "profile_show_domains"
-      | "profile_show_joined_teams",
+      | "profile_show_joined_teams"
+      | "profile_show_readme",
     value: boolean,
   ) => {
     setSavingVisibility(field);
@@ -199,6 +231,109 @@ export function Profile() {
       showMsg("error", err instanceof ApiError ? err.message : "Update failed");
     } finally {
       setSavingVisibility(null);
+    }
+  };
+
+  const readmeMaxBytes = site?.profile_readme_max_bytes ?? 64 * 1024;
+  const readmeBytes = new TextEncoder().encode(readme).byteLength;
+  const readmeOverLimit = readmeBytes > readmeMaxBytes;
+
+  const handleReadmeSave = async () => {
+    if (readmeOverLimit) {
+      showMsg("error", t("profile.readmeTooLarge"));
+      return;
+    }
+    setReadmeSaving(true);
+    try {
+      const res = await api.updateMe({ profile_readme: readme || null });
+      if (token && res.user) setAuth(token, res.user);
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      showMsg("success", t("profile.readmeUpdated"));
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+    } finally {
+      setReadmeSaving(false);
+    }
+  };
+
+  const handleReadmeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset the input so picking the same file twice still fires onChange.
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > readmeMaxBytes) {
+      showMsg("error", t("profile.readmeTooLarge"));
+      return;
+    }
+    setReadmeSaving(true);
+    try {
+      const text = await file.text();
+      // Drop into the textarea so the user can review/edit before saving.
+      // The upload endpoint persists immediately too — we want both.
+      const res = await api.uploadReadme(file);
+      setReadme(res.profile_readme ?? text);
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      showMsg("success", t("profile.readmeUpdated"));
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Upload failed");
+    } finally {
+      setReadmeSaving(false);
+    }
+  };
+
+  const handleReadmeSourceChange = async (
+    source: "manual" | "github",
+    connectionId?: string,
+  ) => {
+    setReadmeSaving(true);
+    try {
+      const body: Parameters<typeof api.updateMe>[0] = {
+        profile_readme_source: source,
+      };
+      if (source === "github") {
+        body.profile_readme_source_meta = connectionId
+          ? { connection_id: connectionId }
+          : null;
+      }
+      const res = await api.updateMe(body);
+      if (token && res.user) setAuth(token, res.user);
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      showMsg("success", t("profile.readmeUpdated"));
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+    } finally {
+      setReadmeSaving(false);
+    }
+  };
+
+  const handleGithubTokenSave = async (next: string | null) => {
+    setReadmeSaving(true);
+    try {
+      const res = await api.updateMe({ github_readme_token: next });
+      if (token && res.user) setAuth(token, res.user);
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      setGhTokenInput("");
+      showMsg("success", t("profile.readmeUpdated"));
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+    } finally {
+      setReadmeSaving(false);
+    }
+  };
+
+  const handleReadmeSync = async () => {
+    setReadmeSyncing(true);
+    try {
+      await api.syncReadmeFromGithub();
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      showMsg("success", t("profile.readmeSynced"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("profile.readmeSyncFailed"),
+      );
+    } finally {
+      setReadmeSyncing(false);
     }
   };
 
@@ -459,6 +594,11 @@ export function Profile() {
                     "default_profile_show_joined_teams",
                     "profile.publicProfileShowJoinedTeams",
                   ],
+                  [
+                    "profile_show_readme",
+                    "default_profile_show_readme",
+                    "profile.publicProfileShowReadme",
+                  ],
                 ] as const
               ).map(([userKey, siteKey, labelKey]) => {
                 const userValue = me.user[userKey];
@@ -555,6 +695,224 @@ export function Profile() {
                     );
                   })}
                 </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Profile README — markdown shown on the public profile. Only useful
+          when the public profile is enabled at all, so we hide the card
+          otherwise. */}
+      {(site?.enable_public_profiles ?? true) && me && (
+        <div className={styles.card}>
+          <div>
+            <Text weight="semibold" size={400} block>
+              {t("profile.readmeTitle")}
+            </Text>
+            <Text
+              size={200}
+              block
+              style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
+            >
+              {t("profile.readmeDesc", {
+                kb: Math.floor(readmeMaxBytes / 1024),
+              })}
+            </Text>
+          </div>
+
+          <Field label={t("profile.readmeSourceLabel")}>
+            <RadioGroup
+              value={me.user.profile_readme_source}
+              disabled={readmeSaving}
+              onChange={(_, d) => {
+                const next = d.value as "manual" | "github";
+                if (next === me.user.profile_readme_source) return;
+                if (next === "github") {
+                  // Pick the first available connection by default; if none,
+                  // the picker below will surface the empty state.
+                  const first = githubConnections[0];
+                  if (!first) {
+                    showMsg("error", t("profile.readmeNoGithubConnection"));
+                    return;
+                  }
+                  void handleReadmeSourceChange("github", first.id);
+                } else {
+                  void handleReadmeSourceChange("manual");
+                }
+              }}
+            >
+              <Radio value="manual" label={t("profile.readmeSourceManual")} />
+              <Radio value="github" label={t("profile.readmeSourceGithub")} />
+            </RadioGroup>
+          </Field>
+
+          {me.user.profile_readme_source === "manual" && (
+            <>
+              <Field
+                validationState={readmeOverLimit ? "error" : "none"}
+                validationMessage={
+                  readmeOverLimit
+                    ? t("profile.readmeTooLarge")
+                    : t("profile.readmeBytesUsed", {
+                        used: readmeBytes,
+                        max: readmeMaxBytes,
+                      })
+                }
+              >
+                <Textarea
+                  value={readme}
+                  onChange={(_, d) => setReadme(d.value)}
+                  placeholder={t("profile.readmePlaceholder")}
+                  rows={12}
+                  resize="vertical"
+                  style={{ fontFamily: "monospace" }}
+                />
+              </Field>
+              <div className={styles.actions}>
+                <Button
+                  appearance="primary"
+                  onClick={handleReadmeSave}
+                  disabled={readmeSaving || readmeOverLimit}
+                >
+                  {readmeSaving ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    t("common.saveChanges")
+                  )}
+                </Button>
+                <input
+                  ref={readmeFileRef}
+                  type="file"
+                  accept=".md,.markdown,text/markdown,text/plain"
+                  style={{ display: "none" }}
+                  onChange={handleReadmeUpload}
+                />
+                <Button
+                  disabled={readmeSaving}
+                  onClick={() => readmeFileRef.current?.click()}
+                >
+                  {t("profile.readmeUpload")}
+                </Button>
+                {readme && (
+                  <Button
+                    appearance="subtle"
+                    disabled={readmeSaving}
+                    onClick={() => setReadme("")}
+                  >
+                    {t("profile.readmeClear")}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+
+          {me.user.profile_readme_source === "github" && (
+            <div
+              className={styles.form}
+              style={{
+                paddingLeft: 12,
+                borderLeft: `2px solid ${tokens.colorNeutralStroke2}`,
+              }}
+            >
+              <Field
+                label={t("profile.readmeGithubAccount")}
+                hint={
+                  githubConnections.length === 0
+                    ? t("profile.readmeNoGithubConnection")
+                    : undefined
+                }
+                validationState={
+                  githubConnections.length === 0 ? "warning" : "none"
+                }
+              >
+                <Dropdown
+                  value={
+                    me.user.profile_readme_source_meta?.github_login
+                      ? `@${me.user.profile_readme_source_meta.github_login}`
+                      : ""
+                  }
+                  selectedOptions={
+                    me.user.profile_readme_source_meta?.connection_id
+                      ? [me.user.profile_readme_source_meta.connection_id]
+                      : []
+                  }
+                  disabled={readmeSaving || githubConnections.length === 0}
+                  onOptionSelect={(_, d) => {
+                    if (d.optionValue)
+                      void handleReadmeSourceChange("github", d.optionValue);
+                  }}
+                >
+                  {githubConnections.map((conn) => {
+                    const profile = conn.profile as { login?: string } | null;
+                    const login = profile?.login ?? conn.provider_user_id;
+                    return (
+                      <Option key={conn.id} value={conn.id} text={`@${login}`}>
+                        @{login}
+                      </Option>
+                    );
+                  })}
+                </Dropdown>
+              </Field>
+
+              <Field
+                label={t("profile.readmeGithubToken")}
+                hint={
+                  me.user.github_readme_token_set
+                    ? t("profile.readmeGithubTokenSet")
+                    : site?.github_readme_has_site_token
+                      ? t("profile.readmeGithubTokenOptionalSite")
+                      : t("profile.readmeGithubTokenOptionalNoSite")
+                }
+              >
+                <Input
+                  type="password"
+                  value={ghTokenInput}
+                  placeholder={
+                    me.user.github_readme_token_set ? "••••••••" : "ghp_…"
+                  }
+                  onChange={(_, d) => setGhTokenInput(d.value)}
+                />
+              </Field>
+              <div className={styles.actions}>
+                <Button
+                  appearance="primary"
+                  disabled={readmeSyncing || readmeSaving}
+                  onClick={handleReadmeSync}
+                >
+                  {readmeSyncing ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    t("profile.readmeSyncNow")
+                  )}
+                </Button>
+                <Button
+                  disabled={readmeSaving || !ghTokenInput.trim()}
+                  onClick={() => handleGithubTokenSave(ghTokenInput.trim())}
+                >
+                  {t("profile.readmeSaveToken")}
+                </Button>
+                {me.user.github_readme_token_set && (
+                  <Button
+                    appearance="subtle"
+                    disabled={readmeSaving}
+                    onClick={() => handleGithubTokenSave(null)}
+                  >
+                    {t("profile.readmeClearToken")}
+                  </Button>
+                )}
+              </div>
+              {me.user.profile_readme_synced_at && (
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {t("profile.readmeLastSynced", {
+                    when: new Date(
+                      me.user.profile_readme_synced_at * 1000,
+                    ).toLocaleString(),
+                  })}
+                </Text>
               )}
             </div>
           )}

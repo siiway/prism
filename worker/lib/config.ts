@@ -60,6 +60,11 @@ const DEFAULT_CONFIG: SiteConfig = {
   // Joined teams reveal social/employer affiliations — opt-in per user, and
   // doubles as the per-user gate for appearing in team member lists.
   default_profile_show_joined_teams: false,
+  default_profile_show_readme: true,
+  profile_readme_max_bytes: 64 * 1024,
+  github_readme_token: "",
+  github_readme_cache_ttl_seconds: 3600,
+  github_readme_token_failures: 0,
   default_team_profile_show_description: true,
   default_team_profile_show_avatar: true,
   // Owner has to be opted in explicitly per team — the owner's username

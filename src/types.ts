@@ -53,6 +53,10 @@ export interface SiteConfig {
   default_profile_show_owned_apps: boolean;
   default_profile_show_domains: boolean;
   default_profile_show_joined_teams: boolean;
+  default_profile_show_readme: boolean;
+  profile_readme_max_bytes: number;
+  github_readme_token: string;
+  github_readme_cache_ttl_seconds: number;
   default_team_profile_show_description: boolean;
   default_team_profile_show_avatar: boolean;
   default_team_profile_show_owner: boolean;

@@ -28,6 +28,24 @@ export interface UserRow {
   /** Also gates whether this user is included in any team's public member
    *  list (the setting follows the user across team profiles). */
   profile_show_joined_teams: number | null;
+  /** User-supplied markdown shown on the public profile. NULL/empty = no
+   *  README. Capped at PROFILE_README_MAX_BYTES on write. Ignored when
+   *  profile_readme_source != 'manual'. */
+  profile_readme: string | null;
+  profile_readme_updated_at: number | null;
+  profile_show_readme: number | null;
+  /** 'manual' (default) or 'github'. */
+  profile_readme_source: string;
+  /** JSON. Shape depends on source — for 'github':
+   *    { connection_id?: string, github_login: string } */
+  profile_readme_source_meta: string | null;
+  profile_readme_synced_at: number | null;
+  /** User-provided GitHub PAT used as the preferred token when fetching
+   *  this user's GitHub README. Plaintext storage matches social_connections. */
+  github_readme_token: string | null;
+  /** Consecutive 401 ("Bad credentials") count for the per-user PAT.
+   *  Auto-cleared at 3; reset on success or rotation. */
+  github_readme_token_failures: number;
   created_at: number;
   updated_at: number;
 }
@@ -435,6 +453,26 @@ export interface SiteConfig {
    *  profile sections default on. Also gates whether the user appears in
    *  any team's public member list. */
   default_profile_show_joined_teams: boolean;
+  /** Whether the README section is visible by default. README itself is
+   *  always opt-in (empty == hidden), so this only matters for users who
+   *  have written one but haven't customized this flag. */
+  default_profile_show_readme: boolean;
+  /** Hard cap on README markdown source, in bytes. Enforced on PATCH /me
+   *  and POST /me/readme. Bumping this is fine; lowering it leaves existing
+   *  oversized READMEs intact (they just can't be re-saved without trimming). */
+  profile_readme_max_bytes: number;
+  /** Site-global GitHub PAT used as the last-resort token when fetching a
+   *  user's GitHub profile README. Stored in plaintext like other provider
+   *  secrets. Empty string = unauthenticated (60 req/hr per IP). */
+  github_readme_token: string;
+  /** TTL on the github_readme_cache table. We serve cached content for this
+   *  long before issuing a conditional GET. Stale-while-error: if a refresh
+   *  fails, we keep returning the stale entry. */
+  github_readme_cache_ttl_seconds: number;
+  /** Consecutive 401 count for the site-global PAT. Auto-clears the site
+   *  token at 3; reset on success or admin rotation. Mirrors the per-user
+   *  counter. */
+  github_readme_token_failures: number;
   /** Defaults for the team public-profile feature. The team is always
    *  the source of truth for `profile_is_public` (no site default for
    *  the master switch — privacy-first). */

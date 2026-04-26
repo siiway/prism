@@ -116,6 +116,10 @@ app.patch("/config", async (c) => {
     "default_profile_show_owned_apps",
     "default_profile_show_domains",
     "default_profile_show_joined_teams",
+    "default_profile_show_readme",
+    "profile_readme_max_bytes",
+    "github_readme_token",
+    "github_readme_cache_ttl_seconds",
     "default_team_profile_show_description",
     "default_team_profile_show_avatar",
     "default_team_profile_show_owner",
@@ -133,6 +137,51 @@ app.patch("/config", async (c) => {
   if (updates.site_icon_url && typeof updates.site_icon_url === "string") {
     const imgErr = await validateImageUrl(updates.site_icon_url);
     if (imgErr) return c.json({ error: `site_icon_url: ${imgErr}` }, 400);
+  }
+
+  if (updates.profile_readme_max_bytes !== undefined) {
+    const v = updates.profile_readme_max_bytes;
+    if (
+      typeof v !== "number" ||
+      !Number.isInteger(v) ||
+      v < 1024 ||
+      v > 1024 * 1024
+    ) {
+      return c.json(
+        {
+          error:
+            "profile_readme_max_bytes must be an integer between 1024 and 1048576",
+        },
+        400,
+      );
+    }
+  }
+
+  if (updates.github_readme_cache_ttl_seconds !== undefined) {
+    const v = updates.github_readme_cache_ttl_seconds;
+    // Anything under 60s would hammer the GitHub API; anything over a week
+    // means stale READMEs sit forever after a manual sync. Pin the range.
+    if (
+      typeof v !== "number" ||
+      !Number.isInteger(v) ||
+      v < 60 ||
+      v > 7 * 86400
+    ) {
+      return c.json(
+        {
+          error:
+            "github_readme_cache_ttl_seconds must be an integer between 60 and 604800",
+        },
+        400,
+      );
+    }
+  }
+
+  // Rotating the site GitHub token always resets its failure counter so a
+  // fresh paste isn't immediately auto-cleared by leftover bad-credential
+  // counts from the previous token.
+  if (updates.github_readme_token !== undefined) {
+    updates.github_readme_token_failures = 0;
   }
 
   await setConfigValues(c.env.DB, updates);

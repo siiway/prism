@@ -290,6 +290,14 @@ export const api = {
       profile_show_owned_apps: boolean | null;
       profile_show_domains: boolean | null;
       profile_show_joined_teams: boolean | null;
+      profile_show_readme: boolean | null;
+      profile_readme: string | null;
+      profile_readme_source: "manual" | "github";
+      profile_readme_source_meta: {
+        connection_id?: string | null;
+        github_login?: string;
+      } | null;
+      github_readme_token: string | null;
     }>,
   ) => request<{ user: UserProfile }>("PATCH", "/user/me", body, getToken()),
   changePassword: (current_password: string, new_password: string) =>
@@ -309,6 +317,22 @@ export const api = {
       getToken(),
     );
   },
+  uploadReadme: (file: File) => {
+    const fd = new FormData();
+    fd.append("readme", file);
+    return request<{
+      profile_readme: string | null;
+      profile_readme_updated_at: number | null;
+      max_bytes: number;
+    }>("POST", "/user/me/readme", fd, getToken());
+  },
+  syncReadmeFromGithub: () =>
+    request<{ status: number; synced_at?: number; error?: string }>(
+      "POST",
+      "/user/me/readme/sync",
+      {},
+      getToken(),
+    ),
   deleteAccount: (password: string) =>
     request<{ message: string }>(
       "DELETE",
@@ -1307,6 +1331,10 @@ export interface SitePublicConfig {
   default_profile_show_owned_apps: boolean;
   default_profile_show_domains: boolean;
   default_profile_show_joined_teams: boolean;
+  default_profile_show_readme: boolean;
+  profile_readme_max_bytes: number;
+  github_readme_has_site_token: boolean;
+  github_readme_cache_ttl_seconds: number;
   default_team_profile_show_description: boolean;
   default_team_profile_show_avatar: boolean;
   default_team_profile_show_owner: boolean;
@@ -1369,6 +1397,20 @@ export interface UserProfile {
   profile_show_owned_apps: boolean | null;
   profile_show_domains: boolean | null;
   profile_show_joined_teams: boolean | null;
+  profile_show_readme: boolean | null;
+  /** Raw markdown source for the profile README. Ignored when source =
+   *  'github' — the displayed content comes from the GitHub cache. */
+  profile_readme: string | null;
+  profile_readme_updated_at: number | null;
+  profile_readme_source: "manual" | "github";
+  profile_readme_source_meta: {
+    connection_id: string | null;
+    github_login: string;
+  } | null;
+  profile_readme_synced_at: number | null;
+  /** True when a per-user GitHub PAT is stored. The token itself is never
+   *  sent back to the client — set/clear via PATCH only. */
+  github_readme_token_set: boolean;
   created_at?: number;
 }
 
@@ -1411,6 +1453,11 @@ export interface PublicUserProfile {
     avatar_url: string | null;
     role: "owner" | "co-owner" | "admin" | "member";
   }> | null;
+  /** Raw markdown — sanitize and rewrite images through the proxy before
+   *  rendering. Null when the user has no readme or it's hidden. */
+  readme: string | null;
+  readme_updated_at: number | null;
+  readme_source: "manual" | "github" | null;
 }
 
 export interface MeResponse {

@@ -18,7 +18,8 @@ import {
   parseNotificationRules,
 } from "../lib/notifications";
 import type { NotificationRules } from "../types";
-import { getConfig } from "../lib/config";
+import { getConfig, getConfigValue } from "../lib/config";
+import { getGithubReadmeFromCache } from "../lib/githubReadme";
 import { sendEmail, verifyEmailTemplate } from "../lib/email";
 import type {
   UserRow,
@@ -82,6 +83,14 @@ app.patch("/me", async (c) => {
     profile_show_owned_apps?: boolean | null;
     profile_show_domains?: boolean | null;
     profile_show_joined_teams?: boolean | null;
+    profile_show_readme?: boolean | null;
+    profile_readme?: string | null;
+    profile_readme_source?: "manual" | "github";
+    profile_readme_source_meta?: {
+      connection_id?: string;
+      github_login?: string;
+    } | null;
+    github_readme_token?: string | null;
   }>();
 
   const now = Math.floor(Date.now() / 1000);
@@ -140,6 +149,113 @@ app.patch("/me", async (c) => {
     updates.push("profile_is_public = ?");
     values.push(body.profile_is_public ? 1 : 0);
   }
+  if (body.profile_readme !== undefined) {
+    const raw = body.profile_readme;
+    if (raw !== null && typeof raw !== "string") {
+      return c.json({ error: "profile_readme must be a string or null" }, 400);
+    }
+    // Empty string == clear (treat the same as null) so the public profile
+    // can simply check truthiness.
+    const trimmed = raw === null ? null : raw;
+    if (trimmed !== null) {
+      // Byte length, not character count — UTF-8 emoji etc. would otherwise
+      // sneak past a .length cap and blow the row size.
+      const bytes = new TextEncoder().encode(trimmed).byteLength;
+      const maxBytes = await getConfigValue(
+        c.env.DB,
+        "profile_readme_max_bytes",
+      );
+      if (bytes > maxBytes) {
+        return c.json(
+          { error: `profile_readme exceeds the ${maxBytes}-byte limit` },
+          413,
+        );
+      }
+    }
+    updates.push("profile_readme = ?");
+    values.push(trimmed && trimmed.length > 0 ? trimmed : null);
+    updates.push("profile_readme_updated_at = ?");
+    values.push(now);
+  }
+  if (body.profile_readme_source !== undefined) {
+    if (
+      body.profile_readme_source !== "manual" &&
+      body.profile_readme_source !== "github"
+    ) {
+      return c.json(
+        { error: "profile_readme_source must be 'manual' or 'github'" },
+        400,
+      );
+    }
+    if (body.profile_readme_source === "github") {
+      // Resolve the GitHub login from the chosen connection so the public
+      // profile route can fetch even if the connection is later removed.
+      const meta = body.profile_readme_source_meta ?? {};
+      let login = meta.github_login?.trim();
+      const connectionId = meta.connection_id?.trim();
+      if (connectionId) {
+        const conn = await c.env.DB.prepare(
+          "SELECT id, profile_data FROM social_connections WHERE id = ? AND user_id = ? AND provider = 'github'",
+        )
+          .bind(connectionId, user.id)
+          .first<{ id: string; profile_data: string }>();
+        if (!conn) {
+          return c.json(
+            { error: "GitHub connection not found for this user" },
+            400,
+          );
+        }
+        try {
+          const profile = JSON.parse(conn.profile_data) as { login?: string };
+          if (profile.login) login = profile.login;
+        } catch {
+          // ignore — fall back to whatever the client sent
+        }
+      }
+      if (!login) {
+        return c.json(
+          { error: "github source requires a connection_id or github_login" },
+          400,
+        );
+      }
+      updates.push("profile_readme_source = ?");
+      values.push("github");
+      updates.push("profile_readme_source_meta = ?");
+      values.push(
+        JSON.stringify({
+          connection_id: connectionId ?? null,
+          github_login: login,
+        }),
+      );
+    } else {
+      updates.push("profile_readme_source = ?");
+      values.push("manual");
+      updates.push("profile_readme_source_meta = ?");
+      values.push(null);
+    }
+  }
+  if (body.github_readme_token !== undefined) {
+    if (
+      body.github_readme_token !== null &&
+      typeof body.github_readme_token !== "string"
+    ) {
+      return c.json(
+        { error: "github_readme_token must be a string or null" },
+        400,
+      );
+    }
+    const tok = body.github_readme_token?.trim() || null;
+    if (tok && tok.length > 256) {
+      return c.json({ error: "github_readme_token is too long" }, 400);
+    }
+    updates.push("github_readme_token = ?");
+    values.push(tok);
+    // A user replacing the token always means "give this one a fresh
+    // chance" — even if they're clearing it, zeroing the counter avoids
+    // weird state if they paste it back later.
+    updates.push("github_readme_token_failures = ?");
+    values.push(0);
+  }
   for (const field of [
     "profile_show_display_name",
     "profile_show_avatar",
@@ -150,6 +266,7 @@ app.patch("/me", async (c) => {
     "profile_show_owned_apps",
     "profile_show_domains",
     "profile_show_joined_teams",
+    "profile_show_readme",
   ] as const) {
     const v = body[field];
     if (v !== undefined) {
@@ -267,6 +384,122 @@ app.post("/me/avatar", async (c) => {
   return c.json({ avatar_url: avatarUrl });
 });
 
+// Upload README as a markdown file (multipart). Convenience for users who
+// edit their bio in a real markdown editor instead of pasting into the
+// textarea. The body is the raw markdown source — we never render it on the
+// server, so no sanitization is needed here, just the size cap.
+app.post("/me/readme", async (c) => {
+  const user = c.get("user");
+  const maxBytes = await getConfigValue(c.env.DB, "profile_readme_max_bytes");
+  const formData = await c.req.formData();
+  const file = formData.get("readme") as unknown as File | null;
+
+  if (!file) return c.json({ error: "readme file required" }, 400);
+  if (file.size > maxBytes) {
+    return c.json({ error: `Readme exceeds the ${maxBytes}-byte limit` }, 413);
+  }
+  // Restrict to text-ish types. Some browsers send empty type for .md.
+  const type = (file.type || "").toLowerCase();
+  if (
+    type &&
+    !type.startsWith("text/") &&
+    type !== "application/octet-stream"
+  ) {
+    return c.json({ error: "Readme must be a text/markdown file" }, 400);
+  }
+
+  const text = await file.text();
+  if (new TextEncoder().encode(text).byteLength > maxBytes) {
+    // file.size can lie when the upstream stream is chunked; recheck after read.
+    return c.json({ error: `Readme exceeds the ${maxBytes}-byte limit` }, 413);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const trimmed = text.length > 0 ? text : null;
+  await c.env.DB.prepare(
+    "UPDATE users SET profile_readme = ?, profile_readme_updated_at = ?, updated_at = ? WHERE id = ?",
+  )
+    .bind(trimmed, now, now, user.id)
+    .run();
+
+  return c.json({
+    profile_readme: trimmed,
+    profile_readme_updated_at: now,
+    max_bytes: maxBytes,
+  });
+});
+
+// Force-refresh the GitHub README cache for the current user. Bypasses TTL.
+// Useful when the user just published a change on GitHub and wants the public
+// profile to reflect it immediately. Errors short-circuit with the upstream
+// status so the UI can show a useful message.
+app.post("/me/readme/sync", async (c) => {
+  const user = c.get("user");
+  const row = await c.env.DB.prepare(
+    "SELECT profile_readme_source, profile_readme_source_meta FROM users WHERE id = ?",
+  )
+    .bind(user.id)
+    .first<{
+      profile_readme_source: string;
+      profile_readme_source_meta: string | null;
+    }>();
+  if (!row || row.profile_readme_source !== "github") {
+    return c.json({ error: "README source is not github" }, 400);
+  }
+  let login: string | null = null;
+  try {
+    const meta = JSON.parse(row.profile_readme_source_meta ?? "{}") as {
+      github_login?: string;
+    };
+    login = meta.github_login ?? null;
+  } catch {
+    // ignore
+  }
+  if (!login) return c.json({ error: "No GitHub login configured" }, 400);
+
+  // Force-refresh by deleting the cache row, then routing through the
+  // standard cache resolver so we pick up the same token cascade and
+  // 401-failure tracking as a normal public-profile view.
+  await c.env.DB.prepare(
+    "DELETE FROM github_readme_cache WHERE github_login = ?",
+  )
+    .bind(login.toLowerCase())
+    .run();
+
+  const content = await getGithubReadmeFromCache(c.env.DB, user.id, login);
+  const now = Math.floor(Date.now() / 1000);
+
+  if (content !== null) {
+    await c.env.DB.prepare(
+      "UPDATE users SET profile_readme_synced_at = ? WHERE id = ?",
+    )
+      .bind(now, user.id)
+      .run();
+    return c.json({ status: 200, synced_at: now });
+  }
+
+  // No content. Distinguish a real 404 (cache row was written with status
+  // 404 by the resolver) from a hard fetch failure (no cache row).
+  const cacheRow = await c.env.DB.prepare(
+    "SELECT status FROM github_readme_cache WHERE github_login = ?",
+  )
+    .bind(login.toLowerCase())
+    .first<{ status: number }>();
+  if (cacheRow?.status === 404) {
+    return c.json(
+      { status: 404, error: "GitHub user has no profile README" },
+      404,
+    );
+  }
+  return c.json(
+    {
+      status: 502,
+      error: "GitHub fetch failed — try again or check your token",
+    },
+    502,
+  );
+});
+
 // Serve R2 assets
 app.get("/assets/*", async (c) => {
   if (!c.env.R2_ASSETS) return c.json({ error: "Not found" }, 404);
@@ -332,6 +565,19 @@ function safeUser(baseUrl: string, row: UserRow) {
     profile_show_owned_apps: nullableBool(row.profile_show_owned_apps),
     profile_show_domains: nullableBool(row.profile_show_domains),
     profile_show_joined_teams: nullableBool(row.profile_show_joined_teams),
+    profile_show_readme: nullableBool(row.profile_show_readme),
+    profile_readme: row.profile_readme,
+    profile_readme_updated_at: row.profile_readme_updated_at,
+    profile_readme_source: row.profile_readme_source as "manual" | "github",
+    profile_readme_source_meta: row.profile_readme_source_meta
+      ? (JSON.parse(row.profile_readme_source_meta) as {
+          connection_id: string | null;
+          github_login: string;
+        })
+      : null,
+    profile_readme_synced_at: row.profile_readme_synced_at,
+    // Expose only whether a personal token is set, not the token itself.
+    github_readme_token_set: !!row.github_readme_token,
     created_at: row.created_at,
   };
 }

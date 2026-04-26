@@ -8,6 +8,7 @@
 import { Hono } from "hono";
 import { optionalAuth } from "../middleware/auth";
 import { getConfig } from "../lib/config";
+import { getGithubReadmeFromCache } from "../lib/githubReadme";
 import { proxyImageUrl } from "../lib/proxyImage";
 import type { UserRow, Variables } from "../types";
 
@@ -75,6 +76,10 @@ app.get("/:username", optionalAuth, async (c) => {
   const showJoinedTeams = resolve(
     row.profile_show_joined_teams,
     config.default_profile_show_joined_teams,
+  );
+  const showReadme = resolve(
+    row.profile_show_readme,
+    config.default_profile_show_readme,
   );
 
   // Each related-table query is gated by its own visibility flag so we don't
@@ -235,8 +240,38 @@ app.get("/:username", optionalAuth, async (c) => {
               role: t.role,
             })) ?? [])
           : null,
+      // Raw markdown — the client sanitizes and rewrites images through the
+      // proxy when rendering. We never render server-side, so no XSS surface
+      // is introduced by returning the source verbatim. Source resolution is
+      // delegated to resolveReadme below: 'github' fetches via the site
+      // cache (lazy refresh), 'manual' just reads the column.
+      readme: showReadme ? await resolveReadme(c.env.DB, row) : null,
+      readme_updated_at: showReadme ? row.profile_readme_updated_at : null,
+      readme_source: showReadme ? row.profile_readme_source : null,
     },
   });
 });
+
+async function resolveReadme(
+  db: D1Database,
+  row: UserRow,
+): Promise<string | null> {
+  if (row.profile_readme_source === "github") {
+    let login: string | null = null;
+    try {
+      const meta = JSON.parse(row.profile_readme_source_meta ?? "{}") as {
+        github_login?: string;
+      };
+      login = meta.github_login ?? null;
+    } catch {
+      // ignore — null login means no readme
+    }
+    if (!login) return null;
+    return getGithubReadmeFromCache(db, row.id, login);
+  }
+  return row.profile_readme && row.profile_readme.length > 0
+    ? row.profile_readme
+    : null;
+}
 
 export default app;

@@ -14,6 +14,7 @@ import {
 import {
   AppsRegular,
   CalendarRegular,
+  DocumentTextRegular,
   EarthRegular,
   GlobeRegular,
   KeyRegular,
@@ -24,8 +25,10 @@ import {
 } from "@fluentui/react-icons";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
+import { renderMarkdown } from "../lib/markdown";
 
 const useStyles = makeStyles({
   page: {
@@ -99,6 +102,58 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground3,
     wordBreak: "break-all",
   },
+  readme: {
+    color: tokens.colorNeutralForeground1,
+    fontSize: tokens.fontSizeBase300,
+    lineHeight: tokens.lineHeightBase300,
+    wordBreak: "break-word",
+    "& h1, & h2, & h3, & h4, & h5, & h6": {
+      marginTop: "16px",
+      marginBottom: "8px",
+      fontWeight: tokens.fontWeightSemibold,
+    },
+    "& h1": { fontSize: tokens.fontSizeBase600 },
+    "& h2": { fontSize: tokens.fontSizeBase500 },
+    "& h3": { fontSize: tokens.fontSizeBase400 },
+    "& p": { margin: "8px 0" },
+    "& ul, & ol": { paddingLeft: "24px", margin: "8px 0" },
+    "& a": { color: tokens.colorBrandForegroundLink },
+    "& code": {
+      fontFamily: "monospace",
+      background: tokens.colorNeutralBackground3,
+      padding: "1px 4px",
+      borderRadius: "3px",
+      fontSize: "0.9em",
+    },
+    "& pre": {
+      background: tokens.colorNeutralBackground3,
+      padding: "12px",
+      borderRadius: "6px",
+      overflow: "auto",
+    },
+    "& pre code": { background: "transparent", padding: 0 },
+    "& blockquote": {
+      borderLeft: `3px solid ${tokens.colorNeutralStroke2}`,
+      margin: "8px 0",
+      padding: "0 12px",
+      color: tokens.colorNeutralForeground2,
+    },
+    "& img": { maxWidth: "100%", borderRadius: "4px" },
+    "& hr": {
+      border: 0,
+      borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+      margin: "16px 0",
+    },
+    "& table": {
+      borderCollapse: "collapse",
+      margin: "8px 0",
+    },
+    "& th, & td": {
+      border: `1px solid ${tokens.colorNeutralStroke2}`,
+      padding: "6px 10px",
+      textAlign: "left",
+    },
+  },
 });
 
 export function PublicProfile() {
@@ -148,7 +203,8 @@ export function PublicProfile() {
     (p.authorized_apps?.length ?? 0) > 0 ||
     (p.owned_apps?.length ?? 0) > 0 ||
     (p.domains?.length ?? 0) > 0 ||
-    (p.joined_teams?.length ?? 0) > 0;
+    (p.joined_teams?.length ?? 0) > 0 ||
+    !!p.readme;
 
   return (
     <div className={styles.page}>
@@ -204,6 +260,8 @@ export function PublicProfile() {
         )}
 
         {hasAnyAdditionalSection && <div className={styles.divider} />}
+
+        {p.readme && <ReadmeSection readme={p.readme} />}
 
         {p.gpg_keys && p.gpg_keys.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -354,6 +412,7 @@ export function PublicProfile() {
           </div>
         )}
 
+        {/* Authorized apps section */}
         {p.authorized_apps && p.authorized_apps.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div className={styles.sectionTitle}>
@@ -403,6 +462,28 @@ export function PublicProfile() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ReadmeSection({ readme }: { readme: string }) {
+  const styles = useStyles();
+  const { t } = useTranslation();
+  // Re-render is rare (only on profile reload), but memoize anyway because
+  // the sanitize+image-rewrite pass walks the whole DOM.
+  const html = useMemo(() => renderMarkdown(readme), [readme]);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className={styles.sectionTitle}>
+        <DocumentTextRegular />
+        {t("publicProfile.readmeHeading")}
+      </div>
+      <div
+        className={styles.readme}
+        // html is the output of marked + DOMPurify with our hardened
+        // configuration in lib/markdown.ts; safe to inject.
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   );
 }

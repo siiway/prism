@@ -420,6 +420,57 @@ export function AdminSettings() {
                 set("default_profile_show_joined_teams", d.checked)
               }
             />
+            <Switch
+              label={t("admin.defaultProfileShowReadme")}
+              checked={get("default_profile_show_readme") ?? true}
+              disabled={!(get("enable_public_profiles") ?? true)}
+              onChange={(_, d) => set("default_profile_show_readme", d.checked)}
+            />
+            <Field
+              label={t("admin.profileReadmeMaxBytes")}
+              hint={t("admin.profileReadmeMaxBytesHint")}
+            >
+              <Input
+                type="number"
+                min={1024}
+                max={1024 * 1024}
+                value={String(get("profile_readme_max_bytes") ?? 64 * 1024)}
+                disabled={!(get("enable_public_profiles") ?? true)}
+                onChange={(_, d) => {
+                  const n = parseInt(d.value, 10);
+                  if (Number.isFinite(n)) set("profile_readme_max_bytes", n);
+                }}
+              />
+            </Field>
+            <Field
+              label={t("admin.githubReadmeToken")}
+              hint={t("admin.githubReadmeTokenHint")}
+            >
+              <Input
+                type="password"
+                value={String(get("github_readme_token") ?? "")}
+                disabled={!(get("enable_public_profiles") ?? true)}
+                placeholder="ghp_… (optional)"
+                onChange={(_, d) => set("github_readme_token", d.value)}
+              />
+            </Field>
+            <Field
+              label={t("admin.githubReadmeCacheTtl")}
+              hint={t("admin.githubReadmeCacheTtlHint")}
+            >
+              <Input
+                type="number"
+                min={60}
+                max={7 * 86400}
+                value={String(get("github_readme_cache_ttl_seconds") ?? 3600)}
+                disabled={!(get("enable_public_profiles") ?? true)}
+                onChange={(_, d) => {
+                  const n = parseInt(d.value, 10);
+                  if (Number.isFinite(n))
+                    set("github_readme_cache_ttl_seconds", n);
+                }}
+              />
+            </Field>
             <Text
               size={200}
               style={{
