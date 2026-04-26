@@ -774,6 +774,8 @@
       "noEnrollment": "您尚未启用 TOTP 认证器或通行密钥。请先在「安全」中启用,应用才能要求您确认敏感操作。",
       "enterCode": "认证器验证码",
       "enterCodeHint": "输入您的认证器应用验证码(或备用码)以继续。",
+      "acknowledge": "我已阅读并理解：「{{action}}」",
+      "acknowledgeNoAction": "尽管未提供操作描述,我仍确认要继续。",
       "confirm": "确认",
       "footerNote": "确认会向 {{appName}} 发回一次性验证结果,不会授予任何新的账户权限。"
     }

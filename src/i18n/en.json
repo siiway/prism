@@ -774,6 +774,8 @@
       "noEnrollment": "You don't have a TOTP authenticator or passkey enrolled. Set one up in Security before this app can ask you to confirm sensitive actions.",
       "enterCode": "Authenticator code",
       "enterCodeHint": "Enter your authenticator app code (or a backup code) to continue.",
+      "acknowledge": "I have read and understand: \"{{action}}\"",
+      "acknowledgeNoAction": "I confirm I want to continue, even though no action was described.",
       "confirm": "Confirm",
       "footerNote": "Confirming sends a one-time verification back to {{appName}}. It does not grant any new account access."
     }

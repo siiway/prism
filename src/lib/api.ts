@@ -1580,9 +1580,11 @@ export interface OAuth2FAInfo {
     is_first_party: boolean;
     is_public: boolean;
   };
+  challenge_id: string;
   redirect_uri: string;
   state: string | null;
   action: string | null;
+  expires_at: number;
   user: UserProfile | null;
   totp_enrolled: boolean;
   passkey_enrolled: boolean;
@@ -1591,13 +1593,8 @@ export interface OAuth2FAInfo {
 }
 
 export interface OAuth2FAAuthorizeBody {
-  client_id: string;
-  redirect_uri: string;
+  challenge_id: string;
   state?: string;
-  action?: string;
-  nonce?: string;
-  code_challenge?: string;
-  code_challenge_method?: string;
   decision: "approve" | "deny";
   totp_code?: string;
   passkey_verify_token?: string;

@@ -576,6 +576,9 @@ app.delete("/:id", async (c) => {
     c.env.DB.prepare("DELETE FROM oauth_2fa_codes WHERE client_id = ?").bind(
       row.client_id,
     ),
+    c.env.DB.prepare(
+      "DELETE FROM oauth_2fa_challenges WHERE client_id = ?",
+    ).bind(row.client_id),
     c.env.DB.prepare("DELETE FROM oauth_consents WHERE client_id = ?").bind(
       row.client_id,
     ),

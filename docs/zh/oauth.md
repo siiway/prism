@@ -244,39 +244,66 @@ ID 令牌是一个签名的 JWT（RS256）。可通过 `/.well-known/jwks.json` 
 
 ## 加强 2FA（敏感操作再确认）
 
-应用可以请求 Prism 让用户在执行敏感操作前用 TOTP 或通行密钥再确认一次——例如转账、删除资源、授予提权访问权限等。流程与授权码流程一致：重定向用户 → 拿到一次性 code → 在服务端换取结果。
+应用可以请求 Prism 让用户在执行敏感操作前用 TOTP 或通行密钥再确认一次——例如转账、删除资源、授予提权访问权限等。
+
+流程是**服务端发起**的：你的服务器先通过 HTTPS 把这次操作注册到 Prism，然后才重定向用户。操作描述和回调 URI 都在服务端到服务端这一步固定下来——只控制 URL 的攻击者无法伪造一个写有任意内容的确认页。
 
 用户必须已登录 Prism（未登录会被引导登录），并已启用 TOTP 认证器或通行密钥。这一过程不会授予任何新的账户权限——返回结果只是用户重新确认了一次的一次性凭证。
 
-### 第一步 — 重定向用户
+### 第一步 — 创建挑战（服务端到服务端）
 
-```text
-GET https://prism.example.com/api/oauth/2fa
-  ?client_id=YOUR_CLIENT_ID
-  &redirect_uri=https://app.example.com/2fa-callback
-  &state=RANDOM
-  &action=确认转账+%241%2C000
-  &nonce=order_abc123
-  &code_challenge=PKCE_CHALLENGE
-  &code_challenge_method=S256
+```http
+POST /api/oauth/2fa/challenges
+Authorization: Basic <base64(client_id:client_secret)>
+Content-Type: application/json
+
+{
+  "redirect_uri": "https://app.example.com/2fa-callback",
+  "action": "确认转账 $1,000",
+  "nonce": "order_abc123",
+  "code_challenge": "PKCE_CHALLENGE",
+  "code_challenge_method": "S256"
+}
 ```
 
-| 参数 | 是否必填 | 说明 |
+| 字段 | 是否必填 | 说明 |
 | --- | --- | --- |
-| `client_id` | 必填 | OAuth 应用的 client ID |
+| `client_id` | 必填（Basic 或请求体） | OAuth 应用的 client ID |
+| `client_secret` | 机密客户端必填 | 通过 Basic 或请求体提供 |
 | `redirect_uri` | 必填 | 必须已在应用上注册 |
-| `state` | 推荐 | 原样回传；回调时校验（防 CSRF） |
-| `action` | 推荐 | 用户要确认的操作的人类可读描述。在 Prism 页面上原样展示，并在 verify 响应中回传。最长 200 字符 |
-| `nonce` | 可选 | 应用自定义的不透明值，原样回传。建议绑定到具体操作（如订单 ID）。最长 256 字符 |
+| `action` | 推荐 | 用户要确认的操作的人类可读描述（≤ 200 字符）。在 Prism 页面原样展示，并在 verify 响应中回传 |
+| `nonce` | 可选 | 应用自定义的不透明值（≤ 256 字符），原样回传。建议绑定到具体操作（如订单 ID） |
 | `code_challenge`, `code_challenge_method` | 公开客户端必填 | PKCE — 见授权码流程 |
 
-### 第二步 — 用户确认
+#### 响应
 
-Prism 会展示应用图标、`action` 文案，并提示用户输入 TOTP 或使用通行密钥。用户点击 **确认** 或 **拒绝**。
+```json
+{
+  "challenge_id": "f3a…opaque…",
+  "expires_at": 1761500900,
+  "url": "https://prism.example.com/oauth/2fa?challenge_id=f3a…"
+}
+```
 
-### 第三步 — 接收 code
+公开客户端（无 `client_secret`）依靠 PKCE 进行身份认证：在这里传 `code_challenge`，在校验时传 `code_verifier`。服务器对每个客户端限速创建挑战（每分钟 60 次），即便密钥泄露也无法用于骚扰用户。
 
-Prism 将用户重定向回你的 `redirect_uri`：
+### 第二步 — 重定向用户
+
+```text
+https://prism.example.com/oauth/2fa?challenge_id=f3a…&state=RANDOM
+```
+
+URL 里只有不透明的 `challenge_id` 和你设的 CSRF `state`。攻击者没有任何可篡改的内容。
+
+### 第三步 — 用户确认
+
+Prism 会展示应用图标、（如适用的）已验证域名徽章、来自挑战的 `action` 文案，并提示用户输入 TOTP 或使用通行密钥。用户还必须勾选一个回显操作内容的复选框（"我已阅读并理解：…"），「确认」按钮才会启用。
+
+用户点击 **确认** 或 **拒绝**。
+
+### 第四步 — 接收 code
+
+Prism 将用户重定向回挑战中固定的 `redirect_uri`：
 
 ```text
 https://app.example.com/2fa-callback?code=…&state=…
@@ -288,7 +315,7 @@ https://app.example.com/2fa-callback?code=…&state=…
 https://app.example.com/2fa-callback?error=access_denied&state=…
 ```
 
-### 第四步 — 校验（服务端）
+### 第五步 — 校验（服务端）
 
 ```http
 POST /api/oauth/2fa/verify
@@ -318,12 +345,21 @@ code 是单次使用的，签发后 5 分钟过期。校验成功后：
 - 将 `nonce` 和 `action` 与你应用最初构造 URL 时存储的值比对——不一致就拒绝结果。
 - `method` 是 `"totp"`、`"passkey"` 或 `"backup"`。
 
-### 安全提示
+### 威胁模型
 
-- 服务器对每个用户限速 2FA 尝试次数（5 分钟内最多 8 次），可有效阻止 TOTP 暴力破解。
-- code 与 `client_id`、`redirect_uri` 绑定：泄露的 code 既无法被其他应用兑换，也无法发送到其他 URI。
-- 公开客户端必须使用 PKCE；机密客户端必须出示 `client_secret`。
-- `action` / `nonce` / `state` 都有长度上限，避免恶意应用通过 UI 投放超长内容欺骗用户。
+可防御的攻击：
+
+- **仅靠 URL 的钓鱼。** 仅能构造 URL 的攻击者（如钓鱼邮件中的链接）无法注入任意 action 文案或挑选任意 redirect URI——这两者都在第 1 步在服务端固定，攻击者拿不到应用的 `client_secret`（或公开客户端的应用本身）就够不到这一步。
+- **code 拦截。** PKCE 将 code 与 verifier 绑定；code 还与 `(client_id, redirect_uri)` 绑定。即使 code 泄露（如通过 referrer），也无法被其他应用兑换或发送到其他 URI。
+- **TOTP 暴力破解。** 每用户 5 分钟限速 8 次。一次失败也会消耗当前挑战——攻击者必须重新走一次服务端发起的 POST 才能重试。
+- **重放 / 重复兑换。** 挑战和生成的 code 都通过原子操作（`UPDATE … WHERE consumed_at IS NULL`）单次消费。
+- **盲目点击。** 用户必须显式勾选回显 action 文案的复选框，「确认」按钮才会启用。
+- **UI 欺骗。** `action`、`nonce`、`state` 都有长度上限，避免恶意应用通过 UI 投放超长内容欺骗用户。
+
+**无法**防御：
+
+- 设备完全失陷（恶意软件可读取屏幕上的 TOTP 验证码并窃取会话 Cookie——任何认证流程都救不了你）。
+- 同时拥有应用 `client_secret` 且被授权代表该应用行事的攻击者，他们可以发起合法挑战。如怀疑泄露请立即轮换密钥。
 
 ## 集成
 

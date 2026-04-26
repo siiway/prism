@@ -112,6 +112,19 @@ export interface OAuthCodeRow {
   created_at: number;
 }
 
+export interface OAuth2FAChallengeRow {
+  id: string;
+  client_id: string;
+  redirect_uri: string;
+  action: string | null;
+  nonce: string | null;
+  code_challenge: string | null;
+  code_challenge_method: string | null;
+  consumed_at: number | null;
+  expires_at: number;
+  created_at: number;
+}
+
 export interface OAuth2FACodeRow {
   code: string;
   client_id: string;

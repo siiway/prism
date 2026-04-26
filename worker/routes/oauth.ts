@@ -884,13 +884,19 @@ app.post("/authorize", requireAuth, async (c) => {
 });
 
 // ─── Step-up 2FA authorization ───────────────────────────────────────────────
-// Apps redirect users here to confirm a sensitive action with TOTP/passkey.
-// The flow mirrors the OAuth Authorization Code grant:
-//   1. App redirects user to /oauth/2fa?client_id=...&redirect_uri=...
-//      &state=...&action=...&nonce=...&code_challenge=...&code_challenge_method=S256
-//   2. User completes TOTP or passkey on the Prism consent page.
-//   3. Prism redirects back to redirect_uri with ?code=...&state=...
-//   4. App exchanges the code at /api/oauth/2fa/verify (PKCE or client secret)
+// Apps confirm sensitive actions by:
+//   1. Server-to-server: POST /api/oauth/2fa/challenges with { action,
+//      redirect_uri, nonce?, code_challenge? } authenticated by client_secret
+//      (or, for public clients, just code_challenge). Receives challenge_id.
+//   2. Redirect user to /oauth/2fa?challenge_id=<id>&state=<state>. The URL
+//      carries no other parameters — a phisher cannot inject arbitrary
+//      action text or pick an arbitrary redirect URI because those are fixed
+//      at step 1, which they cannot reach without the app's credentials.
+//   3. User completes TOTP or passkey on the Prism consent page; the page
+//      requires explicit acknowledgment of the action text.
+//   4. Prism redirects back to the challenge's stored redirect_uri with
+//      ?code=...&state=...
+//   5. App exchanges the code at /api/oauth/2fa/verify (PKCE or client secret)
 //      to receive { user_id, verified_at, action, nonce, method }.
 
 // Friendly redirect for direct hits — sends users to the SPA route.
@@ -906,33 +912,64 @@ const MAX_2FA_ACTION_LEN = 200;
 const MAX_2FA_NONCE_LEN = 256;
 const MAX_2FA_STATE_LEN = 512;
 
-// GET /api/oauth/2fa/info — consent screen data
-app.get("/2fa/info", optionalAuth, async (c) => {
-  const { client_id, redirect_uri, state, action, code_challenge } =
-    c.req.query();
+// POST /api/oauth/2fa/challenges — server-to-server challenge creation.
+// This is the only path that can pin an `action`/`redirect_uri` to a 2FA
+// prompt: the user-facing URL only carries an opaque `challenge_id`, so a
+// phisher who controls only a URL cannot inject arbitrary action text.
+app.post("/2fa/challenges", async (c) => {
+  const contentType = c.req.header("Content-Type") ?? "";
+  let params: Record<string, string>;
+  if (contentType.includes("application/json")) {
+    params = await c.req.json<Record<string, string>>();
+  } else {
+    const text = await c.req.text();
+    params = Object.fromEntries(new URLSearchParams(text));
+  }
 
-  if (!client_id || !redirect_uri) {
-    return c.json({ error: "invalid_request" }, 400);
+  let { client_id: clientId, client_secret: clientSecret } = params;
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Basic ")) {
+    const decoded = atob(authHeader.slice(6));
+    const [id, secret] = decoded.split(":");
+    clientId = id ?? "";
+    clientSecret = secret ?? "";
   }
-  if (action && action.length > MAX_2FA_ACTION_LEN) {
-    return c.json({ error: "invalid_request" }, 400);
-  }
-  if (state && state.length > MAX_2FA_STATE_LEN) {
+
+  if (!clientId) {
     return c.json({ error: "invalid_request" }, 400);
   }
 
   const oauthApp = await c.env.DB.prepare(
     "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
   )
-    .bind(client_id)
+    .bind(clientId)
     .first<OAuthAppRow>();
-  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
+
+  if (!oauthApp.is_public) {
+    if (
+      !oauthApp.client_secret ||
+      !clientSecret ||
+      !timingSafeStrEqual(oauthApp.client_secret, clientSecret)
+    ) {
+      return c.json({ error: "invalid_client" }, 401);
+    }
+  }
+
+  const { redirect_uri, action, nonce, code_challenge, code_challenge_method } =
+    params;
+
+  if (!redirect_uri) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
 
   const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
-  if (!redirectUris.includes(redirect_uri))
+  if (!redirectUris.includes(redirect_uri)) {
     return c.json({ error: "invalid_redirect_uri" }, 400);
+  }
 
-  // Public clients must use PKCE so an intercepted code can't be redeemed.
+  // Public clients have no secret, so PKCE is the only way to bind the
+  // verify call back to whoever created the challenge.
   if (oauthApp.is_public === 1 && !code_challenge) {
     return c.json(
       {
@@ -942,6 +979,85 @@ app.get("/2fa/info", optionalAuth, async (c) => {
       400,
     );
   }
+
+  if (action && action.length > MAX_2FA_ACTION_LEN) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  if (nonce && nonce.length > MAX_2FA_NONCE_LEN) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+
+  // Per-client throttle — a compromised public client (or a leaked secret)
+  // shouldn't be able to mint unlimited challenges to spam users. 60/min is
+  // far above any legitimate use.
+  const rl = await rateLimit(
+    c.env.KV_CACHE,
+    `2fa-challenges:${clientId}`,
+    60,
+    60,
+  );
+  if (!rl.allowed) {
+    return c.json({ error: "rate_limited" }, 429);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const id = randomBase64url(32);
+  const expiresAt = now + 900; // 15-minute window for the user to complete
+
+  await c.env.DB.prepare(
+    `INSERT INTO oauth_2fa_challenges (id, client_id, redirect_uri, action, nonce, code_challenge, code_challenge_method, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      id,
+      clientId,
+      redirect_uri,
+      action ?? null,
+      nonce ?? null,
+      code_challenge ?? null,
+      code_challenge_method ?? null,
+      expiresAt,
+      now,
+    )
+    .run();
+
+  return c.json({
+    challenge_id: id,
+    expires_at: expiresAt,
+    url: `${c.env.APP_URL}/oauth/2fa?challenge_id=${encodeURIComponent(id)}`,
+  });
+});
+
+// GET /api/oauth/2fa/info — consent screen data, looked up by challenge_id.
+app.get("/2fa/info", optionalAuth, async (c) => {
+  const { challenge_id, state } = c.req.query();
+
+  if (!challenge_id) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  if (state && state.length > MAX_2FA_STATE_LEN) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+
+  const challenge = await c.env.DB.prepare(
+    "SELECT * FROM oauth_2fa_challenges WHERE id = ?",
+  )
+    .bind(challenge_id)
+    .first<import("../types").OAuth2FAChallengeRow>();
+  if (!challenge) return c.json({ error: "invalid_challenge" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  if (challenge.expires_at < now)
+    return c.json({ error: "challenge_expired" }, 400);
+  if (challenge.consumed_at)
+    return c.json({ error: "challenge_consumed" }, 400);
+
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(challenge.client_id)
+    .first<OAuthAppRow>();
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
   const isVerified = await computeIsVerified(
     c.env.DB,
@@ -992,9 +1108,11 @@ app.get("/2fa/info", optionalAuth, async (c) => {
       is_first_party: oauthApp.is_first_party === 1,
       is_public: oauthApp.is_public === 1,
     },
-    redirect_uri,
+    challenge_id,
+    redirect_uri: challenge.redirect_uri,
     state: state ?? null,
-    action: action ?? null,
+    action: challenge.action,
+    expires_at: challenge.expires_at,
     user: c.get("user") ?? null,
     totp_enrolled: totpEnrolled,
     passkey_enrolled: passkeyEnrolled,
@@ -1008,63 +1126,65 @@ app.get("/2fa/info", optionalAuth, async (c) => {
 app.post("/2fa/authorize", requireAuth, async (c) => {
   const user = c.get("user");
   const body = await c.req.json<{
-    client_id: string;
-    redirect_uri: string;
+    challenge_id: string;
     state?: string;
-    action?: string;
-    nonce?: string;
-    code_challenge?: string;
-    code_challenge_method?: string;
     decision: "approve" | "deny";
     totp_code?: string;
     passkey_verify_token?: string;
   }>();
 
-  if (body.decision === "deny") {
-    const url = new URL(body.redirect_uri);
-    url.searchParams.set("error", "access_denied");
-    if (body.state) url.searchParams.set("state", body.state);
-    return c.json({ redirect: url.toString() });
-  }
-
-  // Reject oversized fields. Same limits as /2fa/info — guards against UI
-  // spoofing and keeps DB rows bounded.
-  if (body.action && body.action.length > MAX_2FA_ACTION_LEN) {
-    return c.json({ error: "invalid_request" }, 400);
-  }
-  if (body.nonce && body.nonce.length > MAX_2FA_NONCE_LEN) {
+  if (!body.challenge_id) {
     return c.json({ error: "invalid_request" }, 400);
   }
   if (body.state && body.state.length > MAX_2FA_STATE_LEN) {
     return c.json({ error: "invalid_request" }, 400);
   }
 
+  const challenge = await c.env.DB.prepare(
+    "SELECT * FROM oauth_2fa_challenges WHERE id = ?",
+  )
+    .bind(body.challenge_id)
+    .first<import("../types").OAuth2FAChallengeRow>();
+  if (!challenge) return c.json({ error: "invalid_challenge" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  if (challenge.expires_at < now)
+    return c.json({ error: "challenge_expired" }, 400);
+  if (challenge.consumed_at)
+    return c.json({ error: "challenge_consumed" }, 400);
+
+  // Atomically mark the challenge consumed so concurrent requests can't
+  // both succeed. Whoever loses the race sees challenge_consumed.
+  const consumed = await c.env.DB.prepare(
+    "UPDATE oauth_2fa_challenges SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL",
+  )
+    .bind(now, body.challenge_id)
+    .run();
+  if (!consumed.meta.changes) {
+    return c.json({ error: "challenge_consumed" }, 400);
+  }
+
+  if (body.decision === "deny") {
+    const url = new URL(challenge.redirect_uri);
+    url.searchParams.set("error", "access_denied");
+    if (body.state) url.searchParams.set("state", body.state);
+    return c.json({ redirect: url.toString() });
+  }
+
   const oauthApp = await c.env.DB.prepare(
     "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
   )
-    .bind(body.client_id)
+    .bind(challenge.client_id)
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
-
-  const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
-  if (!redirectUris.includes(body.redirect_uri))
-    return c.json({ error: "invalid_redirect_uri" }, 400);
-
-  // Public clients require PKCE so the code can't be replayed by an interceptor.
-  if (oauthApp.is_public === 1 && !body.code_challenge) {
-    return c.json(
-      {
-        error: "invalid_request",
-        error_description: "code_challenge is required for public clients",
-      },
-      400,
-    );
-  }
 
   // Rate-limit 2FA attempts per user. TOTP is 6 digits (~10^6 codes), which
   // a determined attacker with a stolen session could brute-force without
   // a cap. 8 attempts per 5 min keeps the window narrow enough that even
   // a fully-allotted budget gives < 1 in 3000 chance against a fresh code.
+  // Note: the challenge has already been consumed above, so a failed attempt
+  // here also burns this challenge — the attacker has to round-trip through
+  // a fresh server-initiated POST /challenges to retry.
   const rl = await rateLimit(c.env.KV_CACHE, `2fa-stepup:${user.id}`, 8, 300);
   if (!rl.allowed) {
     return c.json(
@@ -1107,7 +1227,6 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     );
   }
 
-  const now = Math.floor(Date.now() / 1000);
   const code = randomBase64url(32);
   await c.env.DB.prepare(
     `INSERT INTO oauth_2fa_codes (code, client_id, user_id, redirect_uri, action, nonce, method, code_challenge, code_challenge_method, expires_at, verified_at, created_at)
@@ -1115,21 +1234,21 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
   )
     .bind(
       code,
-      body.client_id,
+      challenge.client_id,
       user.id,
-      body.redirect_uri,
-      body.action ?? null,
-      body.nonce ?? null,
+      challenge.redirect_uri,
+      challenge.action,
+      challenge.nonce,
       method,
-      body.code_challenge ?? null,
-      body.code_challenge_method ?? null,
+      challenge.code_challenge,
+      challenge.code_challenge_method,
       now + 300, // 5-minute TTL — short window between user click and app verify
       now,
       now,
     )
     .run();
 
-  const url = new URL(body.redirect_uri);
+  const url = new URL(challenge.redirect_uri);
   url.searchParams.set("code", code);
   if (body.state) url.searchParams.set("state", body.state);
 

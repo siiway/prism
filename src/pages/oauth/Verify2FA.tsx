@@ -5,6 +5,7 @@ import {
   Avatar,
   Badge,
   Button,
+  Checkbox,
   Input,
   Spinner,
   Text,
@@ -103,12 +104,18 @@ export function Verify2FA() {
   const { user, token } = useAuthStore();
   const { t } = useTranslation();
 
-  const params = Object.fromEntries(searchParams.entries());
+  const challengeId = searchParams.get("challenge_id") ?? "";
+  const stateParam = searchParams.get("state") ?? "";
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["oauth-2fa", params.client_id, params.redirect_uri],
-    queryFn: () => api.oauth2faInfo(params),
+    queryKey: ["oauth-2fa", challengeId],
+    queryFn: () =>
+      api.oauth2faInfo({
+        challenge_id: challengeId,
+        ...(stateParam ? { state: stateParam } : {}),
+      }),
     retry: false,
+    enabled: !!challengeId,
   });
 
   const [loading, setLoading] = useState(false);
@@ -117,6 +124,11 @@ export function Verify2FA() {
   const [passkeyVerifyToken, setPasskeyVerifyToken] = useState("");
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Mandatory acknowledgement of the action text — defends a session-hijacked
+  // user against being phished into clicking Confirm without reading. The
+  // checkbox label includes the verbatim action so reading the label IS
+  // reading the action.
+  const [acknowledged, setAcknowledged] = useState(false);
 
   const twoFaDone =
     twoFaMode === "passkey"
@@ -129,13 +141,8 @@ export function Verify2FA() {
     setLoading(true);
     try {
       const res = await api.oauth2faAuthorize({
-        client_id: params.client_id,
-        redirect_uri: params.redirect_uri,
-        state: params.state,
-        action: params.action,
-        nonce: params.nonce,
-        code_challenge: params.code_challenge,
-        code_challenge_method: params.code_challenge_method,
+        challenge_id: challengeId,
+        ...(stateParam ? { state: stateParam } : {}),
         decision,
         ...(decision === "approve"
           ? twoFaMode === "passkey"
@@ -158,19 +165,30 @@ export function Verify2FA() {
           setLoading(false);
           return;
         }
-        // Other errors (invalid_client, invalid_redirect_uri, etc.) are
-        // unrecoverable from the user's POV — bounce back to the app with
-        // an error so it can decide what to do.
-        const url = new URL(params.redirect_uri);
+        // Other errors (invalid_challenge, challenge_consumed, etc.) are
+        // unrecoverable from the user's POV — bounce back to the app's
+        // redirect_uri so it can decide what to do. We have to use the
+        // redirect_uri the server gave us (data.redirect_uri), not anything
+        // from the URL — the URL never carried it.
+        if (data?.redirect_uri) {
+          const url = new URL(data.redirect_uri);
+          url.searchParams.set("error", "server_error");
+          url.searchParams.set("error_description", humanMsg);
+          if (stateParam) url.searchParams.set("state", stateParam);
+          window.location.href = url.toString();
+        } else {
+          // No redirect_uri yet (e.g. invalid_challenge before /info loaded).
+          // Show the error in-place rather than navigating to an unknown URL.
+          setErrorMsg(humanMsg);
+          setLoading(false);
+        }
+      } else if (data?.redirect_uri) {
+        const url = new URL(data.redirect_uri);
         url.searchParams.set("error", "server_error");
-        url.searchParams.set("error_description", humanMsg);
-        if (params.state) url.searchParams.set("state", params.state);
+        if (stateParam) url.searchParams.set("state", stateParam);
         window.location.href = url.toString();
       } else {
-        const url = new URL(params.redirect_uri);
-        url.searchParams.set("error", "server_error");
-        if (params.state) url.searchParams.set("state", params.state);
-        window.location.href = url.toString();
+        setLoading(false);
       }
     } finally {
       setLoading(false);
@@ -211,6 +229,19 @@ export function Verify2FA() {
     const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
     navigate(loginUrl, { replace: true });
     return null;
+  }
+
+  if (!challengeId) {
+    return (
+      <div className={styles.page}>
+        <div className={styles.card}>
+          <Title2>{t("oauth.authorizationError")}</Title2>
+          <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
+            {t("oauth.invalidRequest")}
+          </Text>
+        </div>
+      </div>
+    );
   }
 
   if (isLoading) {
@@ -347,12 +378,28 @@ export function Verify2FA() {
             {t("oauth.twoFa.confirmHeading", { appName: data.app.name })}
           </Text>
           {data.action ? (
-            <Text size={300}>{data.action}</Text>
+            <Text
+              size={300}
+              style={{ wordBreak: "break-word", whiteSpace: "pre-wrap" }}
+            >
+              {data.action}
+            </Text>
           ) : (
             <Text size={300} style={{ color: tokens.colorNeutralForeground2 }}>
               {t("oauth.twoFa.noAction")}
             </Text>
           )}
+          <Checkbox
+            checked={acknowledged}
+            onChange={(_, d) => setAcknowledged(!!d.checked)}
+            label={
+              <Text size={200}>
+                {data.action
+                  ? t("oauth.twoFa.acknowledge", { action: data.action })
+                  : t("oauth.twoFa.acknowledgeNoAction")}
+              </Text>
+            }
+          />
         </div>
 
         {!data.has_any_2fa ? (
@@ -472,7 +519,9 @@ export function Verify2FA() {
           <Button
             appearance="primary"
             icon={loading ? <Spinner size="tiny" /> : <CheckmarkRegular />}
-            disabled={loading || !data.has_any_2fa || !twoFaDone}
+            disabled={
+              loading || !data.has_any_2fa || !twoFaDone || !acknowledged
+            }
             onClick={() => handleDecision("approve")}
           >
             {t("oauth.twoFa.confirm")}
