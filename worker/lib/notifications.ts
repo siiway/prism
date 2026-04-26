@@ -2,6 +2,7 @@
 
 import { getConfig } from "./config";
 import { sendEmail } from "./email";
+import { decryptSecret } from "./secretCrypto";
 
 // ─── Event catalogue ─────────────────────────────────────────────────────────
 
@@ -940,7 +941,7 @@ export function parseNotificationRules(
 // ─── Telegram delivery ────────────────────────────────────────────────────────
 
 async function sendTelegramNotification(
-  db: D1Database,
+  env: Env,
   userId: string,
   connectionId: string,
   level: "brief" | "full",
@@ -948,6 +949,7 @@ async function sendTelegramNotification(
   data: Record<string, unknown>,
   appUrl: string,
 ): Promise<void> {
+  const db = env.DB;
   const config = await getConfig(db);
   const sourceSlug = config.tg_notify_source_slug;
   if (!sourceSlug) return;
@@ -959,6 +961,9 @@ async function sendTelegramNotification(
     .bind(sourceSlug)
     .first<{ client_secret: string }>();
   if (!source) return;
+  // Bot token may be encrypted at rest; decrypt before building the URL.
+  const botToken = await decryptSecret(env, source.client_secret);
+  if (!botToken) return;
 
   const conn = await db
     .prepare(
@@ -985,30 +990,28 @@ async function sendTelegramNotification(
   if (!baseText) return;
   const text = withTelegramOperatorMeta(baseText, data);
 
-  await fetch(
-    `https://api.telegram.org/bot${source.client_secret}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: conn.provider_user_id,
-        text,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }),
-    },
-  );
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: conn.provider_user_id,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
+  });
 }
 
 // ─── Main delivery function ───────────────────────────────────────────────────
 
 export async function deliverUserEmailNotifications(
-  db: D1Database,
+  env: Env,
   userId: string,
   event: string,
   data: Record<string, unknown>,
   appUrl: string,
 ): Promise<void> {
+  const db = env.DB;
   // Load prefs row (all three columns for migration support)
   const prefsRow = await db
     .prepare(
@@ -1092,6 +1095,7 @@ export async function deliverUserEmailNotifications(
         const { subject, html, text } = content;
         tasks.push(
           sendEmail(
+            env,
             { to: emailAddress, subject, html, text },
             {
               provider: config.email_provider,
@@ -1114,7 +1118,7 @@ export async function deliverUserEmailNotifications(
   for (const tgRule of tgRules) {
     tasks.push(
       sendTelegramNotification(
-        db,
+        env,
         userId,
         tgRule.connection_id,
         tgRule.level,

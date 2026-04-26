@@ -98,7 +98,7 @@ app.post("/", async (c) => {
   );
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "domain.added",
       {
@@ -190,7 +190,7 @@ app.post("/:id/verify", async (c) => {
     );
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
-        c.env.DB,
+        c.env,
         user.id,
         "domain.verified",
         {
@@ -348,7 +348,7 @@ app.delete("/:id", async (c) => {
   );
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "domain.deleted",
       {

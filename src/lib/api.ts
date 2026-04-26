@@ -631,6 +631,20 @@ export const api = {
     ),
   adminUpdateConfig: (updates: Record<string, unknown>) =>
     request<{ message: string }>("PATCH", "/admin/config", updates, getToken()),
+  adminSecretsStatus: () =>
+    request<AdminSecretsStatus>(
+      "GET",
+      "/admin/secrets/status",
+      undefined,
+      getToken(),
+    ),
+  adminMigrateSecrets: () =>
+    request<AdminSecretsMigrateResult>(
+      "POST",
+      "/admin/secrets/migrate",
+      {},
+      getToken(),
+    ),
   adminStats: () =>
     request<AdminStats>("GET", "/admin/stats", undefined, getToken()),
   adminListUsers: (page = 1, limit = 20, search = "") =>
@@ -1862,6 +1876,30 @@ export interface AdminStats {
   apps: number;
   verified_domains: number;
   active_tokens: number;
+}
+
+export interface AdminSecretsStatus {
+  /** True when the SECRETS_KEY Cloudflare Secrets Store binding is bound. */
+  binding_configured: boolean;
+  oauth_apps_total: number;
+  oauth_apps_plaintext: number;
+  oauth_sources_total: number;
+  oauth_sources_plaintext: number;
+  user_github_pats_total: number;
+  user_github_pats_plaintext: number;
+  config_sensitive_total: number;
+  config_sensitive_plaintext: number;
+}
+
+export interface AdminSecretsMigrateResult {
+  encrypted: {
+    oauth_apps: number;
+    oauth_sources: number;
+    user_github_pats: number;
+    config_keys: string[];
+  };
+  before: AdminSecretsStatus;
+  after: AdminSecretsStatus;
 }
 
 export interface AdminUserList {

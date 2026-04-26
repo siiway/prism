@@ -106,6 +106,12 @@ export function AdminSettings() {
   const [emailSubTab, setEmailSubTab] = useState("send");
   const [resetting, setResetting] = useState(false);
   const [migratingCodes, setMigratingCodes] = useState(false);
+  const [migratingSecrets, setMigratingSecrets] = useState(false);
+
+  const { data: secretsStatus, refetch: refetchSecretsStatus } = useQuery({
+    queryKey: ["admin-secrets-status"],
+    queryFn: api.adminSecretsStatus,
+  });
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -147,6 +153,27 @@ export function AdminSettings() {
       );
     } finally {
       setTestingEmailReceiving(false);
+    }
+  };
+
+  const handleMigrateSecrets = async () => {
+    setMigratingSecrets(true);
+    try {
+      const res = await api.adminMigrateSecrets();
+      const total =
+        res.encrypted.oauth_apps +
+        res.encrypted.oauth_sources +
+        res.encrypted.user_github_pats +
+        res.encrypted.config_keys.length;
+      showMsg("success", t("admin.secretsMigrateSuccess", { count: total }));
+      await refetchSecretsStatus();
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("admin.secretsMigrateFailed"),
+      );
+    } finally {
+      setMigratingSecrets(false);
     }
   };
 
@@ -1011,6 +1038,54 @@ export function AdminSettings() {
         >
           <Title3>{t("admin.dangerTitle")}</Title3>
           <Text>{t("admin.dangerDesc")}</Text>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <Text weight="semibold">{t("admin.secretsMigrateTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.secretsMigrateDesc")}
+            </Text>
+            {secretsStatus && (
+              <Text
+                size={200}
+                style={{
+                  color: secretsStatus.binding_configured
+                    ? tokens.colorNeutralForeground2
+                    : tokens.colorPaletteYellowForeground1,
+                  fontFamily: "monospace",
+                }}
+              >
+                {secretsStatus.binding_configured
+                  ? t("admin.secretsMigrateStatusBound", {
+                      apps: secretsStatus.oauth_apps_plaintext,
+                      sources: secretsStatus.oauth_sources_plaintext,
+                      pats: secretsStatus.user_github_pats_plaintext,
+                      cfg: secretsStatus.config_sensitive_plaintext,
+                    })
+                  : t("admin.secretsMigrateStatusUnbound")}
+              </Text>
+            )}
+            <Button
+              appearance="outline"
+              onClick={handleMigrateSecrets}
+              disabled={
+                migratingSecrets ||
+                !secretsStatus?.binding_configured ||
+                (secretsStatus.oauth_apps_plaintext === 0 &&
+                  secretsStatus.oauth_sources_plaintext === 0 &&
+                  secretsStatus.user_github_pats_plaintext === 0 &&
+                  secretsStatus.config_sensitive_plaintext === 0)
+              }
+              icon={migratingSecrets ? <Spinner size="tiny" /> : undefined}
+            >
+              {t("admin.secretsMigrateButton")}
+            </Button>
+          </div>
           <div
             style={{
               display: "flex",

@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import { randomId, randomBase64url, sha256Hex } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
+import { decryptSecret } from "../lib/secretCrypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { signJWT } from "../lib/jwt";
 import {
@@ -111,11 +112,12 @@ interface ResolvedSource {
  * Returns null if the slug is unknown, disabled, or misconfigured.
  */
 async function resolveSource(
-  db: D1Database,
+  env: Env,
   slug: string,
 ): Promise<ResolvedSource | null> {
-  const row = await db
-    .prepare("SELECT * FROM oauth_sources WHERE slug = ? AND enabled = 1")
+  const row = await env.DB.prepare(
+    "SELECT * FROM oauth_sources WHERE slug = ? AND enabled = 1",
+  )
     .bind(slug)
     .first<OAuthSourceRow>();
 
@@ -133,12 +135,16 @@ async function resolveSource(
 
   if (isGeneric && (!authUrl || !tokenUrl || !userUrl)) return null;
 
+  // Decrypt client_secret if it was encrypted at rest. No-op when
+  // SECRETS_KEY is unbound or the value is plaintext.
+  const clientSecret = (await decryptSecret(env, row.client_secret)) ?? "";
+
   return {
     slug: row.slug,
     provider: row.provider,
     name: row.name,
     clientId: row.client_id,
-    clientSecret: row.client_secret,
+    clientSecret,
     authUrl,
     tokenUrl,
     userUrl,
@@ -196,7 +202,7 @@ app.post("/intent", requireAuth, async (c) => {
 
 app.get("/:provider/begin", optionalAuth, async (c) => {
   const slug = c.req.param("provider") ?? "";
-  const source = await resolveSource(c.env.DB, slug);
+  const source = await resolveSource(c.env, slug);
   if (!source)
     return c.json({ error: "Unknown or unconfigured provider" }, 400);
 
@@ -269,7 +275,7 @@ app.post("/:provider/tg-verify", async (c) => {
     return c.json({ error: "Invalid request body" }, 400);
 
   const config = await getConfig(c.env.DB);
-  const source = await resolveSource(c.env.DB, slug);
+  const source = await resolveSource(c.env, slug);
   if (!source || source.provider !== "telegram")
     return c.json({ error: "provider_not_configured" }, 400);
 
@@ -359,7 +365,7 @@ app.post("/:provider/tg-verify", async (c) => {
 
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
-        c.env.DB,
+        c.env,
         userId,
         "connection.added",
         {
@@ -417,7 +423,7 @@ app.post("/:provider/tg-verify", async (c) => {
 
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
-        c.env.DB,
+        c.env,
         user.id,
         "connection.login",
         {
@@ -466,7 +472,7 @@ app.get("/:provider/callback", async (c) => {
     );
 
   const config = await getConfig(c.env.DB);
-  const source = await resolveSource(c.env.DB, slug);
+  const source = await resolveSource(c.env, slug);
   if (!source)
     return c.redirect(
       `${c.env.APP_URL}/connections?error=provider_not_configured`,
@@ -602,7 +608,7 @@ app.get("/:provider/callback", async (c) => {
 
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
-        c.env.DB,
+        c.env,
         userId,
         "connection.added",
         {
@@ -682,7 +688,7 @@ app.get("/:provider/callback", async (c) => {
 
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
-        c.env.DB,
+        c.env,
         user.id,
         "connection.login",
         {
@@ -731,7 +737,7 @@ app.get("/pending/:key", async (c) => {
 
   const state = JSON.parse(raw) as PendingState;
   // state.provider holds the slug; resolve the base provider type for helpers
-  const source = await resolveSource(c.env.DB, state.provider);
+  const source = await resolveSource(c.env, state.provider);
   const baseProvider = source?.provider ?? state.provider;
 
   return c.json({
@@ -787,7 +793,7 @@ app.post("/complete", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   // Resolve base provider type for display-name helpers
   const completeCfg = await getConfig(c.env.DB);
-  const completeSource = await resolveSource(c.env.DB, state.provider);
+  const completeSource = await resolveSource(c.env, state.provider);
   const baseProvider = completeSource?.provider ?? state.provider;
 
   if (body.action === "login") {
@@ -830,7 +836,7 @@ app.post("/complete", async (c) => {
 
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
-        c.env.DB,
+        c.env,
         user.id,
         "connection.login",
         {
@@ -937,7 +943,7 @@ app.post("/:id/refresh", requireAuth, async (c) => {
     >();
   if (!conn) return c.json({ error: "Connection not found" }, 404);
 
-  const source = await resolveSource(c.env.DB, conn.provider);
+  const source = await resolveSource(c.env, conn.provider);
   if (!source) return c.json({ error: "provider_not_configured" }, 400);
   if (source.provider === "telegram")
     return c.json({ error: "unsupported_refresh" }, 400);
@@ -1007,10 +1013,10 @@ app.delete("/:id", requireAuth, async (c) => {
     .run();
 
   // Resolve provider name for the notification
-  const source = await resolveSource(c.env.DB, conn.provider);
+  const source = await resolveSource(c.env, conn.provider);
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "connection.removed",
       {

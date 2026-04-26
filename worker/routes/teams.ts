@@ -425,7 +425,7 @@ app.post("/:id/members", async (c) => {
   if (teamRow) {
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
-        c.env.DB,
+        c.env,
         target.id,
         "team.member_added",
         {
@@ -538,7 +538,7 @@ app.delete("/:id/members/:userId", async (c) => {
     if (teamRow) {
       c.executionCtx.waitUntil(
         deliverUserEmailNotifications(
-          c.env.DB,
+          c.env,
           targetUserId,
           "team.member_removed",
           {
@@ -668,6 +668,7 @@ app.post("/:id/invites", async (c) => {
       const senderName = esc(user.display_name);
       const siteName = esc(config.site_name);
       await sendEmail(
+        c.env,
         {
           to: body.email,
           subject: `You've been invited to join ${team?.name ?? "a team"} on ${config.site_name}`,

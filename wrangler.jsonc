@@ -40,6 +40,19 @@
     },
   ],
   */
+  // Cloudflare Secrets Store. After creating a 32-byte
+  // base64url-encoded AES-GCM key in the dashboard, redeploy and use
+  // Admin Panel → Settings → Danger Zone → "Migrate secrets to Secret
+  // Store" to encrypt existing OAuth client/source secrets in D1.
+  // Generate the key with e.g.
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+  "secrets_store_secrets": [
+    {
+      "binding": "SECRETS_KEY",
+      "store_id": "5ffcfaec1c6c4599989fb6a761d9583f",
+      "secret_name": "prism-secrets-key"
+    }
+  ],
   // Environment variables (non-secret)
   "vars": {
     "APP_URL": "https://prism.siiway.org"

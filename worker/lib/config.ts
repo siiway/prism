@@ -1,6 +1,12 @@
 // Site configuration loader from D1
 
 import type { SiteConfig, SiteConfigRow } from "../types";
+import {
+  SENSITIVE_CONFIG_KEYS,
+  decryptSecret,
+  encryptSecret,
+  isEncryptedSecret,
+} from "./secretCrypto";
 
 const DEFAULT_CONFIG: SiteConfig = {
   site_name: "Prism",
@@ -139,6 +145,54 @@ export async function setConfigValues(
       .bind(k, JSON.stringify(v), now),
   );
   await db.batch(stmts);
+}
+
+/**
+ * Decrypt the encrypted-at-rest fields of a SiteConfig in place. Callers
+ * that need the actual plaintext of e.g. `email_api_key` or
+ * `captcha_secret_key` MUST run the result of getConfig() through this
+ * before using the value. Cheap when no fields are encrypted (no-ops).
+ */
+export async function decryptConfigSecrets(
+  env: Env,
+  config: SiteConfig,
+): Promise<SiteConfig> {
+  const bag = config as unknown as Record<string, unknown>;
+  for (const key of SENSITIVE_CONFIG_KEYS) {
+    const v = bag[key];
+    if (typeof v === "string" && isEncryptedSecret(v)) {
+      bag[key] = await decryptSecret(env, v);
+    }
+  }
+  return config;
+}
+
+/** Convenience: getConfig + decryptConfigSecrets in one call. */
+export async function getDecryptedConfig(env: Env): Promise<SiteConfig> {
+  const config = await getConfig(env.DB);
+  return decryptConfigSecrets(env, config);
+}
+
+/**
+ * Pre-encrypt sensitive keys in an admin config-update payload. Returns
+ * a new object with sensitive values replaced by their ciphertext; the
+ * admin handler should pass the result through to setConfigValues().
+ *
+ * Empty-string values are passed through unencrypted so admins can still
+ * "clear" a credential without writing junk that decryptSecret would
+ * later fail on.
+ */
+export async function encryptConfigUpdates(
+  env: Env,
+  updates: Partial<Record<string, unknown>>,
+): Promise<Partial<Record<string, unknown>>> {
+  const out: Partial<Record<string, unknown>> = { ...updates };
+  for (const [k, v] of Object.entries(out)) {
+    if (!SENSITIVE_CONFIG_KEYS.has(k)) continue;
+    if (typeof v !== "string" || v === "") continue;
+    out[k] = await encryptSecret(env, v);
+  }
+  return out;
 }
 
 export async function isInitialized(db: D1Database): Promise<boolean> {

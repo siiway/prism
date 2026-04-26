@@ -2,6 +2,7 @@
 
 import { getConfig } from "../lib/config";
 import { verifyPowChallenge } from "../lib/pow";
+import { decryptSecret } from "../lib/secretCrypto";
 
 interface CaptchaResult {
   success: boolean;
@@ -117,13 +118,19 @@ export async function verifyCaptchaToken(
     return { success: false, error: "Captcha token required" };
   }
 
+  // Decrypt the captcha provider secret if it was encrypted at rest. No-op
+  // when SECRETS_KEY isn't bound or the value is plain.
+  const captchaSecret = env
+    ? ((await decryptSecret(env, config.captcha_secret_key)) ?? "")
+    : config.captcha_secret_key;
+
   switch (config.captcha_provider) {
     case "turnstile":
-      return verifyTurnstile(token, config.captcha_secret_key, ip);
+      return verifyTurnstile(token, captchaSecret, ip);
     case "hcaptcha":
-      return verifyHCaptcha(token, config.captcha_secret_key, ip);
+      return verifyHCaptcha(token, captchaSecret, ip);
     case "recaptcha":
-      return verifyRecaptcha(token, config.captcha_secret_key, ip);
+      return verifyRecaptcha(token, captchaSecret, ip);
     default:
       return { success: true };
   }

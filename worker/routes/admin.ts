@@ -1,7 +1,17 @@
 // Admin routes: site config, user management, app moderation, audit log
 
 import { Hono } from "hono";
-import { getConfig, setConfigValues } from "../lib/config";
+import {
+  encryptConfigUpdates,
+  getConfig,
+  setConfigValues,
+} from "../lib/config";
+import {
+  SENSITIVE_CONFIG_KEYS,
+  encryptSecret,
+  isEncryptedSecret,
+  isSecretsKeyConfigured,
+} from "../lib/secretCrypto";
 import { sendEmail } from "../lib/email";
 import { requireAdmin } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
@@ -184,7 +194,11 @@ app.patch("/config", async (c) => {
     updates.github_readme_token_failures = 0;
   }
 
-  await setConfigValues(c.env.DB, updates);
+  // Encrypt sensitive keys (captcha_secret_key, *_client_secret, etc.)
+  // before persisting if the SECRETS_KEY binding is configured. No-op
+  // otherwise — legacy plaintext storage continues to work.
+  const encrypted = await encryptConfigUpdates(c.env, updates);
+  await setConfigValues(c.env.DB, encrypted);
 
   await logAudit(
     c.env.DB,
@@ -198,6 +212,203 @@ app.patch("/config", async (c) => {
   );
   return c.json({ message: "Config updated", updated: Object.keys(updates) });
 });
+
+// ─── Secret Store migration ──────────────────────────────────────────────────
+//
+// Encrypts every plaintext sensitive value at rest using the SECRETS_KEY
+// binding. Idempotent: rows that are already encrypted are left alone, so
+// the admin can run this repeatedly (after adding new OAuth sources, for
+// example) without harm.
+//
+// Status endpoint returns counts so the UI can show progress before/after.
+
+interface SecretsMigrateStatus {
+  binding_configured: boolean;
+  oauth_apps_total: number;
+  oauth_apps_plaintext: number;
+  oauth_sources_total: number;
+  oauth_sources_plaintext: number;
+  user_github_pats_total: number;
+  user_github_pats_plaintext: number;
+  config_sensitive_total: number;
+  config_sensitive_plaintext: number;
+}
+
+app.get("/secrets/status", async (c) => {
+  const status = await collectSecretsStatus(c.env);
+  return c.json(status);
+});
+
+app.post("/secrets/migrate", async (c) => {
+  if (!isSecretsKeyConfigured(c.env)) {
+    return c.json(
+      {
+        error:
+          "SECRETS_KEY binding is not configured. Add the secrets_store_secrets binding in wrangler.jsonc and redeploy first.",
+      },
+      400,
+    );
+  }
+
+  // Run a real encryption attempt first to surface any "wrong key length"
+  // / "binding misconfigured" errors before we touch any rows.
+  try {
+    await encryptSecret(c.env, "smoke-test");
+  } catch (err) {
+    return c.json(
+      {
+        error: `SECRETS_KEY rejected by Web Crypto: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      },
+      400,
+    );
+  }
+
+  const before = await collectSecretsStatus(c.env);
+
+  // ── oauth_apps.client_secret ────────────────────────────────────────────
+  const apps = await c.env.DB.prepare(
+    "SELECT id, client_secret FROM oauth_apps",
+  ).all<{ id: string; client_secret: string | null }>();
+  let appsEncrypted = 0;
+  for (const row of apps.results) {
+    if (!row.client_secret || isEncryptedSecret(row.client_secret)) continue;
+    const ct = await encryptSecret(c.env, row.client_secret);
+    await c.env.DB.prepare(
+      "UPDATE oauth_apps SET client_secret = ? WHERE id = ?",
+    )
+      .bind(ct, row.id)
+      .run();
+    appsEncrypted++;
+  }
+
+  // ── oauth_sources.client_secret ─────────────────────────────────────────
+  const sources = await c.env.DB.prepare(
+    "SELECT id, client_secret FROM oauth_sources",
+  ).all<{ id: string; client_secret: string | null }>();
+  let sourcesEncrypted = 0;
+  for (const row of sources.results) {
+    if (!row.client_secret || isEncryptedSecret(row.client_secret)) continue;
+    const ct = await encryptSecret(c.env, row.client_secret);
+    await c.env.DB.prepare(
+      "UPDATE oauth_sources SET client_secret = ? WHERE id = ?",
+    )
+      .bind(ct, row.id)
+      .run();
+    sourcesEncrypted++;
+  }
+
+  // ── users.github_readme_token ───────────────────────────────────────────
+  const userPats = await c.env.DB.prepare(
+    "SELECT id, github_readme_token FROM users WHERE github_readme_token IS NOT NULL AND github_readme_token != ''",
+  ).all<{ id: string; github_readme_token: string }>();
+  let userPatsEncrypted = 0;
+  for (const row of userPats.results) {
+    if (isEncryptedSecret(row.github_readme_token)) continue;
+    const ct = await encryptSecret(c.env, row.github_readme_token);
+    await c.env.DB.prepare(
+      "UPDATE users SET github_readme_token = ? WHERE id = ?",
+    )
+      .bind(ct, row.id)
+      .run();
+    userPatsEncrypted++;
+  }
+
+  // ── site_config sensitive keys ──────────────────────────────────────────
+  const cfg = await getConfig(c.env.DB);
+  const cfgUpdates: Partial<Record<string, unknown>> = {};
+  for (const key of SENSITIVE_CONFIG_KEYS) {
+    const v = (cfg as unknown as Record<string, unknown>)[key];
+    if (typeof v !== "string" || v === "" || isEncryptedSecret(v)) continue;
+    cfgUpdates[key] = await encryptSecret(c.env, v);
+  }
+  if (Object.keys(cfgUpdates).length > 0) {
+    await setConfigValues(c.env.DB, cfgUpdates);
+  }
+
+  await logAudit(
+    c.env.DB,
+    c.get("user").id,
+    "admin.secrets.migrate",
+    "secrets",
+    null,
+    {
+      apps_encrypted: appsEncrypted,
+      sources_encrypted: sourcesEncrypted,
+      user_pats_encrypted: userPatsEncrypted,
+      config_keys_encrypted: Object.keys(cfgUpdates),
+    },
+    getIp(c),
+    c.executionCtx,
+  );
+
+  const after = await collectSecretsStatus(c.env);
+  return c.json({
+    encrypted: {
+      oauth_apps: appsEncrypted,
+      oauth_sources: sourcesEncrypted,
+      user_github_pats: userPatsEncrypted,
+      config_keys: Object.keys(cfgUpdates),
+    },
+    before,
+    after,
+  });
+});
+
+async function collectSecretsStatus(env: Env): Promise<SecretsMigrateStatus> {
+  const [appsRow, appsPlain, sourcesRow, sourcesPlain, patsRow, patsPlain] =
+    await Promise.all([
+      env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM oauth_apps WHERE client_secret IS NOT NULL AND client_secret != ''",
+      ).first<{ n: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM oauth_apps WHERE client_secret IS NOT NULL AND client_secret != '' AND substr(client_secret, 1, 10) != ?`,
+      )
+        .bind("__ENC_v1__")
+        .first<{ n: number }>(),
+      env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM oauth_sources WHERE client_secret IS NOT NULL AND client_secret != ''",
+      ).first<{ n: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM oauth_sources WHERE client_secret IS NOT NULL AND client_secret != '' AND substr(client_secret, 1, 10) != ?`,
+      )
+        .bind("__ENC_v1__")
+        .first<{ n: number }>(),
+      env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM users WHERE github_readme_token IS NOT NULL AND github_readme_token != ''",
+      ).first<{ n: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM users WHERE github_readme_token IS NOT NULL AND github_readme_token != '' AND substr(github_readme_token, 1, 10) != ?`,
+      )
+        .bind("__ENC_v1__")
+        .first<{ n: number }>(),
+    ]);
+
+  // For site_config we just iterate the in-memory loaded config so we
+  // don't have to enumerate keys server-side via a generic query.
+  const cfg = await getConfig(env.DB);
+  let cfgTotal = 0;
+  let cfgPlain = 0;
+  for (const key of SENSITIVE_CONFIG_KEYS) {
+    const v = (cfg as unknown as Record<string, unknown>)[key];
+    if (typeof v !== "string" || v === "") continue;
+    cfgTotal++;
+    if (!isEncryptedSecret(v)) cfgPlain++;
+  }
+
+  return {
+    binding_configured: isSecretsKeyConfigured(env),
+    oauth_apps_total: appsRow?.n ?? 0,
+    oauth_apps_plaintext: appsPlain?.n ?? 0,
+    oauth_sources_total: sourcesRow?.n ?? 0,
+    oauth_sources_plaintext: sourcesPlain?.n ?? 0,
+    user_github_pats_total: patsRow?.n ?? 0,
+    user_github_pats_plaintext: patsPlain?.n ?? 0,
+    config_sensitive_total: cfgTotal,
+    config_sensitive_plaintext: cfgPlain,
+  };
+}
 
 // ─── User management ──────────────────────────────────────────────────────────
 
@@ -481,6 +692,7 @@ app.post("/test-email", async (c) => {
   const admin = c.get("user");
   try {
     await sendEmail(
+      c.env,
       {
         to: admin.email,
         subject: "Prism — Test Email",
@@ -549,6 +761,7 @@ app.post("/test-email-receiving", async (c) => {
 
   try {
     await sendEmail(
+      c.env,
       {
         to: toAddress,
         subject,
@@ -1223,6 +1436,7 @@ app.post("/invites", async (c) => {
   if (body.send_email && body.email && config.email_provider !== "none") {
     const tmpl = inviteEmailTemplate(config.site_name, inviteUrl, body.note);
     await sendEmail(
+      c.env,
       {
         to: body.email,
         subject: `You've been invited to ${config.site_name}`,
@@ -1407,10 +1621,21 @@ app.post("/oauth-sources/migrate", async (c) => {
 
     const id = randomId();
     const now = Math.floor(Date.now() / 1000);
+    // The legacy site_config value MAY already be encrypted (admins who
+    // ran the SECRETS_KEY migration before adding sources). encryptSecret
+    // is idempotent on encrypted input, so we always send through.
     await c.env.DB.prepare(
       "INSERT INTO oauth_sources (id, slug, provider, name, client_id, client_secret, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
     )
-      .bind(id, slug, provider, name, clientId, clientSecret ?? "", now)
+      .bind(
+        id,
+        slug,
+        provider,
+        name,
+        clientId,
+        await encryptSecret(c.env, clientSecret ?? ""),
+        now,
+      )
       .run();
 
     migrated.push(slug);
@@ -1488,7 +1713,7 @@ app.post("/oauth-sources", async (c) => {
         body.provider,
         body.name,
         body.client_id,
-        body.client_secret,
+        await encryptSecret(c.env, body.client_secret),
         now,
         body.auth_url ?? null,
         body.token_url ?? null,
@@ -1563,7 +1788,7 @@ app.patch("/oauth-sources/:id", async (c) => {
   }
   if (body.client_secret !== undefined) {
     sets.push("client_secret = ?");
-    vals.push(body.client_secret);
+    vals.push(await encryptSecret(c.env, body.client_secret));
   }
   if (body.enabled !== undefined) {
     sets.push("enabled = ?");

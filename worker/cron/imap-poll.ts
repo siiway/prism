@@ -4,22 +4,24 @@
 
 import { getConfig } from "../lib/config";
 import { pollVerifyEmails } from "../lib/imap";
+import { decryptSecret } from "../lib/secretCrypto";
 
-export async function runImapPoll(
-  db: D1Database,
-  kv: KVNamespace,
-): Promise<void> {
+export async function runImapPoll(env: Env, kv: KVNamespace): Promise<void> {
+  const db = env.DB;
   const config = await getConfig(db);
 
   if (config.email_receive_provider !== "imap") return;
   if (!config.imap_host || !config.imap_user || !config.imap_password) return;
+
+  const password = (await decryptSecret(env, config.imap_password)) ?? "";
+  if (!password) return;
 
   const messages = await pollVerifyEmails({
     host: config.imap_host,
     port: config.imap_port,
     secure: config.imap_secure,
     user: config.imap_user,
-    password: config.imap_password,
+    password,
   });
 
   for (const msg of messages) {

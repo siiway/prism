@@ -23,6 +23,7 @@
 // cache stores the etag so refreshes use a conditional GET.
 
 import { getConfig, setConfigValue } from "./config";
+import { decryptSecret } from "./secretCrypto";
 
 export interface GithubReadmeFetchResult {
   /** HTTP status from the GitHub API. 200 = new content, 304 = unchanged,
@@ -65,9 +66,10 @@ export const GITHUB_TOKEN_FAILURE_LIMIT = MAX_TOKEN_FAILURES;
  *  fetches; tokens are escalated to only when the unauth tier hits its
  *  rate limit (or, for the user PAT, when the site PAT hits 401). */
 async function resolveTokens(
-  db: D1Database,
+  env: Env,
   ownerUserId: string,
 ): Promise<ResolvedToken[]> {
+  const db = env.DB;
   const out: ResolvedToken[] = [{ source: "none", token: null }];
 
   const userRow = await db
@@ -75,12 +77,15 @@ async function resolveTokens(
     .bind(ownerUserId)
     .first<{ github_readme_token: string | null }>();
   if (userRow?.github_readme_token) {
-    out.push({ source: "user", token: userRow.github_readme_token });
+    // PAT may be encrypted at rest; decrypt before sending to GitHub.
+    const userToken = await decryptSecret(env, userRow.github_readme_token);
+    if (userToken) out.push({ source: "user", token: userToken });
   }
 
   const config = await getConfig(db);
   if (config.github_readme_token) {
-    out.push({ source: "site", token: config.github_readme_token });
+    const siteToken = await decryptSecret(env, config.github_readme_token);
+    if (siteToken) out.push({ source: "site", token: siteToken });
   }
 
   return out;
@@ -89,10 +94,10 @@ async function resolveTokens(
 /** Single-tier resolve, used by the manual-sync endpoint where we don't
  *  want fall-through retry behaviour to mask a config issue. */
 export async function pickGithubToken(
-  db: D1Database,
+  env: Env,
   ownerUserId: string,
 ): Promise<string | null> {
-  const tiers = await resolveTokens(db, ownerUserId);
+  const tiers = await resolveTokens(env, ownerUserId);
   return tiers[0]?.token ?? null;
 }
 
@@ -227,12 +232,13 @@ async function resetTokenFailures(
  * succeeds within the public 60/hr ceiling never touches a token at all.
  */
 async function fetchWithFallback(
-  db: D1Database,
+  env: Env,
   ownerUserId: string,
   login: string,
   etag: string | null,
 ): Promise<GithubReadmeFetchResult> {
-  const tiers = await resolveTokens(db, ownerUserId);
+  const db = env.DB;
+  const tiers = await resolveTokens(env, ownerUserId);
   let last: GithubReadmeFetchResult = {
     status: 0,
     content: null,
@@ -274,10 +280,11 @@ async function fetchWithFallback(
  * with no cache fallback).
  */
 export async function getGithubReadmeFromCache(
-  db: D1Database,
+  env: Env,
   ownerUserId: string,
   login: string,
 ): Promise<string | null> {
+  const db = env.DB;
   const normalized = login.toLowerCase();
   const config = await getConfig(db);
   const ttl = config.github_readme_cache_ttl_seconds;
@@ -293,7 +300,7 @@ export async function getGithubReadmeFromCache(
   }
 
   const result = await fetchWithFallback(
-    db,
+    env,
     ownerUserId,
     normalized,
     cached?.etag ?? null,

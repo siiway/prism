@@ -242,6 +242,7 @@ app.post("/register", async (c) => {
     const verifyUrl = `${c.env.APP_URL}/api/auth/verify-email?token=${verifyToken}`;
     const tmpl = verifyEmailTemplate(config.site_name, verifyUrl);
     await sendEmail(
+      c.env,
       {
         to: body.email,
         subject: `Verify your email — ${config.site_name}`,
@@ -592,7 +593,7 @@ app.post("/check-email-verification", requireAuth, async (c) => {
     if (config.imap_host && config.imap_user && config.imap_password) {
       try {
         const { runImapPoll } = await import("../cron/imap-poll");
-        await runImapPoll(c.env.DB, c.env.KV_CACHE);
+        await runImapPoll(c.env, c.env.KV_CACHE);
       } catch {
         // IMAP poll failure shouldn't block the status check
       }
@@ -664,6 +665,7 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
   const verifyUrl = `${c.env.APP_URL}/api/auth/verify-email?token=${verifyToken}`;
   const tmpl = verifyEmailTemplate(config.site_name, verifyUrl);
   await sendEmail(
+    c.env,
     {
       to: user.email,
       subject: `Verify your email — ${config.site_name}`,
@@ -802,7 +804,7 @@ app.post("/totp/verify", requireAuth, async (c) => {
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "security.totp_enabled",
       {
@@ -873,7 +875,7 @@ app.delete("/totp/:id", requireAuth, async (c) => {
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "security.totp_disabled",
       {
@@ -1007,7 +1009,7 @@ app.post("/passkey/register/finish", requireAuth, async (c) => {
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "security.passkey_added",
       {
@@ -1259,7 +1261,7 @@ app.delete("/passkeys/:id", requireAuth, async (c) => {
   if (row) {
     c.executionCtx.waitUntil(
       deliverUserEmailNotifications(
-        c.env.DB,
+        c.env,
         user.id,
         "security.passkey_removed",
         {

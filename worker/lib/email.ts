@@ -1,5 +1,7 @@
 // Email sending via Resend, Mailchannels, or SMTP
 
+import { decryptSecret } from "./secretCrypto";
+
 export interface EmailOptions {
   to: string;
   subject: string;
@@ -10,6 +12,8 @@ export interface EmailOptions {
 export interface EmailConfig {
   provider: "none" | "resend" | "mailchannels" | "smtp";
   from: string;
+  /** May be ciphertext (`__ENC_v1__…`) when SECRETS_KEY is bound; this
+   *  function decrypts before use. Plaintext values pass through. */
   apiKey: string;
   smtpHost?: string;
   smtpPort?: number;
@@ -19,10 +23,18 @@ export interface EmailConfig {
 }
 
 export async function sendEmail(
+  env: Env,
   opts: EmailOptions,
   config: EmailConfig,
 ): Promise<void> {
   if (config.provider === "none") return;
+  // Decrypt opportunistically — no-op when the value is already plaintext
+  // or when SECRETS_KEY is not bound.
+  config = {
+    ...config,
+    apiKey: (await decryptSecret(env, config.apiKey)) ?? "",
+    smtpPassword: (await decryptSecret(env, config.smtpPassword)) ?? "",
+  };
 
   if (config.provider === "resend") {
     const res = await fetch("https://api.resend.com/emails", {

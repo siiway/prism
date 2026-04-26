@@ -2,14 +2,10 @@
 
 import { Hono } from "hono";
 import { getConfig, getRsaKeyPair } from "../lib/config";
+import { encryptSecret, timingSafeSecretEqual } from "../lib/secretCrypto";
 import { getMLDSAKey } from "../lib/mldsa";
 import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
-import {
-  randomBase64url,
-  randomId,
-  verifyPkce,
-  timingSafeStrEqual,
-} from "../lib/crypto";
+import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
 import { rateLimit } from "../middleware/rateLimit";
 import { verifyCaptchaToken } from "../middleware/captcha";
@@ -467,7 +463,7 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
           user_id: user.id,
         }).catch(() => {}),
         deliverUserEmailNotifications(
-          c.env.DB,
+          c.env,
           user.id,
           "oauth.consent_revoked",
           {
@@ -906,7 +902,7 @@ app.post("/authorize", requireAuth, async (c) => {
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "oauth.consent_granted",
       {
@@ -1077,7 +1073,11 @@ app.post("/2fa/challenges", async (c) => {
     if (
       !oauthApp.client_secret ||
       !clientSecret ||
-      !timingSafeStrEqual(oauthApp.client_secret, clientSecret)
+      !(await timingSafeSecretEqual(
+        c.env,
+        oauthApp.client_secret,
+        clientSecret,
+      ))
     ) {
       return c.json({ error: "invalid_client" }, 401);
     }
@@ -1566,7 +1566,11 @@ app.post("/2fa/verify", async (c) => {
     if (
       !oauthApp.client_secret ||
       !clientSecret ||
-      !timingSafeStrEqual(oauthApp.client_secret, clientSecret)
+      !(await timingSafeSecretEqual(
+        c.env,
+        oauthApp.client_secret,
+        clientSecret,
+      ))
     ) {
       return c.json({ error: "invalid_client" }, 401);
     }
@@ -1703,7 +1707,11 @@ app.post("/token", async (c) => {
     if (
       !oauthApp.client_secret ||
       !clientSecret ||
-      !timingSafeStrEqual(oauthApp.client_secret, clientSecret)
+      !(await timingSafeSecretEqual(
+        c.env,
+        oauthApp.client_secret,
+        clientSecret,
+      ))
     ) {
       return c.json({ error: "invalid_client" }, 401);
     }
@@ -2728,7 +2736,10 @@ app.post("/me/apps", async (c) => {
       body.description ?? "",
       body.website_url ?? null,
       clientId,
-      clientSecret,
+      // Encrypt at rest. Plaintext is returned in the response so the
+      // calling app can store it; never re-fetched from D1 outside of
+      // timingSafeSecretEqual.
+      await encryptSecret(c.env, clientSecret),
       JSON.stringify(body.redirect_uris),
       JSON.stringify(allowedScopes),
       body.is_public ? 1 : 0,

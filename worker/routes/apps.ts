@@ -1,7 +1,8 @@
 // OAuth application management (CRUD for user-owned apps)
 
 import { Hono, type Context, type Next } from "hono";
-import { randomId, randomBase64url, timingSafeStrEqual } from "../lib/crypto";
+import { randomId, randomBase64url } from "../lib/crypto";
+import { encryptSecret, timingSafeSecretEqual } from "../lib/secretCrypto";
 import { requireAuth, tryPatAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
 import { computeIsVerified, computeVerified } from "../lib/domainVerify";
@@ -204,7 +205,7 @@ async function tryAppSelfAuthForScopeDefs(
     row.is_public === 1 ||
     row.allow_self_manage_exported_permissions !== 1 ||
     !row.client_secret ||
-    !timingSafeStrEqual(row.client_secret, clientSecret)
+    !(await timingSafeSecretEqual(c.env, row.client_secret, clientSecret))
   ) {
     return await next();
   }
@@ -345,7 +346,10 @@ app.post("/", async (c) => {
       body.description ?? "",
       body.website_url ?? null,
       clientId,
-      clientSecret,
+      // Encrypt at rest. The plaintext value is returned in the response
+      // body of this endpoint so the user can save it; we never need to
+      // hand it back from D1 except through timingSafeSecretEqual.
+      await encryptSecret(c.env, clientSecret),
       JSON.stringify(body.redirect_uris),
       JSON.stringify(allowedScopes),
       JSON.stringify(optionalScopes),
@@ -374,7 +378,7 @@ app.post("/", async (c) => {
   );
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "app.created",
       {
@@ -518,7 +522,7 @@ app.patch("/:id", async (c) => {
   );
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "app.updated",
       {
@@ -548,7 +552,11 @@ app.post("/:id/rotate-secret", async (c) => {
   await c.env.DB.prepare(
     "UPDATE oauth_apps SET client_secret = ?, updated_at = ? WHERE id = ?",
   )
-    .bind(newSecret, Math.floor(Date.now() / 1000), id)
+    .bind(
+      await encryptSecret(c.env, newSecret),
+      Math.floor(Date.now() / 1000),
+      id,
+    )
     .run();
 
   return c.json({ client_secret: newSecret });
@@ -592,7 +600,7 @@ app.delete("/:id", async (c) => {
   );
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "app.deleted",
       {

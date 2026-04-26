@@ -20,6 +20,7 @@ import {
 import type { NotificationRules } from "../types";
 import { getConfig, getConfigValue } from "../lib/config";
 import { getGithubReadmeFromCache } from "../lib/githubReadme";
+import { encryptSecret } from "../lib/secretCrypto";
 import { sendEmail, verifyEmailTemplate } from "../lib/email";
 import type {
   UserRow,
@@ -248,8 +249,10 @@ app.patch("/me", async (c) => {
     if (tok && tok.length > 256) {
       return c.json({ error: "github_readme_token is too long" }, 400);
     }
+    // Encrypt at rest if the SECRETS_KEY binding is configured. No-op
+    // otherwise (legacy plaintext path).
     updates.push("github_readme_token = ?");
-    values.push(tok);
+    values.push(tok ? await encryptSecret(c.env, tok) : null);
     // A user replacing the token always means "give this one a fresh
     // chance" — even if they're clearing it, zeroing the counter avoids
     // weird state if they paste it back later.
@@ -301,7 +304,7 @@ app.patch("/me", async (c) => {
   );
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "profile.updated",
       {
@@ -466,7 +469,7 @@ app.post("/me/readme/sync", async (c) => {
     .bind(login.toLowerCase())
     .run();
 
-  const content = await getGithubReadmeFromCache(c.env.DB, user.id, login);
+  const content = await getGithubReadmeFromCache(c.env, user.id, login);
   const now = Math.floor(Date.now() / 1000);
 
   if (content !== null) {
@@ -661,6 +664,7 @@ app.post("/me/emails", async (c) => {
     const tmpl = verifyEmailTemplate(config.site_name, verifyUrl);
     c.executionCtx.waitUntil(
       sendEmail(
+        c.env,
         {
           to: email,
           subject: `Verify your email — ${config.site_name}`,
@@ -706,6 +710,7 @@ app.post("/me/emails/:id/resend", async (c) => {
   const verifyUrl = `${c.env.APP_URL}/api/auth/verify-email?token=${verifyToken}&alt=1`;
   const tmpl = verifyEmailTemplate(config.site_name, verifyUrl);
   await sendEmail(
+    c.env,
     {
       to: emailRow.email,
       subject: `Verify your email — ${config.site_name}`,
@@ -912,7 +917,7 @@ app.post("/tokens", async (c) => {
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "token.created",
       {
@@ -956,7 +961,7 @@ app.delete("/tokens/:id", async (c) => {
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
-      c.env.DB,
+      c.env,
       user.id,
       "token.revoked",
       {

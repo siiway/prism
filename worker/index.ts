@@ -99,7 +99,7 @@ export default {
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(runReverification(env.DB));
-    ctx.waitUntil(runImapPoll(env.DB, env.KV_CACHE));
+    ctx.waitUntil(runImapPoll(env, env.KV_CACHE));
     ctx.waitUntil(purgeAppEventQueue(env.DB).catch(() => {}));
     ctx.waitUntil(sweepExpiredPowUsed(env.DB).catch(() => {}));
   },

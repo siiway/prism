@@ -16,4 +16,12 @@ interface Env {
   ASSETS?: Fetcher;
   // Vars
   APP_URL: string;
+  // Cloudflare Secrets Store binding for the master encryption key used to
+  // wrap OAuth client secrets, OAuth source credentials, and other
+  // sensitive site_config fields at rest in D1. Optional — when unset the
+  // worker stores those fields in plaintext (legacy behaviour). The
+  // stored secret value must be a 32-byte AES-GCM key encoded as
+  // base64url. See Admin Panel → Settings → Danger Zone → "Migrate
+  // secrets to Secret Store" for the migration flow.
+  SECRETS_KEY?: SecretsStoreSecret;
 }

@@ -245,17 +245,14 @@ app.get("/:username", optionalAuth, async (c) => {
       // is introduced by returning the source verbatim. Source resolution is
       // delegated to resolveReadme below: 'github' fetches via the site
       // cache (lazy refresh), 'manual' just reads the column.
-      readme: showReadme ? await resolveReadme(c.env.DB, row) : null,
+      readme: showReadme ? await resolveReadme(c.env, row) : null,
       readme_updated_at: showReadme ? row.profile_readme_updated_at : null,
       readme_source: showReadme ? row.profile_readme_source : null,
     },
   });
 });
 
-async function resolveReadme(
-  db: D1Database,
-  row: UserRow,
-): Promise<string | null> {
+async function resolveReadme(env: Env, row: UserRow): Promise<string | null> {
   if (row.profile_readme_source === "github") {
     let login: string | null = null;
     try {
@@ -267,7 +264,7 @@ async function resolveReadme(
       // ignore — null login means no readme
     }
     if (!login) return null;
-    return getGithubReadmeFromCache(db, row.id, login);
+    return getGithubReadmeFromCache(env, row.id, login);
   }
   return row.profile_readme && row.profile_readme.length > 0
     ? row.profile_readme
