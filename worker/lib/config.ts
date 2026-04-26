@@ -43,6 +43,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   disable_user_create_team: false,
   disable_user_create_app: false,
   tg_notify_source_slug: "",
+  sudo_mode_ttl_minutes: 5,
   initialized: false,
 };
 

@@ -81,6 +81,15 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     background: tokens.colorNeutralBackground3,
   },
+  sudoActiveBox: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    padding: "12px 16px",
+    borderRadius: "8px",
+    border: `1px solid ${tokens.colorPaletteGreenBorder1}`,
+    background: tokens.colorPaletteGreenBackground1,
+  },
   publicClientWarning: {
     padding: "12px 14px",
     borderRadius: "8px",
@@ -129,11 +138,19 @@ export function Verify2FA() {
   // checkbox label includes the verbatim action so reading the label IS
   // reading the action.
   const [acknowledged, setAcknowledged] = useState(false);
+  // Opt-in: open a sudo grace window after this confirmation succeeds.
+  const [enableSudo, setEnableSudo] = useState(false);
 
+  const sudoEnabledOnSite = (data?.sudo_ttl_minutes ?? 0) > 0;
+  const sudoActive = !!data?.sudo_active && sudoEnabledOnSite;
+
+  // When sudo is already active for this user/app/session, the user only has
+  // to acknowledge the action — no TOTP or passkey is required.
   const twoFaDone =
-    twoFaMode === "passkey"
+    sudoActive ||
+    (twoFaMode === "passkey"
       ? passkeyVerifyToken.length > 0
-      : totpCode.trim().length > 0;
+      : totpCode.trim().length > 0);
 
   const handleDecision = async (decision: "approve" | "deny") => {
     if (!data) return;
@@ -145,9 +162,14 @@ export function Verify2FA() {
         ...(stateParam ? { state: stateParam } : {}),
         decision,
         ...(decision === "approve"
-          ? twoFaMode === "passkey"
-            ? { passkey_verify_token: passkeyVerifyToken }
-            : { totp_code: totpCode.trim() }
+          ? sudoActive
+            ? { use_sudo: true }
+            : {
+                ...(twoFaMode === "passkey"
+                  ? { passkey_verify_token: passkeyVerifyToken }
+                  : { totp_code: totpCode.trim() }),
+                ...(enableSudo ? { enable_sudo: true } : {}),
+              }
           : {}),
       });
       window.location.href = res.redirect;
@@ -402,7 +424,37 @@ export function Verify2FA() {
           />
         </div>
 
-        {!data.has_any_2fa ? (
+        {sudoActive ? (
+          <div className={styles.sudoActiveBox}>
+            <Text
+              size={200}
+              weight="semibold"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                color: tokens.colorPaletteGreenForeground1,
+              }}
+            >
+              <CheckmarkRegular fontSize={14} />
+              {t("oauth.twoFa.sudoActiveTitle")}
+            </Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground2 }}>
+              {t("oauth.twoFa.sudoActiveDesc", {
+                appName: data.app.name,
+                minutes: data.sudo_ttl_minutes,
+              })}
+            </Text>
+            {errorMsg && (
+              <Text
+                size={200}
+                style={{ color: tokens.colorPaletteRedForeground1 }}
+              >
+                {errorMsg}
+              </Text>
+            )}
+          </div>
+        ) : !data.has_any_2fa ? (
           <Text size={200} style={{ color: tokens.colorPaletteRedForeground1 }}>
             {t("oauth.twoFa.noEnrollment")}
           </Text>
@@ -510,6 +562,20 @@ export function Verify2FA() {
                 {errorMsg}
               </Text>
             )}
+            {sudoEnabledOnSite && (
+              <Checkbox
+                checked={enableSudo}
+                onChange={(_, d) => setEnableSudo(!!d.checked)}
+                label={
+                  <Text size={200}>
+                    {t("oauth.twoFa.enableSudo", {
+                      minutes: data.sudo_ttl_minutes,
+                      appName: data.app.name,
+                    })}
+                  </Text>
+                }
+              />
+            )}
           </div>
         )}
 
@@ -520,11 +586,16 @@ export function Verify2FA() {
             appearance="primary"
             icon={loading ? <Spinner size="tiny" /> : <CheckmarkRegular />}
             disabled={
-              loading || !data.has_any_2fa || !twoFaDone || !acknowledged
+              loading ||
+              (!sudoActive && !data.has_any_2fa) ||
+              !twoFaDone ||
+              !acknowledged
             }
             onClick={() => handleDecision("approve")}
           >
-            {t("oauth.twoFa.confirm")}
+            {sudoActive
+              ? t("oauth.twoFa.confirmSudo")
+              : t("oauth.twoFa.confirm")}
           </Button>
           <Button
             appearance="outline"

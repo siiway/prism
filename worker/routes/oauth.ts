@@ -912,6 +912,44 @@ const MAX_2FA_ACTION_LEN = 200;
 const MAX_2FA_NONCE_LEN = 256;
 const MAX_2FA_STATE_LEN = 512;
 
+// Sudo mode: after a successful 2FA, the user can opt into a short grace
+// window during which subsequent challenges from the same app on the same
+// session bypass the TOTP/passkey check. The grant is bound to the tuple
+// (user_id, session_id, client_id) so it doesn't leak across apps, sessions,
+// or users.
+function sudoKvKey(
+  userId: string,
+  sessionId: string,
+  clientId: string,
+): string {
+  return `2fa-sudo:${userId}:${sessionId}:${clientId}`;
+}
+
+async function isSudoActive(
+  kv: KVNamespace,
+  userId: string,
+  sessionId: string,
+  clientId: string,
+): Promise<boolean> {
+  const v = await kv.get(sudoKvKey(userId, sessionId, clientId));
+  return v !== null;
+}
+
+async function grantSudo(
+  kv: KVNamespace,
+  userId: string,
+  sessionId: string,
+  clientId: string,
+  ttlMinutes: number,
+): Promise<void> {
+  if (ttlMinutes <= 0) return;
+  // KV requires expirationTtl >= 60s; treat anything below as 60s.
+  const ttl = Math.max(60, Math.floor(ttlMinutes * 60));
+  await kv.put(sudoKvKey(userId, sessionId, clientId), "1", {
+    expirationTtl: ttl,
+  });
+}
+
 // POST /api/oauth/2fa/challenges — server-to-server challenge creation.
 // This is the only path that can pin an `action`/`redirect_uri` to a 2FA
 // prompt: the user-facing URL only carries an opaque `challenge_id`, so a
@@ -1071,9 +1109,11 @@ app.get("/2fa/info", optionalAuth, async (c) => {
   let totpEnrolled = false;
   let passkeyEnrolled = false;
   let backupCodesAvailable = false;
+  let sudoActive = false;
   const currentUser = c.get("user");
+  const sessionId = c.get("sessionId");
   if (currentUser) {
-    const [totpRow, passkeyRow, recoveryRow] = await Promise.all([
+    const [totpRow, passkeyRow, recoveryRow, sudo] = await Promise.all([
       c.env.DB.prepare(
         "SELECT id FROM totp_authenticators WHERE user_id = ? AND enabled = 1 LIMIT 1",
       )
@@ -1089,11 +1129,22 @@ app.get("/2fa/info", optionalAuth, async (c) => {
       )
         .bind(currentUser.id)
         .first<{ user_id: string }>(),
+      sessionId
+        ? isSudoActive(
+            c.env.KV_CACHE,
+            currentUser.id,
+            sessionId,
+            challenge.client_id,
+          )
+        : Promise.resolve(false),
     ]);
     totpEnrolled = !!totpRow;
     passkeyEnrolled = !!passkeyRow;
     backupCodesAvailable = !!recoveryRow;
+    sudoActive = sudo;
   }
+
+  const config = await getConfig(c.env.DB);
 
   return c.json({
     app: {
@@ -1118,19 +1169,31 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     passkey_enrolled: passkeyEnrolled,
     backup_codes_available: backupCodesAvailable,
     has_any_2fa: totpEnrolled || passkeyEnrolled,
+    sudo_active: sudoActive,
+    sudo_ttl_minutes: config.sudo_mode_ttl_minutes,
   });
 });
 
 // POST /api/oauth/2fa/authorize — user approves with TOTP/passkey or denies.
 // On approve: returns { redirect } where the redirect URL carries the code.
+//
+// Sudo mode interaction:
+//   - `use_sudo: true` — bypass the TOTP/passkey check by drawing on a
+//     prior successful 2FA in this same session for this same client.
+//     Refused if no sudo grant is active or if `sudo_mode_ttl_minutes` is 0.
+//   - `enable_sudo: true` (with a real TOTP/passkey, not `use_sudo`) — on
+//     success, grant a sudo window for this (user, session, client) tuple.
 app.post("/2fa/authorize", requireAuth, async (c) => {
   const user = c.get("user");
+  const sessionId = c.get("sessionId");
   const body = await c.req.json<{
     challenge_id: string;
     state?: string;
     decision: "approve" | "deny";
     totp_code?: string;
     passkey_verify_token?: string;
+    enable_sudo?: boolean;
+    use_sudo?: boolean;
   }>();
 
   if (!body.challenge_id) {
@@ -1178,55 +1241,99 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
-  // Rate-limit 2FA attempts per user. TOTP is 6 digits (~10^6 codes), which
-  // a determined attacker with a stolen session could brute-force without
-  // a cap. 8 attempts per 5 min keeps the window narrow enough that even
-  // a fully-allotted budget gives < 1 in 3000 chance against a fresh code.
-  // Note: the challenge has already been consumed above, so a failed attempt
-  // here also burns this challenge — the attacker has to round-trip through
-  // a fresh server-initiated POST /challenges to retry.
-  const rl = await rateLimit(c.env.KV_CACHE, `2fa-stepup:${user.id}`, 8, 300);
-  if (!rl.allowed) {
-    return c.json(
-      {
-        error: "rate_limited",
-        message: "Too many 2FA attempts. Try again in a few minutes.",
-      },
-      429,
-    );
-  }
+  const config = await getConfig(c.env.DB);
+  const sudoTtlMinutes = Math.max(0, config.sudo_mode_ttl_minutes);
 
-  // Verify 2FA. Try passkey first (token from /auth/passkey/verify), then TOTP.
-  let method: "totp" | "passkey" | "backup" | null = null;
-  if (body.passkey_verify_token) {
-    const kvKey = `passkey_site_verify:${user.id}:${body.passkey_verify_token}`;
-    const stored = await c.env.KV_CACHE.get(kvKey);
-    if (stored) {
-      await c.env.KV_CACHE.delete(kvKey);
-      method = "passkey";
+  let method: "totp" | "passkey" | "backup" | "sudo" | null = null;
+
+  // Sudo path — bypass TOTP/passkey if the user opted into sudo earlier in
+  // this session for this same client. The KV record is the proof.
+  if (body.use_sudo) {
+    if (sudoTtlMinutes === 0) {
+      return c.json(
+        {
+          error: "sudo_disabled",
+          message: "Sudo mode is not enabled on this site.",
+        },
+        400,
+      );
     }
-  } else if (body.totp_code) {
-    // verifyAnyTotp also consumes a backup code if one matches; we can't
-    // tell which path matched so we record "totp" for both. (The TOTP code
-    // and a backup code are functionally equivalent for this gate.)
-    if (await verifyAnyTotp(c.env.DB, user.id, body.totp_code)) {
-      method = "totp";
+    if (
+      sessionId &&
+      (await isSudoActive(
+        c.env.KV_CACHE,
+        user.id,
+        sessionId,
+        challenge.client_id,
+      ))
+    ) {
+      method = "sudo";
+    } else {
+      return c.json(
+        {
+          error: "sudo_inactive",
+          message:
+            "Sudo grace period is not active. Confirm with TOTP or passkey.",
+        },
+        400,
+      );
+    }
+  } else {
+    // Normal path: rate-limit and verify TOTP / passkey.
+    const rl = await rateLimit(c.env.KV_CACHE, `2fa-stepup:${user.id}`, 8, 300);
+    if (!rl.allowed) {
+      return c.json(
+        {
+          error: "rate_limited",
+          message: "Too many 2FA attempts. Try again in a few minutes.",
+        },
+        429,
+      );
+    }
+
+    if (body.passkey_verify_token) {
+      const kvKey = `passkey_site_verify:${user.id}:${body.passkey_verify_token}`;
+      const stored = await c.env.KV_CACHE.get(kvKey);
+      if (stored) {
+        await c.env.KV_CACHE.delete(kvKey);
+        method = "passkey";
+      }
+    } else if (body.totp_code) {
+      if (await verifyAnyTotp(c.env.DB, user.id, body.totp_code)) {
+        method = "totp";
+      }
+    }
+
+    if (!method) {
+      return c.json(
+        {
+          error: "invalid_2fa",
+          message:
+            body.totp_code || body.passkey_verify_token
+              ? "Invalid 2FA credential."
+              : "A 2FA verification is required.",
+        },
+        400,
+      );
+    }
+
+    // Successful real 2FA — optionally grant a sudo window for this session
+    // and client. We don't grant on the sudo bypass path: only fresh proof
+    // of factor extends the window.
+    if (body.enable_sudo && sessionId && sudoTtlMinutes > 0) {
+      await grantSudo(
+        c.env.KV_CACHE,
+        user.id,
+        sessionId,
+        challenge.client_id,
+        sudoTtlMinutes,
+      );
     }
   }
 
-  if (!method) {
-    return c.json(
-      {
-        error: "invalid_2fa",
-        message:
-          body.totp_code || body.passkey_verify_token
-            ? "Invalid 2FA credential."
-            : "A 2FA verification is required.",
-      },
-      400,
-    );
-  }
-
+  // Persist which method was used (including "sudo") so the verifying app
+  // can decide whether to accept a sudo-bypassed confirmation for the action.
+  // Apps performing very high-stakes operations should require method !== "sudo".
   const code = randomBase64url(32);
   await c.env.DB.prepare(
     `INSERT INTO oauth_2fa_codes (code, client_id, user_id, redirect_uri, action, nonce, method, code_challenge, code_challenge_method, expires_at, verified_at, created_at)
@@ -1253,6 +1360,26 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
   if (body.state) url.searchParams.set("state", body.state);
 
   return c.json({ redirect: url.toString() });
+});
+
+// POST /api/oauth/2fa/sudo/revoke — drop the active sudo window for one app
+// in this session. Lets a user "log out" of sudo for a given client ahead
+// of its TTL. (Logging out of Prism rotates the session id, so all sudo
+// grants for that session naturally become unreachable.)
+app.post("/2fa/sudo/revoke", requireAuth, async (c) => {
+  const user = c.get("user");
+  const sessionId = c.get("sessionId");
+  if (!sessionId) return c.json({ revoked: false });
+
+  const body = await c.req
+    .json<{ client_id?: string }>()
+    .catch(() => ({}) as { client_id?: string });
+  if (!body.client_id) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+
+  await c.env.KV_CACHE.delete(sudoKvKey(user.id, sessionId, body.client_id));
+  return c.json({ revoked: true });
 });
 
 // POST /api/oauth/2fa/verify — app exchanges the single-use code for the

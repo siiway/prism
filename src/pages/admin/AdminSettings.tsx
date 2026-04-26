@@ -404,6 +404,21 @@ export function AdminSettings() {
                 rows={3}
               />
             </Field>
+            <Field
+              label={t("admin.sudoModeTtl")}
+              hint={t("admin.sudoModeTtlHint")}
+            >
+              <Input
+                type="number"
+                value={String(get("sudo_mode_ttl_minutes") ?? 5)}
+                onChange={(e) =>
+                  set(
+                    "sudo_mode_ttl_minutes",
+                    Math.max(0, parseInt(e.target.value) || 0),
+                  )
+                }
+              />
+            </Field>
           </div>
         </div>
       )}

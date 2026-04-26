@@ -348,6 +348,28 @@ The code is single-use and expires 5 minutes after issuance. After successful ve
 - Compare `nonce` and `action` against what your app stored when it built the URL — if they don't match, reject the result.
 - `method` is `"totp"`, `"passkey"`, or `"backup"`.
 
+### Sudo mode (grace window)
+
+After a successful TOTP/passkey confirmation, the user can opt into a **sudo grace window** during which subsequent challenges from the same app on the same Prism session bypass the 2FA prompt. The action acknowledgment checkbox is still required, so the user always sees and confirms what they're approving — only the TOTP/passkey re-prompting is skipped.
+
+The TTL is admin-configured via the `sudo_mode_ttl_minutes` site setting. Set it to `0` to disable sudo mode entirely.
+
+The grant is bound to the tuple `(user_id, session_id, client_id)` — it does not leak across apps, sessions, or users. Logging out of Prism rotates the session ID, so all sudo grants for that session become unreachable.
+
+When the user opts in, Prism returns the redirect with a code whose `method` field is `"sudo"`. **Apps performing very high-stakes operations (account deletion, large transfers) should require `method !== "sudo"`** so those particular actions always trigger a fresh 2FA prompt.
+
+#### Revoking a sudo window
+
+Users can drop a sudo window ahead of its TTL:
+
+```http
+POST /api/oauth/2fa/sudo/revoke
+Authorization: Bearer <user-session-jwt>
+Content-Type: application/json
+
+{ "client_id": "YOUR_CLIENT_ID" }
+```
+
 ### Threat model
 
 What this defends against:

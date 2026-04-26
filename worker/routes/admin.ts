@@ -104,6 +104,7 @@ app.patch("/config", async (c) => {
     "gpg_challenge_prefix",
     "disable_user_create_team",
     "disable_user_create_app",
+    "sudo_mode_ttl_minutes",
   ]);
 
   const updates: Record<string, unknown> = {};

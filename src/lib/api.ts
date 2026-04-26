@@ -1590,6 +1590,11 @@ export interface OAuth2FAInfo {
   passkey_enrolled: boolean;
   backup_codes_available: boolean;
   has_any_2fa: boolean;
+  /** True if this user already has a sudo grace window open for this app on
+   *  this session — the page can offer a one-click confirm without TOTP. */
+  sudo_active: boolean;
+  /** Site-wide sudo TTL in minutes. 0 = sudo mode disabled. */
+  sudo_ttl_minutes: number;
 }
 
 export interface OAuth2FAAuthorizeBody {
@@ -1598,6 +1603,12 @@ export interface OAuth2FAAuthorizeBody {
   decision: "approve" | "deny";
   totp_code?: string;
   passkey_verify_token?: string;
+  /** Open a sudo grace window for this (session, client) on success. Ignored
+   *  when used together with `use_sudo`. */
+  enable_sudo?: boolean;
+  /** Bypass TOTP/passkey using an already-active sudo grant. Server rejects
+   *  if no grant is active or sudo mode is disabled. */
+  use_sudo?: boolean;
 }
 
 export interface OAuthApproveBody {

@@ -345,6 +345,28 @@ code 是单次使用的，签发后 5 分钟过期。校验成功后：
 - 将 `nonce` 和 `action` 与你应用最初构造 URL 时存储的值比对——不一致就拒绝结果。
 - `method` 是 `"totp"`、`"passkey"` 或 `"backup"`。
 
+### Sudo 模式（宽限窗口）
+
+用户在一次成功的 TOTP/通行密钥确认之后,可选择启用 **sudo 宽限窗口**：在此窗口内,同一会话同一应用的后续挑战会跳过 2FA 提示。但操作描述的确认复选框仍然必须勾选——用户始终能看到并确认自己批准的内容,只跳过 TOTP/通行密钥的重新输入。
+
+TTL 由管理员通过 `sudo_mode_ttl_minutes` 站点设置控制。设为 `0` 即可完全禁用 sudo 模式。
+
+授权绑定到 `(user_id, session_id, client_id)` 三元组——不会跨应用、跨会话、跨用户泄露。登出 Prism 会更换 session ID,该会话内所有 sudo 授权随即不可达。
+
+用户启用 sudo 后,Prism 返回的重定向 code 的 `method` 字段为 `"sudo"`。**进行极高风险操作（销户、大额转账）的应用应要求 `method !== "sudo"`**,使这些操作始终触发一次全新的 2FA 提示。
+
+#### 提前撤销 sudo 窗口
+
+用户可在 TTL 到期前主动撤销：
+
+```http
+POST /api/oauth/2fa/sudo/revoke
+Authorization: Bearer <user-session-jwt>
+Content-Type: application/json
+
+{ "client_id": "YOUR_CLIENT_ID" }
+```
+
 ### 威胁模型
 
 可防御的攻击：

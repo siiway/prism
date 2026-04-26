@@ -132,7 +132,7 @@ export interface OAuth2FACodeRow {
   redirect_uri: string;
   action: string | null;
   nonce: string | null;
-  method: "totp" | "passkey" | "backup";
+  method: "totp" | "passkey" | "backup" | "sudo";
   code_challenge: string | null;
   code_challenge_method: string | null;
   used_at: number | null;
@@ -377,6 +377,10 @@ export interface SiteConfig {
   disable_user_create_team: boolean;
   disable_user_create_app: boolean;
   tg_notify_source_slug: string;
+  /** How long, in minutes, a successful 2FA step-up grants a sudo grace period
+   *  during which subsequent challenges from the same app on the same session
+   *  bypass TOTP/passkey re-prompting. 0 disables sudo mode entirely. */
+  sudo_mode_ttl_minutes: number;
   initialized: boolean;
 }
 

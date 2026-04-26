@@ -777,6 +777,10 @@
       "acknowledge": "I have read and understand: \"{{action}}\"",
       "acknowledgeNoAction": "I confirm I want to continue, even though no action was described.",
       "confirm": "Confirm",
+      "confirmSudo": "Confirm (sudo)",
+      "enableSudo": "Don't ask again from {{appName}} for {{minutes}} minutes (sudo mode)",
+      "sudoActiveTitle": "Sudo mode active",
+      "sudoActiveDesc": "You recently confirmed with {{appName}}, so we're skipping the 2FA prompt. The grace period lasts {{minutes}} minutes from your last confirmation.",
       "footerNote": "Confirming sends a one-time verification back to {{appName}}. It does not grant any new account access."
     }
   },
@@ -1080,6 +1084,8 @@
     "gpgChallengePrefix": "GPG challenge prefix",
     "gpgChallengePrefixHint": "Additional lines inserted after the site header in the GPG login challenge text. Leave empty for no prefix.",
     "gpgChallengePrefixPlaceholder": "I authorize this login as account owner.",
+    "sudoModeTtl": "2FA sudo mode TTL (minutes)",
+    "sudoModeTtlHint": "After a successful 2FA step-up, users can opt into a sudo grace period during which subsequent challenges from the same app on the same session bypass the TOTP/passkey prompt. 0 disables sudo mode entirely. Recommended: 5–15 minutes.",
     "migrateRecoveryCodesTitle": "Migrate recovery codes",
     "migrateRecoveryCodesDesc": "Hash all plaintext backup/recovery codes stored in the database. Already-hashed codes are skipped. Old plaintext codes remain usable until migrated.",
     "migrateRecoveryCodes": "Migrate to hashed format",

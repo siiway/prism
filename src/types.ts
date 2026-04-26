@@ -41,5 +41,6 @@ export interface SiteConfig {
   disable_user_create_team: boolean;
   disable_user_create_app: boolean;
   tg_notify_source_slug: string;
+  sudo_mode_ttl_minutes: number;
   initialized: boolean;
 }
