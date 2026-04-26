@@ -23,12 +23,13 @@ import {
   WarningRegular,
 } from "@fluentui/react-icons";
 import { startAuthentication } from "@simplewebauthn/browser";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../store/auth";
+import { Captcha, type CaptchaValue } from "../../components/Captcha";
 
 const useStyles = makeStyles({
   page: {
@@ -140,9 +141,20 @@ export function Verify2FA() {
   const [acknowledged, setAcknowledged] = useState(false);
   // Opt-in: open a sudo grace window after this confirmation succeeds.
   const [enableSudo, setEnableSudo] = useState(false);
+  // Captcha solution. We persist by reference because the Captcha component
+  // calls `onVerified` exactly once per solve.
+  const [captchaValue, setCaptchaValue] = useState<CaptchaValue | null>(null);
+  const handleCaptchaVerified = useCallback((v: CaptchaValue) => {
+    setCaptchaValue(v);
+  }, []);
 
   const sudoEnabledOnSite = (data?.sudo_ttl_minutes ?? 0) > 0;
   const sudoActive = !!data?.sudo_active && sudoEnabledOnSite;
+  const captchaRequired = !!data?.captcha_required;
+  const captchaSatisfied =
+    !captchaRequired ||
+    !!captchaValue?.captcha_token ||
+    (!!captchaValue?.pow_challenge && captchaValue?.pow_nonce !== undefined);
 
   // When sudo is already active for this user/app/session, the user only has
   // to acknowledge the action — no TOTP or passkey is required.
@@ -157,18 +169,34 @@ export function Verify2FA() {
     setErrorMsg(null);
     setLoading(true);
     try {
+      const captchaPayload =
+        captchaRequired && decision === "approve" && captchaValue
+          ? {
+              ...(captchaValue.captcha_token
+                ? { captcha_token: captchaValue.captcha_token }
+                : {}),
+              ...(captchaValue.pow_challenge
+                ? { pow_challenge: captchaValue.pow_challenge }
+                : {}),
+              ...(captchaValue.pow_nonce !== undefined
+                ? { pow_nonce: captchaValue.pow_nonce }
+                : {}),
+            }
+          : {};
+
       const res = await api.oauth2faAuthorize({
         challenge_id: challengeId,
         ...(stateParam ? { state: stateParam } : {}),
         decision,
         ...(decision === "approve"
           ? sudoActive
-            ? { use_sudo: true }
+            ? { use_sudo: true, ...captchaPayload }
             : {
                 ...(twoFaMode === "passkey"
                   ? { passkey_verify_token: passkeyVerifyToken }
                   : { totp_code: totpCode.trim() }),
                 ...(enableSudo ? { enable_sudo: true } : {}),
+                ...captchaPayload,
               }
           : {}),
       });
@@ -182,8 +210,10 @@ export function Verify2FA() {
           "message" in (err.data as object)
             ? String((err.data as Record<string, unknown>).message)
             : err.message;
-        if (errorCode === "invalid_2fa") {
+        if (errorCode === "invalid_2fa" || errorCode === "captcha_failed") {
           setErrorMsg(humanMsg);
+          // Captcha tokens are single-use server-side; force a re-solve.
+          if (errorCode === "captcha_failed") setCaptchaValue(null);
           setLoading(false);
           return;
         }
@@ -579,6 +609,19 @@ export function Verify2FA() {
           </div>
         )}
 
+        {captchaRequired && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("oauth.twoFa.captchaHint")}
+            </Text>
+            <Captcha
+              provider={data.captcha_provider}
+              siteKey={data.captcha_site_key}
+              onVerified={handleCaptchaVerified}
+            />
+          </div>
+        )}
+
         <div className={styles.divider} />
 
         <div className={styles.actions}>
@@ -589,7 +632,8 @@ export function Verify2FA() {
               loading ||
               (!sudoActive && !data.has_any_2fa) ||
               !twoFaDone ||
-              !acknowledged
+              !acknowledged ||
+              !captchaSatisfied
             }
             onClick={() => handleDecision("approve")}
           >

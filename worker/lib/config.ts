@@ -44,6 +44,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   disable_user_create_app: false,
   tg_notify_source_slug: "",
   sudo_mode_ttl_minutes: 5,
+  require_captcha_for_2fa: false,
   initialized: false,
 };
 

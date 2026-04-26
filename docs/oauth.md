@@ -348,6 +348,19 @@ The code is single-use and expires 5 minutes after issuance. After successful ve
 - Compare `nonce` and `action` against what your app stored when it built the URL — if they don't match, reject the result.
 - `method` is `"totp"`, `"passkey"`, or `"backup"`.
 
+### Captcha gate
+
+Sites can require users to solve a captcha before they can approve a 2FA step-up. There are two ways the gate is triggered:
+
+- **Site default** — admins toggle `require_captcha_for_2fa` to demand a captcha for every step-up site-wide.
+- **Per-app opt-in** — apps include `require_captcha: true` when they call `POST /api/oauth/2fa/challenges`. Useful for apps that want extra friction on their high-stakes actions even when the site default is off. (Apps cannot disable an enforced site-wide gate.)
+
+The site's already-configured captcha provider is used (Turnstile, hCaptcha, reCAPTCHA, or PoW). If `captcha_provider` is `"none"`, the gate is a no-op even when one of the triggers fires.
+
+The user-facing `/api/oauth/2fa/info` response surfaces `captcha_required`, `captcha_provider`, and `captcha_site_key` so the SPA can render the right widget. The user solves the challenge and submits `captcha_token` (or `pow_challenge` + `pow_nonce`) along with their TOTP/passkey to `/api/oauth/2fa/authorize`.
+
+The captcha gate is **skipped** on the sudo bypass path: with no factor being checked there's no anti-bot surface, and forcing a solve would defeat the point of the sudo grace window.
+
 ### Sudo mode (grace window)
 
 After a successful TOTP/passkey confirmation, the user can opt into a **sudo grace window** during which subsequent challenges from the same app on the same Prism session bypass the 2FA prompt. The action acknowledgment checkbox is still required, so the user always sees and confirms what they're approving — only the TOTP/passkey re-prompting is skipped.

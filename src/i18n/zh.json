@@ -779,6 +779,7 @@
       "confirm": "确认",
       "confirmSudo": "确认(sudo)",
       "enableSudo": "{{minutes}} 分钟内不再询问 {{appName}}(sudo 模式)",
+      "captchaHint": "请完成下方挑战以证明您是真人。",
       "sudoActiveTitle": "sudo 模式已启用",
       "sudoActiveDesc": "您最近已经在 {{appName}} 确认过,所以本次跳过 2FA 提示。距离上次确认起,sudo 窗口持续 {{minutes}} 分钟。",
       "footerNote": "确认会向 {{appName}} 发回一次性验证结果,不会授予任何新的账户权限。"
@@ -1086,6 +1087,8 @@
     "gpgChallengePrefixPlaceholder": "我授权以账户所有者身份登录。",
     "sudoModeTtl": "2FA sudo 模式时长（分钟）",
     "sudoModeTtlHint": "用户成功完成一次 2FA 加强后,可选择开启 sudo 宽限期,期间内同一会话同一应用的后续挑战将跳过 TOTP/通行密钥提示。设置为 0 可完全禁用 sudo 模式。建议：5–15 分钟。",
+    "requireCaptchaFor2fa": "2FA 加强需通过验证码",
+    "requireCaptchaFor2faHint": "对每次 2FA 加强确认强制要求通过验证码。无论此设置如何,应用也可在创建挑战时单独要求验证码。使用站点已配置的验证码提供商；若未配置,此项为无效。sudo 旁路会跳过验证码。",
     "migrateRecoveryCodesTitle": "迁移恢复码",
     "migrateRecoveryCodesDesc": "对数据库中所有明文备份/恢复码进行哈希处理。已哈希的码将被跳过。迁移前旧明文码仍可正常使用。",
     "migrateRecoveryCodes": "迁移至哈希格式",

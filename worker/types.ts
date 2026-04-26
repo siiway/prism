@@ -123,6 +123,9 @@ export interface OAuth2FAChallengeRow {
   consumed_at: number | null;
   expires_at: number;
   created_at: number;
+  /** App-set: 1 means this specific challenge demands a captcha at /authorize
+   *  even if the site default doesn't. */
+  require_captcha: number;
 }
 
 export interface OAuth2FACodeRow {
@@ -381,6 +384,10 @@ export interface SiteConfig {
    *  during which subsequent challenges from the same app on the same session
    *  bypass TOTP/passkey re-prompting. 0 disables sudo mode entirely. */
   sudo_mode_ttl_minutes: number;
+  /** Site-wide default: require a captcha solve at the user-facing 2FA
+   *  step-up screen. Apps can also opt-in per challenge. The site's
+   *  configured `captcha_provider` is used; if that's "none", this is a no-op. */
+  require_captcha_for_2fa: boolean;
   initialized: boolean;
 }
 

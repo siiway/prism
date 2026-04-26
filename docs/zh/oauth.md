@@ -345,6 +345,19 @@ code 是单次使用的，签发后 5 分钟过期。校验成功后：
 - 将 `nonce` 和 `action` 与你应用最初构造 URL 时存储的值比对——不一致就拒绝结果。
 - `method` 是 `"totp"`、`"passkey"` 或 `"backup"`。
 
+### 验证码门槛
+
+站点可以要求用户在批准 2FA 加强前先通过验证码。触发该门槛有两种方式：
+
+- **站点默认** — 管理员开启 `require_captcha_for_2fa`,所有 2FA 加强都需要通过验证码。
+- **应用按挑战开启** — 应用在调用 `POST /api/oauth/2fa/challenges` 时传入 `require_captcha: true`。适合在站点默认关闭时,某些应用仍希望对自己的高风险操作增加阻力。（应用无法关闭站点已强制启用的门槛。）
+
+使用站点已配置好的验证码提供商（Turnstile、hCaptcha、reCAPTCHA 或 PoW）。如果 `captcha_provider` 为 `"none"`,即便上述触发条件命中也不会有任何效果。
+
+`/api/oauth/2fa/info` 响应中暴露了 `captcha_required`、`captcha_provider`、`captcha_site_key`,以便前端渲染对应的小部件。用户解决挑战后,把 `captcha_token`（或 `pow_challenge` + `pow_nonce`）连同 TOTP/通行密钥一并提交到 `/api/oauth/2fa/authorize`。
+
+走 sudo 旁路时**不会**触发验证码：sudo 不检查任何因子,没有自动化攻击的面,强制挑战反而会让 sudo 宽限期失去意义。
+
 ### Sudo 模式（宽限窗口）
 
 用户在一次成功的 TOTP/通行密钥确认之后,可选择启用 **sudo 宽限窗口**：在此窗口内,同一会话同一应用的后续挑战会跳过 2FA 提示。但操作描述的确认复选框仍然必须勾选——用户始终能看到并确认自己批准的内容,只跳过 TOTP/通行密钥的重新输入。

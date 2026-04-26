@@ -105,6 +105,7 @@ app.patch("/config", async (c) => {
     "disable_user_create_team",
     "disable_user_create_app",
     "sudo_mode_ttl_minutes",
+    "require_captcha_for_2fa",
   ]);
 
   const updates: Record<string, unknown> = {};

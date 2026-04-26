@@ -1595,6 +1595,13 @@ export interface OAuth2FAInfo {
   sudo_active: boolean;
   /** Site-wide sudo TTL in minutes. 0 = sudo mode disabled. */
   sudo_ttl_minutes: number;
+  /** True if this challenge requires a captcha solve (site default OR app
+   *  opt-in AND a provider is configured AND sudo bypass is not active). */
+  captcha_required: boolean;
+  /** Captcha provider to use. "none" if no captcha is required. */
+  captcha_provider: string;
+  /** Site key for the configured provider (empty string when not required). */
+  captcha_site_key: string;
 }
 
 export interface OAuth2FAAuthorizeBody {
@@ -1609,6 +1616,14 @@ export interface OAuth2FAAuthorizeBody {
   /** Bypass TOTP/passkey using an already-active sudo grant. Server rejects
    *  if no grant is active or sudo mode is disabled. */
   use_sudo?: boolean;
+  /** Captcha verification token. Required when info.captcha_required is true
+   *  and provider is turnstile/hcaptcha/recaptcha. */
+  captcha_token?: string;
+  /** PoW solution challenge. Required when info.captcha_required is true and
+   *  provider is "pow". */
+  pow_challenge?: string;
+  /** PoW solution nonce. Required alongside pow_challenge. */
+  pow_nonce?: number;
 }
 
 export interface OAuthApproveBody {

@@ -419,6 +419,13 @@ export function AdminSettings() {
                 }
               />
             </Field>
+            <Field hint={t("admin.requireCaptchaFor2faHint")}>
+              <Switch
+                label={t("admin.requireCaptchaFor2fa")}
+                checked={!!get("require_captcha_for_2fa")}
+                onChange={(_, d) => set("require_captcha_for_2fa", d.checked)}
+              />
+            </Field>
           </div>
         </div>
       )}

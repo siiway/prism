@@ -42,5 +42,6 @@ export interface SiteConfig {
   disable_user_create_app: boolean;
   tg_notify_source_slug: string;
   sudo_mode_ttl_minutes: number;
+  require_captcha_for_2fa: boolean;
   initialized: boolean;
 }

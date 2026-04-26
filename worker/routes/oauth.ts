@@ -12,6 +12,7 @@ import {
 } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
 import { rateLimit } from "../middleware/rateLimit";
+import { verifyCaptchaToken } from "../middleware/captcha";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import {
   computeIsVerified,
@@ -957,11 +958,19 @@ async function grantSudo(
 app.post("/2fa/challenges", async (c) => {
   const contentType = c.req.header("Content-Type") ?? "";
   let params: Record<string, string>;
+  // Stash the raw require_captcha separately because JSON might encode it as
+  // a real boolean while form bodies always send strings.
+  let rawRequireCaptcha: unknown;
   if (contentType.includes("application/json")) {
-    params = await c.req.json<Record<string, string>>();
+    const body = await c.req.json<Record<string, unknown>>();
+    rawRequireCaptcha = body.require_captcha;
+    params = Object.fromEntries(
+      Object.entries(body).map(([k, v]) => [k, v == null ? "" : String(v)]),
+    );
   } else {
     const text = await c.req.text();
     params = Object.fromEntries(new URLSearchParams(text));
+    rawRequireCaptcha = params.require_captcha;
   }
 
   let { client_id: clientId, client_secret: clientSecret } = params;
@@ -1042,9 +1051,17 @@ app.post("/2fa/challenges", async (c) => {
   const id = randomBase64url(32);
   const expiresAt = now + 900; // 15-minute window for the user to complete
 
+  // Accept JSON booleans as well as form-encoded strings.
+  const requireCaptchaFlag =
+    rawRequireCaptcha === true ||
+    rawRequireCaptcha === "true" ||
+    rawRequireCaptcha === "1"
+      ? 1
+      : 0;
+
   await c.env.DB.prepare(
-    `INSERT INTO oauth_2fa_challenges (id, client_id, redirect_uri, action, nonce, code_challenge, code_challenge_method, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO oauth_2fa_challenges (id, client_id, redirect_uri, action, nonce, code_challenge, code_challenge_method, expires_at, created_at, require_captcha)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
@@ -1056,6 +1073,7 @@ app.post("/2fa/challenges", async (c) => {
       code_challenge_method ?? null,
       expiresAt,
       now,
+      requireCaptchaFlag,
     )
     .run();
 
@@ -1146,6 +1164,14 @@ app.get("/2fa/info", optionalAuth, async (c) => {
 
   const config = await getConfig(c.env.DB);
 
+  // Captcha is required if either the site default or the per-challenge flag
+  // is set, AND a captcha provider is actually configured. Sudo bypass skips
+  // captcha — there's no factor being checked, so no brute-force surface.
+  const captchaRequired =
+    (config.require_captcha_for_2fa || challenge.require_captcha === 1) &&
+    config.captcha_provider !== "none" &&
+    !sudoActive;
+
   return c.json({
     app: {
       id: oauthApp.id,
@@ -1171,6 +1197,9 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     has_any_2fa: totpEnrolled || passkeyEnrolled,
     sudo_active: sudoActive,
     sudo_ttl_minutes: config.sudo_mode_ttl_minutes,
+    captcha_required: captchaRequired,
+    captcha_provider: captchaRequired ? config.captcha_provider : "none",
+    captcha_site_key: captchaRequired ? config.captcha_site_key : "",
   });
 });
 
@@ -1194,6 +1223,9 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     passkey_verify_token?: string;
     enable_sudo?: boolean;
     use_sudo?: boolean;
+    captcha_token?: string;
+    pow_challenge?: string;
+    pow_nonce?: number;
   }>();
 
   if (!body.challenge_id) {
@@ -1215,6 +1247,41 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     return c.json({ error: "challenge_expired" }, 400);
   if (challenge.consumed_at)
     return c.json({ error: "challenge_consumed" }, 400);
+
+  const config = await getConfig(c.env.DB);
+  const sudoTtlMinutes = Math.max(0, config.sudo_mode_ttl_minutes);
+
+  // Captcha gate runs BEFORE consuming the challenge, so a user who failed
+  // captcha can retry with a fresh token without losing the challenge. We
+  // skip captcha on the sudo bypass path: there's no factor being checked,
+  // so no anti-bot value, and forcing it would defeat the "frictionless"
+  // point of sudo.
+  const captchaRequired =
+    !body.use_sudo &&
+    (config.require_captcha_for_2fa || challenge.require_captcha === 1) &&
+    config.captcha_provider !== "none";
+  if (captchaRequired && body.decision === "approve") {
+    const ip =
+      c.req.header("CF-Connecting-IP") ??
+      c.req.header("X-Forwarded-For") ??
+      "unknown";
+    const captchaResult = await verifyCaptchaToken(
+      c.env.DB,
+      body.captcha_token,
+      body.pow_challenge,
+      body.pow_nonce,
+      ip,
+    );
+    if (!captchaResult.success) {
+      return c.json(
+        {
+          error: "captcha_failed",
+          message: captchaResult.error ?? "Captcha verification failed.",
+        },
+        400,
+      );
+    }
+  }
 
   // Atomically mark the challenge consumed so concurrent requests can't
   // both succeed. Whoever loses the race sees challenge_consumed.
@@ -1240,9 +1307,6 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     .bind(challenge.client_id)
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
-
-  const config = await getConfig(c.env.DB);
-  const sudoTtlMinutes = Math.max(0, config.sudo_mode_ttl_minutes);
 
   let method: "totp" | "passkey" | "backup" | "sudo" | null = null;
 
