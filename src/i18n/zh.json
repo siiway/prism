@@ -766,7 +766,17 @@
     "teamScopePermMemberWrite": "添加/移除/更新成员",
     "teamScopePermMemberProfileRead": "读取成员资料",
     "teamScopeOwnerOnlyDelete": "仅团队所有者可授予删除权限。",
-    "teamScopeForbidden": "您必须是团队所有者或管理员才能授予此访问权限。"
+    "teamScopeForbidden": "您必须是团队所有者或管理员才能授予此访问权限。",
+    "twoFa": {
+      "title": "两步验证确认",
+      "confirmHeading": "{{appName}} 请求您确认：",
+      "noAction": "应用未提供操作描述。仅在确认是您主动发起此请求时才继续。",
+      "noEnrollment": "您尚未启用 TOTP 认证器或通行密钥。请先在「安全」中启用,应用才能要求您确认敏感操作。",
+      "enterCode": "认证器验证码",
+      "enterCodeHint": "输入您的认证器应用验证码(或备用码)以继续。",
+      "confirm": "确认",
+      "footerNote": "确认会向 {{appName}} 发回一次性验证结果,不会授予任何新的账户权限。"
+    }
   },
   "admin": {
     "title": "管理面板",

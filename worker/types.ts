@@ -112,6 +112,22 @@ export interface OAuthCodeRow {
   created_at: number;
 }
 
+export interface OAuth2FACodeRow {
+  code: string;
+  client_id: string;
+  user_id: string;
+  redirect_uri: string;
+  action: string | null;
+  nonce: string | null;
+  method: "totp" | "passkey" | "backup";
+  code_challenge: string | null;
+  code_challenge_method: string | null;
+  used_at: number | null;
+  expires_at: number;
+  verified_at: number;
+  created_at: number;
+}
+
 export interface OAuthTokenRow {
   id: string;
   access_token: string;

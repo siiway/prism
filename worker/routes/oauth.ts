@@ -11,6 +11,7 @@ import {
   timingSafeStrEqual,
 } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
+import { rateLimit } from "../middleware/rateLimit";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import {
   computeIsVerified,
@@ -880,6 +881,386 @@ app.post("/authorize", requireAuth, async (c) => {
   );
 
   return c.json({ redirect: url.toString() });
+});
+
+// ─── Step-up 2FA authorization ───────────────────────────────────────────────
+// Apps redirect users here to confirm a sensitive action with TOTP/passkey.
+// The flow mirrors the OAuth Authorization Code grant:
+//   1. App redirects user to /oauth/2fa?client_id=...&redirect_uri=...
+//      &state=...&action=...&nonce=...&code_challenge=...&code_challenge_method=S256
+//   2. User completes TOTP or passkey on the Prism consent page.
+//   3. Prism redirects back to redirect_uri with ?code=...&state=...
+//   4. App exchanges the code at /api/oauth/2fa/verify (PKCE or client secret)
+//      to receive { user_id, verified_at, action, nonce, method }.
+
+// Friendly redirect for direct hits — sends users to the SPA route.
+app.get("/2fa", (c) => {
+  const qs = new URL(c.req.url).search;
+  return c.redirect(`/oauth/2fa${qs}`, 302);
+});
+
+// Caps so a malicious app can't smuggle a giant blob into the consent UI to
+// scroll legitimate content off-screen, or hide a payload in echoed-back
+// `nonce`/`action` fields.
+const MAX_2FA_ACTION_LEN = 200;
+const MAX_2FA_NONCE_LEN = 256;
+const MAX_2FA_STATE_LEN = 512;
+
+// GET /api/oauth/2fa/info — consent screen data
+app.get("/2fa/info", optionalAuth, async (c) => {
+  const { client_id, redirect_uri, state, action, code_challenge } =
+    c.req.query();
+
+  if (!client_id || !redirect_uri) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  if (action && action.length > MAX_2FA_ACTION_LEN) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  if (state && state.length > MAX_2FA_STATE_LEN) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(client_id)
+    .first<OAuthAppRow>();
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
+
+  const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
+  if (!redirectUris.includes(redirect_uri))
+    return c.json({ error: "invalid_redirect_uri" }, 400);
+
+  // Public clients must use PKCE so an intercepted code can't be redeemed.
+  if (oauthApp.is_public === 1 && !code_challenge) {
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge is required for public clients",
+      },
+      400,
+    );
+  }
+
+  const isVerified = await computeIsVerified(
+    c.env.DB,
+    oauthApp.owner_id,
+    oauthApp.website_url,
+    oauthApp.redirect_uris,
+    oauthApp.team_id,
+  );
+
+  // Show what 2FA methods this user has enrolled.
+  let totpEnrolled = false;
+  let passkeyEnrolled = false;
+  let backupCodesAvailable = false;
+  const currentUser = c.get("user");
+  if (currentUser) {
+    const [totpRow, passkeyRow, recoveryRow] = await Promise.all([
+      c.env.DB.prepare(
+        "SELECT id FROM totp_authenticators WHERE user_id = ? AND enabled = 1 LIMIT 1",
+      )
+        .bind(currentUser.id)
+        .first<{ id: string }>(),
+      c.env.DB.prepare(
+        "SELECT credential_id FROM passkeys WHERE user_id = ? LIMIT 1",
+      )
+        .bind(currentUser.id)
+        .first<{ credential_id: string }>(),
+      c.env.DB.prepare(
+        "SELECT user_id FROM user_totp_recovery WHERE user_id = ?",
+      )
+        .bind(currentUser.id)
+        .first<{ user_id: string }>(),
+    ]);
+    totpEnrolled = !!totpRow;
+    passkeyEnrolled = !!passkeyRow;
+    backupCodesAvailable = !!recoveryRow;
+  }
+
+  return c.json({
+    app: {
+      id: oauthApp.id,
+      name: oauthApp.name,
+      description: oauthApp.description,
+      icon_url: proxyImageUrl(c.env.APP_URL, oauthApp.icon_url),
+      unproxied_icon_url: oauthApp.icon_url,
+      website_url: oauthApp.website_url,
+      is_verified: isVerified,
+      is_official: oauthApp.is_official === 1,
+      is_first_party: oauthApp.is_first_party === 1,
+      is_public: oauthApp.is_public === 1,
+    },
+    redirect_uri,
+    state: state ?? null,
+    action: action ?? null,
+    user: c.get("user") ?? null,
+    totp_enrolled: totpEnrolled,
+    passkey_enrolled: passkeyEnrolled,
+    backup_codes_available: backupCodesAvailable,
+    has_any_2fa: totpEnrolled || passkeyEnrolled,
+  });
+});
+
+// POST /api/oauth/2fa/authorize — user approves with TOTP/passkey or denies.
+// On approve: returns { redirect } where the redirect URL carries the code.
+app.post("/2fa/authorize", requireAuth, async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{
+    client_id: string;
+    redirect_uri: string;
+    state?: string;
+    action?: string;
+    nonce?: string;
+    code_challenge?: string;
+    code_challenge_method?: string;
+    decision: "approve" | "deny";
+    totp_code?: string;
+    passkey_verify_token?: string;
+  }>();
+
+  if (body.decision === "deny") {
+    const url = new URL(body.redirect_uri);
+    url.searchParams.set("error", "access_denied");
+    if (body.state) url.searchParams.set("state", body.state);
+    return c.json({ redirect: url.toString() });
+  }
+
+  // Reject oversized fields. Same limits as /2fa/info — guards against UI
+  // spoofing and keeps DB rows bounded.
+  if (body.action && body.action.length > MAX_2FA_ACTION_LEN) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  if (body.nonce && body.nonce.length > MAX_2FA_NONCE_LEN) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+  if (body.state && body.state.length > MAX_2FA_STATE_LEN) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(body.client_id)
+    .first<OAuthAppRow>();
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
+
+  const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
+  if (!redirectUris.includes(body.redirect_uri))
+    return c.json({ error: "invalid_redirect_uri" }, 400);
+
+  // Public clients require PKCE so the code can't be replayed by an interceptor.
+  if (oauthApp.is_public === 1 && !body.code_challenge) {
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge is required for public clients",
+      },
+      400,
+    );
+  }
+
+  // Rate-limit 2FA attempts per user. TOTP is 6 digits (~10^6 codes), which
+  // a determined attacker with a stolen session could brute-force without
+  // a cap. 8 attempts per 5 min keeps the window narrow enough that even
+  // a fully-allotted budget gives < 1 in 3000 chance against a fresh code.
+  const rl = await rateLimit(c.env.KV_CACHE, `2fa-stepup:${user.id}`, 8, 300);
+  if (!rl.allowed) {
+    return c.json(
+      {
+        error: "rate_limited",
+        message: "Too many 2FA attempts. Try again in a few minutes.",
+      },
+      429,
+    );
+  }
+
+  // Verify 2FA. Try passkey first (token from /auth/passkey/verify), then TOTP.
+  let method: "totp" | "passkey" | "backup" | null = null;
+  if (body.passkey_verify_token) {
+    const kvKey = `passkey_site_verify:${user.id}:${body.passkey_verify_token}`;
+    const stored = await c.env.KV_CACHE.get(kvKey);
+    if (stored) {
+      await c.env.KV_CACHE.delete(kvKey);
+      method = "passkey";
+    }
+  } else if (body.totp_code) {
+    // verifyAnyTotp also consumes a backup code if one matches; we can't
+    // tell which path matched so we record "totp" for both. (The TOTP code
+    // and a backup code are functionally equivalent for this gate.)
+    if (await verifyAnyTotp(c.env.DB, user.id, body.totp_code)) {
+      method = "totp";
+    }
+  }
+
+  if (!method) {
+    return c.json(
+      {
+        error: "invalid_2fa",
+        message:
+          body.totp_code || body.passkey_verify_token
+            ? "Invalid 2FA credential."
+            : "A 2FA verification is required.",
+      },
+      400,
+    );
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const code = randomBase64url(32);
+  await c.env.DB.prepare(
+    `INSERT INTO oauth_2fa_codes (code, client_id, user_id, redirect_uri, action, nonce, method, code_challenge, code_challenge_method, expires_at, verified_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      code,
+      body.client_id,
+      user.id,
+      body.redirect_uri,
+      body.action ?? null,
+      body.nonce ?? null,
+      method,
+      body.code_challenge ?? null,
+      body.code_challenge_method ?? null,
+      now + 300, // 5-minute TTL — short window between user click and app verify
+      now,
+      now,
+    )
+    .run();
+
+  const url = new URL(body.redirect_uri);
+  url.searchParams.set("code", code);
+  if (body.state) url.searchParams.set("state", body.state);
+
+  return c.json({ redirect: url.toString() });
+});
+
+// POST /api/oauth/2fa/verify — app exchanges the single-use code for the
+// verification result. Form-encoded or JSON body. Auth via PKCE (public
+// clients) or HTTP Basic / client_secret (confidential clients), mirroring
+// the /token endpoint.
+app.post("/2fa/verify", async (c) => {
+  const contentType = c.req.header("Content-Type") ?? "";
+  let params: Record<string, string>;
+  if (contentType.includes("application/json")) {
+    params = await c.req.json<Record<string, string>>();
+  } else {
+    const text = await c.req.text();
+    params = Object.fromEntries(new URLSearchParams(text));
+  }
+
+  const { code, redirect_uri, code_verifier } = params;
+  let { client_id: clientId, client_secret: clientSecret } = params;
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Basic ")) {
+    const decoded = atob(authHeader.slice(6));
+    const [id, secret] = decoded.split(":");
+    clientId = id ?? "";
+    clientSecret = secret ?? "";
+  }
+
+  if (!code || !clientId || !redirect_uri) {
+    return c.json({ error: "invalid_request" }, 400);
+  }
+
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(clientId)
+    .first<OAuthAppRow>();
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
+
+  if (!oauthApp.is_public) {
+    if (
+      !oauthApp.client_secret ||
+      !clientSecret ||
+      !timingSafeStrEqual(oauthApp.client_secret, clientSecret)
+    ) {
+      return c.json({ error: "invalid_client" }, 401);
+    }
+  }
+
+  const codeRow = await c.env.DB.prepare(
+    "SELECT * FROM oauth_2fa_codes WHERE code = ?",
+  )
+    .bind(code)
+    .first<import("../types").OAuth2FACodeRow>();
+  // Bind the code to (client_id, redirect_uri) before any other check so a
+  // stolen code is useless to a different app or sent to a different URI.
+  if (!codeRow || codeRow.client_id !== clientId)
+    return c.json({ error: "invalid_grant" }, 400);
+  if (codeRow.redirect_uri !== redirect_uri)
+    return c.json({ error: "invalid_grant" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  if (codeRow.used_at)
+    return c.json(
+      { error: "invalid_grant", error_description: "Code already used" },
+      400,
+    );
+  if (codeRow.expires_at < now)
+    return c.json(
+      { error: "invalid_grant", error_description: "Code expired" },
+      400,
+    );
+
+  if (oauthApp.is_public && !codeRow.code_challenge) {
+    return c.json(
+      {
+        error: "invalid_grant",
+        error_description: "PKCE is required for public clients",
+      },
+      400,
+    );
+  }
+
+  if (codeRow.code_challenge) {
+    if (!code_verifier)
+      return c.json(
+        {
+          error: "invalid_grant",
+          error_description: "code_verifier required",
+        },
+        400,
+      );
+    const pkceOk = await verifyPkce(
+      code_verifier,
+      codeRow.code_challenge,
+      codeRow.code_challenge_method ?? "S256",
+    );
+    if (!pkceOk)
+      return c.json(
+        {
+          error: "invalid_grant",
+          error_description: "PKCE verification failed",
+        },
+        400,
+      );
+  }
+
+  // Mark single-use. Conditional UPDATE so a concurrent verify can't redeem
+  // the same code twice — losers see invalid_grant on the recheck.
+  const updated = await c.env.DB.prepare(
+    "UPDATE oauth_2fa_codes SET used_at = ? WHERE code = ? AND used_at IS NULL",
+  )
+    .bind(now, code)
+    .run();
+  if (!updated.meta.changes) {
+    return c.json(
+      { error: "invalid_grant", error_description: "Code already used" },
+      400,
+    );
+  }
+
+  return c.json({
+    user_id: codeRow.user_id,
+    client_id: codeRow.client_id,
+    verified_at: codeRow.verified_at,
+    action: codeRow.action,
+    nonce: codeRow.nonce,
+    method: codeRow.method,
+  });
 });
 
 // ─── Token endpoint ──────────────────────────────────────────────────────────

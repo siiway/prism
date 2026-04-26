@@ -766,7 +766,17 @@
     "teamScopePermMemberWrite": "Add/remove/update members",
     "teamScopePermMemberProfileRead": "Read member profiles",
     "teamScopeOwnerOnlyDelete": "Only team owners can grant deletion access.",
-    "teamScopeForbidden": "You must be a team owner or admin to grant this access."
+    "teamScopeForbidden": "You must be a team owner or admin to grant this access.",
+    "twoFa": {
+      "title": "Two-Factor Confirmation",
+      "confirmHeading": "{{appName}} is asking you to confirm:",
+      "noAction": "No action description was provided. Only continue if you initiated this prompt.",
+      "noEnrollment": "You don't have a TOTP authenticator or passkey enrolled. Set one up in Security before this app can ask you to confirm sensitive actions.",
+      "enterCode": "Authenticator code",
+      "enterCodeHint": "Enter your authenticator app code (or a backup code) to continue.",
+      "confirm": "Confirm",
+      "footerNote": "Confirming sends a one-time verification back to {{appName}}. It does not grant any new account access."
+    }
   },
   "admin": {
     "title": "Admin Panel",

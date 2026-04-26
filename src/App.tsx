@@ -29,6 +29,7 @@ import { Domains } from "./pages/Domains";
 import { Connections } from "./pages/Connections";
 import { ConnectedApps } from "./pages/ConnectedApps";
 import { Authorize } from "./pages/oauth/Authorize";
+import { Verify2FA } from "./pages/oauth/Verify2FA";
 import { SocialConfirm } from "./pages/SocialConfirm";
 import { SocialSelect } from "./pages/SocialSelect";
 import { AdminLayout } from "./pages/admin/AdminLayout";
@@ -161,6 +162,7 @@ export default function App() {
 
             {/* OAuth consent */}
             <Route path="/oauth/authorize" element={<Authorize />} />
+            <Route path="/oauth/2fa" element={<Verify2FA />} />
 
             {/* Protected app shell */}
             <Route

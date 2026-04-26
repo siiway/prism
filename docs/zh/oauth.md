@@ -242,6 +242,89 @@ ID 令牌是一个签名的 JWT（RS256）。可通过 `/.well-known/jwks.json` 
 { "oidc_fields": ["teams", "domains"] }
 ```
 
+## 加强 2FA（敏感操作再确认）
+
+应用可以请求 Prism 让用户在执行敏感操作前用 TOTP 或通行密钥再确认一次——例如转账、删除资源、授予提权访问权限等。流程与授权码流程一致：重定向用户 → 拿到一次性 code → 在服务端换取结果。
+
+用户必须已登录 Prism（未登录会被引导登录），并已启用 TOTP 认证器或通行密钥。这一过程不会授予任何新的账户权限——返回结果只是用户重新确认了一次的一次性凭证。
+
+### 第一步 — 重定向用户
+
+```text
+GET https://prism.example.com/api/oauth/2fa
+  ?client_id=YOUR_CLIENT_ID
+  &redirect_uri=https://app.example.com/2fa-callback
+  &state=RANDOM
+  &action=确认转账+%241%2C000
+  &nonce=order_abc123
+  &code_challenge=PKCE_CHALLENGE
+  &code_challenge_method=S256
+```
+
+| 参数 | 是否必填 | 说明 |
+| --- | --- | --- |
+| `client_id` | 必填 | OAuth 应用的 client ID |
+| `redirect_uri` | 必填 | 必须已在应用上注册 |
+| `state` | 推荐 | 原样回传；回调时校验（防 CSRF） |
+| `action` | 推荐 | 用户要确认的操作的人类可读描述。在 Prism 页面上原样展示，并在 verify 响应中回传。最长 200 字符 |
+| `nonce` | 可选 | 应用自定义的不透明值，原样回传。建议绑定到具体操作（如订单 ID）。最长 256 字符 |
+| `code_challenge`, `code_challenge_method` | 公开客户端必填 | PKCE — 见授权码流程 |
+
+### 第二步 — 用户确认
+
+Prism 会展示应用图标、`action` 文案，并提示用户输入 TOTP 或使用通行密钥。用户点击 **确认** 或 **拒绝**。
+
+### 第三步 — 接收 code
+
+Prism 将用户重定向回你的 `redirect_uri`：
+
+```text
+https://app.example.com/2fa-callback?code=…&state=…
+```
+
+或在拒绝/出错时：
+
+```text
+https://app.example.com/2fa-callback?error=access_denied&state=…
+```
+
+### 第四步 — 校验（服务端）
+
+```http
+POST /api/oauth/2fa/verify
+Content-Type: application/x-www-form-urlencoded
+
+code=THE_CODE&client_id=YOUR_CLIENT_ID&redirect_uri=…&code_verifier=PKCE_VERIFIER
+```
+
+机密客户端可用 `client_secret`（请求体）或 HTTP Basic 认证。公开客户端仅依靠 PKCE。
+
+#### 响应
+
+```json
+{
+  "user_id": "u_abc",
+  "client_id": "YOUR_CLIENT_ID",
+  "verified_at": 1761500000,
+  "action": "确认转账 $1,000",
+  "nonce": "order_abc123",
+  "method": "totp"
+}
+```
+
+code 是单次使用的，签发后 5 分钟过期。校验成功后：
+
+- `verified_at` 是用户完成 2FA 的 Unix 时间戳——超过你认可的窗口期就视为过期。
+- 将 `nonce` 和 `action` 与你应用最初构造 URL 时存储的值比对——不一致就拒绝结果。
+- `method` 是 `"totp"`、`"passkey"` 或 `"backup"`。
+
+### 安全提示
+
+- 服务器对每个用户限速 2FA 尝试次数（5 分钟内最多 8 次），可有效阻止 TOTP 暴力破解。
+- code 与 `client_id`、`redirect_uri` 绑定：泄露的 code 既无法被其他应用兑换，也无法发送到其他 URI。
+- 公开客户端必须使用 PKCE；机密客户端必须出示 `client_secret`。
+- `action` / `nonce` / `state` 都有长度上限，避免恶意应用通过 UI 投放超长内容欺骗用户。
+
 ## 集成
 
 ### Cloudflare Access

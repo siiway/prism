@@ -553,6 +553,23 @@ export const api = {
     ),
   oauthApprove: (body: OAuthApproveBody) =>
     request<{ redirect: string }>("POST", "/oauth/authorize", body, getToken()),
+
+  // ─── OAuth 2FA step-up ───────────────────────────────────────────────────
+  oauth2faInfo: (params: Record<string, string>) =>
+    request<OAuth2FAInfo>(
+      "GET",
+      `/oauth/2fa/info?${new URLSearchParams(params)}`,
+      undefined,
+      getToken(),
+    ),
+  oauth2faAuthorize: (body: OAuth2FAAuthorizeBody) =>
+    request<{ redirect: string }>(
+      "POST",
+      "/oauth/2fa/authorize",
+      body,
+      getToken(),
+    ),
+
   passkeyVerifyBegin: () =>
     request<unknown>("POST", "/auth/passkey/verify/begin", {}, getToken()),
   passkeyVerifyFinish: (challenge: string, response: unknown) =>
@@ -1548,6 +1565,42 @@ export interface OAuthAuthorizeInfo {
     avatar_url: string | null;
     role: string;
   }>;
+}
+
+export interface OAuth2FAInfo {
+  app: {
+    id: string;
+    name: string;
+    description: string;
+    icon_url: string | null;
+    unproxied_icon_url: string | null;
+    website_url: string | null;
+    is_verified: boolean;
+    is_official: boolean;
+    is_first_party: boolean;
+    is_public: boolean;
+  };
+  redirect_uri: string;
+  state: string | null;
+  action: string | null;
+  user: UserProfile | null;
+  totp_enrolled: boolean;
+  passkey_enrolled: boolean;
+  backup_codes_available: boolean;
+  has_any_2fa: boolean;
+}
+
+export interface OAuth2FAAuthorizeBody {
+  client_id: string;
+  redirect_uri: string;
+  state?: string;
+  action?: string;
+  nonce?: string;
+  code_challenge?: string;
+  code_challenge_method?: string;
+  decision: "approve" | "deny";
+  totp_code?: string;
+  passkey_verify_token?: string;
 }
 
 export interface OAuthApproveBody {

@@ -245,6 +245,82 @@ To opt an application into a custom claim, include the field name in the app's `
 { "oidc_fields": ["teams", "domains"] }
 ```
 
+## Step-up 2FA
+
+Apps can ask Prism to have the user re-confirm with TOTP or passkey before performing a sensitive action — wire transfers, deleting resources, granting elevated access, etc. The flow mirrors the Authorization Code grant: redirect the user, get a single-use code back, exchange it server-side.
+
+The user must be logged into Prism (they're redirected to login if not) and have a TOTP authenticator or passkey enrolled. No new account access is granted — the result is a one-time proof that the user re-confirmed.
+
+### Step 1 — Redirect the user
+
+```text
+GET https://prism.example.com/api/oauth/2fa
+  ?client_id=YOUR_CLIENT_ID
+  &redirect_uri=https://app.example.com/2fa-callback
+  &state=RANDOM
+  &action=Confirm+wire+transfer+of+%241%2C000
+  &nonce=order_abc123
+  &code_challenge=PKCE_CHALLENGE
+  &code_challenge_method=S256
+```
+
+| Parameter | Required | Description |
+| --- | --- | --- |
+| `client_id` | yes | Your OAuth app's client ID |
+| `redirect_uri` | yes | Must be registered on the OAuth app |
+| `state` | recommended | Echoed back; verify on callback (CSRF defense) |
+| `action` | recommended | Human-readable description of what the user is confirming. Shown verbatim on the Prism page and echoed in the verify response |
+| `nonce` | optional | App-defined opaque value, echoed back. Bind it to the operation (e.g. an order ID) |
+| `code_challenge`, `code_challenge_method` | required for public clients | PKCE — see Authorization Code flow |
+
+### Step 2 — User confirms
+
+Prism shows the app icon, the `action` text, and prompts for TOTP or passkey. The user clicks **Confirm** or **Deny**.
+
+### Step 3 — Receive the code
+
+Prism redirects the user back to your `redirect_uri`:
+
+```text
+https://app.example.com/2fa-callback?code=…&state=…
+```
+
+Or, on denial / error:
+
+```text
+https://app.example.com/2fa-callback?error=access_denied&state=…
+```
+
+### Step 4 — Verify (server-side)
+
+```http
+POST /api/oauth/2fa/verify
+Content-Type: application/x-www-form-urlencoded
+
+code=THE_CODE&client_id=YOUR_CLIENT_ID&code_verifier=PKCE_VERIFIER
+```
+
+Confidential clients send `client_secret` in the body or via HTTP Basic. Public clients use PKCE only.
+
+#### Response
+
+```json
+{
+  "user_id": "u_abc",
+  "client_id": "YOUR_CLIENT_ID",
+  "verified_at": 1761500000,
+  "action": "Confirm wire transfer of $1,000",
+  "nonce": "order_abc123",
+  "method": "totp"
+}
+```
+
+The code is single-use and expires 5 minutes after issuance. After successful verification:
+
+- `verified_at` is the unix timestamp the user completed 2FA — treat anything older than your acceptable window as stale.
+- Compare `nonce` and `action` against what your app stored when it built the URL — if they don't match, reject the result.
+- `method` is `"totp"`, `"passkey"`, or `"backup"`.
+
 ## Error responses
 
 Authorization errors redirect to your `redirect_uri` with:

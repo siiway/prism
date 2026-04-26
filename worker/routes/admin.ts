@@ -529,6 +529,7 @@ app.post("/reset", async (c) => {
     c.env.DB.prepare("DELETE FROM webhooks"),
     c.env.DB.prepare("DELETE FROM oauth_tokens"),
     c.env.DB.prepare("DELETE FROM oauth_codes"),
+    c.env.DB.prepare("DELETE FROM oauth_2fa_codes"),
     c.env.DB.prepare("DELETE FROM oauth_consents"),
     c.env.DB.prepare("DELETE FROM personal_access_tokens"),
     c.env.DB.prepare("DELETE FROM sessions"),
