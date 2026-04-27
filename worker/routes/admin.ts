@@ -25,6 +25,11 @@ import { inviteEmailTemplate } from "../lib/email";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { hashBackupCodes } from "../lib/totp";
 import { deliverAdminWebhooks, hmacSign } from "../lib/webhooks";
+import {
+  dissolveTeam,
+  teamUserSyntheticEmail,
+  teamUserSyntheticUsername,
+} from "./teams";
 import type {
   AuditLogRow,
   LoginErrorRow,
@@ -418,16 +423,18 @@ app.get("/users", async (c) => {
   const offset = (page - 1) * limit;
   const search = c.req.query("search") ?? "";
 
+  // Hide synthetic team-user rows from the user list — they're surfaced
+  // through the dedicated teams admin page.
   const whereClause = search
-    ? "WHERE u.email LIKE ? OR u.username LIKE ? OR u.display_name LIKE ?"
-    : "";
+    ? "WHERE u.kind = 'user' AND (u.email LIKE ? OR u.username LIKE ? OR u.display_name LIKE ?)"
+    : "WHERE u.kind = 'user'";
   const searchParam = `%${search}%`;
   const params = search ? [searchParam, searchParam, searchParam] : [];
 
   const [usersResult, countResult] = await Promise.all([
     c.env.DB.prepare(
       `SELECT u.id, u.email, u.username, u.display_name, u.role, u.email_verified, u.is_active, u.created_at,
-              (SELECT COUNT(*) FROM oauth_apps WHERE owner_id = u.id) as app_count
+              (SELECT COUNT(*) FROM oauth_apps WHERE owner_id = u.id AND team_id IS NULL) as app_count
        FROM users u ${whereClause} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
     )
       .bind(...params, limit, offset)
@@ -447,14 +454,16 @@ app.get("/users", async (c) => {
 
 app.get("/users/:id", async (c) => {
   const id = c.req.param("id");
-  const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
+  const user = await c.env.DB.prepare(
+    "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+  )
     .bind(id)
     .first<UserRow>();
   if (!user) return c.json({ error: "User not found" }, 404);
 
   const [apps, connections, sessions] = await Promise.all([
     c.env.DB.prepare(
-      "SELECT id, name, client_id, is_active, created_at FROM oauth_apps WHERE owner_id = ?",
+      "SELECT id, name, client_id, is_active, created_at FROM oauth_apps WHERE owner_id = ? AND team_id IS NULL",
     )
       .bind(id)
       .all(),
@@ -592,12 +601,23 @@ app.get("/apps", async (c) => {
 
   const [apps, count] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT a.*, u.username as owner_username
-       FROM oauth_apps a JOIN users u ON u.id = a.owner_id
+      `SELECT a.*,
+              u.username as owner_username,
+              t.name as team_name,
+              t.avatar_url as team_avatar_url
+       FROM oauth_apps a
+       LEFT JOIN users u ON u.id = a.owner_id
+       LEFT JOIN teams t ON t.id = a.team_id
        ORDER BY a.created_at DESC LIMIT ? OFFSET ?`,
     )
       .bind(limit, offset)
-      .all<OAuthAppRow & { owner_username: string }>(),
+      .all<
+        OAuthAppRow & {
+          owner_username: string | null;
+          team_name: string | null;
+          team_avatar_url: string | null;
+        }
+      >(),
     c.env.DB.prepare("SELECT COUNT(*) as n FROM oauth_apps").first<{
       n: number;
     }>(),
@@ -622,6 +642,7 @@ app.get("/apps", async (c) => {
         ...a,
         icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
         unproxied_icon_url: a.icon_url,
+        team_avatar_url: proxyImageUrl(c.env.APP_URL, a.team_avatar_url),
         is_verified: computeVerified(merged, a.website_url, a.redirect_uris),
       };
     }),
@@ -850,6 +871,101 @@ app.post("/reset", async (c) => {
   return c.json({ message: "Platform reset complete" });
 });
 
+// ─── Migrate teams to the unified user model ─────────────────────────────────
+//
+// Backfills the kind='team' user rows that mirror existing teams, and
+// re-points oauth_apps.owner_id at those team-user rows for any app
+// already attached to a team. Without this step legacy rows would still
+// show the original creator as owner everywhere owner_id is joined to
+// users (admin panel, profile pages, OAuth APIs). Idempotent — safe to
+// run repeatedly as new teams are created.
+
+app.get("/teams-as-users-status", async (c) => {
+  const [teamsRow, mirroredRow, appsRow, appsAlignedRow] = await Promise.all([
+    c.env.DB.prepare("SELECT COUNT(*) AS n FROM teams").first<{ n: number }>(),
+    c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM users u JOIN teams t ON t.id = u.id WHERE u.kind = 'team'",
+    ).first<{ n: number }>(),
+    c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM oauth_apps WHERE team_id IS NOT NULL",
+    ).first<{ n: number }>(),
+    c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM oauth_apps WHERE team_id IS NOT NULL AND owner_id = team_id",
+    ).first<{ n: number }>(),
+  ]);
+  return c.json({
+    teams_total: teamsRow?.n ?? 0,
+    teams_mirrored: mirroredRow?.n ?? 0,
+    team_apps_total: appsRow?.n ?? 0,
+    team_apps_aligned: appsAlignedRow?.n ?? 0,
+  });
+});
+
+app.post("/migrate-teams-as-users", async (c) => {
+  const admin = c.get("user");
+  const now = Math.floor(Date.now() / 1000);
+
+  // 1. Synthesize the team-user row for every team that doesn't have one.
+  const teams = await c.env.DB.prepare(
+    `SELECT t.id, t.name, t.avatar_url, t.created_at, t.updated_at
+     FROM teams t
+     LEFT JOIN users u ON u.id = t.id AND u.kind = 'team'
+     WHERE u.id IS NULL`,
+  ).all<{
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    created_at: number;
+    updated_at: number;
+  }>();
+
+  let teamsMirrored = 0;
+  for (const t of teams.results) {
+    await c.env.DB.prepare(
+      `INSERT INTO users
+        (id, email, username, password_hash, display_name, avatar_url,
+         role, kind, email_verified, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, NULL, ?, ?, 'user', 'team', 0, 1, ?, ?)`,
+    )
+      .bind(
+        t.id,
+        teamUserSyntheticEmail(t.id),
+        teamUserSyntheticUsername(t.id),
+        t.name,
+        t.avatar_url,
+        t.created_at,
+        t.updated_at,
+      )
+      .run();
+    teamsMirrored++;
+  }
+
+  // 2. Re-point owner_id at the team-user for every team-attached app
+  //    that still references the original creator.
+  const appUpdate = await c.env.DB.prepare(
+    "UPDATE oauth_apps SET owner_id = team_id, updated_at = ? WHERE team_id IS NOT NULL AND owner_id != team_id",
+  )
+    .bind(now)
+    .run();
+  const appsRealigned = appUpdate.meta?.changes ?? 0;
+
+  await logAudit(
+    c.env.DB,
+    admin.id,
+    "admin.migrate_teams_as_users",
+    "users",
+    null,
+    { teams_mirrored: teamsMirrored, apps_realigned: appsRealigned },
+    getIp(c),
+    c.executionCtx,
+  );
+
+  return c.json({
+    teams_mirrored: teamsMirrored,
+    apps_realigned: appsRealigned,
+  });
+});
+
 // ─── Migrate recovery codes to hashed format ──────────────────────────────────
 
 app.post("/migrate-recovery-codes", async (c) => {
@@ -927,13 +1043,7 @@ app.delete("/teams/:id", async (c) => {
     .first();
   if (!team) return c.json({ error: "Team not found" }, 404);
 
-  // Disown team apps before deleting
-  await c.env.DB.prepare(
-    "UPDATE oauth_apps SET team_id = NULL WHERE team_id = ?",
-  )
-    .bind(id)
-    .run();
-  await c.env.DB.prepare("DELETE FROM teams WHERE id = ?").bind(id).run();
+  await dissolveTeam(c.env.DB, id, admin.id);
 
   await logAudit(
     c.env.DB,

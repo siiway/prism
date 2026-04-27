@@ -26,7 +26,7 @@ export async function requireAuth(c: Context<AppEnv>, next: Next) {
     const payload = await verifyJWT(token, secret);
 
     const session = await c.env.DB.prepare(
-      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?",
+      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user'",
     )
       .bind(payload.sessionId)
       .first<{ id: string; is_active: number }>();
@@ -65,7 +65,7 @@ export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
     if (payload.role !== "admin") return c.json({ error: "Forbidden" }, 403);
 
     const session = await c.env.DB.prepare(
-      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?",
+      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user'",
     )
       .bind(payload.sessionId)
       .first<{ id: string; is_active: number }>();
@@ -133,7 +133,7 @@ export function tryPatAuth(scopes: {
       return c.json({ error: "insufficient_scope" }, 403);
 
     const user = await c.env.DB.prepare(
-      "SELECT id, email, username, display_name, avatar_url, role, email_verified, is_active FROM users WHERE id = ?",
+      "SELECT id, email, username, display_name, avatar_url, role, email_verified, is_active FROM users WHERE id = ? AND kind = 'user'",
     )
       .bind(pat.user_id)
       .first<{
@@ -185,7 +185,7 @@ export async function optionalAuth(c: Context<AppEnv>, next: Next) {
       const payload = await verifyJWT(token, secret);
 
       const session = await c.env.DB.prepare(
-        "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ?",
+        "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user'",
       )
         .bind(payload.sessionId)
         .first<{ id: string; is_active: number }>();

@@ -174,7 +174,31 @@ export function AdminApps() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Text size={200}>@{app.owner_username}</Text>
+                  {app.team_id ? (
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      {app.team_avatar_url ? (
+                        <img
+                          src={app.team_avatar_url}
+                          alt=""
+                          width={16}
+                          height={16}
+                          style={{ borderRadius: 4 }}
+                        />
+                      ) : null}
+                      <Text size={200} weight="semibold">
+                        {app.team_name ?? t("admin.teamHeader")}
+                      </Text>
+                      <Badge color="brand" appearance="tint" size="small">
+                        {t("admin.teamHeader")}
+                      </Badge>
+                    </div>
+                  ) : (
+                    <Text size={200}>
+                      {app.owner_username ? `@${app.owner_username}` : "—"}
+                    </Text>
+                  )}
                 </TableCell>
                 <TableCell>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -276,9 +300,11 @@ export function AdminApps() {
                   <Field label={t("admin.ownerHeader")}>
                     <Input
                       value={
-                        editing?.owner_username
-                          ? `@${editing.owner_username}`
-                          : "—"
+                        editing?.team_id
+                          ? `${(editing.team_name as string) ?? ""} (${t("admin.teamHeader")})`
+                          : editing?.owner_username
+                            ? `@${editing.owner_username}`
+                            : "—"
                       }
                       readOnly
                     />

@@ -53,6 +53,59 @@ async function getMember(
     .first<TeamMemberRow>();
 }
 
+// ─── Team-as-user helpers ────────────────────────────────────────────────────
+//
+// Synthetic credentials used to satisfy the NOT NULL UNIQUE constraints on
+// users.email / users.username for kind='team' rows. The colon prefix
+// guarantees the value can never collide with a real registration (the
+// register validator only allows [a-z0-9_.-]).
+
+export function teamUserSyntheticUsername(teamId: string): string {
+  return `team:${teamId}`;
+}
+
+export function teamUserSyntheticEmail(teamId: string): string {
+  return `team-${teamId}@teams.invalid`;
+}
+
+/**
+ * Disband a team. Reassigns any team-owned apps to a real-user fallback so
+ * the app rows survive the cascading delete that follows from removing the
+ * team-user (oauth_apps.owner_id REFERENCES users(id) ON DELETE CASCADE).
+ *
+ * Falls back to the deleting user if the team has no owner-role member.
+ */
+export async function dissolveTeam(
+  db: D1Database,
+  teamId: string,
+  fallbackUserId: string,
+): Promise<void> {
+  const ownerRow = await db
+    .prepare(
+      "SELECT user_id FROM team_members WHERE team_id = ? AND role = 'owner' LIMIT 1",
+    )
+    .bind(teamId)
+    .first<{ user_id: string }>();
+  const reassignTo = ownerRow?.user_id ?? fallbackUserId;
+  const now = Math.floor(Date.now() / 1000);
+
+  await db
+    .prepare(
+      "UPDATE oauth_apps SET team_id = NULL, owner_id = ?, updated_at = ? WHERE team_id = ?",
+    )
+    .bind(reassignTo, now, teamId)
+    .run();
+
+  // Drop the team-user row if it exists. CASCADE-safe now that no app
+  // rows still point at it as owner.
+  await db
+    .prepare("DELETE FROM users WHERE id = ? AND kind = 'team'")
+    .bind(teamId)
+    .run();
+
+  await db.prepare("DELETE FROM teams WHERE id = ?").bind(teamId).run();
+}
+
 // ─── Public invite join routes (BEFORE global auth middleware) ────────────────
 
 interface InviteRow {
@@ -215,6 +268,8 @@ app.post("/", async (c) => {
 
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
+  const teamUserUsername = teamUserSyntheticUsername(id);
+  const teamUserEmail = teamUserSyntheticEmail(id);
 
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -223,6 +278,20 @@ app.post("/", async (c) => {
       id,
       body.name.trim(),
       body.description ?? "",
+      body.avatar_url ?? null,
+      now,
+      now,
+    ),
+    // Synthetic user row mirroring the team — kind='team' rules out login,
+    // sessions, social linking, etc. The id matches teams.id so any code
+    // joining oauth_apps.owner_id → users still resolves to the team.
+    c.env.DB.prepare(
+      "INSERT INTO users (id, email, username, password_hash, display_name, avatar_url, role, kind, email_verified, is_active, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, 'user', 'team', 0, 1, ?, ?)",
+    ).bind(
+      id,
+      teamUserEmail,
+      teamUserUsername,
+      body.name.trim(),
       body.avatar_url ?? null,
       now,
       now,
@@ -357,6 +426,21 @@ app.patch("/:id", async (c) => {
     .bind(...values)
     .run();
 
+  // Mirror display fields to the team-user row so admin/profile views
+  // stay in sync. No-op for deployments that haven't run the migration.
+  if (body.name !== undefined || body.avatar_url !== undefined) {
+    await c.env.DB.prepare(
+      "UPDATE users SET display_name = ?, avatar_url = ?, updated_at = ? WHERE id = ? AND kind = 'team'",
+    )
+      .bind(
+        body.name?.trim() ?? team.name,
+        body.avatar_url !== undefined ? body.avatar_url : team.avatar_url,
+        Math.floor(Date.now() / 1000),
+        id,
+      )
+      .run();
+  }
+
   const updated = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)
     .first<TeamRow>();
@@ -373,14 +457,7 @@ app.delete("/:id", async (c) => {
   if (!hasRole(member.role, "owner"))
     return c.json({ error: "Only the team owner can delete the team" }, 403);
 
-  // Disown team apps (hand back to creator)
-  await c.env.DB.prepare(
-    "UPDATE oauth_apps SET team_id = NULL WHERE team_id = ?",
-  )
-    .bind(id)
-    .run();
-
-  await c.env.DB.prepare("DELETE FROM teams WHERE id = ?").bind(id).run();
+  await dissolveTeam(c.env.DB, id, user.id);
 
   return c.json({ message: "Team deleted" });
 });
@@ -403,7 +480,7 @@ app.post("/:id/members", async (c) => {
   if (body.role === "co-owner" && member.role === "owner") role = "co-owner";
 
   const target = await c.env.DB.prepare(
-    "SELECT id FROM users WHERE username = ?",
+    "SELECT id FROM users WHERE username = ? AND kind = 'user'",
   )
     .bind(body.username)
     .first<{ id: string }>();
@@ -513,12 +590,7 @@ app.delete("/:id/members/:userId", async (c) => {
         400,
       );
     // Last member — delete the team
-    await c.env.DB.prepare(
-      "UPDATE oauth_apps SET team_id = NULL WHERE team_id = ?",
-    )
-      .bind(id)
-      .run();
-    await c.env.DB.prepare("DELETE FROM teams WHERE id = ?").bind(id).run();
+    await dissolveTeam(c.env.DB, id, user.id);
     return c.json({ message: "Team deleted" });
   }
 
@@ -1150,6 +1222,16 @@ app.post("/:id/apps", async (c) => {
     ["openid", "profile", "email", "apps:read", "offline_access"].includes(s),
   );
 
+  // owner_id points at the team-user row (id == teams.id) when teams have
+  // been migrated to the unified user model. Falls back to the creator if
+  // the migration hasn't run yet so the FK stays valid.
+  const teamUser = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE id = ? AND kind = 'team'",
+  )
+    .bind(id)
+    .first<{ id: string }>();
+  const appOwnerId = teamUser?.id ?? user.id;
+
   const appId = randomId();
   const clientId = `prism_${randomBase64url(16)}`;
   const clientSecret = randomBase64url(32);
@@ -1163,7 +1245,7 @@ app.post("/:id/apps", async (c) => {
   )
     .bind(
       appId,
-      user.id,
+      appOwnerId,
       id,
       body.name,
       body.description ?? "",
@@ -1206,20 +1288,42 @@ app.post("/:id/apps/transfer", async (c) => {
     .first<OAuthAppRow>();
 
   if (!appRow) return c.json({ error: "App not found" }, 404);
+  if (appRow.team_id)
+    return c.json({ error: "App is already owned by a team" }, 409);
   if (appRow.owner_id !== user.id)
     return c.json({ error: "You can only transfer apps you created" }, 403);
 
-  const now = Math.floor(Date.now() / 1000);
-  await c.env.DB.prepare(
-    "UPDATE oauth_apps SET team_id = ?, updated_at = ? WHERE id = ?",
+  // Re-point owner_id to the team-user row (id == teams.id, kind='team')
+  // so the app appears owned by the team everywhere owner_id is joined to
+  // users (admin panel, profile pages, OAuth APIs).
+  // If the deployment hasn't run the teams-as-users migration yet the
+  // team-user row may not exist; fall back to the legacy behaviour
+  // (leave owner_id alone, set team_id only) so we don't break the FK.
+  const teamUser = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE id = ? AND kind = 'team'",
   )
-    .bind(id, now, body.app_id)
-    .run();
+    .bind(id)
+    .first<{ id: string }>();
+
+  const now = Math.floor(Date.now() / 1000);
+  if (teamUser) {
+    await c.env.DB.prepare(
+      "UPDATE oauth_apps SET team_id = ?, owner_id = ?, updated_at = ? WHERE id = ?",
+    )
+      .bind(id, id, now, body.app_id)
+      .run();
+  } else {
+    await c.env.DB.prepare(
+      "UPDATE oauth_apps SET team_id = ?, updated_at = ? WHERE id = ?",
+    )
+      .bind(id, now, body.app_id)
+      .run();
+  }
 
   return c.json({ message: "App transferred to team" });
 });
 
-// Remove app from team (back to personal)
+// Remove app from team (back to personal — assigned to the requester)
 app.delete("/:id/apps/:appId/transfer", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
@@ -1239,9 +1343,9 @@ app.delete("/:id/apps/:appId/transfer", async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(
-    "UPDATE oauth_apps SET team_id = NULL, updated_at = ? WHERE id = ?",
+    "UPDATE oauth_apps SET team_id = NULL, owner_id = ?, updated_at = ? WHERE id = ?",
   )
-    .bind(now, appId)
+    .bind(user.id, now, appId)
     .run();
 
   return c.json({ message: "App moved back to personal" });

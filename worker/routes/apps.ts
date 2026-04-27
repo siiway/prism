@@ -629,14 +629,20 @@ type AppWebhookRow = {
   updated_at: number;
 };
 
-/** Verify Basic auth for app client credentials. Returns the app row or null. */
+/** Verify Basic auth for app client credentials. Returns the app row or null.
+ *
+ *  Two security properties this enforces beyond a naive string compare:
+ *   1. Decrypts the at-rest stored secret via timingSafeSecretEqual, so apps
+ *      keep authenticating after the secrets-store migration encrypts the
+ *      column.
+ *   2. Constant-time comparison to defeat timing side-channels on the secret.
+ */
 async function verifyClientAuth(
-  db: D1Database,
+  env: Env,
   authHeader: string | undefined,
 ): Promise<{
   id: string;
   client_id: string;
-  client_secret: string;
   is_active: number;
 } | null> {
   if (!authHeader?.startsWith("Basic ")) return null;
@@ -650,10 +656,10 @@ async function verifyClientAuth(
   if (sep < 1) return null;
   const clientId = decoded.slice(0, sep);
   const clientSecret = decoded.slice(sep + 1);
-  const row = await db
-    .prepare(
-      "SELECT id, client_id, client_secret, is_active FROM oauth_apps WHERE client_id = ?",
-    )
+  if (!clientSecret) return null;
+  const row = await env.DB.prepare(
+    "SELECT id, client_id, client_secret, is_active FROM oauth_apps WHERE client_id = ?",
+  )
     .bind(clientId)
     .first<{
       id: string;
@@ -661,9 +667,10 @@ async function verifyClientAuth(
       client_secret: string;
       is_active: number;
     }>();
-  if (!row || row.is_active !== 1 || row.client_secret !== clientSecret)
+  if (!row || row.is_active !== 1) return null;
+  if (!(await timingSafeSecretEqual(env, row.client_secret, clientSecret)))
     return null;
-  return row;
+  return { id: row.id, client_id: row.client_id, is_active: row.is_active };
 }
 
 // GET /:id/webhooks — list app webhooks (app owner / team admin / site admin)
@@ -908,10 +915,7 @@ app.get("/:id/webhooks/:wid/deliveries", async (c) => {
 // GET /:id/events/sse — Server-Sent Events stream for app events
 // Auth: HTTP Basic  (client_id:client_secret)
 app.get("/:id/events/sse", async (c) => {
-  const appRow = await verifyClientAuth(
-    c.env.DB,
-    c.req.header("Authorization"),
-  );
+  const appRow = await verifyClientAuth(c.env, c.req.header("Authorization"));
   if (!appRow) return c.json({ error: "Unauthorized" }, 401);
 
   const appId = c.req.param("id");
@@ -1007,7 +1011,7 @@ app.get("/:id/events/ws", async (c) => {
     }
   }
 
-  const appRow = await verifyClientAuth(c.env.DB, authHeader);
+  const appRow = await verifyClientAuth(c.env, authHeader);
   if (!appRow) return c.json({ error: "Unauthorized" }, 401);
 
   const appId = c.req.param("id");

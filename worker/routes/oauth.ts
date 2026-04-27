@@ -13,6 +13,7 @@ import { requireAuth, optionalAuth } from "../middleware/auth";
 import {
   computeIsVerified,
   buildVerifiedDomainsMap,
+  buildVerifiedTeamDomainsMap,
   computeVerified,
 } from "../lib/domainVerify";
 import { hmacSign } from "../lib/webhooks";
@@ -349,7 +350,7 @@ app.get("/consents", requireAuth, async (c) => {
     c.env.DB.prepare(
       `SELECT oc.client_id, oc.scopes, oc.granted_at,
               oa.name, oa.description, oa.icon_url, oa.website_url,
-              oa.owner_id, oa.redirect_uris
+              oa.owner_id, oa.team_id, oa.redirect_uris
        FROM oauth_consents oc
        JOIN oauth_apps oa ON oa.client_id = oc.client_id
        WHERE oc.user_id = ?
@@ -365,6 +366,7 @@ app.get("/consents", requireAuth, async (c) => {
         icon_url: string | null;
         website_url: string | null;
         owner_id: string;
+        team_id: string | null;
         redirect_uris: string;
       }>(),
     c.env.DB.prepare(
@@ -384,8 +386,20 @@ app.get("/consents", requireAuth, async (c) => {
       }>(),
   ]);
 
+  // Personal domains are keyed by owner_id; team domains by team_id. For
+  // team-owned apps we need both — owner_id points at the synthetic
+  // team-user which never owns personal domains, so falling back to that
+  // alone would mark every team app as unverified.
   const ownerIds = [...new Set(consentRows.results.map((r) => r.owner_id))];
-  const domainsMap = await buildVerifiedDomainsMap(c.env.DB, ownerIds);
+  const teamIds = [
+    ...new Set(
+      consentRows.results.map((r) => r.team_id).filter((v): v is string => !!v),
+    ),
+  ];
+  const [domainsMap, teamDomainsMap] = await Promise.all([
+    buildVerifiedDomainsMap(c.env.DB, ownerIds),
+    buildVerifiedTeamDomainsMap(c.env.DB, teamIds),
+  ]);
 
   // Group tokens by client_id
   const tokensByApp = new Map<string, typeof tokenRows.results>();
@@ -407,7 +421,12 @@ app.get("/consents", requireAuth, async (c) => {
         unproxied_icon_url: r.icon_url,
         website_url: r.website_url,
         is_verified: computeVerified(
-          domainsMap.get(r.owner_id) ?? new Set(),
+          new Set([
+            ...(domainsMap.get(r.owner_id) ?? []),
+            ...(r.team_id
+              ? (teamDomainsMap.get(r.team_id) ?? new Set<string>())
+              : []),
+          ]),
           r.website_url,
           r.redirect_uris,
         ),
@@ -1782,7 +1801,9 @@ app.post("/token", async (c) => {
       .bind(code)
       .run();
 
-    const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
+    const user = await c.env.DB.prepare(
+      "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+    )
       .bind(codeRow.user_id)
       .first<UserRow>();
     if (!user || !user.is_active)
@@ -1879,7 +1900,9 @@ app.post("/token", async (c) => {
       );
     }
 
-    const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
+    const user = await c.env.DB.prepare(
+      "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+    )
       .bind(tokenRow.user_id)
       .first<UserRow>();
     if (!user || !user.is_active)
@@ -1945,7 +1968,9 @@ app.get("/userinfo", async (c) => {
   if (!tokenRow || tokenRow.expires_at < now)
     return c.json({ error: "invalid_token" }, 401);
 
-  const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
+  const user = await c.env.DB.prepare(
+    "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+  )
     .bind(tokenRow.user_id)
     .first<UserRow>();
   if (!user) return c.json({ error: "invalid_token" }, 401);
@@ -2032,7 +2057,15 @@ app.post("/revoke", async (c) => {
 
 // ─── Resource endpoints (OAuth-protected) ────────────────────────────────────
 
-/** Validate Bearer token (OAuth access token or PAT) and check for a required scope. */
+/** Validate Bearer token (OAuth access token or PAT) and check for a required scope.
+ *
+ *  After resolving the bearer's userId we verify the user row still exists,
+ *  is_active=1, and kind='user'. This rejects tokens that outlived their
+ *  user (deactivated/deleted) and refuses to act on behalf of any synthetic
+ *  team-user row. Defense-in-depth — no token issuance flow creates tokens
+ *  for kind='team' rows, but enforcing it here means a single misbehaving
+ *  insert can't bypass the team-user invariant.
+ */
 async function resolveBearerToken(
   c: { req: { header(name: string): string | undefined }; env: Env },
   requiredScope: string,
@@ -2041,6 +2074,9 @@ async function resolveBearerToken(
   if (!auth?.startsWith("Bearer ")) return null;
   const raw = auth.slice(7);
   const now = Math.floor(Date.now() / 1000);
+
+  let resolvedUserId: string;
+  let resolvedScopes: string[];
 
   // Personal Access Token (prism_pat_ prefix)
   if (raw.startsWith("prism_pat_")) {
@@ -2060,11 +2096,10 @@ async function resolveBearerToken(
       .bind(now, raw)
       .run()
       .catch(() => {});
-    return { userId: pat.user_id, scopes };
-  }
-
-  // JWT access token (three dot-separated segments)
-  if (raw.split(".").length === 3) {
+    resolvedUserId = pat.user_id;
+    resolvedScopes = scopes;
+  } else if (raw.split(".").length === 3) {
+    // JWT access token
     let payload;
     try {
       const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
@@ -2081,19 +2116,33 @@ async function resolveBearerToken(
     if (!tokenRow || tokenRow.expires_at < now) return null;
     const scopes = JSON.parse(tokenRow.scopes) as string[];
     if (!scopes.includes(requiredScope)) return null;
-    return { userId: tokenRow.user_id, scopes };
+    resolvedUserId = tokenRow.user_id;
+    resolvedScopes = scopes;
+  } else {
+    // Legacy opaque access token (kept for backward compatibility)
+    const tokenRow = await c.env.DB.prepare(
+      "SELECT user_id, scopes, expires_at FROM oauth_tokens WHERE access_token = ?",
+    )
+      .bind(raw)
+      .first<{ user_id: string; scopes: string; expires_at: number }>();
+    if (!tokenRow || tokenRow.expires_at < now) return null;
+    const scopes = JSON.parse(tokenRow.scopes) as string[];
+    if (!scopes.includes(requiredScope)) return null;
+    resolvedUserId = tokenRow.user_id;
+    resolvedScopes = scopes;
   }
 
-  // Legacy opaque access token (kept for backward compatibility)
-  const tokenRow = await c.env.DB.prepare(
-    "SELECT user_id, scopes, expires_at FROM oauth_tokens WHERE access_token = ?",
+  // Reject tokens whose user has been deactivated/deleted, and any
+  // synthetic team-user (kind='team') that should never act on behalf
+  // of itself via a bearer credential.
+  const userRow = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE id = ? AND is_active = 1 AND kind = 'user'",
   )
-    .bind(raw)
-    .first<{ user_id: string; scopes: string; expires_at: number }>();
-  if (!tokenRow || tokenRow.expires_at < now) return null;
-  const scopes = JSON.parse(tokenRow.scopes) as string[];
-  if (!scopes.includes(requiredScope)) return null;
-  return { userId: tokenRow.user_id, scopes };
+    .bind(resolvedUserId)
+    .first<{ id: string }>();
+  if (!userRow) return null;
+
+  return { userId: resolvedUserId, scopes: resolvedScopes };
 }
 
 // GET /api/oauth/me/apps — list the token owner's OAuth apps (requires apps:read)
@@ -2103,7 +2152,7 @@ app.get("/me/apps", async (c) => {
 
   const { results } = await c.env.DB.prepare(
     `SELECT id, name, client_id, description, icon_url, website_url, is_public, enabled, created_at
-     FROM oauth_apps WHERE owner_id = ? ORDER BY created_at DESC`,
+     FROM oauth_apps WHERE owner_id = ? AND team_id IS NULL ORDER BY created_at DESC`,
   )
     .bind(resolved.userId)
     .all<{
@@ -2765,21 +2814,99 @@ app.post("/me/apps", async (c) => {
   );
 });
 
+/**
+ * Resolve whether the calling token may manage an app via /me/apps endpoints.
+ *
+ * - Personal app (team_id IS NULL): caller must be the owner.
+ * - Team app (team_id IS NOT NULL): caller must be a team owner or co-owner
+ *   (admins can read but not grant — matches the consent-grant rule).
+ */
+async function canManageAppViaToken(
+  db: D1Database,
+  appId: string,
+  callerUserId: string,
+): Promise<{
+  allowed: boolean;
+  app: { id: string; owner_id: string; team_id: string | null } | null;
+}> {
+  const app = await db
+    .prepare("SELECT id, owner_id, team_id FROM oauth_apps WHERE id = ?")
+    .bind(appId)
+    .first<{ id: string; owner_id: string; team_id: string | null }>();
+  if (!app) return { allowed: false, app: null };
+
+  if (!app.team_id) {
+    return { allowed: app.owner_id === callerUserId, app };
+  }
+
+  const member = await db
+    .prepare("SELECT role FROM team_members WHERE team_id = ? AND user_id = ?")
+    .bind(app.team_id, callerUserId)
+    .first<{ role: string }>();
+  const role = member?.role ?? "";
+  return { allowed: role === "owner" || role === "co-owner", app };
+}
+
+// GET /api/oauth/me/team-apps — list OAuth apps owned by teams the token
+// owner is a member of. Read-only listing — only owners/co-owners can grant
+// or mutate via the PATCH/DELETE endpoints below. Requires apps:read.
+app.get("/me/team-apps", async (c) => {
+  const resolved = await resolveBearerToken(c, "apps:read");
+  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    `SELECT a.id, a.name, a.client_id, a.description, a.icon_url,
+            a.website_url, a.is_public, a.is_active, a.created_at, a.updated_at,
+            a.team_id, t.name AS team_name, t.avatar_url AS team_avatar_url,
+            tm.role AS my_role
+     FROM oauth_apps a
+     JOIN teams t ON t.id = a.team_id
+     JOIN team_members tm ON tm.team_id = a.team_id AND tm.user_id = ?
+     WHERE a.team_id IS NOT NULL
+     ORDER BY a.created_at DESC`,
+  )
+    .bind(resolved.userId)
+    .all<{
+      id: string;
+      name: string;
+      client_id: string;
+      description: string | null;
+      icon_url: string | null;
+      website_url: string | null;
+      is_public: number;
+      is_active: number;
+      created_at: number;
+      updated_at: number;
+      team_id: string;
+      team_name: string;
+      team_avatar_url: string | null;
+      my_role: string;
+    }>();
+
+  return c.json({
+    apps: results.map((a) => ({
+      ...a,
+      icon_url: proxyImageUrl(c.env.APP_URL, a.icon_url),
+      unproxied_icon_url: a.icon_url,
+      team_avatar_url: proxyImageUrl(c.env.APP_URL, a.team_avatar_url),
+      unproxied_team_avatar_url: a.team_avatar_url,
+      is_public: a.is_public === 1,
+      is_active: a.is_active === 1,
+      can_grant: a.my_role === "owner" || a.my_role === "co-owner",
+    })),
+  });
+});
+
 // PATCH /api/oauth/me/apps/:id — update own OAuth app (requires apps:write)
 app.patch("/me/apps/:id", async (c) => {
   const resolved = await resolveBearerToken(c, "apps:write");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const appId = c.req.param("id");
-  const appRow = await c.env.DB.prepare(
-    "SELECT id, owner_id FROM oauth_apps WHERE id = ?",
-  )
-    .bind(appId)
-    .first<{ id: string; owner_id: string }>();
+  const access = await canManageAppViaToken(c.env.DB, appId, resolved.userId);
 
-  if (!appRow) return c.json({ error: "App not found" }, 404);
-  if (appRow.owner_id !== resolved.userId)
-    return c.json({ error: "Forbidden" }, 403);
+  if (!access.app) return c.json({ error: "App not found" }, 404);
+  if (!access.allowed) return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{
     name?: string;
@@ -2854,15 +2981,10 @@ app.delete("/me/apps/:id", async (c) => {
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const appId = c.req.param("id");
-  const appRow = await c.env.DB.prepare(
-    "SELECT id, owner_id FROM oauth_apps WHERE id = ?",
-  )
-    .bind(appId)
-    .first<{ id: string; owner_id: string }>();
+  const access = await canManageAppViaToken(c.env.DB, appId, resolved.userId);
 
-  if (!appRow) return c.json({ error: "App not found" }, 404);
-  if (appRow.owner_id !== resolved.userId)
-    return c.json({ error: "Forbidden" }, 403);
+  if (!access.app) return c.json({ error: "App not found" }, 404);
+  if (!access.allowed) return c.json({ error: "Forbidden" }, 403);
 
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -2949,7 +3071,7 @@ app.post("/me/teams/:id/members", async (c) => {
   if (!body.username) return c.json({ error: "username is required" }, 400);
 
   const targetUser = await c.env.DB.prepare(
-    "SELECT id FROM users WHERE username = ? AND is_active = 1",
+    "SELECT id FROM users WHERE username = ? AND is_active = 1 AND kind = 'user'",
   )
     .bind(body.username.toLowerCase().trim())
     .first<{ id: string }>();

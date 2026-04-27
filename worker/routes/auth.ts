@@ -340,8 +340,14 @@ app.post("/login", async (c) => {
   const identifier = body.identifier.toLowerCase().trim();
   let user: UserRow | null;
   if (isEmail) {
-    // Check primary email first, then alternate emails
-    user = await c.env.DB.prepare("SELECT * FROM users WHERE email = ?")
+    // Check primary email first, then alternate emails. kind='user' filter
+    // is defensive: synthetic team-user rows have a teams.invalid email so
+    // they would fail the password_hash check anyway, but excluding them
+    // here prevents any future credential-bearing flow from accidentally
+    // resolving the team-user.
+    user = await c.env.DB.prepare(
+      "SELECT * FROM users WHERE email = ? AND kind = 'user'",
+    )
       .bind(identifier)
       .first<UserRow>();
     if (!user) {
@@ -352,7 +358,7 @@ app.post("/login", async (c) => {
         .first<{ user_id: string }>();
       if (alt) {
         const altUser = await c.env.DB.prepare(
-          "SELECT * FROM users WHERE id = ?",
+          "SELECT * FROM users WHERE id = ? AND kind = 'user'",
         )
           .bind(alt.user_id)
           .first<UserRow>();
@@ -367,7 +373,9 @@ app.post("/login", async (c) => {
       }
     }
   } else {
-    user = await c.env.DB.prepare("SELECT * FROM users WHERE username = ?")
+    user = await c.env.DB.prepare(
+      "SELECT * FROM users WHERE username = ? AND kind = 'user'",
+    )
       .bind(identifier)
       .first<UserRow>();
   }
@@ -1036,7 +1044,7 @@ app.post("/passkey/auth/begin", async (c) => {
   const username = "username" in body ? body.username : undefined;
   if (username) {
     const user = await c.env.DB.prepare(
-      "SELECT * FROM users WHERE username = ? OR email = ?",
+      "SELECT * FROM users WHERE (username = ? OR email = ?) AND kind = 'user'",
     )
       .bind(username, username)
       .first<{ id: string }>();
@@ -1337,10 +1345,12 @@ app.post("/gpg-challenge", async (c) => {
   const identifier = body.identifier.toLowerCase().trim();
   const isEmail = identifier.includes("@");
   const user = await (isEmail
-    ? c.env.DB.prepare("SELECT id FROM users WHERE email = ?")
+    ? c.env.DB.prepare("SELECT id FROM users WHERE email = ? AND kind = 'user'")
         .bind(identifier)
         .first<{ id: string }>()
-    : c.env.DB.prepare("SELECT id FROM users WHERE username = ?")
+    : c.env.DB.prepare(
+        "SELECT id FROM users WHERE username = ? AND kind = 'user'",
+      )
         .bind(identifier)
         .first<{ id: string }>());
 
@@ -1391,10 +1401,12 @@ app.post("/gpg-login", async (c) => {
   const isEmail = identifier.includes("@");
 
   const user = await (isEmail
-    ? c.env.DB.prepare("SELECT * FROM users WHERE email = ?")
+    ? c.env.DB.prepare("SELECT * FROM users WHERE email = ? AND kind = 'user'")
         .bind(identifier)
         .first<UserRow>()
-    : c.env.DB.prepare("SELECT * FROM users WHERE username = ?")
+    : c.env.DB.prepare(
+        "SELECT * FROM users WHERE username = ? AND kind = 'user'",
+      )
         .bind(identifier)
         .first<UserRow>());
 

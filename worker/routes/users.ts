@@ -24,7 +24,7 @@ app.get("/:username", optionalAuth, async (c) => {
   }
 
   const row = await c.env.DB.prepare(
-    "SELECT * FROM users WHERE username = ? AND is_active = 1",
+    "SELECT * FROM users WHERE username = ? AND is_active = 1 AND kind = 'user'",
   )
     .bind(username)
     .first<UserRow>();
@@ -120,7 +120,7 @@ app.get("/:username", optionalAuth, async (c) => {
         ? c.env.DB.prepare(
             `SELECT id, client_id, name, description, icon_url, website_url, created_at
            FROM oauth_apps
-           WHERE owner_id = ? AND is_active = 1
+           WHERE owner_id = ? AND team_id IS NULL AND is_active = 1
            ORDER BY created_at ASC`,
           )
             .bind(row.id)

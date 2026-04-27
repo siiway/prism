@@ -820,6 +820,20 @@ export const api = {
       {},
       getToken(),
     ),
+  adminTeamsAsUsersStatus: () =>
+    request<{
+      teams_total: number;
+      teams_mirrored: number;
+      team_apps_total: number;
+      team_apps_aligned: number;
+    }>("GET", "/admin/teams-as-users-status", undefined, getToken()),
+  adminMigrateTeamsAsUsers: () =>
+    request<{ teams_mirrored: number; apps_realigned: number }>(
+      "POST",
+      "/admin/migrate-teams-as-users",
+      {},
+      getToken(),
+    ),
 
   // ─── Webhooks (admin) ─────────────────────────────────────────────────────
   listWebhooks: () =>
@@ -1663,7 +1677,9 @@ export interface OAuthApp {
   team_id: string | null;
   created_at: number;
   updated_at: number;
-  owner_username?: string;
+  owner_username?: string | null;
+  team_name?: string | null;
+  team_avatar_url?: string | null;
 }
 
 export interface CreateAppBody {

@@ -107,11 +107,18 @@ export function AdminSettings() {
   const [resetting, setResetting] = useState(false);
   const [migratingCodes, setMigratingCodes] = useState(false);
   const [migratingSecrets, setMigratingSecrets] = useState(false);
+  const [migratingTeamsAsUsers, setMigratingTeamsAsUsers] = useState(false);
 
   const { data: secretsStatus, refetch: refetchSecretsStatus } = useQuery({
     queryKey: ["admin-secrets-status"],
     queryFn: api.adminSecretsStatus,
   });
+
+  const { data: teamsAsUsersStatus, refetch: refetchTeamsAsUsersStatus } =
+    useQuery({
+      queryKey: ["admin-teams-as-users-status"],
+      queryFn: api.adminTeamsAsUsersStatus,
+    });
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -194,6 +201,31 @@ export function AdminSettings() {
       );
     } finally {
       setMigratingCodes(false);
+    }
+  };
+
+  const handleMigrateTeamsAsUsers = async () => {
+    setMigratingTeamsAsUsers(true);
+    try {
+      const res = await api.adminMigrateTeamsAsUsers();
+      showMsg(
+        "success",
+        t("admin.migrateTeamsAsUsersSuccess", {
+          teams: res.teams_mirrored,
+          apps: res.apps_realigned,
+        }),
+      );
+      await refetchTeamsAsUsersStatus();
+      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("admin.migrateTeamsAsUsersFailed"),
+      );
+    } finally {
+      setMigratingTeamsAsUsers(false);
     }
   };
 
@@ -1107,6 +1139,47 @@ export function AdminSettings() {
               icon={migratingCodes ? <Spinner size="tiny" /> : undefined}
             >
               {t("admin.migrateRecoveryCodes")}
+            </Button>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <Text weight="semibold">{t("admin.migrateTeamsAsUsersTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.migrateTeamsAsUsersDesc")}
+            </Text>
+            {teamsAsUsersStatus && (
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                {t("admin.migrateTeamsAsUsersStatus", {
+                  mirrored: teamsAsUsersStatus.teams_mirrored,
+                  teamsTotal: teamsAsUsersStatus.teams_total,
+                  aligned: teamsAsUsersStatus.team_apps_aligned,
+                  appsTotal: teamsAsUsersStatus.team_apps_total,
+                })}
+              </Text>
+            )}
+            <Button
+              appearance="outline"
+              onClick={handleMigrateTeamsAsUsers}
+              disabled={
+                migratingTeamsAsUsers ||
+                (!!teamsAsUsersStatus &&
+                  teamsAsUsersStatus.teams_mirrored ===
+                    teamsAsUsersStatus.teams_total &&
+                  teamsAsUsersStatus.team_apps_aligned ===
+                    teamsAsUsersStatus.team_apps_total)
+              }
+              icon={migratingTeamsAsUsers ? <Spinner size="tiny" /> : undefined}
+            >
+              {t("admin.migrateTeamsAsUsersButton")}
             </Button>
           </div>
           <div>

@@ -8,6 +8,11 @@ export interface UserRow {
   display_name: string;
   avatar_url: string | null;
   role: "admin" | "user";
+  /** 'user' (default) for real humans. 'team' for synthetic rows whose id
+   *  matches teams.id — these unify oauth_apps.owner_id so team-owned apps
+   *  resolve via the same join as personal apps. Team-kind rows have no
+   *  password_hash, no sessions, no social connections, and cannot log in. */
+  kind: "user" | "team";
   email_verified: number;
   email_verify_token: string | null;
   is_active: number;
