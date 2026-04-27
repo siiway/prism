@@ -1,6 +1,7 @@
 // Social platform connections page
 
 import {
+  Avatar,
   Badge,
   Button,
   Dialog,
@@ -21,6 +22,7 @@ import {
   AddRegular,
   ArrowClockwiseRegular,
   DeleteRegular,
+  GlobeRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -61,6 +63,14 @@ const PROVIDER_COLORS: Record<string, string> = {
   microsoft: "#0078d4",
   discord: "#5865f2",
   telegram: "#2AABEE",
+};
+
+const PROVIDER_ICON_URLS: Record<string, string> = {
+  github: "https://cdn.simpleicons.org/github",
+  google: "https://cdn.simpleicons.org/google",
+  microsoft: "https://cdn.simpleicons.org/microsoft",
+  discord: "https://cdn.simpleicons.org/discord",
+  telegram: "https://cdn.simpleicons.org/telegram",
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -106,6 +116,35 @@ function getDisplayName(profile: unknown): string | null {
     (p.email as string) ||
     null
   );
+}
+
+function getProfileAvatarUrl(conn: {
+  provider: string;
+  provider_user_id: string;
+  profile: unknown;
+}): string | null {
+  if (!conn.profile || typeof conn.profile !== "object") return null;
+  const profile = conn.profile as Record<string, unknown>;
+
+  const directAvatar = getProfileTextField(profile, [
+    "avatar_url",
+    "photo_url",
+    "picture",
+    "image",
+    "profile_image_url",
+  ]);
+  if (directAvatar) return directAvatar;
+
+  if (conn.provider === "discord") {
+    const discordId =
+      getProfileTextField(profile, ["id"]) ?? conn.provider_user_id;
+    const avatarHash = getProfileTextField(profile, ["avatar"]);
+    if (!discordId || !avatarHash) return null;
+    const ext = avatarHash.startsWith("a_") ? "gif" : "png";
+    return `https://cdn.discordapp.com/avatars/${discordId}/${avatarHash}.${ext}?size=128`;
+  }
+
+  return null;
 }
 
 function getProfileTextField(profile: Record<string, unknown>, keys: string[]) {
@@ -289,6 +328,7 @@ export function Connections() {
         {providers.map((p) => {
           const conns = getConnections(p.slug);
           const color = PROVIDER_COLORS[p.provider] ?? "#666";
+          const providerIconUrl = p.icon_url ?? PROVIDER_ICON_URLS[p.provider] ?? null;
 
           return (
             <div key={p.slug} className={styles.providerCard}>
@@ -305,11 +345,17 @@ export function Connections() {
                     flexShrink: 0,
                   }}
                 >
-                  <Text
-                    style={{ color: "white", fontWeight: 700, fontSize: 16 }}
-                  >
-                    {p.name[0]}
-                  </Text>
+                  {providerIconUrl ? (
+                    <img
+                      src={providerIconUrl}
+                      alt={p.name}
+                      width={20}
+                      height={20}
+                      style={{ objectFit: "contain" }}
+                    />
+                  ) : (
+                    <GlobeRegular style={{ color: "white", fontSize: 20 }} />
+                  )}
                 </div>
                 <div style={{ flex: 1 }}>
                   <Text weight="semibold" block>
@@ -330,64 +376,72 @@ export function Connections() {
               {conns.map((conn) => {
                 const details = getConnectionDetails(conn);
                 const displayName = details.display;
+                const profileAvatar = getProfileAvatarUrl(conn);
                 return (
                   <div key={conn.id} className={styles.connRow}>
-                    <div style={{ minWidth: 0 }}>
-                      <Text
-                        size={200}
-                        weight="semibold"
-                        block
-                        style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {displayName ?? conn.provider_user_id}
-                      </Text>
-                      {details.nickname ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Avatar
+                        size={32}
+                        name={displayName ?? conn.provider_user_id}
+                        image={profileAvatar ? { src: profileAvatar } : undefined}
+                      />
+                      <div style={{ minWidth: 0 }}>
+                        <Text
+                          size={200}
+                          weight="semibold"
+                          block
+                          style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {displayName ?? conn.provider_user_id}
+                        </Text>
+                        {details.nickname ? (
+                          <Text
+                            size={100}
+                            block
+                            style={{ color: tokens.colorNeutralForeground3 }}
+                          >
+                            {t("connections.detailNickname", {
+                              value: details.nickname,
+                            })}
+                          </Text>
+                        ) : null}
+                        {details.username ? (
+                          <Text
+                            size={100}
+                            block
+                            style={{ color: tokens.colorNeutralForeground3 }}
+                          >
+                            {t("connections.detailUsername", {
+                              value: details.username,
+                            })}
+                          </Text>
+                        ) : null}
+                        {details.platformId ? (
+                          <Text
+                            size={100}
+                            block
+                            style={{ color: tokens.colorNeutralForeground3 }}
+                          >
+                            {t("connections.detailId", {
+                              value: details.platformId,
+                            })}
+                          </Text>
+                        ) : null}
                         <Text
                           size={100}
-                          block
                           style={{ color: tokens.colorNeutralForeground3 }}
                         >
-                          {t("connections.detailNickname", {
-                            value: details.nickname,
+                          {t("connections.connectedOn", {
+                            date: new Date(
+                              conn.connected_at * 1000,
+                            ).toLocaleDateString(),
                           })}
                         </Text>
-                      ) : null}
-                      {details.username ? (
-                        <Text
-                          size={100}
-                          block
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          {t("connections.detailUsername", {
-                            value: details.username,
-                          })}
-                        </Text>
-                      ) : null}
-                      {details.platformId ? (
-                        <Text
-                          size={100}
-                          block
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          {t("connections.detailId", {
-                            value: details.platformId,
-                          })}
-                        </Text>
-                      ) : null}
-                      <Text
-                        size={100}
-                        style={{ color: tokens.colorNeutralForeground3 }}
-                      >
-                        {t("connections.connectedOn", {
-                          date: new Date(
-                            conn.connected_at * 1000,
-                          ).toLocaleDateString(),
-                        })}
-                      </Text>
+                      </div>
                     </div>
 
                     <div style={{ display: "flex", gap: 4 }}>

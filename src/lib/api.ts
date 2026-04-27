@@ -1356,7 +1356,12 @@ export interface SitePublicConfig {
   default_team_profile_show_apps: boolean;
   default_team_profile_show_domains: boolean;
   default_team_profile_show_members: boolean;
-  enabled_providers: { slug: string; name: string; provider: string }[];
+  enabled_providers: {
+    slug: string;
+    name: string;
+    provider: string;
+    icon_url?: string | null;
+  }[];
 }
 
 export interface RegisterBody {
