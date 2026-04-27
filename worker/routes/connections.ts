@@ -20,6 +20,8 @@ interface PendingState {
   providerUserId: string;
   providerEmail: string | null;
   accessToken: string | null;
+  refreshToken: string | null;
+  tokenExpiresAt: number | null;
   profileData: Record<string, unknown>;
   users?: Array<{
     id: string;
@@ -400,6 +402,8 @@ app.post("/:provider/tg-verify", async (c) => {
         providerUserId,
         providerEmail: null,
         accessToken: null,
+        refreshToken: null,
+        tokenExpiresAt: null,
         profileData,
       } satisfies PendingState),
       { expirationTtl: 600 },
@@ -448,6 +452,8 @@ app.post("/:provider/tg-verify", async (c) => {
       providerUserId,
       providerEmail: null,
       accessToken: null,
+      refreshToken: null,
+      tokenExpiresAt: null,
       profileData,
       users: linkedUsers.map((u: UserRow) => ({
         id: u.id,
@@ -525,6 +531,10 @@ app.get("/:provider/callback", async (c) => {
   const accessToken = tokenData.access_token as string;
   if (!accessToken)
     return c.redirect(`${c.env.APP_URL}/connections?error=no_access_token`);
+  const refreshToken =
+    typeof tokenData.refresh_token === "string"
+      ? tokenData.refresh_token
+      : null;
 
   // Fetch user profile
   let profileData: Record<string, unknown>;
@@ -560,6 +570,16 @@ app.get("/:provider/callback", async (c) => {
     return c.redirect(`${c.env.APP_URL}/connections?error=no_user_id`);
 
   const now = Math.floor(Date.now() / 1000);
+  const expiresIn =
+    typeof tokenData.expires_in === "number"
+      ? tokenData.expires_in
+      : typeof tokenData.expires_in === "string"
+        ? Number(tokenData.expires_in)
+        : null;
+  const tokenExpiresAt =
+    expiresIn && Number.isFinite(expiresIn) && expiresIn > 0
+      ? now + Math.floor(expiresIn)
+      : null;
 
   // Connect mode: attach to existing account
   // social_connections.provider stores the slug so users can have e.g. github + github-work
@@ -574,7 +594,7 @@ app.get("/:provider/callback", async (c) => {
       return c.redirect(`${c.env.APP_URL}/connections?error=already_connected`);
 
     await c.env.DB.prepare(
-      "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         randomId(),
@@ -582,6 +602,8 @@ app.get("/:provider/callback", async (c) => {
         slug,
         providerUserId,
         accessToken,
+        refreshToken,
+        tokenExpiresAt,
         JSON.stringify(profileData),
         now,
       )
@@ -647,6 +669,8 @@ app.get("/:provider/callback", async (c) => {
         providerUserId,
         providerEmail,
         accessToken,
+        refreshToken,
+        tokenExpiresAt,
         profileData,
       } satisfies PendingState),
       { expirationTtl: 600 },
@@ -660,10 +684,12 @@ app.get("/:provider/callback", async (c) => {
     // Single account — log in directly and refresh the token
     const user = linkedUsers[0];
     await c.env.DB.prepare(
-      "UPDATE social_connections SET access_token = ?, profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
+      "UPDATE social_connections SET access_token = ?, refresh_token = ?, token_expires_at = ?, profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
     )
       .bind(
         accessToken,
+        refreshToken,
+        tokenExpiresAt,
         JSON.stringify(profileData),
         user.id,
         slug,
@@ -713,6 +739,8 @@ app.get("/:provider/callback", async (c) => {
       providerUserId,
       providerEmail,
       accessToken,
+      refreshToken,
+      tokenExpiresAt,
       profileData,
       users: linkedUsers.map((u: UserRow) => ({
         id: u.id,
@@ -808,10 +836,12 @@ app.post("/complete", async (c) => {
     if (!user) return c.json({ error: "User not found" }, 404);
 
     await c.env.DB.prepare(
-      "UPDATE social_connections SET access_token = ?, profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
+      "UPDATE social_connections SET access_token = ?, refresh_token = ?, token_expires_at = ?, profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
     )
       .bind(
         state.accessToken,
+        state.refreshToken,
+        state.tokenExpiresAt,
         JSON.stringify(state.profileData),
         user.id,
         state.provider,
@@ -899,7 +929,7 @@ app.post("/complete", async (c) => {
       .run();
 
     await c.env.DB.prepare(
-      "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO social_connections (id, user_id, provider, provider_user_id, access_token, refresh_token, token_expires_at, profile_data, connected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
         randomId(),
@@ -907,6 +937,8 @@ app.post("/complete", async (c) => {
         state.provider,
         state.providerUserId,
         state.accessToken,
+        state.refreshToken,
+        state.tokenExpiresAt,
         JSON.stringify(state.profileData),
         now,
       )
@@ -932,13 +964,19 @@ app.post("/:id/refresh", requireAuth, async (c) => {
   const id = c.req.param("id");
 
   const conn = await c.env.DB.prepare(
-    "SELECT id, provider, provider_user_id, access_token, connected_at FROM social_connections WHERE id = ? AND user_id = ?",
+    "SELECT id, provider, provider_user_id, access_token, refresh_token, token_expires_at, connected_at FROM social_connections WHERE id = ? AND user_id = ?",
   )
     .bind(id, user.id)
     .first<
       Pick<
         SocialConnectionRow,
-        "id" | "provider" | "provider_user_id" | "access_token" | "connected_at"
+        | "id"
+        | "provider"
+        | "provider_user_id"
+        | "access_token"
+        | "refresh_token"
+        | "token_expires_at"
+        | "connected_at"
       >
     >();
   if (!conn) return c.json({ error: "Connection not found" }, 404);
@@ -947,25 +985,101 @@ app.post("/:id/refresh", requireAuth, async (c) => {
   if (!source) return c.json({ error: "provider_not_configured" }, 400);
   if (source.provider === "telegram")
     return c.json({ error: "unsupported_refresh" }, 400);
-  if (!conn.access_token) return c.json({ error: "no_access_token" }, 400);
-
-  let profileData: Record<string, unknown>;
-  try {
+  const fetchProfile = async (accessToken: string) => {
     const userRes = await fetch(source.userUrl, {
       headers: {
-        Authorization: `Bearer ${conn.access_token}`,
+        Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
         "User-Agent": "Prism/1.0",
       },
     });
-    if (!userRes.ok) {
-      const body = await userRes.text();
+    return userRes;
+  };
+
+  const refreshAccessToken = async () => {
+    if (!conn.refresh_token) return null;
+    let tokenRes: Response;
+    try {
+      tokenRes = await fetch(source.tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          client_id: source.clientId,
+          client_secret: source.clientSecret,
+          grant_type: "refresh_token",
+          refresh_token: conn.refresh_token,
+        }),
+      });
+    } catch (err) {
+      console.error("[connections] refresh token request threw:", err);
+      return null;
+    }
+    if (!tokenRes.ok) {
+      const body = await tokenRes.text();
       console.error(
-        `[connections] refresh profile fetch ${userRes.status} for ${source.provider}: ${body}`,
+        `[connections] refresh token failed ${tokenRes.status} for ${source.provider}: ${body}`,
+      );
+      return null;
+    }
+    const tokenJson = (await tokenRes.json()) as Record<string, unknown>;
+    const nextAccessToken =
+      typeof tokenJson.access_token === "string" ? tokenJson.access_token : null;
+    if (!nextAccessToken) return null;
+    const nextRefreshToken =
+      typeof tokenJson.refresh_token === "string"
+        ? tokenJson.refresh_token
+        : conn.refresh_token;
+    const nextExpiresIn =
+      typeof tokenJson.expires_in === "number"
+        ? tokenJson.expires_in
+        : typeof tokenJson.expires_in === "string"
+          ? Number(tokenJson.expires_in)
+          : null;
+    const now = Math.floor(Date.now() / 1000);
+    const nextTokenExpiresAt =
+      nextExpiresIn && Number.isFinite(nextExpiresIn) && nextExpiresIn > 0
+        ? now + Math.floor(nextExpiresIn)
+        : null;
+    await c.env.DB.prepare(
+      "UPDATE social_connections SET access_token = ?, refresh_token = ?, token_expires_at = ? WHERE id = ? AND user_id = ?",
+    )
+      .bind(
+        nextAccessToken,
+        nextRefreshToken,
+        nextTokenExpiresAt,
+        conn.id,
+        user.id,
+      )
+      .run();
+    return nextAccessToken;
+  };
+
+  if (!conn.access_token) return c.json({ error: "no_access_token" }, 400);
+
+  let profileData: Record<string, unknown>;
+  try {
+    let profileRes = await fetchProfile(conn.access_token);
+    if (
+      !profileRes.ok &&
+      (profileRes.status === 401 || profileRes.status === 403)
+    ) {
+      const refreshedAccessToken = await refreshAccessToken();
+      if (!refreshedAccessToken) {
+        return c.json({ error: "reauthorization_required" }, 401);
+      }
+      profileRes = await fetchProfile(refreshedAccessToken);
+    }
+    if (!profileRes.ok) {
+      const body = await profileRes.text();
+      console.error(
+        `[connections] refresh profile fetch ${profileRes.status} for ${source.provider}: ${body}`,
       );
       return c.json({ error: "profile_fetch_failed" }, 502);
     }
-    profileData = (await userRes.json()) as Record<string, unknown>;
+    profileData = (await profileRes.json()) as Record<string, unknown>;
   } catch (err) {
     console.error("[connections] refresh profile fetch threw:", err);
     return c.json({ error: "profile_fetch_failed" }, 502);

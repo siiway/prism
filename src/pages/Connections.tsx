@@ -46,6 +46,15 @@ const useStyles = makeStyles({
     gap: "12px",
   },
   providerHeader: { display: "flex", alignItems: "center", gap: "12px" },
+  providerIconInner: {
+    width: "26px",
+    height: "26px",
+    borderRadius: "6px",
+    background: "rgba(255, 255, 255, 0.95)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   connRow: {
     display: "flex",
     alignItems: "center",
@@ -100,6 +109,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     "This provider does not support refreshing linked profile data.",
   account_mismatch:
     "Could not refresh this connection because the provider returned a different account.",
+  reauthorization_required:
+    "Refresh token expired or missing. Please reconnect this account.",
 };
 
 function getDisplayName(profile: unknown): string | null {
@@ -308,6 +319,7 @@ export function Connections() {
   };
 
   const providers = site?.enabled_providers ?? [];
+  const providerTypeBySlug = new Map(providers.map((p) => [p.slug, p.provider]));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -346,13 +358,15 @@ export function Connections() {
                   }}
                 >
                   {providerIconUrl ? (
-                    <img
-                      src={providerIconUrl}
-                      alt={p.name}
-                      width={20}
-                      height={20}
-                      style={{ objectFit: "contain" }}
-                    />
+                    <div className={styles.providerIconInner}>
+                      <img
+                        src={providerIconUrl}
+                        alt={p.name}
+                        width={18}
+                        height={18}
+                        style={{ objectFit: "contain" }}
+                      />
+                    </div>
                   ) : (
                     <GlobeRegular style={{ color: "white", fontSize: 20 }} />
                   )}
@@ -377,6 +391,7 @@ export function Connections() {
                 const details = getConnectionDetails(conn);
                 const displayName = details.display;
                 const profileAvatar = getProfileAvatarUrl(conn);
+                const canRefresh = providerTypeBySlug.get(conn.provider) !== "telegram";
                 return (
                   <div key={conn.id} className={styles.connRow}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -445,20 +460,22 @@ export function Connections() {
                     </div>
 
                     <div style={{ display: "flex", gap: 4 }}>
-                      <Button
-                        icon={
-                          refreshingConnectionId === conn.id ? (
-                            <Spinner size="tiny" />
-                          ) : (
-                            <ArrowClockwiseRegular />
-                          )
-                        }
-                        appearance="subtle"
-                        size="small"
-                        title={t("connections.refreshAction")}
-                        onClick={() => handleRefresh(conn.id, p.name)}
-                        disabled={refreshingConnectionId === conn.id}
-                      />
+                      {canRefresh ? (
+                        <Button
+                          icon={
+                            refreshingConnectionId === conn.id ? (
+                              <Spinner size="tiny" />
+                            ) : (
+                              <ArrowClockwiseRegular />
+                            )
+                          }
+                          appearance="subtle"
+                          size="small"
+                          title={t("connections.refreshAction")}
+                          onClick={() => handleRefresh(conn.id, p.name)}
+                          disabled={refreshingConnectionId === conn.id}
+                        />
+                      ) : null}
                       <Dialog>
                         <DialogTrigger disableButtonEnhancement>
                           <Button
