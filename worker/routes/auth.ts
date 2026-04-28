@@ -314,26 +314,34 @@ app.post("/login", async (c) => {
     pow_nonce?: number;
   }>();
 
-  const captchaOk = await verifyCaptchaToken(
-    c.env.DB,
-    body.captcha_token,
-    body.pow_challenge,
-    body.pow_nonce,
-    ip,
-    c.env,
-  );
-  if (!captchaOk.success) {
-    c.executionCtx.waitUntil(
-      logLoginError(
-        c.env.DB,
-        "captcha_failed",
-        body.identifier ?? null,
-        ip,
-        ua,
-        {},
-      ).catch(() => {}),
+  // Login is a two-step flow when 2FA is enrolled: the first call (no
+  // totp_code) validates password+captcha and returns totp_required; the
+  // second call replays password and adds totp_code. Captcha tokens are
+  // single-use (provider replay protection / PoW nonce) so we only verify
+  // on the password step. The TOTP follow-up still re-checks the password,
+  // and /login itself is IP rate-limited, so we don't lose anti-bot value.
+  if (!body.totp_code) {
+    const captchaOk = await verifyCaptchaToken(
+      c.env.DB,
+      body.captcha_token,
+      body.pow_challenge,
+      body.pow_nonce,
+      ip,
+      c.env,
     );
-    return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
+    if (!captchaOk.success) {
+      c.executionCtx.waitUntil(
+        logLoginError(
+          c.env.DB,
+          "captcha_failed",
+          body.identifier ?? null,
+          ip,
+          ua,
+          {},
+        ).catch(() => {}),
+      );
+      return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
+    }
   }
 
   const isEmail = body.identifier.includes("@");
