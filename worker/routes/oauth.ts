@@ -7,6 +7,7 @@ import { getMLDSAKey } from "../lib/mldsa";
 import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
+import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
 import { verifyCaptchaToken } from "../middleware/captcha";
 import { requireAuth, optionalAuth } from "../middleware/auth";
@@ -1008,43 +1009,7 @@ const MAX_2FA_ACTION_LEN = 200;
 const MAX_2FA_NONCE_LEN = 256;
 const MAX_2FA_STATE_LEN = 512;
 
-// Sudo mode: after a successful 2FA, the user can opt into a short grace
-// window during which subsequent challenges from the same app on the same
-// session bypass the TOTP/passkey check. The grant is bound to the tuple
-// (user_id, session_id, client_id) so it doesn't leak across apps, sessions,
-// or users.
-function sudoKvKey(
-  userId: string,
-  sessionId: string,
-  clientId: string,
-): string {
-  return `2fa-sudo:${userId}:${sessionId}:${clientId}`;
-}
-
-async function isSudoActive(
-  kv: KVNamespace,
-  userId: string,
-  sessionId: string,
-  clientId: string,
-): Promise<boolean> {
-  const v = await kv.get(sudoKvKey(userId, sessionId, clientId));
-  return v !== null;
-}
-
-async function grantSudo(
-  kv: KVNamespace,
-  userId: string,
-  sessionId: string,
-  clientId: string,
-  ttlMinutes: number,
-): Promise<void> {
-  if (ttlMinutes <= 0) return;
-  // KV requires expirationTtl >= 60s; treat anything below as 60s.
-  const ttl = Math.max(60, Math.floor(ttlMinutes * 60));
-  await kv.put(sudoKvKey(userId, sessionId, clientId), "1", {
-    expirationTtl: ttl,
-  });
-}
+// Sudo helpers are shared with admin reset flow; see lib/sudo.ts.
 
 // POST /api/oauth/2fa/challenges — server-to-server challenge creation.
 // This is the only path that can pin an `action`/`redirect_uri` to a 2FA

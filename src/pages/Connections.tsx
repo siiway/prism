@@ -319,7 +319,9 @@ export function Connections() {
   };
 
   const providers = site?.enabled_providers ?? [];
-  const providerTypeBySlug = new Map(providers.map((p) => [p.slug, p.provider]));
+  const providerTypeBySlug = new Map(
+    providers.map((p) => [p.slug, p.provider]),
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -340,7 +342,8 @@ export function Connections() {
         {providers.map((p) => {
           const conns = getConnections(p.slug);
           const color = PROVIDER_COLORS[p.provider] ?? "#666";
-          const providerIconUrl = p.icon_url ?? PROVIDER_ICON_URLS[p.provider] ?? null;
+          const providerIconUrl =
+            p.icon_url ?? PROVIDER_ICON_URLS[p.provider] ?? null;
 
           return (
             <div key={p.slug} className={styles.providerCard}>
@@ -391,14 +394,19 @@ export function Connections() {
                 const details = getConnectionDetails(conn);
                 const displayName = details.display;
                 const profileAvatar = getProfileAvatarUrl(conn);
-                const canRefresh = providerTypeBySlug.get(conn.provider) !== "telegram";
+                const canRefresh =
+                  providerTypeBySlug.get(conn.provider) !== "telegram";
                 return (
                   <div key={conn.id} className={styles.connRow}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 8 }}
+                    >
                       <Avatar
                         size={32}
                         name={displayName ?? conn.provider_user_id}
-                        image={profileAvatar ? { src: profileAvatar } : undefined}
+                        image={
+                          profileAvatar ? { src: profileAvatar } : undefined
+                        }
                       />
                       <div style={{ minWidth: 0 }}>
                         <Text

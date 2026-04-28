@@ -806,11 +806,49 @@ export const api = {
       {},
       getToken(),
     ),
+  // Back-compat alias — older callers used `adminReset()` to perform a reset
+  // in one shot. The new flow requires request → cooldown → confirm. We keep
+  // this entry point so existing code paths still resolve; under the hood it
+  // routes to the confirmation endpoint, which will refuse without an
+  // already-pending request and a passed cooldown.
   adminReset: () =>
     request<{ message: string }>(
       "POST",
-      "/admin/reset",
+      "/admin/reset/confirm",
       { confirm: "RESET_EVERYTHING" },
+      getToken(),
+    ),
+  adminResetStatus: () =>
+    request<{
+      enabled: boolean;
+      cooldown_required: boolean;
+      cooldown_seconds: number;
+      sudo_active: boolean;
+      pending: {
+        requested_at: number;
+        eligible_at: number;
+        requested_by_self: boolean;
+      } | null;
+    }>("GET", "/admin/reset/status", undefined, getToken()),
+  adminResetRequest: (body: { totp_code?: string }) =>
+    request<{ requested_at: number; eligible_at: number }>(
+      "POST",
+      "/admin/reset/request",
+      body,
+      getToken(),
+    ),
+  adminResetCancel: () =>
+    request<{ cancelled: boolean }>(
+      "POST",
+      "/admin/reset/cancel",
+      {},
+      getToken(),
+    ),
+  adminResetConfirm: (body: { totp_code?: string }) =>
+    request<{ message: string }>(
+      "POST",
+      "/admin/reset/confirm",
+      { confirm: "RESET_EVERYTHING", ...body },
       getToken(),
     ),
   adminMigrateRecoveryCodes: () =>

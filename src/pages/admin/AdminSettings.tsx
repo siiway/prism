@@ -24,7 +24,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -105,6 +105,10 @@ export function AdminSettings() {
   const [testingEmailReceiving, setTestingEmailReceiving] = useState(false);
   const [emailSubTab, setEmailSubTab] = useState("send");
   const [resetting, setResetting] = useState(false);
+  const [resetTotpCode, setResetTotpCode] = useState("");
+  const [resetRequestOpen, setResetRequestOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
   const [migratingCodes, setMigratingCodes] = useState(false);
   const [migratingSecrets, setMigratingSecrets] = useState(false);
   const [migratingTeamsAsUsers, setMigratingTeamsAsUsers] = useState(false);
@@ -119,6 +123,13 @@ export function AdminSettings() {
       queryKey: ["admin-teams-as-users-status"],
       queryFn: api.adminTeamsAsUsersStatus,
     });
+
+  const { data: resetStatus, refetch: refetchResetStatus } = useQuery({
+    queryKey: ["admin-reset-status"],
+    queryFn: api.adminResetStatus,
+    enabled: tab === "danger",
+    refetchInterval: tab === "danger" ? 30_000 : false,
+  });
 
   const showMsg = (type: "success" | "error", text: string) => {
     setMessage({ type, text });
@@ -229,10 +240,45 @@ export function AdminSettings() {
     }
   };
 
-  const handleReset = async () => {
+  const handleResetRequest = async () => {
     setResetting(true);
     try {
-      await api.adminReset();
+      await api.adminResetRequest({
+        totp_code: resetTotpCode.trim() || undefined,
+      });
+      setResetRequestOpen(false);
+      setResetTotpCode("");
+      await refetchResetStatus();
+      showMsg("success", t("admin.resetRequested"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("admin.resetFailed"),
+      );
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleResetCancel = async () => {
+    try {
+      await api.adminResetCancel();
+      await refetchResetStatus();
+      showMsg("success", t("admin.resetCancelled"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("admin.resetFailed"),
+      );
+    }
+  };
+
+  const handleResetConfirm = async () => {
+    setResetting(true);
+    try {
+      await api.adminResetConfirm({
+        totp_code: resetTotpCode.trim() || undefined,
+      });
       clearAuth();
       navigate("/init", { replace: true });
     } catch (err) {
@@ -243,6 +289,15 @@ export function AdminSettings() {
       setResetting(false);
     }
   };
+
+  useEffect(() => {
+    if (tab !== "danger") return;
+    const id = setInterval(
+      () => setNowSec(Math.floor(Date.now() / 1000)),
+      1000,
+    );
+    return () => clearInterval(id);
+  }, [tab]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -1182,44 +1237,240 @@ export function AdminSettings() {
               {t("admin.migrateTeamsAsUsersButton")}
             </Button>
           </div>
-          <div>
-            <Dialog>
-              <DialogTrigger disableButtonEnhancement>
-                <Button
-                  appearance="primary"
-                  style={{ background: tokens.colorPaletteRedBackground3 }}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+              borderTop: `1px solid ${tokens.colorPaletteRedBorder2}`,
+              paddingTop: 16,
+            }}
+          >
+            <Text weight="semibold">{t("admin.resetSectionTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.resetSectionDesc")}
+            </Text>
+            {!resetStatus ? null : !resetStatus.enabled ? (
+              <>
+                <Text
+                  size={200}
+                  weight="semibold"
+                  style={{ color: tokens.colorPaletteYellowForeground1 }}
                 >
-                  {t("admin.resetEverything")}
-                </Button>
-              </DialogTrigger>
-              <DialogSurface>
-                <DialogBody>
-                  <DialogTitle>{t("admin.resetEverythingTitle")}</DialogTitle>
-                  <DialogContent>
-                    {t("admin.resetEverythingDesc")}
-                  </DialogContent>
-                  <DialogActions>
+                  {t("admin.resetDisabledTitle")}
+                </Text>
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {t("admin.resetDisabledDesc")}
+                </Text>
+              </>
+            ) : resetStatus.pending ? (
+              <>
+                <Text
+                  size={200}
+                  weight="semibold"
+                  style={{ color: tokens.colorPaletteRedForeground1 }}
+                >
+                  {t("admin.resetPendingTitle")}
+                </Text>
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {resetStatus.pending.requested_by_self
+                    ? t("admin.resetPendingByYou")
+                    : t("admin.resetPendingBy")}
+                </Text>
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground2 }}
+                >
+                  {nowSec >= resetStatus.pending.eligible_at
+                    ? t("admin.resetReadyToConfirm")
+                    : t("admin.resetEligibleAt", {
+                        when: new Date(
+                          resetStatus.pending.eligible_at * 1000,
+                        ).toLocaleString(),
+                      })}
+                </Text>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Dialog
+                    open={resetConfirmOpen}
+                    onOpenChange={(_, d) => {
+                      setResetConfirmOpen(d.open);
+                      if (!d.open) setResetTotpCode("");
+                    }}
+                  >
                     <DialogTrigger disableButtonEnhancement>
-                      <Button appearance="secondary">
-                        {t("common.cancel")}
+                      <Button
+                        appearance="primary"
+                        style={{
+                          background: tokens.colorPaletteRedBackground3,
+                        }}
+                        disabled={
+                          nowSec < resetStatus.pending.eligible_at || resetting
+                        }
+                      >
+                        {t("admin.resetConfirm")}
                       </Button>
                     </DialogTrigger>
+                    <DialogSurface>
+                      <DialogBody>
+                        <DialogTitle>
+                          {t("admin.resetConfirmDialogTitle")}
+                        </DialogTitle>
+                        <DialogContent>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 12,
+                            }}
+                          >
+                            <Text>{t("admin.resetConfirmDialogDesc")}</Text>
+                            {resetStatus.sudo_active && (
+                              <Text
+                                size={200}
+                                style={{
+                                  color: tokens.colorNeutralForeground3,
+                                }}
+                              >
+                                {t("admin.resetSudoActiveNote")}
+                              </Text>
+                            )}
+                            <Field label={t("admin.totpCode")}>
+                              <Input
+                                value={resetTotpCode}
+                                onChange={(e) =>
+                                  setResetTotpCode(e.target.value)
+                                }
+                                placeholder={t("admin.totpCodePlaceholder")}
+                                inputMode="numeric"
+                                autoComplete="one-time-code"
+                              />
+                            </Field>
+                          </div>
+                        </DialogContent>
+                        <DialogActions>
+                          <DialogTrigger disableButtonEnhancement>
+                            <Button appearance="secondary">
+                              {t("common.cancel")}
+                            </Button>
+                          </DialogTrigger>
+                          <Button
+                            appearance="primary"
+                            style={{
+                              background: tokens.colorPaletteRedBackground3,
+                            }}
+                            onClick={handleResetConfirm}
+                            disabled={resetting}
+                          >
+                            {resetting ? (
+                              <Spinner size="tiny" />
+                            ) : (
+                              t("admin.yesResetEverything")
+                            )}
+                          </Button>
+                        </DialogActions>
+                      </DialogBody>
+                    </DialogSurface>
+                  </Dialog>
+                  <Button
+                    appearance="outline"
+                    onClick={handleResetCancel}
+                    disabled={resetting}
+                  >
+                    {t("admin.resetCancel")}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {resetStatus.cooldown_required
+                    ? t("admin.resetCooldownNote")
+                    : t("admin.resetNoCooldownNote")}
+                </Text>
+                <Dialog
+                  open={resetRequestOpen}
+                  onOpenChange={(_, d) => {
+                    setResetRequestOpen(d.open);
+                    if (!d.open) setResetTotpCode("");
+                  }}
+                >
+                  <DialogTrigger disableButtonEnhancement>
                     <Button
                       appearance="primary"
                       style={{ background: tokens.colorPaletteRedBackground3 }}
-                      onClick={handleReset}
-                      disabled={resetting}
                     >
-                      {resetting ? (
-                        <Spinner size="tiny" />
-                      ) : (
-                        t("admin.yesResetEverything")
-                      )}
+                      {t("admin.resetRequest")}
                     </Button>
-                  </DialogActions>
-                </DialogBody>
-              </DialogSurface>
-            </Dialog>
+                  </DialogTrigger>
+                  <DialogSurface>
+                    <DialogBody>
+                      <DialogTitle>
+                        {t("admin.resetRequestDialogTitle")}
+                      </DialogTitle>
+                      <DialogContent>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 12,
+                          }}
+                        >
+                          <Text>{t("admin.resetRequestDialogDesc")}</Text>
+                          {resetStatus.sudo_active && (
+                            <Text
+                              size={200}
+                              style={{ color: tokens.colorNeutralForeground3 }}
+                            >
+                              {t("admin.resetSudoActiveNote")}
+                            </Text>
+                          )}
+                          <Field label={t("admin.totpCode")}>
+                            <Input
+                              value={resetTotpCode}
+                              onChange={(e) => setResetTotpCode(e.target.value)}
+                              placeholder={t("admin.totpCodePlaceholder")}
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                            />
+                          </Field>
+                        </div>
+                      </DialogContent>
+                      <DialogActions>
+                        <DialogTrigger disableButtonEnhancement>
+                          <Button appearance="secondary">
+                            {t("common.cancel")}
+                          </Button>
+                        </DialogTrigger>
+                        <Button
+                          appearance="primary"
+                          style={{
+                            background: tokens.colorPaletteRedBackground3,
+                          }}
+                          onClick={handleResetRequest}
+                          disabled={resetting}
+                        >
+                          {resetting ? (
+                            <Spinner size="tiny" />
+                          ) : (
+                            t("admin.resetRequest")
+                          )}
+                        </Button>
+                      </DialogActions>
+                    </DialogBody>
+                  </DialogSurface>
+                </Dialog>
+              </>
+            )}
           </div>
         </div>
       )}

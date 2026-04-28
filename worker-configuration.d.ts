@@ -16,6 +16,14 @@ interface Env {
   ASSETS?: Fetcher;
   // Vars
   APP_URL: string;
+  // Gate the Admin Panel "Reset everything" command. Disabled by default
+  // (irreversibly destructive). Set to "true" / "1" / "yes" in
+  // wrangler.jsonc vars to expose the button in the admin UI.
+  ENABLE_RESET?: string;
+  // When set to "true" / "1" / "yes", skip the one-week cooldown between
+  // requesting a reset and being allowed to confirm it. 2FA is still
+  // required even when this is set.
+  NO_RESET_COOLDOWN?: string;
   // Cloudflare Secrets Store binding for the master encryption key used to
   // wrap OAuth client secrets, OAuth source credentials, and other
   // sensitive site_config fields at rest in D1. Optional — when unset the

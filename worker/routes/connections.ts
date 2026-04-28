@@ -1026,7 +1026,9 @@ app.post("/:id/refresh", requireAuth, async (c) => {
     }
     const tokenJson = (await tokenRes.json()) as Record<string, unknown>;
     const nextAccessToken =
-      typeof tokenJson.access_token === "string" ? tokenJson.access_token : null;
+      typeof tokenJson.access_token === "string"
+        ? tokenJson.access_token
+        : null;
     if (!nextAccessToken) return null;
     const nextRefreshToken =
       typeof tokenJson.refresh_token === "string"
