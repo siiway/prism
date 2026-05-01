@@ -142,7 +142,7 @@ export function Profile() {
   const [avatarUrl, setAvatarUrl] = useState(user?.unproxied_avatar_url ?? "");
   const [saveLoading, setSaveLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
-  const [pwForm, setPwForm] = useState({ current: "", next: "" });
+  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [pwLoading, setPwLoading] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [emailLoading, setEmailLoading] = useState(false);
@@ -339,10 +339,14 @@ export function Profile() {
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (pwForm.next !== pwForm.confirm) {
+      showMsg("error", t("profile.passwordMismatch"));
+      return;
+    }
     setPwLoading(true);
     try {
       await api.changePassword(pwForm.current, pwForm.next);
-      setPwForm({ current: "", next: "" });
+      setPwForm({ current: "", next: "", confirm: "" });
       showMsg("success", t("profile.passwordChanged"));
     } catch (err) {
       showMsg(
@@ -1152,6 +1156,16 @@ export function Profile() {
                 setPwForm((f) => ({ ...f, next: e.target.value }))
               }
               placeholder={t("profile.newPasswordPlaceholder")}
+            />
+          </Field>
+          <Field label={t("profile.confirmNewPassword")}>
+            <Input
+              type="password"
+              value={pwForm.confirm}
+              onChange={(e) =>
+                setPwForm((f) => ({ ...f, confirm: e.target.value }))
+              }
+              placeholder={t("profile.confirmNewPasswordPlaceholder")}
             />
           </Field>
           <div className={styles.actions}>
