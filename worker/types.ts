@@ -116,6 +116,7 @@ export interface OAuthAppRow {
   oidc_fields: string; // JSON string[]
   use_jwt_tokens: number;
   allow_self_manage_exported_permissions: number;
+  access_whitelist_enabled: number;
   created_at: number;
   updated_at: number;
 }
@@ -391,6 +392,15 @@ export interface AppScopeAccessRuleRow {
   app_id: string;
   rule_type: "owner_allow" | "owner_deny" | "app_allow" | "app_deny";
   target_id: string;
+  created_at: number;
+}
+
+export interface AppAccessRuleRow {
+  id: string;
+  app_id: string;
+  rule_type: "team" | "user";
+  target_id: string;
+  min_role: "owner" | "co-owner" | "admin" | "member" | null;
   created_at: number;
 }
 

@@ -1523,5 +1523,32 @@
     "description": "We couldn't find the page you were looking for. It may have moved or never existed.",
     "goBack": "Go back",
     "goHome": "Go home"
+  },
+  "unauthorized": {
+    "title": "Access denied",
+    "description": "You are not authorized to access this application.",
+    "descriptionWithApp": "You are not authorized to access \"{{app}}\".",
+    "goBack": "Go back",
+    "goHome": "Go to dashboard"
+  },
+  "accessWhitelist": {
+    "title": "Access whitelist",
+    "description": "Restrict who can use this app. When enabled, only matching teams and users listed below can authorize.",
+    "enabled": "Enable access whitelist",
+    "addRule": "Add rule",
+    "ruleType": "Rule type",
+    "ruleTypeTeam": "Team",
+    "ruleTypeUser": "User",
+    "target": "Target",
+    "minRole": "Minimum role",
+    "minRoleHint": "Only team members with at least this role can access",
+    "noRules": "No rules configured. Add rules below to restrict access.",
+    "selectTeam": "Select a team…",
+    "selectUser": "Select a user…",
+    "roleOwner": "Owner",
+    "roleCoOwner": "Co-owner",
+    "roleAdmin": "Admin",
+    "roleMember": "Member",
+    "teamNotFound": "You are not a member of any eligible team. Create or join a team first."
   }
 }

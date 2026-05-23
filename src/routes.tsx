@@ -18,6 +18,7 @@ import { api, type UserProfile } from "./lib/api";
 // and NotFound (needed to know its route id at static-handler time).
 import { AuthCallback } from "./components/Guards";
 import { NotFound } from "./pages/NotFound";
+import { Unauthorized } from "./pages/Unauthorized";
 
 export interface RouteContext {
   qc: QueryClient;
@@ -442,6 +443,12 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           ],
         },
       ],
+    },
+
+    // ── Unauthorized ───────────────────────────────────────────────────────
+    {
+      path: "/unauthorized",
+      element: <Unauthorized />,
     },
 
     // ── 404 ─────────────────────────────────────────────────────────────────

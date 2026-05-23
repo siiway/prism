@@ -17,11 +17,13 @@ import {
   MessageBar,
   Option,
   Spinner,
+  Switch,
   Tab,
   TabList,
   Text,
   Textarea,
   Title2,
+  Title3,
   Tooltip,
   makeStyles,
   tokens,
@@ -1116,6 +1118,41 @@ export function AppDetail() {
     queryFn: api.listTeams,
   });
 
+  const { data: accessRulesData, refetch: refetchAccessRules } = useQuery({
+    queryKey: ["app-access-rules", id],
+    queryFn: () => api.listAccessRules(id!),
+    enabled: !!id,
+  });
+  const accessRules = accessRulesData?.rules ?? [];
+
+  const [accessRuleTargetId, setAccessRuleTargetId] = useState("");
+  const [accessRuleType, setAccessRuleType] = useState<"team" | "user">("team");
+  const [accessRuleMinRole, setAccessRuleMinRole] = useState("member");
+
+  const addAccessRule = useMutation({
+    mutationFn: () =>
+      api.createAccessRule(id!, {
+        rule_type: accessRuleType,
+        target_id: accessRuleTargetId.trim(),
+        min_role: accessRuleType === "team" ? accessRuleMinRole : undefined,
+      }),
+    onSuccess: () => {
+      setAccessRuleTargetId("");
+      refetchAccessRules();
+    },
+  });
+
+  const deleteAccessRule = useMutation({
+    mutationFn: (ruleId: string) => api.deleteAccessRule(id!, ruleId),
+    onSuccess: () => refetchAccessRules(),
+  });
+
+  const toggleWhitelist = useMutation({
+    mutationFn: (enabled: boolean) =>
+      api.updateApp(id!, { access_whitelist_enabled: enabled }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["app", id] }),
+  });
+
   const [tab, setTab] = useState("settings");
   const [form, setForm] = useState<{
     name: string;
@@ -1305,6 +1342,7 @@ export function AppDetail() {
         <Tab value="settings">{t("apps.settingsTab")}</Tab>
         <Tab value="credentials">{t("apps.credentialsTab")}</Tab>
         <Tab value="permissions">{t("apps.permissionsTab")}</Tab>
+        <Tab value="whitelist">{t("accessWhitelist.title")}</Tab>
         <Tab value="danger">{t("apps.dangerTab")}</Tab>
       </TabList>
 
@@ -1559,6 +1597,222 @@ export function AppDetail() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {tab === "whitelist" && app && (
+        <div className={styles.card}>
+          <Title3>{t("accessWhitelist.title")}</Title3>
+          <Text style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("accessWhitelist.description")}
+          </Text>
+          <Field
+            label={t("accessWhitelist.enabled")}
+            hint={t("accessWhitelist.description")}
+          >
+            <Switch
+              label={t("accessWhitelist.enabled")}
+              checked={app.access_whitelist_enabled}
+              onChange={(_, d) => toggleWhitelist.mutate(d.checked)}
+            />
+          </Field>
+
+          {app.access_whitelist_enabled && (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                  paddingTop: "8px",
+                }}
+              >
+                <Text weight="semibold">{t("accessWhitelist.addRule")}</Text>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "12px",
+                  }}
+                >
+                  <Field label={t("accessWhitelist.ruleType")}>
+                    <Dropdown
+                      value={
+                        accessRuleType === "team"
+                          ? t("accessWhitelist.ruleTypeTeam")
+                          : t("accessWhitelist.ruleTypeUser")
+                      }
+                      selectedOptions={[accessRuleType]}
+                      onOptionSelect={(_, d) =>
+                        setAccessRuleType(d.optionValue as "team" | "user")
+                      }
+                    >
+                      <Option value="team">
+                        {t("accessWhitelist.ruleTypeTeam")}
+                      </Option>
+                      <Option value="user">
+                        {t("accessWhitelist.ruleTypeUser")}
+                      </Option>
+                    </Dropdown>
+                  </Field>
+                  <Field label={t("accessWhitelist.target")}>
+                    {accessRuleType === "team" ? (
+                      <Dropdown
+                        value={
+                          teamsData?.teams.find(
+                            (t) => t.id === accessRuleTargetId,
+                          )?.name ?? t("accessWhitelist.selectTeam")
+                        }
+                        selectedOptions={
+                          accessRuleTargetId ? [accessRuleTargetId] : []
+                        }
+                        onOptionSelect={(_, d) =>
+                          setAccessRuleTargetId(d.optionValue ?? "")
+                        }
+                      >
+                        {(teamsData?.teams ?? []).map((tm) => (
+                          <Option key={tm.id} value={tm.id}>
+                            {tm.name}
+                          </Option>
+                        ))}
+                      </Dropdown>
+                    ) : (
+                      <Input
+                        value={accessRuleTargetId}
+                        onChange={(e) =>
+                          setAccessRuleTargetId(e.target.value)
+                        }
+                        placeholder="user-id"
+                      />
+                    )}
+                  </Field>
+                </div>
+                {accessRuleType === "team" && (
+                  <Field
+                    label={t("accessWhitelist.minRole")}
+                    hint={t("accessWhitelist.minRoleHint")}
+                  >
+                    <Dropdown
+                      value={t(
+                        `accessWhitelist.${
+                          ({
+                            owner: "roleOwner",
+                            "co-owner": "roleCoOwner",
+                            admin: "roleAdmin",
+                            member: "roleMember",
+                          } as Record<string, string>)[accessRuleMinRole]
+                        }`,
+                      )}
+                      selectedOptions={[accessRuleMinRole]}
+                      onOptionSelect={(_, d) =>
+                        setAccessRuleMinRole(d.optionValue ?? "member")
+                      }
+                    >
+                      <Option value="owner">
+                        {t("accessWhitelist.roleOwner")}
+                      </Option>
+                      <Option value="co-owner">
+                        {t("accessWhitelist.roleCoOwner")}
+                      </Option>
+                      <Option value="admin">
+                        {t("accessWhitelist.roleAdmin")}
+                      </Option>
+                      <Option value="member">
+                        {t("accessWhitelist.roleMember")}
+                      </Option>
+                    </Dropdown>
+                  </Field>
+                )}
+                <Button
+                  appearance="primary"
+                  disabled={
+                    !accessRuleTargetId.trim() ||
+                    (accessRuleType === "team" &&
+                      !teamsData?.teams.length) ||
+                    addAccessRule.isPending
+                  }
+                  onClick={() => addAccessRule.mutate()}
+                  style={{ width: "fit-content" }}
+                >
+                  {addAccessRule.isPending ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    t("accessWhitelist.addRule")
+                  )}
+                </Button>
+              </div>
+
+              <div>
+                <Text weight="semibold" block style={{ marginBottom: 8 }}>
+                  {t("accessWhitelist.addRule")}
+                </Text>
+                {accessRules.length === 0 ? (
+                  <Text
+                    size={200}
+                    style={{ color: tokens.colorNeutralForeground3 }}
+                  >
+                    {t("accessWhitelist.noRules")}
+                  </Text>
+                ) : (
+                  accessRules.map((rule) => (
+                    <div
+                      key={rule.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "8px 0",
+                        borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+                      }}
+                    >
+                      <Badge
+                        appearance="filled"
+                        color={
+                          rule.rule_type === "team" ? "brand" : "important"
+                        }
+                      >
+                        {rule.rule_type === "team"
+                          ? t("accessWhitelist.ruleTypeTeam")
+                          : t("accessWhitelist.ruleTypeUser")}
+                      </Badge>
+                      <Text size={300} style={{ flex: 1 }}>
+                        {rule.rule_type === "team"
+                          ? teamsData?.teams.find(
+                              (t) => t.id === rule.target_id,
+                            )?.name ?? rule.target_id
+                          : rule.target_id}
+                      </Text>
+                      {rule.min_role && (
+                        <Text
+                          size={200}
+                          style={{ color: tokens.colorNeutralForeground3 }}
+                        >
+                          {t(
+                            `accessWhitelist.${
+                              ({
+                                owner: "roleOwner",
+                                "co-owner": "roleCoOwner",
+                                admin: "roleAdmin",
+                                member: "roleMember",
+                              } as Record<string, string>)[
+                                rule.min_role
+                              ]
+                            }`,
+                          )}
+                        </Text>
+                      )}
+                      <Button
+                        icon={<DeleteRegular />}
+                        appearance="subtle"
+                        size="small"
+                        onClick={() => deleteAccessRule.mutate(rule.id)}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 

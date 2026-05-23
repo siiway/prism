@@ -1523,5 +1523,32 @@
     "description": "找不到您要查看的页面，它可能已经移动或从未存在。",
     "goBack": "返回",
     "goHome": "回到首页"
+  },
+  "unauthorized": {
+    "title": "访问被拒绝",
+    "description": "您没有权限访问此应用。",
+    "descriptionWithApp": "您没有权限访问 \"{{app}}\"。",
+    "goBack": "返回",
+    "goHome": "前往控制台"
+  },
+  "accessWhitelist": {
+    "title": "访问白名单",
+    "description": "限制谁可以使用此应用。启用后，只有下方列出的团队和用户才能授权。",
+    "enabled": "启用访问白名单",
+    "addRule": "添加规则",
+    "ruleType": "规则类型",
+    "ruleTypeTeam": "团队",
+    "ruleTypeUser": "用户",
+    "target": "目标",
+    "minRole": "最低角色",
+    "minRoleHint": "只有团队中角色不低于此等级的成员才能访问",
+    "noRules": "暂无规则。添加规则来限制访问。",
+    "selectTeam": "选择团队…",
+    "selectUser": "选择用户…",
+    "roleOwner": "所有者",
+    "roleCoOwner": "共同所有者",
+    "roleAdmin": "管理员",
+    "roleMember": "成员",
+    "teamNotFound": "您尚未加入任何符合条件的团队，请先创建或加入一个团队。"
   }
 }

@@ -140,6 +140,20 @@ export function Authorize() {
     retry: false,
   });
 
+  useEffect(() => {
+    if (
+      error instanceof ApiError &&
+      error.status === 403 &&
+      typeof error.data === "object" &&
+      error.data !== null &&
+      (error.data as Record<string, unknown>).error ===
+        "unauthorized_whitelist"
+    ) {
+      const appName = (error.data as Record<string, unknown>).app_name ?? "";
+      navigate(`/unauthorized?app_name=${encodeURIComponent(String(appName))}`);
+    }
+  }, [error, navigate]);
+
   const [loading, setLoading] = useState(false);
   const [totpCode, setTotpCode] = useState("");
   const [confirmText, setConfirmText] = useState("");

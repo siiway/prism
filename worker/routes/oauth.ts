@@ -57,6 +57,7 @@ import type {
   UserRow,
   WebhookDeliveryRow,
   WebhookRow,
+  AppAccessRuleRow,
   Variables,
 } from "../types";
 
@@ -520,6 +521,36 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
   return c.json({ message: "Access revoked" });
 });
 
+/** Check if the given user is allowed by the app's access whitelist rules.
+ *  Returns null if allowed, or an error message string if denied. */
+async function checkAccessWhitelist(
+  db: D1Database,
+  app: OAuthAppRow,
+  userId: string,
+): Promise<string | null> {
+  if (!app.access_whitelist_enabled) return null;
+
+  const { results } = await db.prepare(
+    "SELECT rule_type, target_id, min_role FROM app_access_rules WHERE app_id = ?",
+  )
+    .bind(app.id)
+    .all<AppAccessRuleRow>();
+
+  if (results.length === 0) return "unauthorized_whitelist";
+
+  for (const rule of results) {
+    if (rule.rule_type === "user") {
+      if (rule.target_id === userId) return null;
+    } else if (rule.rule_type === "team") {
+      const minRank = ROLE_RANK[rule.min_role ?? "member"] ?? 0;
+      const m = await getEffectiveMember(db, rule.target_id, userId);
+      if (m && (ROLE_RANK[m.role] ?? 0) >= minRank) return null;
+    }
+  }
+
+  return "unauthorized_whitelist";
+}
+
 // GET /api/oauth/authorize — redirect browser to SPA consent page
 app.get("/authorize", (c) => {
   const qs = new URL(c.req.url).search;
@@ -554,6 +585,22 @@ app.get("/app-info", optionalAuth, async (c) => {
   const redirectUris = JSON.parse(oauthApp.redirect_uris) as string[];
   if (!redirectUriMatchesRegistered(redirect_uri, redirectUris))
     return c.json({ error: "invalid_redirect_uri" }, 400);
+
+  // Access whitelist check: if enabled, verify the user against the rules.
+  const currentUser = c.get("user");
+  if (currentUser && oauthApp.access_whitelist_enabled) {
+    const denied = await checkAccessWhitelist(
+      c.env.DB,
+      oauthApp,
+      currentUser.id,
+    );
+    if (denied) {
+      return c.json({
+        error: "unauthorized_whitelist",
+        app_name: oauthApp.name,
+      }, 403);
+    }
+  }
 
   const requestedScopes = (scope ?? "").split(" ").filter(Boolean);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
@@ -632,7 +679,6 @@ app.get("/app-info", optionalAuth, async (c) => {
 
   // Site-level scopes require admin role + 2FA enrolled.
   let sitesScopesGrantable = false;
-  const currentUser = c.get("user");
   if (hasSiteScopes(scopes) && currentUser?.role === "admin") {
     const [totpRow, passkeyRow] = await Promise.all([
       c.env.DB.prepare(

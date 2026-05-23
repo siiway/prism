@@ -29,6 +29,7 @@ import type {
   TeamMemberRow,
   AppScopeDefinitionRow,
   AppScopeAccessRuleRow,
+  AppAccessRuleRow,
   Variables,
 } from "../types";
 
@@ -445,6 +446,7 @@ app.patch("/:id", async (c) => {
     is_public?: boolean;
     use_jwt_tokens?: boolean;
     allow_self_manage_exported_permissions?: boolean;
+    access_whitelist_enabled?: boolean;
   }>();
 
   if (body.icon_url) {
@@ -520,10 +522,16 @@ app.patch("/:id", async (c) => {
           ? 1
           : 0
         : row.allow_self_manage_exported_permissions,
+    access_whitelist_enabled:
+      body.access_whitelist_enabled !== undefined
+        ? body.access_whitelist_enabled
+          ? 1
+          : 0
+        : row.access_whitelist_enabled,
   };
 
   await c.env.DB.prepare(
-    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, allow_self_manage_exported_permissions=?, updated_at=? WHERE id=?`,
+    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, allow_self_manage_exported_permissions=?, access_whitelist_enabled=?, updated_at=? WHERE id=?`,
   )
     .bind(
       updated.name,
@@ -537,6 +545,7 @@ app.patch("/:id", async (c) => {
       updated.is_public,
       updated.use_jwt_tokens,
       updated.allow_self_manage_exported_permissions,
+      updated.access_whitelist_enabled,
       now,
       id,
     )
@@ -1408,6 +1417,107 @@ app.delete("/:id/scope-access-rules/:ruleId", async (c) => {
   return c.json({ message: "Deleted" });
 });
 
+// ─── Access whitelist rules ───────────────────────────────────────────────────
+
+// GET /:id/access-rules — list access whitelist rules for this app
+app.get("/:id/access-rules", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
+    .bind(id)
+    .first<OAuthAppRow>();
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!(await canAccess(c.env.DB, row, user.id, user.role, false)))
+    return c.json({ error: "Forbidden" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT * FROM app_access_rules WHERE app_id = ? ORDER BY created_at ASC",
+  )
+    .bind(id)
+    .all<AppAccessRuleRow>();
+
+  return c.json({ rules: results });
+});
+
+// POST /:id/access-rules — add an access whitelist rule
+app.post("/:id/access-rules", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
+    .bind(id)
+    .first<OAuthAppRow>();
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
+    return c.json({ error: "Forbidden" }, 403);
+
+  const body = await c.req.json<{
+    rule_type: "team" | "user";
+    target_id: string;
+    min_role?: "owner" | "co-owner" | "admin" | "member";
+  }>();
+  if (!["team", "user"].includes(body.rule_type))
+    return c.json({ error: "rule_type must be 'team' or 'user'" }, 400);
+  if (!body.target_id?.trim())
+    return c.json({ error: "target_id is required" }, 400);
+
+  // Validate min_role only for team rules
+  const minRole =
+    body.rule_type === "team"
+      ? body.min_role ?? "member"
+      : null;
+  if (
+    body.rule_type === "team" &&
+    body.min_role &&
+    !["owner", "co-owner", "admin", "member"].includes(body.min_role)
+  )
+    return c.json(
+      { error: "min_role must be one of: owner, co-owner, admin, member" },
+      400,
+    );
+
+  const now = Math.floor(Date.now() / 1000);
+  const ruleId = randomId();
+
+  await c.env.DB.prepare(
+    "INSERT INTO app_access_rules (id, app_id, rule_type, target_id, min_role, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  )
+    .bind(ruleId, id, body.rule_type, body.target_id.trim(), minRole, now)
+    .run();
+
+  return c.json(
+    {
+      rule: {
+        id: ruleId,
+        app_id: id,
+        rule_type: body.rule_type,
+        target_id: body.target_id.trim(),
+        min_role: minRole,
+        created_at: now,
+      },
+    },
+    201,
+  );
+});
+
+// DELETE /:id/access-rules/:ruleId — remove an access whitelist rule
+app.delete("/:id/access-rules/:ruleId", async (c) => {
+  const user = c.get("user");
+  const { id, ruleId } = c.req.param();
+  const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
+    .bind(id)
+    .first<OAuthAppRow>();
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
+    return c.json({ error: "Forbidden" }, 403);
+
+  await c.env.DB.prepare(
+    "DELETE FROM app_access_rules WHERE id = ? AND app_id = ?",
+  )
+    .bind(ruleId, id)
+    .run();
+  return c.json({ message: "Deleted" });
+});
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function safeApp(
@@ -1436,6 +1546,7 @@ async function safeApp(
     use_jwt_tokens: row.use_jwt_tokens === 1,
     allow_self_manage_exported_permissions:
       row.allow_self_manage_exported_permissions === 1,
+    access_whitelist_enabled: row.access_whitelist_enabled === 1,
     team_id: row.team_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,

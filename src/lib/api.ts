@@ -577,6 +577,32 @@ export const api = {
       getToken(),
     ),
 
+  // ─── App access whitelist rules ─────────────────────────────────────────
+  listAccessRules: (appId: string) =>
+    request<{ rules: AppAccessRule[] }>(
+      "GET",
+      `/apps/${appId}/access-rules`,
+      undefined,
+      getToken(),
+    ),
+  createAccessRule: (
+    appId: string,
+    body: { rule_type: "team" | "user"; target_id: string; min_role?: string },
+  ) =>
+    request<{ rule: AppAccessRule }>(
+      "POST",
+      `/apps/${appId}/access-rules`,
+      body,
+      getToken(),
+    ),
+  deleteAccessRule: (appId: string, ruleId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/apps/${appId}/access-rules/${ruleId}`,
+      undefined,
+      getToken(),
+    ),
+
   // ─── Domains ─────────────────────────────────────────────────────────────
   listDomains: () =>
     request<{ domains: Domain[] }>("GET", "/domains", undefined, getToken()),
@@ -2057,6 +2083,7 @@ export interface OAuthApp {
   is_first_party: boolean;
   use_jwt_tokens: boolean;
   allow_self_manage_exported_permissions: boolean;
+  access_whitelist_enabled: boolean;
   team_id: string | null;
   created_at: number;
   updated_at: number;
@@ -2076,6 +2103,7 @@ export interface CreateAppBody {
   is_public?: boolean;
   use_jwt_tokens?: boolean;
   allow_self_manage_exported_permissions?: boolean;
+  access_whitelist_enabled?: boolean;
 }
 
 export type VerificationMethod = "dns-txt" | "http-file" | "html-meta";
@@ -2500,5 +2528,14 @@ export interface AppScopeAccessRule {
   app_id: string;
   rule_type: "owner_allow" | "owner_deny" | "app_allow" | "app_deny";
   target_id: string;
+  created_at: number;
+}
+
+export interface AppAccessRule {
+  id: string;
+  app_id: string;
+  rule_type: "team" | "user";
+  target_id: string;
+  min_role: "owner" | "co-owner" | "admin" | "member" | null;
   created_at: number;
 }
