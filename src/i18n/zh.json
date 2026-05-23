@@ -1536,6 +1536,7 @@
     "description": "限制谁可以使用此应用。启用后，只有下方列出的团队和用户才能授权。",
     "enabled": "启用访问白名单",
     "addRule": "添加规则",
+    "rules": "已配置的规则",
     "ruleType": "规则类型",
     "ruleTypeTeam": "团队",
     "ruleTypeUser": "用户",

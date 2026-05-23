@@ -801,6 +801,15 @@ app.post("/authorize", requireAuth, async (c) => {
   if (!redirectUriMatchesRegistered(body.redirect_uri, redirectUris))
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
+  const whitelistDenied = await checkAccessWhitelist(
+    c.env.DB,
+    oauthApp,
+    user.id,
+  );
+  if (whitelistDenied) {
+    return c.json({ error: "unauthorized_whitelist" }, 403);
+  }
+
   if (body.action === "deny") {
     const url = new URL(body.redirect_uri);
     url.searchParams.set("error", "access_denied");

@@ -1536,6 +1536,7 @@
     "description": "Restrict who can use this app. When enabled, only matching teams and users listed below can authorize.",
     "enabled": "Enable access whitelist",
     "addRule": "Add rule",
+    "rules": "Configured rules",
     "ruleType": "Rule type",
     "ruleTypeTeam": "Team",
     "ruleTypeUser": "User",

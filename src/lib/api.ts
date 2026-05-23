@@ -587,7 +587,11 @@ export const api = {
     ),
   createAccessRule: (
     appId: string,
-    body: { rule_type: "team" | "user"; target_id: string; min_role?: string },
+    body: {
+      rule_type: "team" | "user";
+      target_id: string;
+      min_role?: "owner" | "co-owner" | "admin" | "member";
+    },
   ) =>
     request<{ rule: AppAccessRule }>(
       "POST",

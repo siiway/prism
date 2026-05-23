@@ -1744,7 +1744,7 @@ export function AppDetail() {
 
               <div>
                 <Text weight="semibold" block style={{ marginBottom: 8 }}>
-                  {t("accessWhitelist.addRule")}
+                  {t("accessWhitelist.rules")}
                 </Text>
                 {accessRules.length === 0 ? (
                   <Text
