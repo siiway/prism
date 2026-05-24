@@ -1127,7 +1127,7 @@ export function AppDetail() {
 
   const [accessRuleTargetId, setAccessRuleTargetId] = useState("");
   const [accessRuleType, setAccessRuleType] = useState<"team" | "user">("team");
-  const [accessRuleMinRole, setAccessRuleMinRole] = useState("member");
+  const [accessRuleMinRole, setAccessRuleMinRole] = useState<"owner" | "co-owner" | "admin" | "member">("member");
 
   const addAccessRule = useMutation({
     mutationFn: () =>
@@ -1259,7 +1259,7 @@ export function AppDetail() {
 
   // Teams where the user is admin or owner
   const manageableTeams = (teamsData?.teams ?? []).filter(
-    (t) => t.role === "owner" || t.role === "admin",
+    (tm) => tm.role === "owner" || tm.role === "admin",
   );
 
   const handleMoveToTeam = async () => {
@@ -1660,7 +1660,7 @@ export function AppDetail() {
                       <Dropdown
                         value={
                           teamsData?.teams.find(
-                            (t) => t.id === accessRuleTargetId,
+                            (tm) => tm.id === accessRuleTargetId,
                           )?.name ?? t("accessWhitelist.selectTeam")
                         }
                         selectedOptions={
@@ -1778,7 +1778,7 @@ export function AppDetail() {
                       <Text size={300} style={{ flex: 1 }}>
                         {rule.rule_type === "team"
                           ? teamsData?.teams.find(
-                              (t) => t.id === rule.target_id,
+                              (tm) => tm.id === rule.target_id,
                             )?.name ?? rule.target_id
                           : rule.target_id}
                       </Text>
