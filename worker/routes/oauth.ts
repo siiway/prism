@@ -538,13 +538,21 @@ async function checkAccessWhitelist(
 
   if (results.length === 0) return "unauthorized_whitelist";
 
-  for (const rule of results) {
-    if (rule.rule_type === "user") {
-      if (rule.target_id === userId) return null;
-    } else if (rule.rule_type === "team") {
+  const teamRules = results.filter((r) => r.rule_type === "team");
+  const userRules = results.filter((r) => r.rule_type === "user");
+
+  if (userRules.some((r) => r.target_id === userId)) return null;
+
+  if (teamRules.length > 0) {
+    const memberships = await listEffectiveTeamMemberships(db, userId);
+    const membershipByTeam = new Map(
+      memberships.map((m) => [m.team.id, m.role]),
+    );
+    for (const rule of teamRules) {
+      const role = membershipByTeam.get(rule.target_id);
+      if (!role) continue;
       const minRank = ROLE_RANK[rule.min_role ?? "member"] ?? 0;
-      const m = await getEffectiveMember(db, rule.target_id, userId);
-      if (m && (ROLE_RANK[m.role] ?? 0) >= minRank) return null;
+      if ((ROLE_RANK[role] ?? 0) >= minRank) return null;
     }
   }
 
@@ -807,7 +815,7 @@ app.post("/authorize", requireAuth, async (c) => {
     user.id,
   );
   if (whitelistDenied) {
-    return c.json({ error: "unauthorized_whitelist" }, 403);
+    return c.json({ error: "unauthorized_whitelist", app_name: oauthApp.name }, 403);
   }
 
   if (body.action === "deny") {
