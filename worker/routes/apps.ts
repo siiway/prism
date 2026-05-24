@@ -1461,19 +1461,20 @@ app.post("/:id/access-rules", async (c) => {
     return c.json({ error: "target_id is required" }, 400);
 
   // Validate min_role only for team rules
-  const minRole =
-    body.rule_type === "team"
-      ? body.min_role ?? "member"
-      : null;
+  const validRoles = ["owner", "co-owner", "admin", "member"];
   if (
     body.rule_type === "team" &&
-    body.min_role &&
-    !["owner", "co-owner", "admin", "member"].includes(body.min_role)
+    body.min_role !== undefined &&
+    !validRoles.includes(body.min_role)
   )
     return c.json(
       { error: "min_role must be one of: owner, co-owner, admin, member" },
       400,
     );
+  const minRole =
+    body.rule_type === "team"
+      ? body.min_role || "member"
+      : null;
 
   const now = Math.floor(Date.now() / 1000);
   const ruleId = randomId();
@@ -1510,11 +1511,12 @@ app.delete("/:id/access-rules/:ruleId", async (c) => {
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
     return c.json({ error: "Forbidden" }, 403);
 
-  await c.env.DB.prepare(
+  const result = await c.env.DB.prepare(
     "DELETE FROM app_access_rules WHERE id = ? AND app_id = ?",
   )
     .bind(ruleId, id)
     .run();
+  if (!result.meta.changes) return c.json({ error: "Not found" }, 404);
   return c.json({ message: "Deleted" });
 });
 
