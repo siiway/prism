@@ -18,3 +18,4 @@ CREATE TABLE IF NOT EXISTS app_access_rules (
 );
 
 CREATE INDEX IF NOT EXISTS idx_app_access_rules_app ON app_access_rules(app_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_access_rules_unique ON app_access_rules(app_id, rule_type, target_id);
