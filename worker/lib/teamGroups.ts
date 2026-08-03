@@ -279,19 +279,31 @@ interface AssignmentRow {
 async function loadAssignments(
   db: D1Database,
   teamIds: string[],
-  restrict: { userId: string } | { memberOfTeamId: string },
+  restrict:
+    | { userId: string }
+    | { userIds: string[] }
+    | { memberOfTeamId: string },
 ): Promise<AssignmentRow[]> {
   const out: AssignmentRow[] = [];
   for (const group of chunk([...new Set(teamIds)], BIND_CHUNK)) {
     const placeholders = group.map(() => "?").join(", ");
-    const where =
-      "userId" in restrict
-        ? "tmg.user_id = ?"
-        : // Only members of the team being read — an ancestor's own members
-          // are not silently pulled into a descendant's listing.
-          "tmg.user_id IN (SELECT user_id FROM team_members WHERE team_id = ?)";
-    const bindTail =
-      "userId" in restrict ? restrict.userId : restrict.memberOfTeamId;
+    let where: string;
+    let tail: unknown[];
+    if ("userId" in restrict) {
+      where = "tmg.user_id = ?";
+      tail = [restrict.userId];
+    } else if ("userIds" in restrict) {
+      // A rendered page of members, rather than the whole roster.
+      const userPlaceholders = restrict.userIds.map(() => "?").join(", ");
+      where = `tmg.user_id IN (${userPlaceholders})`;
+      tail = restrict.userIds;
+    } else {
+      // Only members of the team being read — an ancestor's own members
+      // are not silently pulled into a descendant's listing.
+      where =
+        "tmg.user_id IN (SELECT user_id FROM team_members WHERE team_id = ?)";
+      tail = [restrict.memberOfTeamId];
+    }
     const { results } = await db
       .prepare(
         `SELECT tmg.team_id, tmg.user_id, g.slug, g.name, g.color
@@ -300,7 +312,7 @@ async function loadAssignments(
           WHERE tmg.team_id IN (${placeholders}) AND ${where}
           ORDER BY g.name ASC`,
       )
-      .bind(...group, bindTail)
+      .bind(...group, ...tail)
       .all<AssignmentRow>();
     out.push(...results);
   }
@@ -398,22 +410,49 @@ async function planResolution(
 }
 
 /**
- * Groups for every direct member of `teamId`, keyed by user id.
+ * The team ids whose group assignments count for `teamId` — itself plus each
+ * enabled ancestor, or null when groups are off.
+ *
+ * Exposed so a caller can express "members holding group X" as a SQL join
+ * instead of resolving every member first. Filtering has to see inherited
+ * labels, and inheritance is exactly "assignments in this chain".
+ */
+export async function getGroupChainIds(
+  db: D1Database,
+  teamId: string,
+): Promise<string[] | null> {
+  const plan = await planResolution(db, [teamId]);
+  const ancestors = plan?.chains.get(teamId);
+  if (!plan || ancestors === undefined) return null;
+  return [teamId, ...ancestors];
+}
+
+/**
+ * Groups for the direct members of `teamId`, keyed by user id.
  *
  * Returns an empty map when the team has groups disabled. Members with no
  * labels are simply absent from the map — callers should default to `[]`.
+ *
+ * Pass `userIds` to resolve only a subset. A paginated member list wants the
+ * page it is about to render, not the whole roster.
  */
 export async function getGroupsForTeamMembers(
   db: D1Database,
   teamId: string,
+  userIds?: string[],
 ): Promise<Map<string, ResolvedGroup[]>> {
-  const plan = await planResolution(db, [teamId]);
   const out = new Map<string, ResolvedGroup[]>();
+  // An explicit empty page has nothing to look up — and an empty IN () list
+  // would match every row rather than none.
+  if (userIds && userIds.length === 0) return out;
+  const plan = await planResolution(db, [teamId]);
   if (!plan) return out;
 
-  const rows = await loadAssignments(db, plan.lookupTeamIds, {
-    memberOfTeamId: teamId,
-  });
+  const rows = await loadAssignments(
+    db,
+    plan.lookupTeamIds,
+    userIds ? { userIds } : { memberOfTeamId: teamId },
+  );
   const ancestorIds = plan.chains.get(teamId) ?? [];
 
   const byUser = new Map<string, AssignmentRow[]>();

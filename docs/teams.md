@@ -156,8 +156,12 @@ the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
   - `team.sub_teams` — immediate children with member counts.
   - `team.my_role` — the _effective_ role; `team.inherited_from` carries the
     ancestor id when the role came from inheritance.
-  - `members` — direct members only (inherited members are visible by
-    inspecting ancestor teams, surfacing them here would multiply listings).
+  - `members` — the **first page** of direct members (50), plus
+    `member_count` for the whole team. Page and filter through
+    `GET /api/teams/:id/members`; the detail response carries page one so the
+    initial render needs a single request. Inherited members are not listed —
+    they are visible by inspecting ancestor teams, and surfacing them here
+    would multiply listings.
 
 ## Member groups
 
@@ -416,7 +420,7 @@ PATCH  /api/teams/:id                        update settings, requirements, pare
 GET    /api/teams/:id                        team + ancestors + sub_teams summary
 GET    /api/teams/:id/sub-teams              list immediate children
 POST   /api/teams/:id/sub-teams              create a sub-team under :id
-GET    /api/teams/:id/members                list members (direct only)
+GET    /api/teams/:id/members                list members (direct only) — paginated, ?q= and ?group=
 POST   /api/teams/:id/members                add by username/id
 PATCH  /api/teams/:id/members/:userId        change role
 DELETE /api/teams/:id/members/:userId        remove (or leave with self)

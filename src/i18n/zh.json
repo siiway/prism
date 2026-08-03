@@ -29,7 +29,8 @@
     "saveFailed": "保存失败",
     "copyId": "复制 ID",
     "copied": "已复制！",
-    "edit": "编辑"
+    "edit": "编辑",
+    "clear": "清除"
   },
   "nav": {
     "dashboard": "控制台",
@@ -767,7 +768,13 @@
     "capabilitiesFailed": "权限更新失败",
     "capabilityFollowDefault": "跟随站点默认（{{state}}）",
     "capabilityAllow": "允许",
-    "capabilityDeny": "不允许"
+    "capabilityDeny": "不允许",
+    "searchMembersPlaceholder": "搜索成员",
+    "filterByGroup": "按身份组筛选",
+    "allGroups": "全部身份组",
+    "noMembersMatch": "没有匹配的成员。",
+    "memberMatchCount": "匹配 {{count}} 人",
+    "memberPageOf": "第 {{page}} / {{pages}} 页"
   },
   "connections": {
     "title": "关联账号",

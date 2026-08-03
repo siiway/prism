@@ -98,7 +98,7 @@ description: 协作管理 OAuth 应用与已验证域名 — 角色、邀请、�
   - `team.ancestors` —— `[{id, name, avatar_url}]` 从直接上级到根，用于面包屑。
   - `team.sub_teams` —— 直接子团队及其成员数。
   - `team.my_role` —— **有效**角色；当来自继承时，`team.inherited_from` 给出上级 id。
-  - `members` —— 仅直接成员（继承成员可在上级团队中查看，这里展开会让每个子团队列表都重复一遍）。
+  - `members` —— 直接成员的**第一页**（50 条），另有 `member_count` 表示全团队总数。翻页与筛选走 `GET /api/teams/:id/members`；详情响应自带第一页，因此首屏只需一个请求。继承成员不在此列出（可在上级团队查看，这里展开会让每个子团队列表都重复一遍）。
 
 ## 身份组
 
@@ -269,7 +269,7 @@ OAuth 应用可以直接在团队下创建（**Teams → \<team\> → Apps → N
 GET    /api/teams                            列出加入的团队
 POST   /api/teams                            创建
 PATCH  /api/teams/:id                        更新设置与门槛
-GET    /api/teams/:id/members                列成员
+GET    /api/teams/:id/members                列成员（分页，支持 ?q= 与 ?group=）
 POST   /api/teams/:id/members                按用户名/ID 添加
 PATCH  /api/teams/:id/members/:userId        改角色
 DELETE /api/teams/:id/members/:userId        移除（self 即退出）

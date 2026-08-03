@@ -29,7 +29,8 @@
     "saveFailed": "Save failed",
     "copyId": "Copy ID",
     "copied": "Copied!",
-    "edit": "Edit"
+    "edit": "Edit",
+    "clear": "Clear"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -767,7 +768,13 @@
     "capabilitiesFailed": "Could not update permissions",
     "capabilityFollowDefault": "Follow the site default ({{state}})",
     "capabilityAllow": "Allowed",
-    "capabilityDeny": "Not allowed"
+    "capabilityDeny": "Not allowed",
+    "searchMembersPlaceholder": "Search members",
+    "filterByGroup": "Filter by group",
+    "allGroups": "All groups",
+    "noMembersMatch": "No members match your search.",
+    "memberMatchCount": "{{count}} matching",
+    "memberPageOf": "Page {{page}} of {{pages}}"
   },
   "connections": {
     "title": "Linked Accounts",

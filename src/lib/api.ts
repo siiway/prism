@@ -1219,7 +1219,14 @@ export const api = {
       getToken(),
     ),
   getTeam: (id: string) =>
-    request<{ team: Team; members: TeamMember[] }>(
+    request<{
+      team: Team;
+      /** First page only. Page through listTeamMembers for the rest. */
+      members: TeamMember[];
+      /** Total across the team, not the page. */
+      member_count: number;
+      member_page: { page: number; limit: number };
+    }>(
       "GET",
       `/teams/${id}`,
       undefined,
@@ -1333,6 +1340,28 @@ export const api = {
       undefined,
       getToken(),
     ),
+  listTeamMembers: (
+    teamId: string,
+    params: { page?: number; limit?: number; q?: string; group?: string } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    if (params.group) search.set("group", params.group);
+    const qs = search.toString();
+    return request<{
+      members: TeamMember[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
+      "GET",
+      `/teams/${encodeURIComponent(teamId)}/members${qs ? `?${qs}` : ""}`,
+      undefined,
+      getToken(),
+    );
+  },
   addTeamMember: (teamId: string, body: { username: string; role?: string }) =>
     request<{ message: string }>(
       "POST",

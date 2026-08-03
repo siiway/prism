@@ -37,6 +37,7 @@ import {
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { isTeamLocked } from "../lib/lockdown";
 import {
+  getGroupChainIds,
   MAX_GROUPS_PER_MEMBER,
   MAX_GROUPS_PER_TEAM,
   MAX_GROUP_DESCRIPTION_LENGTH,
@@ -930,25 +931,17 @@ app.get("/:id", async (c) => {
   const eff = await getEffectiveMember(c.env.DB, id, user.id);
   if (!eff) return c.json({ error: "Not found" }, 404);
 
-  const [team, members, ancestors, subTeams, memberGroups] = await Promise.all([
+  // First page only. This used to return every member, which made the team
+  // page's cost grow without bound with the roster — the table pages through
+  // GET /:id/members from here on.
+  const [team, memberPage, ancestors, subTeams] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
       .bind(id)
       .first<TeamRow>(),
-    c.env.DB.prepare(
-      `SELECT tm.user_id, tm.role, tm.joined_at,
-              u.username, u.display_name, u.avatar_url
-       FROM team_members tm JOIN users u ON u.id = tm.user_id
-       WHERE tm.team_id = ? ORDER BY tm.joined_at ASC`,
-    )
-      .bind(id)
-      .all<{
-        user_id: string;
-        role: string;
-        joined_at: number;
-        username: string;
-        display_name: string;
-        avatar_url: string | null;
-      }>(),
+    listTeamMembers(c.env.DB, c.env.APP_URL, id, {
+      page: 1,
+      limit: MEMBER_PAGE_SIZE,
+    }),
     getTeamAncestors(c.env.DB, id),
     c.env.DB.prepare(
       `SELECT t.id, t.name, t.avatar_url, (
@@ -964,7 +957,6 @@ app.get("/:id", async (c) => {
         avatar_url: string | null;
         member_count: number;
       }>(),
-    getGroupsForTeamMembers(c.env.DB, id),
   ]);
 
   if (!team) return c.json({ error: "Not found" }, 404);
@@ -999,16 +991,11 @@ app.get("/:id", async (c) => {
         })),
       ),
     },
-    members: await Promise.all(
-      members.results.map(async (m) => ({
-        ...m,
-        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, m.avatar_url),
-        unproxied_avatar_url: m.avatar_url,
-        // Empty whenever the team has groups switched off — the resolver
-        // returns an empty map rather than us branching here.
-        groups: memberGroups.get(m.user_id) ?? [],
-      })),
-    ),
+    members: memberPage.members,
+    // Total across the whole team, not the page — the members tab shows it,
+    // and a count that shrank to the page size would just look wrong.
+    member_count: memberPage.total,
+    member_page: { page: memberPage.page, limit: memberPage.limit },
   });
 });
 
@@ -1221,7 +1208,162 @@ app.delete("/:id", async (c) => {
   return c.json({ message: "Team deleted" });
 });
 
+
+// ─── Member listing ───────────────────────────────────────────────────────────
+
+/** Rows returned per member page. The team detail response embeds the first
+ *  page so the initial render still needs one request; the table pages and
+ *  filters through GET /:id/members from then on. */
+const MEMBER_PAGE_SIZE = 50;
+
+interface MemberListOptions {
+  page: number;
+  limit: number;
+  /** Matches display name or username, case-insensitively. */
+  query?: string;
+  /** Group slug. Resolved across the inheritance chain, so a label held via
+   *  an ancestor team filters here exactly as it displays. */
+  group?: string;
+}
+
+/**
+ * One page of a team's direct members, with their resolved groups.
+ *
+ * Filtering happens in SQL rather than over a fully-loaded roster: the whole
+ * point of paginating is to stop reading every member row, so a filter that
+ * needed them all would give the page size back with one hand and take the
+ * saving with the other.
+ */
+async function listTeamMembers(
+  db: D1Database,
+  appUrl: string,
+  teamId: string,
+  opts: MemberListOptions,
+): Promise<{
+  members: Array<Record<string, unknown>>;
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const where: string[] = ["tm.team_id = ?"];
+  const args: unknown[] = [teamId];
+
+  if (opts.query) {
+    // LIKE with an escaped pattern — the input is user-supplied and % or _
+    // would otherwise silently widen the match.
+    const pattern = `%${opts.query.replace(/[\\%_]/g, "\\$&")}%`;
+    where.push(
+      "(LOWER(u.display_name) LIKE LOWER(?) ESCAPE '\\' OR LOWER(u.username) LIKE LOWER(?) ESCAPE '\\')",
+    );
+    args.push(pattern, pattern);
+  }
+
+  if (opts.group) {
+    // Inherited labels have to filter too, and inheritance is exactly
+    // "assignments anywhere in the enabled chain" — so the chain becomes an
+    // IN list rather than something resolved per member in JS.
+    const chain = await getGroupChainIds(db, teamId);
+    if (!chain) {
+      // Groups are off for this team: no member can hold one.
+      return { members: [], total: 0, page: opts.page, limit: opts.limit };
+    }
+    const placeholders = chain.map(() => "?").join(", ");
+    where.push(
+      `EXISTS (
+         SELECT 1 FROM team_member_groups tmg
+           JOIN team_groups g ON g.id = tmg.group_id
+          WHERE tmg.user_id = tm.user_id
+            AND tmg.team_id IN (${placeholders})
+            AND g.slug = ?
+       )`,
+    );
+    args.push(...chain, opts.group);
+  }
+
+  const clause = where.join(" AND ");
+  const offset = (opts.page - 1) * opts.limit;
+
+  const [rows, countRow] = await Promise.all([
+    db
+      .prepare(
+        `SELECT tm.user_id, tm.role, tm.joined_at,
+                u.username, u.display_name, u.avatar_url
+           FROM team_members tm JOIN users u ON u.id = tm.user_id
+          WHERE ${clause}
+          ORDER BY tm.joined_at ASC
+          LIMIT ? OFFSET ?`,
+      )
+      .bind(...args, opts.limit, offset)
+      .all<{
+        user_id: string;
+        role: string;
+        joined_at: number;
+        username: string;
+        display_name: string;
+        avatar_url: string | null;
+      }>(),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS n
+           FROM team_members tm JOIN users u ON u.id = tm.user_id
+          WHERE ${clause}`,
+      )
+      .bind(...args)
+      .first<{ n: number }>(),
+  ]);
+
+  // Resolve groups for this page only — the whole-team variant would undo
+  // the pagination it is being called from.
+  const groups = await getGroupsForTeamMembers(
+    db,
+    teamId,
+    rows.results.map((r) => r.user_id),
+  );
+
+  return {
+    members: await Promise.all(
+      rows.results.map(async (m) => ({
+        ...m,
+        avatar_url: await proxyImageUrl(appUrl, db, m.avatar_url),
+        unproxied_avatar_url: m.avatar_url,
+        groups: groups.get(m.user_id) ?? [],
+      })),
+    ),
+    total: countRow?.n ?? 0,
+    page: opts.page,
+    limit: opts.limit,
+  };
+}
+
 // ─── Members ─────────────────────────────────────────────────────────────────
+// GET /:id/members — paginated, searchable member list.
+//
+// The team detail response carries the first page for the initial render;
+// everything after that (paging, search, group filter) comes through here.
+app.get("/:id/members", async (c) => {
+  const user = c.get("user");
+  const id = c.req.param("id");
+
+  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  if (!eff) return c.json({ error: "Not found" }, 404);
+
+  const page = Math.max(1, Number(c.req.query("page")) || 1);
+  const limit = Math.min(
+    100,
+    Math.max(1, Number(c.req.query("limit")) || MEMBER_PAGE_SIZE),
+  );
+
+  const result = await listTeamMembers(c.env.DB, c.env.APP_URL, id, {
+    page,
+    limit,
+    query: c.req.query("q")?.trim() || undefined,
+    group: c.req.query("group")?.trim() || undefined,
+  });
+
+  return c.json(result);
+});
+
+
 
 // Add member by username
 app.post("/:id/members", async (c) => {
