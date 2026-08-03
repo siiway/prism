@@ -152,15 +152,27 @@ export function MembersTable({
   const limit = data?.limit || 50;
   const pageCount = Math.max(1, Math.ceil(total / limit));
 
-  // Derived from whatever is on screen. A definitive list would need another
-  // request, and filtering by a group nobody visible holds is not a case
-  // worth a round trip.
+  // Definitions rather than whatever happens to be on the current page: with
+  // a roster spread over many pages, a group that only appears on page 7
+  // would otherwise never be offered as a filter. Shares a query key with the
+  // groups tab, so this is usually served from cache.
+  const { data: groupData } = useQuery({
+    queryKey: ["team-groups", teamId],
+    queryFn: () => api.listTeamGroups(teamId),
+    enabled: groupsEnabled,
+    staleTime: 60_000,
+  });
+
   const groupOptions = useMemo(() => {
     const bySlug = new Map<string, string>();
+    for (const g of groupData?.groups ?? []) bySlug.set(g.slug, g.name);
+    // Union with what is on screen: the definitions endpoint returns this
+    // team's own groups, so inherited labels would otherwise be filterable
+    // on the server but never offered here.
     for (const m of [...members, ...rows])
       for (const g of m.groups ?? []) bySlug.set(g.slug, g.name);
     return [...bySlug.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [members, rows]);
+  }, [groupData, members, rows]);
 
   return (
     <div>
@@ -231,7 +243,13 @@ export function MembersTable({
               {/* placeholderData keeps the previous page on screen while the
                   next loads, so this only fires on the first filtered fetch. */}
               {rows.length === 0 && isFetching ? (
-                <SkeletonTableRows rows={3} cols={canManage ? 4 : 3} />
+                <SkeletonTableRows
+                  rows={3}
+                  cols={
+                    // member, role, joined + the two conditional columns
+                    3 + (groupsEnabled ? 1 : 0) + (canManage ? 1 : 0)
+                  }
+                />
               ) : null}
               {rows.map((m) => (
                 <TableRow key={m.user_id}>
