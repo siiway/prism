@@ -184,6 +184,12 @@ export interface ResolvedGroup {
   inherited_from: string | null;
 }
 
+/** {@link ResolvedGroup} plus the hop count used to settle slug collisions.
+ *  Internal to {@link collapse} — stripped before the value leaves. */
+interface RankedGroup extends ResolvedGroup {
+  distance: number;
+}
+
 /** Only the columns the resolution walk needs — deliberately narrower than
  *  TeamRow so the ancestor walk stays cheap. */
 interface TeamChainNode {
@@ -304,33 +310,50 @@ async function loadAssignments(
 /**
  * Collapse raw assignments into the resolved list for one team.
  *
- * Direct assignments win over inherited ones on slug collision: two teams in
- * the same chain may both define `oncall`, and the team being read is the
- * more specific answer. Deduping also keeps the claim array free of repeats.
+ * On slug collision the *closest* definition wins: the team being read first,
+ * then each ancestor by distance. Two teams in one chain may both define
+ * `oncall`, and the nearer one is the more specific answer.
+ *
+ * Proximity has to drive this explicitly. Falling back to whatever order the
+ * rows arrived in would tie the winner to the SQL sort — which is by display
+ * name, so renaming an unrelated group could silently flip which team a label
+ * is attributed to. Deduping also keeps the claim array free of repeats.
  */
 function collapse(
   teamId: string,
   ancestorIds: string[],
   rows: AssignmentRow[],
 ): ResolvedGroup[] {
-  const bySlug = new Map<string, ResolvedGroup>();
-  const relevant = new Set([teamId, ...ancestorIds]);
-  // Direct first so it claims the slug before any ancestor can.
-  const ordered = [
-    ...rows.filter((r) => r.team_id === teamId),
-    ...rows.filter((r) => r.team_id !== teamId),
-  ];
-  for (const row of ordered) {
-    if (!relevant.has(row.team_id)) continue;
-    if (bySlug.has(row.slug)) continue;
+  // Distance from the team being read: 0 = direct, 1 = parent, 2 = grandparent…
+  const distance = new Map<string, number>([[teamId, 0]]);
+  ancestorIds.forEach((id, i) => distance.set(id, i + 1));
+
+  const bySlug = new Map<string, RankedGroup>();
+  for (const row of rows) {
+    // Skip rows belonging to some other team's chain — loadAssignments fetches
+    // the union across every team being resolved in one pass.
+    const d = distance.get(row.team_id);
+    if (d === undefined) continue;
+    const seen = bySlug.get(row.slug);
+    if (seen && seen.distance <= d) continue;
     bySlug.set(row.slug, {
       slug: row.slug,
       name: row.name,
       color: row.color,
-      inherited_from: row.team_id === teamId ? null : row.team_id,
+      inherited_from: d === 0 ? null : row.team_id,
+      distance: d,
     });
   }
-  return [...bySlug.values()].sort((a, b) => a.slug.localeCompare(b.slug));
+  // Rebuild explicitly so `distance` — an internal tie-break aid — never
+  // reaches the wire.
+  return [...bySlug.values()]
+    .sort((a, b) => a.slug.localeCompare(b.slug))
+    .map((g) => ({
+      slug: g.slug,
+      name: g.name,
+      color: g.color,
+      inherited_from: g.inherited_from,
+    }));
 }
 
 /** Shared setup for both resolution entry points. Returns null when groups

@@ -1602,27 +1602,36 @@ app.post("/:id/groups", async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   const groupId = randomId();
-  await c.env.DB.prepare(
-    `INSERT INTO team_groups
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO team_groups
        (id, team_id, slug, name, description, color, admin_assignable, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      groupId,
-      id,
-      slug,
-      name,
-      description,
-      color || null,
-      body.admin_assignable === undefined || body.admin_assignable === null
-        ? null
-        : body.admin_assignable
-          ? 1
-          : 0,
-      now,
-      now,
     )
-    .run();
+      .bind(
+        groupId,
+        id,
+        slug,
+        name,
+        description,
+        color || null,
+        body.admin_assignable === undefined || body.admin_assignable === null
+          ? null
+          : body.admin_assignable
+            ? 1
+            : 0,
+        now,
+        now,
+      )
+      .run();
+  } catch (err) {
+    // The check above races: two concurrent creates can both read a free
+    // slug. UNIQUE (team_id, slug) is the real guard, so translate it into
+    // the same 409 the checked path returns rather than a 500.
+    if (String(err).includes("UNIQUE"))
+      return c.json({ error: "A group with that slug already exists" }, 409);
+    throw err;
+  }
 
   auditTeam(c, id, "team.group.create", {
     resourceType: "team_group",
