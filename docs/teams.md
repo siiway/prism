@@ -159,6 +159,130 @@ the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
   - `members` — direct members only (inherited members are visible by
     inspecting ancestor teams, surfacing them here would multiply listings).
 
+## Member groups
+
+Member groups are team-defined labels you attach to members — a member can hold
+several at once. They are **pure labels**: they never enter the role ladder, so
+nothing about what anyone can do inside Prism changes when you hand one out.
+Their entire purpose is to ride along with member information to the apps your
+team connects, so those apps can authorize on them.
+
+Off by default. Only the team owner can turn them on, under
+**Teams → \<team\> → Settings → Member groups**.
+
+### Groups vs. sub-teams
+
+Both can drive group-based authorization downstream, so it's worth being
+explicit about which one fits:
+
+|                                     | Sub-team                          | Member group                     |
+| ----------------------------------- | --------------------------------- | -------------------------------- |
+| Independent entity (own page, id)   | yes                               | no — a label inside one team     |
+| Can own apps and domains            | yes                               | no                               |
+| Cardinality                         | tree, depth-capped                | flat, many-per-member            |
+| Affects Prism's own authorization   | **yes** — roles cascade with it   | **no**                           |
+| Shape in claims                     | its own `in_team_<sub-team-id>`   | `groups_in_team_<team-id>` array |
+| Can be granted to an app on its own | yes, it has its own `team:` scope | no, rides with member info       |
+| Membership vs. the parent team      | may be a different set of people  | always a subset of the members   |
+
+Split **organisation and resources** with a sub-team; label **attributes of the
+same set of people** with a group. Using sub-teams as labels is the trap worth
+naming: every "label" becomes another team id in the claims, and because
+membership cascades downward the person you only meant to tag ends up holding a
+role there too.
+
+### Defining and assigning
+
+Definitions live under **Teams → \<team\> → Groups**. Each has:
+
+| Field       | Notes                                                                                                       |
+| ----------- | ----------------------------------------------------------------------------------------------------------- |
+| `slug`      | The stable identifier apps authorize on. **Immutable** — renaming would silently break downstream policies. |
+| `name`      | Display label, freely editable.                                                                             |
+| description | Optional, for humans.                                                                                       |
+| colour      | Optional `#rrggbb`, used for the badge.                                                                     |
+
+Limits: 50 groups per team, 20 groups per member, slug ≤ 32 characters of
+lowercase alphanumerics and single hyphens.
+
+Assign from the members table — the tag button on a member row. The dialog
+sends the full desired set and the server reconciles it, permission-checking
+only the groups that actually change.
+
+### Who can manage and assign
+
+Owners and co-owners always can. What **admins** may do is configurable by the
+owner, resolved through a chain where each level only contributes the keys it
+explicitly sets:
+
+```
+per-group admin_assignable   →  team role_permissions  →  site default  →  built-in
+(assignment only)               (Groups → Admin           (default_team_    (manage: off
+                                 permissions)              role_permissions)  assign: on)
+```
+
+| Capability      | What it covers                      | Built-in default |
+| --------------- | ----------------------------------- | ---------------- |
+| `groups:manage` | Create, edit and delete definitions | off              |
+| `groups:assign` | Attach and detach groups on members | on               |
+
+The per-group `admin_assignable` override exists so a team that generally lets
+admins hand out labels can still reserve a sensitive one for owners.
+
+::: warning The switches themselves are owner-only
+Toggling the feature, editing `role_permissions`, and setting a per-group
+`admin_assignable` are all restricted to the owner — deliberately, and not
+merely to "admin and above". A capability set that the constrained role could
+edit would be no constraint at all: an admin would simply grant themselves
+whatever the owner withheld.
+:::
+
+### Inheritance
+
+Groups flow down the sub-team tree the same way roles do: a member of an
+ancestor team carries that team's labels on every descendant, flagged with
+`inherited_from` so the UI can render them read-only. Inherited labels are
+managed at the team they come from.
+
+This rides on the same `inherit_team_membership` switch as role inheritance —
+when ancestors and descendants are decoupled for membership, labels stop
+crossing that boundary too.
+
+### Turning them off
+
+Switching the feature off **hides, it does not erase**. Definitions and
+assignments stay in the database; every read surface simply stops emitting
+them, so connected apps see no groups from the next token refresh onward.
+Turning it back on restores every assignment exactly as it was.
+
+The same holds along the inheritance chain: an ancestor with groups switched
+off contributes nothing to its descendants, so a disabled team's labels can't
+leak out through its children.
+
+::: tip Downstream effect
+Because apps authorize on these labels, disabling the feature (or deleting a
+group) makes downstream authorization **stricter**, not looser — the affected
+users simply stop presenting the label.
+:::
+
+### Where they show up
+
+| Surface                              | Shape                                                                      |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| `GET /api/teams/:id` (session)       | `members[].groups` — `{slug, name, color, inherited_from}`                 |
+| `GET /api/oauth/me/team/:id/members` | same, under `team:<id>:member:read`                                        |
+| `.../members/:userId/profile`        | same, under `team:<id>:member:profile:read`                                |
+| ID token / userinfo                  | `groups_in_team_<id>` — array of slugs; `teams[].groups` via `oidc_fields` |
+
+No new OAuth scope: groups ride along with the member information an app is
+already trusted to read. An app already holding `team:<id>:member:read` starts
+seeing groups on its next call without re-consent — the trade-off accepted
+because these are team-authored labels, not personal data. Management and
+assignment are dashboard-only; `team:<id>:member:write` does **not** grant them.
+
+Team `role_permissions` never leave the dashboard API — downstream apps see
+which labels a member holds, not how the team configured who may hand them out.
+
 ## Team-owned apps and domains
 
 OAuth apps can be created directly under a team (**Teams → \<team\> → Apps → New**)
@@ -265,7 +389,8 @@ The same `oidc_fields` mechanism that surfaces user role in ID tokens also
 emits per-team claims when an app declares them — useful for Cloudflare Access
 policies that depend on team membership. The `teams:read` scope unlocks the
 flat `teams` claim plus the `in_team_<id>` / `role_in_team_<id>` per-team
-markers. See the
+markers, and `groups_in_team_<id>` for teams using
+[member groups](#member-groups). See the
 [Cloudflare Access integration](oauth.md#cloudflare-access) for details.
 
 ### Picking a tier
@@ -295,6 +420,11 @@ GET    /api/teams/:id/members                list members (direct only)
 POST   /api/teams/:id/members                add by username/id
 PATCH  /api/teams/:id/members/:userId        change role
 DELETE /api/teams/:id/members/:userId        remove (or leave with self)
+GET    /api/teams/:id/groups                 list group definitions + capabilities
+POST   /api/teams/:id/groups                 create a group
+PATCH  /api/teams/:id/groups/:groupId        rename / recolour (slug immutable)
+DELETE /api/teams/:id/groups/:groupId        delete (unassigns everywhere)
+PUT    /api/teams/:id/members/:userId/groups replace a member's group set
 POST   /api/teams/:id/transfer-ownership     transfer to a co-owner (direct owner only)
 GET    /api/teams/join/:token                preview an invite (auth optional)
 POST   /api/teams/join/:token                accept

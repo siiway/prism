@@ -115,6 +115,22 @@ See that page for the full semantics; the keys themselves:
 | `inherit_team_membership` | boolean | `true`  | Cascade member roles to descendants (effective role = max(direct, inherited)).  |
 | `inherit_team_domains`    | boolean | `true`  | Surface ancestor-owned domains on sub-team listings + use them for auto-verify. |
 
+### Member groups
+
+Site-wide fallback for the per-team capability set behind
+[member groups](teams.md#member-groups). There is no master switch — the
+feature is opt-in per team and off by default, so nothing is emitted until a
+team owner turns it on.
+
+| Key                             | Type   | Default | Description                                                                              |
+| ------------------------------- | ------ | ------- | ---------------------------------------------------------------------------------------- |
+| `default_team_role_permissions` | object | `{}`    | Fallback capability grants for the `admin` role, e.g. `{"admin":{"groups:manage":true}}` |
+
+Resolution order is per-group override → team `role_permissions` → this key →
+built-in defaults (`groups:manage` off, `groups:assign` on). Each level only
+contributes the keys it explicitly sets, so an empty object here simply lets
+every team fall through to the built-ins.
+
 ### Team join requirements (site floor)
 
 Site-wide minimums every team is forced to require, regardless of the team-level

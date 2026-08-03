@@ -16,10 +16,15 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { DeleteRegular, MoreHorizontalRegular } from "@fluentui/react-icons";
+import {
+  DeleteRegular,
+  MoreHorizontalRegular,
+  TagRegular,
+} from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import type { TeamMember } from "../../lib/api";
 
@@ -46,9 +51,13 @@ interface MembersTableProps {
   isCoOwnerOrAbove: boolean;
   myRole: string;
   meId: string | undefined;
+  /** Team-level groups switch. Drives both the extra column and the
+   *  "manage groups" action. */
+  groupsEnabled: boolean;
   onChangeRole: (userId: string, role: string) => void;
   onRemoveMember: (userId: string) => void;
   onTransferOwnership: (userId: string) => void;
+  onAssignGroups: (member: TeamMember) => void;
 }
 
 export function MembersTable({
@@ -58,9 +67,11 @@ export function MembersTable({
   isCoOwnerOrAbove,
   myRole,
   meId,
+  groupsEnabled,
   onChangeRole,
   onRemoveMember,
   onTransferOwnership,
+  onAssignGroups,
 }: MembersTableProps) {
   const styles = useStyles();
   const { t } = useTranslation();
@@ -72,6 +83,9 @@ export function MembersTable({
           <TableRow>
             <TableHeaderCell>{t("teams.memberHeader")}</TableHeaderCell>
             <TableHeaderCell>{t("teams.roleHeader")}</TableHeaderCell>
+            {groupsEnabled && (
+              <TableHeaderCell>{t("teams.groupsHeader")}</TableHeaderCell>
+            )}
             <TableHeaderCell>{t("teams.joinedHeader")}</TableHeaderCell>
             {canManage && <TableHeaderCell />}
           </TableRow>
@@ -108,11 +122,60 @@ export function MembersTable({
                   {m.role}
                 </Badge>
               </TableCell>
+              {groupsEnabled && (
+                <TableCell>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {(m.groups ?? []).map((g) => (
+                      <Tooltip
+                        key={g.slug}
+                        relationship="label"
+                        content={
+                          g.inherited_from
+                            ? t("teams.groupInheritedTooltip", { slug: g.slug })
+                            : g.slug
+                        }
+                      >
+                        <Badge
+                          // Inherited labels are outlined rather than filled:
+                          // they can't be changed from this team, so they
+                          // shouldn't read as locally-set.
+                          appearance={g.inherited_from ? "outline" : "filled"}
+                          size="small"
+                          color={g.color ? undefined : "informative"}
+                          style={
+                            g.color && !g.inherited_from
+                              ? { backgroundColor: g.color, color: "#fff" }
+                              : undefined
+                          }
+                        >
+                          {g.name}
+                        </Badge>
+                      </Tooltip>
+                    ))}
+                  </div>
+                </TableCell>
+              )}
               <TableCell>
                 {new Date(m.joined_at * 1000).toLocaleDateString()}
               </TableCell>
               {canManage && (
                 <TableCell>
+                  {/* Standalone rather than a menu entry: labels are
+                      orthogonal to role, so this stays available for the
+                      owner and for yourself, where the role menu is hidden. */}
+                  {groupsEnabled && (
+                    <Tooltip
+                      relationship="label"
+                      content={t("teams.manageGroupsAction")}
+                    >
+                      <Button
+                        appearance="subtle"
+                        size="small"
+                        icon={<TagRegular />}
+                        onClick={() => onAssignGroups(m)}
+                      />
+                    </Tooltip>
+                  )}
                   {m.user_id !== meId &&
                     m.role !== "owner" &&
                     !(m.role === "co-owner" && myRole !== "owner") && (

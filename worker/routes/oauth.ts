@@ -40,6 +40,12 @@ import {
   UNBOUND_TEAM_SCOPES,
 } from "../lib/scopes";
 import { deliverAppEvent } from "../lib/app-events";
+import {
+  getGroupsForTeamMembers,
+  getGroupsForUserByTeam,
+  getMemberGroups,
+  sanitizeRolePermissions,
+} from "../lib/teamGroups";
 import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
 import {
   getMember,
@@ -3674,14 +3680,23 @@ app.get("/me/team/:teamId/members", async (c) => {
   if (!actorRole || !hasRole(actorRole, "member"))
     return c.json({ error: "actor is no longer a team member" }, 403);
 
-  const { results } = await c.env.DB.prepare(
-    `SELECT tm.user_id, tm.role, tm.joined_at
+  const [{ results }, groups] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT tm.user_id, tm.role, tm.joined_at
      FROM team_members tm WHERE tm.team_id = ? ORDER BY tm.joined_at ASC`,
-  )
-    .bind(teamId)
-    .all<{ user_id: string; role: string; joined_at: number }>();
+    )
+      .bind(teamId)
+      .all<{ user_id: string; role: string; joined_at: number }>(),
+    // Empty for every member when the team has groups switched off.
+    getGroupsForTeamMembers(c.env.DB, teamId),
+  ]);
 
-  return c.json({ members: results });
+  return c.json({
+    members: results.map((m) => ({
+      ...m,
+      groups: groups.get(m.user_id) ?? [],
+    })),
+  });
 });
 
 // GET /api/oauth/me/team/:teamId/members/:userId/profile
@@ -3712,6 +3727,7 @@ app.get("/me/team/:teamId/members/:userId/profile", async (c) => {
       ...row,
       avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, row.avatar_url),
       unproxied_avatar_url: row.avatar_url,
+      groups: await getMemberGroups(c.env.DB, teamId, userId),
     },
   });
 });
@@ -3877,6 +3893,15 @@ app.patch("/me/admin/config", async (c) => {
     if (!BLOCKED.has(k)) updates[k] = v;
   }
 
+  // This endpoint is deny-listed rather than allow-listed, so the capability
+  // set has to be sanitised here too — otherwise arbitrary JSON reaches the
+  // config row through this path.
+  if (updates.default_team_role_permissions !== undefined) {
+    updates.default_team_role_permissions = sanitizeRolePermissions(
+      updates.default_team_role_permissions,
+    );
+  }
+
   if (Object.keys(updates).length === 0)
     return c.json({ error: "No updatable fields provided" }, 400);
 
@@ -3924,10 +3949,22 @@ async function buildClaims(
       )
       .bind(user.id)
       .all<{ id: string; name: string; role: string }>();
+    // Member groups for every team at once — teams with groups disabled are
+    // simply absent from the map.
+    const groupsByTeam = await getGroupsForUserByTeam(
+      db,
+      user.id,
+      rows.results.map((r) => r.id),
+    );
     // Flat claims always emitted with teams:read — required for Cloudflare Access policies
     for (const r of rows.results) {
       claims[`in_team_${r.id}`] = true;
       claims[`role_in_team_${r.id}`] = r.role;
+      // Omitted rather than emitted empty: absence already means "holds no
+      // group here", and it keeps the token from growing a claim per team.
+      const groups = groupsByTeam.get(r.id);
+      if (groups?.length)
+        claims[`groups_in_team_${r.id}`] = groups.map((g) => g.slug);
     }
     // Structured array only when opted into via oidc_fields
     if (wants("teams")) {
@@ -3935,6 +3972,7 @@ async function buildClaims(
         id: r.id,
         name: r.name,
         role: r.role,
+        groups: (groupsByTeam.get(r.id) ?? []).map((g) => g.slug),
       }));
     }
   }
@@ -3953,9 +3991,20 @@ async function buildClaims(
       )
       .bind(user.id, ...[...boundTeamIds])
       .all<{ id: string; role: string }>();
+    // An app may hold only bound team scopes without `teams:read`, so this
+    // path needs its own group lookup — otherwise those apps would see the
+    // membership claims but never the labels.
+    const boundGroups = await getGroupsForUserByTeam(
+      db,
+      user.id,
+      boundRows.results.map((r) => r.id),
+    );
     for (const r of boundRows.results) {
       claims[`in_team_${r.id}`] = true;
       claims[`role_in_team_${r.id}`] = r.role;
+      const groups = boundGroups.get(r.id);
+      if (groups?.length)
+        claims[`groups_in_team_${r.id}`] = groups.map((g) => g.slug);
     }
   }
 

@@ -151,8 +151,39 @@ export interface TeamRow {
   require_2fa: number;
   /** 1 = members must have a verified primary email. */
   require_verified_email: number;
+  /** 1 = this team uses member groups (owner-only opt-in, default off).
+   *  While 0 every read surface omits groups; the rows themselves are kept
+   *  so re-enabling restores the previous assignments. */
+  enable_groups: number;
+  /** JSON {@link TeamRolePermissions}, or NULL when nothing is overridden.
+   *  Owner-only to change — a capability set that the roles it constrains
+   *  could edit would be no constraint at all. */
+  role_permissions: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface TeamGroupRow {
+  id: string;
+  team_id: string;
+  /** Stable identifier emitted to downstream apps. Immutable after
+   *  creation — see the migration note. */
+  slug: string;
+  name: string;
+  description: string;
+  color: string | null;
+  /** NULL = follow the team/site/built-in chain for `groups:assign`;
+   *  0/1 = per-group exception. Owner-only to change. */
+  admin_assignable: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface TeamMemberGroupRow {
+  team_id: string;
+  user_id: string;
+  group_id: string;
+  assigned_at: number;
 }
 
 export interface TeamMemberRow {
@@ -571,8 +602,27 @@ export interface SiteConfig {
   /** Public team profile default — show the list of immediate sub-teams.
    *  Per-team override lives in {@link TeamRow.profile_show_sub_teams}. */
   default_team_profile_show_sub_teams: boolean;
+  /** Site-wide fallback for the per-team capability set, same shape as
+   *  {@link TeamRow.role_permissions}. Sits between a team's own overrides
+   *  and the built-in defaults in worker/lib/teamGroups.ts — operators can
+   *  shift the default posture for every team that hasn't customised it.
+   *  Keys absent here fall through to the built-ins. */
+  default_team_role_permissions: TeamRolePermissions;
   initialized: boolean;
 }
+
+/** Capability overrides for non-owner roles within a team, keyed by role.
+ *  Only explicitly-set keys are present; anything missing falls through to
+ *  the next level of the chain. Owners and co-owners are never gated by
+ *  this — they always hold every capability. */
+export type TeamRolePermissions = Partial<
+  Record<"admin", Partial<Record<TeamCapability, boolean>>>
+>;
+
+/** Capabilities that a team owner can grant to (or withhold from) admins.
+ *  Extend this union to add more; no migration needed since the storage is
+ *  a JSON blob. */
+export type TeamCapability = "groups:manage" | "groups:assign";
 
 export interface AuthUser {
   id: string;

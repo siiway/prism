@@ -314,7 +314,7 @@ ID 令牌是一个签名的 JWT。默认算法为 **ML-DSA-65**（后量子，FI
 | -------------- | ----------------- | ---------------------------------------------------------------------------- |
 | `profile`      | _（始终包含）_    | `name`、`preferred_username`、`picture`                                      |
 | `email`        | _（始终包含）_    | `email`、`email_verified`                                                    |
-| `teams:read`   | `teams`           | `teams` — `{ id, name, role }` 对象数组，表示用户的团队成员身份              |
+| `teams:read`   | `teams`           | `teams` — `{ id, name, role, groups }` 对象数组，表示用户的团队成员身份      |
 | `apps:read`    | `apps`            | `apps` — `{ id, name, client_id, is_verified }` 对象数组，表示用户拥有的应用 |
 | `domains:read` | `domains`         | `domains` — `{ id, domain, verified }` 对象数组                              |
 | `gpg:read`     | `gpg_keys`        | `gpg_keys` — `{ id, fingerprint, key_id, name }` 对象数组                    |
@@ -325,6 +325,20 @@ ID 令牌是一个签名的 JWT。默认算法为 **ML-DSA-65**（后量子，FI
 ```json
 { "oidc_fields": ["teams", "domains"] }
 ```
+
+### 按团队的扁平 claim
+
+与 `oidc_fields` 无关：只要授予了 `teams:read`，或任何绑定形式的 `team:<id>:*` scope，就一定会产出按团队的扁平标记 —— 因为 Cloudflare Access 这类策略引擎只能匹配扁平的 claim 名。
+
+| Claim                      | 值         | 何时产出                                                |
+| -------------------------- | ---------- | ------------------------------------------------------- |
+| `in_team_<team-id>`        | `true`     | 用户是该团队成员                                        |
+| `role_in_team_<team-id>`   | 如 `admin` | 始终与 `in_team_<team-id>` 一同产出                     |
+| `groups_in_team_<team-id>` | slug 数组  | 该团队启用了[身份组](teams.md#身份组)且用户至少持有一个 |
+
+`groups_in_team_<id>` 在为空时**直接省略而不是下发空数组** —— 缺失本身已经表示「在该团队不持有任何身份组」，省略也避免了每个团队都往令牌里塞一个 claim。团队关闭身份组功能时同样不产出，无论库里存了什么。
+
+值是身份组的 **slug** 而非展示名：slug 不可变，因此基于它编写的策略在团队改名后依然有效。
 
 ## 加强 2FA（敏感操作再确认）
 
@@ -521,6 +535,7 @@ Content-Type: application/json
 role
 in_team_<team-id>
 role_in_team_<team-id>
+groups_in_team_<team-id>
 ```
 
 保存后点击 **Test** 验证连接。成功后可在 `oidc_fields` 中看到声明：
@@ -531,7 +546,8 @@ role_in_team_<team-id>
   "oidc_fields": {
     "role": "admin",
     "in_team_abc123": true,
-    "role_in_team_abc123": "owner"
+    "role_in_team_abc123": "owner",
+    "groups_in_team_abc123": ["backend", "oncall"]
   }
 }
 ```
@@ -540,11 +556,12 @@ role_in_team_<team-id>
 
 在 Access 应用策略中使用 **OIDC Claim** 选择器：
 
-| 选择器     | Claim name               | Claim value | 效果              |
-| ---------- | ------------------------ | ----------- | ----------------- |
-| OIDC Claim | `role`                   | `admin`     | 仅限 Prism 管理员 |
-| OIDC Claim | `in_team_<team-id>`      | `true`      | 指定团队成员      |
-| OIDC Claim | `role_in_team_<team-id>` | `owner`     | 仅限团队所有者    |
+| 选择器     | Claim name                 | Claim value | 效果               |
+| ---------- | -------------------------- | ----------- | ------------------ |
+| OIDC Claim | `role`                     | `admin`     | 仅限 Prism 管理员  |
+| OIDC Claim | `in_team_<team-id>`        | `true`      | 指定团队成员       |
+| OIDC Claim | `role_in_team_<team-id>`   | `owner`     | 仅限团队所有者     |
+| OIDC Claim | `groups_in_team_<team-id>` | `oncall`    | 持有该身份组的成员 |
 
 > **注意：** Cloudflare Access 从 **ID 令牌**（RS256 签名的 JWT）中读取自定义声明。Dashboard 中填写的声明名必须与 Prism 实际嵌入令牌的字段名完全一致，后者由应用的 `oidc_fields` 配置决定。
 

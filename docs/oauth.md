@@ -352,21 +352,35 @@ Standard claims (always present when `openid` scope is requested):
 
 Scope-gated claims — `profile` and `email` claims are included whenever the corresponding scope is granted. The remaining claims below also require the application to declare the field name in its `oidc_fields` configuration:
 
-| Scope          | Field name        | Claim(s) added to ID token                                                           |
-| -------------- | ----------------- | ------------------------------------------------------------------------------------ |
-| `profile`      | _(always)_        | `name`, `preferred_username`, `picture`                                              |
-| `email`        | _(always)_        | `email`, `email_verified`                                                            |
-| `teams:read`   | `teams`           | `teams` — array of `{ id, name, role }` objects for the user's team memberships      |
-| `apps:read`    | `apps`            | `apps` — array of `{ id, name, client_id, is_verified }` objects for the user's apps |
-| `domains:read` | `domains`         | `domains` — array of `{ id, domain, verified }` objects                              |
-| `gpg:read`     | `gpg_keys`        | `gpg_keys` — array of `{ id, fingerprint, key_id, name }` objects                    |
-| `social:read`  | `social_accounts` | `social_accounts` — array of `{ id, provider, provider_user_id }` objects            |
+| Scope          | Field name        | Claim(s) added to ID token                                                              |
+| -------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| `profile`      | _(always)_        | `name`, `preferred_username`, `picture`                                                 |
+| `email`        | _(always)_        | `email`, `email_verified`                                                               |
+| `teams:read`   | `teams`           | `teams` — array of `{ id, name, role, groups }` objects for the user's team memberships |
+| `apps:read`    | `apps`            | `apps` — array of `{ id, name, client_id, is_verified }` objects for the user's apps    |
+| `domains:read` | `domains`         | `domains` — array of `{ id, domain, verified }` objects                                 |
+| `gpg:read`     | `gpg_keys`        | `gpg_keys` — array of `{ id, fingerprint, key_id, name }` objects                       |
+| `social:read`  | `social_accounts` | `social_accounts` — array of `{ id, provider, provider_user_id }` objects               |
 
 To opt an application into a custom claim, include the field name in the app's `oidc_fields` array when creating or updating it via the API:
 
 ```json
 { "oidc_fields": ["teams", "domains"] }
 ```
+
+### Flat per-team claims
+
+Independent of `oidc_fields`, granting `teams:read` — or any bound `team:<id>:*` scope — always emits flat per-team markers, because policy engines like Cloudflare Access can only match on flat claim names:
+
+| Claim                      | Value          | Emitted when                                                                          |
+| -------------------------- | -------------- | ------------------------------------------------------------------------------------- |
+| `in_team_<team-id>`        | `true`         | The user is a member of that team                                                     |
+| `role_in_team_<team-id>`   | e.g. `admin`   | Always, alongside `in_team_<team-id>`                                                 |
+| `groups_in_team_<team-id>` | array of slugs | The team uses [member groups](teams.md#member-groups) and the user holds at least one |
+
+`groups_in_team_<id>` is **omitted rather than sent empty** — absence already means "holds no group here", and skipping it keeps the token from growing a claim per team. It is also absent for any team with the groups feature switched off, regardless of what is stored.
+
+The values are group _slugs_, not display names: slugs are immutable, so a policy that matches on them keeps working after a team renames a group.
 
 ## Step-up 2FA
 
@@ -580,6 +594,7 @@ Under **OIDC Claims**, enter the names of the custom claims Prism returns, for e
 role
 in_team_<team-id>
 role_in_team_<team-id>
+groups_in_team_<team-id>
 ```
 
 After saving, use **Test** to verify. A successful test shows the claims under `oidc_fields`:
@@ -590,7 +605,8 @@ After saving, use **Test** to verify. A successful test shows the claims under `
   "oidc_fields": {
     "role": "admin",
     "in_team_abc123": true,
-    "role_in_team_abc123": "owner"
+    "role_in_team_abc123": "owner",
+    "groups_in_team_abc123": ["backend", "oncall"]
   }
 }
 ```
@@ -599,10 +615,11 @@ After saving, use **Test** to verify. A successful test shows the claims under `
 
 In your Access application policy, use the **OIDC Claim** selector:
 
-| Selector   | Claim name               | Claim value | Effect                     |
-| ---------- | ------------------------ | ----------- | -------------------------- |
-| OIDC Claim | `role`                   | `admin`     | Prism admins only          |
-| OIDC Claim | `in_team_<team-id>`      | `true`      | Members of a specific team |
-| OIDC Claim | `role_in_team_<team-id>` | `owner`     | Team owners only           |
+| Selector   | Claim name                 | Claim value | Effect                     |
+| ---------- | -------------------------- | ----------- | -------------------------- |
+| OIDC Claim | `role`                     | `admin`     | Prism admins only          |
+| OIDC Claim | `in_team_<team-id>`        | `true`      | Members of a specific team |
+| OIDC Claim | `role_in_team_<team-id>`   | `owner`     | Team owners only           |
+| OIDC Claim | `groups_in_team_<team-id>` | `oncall`    | Members holding that group |
 
 > **Note:** Cloudflare Access reads custom claims from the **ID token** (RS256-signed JWT). The claim names listed under OIDC Claims in the dashboard must exactly match what Prism embeds in the token, which is controlled by the app's `oidc_fields` setting.

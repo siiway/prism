@@ -100,6 +100,11 @@ const DEFAULT_CONFIG: SiteConfig = {
   inherit_team_membership: true,
   inherit_team_domains: true,
   default_team_profile_show_sub_teams: true,
+  // Site-wide fallback for per-team capability grants. Empty by default so
+  // every team falls through to the built-in defaults in lib/teamGroups.ts;
+  // operators who want a different posture site-wide set it here instead of
+  // editing each team.
+  default_team_role_permissions: {},
   initialized: false,
 };
 

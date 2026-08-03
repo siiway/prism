@@ -100,6 +100,93 @@ description: 协作管理 OAuth 应用与已验证域名 — 角色、邀请、�
   - `team.my_role` —— **有效**角色；当来自继承时，`team.inherited_from` 给出上级 id。
   - `members` —— 仅直接成员（继承成员可在上级团队中查看，这里展开会让每个子团队列表都重复一遍）。
 
+## 身份组
+
+身份组是团队自建的成员标签，一个成员可以同时属于多个。它是**纯标签**：不进角色阶梯，发一个标签不会改变任何人在 Prism 内部能做什么。它唯一的用途，是随成员信息一起下发给团队接入的应用，由这些应用拿去鉴权。
+
+默认关闭。只有团队所有者能在 **Teams → \<team\> → Settings → 身份组** 开启。
+
+### 身份组与子团队的区别
+
+两者都能给下游做基于分组的鉴权，所以有必要说清楚各自适用在哪：
+
+|                              | 子团队                      | 身份组                         |
+| ---------------------------- | --------------------------- | ------------------------------ |
+| 是否独立实体（独立主页、id） | 是                          | 否 —— 团队内的一个标签         |
+| 能否拥有应用与域名           | 能                          | 不能                           |
+| 基数关系                     | 树形层级，深度受限          | 平面多对多，一人可挂多个       |
+| 是否影响 Prism 内部鉴权      | **影响** —— 角色随之继承    | **不影响**                     |
+| 在 claims 里的形态           | 独立的 `in_team_<子团队id>` | `groups_in_team_<团队id>` 数组 |
+| 能否单独授权给应用           | 能，有自己的 `team:` scope  | 不能，随成员信息一起下发       |
+| 与父团队的成员范围关系       | 可以是不重叠的另一批人      | 始终是团队现有成员的子集       |
+
+需要**管辖与资源分家**用子团队；只是给**同一批人打属性标签**用身份组。有个坑值得点名：拿子团队当标签使，每个「标签」都会变成 claims 里的又一个团队 id，而且因为成员身份会向下继承，你本来只想打个标签的人，会连带在那个子团队里获得角色。
+
+### 定义与分配
+
+定义在 **Teams → \<team\> → 身份组** 中管理，每个身份组包含：
+
+| 字段   | 说明                                                                 |
+| ------ | -------------------------------------------------------------------- |
+| `slug` | 下游应用用于鉴权的稳定标识。**不可修改** —— 改名会静默打断线上策略。 |
+| `name` | 展示名，可随意修改。                                                 |
+| 描述   | 可选，给人看的。                                                     |
+| 颜色   | 可选 `#rrggbb`，用于标签配色。                                       |
+
+限额：每团队 50 个身份组，每成员 20 个，`slug` 最长 32 字符，仅限小写字母数字与单连字符。
+
+分配入口在成员表格 —— 成员行上的标签按钮。对话框提交的是完整的目标集合，由服务端做差集协调，且只对**实际发生变化**的身份组做权限校验。
+
+### 谁能管理、谁能分配
+
+所有者与共同所有者始终可以。**管理员**能做什么由所有者配置，通过一条回退链解析，每一级只贡献它显式设置过的键：
+
+```
+单组 admin_assignable  →  团队 role_permissions  →  站点默认      →  代码内置
+（仅作用于分配）           （身份组 → 管理员权限）    （default_team_   （管理：关
+                                                      role_permissions） 分配：开）
+```
+
+| 能力            | 覆盖范围                   | 内置默认 |
+| --------------- | -------------------------- | -------- |
+| `groups:manage` | 创建、编辑、删除身份组定义 | 关       |
+| `groups:assign` | 给成员挂载与取消身份组     | 开       |
+
+单组的 `admin_assignable` 覆盖项，是为了让「整体允许管理员发标签」的团队仍能把某个敏感身份组收回给所有者。
+
+::: warning 开关本身仅所有者可改
+开关功能、修改 `role_permissions`、设置单组 `admin_assignable`，这三项都限定所有者，而不是「管理员及以上」—— 这是刻意的。如果被约束的角色能编辑约束自己的配置，这个约束就等于不存在：管理员只需把所有者收走的权限给自己开回来。
+:::
+
+### 继承
+
+身份组像角色一样沿子团队树向下流动：上级团队的成员会在每个下级团队带着上级的标签，并标记 `inherited_from`，前端据此渲染为只读。继承来的标签在其来源团队处管理。
+
+这一行为跟随与角色继承同一个 `inherit_team_membership` 开关 —— 当上下级在成员资格上已被解耦，标签也不再跨过那条边界。
+
+### 关闭之后
+
+关闭是**隐藏，不是清除**。定义与分配关系都留在库里，只是所有读取出口不再下发，已接入的应用从下次刷新令牌起看不到任何身份组。重新开启后，全部分配原样恢复。
+
+继承链上同理：上级团队关掉后，不再向下级贡献任何标签，避免已关闭团队的标签借道子团队泄出去。
+
+::: tip 对下游的影响
+因为应用是拿这些标签做鉴权的，关闭功能（或删除某个身份组）会让下游鉴权**变严**而不是变松 —— 受影响的用户只是不再出示该标签。
+:::
+
+### 出现在哪些位置
+
+| 出口                                 | 形态                                                                       |
+| ------------------------------------ | -------------------------------------------------------------------------- |
+| `GET /api/teams/:id`（会话）         | `members[].groups` —— `{slug, name, color, inherited_from}`                |
+| `GET /api/oauth/me/team/:id/members` | 同上，需 `team:<id>:member:read`                                           |
+| `.../members/:userId/profile`        | 同上，需 `team:<id>:member:profile:read`                                   |
+| ID token / userinfo                  | `groups_in_team_<id>` —— slug 数组；`teams[].groups` 需 `oidc_fields` 选入 |
+
+**不新增 scope**：身份组随应用本就被信任读取的成员信息一起下发。已持有 `team:<id>:member:read` 的应用会在下次调用时自动看到身份组，无需重新授权 —— 之所以接受这个取舍，是因为这是团队自建的标签而非个人隐私数据。管理与分配仅限仪表盘，`team:<id>:member:write` **不**授予这些操作。
+
+团队的 `role_permissions` 不会离开仪表盘 API —— 下游应用看得到成员持有哪些标签，但看不到团队是怎么配置发放权限的。
+
 ## 团队拥有的应用与域名
 
 OAuth 应用可以直接在团队下创建（**Teams → \<team\> → Apps → New**），或从成员个人应用转入（**Apps → \<app\> → Settings → Transfer**）。被转入的个人应用就地改主 — `client_id` 与 `client_secret` 保持不变，外部集成不会断。
@@ -165,7 +252,7 @@ OAuth 应用可以直接在团队下创建（**Teams → \<team\> → Apps → N
 
 ### `oidc_fields` claim
 
-把用户角色嵌入 ID Token 用的 `oidc_fields` 机制同样能产出按团队的 claim — 这对依赖团队成员关系的 Cloudflare Access 策略非常有用。`teams:read` scope 会解锁扁平的 `teams` claim 以及 `in_team_<id>` / `role_in_team_<id>` 标记。详见 [Cloudflare Access 集成](oauth.md#cloudflare-access)。
+把用户角色嵌入 ID Token 用的 `oidc_fields` 机制同样能产出按团队的 claim — 这对依赖团队成员关系的 Cloudflare Access 策略非常有用。`teams:read` scope 会解锁扁平的 `teams` claim 以及 `in_team_<id>` / `role_in_team_<id>` 标记，启用了[身份组](#身份组)的团队还会带上 `groups_in_team_<id>`。详见 [Cloudflare Access 集成](oauth.md#cloudflare-access)。
 
 ### 怎么选
 
@@ -186,6 +273,11 @@ GET    /api/teams/:id/members                列成员
 POST   /api/teams/:id/members                按用户名/ID 添加
 PATCH  /api/teams/:id/members/:userId        改角色
 DELETE /api/teams/:id/members/:userId        移除（self 即退出）
+GET    /api/teams/:id/groups                 列出身份组定义与有效权限
+POST   /api/teams/:id/groups                 创建身份组
+PATCH  /api/teams/:id/groups/:groupId        改名/改色（slug 不可改）
+DELETE /api/teams/:id/groups/:groupId        删除（连带解除所有分配）
+PUT    /api/teams/:id/members/:userId/groups 覆盖某成员的身份组集合
 POST   /api/teams/:id/transfer-ownership     转交给 co-owner
 GET    /api/teams/join/:token                预览邀请（认证可选）
 POST   /api/teams/join/:token                接受邀请

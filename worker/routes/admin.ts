@@ -52,6 +52,7 @@ import type {
   Variables,
 } from "../types";
 import { isUserLocked, isTeamLocked } from "../lib/lockdown";
+import { sanitizeRolePermissions } from "../lib/teamGroups";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -165,6 +166,7 @@ app.patch("/config", async (c) => {
     "inherit_team_membership",
     "inherit_team_domains",
     "default_team_profile_show_sub_teams",
+    "default_team_role_permissions",
   ]);
 
   const updates: Record<string, unknown> = {};
@@ -220,6 +222,14 @@ app.patch("/config", async (c) => {
   // counts from the previous token.
   if (updates.github_readme_token !== undefined) {
     updates.github_readme_token_failures = 0;
+  }
+
+  // Strip the site-default capability set down to keys we recognise so the
+  // config row can't accumulate arbitrary JSON from a hand-rolled request.
+  if (updates.default_team_role_permissions !== undefined) {
+    updates.default_team_role_permissions = sanitizeRolePermissions(
+      updates.default_team_role_permissions,
+    );
   }
 
   // Bound sub-team nesting. Anything beyond ~20 is almost certainly a

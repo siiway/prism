@@ -1243,8 +1243,71 @@ export const api = {
       profile_show_sub_teams?: boolean | null;
       require_2fa?: boolean;
       require_verified_email?: boolean;
+      /** Owner-only. */
+      enable_groups?: boolean;
+      /** Owner-only. Only the keys present are overridden; drop a key to let
+       *  it fall back to the site default. */
+      role_permissions?: TeamRolePermissions;
     },
   ) => request<{ team: Team }>("PATCH", `/teams/${id}`, body, getToken()),
+  listTeamGroups: (teamId: string) =>
+    request<{
+      enabled: boolean;
+      capabilities: Record<TeamCapability, boolean>;
+      can_manage: boolean;
+      groups: TeamGroup[];
+    }>(
+      "GET",
+      `/teams/${encodeURIComponent(teamId)}/groups`,
+      undefined,
+      getToken(),
+    ),
+  createTeamGroup: (
+    teamId: string,
+    body: {
+      slug: string;
+      name: string;
+      description?: string;
+      color?: string | null;
+      admin_assignable?: boolean | null;
+    },
+  ) =>
+    request<{ group: TeamGroup }>(
+      "POST",
+      `/teams/${encodeURIComponent(teamId)}/groups`,
+      body,
+      getToken(),
+    ),
+  updateTeamGroup: (
+    teamId: string,
+    groupId: string,
+    body: {
+      name?: string;
+      description?: string;
+      color?: string | null;
+      admin_assignable?: boolean | null;
+    },
+  ) =>
+    request<{ group: TeamGroup }>(
+      "PATCH",
+      `/teams/${encodeURIComponent(teamId)}/groups/${encodeURIComponent(groupId)}`,
+      body,
+      getToken(),
+    ),
+  deleteTeamGroup: (teamId: string, groupId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/teams/${encodeURIComponent(teamId)}/groups/${encodeURIComponent(groupId)}`,
+      undefined,
+      getToken(),
+    ),
+  setTeamMemberGroups: (teamId: string, userId: string, groupIds: string[]) =>
+    request<{ groups: MemberGroup[] }>(
+      "PUT",
+      `/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}/groups`,
+      { group_ids: groupIds },
+      getToken(),
+    ),
   setTeamShowOnProfile: (id: string, value: boolean | null) =>
     request<{ show_on_profile: boolean | null }>(
       "PATCH",
@@ -1888,8 +1951,49 @@ export interface Team {
    *  to remove their last 2FA factor or unverify their email. */
   require_2fa: boolean;
   require_verified_email: boolean;
+  /** Owner-only opt-in for member groups. Off by default; while off no read
+   *  surface emits groups, but the definitions and assignments are kept. */
+  enable_groups: boolean;
+  /** Owner-configured capability overrides for the `admin` role. Absent keys
+   *  fall through to the site default and then the built-in default. */
+  role_permissions: TeamRolePermissions;
   created_at: number;
   updated_at: number;
+}
+
+/** Capabilities a team owner can grant to or withhold from admins. */
+export type TeamCapability = "groups:manage" | "groups:assign";
+
+export interface TeamRolePermissions {
+  admin?: Partial<Record<TeamCapability, boolean>>;
+}
+
+/** A group definition as managed on the team. */
+export interface TeamGroup {
+  id: string;
+  /** Stable identifier downstream apps authorize on. Immutable. */
+  slug: string;
+  name: string;
+  description: string;
+  color: string | null;
+  /** Per-group override of the admin `groups:assign` capability.
+   *  `null` follows the team/site/built-in chain. Owner-only to change. */
+  admin_assignable: boolean | null;
+  /** Whether the current viewer may assign or remove this group. */
+  can_assign: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+/** A group as it appears on a member, after enable/inheritance resolution. */
+export interface MemberGroup {
+  slug: string;
+  name: string;
+  color: string | null;
+  /** Ancestor team id when inherited from a parent team, `null` when
+   *  assigned on the team being viewed. Inherited labels are managed at the
+   *  ancestor they come from. */
+  inherited_from: string | null;
 }
 
 /** Compact ancestor reference on the team detail response. */
@@ -1973,6 +2077,8 @@ export interface TeamMember {
   avatar_url: string | null;
   role: "owner" | "co-owner" | "admin" | "member";
   joined_at: number;
+  /** Resolved member groups — empty when the team has groups disabled. */
+  groups?: MemberGroup[];
 }
 
 export interface TeamInvite {

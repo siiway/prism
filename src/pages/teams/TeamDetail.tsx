@@ -41,6 +41,7 @@ import {
   PeopleRegular,
   SettingsRegular,
   ShieldTaskRegular,
+  TagRegular,
 } from "@fluentui/react-icons";
 import { AuditLog } from "../../components/AuditLog";
 import { Fragment, useState } from "react";
@@ -53,6 +54,7 @@ import {
   type Domain,
   type OAuthApp,
   type TeamInvite,
+  type TeamMember,
 } from "../../lib/api";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { EmptyState } from "../../components/EmptyState";
@@ -63,7 +65,9 @@ import { AddMemberDialog } from "./dialogs/AddMemberDialog";
 import { CreateSubTeamDialog } from "./dialogs/CreateSubTeamDialog";
 import { MigrateAppDialog } from "./dialogs/MigrateAppDialog";
 import { NewTeamAppDialog } from "./dialogs/NewTeamAppDialog";
+import { AssignGroupsDialog } from "./dialogs/AssignGroupsDialog";
 import { MembersTable } from "./MembersTable";
+import { GroupsTab } from "./GroupsTab";
 import { AppsGrid } from "./AppsGrid";
 import { DomainsTable } from "./DomainsTable";
 import {
@@ -154,6 +158,7 @@ const ROLE_COLORS: Record<
 
 type TabType =
   | "members"
+  | "groups"
   | "apps"
   | "domains"
   | "sub-teams"
@@ -274,6 +279,10 @@ export function TeamDetail() {
       );
     }
   };
+
+  // ── Member groups ───────────────────────────────────────────────────────────
+  const [assigningGroupsFor, setAssigningGroupsFor] =
+    useState<TeamMember | null>(null);
 
   // ── Invites ─────────────────────────────────────────────────────────────────
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -400,6 +409,25 @@ export function TeamDetail() {
     }
   };
 
+  const handleEnableGroupsChange = async (value: boolean) => {
+    if (!id) return;
+    setSavingRequirement("enable_groups");
+    try {
+      await api.updateTeam(id, { enable_groups: value });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["team", id] }),
+        qc.invalidateQueries({ queryKey: ["team-groups", id] }),
+      ]);
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("teams.failedUpdateTeam"),
+      );
+    } finally {
+      setSavingRequirement(null);
+    }
+  };
+
   const handleDeleteTeam = async () => {
     if (!id) return;
     try {
@@ -506,6 +534,13 @@ export function TeamDetail() {
         <Tab value="members" icon={<PeopleRegular />}>
           {t("teams.membersTab", { count: members.length })}
         </Tab>
+        {/* Visible to managers even while the feature is off, so an owner
+            can find the switch and see what's already defined. */}
+        {canManage && (team.enable_groups || isOwner) && (
+          <Tab value="groups" icon={<TagRegular />}>
+            {t("teams.groupsTab")}
+          </Tab>
+        )}
         <Tab value="apps" icon={<AppsRegular />}>
           {t("teams.appsTab")}
         </Tab>
@@ -559,11 +594,32 @@ export function TeamDetail() {
             isCoOwnerOrAbove={isCoOwnerOrAbove}
             myRole={myRole}
             meId={me?.id}
+            groupsEnabled={team.enable_groups}
             onChangeRole={handleChangeRole}
             onRemoveMember={handleRemoveMember}
             onTransferOwnership={handleTransferOwnership}
+            onAssignGroups={setAssigningGroupsFor}
           />
+
+          {assigningGroupsFor && (
+            <AssignGroupsDialog
+              teamId={id!}
+              member={assigningGroupsFor}
+              onClose={() => setAssigningGroupsFor(null)}
+              showMsg={showMsg}
+            />
+          )}
         </div>
+      )}
+
+      {/* Member groups tab */}
+      {tab === "groups" && canManage && (
+        <GroupsTab
+          teamId={id!}
+          enabled={team.enable_groups}
+          isOwner={isOwner}
+          showMsg={showMsg}
+        />
       )}
 
       {/* Apps tab */}
@@ -999,6 +1055,41 @@ export function TeamDetail() {
                 </div>
               );
             })()}
+
+          {isOwner && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                padding: 16,
+                border: `1px solid ${tokens.colorNeutralStroke1}`,
+                borderRadius: 8,
+              }}
+            >
+              <div>
+                <Text weight="semibold" size={400} block>
+                  {t("teams.groupsSettingsTitle")}
+                </Text>
+                <Text
+                  size={200}
+                  block
+                  style={{
+                    color: tokens.colorNeutralForeground3,
+                    marginTop: 4,
+                  }}
+                >
+                  {t("teams.groupsSettingsDesc")}
+                </Text>
+              </div>
+              <Switch
+                label={t("teams.enableGroups")}
+                checked={team.enable_groups}
+                disabled={savingRequirement === "enable_groups"}
+                onChange={(_, d) => handleEnableGroupsChange(d.checked)}
+              />
+            </div>
+          )}
 
           {(site?.enable_public_profiles ?? true) && (
             <div
