@@ -45,6 +45,7 @@ import {
   canManageGroups,
   effectiveCapabilities,
   getGroupsForTeamMembers,
+  getMemberGroups,
   getSiteRolePermissions,
   listTeamGroups,
   parseRolePermissions,
@@ -1517,6 +1518,10 @@ app.get("/:id/groups", async (c) => {
       ctx.team.role_permissions,
       ctx.siteDefaults,
     ),
+    // What the chain resolves to *without* this team's overrides. The
+    // settings UI labels its "follow the site default" option with this, so
+    // an owner can see what clearing an override would actually give them.
+    default_capabilities: effectiveCapabilities(null, ctx.siteDefaults),
     can_manage: canManageGroups(
       ctx.role,
       ctx.team.role_permissions,
@@ -1870,8 +1875,9 @@ app.put("/:id/members/:userId/groups", async (c) => {
     },
   });
 
-  const groups = await getGroupsForTeamMembers(c.env.DB, id);
-  return c.json({ groups: groups.get(targetUserId) ?? [] });
+  // Single-member resolve — the whole-team variant would recompute every
+  // other member's labels just to read one row back.
+  return c.json({ groups: await getMemberGroups(c.env.DB, id, targetUserId) });
 });
 
 // ─── Invites ──────────────────────────────────────────────────────────────────

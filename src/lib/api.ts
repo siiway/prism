@@ -1253,7 +1253,11 @@ export const api = {
   listTeamGroups: (teamId: string) =>
     request<{
       enabled: boolean;
+      /** Resolved through the full chain, including this team's overrides. */
       capabilities: Record<TeamCapability, boolean>;
+      /** What the chain gives without this team's overrides — lets the
+       *  settings UI say what "follow the site default" means. */
+      default_capabilities: Record<TeamCapability, boolean>;
       can_manage: boolean;
       groups: TeamGroup[];
     }>(

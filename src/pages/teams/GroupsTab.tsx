@@ -16,7 +16,6 @@ import {
   MessageBar,
   Select,
   Spinner,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -310,16 +309,23 @@ function AdminCapabilitiesPanel({
   });
 
   const effective = groupsData?.capabilities;
+  const defaults = groupsData?.default_capabilities;
   const overrides = teamData?.team.role_permissions?.admin ?? {};
 
+  // `null` clears the override so the capability falls back through the
+  // chain again. Dropping the key entirely is what signals that — an
+  // explicit `false` would pin it instead.
   const setCapability = async (
     key: "groups:manage" | "groups:assign",
-    value: boolean,
+    value: boolean | null,
   ) => {
     setSaving(key);
     try {
+      const nextAdmin = { ...overrides };
+      if (value === null) delete nextAdmin[key];
+      else nextAdmin[key] = value;
       await api.updateTeam(teamId, {
-        role_permissions: { admin: { ...overrides, [key]: value } },
+        role_permissions: { admin: nextAdmin },
       });
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["team", teamId] }),
@@ -336,7 +342,47 @@ function AdminCapabilitiesPanel({
     }
   };
 
-  if (!effective) return null;
+  if (!effective || !defaults) return null;
+
+  const capabilityField = (
+    key: "groups:manage" | "groups:assign",
+    label: string,
+  ) => {
+    const override = overrides[key];
+    return (
+      <Field
+        key={key}
+        label={label}
+        hint={
+          override === undefined
+            ? undefined
+            : t("teams.capabilityOverridden", {
+                state: defaults[key]
+                  ? t("teams.capabilityAllow")
+                  : t("teams.capabilityDeny"),
+              })
+        }
+      >
+        <Select
+          value={override === undefined ? "" : override ? "yes" : "no"}
+          disabled={saving === key}
+          onChange={(_, d) =>
+            setCapability(key, d.value === "" ? null : d.value === "yes")
+          }
+        >
+          <option value="">
+            {t("teams.capabilityFollowDefault", {
+              state: defaults[key]
+                ? t("teams.capabilityAllow")
+                : t("teams.capabilityDeny"),
+            })}
+          </option>
+          <option value="yes">{t("teams.capabilityAllow")}</option>
+          <option value="no">{t("teams.capabilityDeny")}</option>
+        </Select>
+      </Field>
+    );
+  };
 
   return (
     <div className={styles.panel}>
@@ -352,18 +398,8 @@ function AdminCapabilitiesPanel({
           {t("teams.adminCapabilitiesDesc")}
         </Text>
       </div>
-      <Switch
-        label={t("teams.capabilityGroupsManage")}
-        checked={effective["groups:manage"]}
-        disabled={saving === "groups:manage"}
-        onChange={(_, d) => setCapability("groups:manage", d.checked)}
-      />
-      <Switch
-        label={t("teams.capabilityGroupsAssign")}
-        checked={effective["groups:assign"]}
-        disabled={saving === "groups:assign"}
-        onChange={(_, d) => setCapability("groups:assign", d.checked)}
-      />
+      {capabilityField("groups:manage", t("teams.capabilityGroupsManage"))}
+      {capabilityField("groups:assign", t("teams.capabilityGroupsAssign"))}
     </div>
   );
 }

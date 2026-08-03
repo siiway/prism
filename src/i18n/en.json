@@ -764,7 +764,11 @@
     "capabilityGroupsManage": "Admins can create, edit and delete groups",
     "capabilityGroupsAssign": "Admins can assign groups to members",
     "capabilitiesSaved": "Permissions updated",
-    "capabilitiesFailed": "Could not update permissions"
+    "capabilitiesFailed": "Could not update permissions",
+    "capabilityFollowDefault": "Follow the site default ({{state}})",
+    "capabilityAllow": "Allowed",
+    "capabilityDeny": "Not allowed",
+    "capabilityOverridden": "Overriding the site default ({{state}}). Pick “follow the site default” to clear it."
   },
   "connections": {
     "title": "Linked Accounts",

@@ -764,7 +764,11 @@
     "capabilityGroupsManage": "管理员可创建、编辑和删除身份组",
     "capabilityGroupsAssign": "管理员可给成员分配身份组",
     "capabilitiesSaved": "权限已更新",
-    "capabilitiesFailed": "权限更新失败"
+    "capabilitiesFailed": "权限更新失败",
+    "capabilityFollowDefault": "跟随站点默认（{{state}}）",
+    "capabilityAllow": "允许",
+    "capabilityDeny": "不允许",
+    "capabilityOverridden": "已覆盖站点默认（{{state}}）。选「跟随站点默认」即可清除覆盖。"
   },
   "connections": {
     "title": "关联账号",
