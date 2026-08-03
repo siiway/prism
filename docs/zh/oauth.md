@@ -565,6 +565,8 @@ groups_in_team_<team-id>
 
 > **注意：** Cloudflare Access 从 **ID 令牌**（RS256 签名的 JWT）中读取自定义声明。Dashboard 中填写的声明名必须与 Prism 实际嵌入令牌的字段名完全一致，后者由应用的 `oidc_fields` 配置决定。
 
+> **数组型 claim 的匹配：** `groups_in_team_<team-id>` 是一个数组（如 `["backend", "oncall"]`）。Access 通过其 [Multi-record OIDC claims（多记录 OIDC 声明）](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/generic-oidc/#multi-record-oidc-claims) 支持来匹配 —— 数组会被拆成一条条记录单独引用，因此策略值填 `oncall` 即可匹配数组中含 `oncall` 的所有用户。匹配是**整条记录**级别的：Access **不支持**部分 / 子串值引用，这也正是该 claim 携带不可变的身份组 **slug** 而非展示名的原因。
+
 ## 错误响应
 
 授权错误会重定向到你的 `redirect_uri`，附带：

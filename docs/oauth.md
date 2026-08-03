@@ -623,3 +623,5 @@ In your Access application policy, use the **OIDC Claim** selector:
 | OIDC Claim | `groups_in_team_<team-id>` | `oncall`    | Members holding that group |
 
 > **Note:** Cloudflare Access reads custom claims from the **ID token** (RS256-signed JWT). The claim names listed under OIDC Claims in the dashboard must exactly match what Prism embeds in the token, which is controlled by the app's `oidc_fields` setting.
+
+> **Matching an array claim:** `groups_in_team_<team-id>` is an array (e.g. `["backend", "oncall"]`). Access matches it through its [Multi-record OIDC claims](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/generic-oidc/#multi-record-oidc-claims) support — each element is parsed out individually, so a policy value of `oncall` matches any user whose array contains `oncall`. Matching is on the whole element only: Access does **not** support partial/substring value references, which is exactly why the claim carries immutable group _slugs_ rather than display names.
