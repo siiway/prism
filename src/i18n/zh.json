@@ -767,8 +767,7 @@
     "capabilitiesFailed": "权限更新失败",
     "capabilityFollowDefault": "跟随站点默认（{{state}}）",
     "capabilityAllow": "允许",
-    "capabilityDeny": "不允许",
-    "capabilityOverridden": "已覆盖站点默认（{{state}}）。选「跟随站点默认」即可清除覆盖。"
+    "capabilityDeny": "不允许"
   },
   "connections": {
     "title": "关联账号",

@@ -350,19 +350,7 @@ function AdminCapabilitiesPanel({
   ) => {
     const override = overrides[key];
     return (
-      <Field
-        key={key}
-        label={label}
-        hint={
-          override === undefined
-            ? undefined
-            : t("teams.capabilityOverridden", {
-                state: defaults[key]
-                  ? t("teams.capabilityAllow")
-                  : t("teams.capabilityDeny"),
-              })
-        }
-      >
+      <Field key={key} label={label}>
         <Select
           value={override === undefined ? "" : override ? "yes" : "no"}
           disabled={saving === key}

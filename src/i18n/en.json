@@ -767,8 +767,7 @@
     "capabilitiesFailed": "Could not update permissions",
     "capabilityFollowDefault": "Follow the site default ({{state}})",
     "capabilityAllow": "Allowed",
-    "capabilityDeny": "Not allowed",
-    "capabilityOverridden": "Overriding the site default ({{state}}). Pick “follow the site default” to clear it."
+    "capabilityDeny": "Not allowed"
   },
   "connections": {
     "title": "Linked Accounts",
