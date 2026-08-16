@@ -365,9 +365,9 @@ app.patch("/me", async (c) => {
     changedFields.avatar_url = body.avatar_url ?? "";
 
   const auditMeta = auditRequestMeta(c);
-  const changedFieldNames = updates
-    .filter((u) => u !== "updated_at = ?" && u !== "profile_readme_updated_at = ?" && u !== "profile_readme_source_meta = ?")
-    .map((u) => u.split(" = ")[0]);
+  const changedFieldNames = Object.keys(changedFields).filter(
+    (f) => f !== "updated_at" && f !== "profile_readme_updated_at" && f !== "profile_readme_source_meta"
+  );
   await recordAudit(c.env, c.executionCtx, {
     scope: "user",
     scopeId: user.id,

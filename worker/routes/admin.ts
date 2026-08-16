@@ -1837,8 +1837,12 @@ app.get("/migrate-recovery-codes-status", async (c) => {
   let unmigrated = 0;
   for (const row of rows.results) {
     total++;
-    const codes = JSON.parse(row.backup_codes) as string[];
-    if (!codes.every((c) => c.startsWith("$sha256$"))) unmigrated++;
+    try {
+      const codes = JSON.parse(row.backup_codes) as string[];
+      if (!codes.every((c) => c.startsWith("$sha256$"))) unmigrated++;
+    } catch {
+      unmigrated++;
+    }
   }
 
   return c.json({ total, unmigrated });

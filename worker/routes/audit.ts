@@ -543,20 +543,17 @@ app.get("/platform/legacy-webhooks-status", async (c) => {
   if (user.role !== "admin") return c.json({ error: "Forbidden" }, 403);
 
   const { results } = await c.env.DB.prepare(
-    "SELECT id, name, user_id FROM webhooks",
-  ).all<{ id: string; name: string; user_id: string | null }>();
+    `SELECT w.id, w.name, w.user_id,
+            (SELECT 1 FROM audit_webhooks aw WHERE aw.created_by = ? AND aw.name = w.name || ' (migrated)' LIMIT 1) AS migrated
+     FROM webhooks w`,
+  )
+    .bind(user.id)
+    .all<{ id: string; name: string; user_id: string | null; migrated: number | null }>();
 
-  let unmigrated = 0;
-  for (const wh of results) {
-    const existing = await c.env.DB.prepare(
-      "SELECT id FROM audit_webhooks WHERE created_by = ? AND name = ? LIMIT 1",
-    )
-      .bind(user.id, `${wh.name} (migrated)`)
-      .first();
-    if (!existing) unmigrated++;
-  }
+  const total = results.length;
+  const unmigrated = results.filter((r) => !r.migrated).length;
 
-  return c.json({ total: results.length, unmigrated });
+  return c.json({ total, unmigrated });
 });
 
 app.post("/platform/migrate-legacy-webhooks", async (c) => {
