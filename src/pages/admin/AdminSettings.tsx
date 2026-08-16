@@ -137,6 +137,19 @@ export function AdminSettings() {
     enabled: tab === "danger",
   });
 
+  const { data: webhooksStatus, refetch: refetchWebhooksStatus } = useQuery({
+    queryKey: ["admin-legacy-webhooks-status"],
+    queryFn: api.legacyWebhooksStatus,
+    enabled: tab === "danger",
+  });
+
+  const { data: recoveryCodesStatus, refetch: refetchRecoveryCodesStatus } =
+    useQuery({
+      queryKey: ["admin-recovery-codes-status"],
+      queryFn: api.adminRecoveryCodesStatus,
+      enabled: tab === "danger",
+    });
+
   const { data: teamsAsUsersStatus, refetch: refetchTeamsAsUsersStatus } =
     useQuery({
       queryKey: ["admin-teams-as-users-status"],
@@ -244,6 +257,7 @@ export function AdminSettings() {
           total: res.total,
         }),
       );
+      await refetchWebhooksStatus();
     } catch (err) {
       showMsg(
         "error",
@@ -283,6 +297,7 @@ export function AdminSettings() {
         "success",
         t("admin.migrateRecoveryCodesSuccess", { count: res.migrated }),
       );
+      await refetchRecoveryCodesStatus();
     } catch (err) {
       showMsg(
         "error",
@@ -1650,7 +1665,10 @@ export function AdminSettings() {
             <Button
               appearance="outline"
               onClick={handleMigrateWebhooks}
-              disabled={migratingWebhooks}
+              disabled={
+                migratingWebhooks ||
+                (!!webhooksStatus && webhooksStatus.unmigrated === 0)
+              }
               icon={migratingWebhooks ? <Spinner size="tiny" /> : undefined}
             >
               {t("admin.webhooksMigrateButton")}
@@ -1763,7 +1781,10 @@ export function AdminSettings() {
             <Button
               appearance="outline"
               onClick={handleMigrateRecoveryCodes}
-              disabled={migratingCodes}
+              disabled={
+                migratingCodes ||
+                (!!recoveryCodesStatus && recoveryCodesStatus.unmigrated === 0)
+              }
               icon={migratingCodes ? <Spinner size="tiny" /> : undefined}
             >
               {t("admin.migrateRecoveryCodes")}

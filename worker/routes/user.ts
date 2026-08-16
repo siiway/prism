@@ -365,6 +365,9 @@ app.patch("/me", async (c) => {
     changedFields.avatar_url = body.avatar_url ?? "";
 
   const auditMeta = auditRequestMeta(c);
+  const changedFieldNames = updates
+    .filter((u) => u !== "updated_at = ?" && u !== "profile_readme_updated_at = ?" && u !== "profile_readme_source_meta = ?")
+    .map((u) => u.split(" = ")[0]);
   await recordAudit(c.env, c.executionCtx, {
     scope: "user",
     scopeId: user.id,
@@ -376,7 +379,8 @@ app.patch("/me", async (c) => {
     resourceName: `@${user.username}`,
     ip: auditMeta.ip,
     userAgent: auditMeta.userAgent,
-    metadata: { changed_fields: Object.keys(changedFields) },
+    geo: auditMeta.geo,
+    metadata: { changed_fields: changedFieldNames },
   });
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(

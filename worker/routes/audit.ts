@@ -538,6 +538,27 @@ registerScope("/platform", async (c) => {
 
 // ─── Admin: migrate legacy webhooks into the new audit-webhook system ──────────
 
+app.get("/platform/legacy-webhooks-status", async (c) => {
+  const user = c.get("user");
+  if (user.role !== "admin") return c.json({ error: "Forbidden" }, 403);
+
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, name, user_id FROM webhooks",
+  ).all<{ id: string; name: string; user_id: string | null }>();
+
+  let unmigrated = 0;
+  for (const wh of results) {
+    const existing = await c.env.DB.prepare(
+      "SELECT id FROM audit_webhooks WHERE created_by = ? AND name = ? LIMIT 1",
+    )
+      .bind(user.id, `${wh.name} (migrated)`)
+      .first();
+    if (!existing) unmigrated++;
+  }
+
+  return c.json({ total: results.length, unmigrated });
+});
+
 app.post("/platform/migrate-legacy-webhooks", async (c) => {
   const user = c.get("user");
   if (user.role !== "admin") return c.json({ error: "Forbidden" }, 403);

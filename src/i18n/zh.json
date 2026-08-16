@@ -63,7 +63,7 @@
     "closeMenu": "关闭菜单",
     "openMenu": "打开菜单",
     "signOut": "退出登录",
-    "auditLog": "审核日志"
+    "auditLog": "审计日志"
   },
   "auth": {
     "signIn": "登录",
@@ -759,7 +759,7 @@
     "requirementVerifiedEmailUnmet": "需要已验证的主邮箱。",
     "goToSecurity": "设置二次验证",
     "goToProfile": "验证邮箱",
-    "auditTab": "审核日志",
+    "auditTab": "审计日志",
     "groupsTab": "身份组",
     "groupsHeader": "身份组",
     "groupsDesc": "身份组是你贴在成员身上的标签。它不会改变任何人在 Prism 内部的权限，而是随成员信息下发给团队接入的应用，由这些应用拿去鉴权。",
@@ -1509,7 +1509,7 @@
     "defaultTeamProfileShowMembers": "团队：默认显示成员列表（每位成员自己的设置仍然适用）",
     "defaultTeamProfileShowSubTeams": "团队：默认在公开资料展示子团队列表",
     "webhooksMigrateTitle": "迁移旧版 Webhook",
-    "webhooksMigrateDesc": "将旧版 Webhook 系统中的 Webhook 导入到新的审核日志 Webhook 系统（作为通用 Webhook）。可安全地多次运行。",
+    "webhooksMigrateDesc": "将旧版 Webhook 系统中的 Webhook 导入到新的审计日志 Webhook 系统（作为通用 Webhook）。可安全地多次运行。",
     "webhooksMigrateButton": "迁移 Webhook",
     "webhooksMigrateSuccess": "已迁移 {{count}} 个（共 {{total}} 个）Webhook。",
     "webhooksMigrateFailed": "迁移 Webhook 失败。",
@@ -1683,7 +1683,7 @@
     "rulesetsStop": "匹配后停止处理后续规则",
     "rulesetActiveOverride": "已激活的规则集（\"{{name}}\"）正在覆盖下方的逐事件规则。",
     "rulesTab": "通知",
-    "auditTab": "审核日志"
+    "auditTab": "审计日志"
   },
   "verifyChoose": {
     "title": "验证您的邮箱",
@@ -1792,7 +1792,7 @@
     "metadata": "元数据",
     "backToLog": "返回日志",
     "webhooksTitle": "Webhook",
-    "webhooksHint": "Webhook 会将审核事件实时推送到 Discord、Telegram 或任意 HTTP 端点。",
+    "webhooksHint": "Webhook 会将审计事件实时推送到 Discord、Telegram 或任意 HTTP 端点。",
     "newWebhook": "新建 Webhook",
     "editWebhook": "编辑 Webhook",
     "noWebhooks": "暂无 Webhook。",
@@ -1828,7 +1828,7 @@
     "webhookSaved": "Webhook 已保存。",
     "webhookSaveFailed": "保存 Webhook 失败。",
     "webhookDeleteFailed": "删除 Webhook 失败。",
-    "pageTitle": "审核日志",
+    "pageTitle": "审计日志",
     "pageSubtitle": "你的登录、授权与账户活动记录（Transparent User Control）。"
   },
   "join": {

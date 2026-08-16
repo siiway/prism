@@ -307,12 +307,9 @@ export function AuditLog({ base }: { base: string }) {
                             })
                           }
                         >
-                          {ev.resource_name ??
-                            `${ev.resource_type ?? ""}${
-                              ev.resource_id
-                                ? ` ${ev.resource_id.slice(0, 8)}`
-                                : ""
-                            }`}
+                          {ev.resource_name
+                            ? `${ev.resource_name}`
+                            : `${ev.resource_type ?? ""}${ev.resource_id ? ` / ${ev.resource_id.slice(0, 8)}` : ""}`}
                         </Text>
                       </Tooltip>
                     ) : (

@@ -1108,6 +1108,13 @@ export const api = {
       {},
       getToken(),
     ),
+  adminRecoveryCodesStatus: () =>
+    request<{ total: number; unmigrated: number }>(
+      "GET",
+      "/admin/migrate-recovery-codes-status",
+      undefined,
+      getToken(),
+    ),
   adminSetInviteRegistration: (
     teamId: string,
     body: { granted?: boolean; exemptions?: { email_verification?: boolean } },
@@ -1274,6 +1281,13 @@ export const api = {
       "POST",
       "/audit/platform/migrate-legacy-webhooks",
       {},
+      getToken(),
+    ),
+  legacyWebhooksStatus: () =>
+    request<{ total: number; unmigrated: number }>(
+      "GET",
+      "/audit/platform/legacy-webhooks-status",
+      undefined,
       getToken(),
     ),
 

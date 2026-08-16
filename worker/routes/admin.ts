@@ -977,9 +977,9 @@ app.patch("/users/:id", async (c) => {
     email_verified?: boolean;
   }>();
 
-  const user = await c.env.DB.prepare("SELECT id FROM users WHERE id = ?")
+  const user = await c.env.DB.prepare("SELECT id, username FROM users WHERE id = ?")
     .bind(id)
-    .first();
+    .first<{ id: string; username: string }>();
   if (!user) return c.json({ error: "User not found" }, 404);
 
   if (body.role === "user" && id === admin.id) {
@@ -1023,6 +1023,7 @@ app.patch("/users/:id", async (c) => {
     body,
     getIp(c),
     c.executionCtx,
+    { resourceName: user.username },
   );
   return c.json({ message: "User updated" });
 });
@@ -1075,6 +1076,7 @@ app.delete("/users/:id", async (c) => {
     {},
     getIp(c),
     c.executionCtx,
+    { resourceName: user.username },
   );
   return c.json({ message: "User deleted" });
 });
@@ -1163,9 +1165,9 @@ app.patch("/apps/:id", async (c) => {
     is_first_party?: boolean;
   }>();
 
-  const app = await c.env.DB.prepare("SELECT id FROM oauth_apps WHERE id = ?")
+  const app = await c.env.DB.prepare("SELECT id, name FROM oauth_apps WHERE id = ?")
     .bind(id)
-    .first();
+    .first<{ id: string; name: string }>();
   if (!app) return c.json({ error: "App not found" }, 404);
 
   const updates: string[] = [];
@@ -1196,11 +1198,12 @@ app.patch("/apps/:id", async (c) => {
     c.env,
     admin.id,
     "admin.app.update",
-    "oauth_app",
+    "app",
     id,
     body,
     getIp(c),
     c.executionCtx,
+    { resourceName: app.name },
   );
   return c.json({ message: "App updated" });
 });
@@ -1825,6 +1828,22 @@ app.delete("/image-proxy/:id", async (c) => {
 
 // ─── Migrate recovery codes to hashed format ──────────────────────────────────
 
+app.get("/migrate-recovery-codes-status", async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT backup_codes FROM user_totp_recovery",
+  ).all<{ backup_codes: string }>();
+
+  let total = 0;
+  let unmigrated = 0;
+  for (const row of rows.results) {
+    total++;
+    const codes = JSON.parse(row.backup_codes) as string[];
+    if (!codes.every((c) => c.startsWith("$sha256$"))) unmigrated++;
+  }
+
+  return c.json({ total, unmigrated });
+});
+
 app.post("/migrate-recovery-codes", async (c) => {
   const rows = await c.env.DB.prepare(
     "SELECT user_id, backup_codes FROM user_totp_recovery",
@@ -1943,6 +1962,7 @@ app.delete("/teams/:id", async (c) => {
     {},
     getIp(c),
     c.executionCtx,
+    { resourceName: team.name },
   );
   return c.json({ message: "Team deleted" });
 });
@@ -2085,6 +2105,11 @@ app.post("/teams/:id/dissolve/cancel", async (c) => {
   const admin = c.get("user");
   const id = c.req.param("id");
 
+  const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
+    .bind(id)
+    .first<{ id: string; name: string }>();
+  if (!team) return c.json({ error: "Team not found" }, 404);
+
   const now = Math.floor(Date.now() / 1000);
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -2104,6 +2129,7 @@ app.post("/teams/:id/dissolve/cancel", async (c) => {
     {},
     getIp(c),
     c.executionCtx,
+    { resourceName: team.name },
   );
   return c.json({ message: "Dissolution cancelled" });
 });
@@ -2549,6 +2575,7 @@ async function logAudit(
     actorName?: string | null;
     resourceName?: string | null;
     userAgent?: string | null;
+    geo?: string | null;
   },
 ) {
   let actorName = extra?.actorName ?? null;
@@ -2569,6 +2596,7 @@ async function logAudit(
     resourceName: extra?.resourceName ?? null,
     ip,
     userAgent: extra?.userAgent ?? null,
+    geo: extra?.geo ?? null,
     metadata,
   });
 }
@@ -2680,6 +2708,7 @@ app.post("/invites", async (c) => {
     { email: body.email ?? null },
     getIp(c),
     c.executionCtx,
+    { resourceName: body.email ?? null },
   );
 
   return c.json({ invite: { id, token, invite_url: inviteUrl } }, 201);
@@ -2992,6 +3021,7 @@ app.post("/oauth-sources", async (c) => {
     { slug: body.slug, provider: body.provider },
     getIp(c),
     c.executionCtx,
+    { resourceName: body.slug },
   );
   return c.json(
     {
@@ -3012,10 +3042,10 @@ app.patch("/oauth-sources/:id", async (c) => {
   const { id } = c.req.param();
 
   const existing = await c.env.DB.prepare(
-    "SELECT id FROM oauth_sources WHERE id = ?",
+    "SELECT id, slug FROM oauth_sources WHERE id = ?",
   )
     .bind(id)
-    .first();
+    .first<{ id: string; slug: string }>();
   if (!existing) return c.json({ error: "Source not found" }, 404);
 
   const body = await c.req.json<{
@@ -3109,6 +3139,7 @@ app.patch("/oauth-sources/:id", async (c) => {
     {},
     getIp(c),
     c.executionCtx,
+    { resourceName: existing.slug },
   );
   return c.json({ message: "Updated" });
 });
@@ -3136,6 +3167,7 @@ app.delete("/oauth-sources/:id", async (c) => {
     { slug: existing.slug },
     getIp(c),
     c.executionCtx,
+    { resourceName: existing.slug },
   );
   return c.json({ message: "Deleted" });
 });

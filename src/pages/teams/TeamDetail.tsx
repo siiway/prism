@@ -330,6 +330,7 @@ export function TeamDetail() {
     try {
       await api.changeTeamMemberRole(id, userId, role);
       await qc.invalidateQueries({ queryKey: ["team", id] });
+      await qc.invalidateQueries({ queryKey: ["team-members", id] });
       showMsg("success", t("teams.roleUpdated"));
     } catch (err) {
       showMsg(
@@ -344,6 +345,7 @@ export function TeamDetail() {
     try {
       await api.removeTeamMember(id, userId);
       await qc.invalidateQueries({ queryKey: ["team", id] });
+      await qc.invalidateQueries({ queryKey: ["team-members", id] });
       showMsg("success", t("teams.memberRemoved"));
     } catch (err) {
       showMsg(
@@ -358,6 +360,7 @@ export function TeamDetail() {
     try {
       await api.transferOwnership(id, userId);
       await qc.invalidateQueries({ queryKey: ["team", id] });
+      await qc.invalidateQueries({ queryKey: ["team-members", id] });
       showMsg("success", t("teams.ownershipTransferred"));
     } catch (err) {
       showMsg(
