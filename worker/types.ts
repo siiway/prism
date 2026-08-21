@@ -510,6 +510,19 @@ export type CaptchaProvider =
   | "recaptcha"
   | "pow";
 
+/** How the Turnstile challenge script host is chosen. Cloudflare serves the
+ *  widget JS from a Mainland-China-accelerated mirror
+ *  (challenges.cloudflare-cn.com) alongside the global host
+ *  (challenges.cloudflare.com). Only the client-side script host is affected —
+ *  server-side siteverify always hits the global host. Only applies when
+ *  captcha_provider is "turnstile". */
+export type TurnstileEndpointMode =
+  | "global" // always the global host
+  | "china" // always the China mirror
+  | "client_language" // client picks the mirror when the browser language is Chinese
+  | "server_region" // server picks the mirror when the request geo is CN
+  | "client_region"; // client picks the mirror from its own timezone
+
 export interface SiteConfig {
   site_name: string;
   site_description: string;
@@ -520,6 +533,9 @@ export interface SiteConfig {
   captcha_provider: CaptchaProvider;
   captcha_site_key: string;
   captcha_secret_key: string;
+  /** Turnstile challenge-script host selection strategy. Only meaningful when
+   *  captcha_provider is "turnstile". */
+  turnstile_endpoint_mode: TurnstileEndpointMode;
   pow_difficulty: number;
   domain_reverify_days: number;
   session_ttl_days: number;

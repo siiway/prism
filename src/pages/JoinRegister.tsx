@@ -245,6 +245,7 @@ export function JoinRegister() {
             <Captcha
               provider={info.captcha_provider}
               siteKey={info.captcha_site_key}
+              turnstileEndpoint={info.turnstile_endpoint}
               onVerified={setCaptcha}
               onError={setError}
             />

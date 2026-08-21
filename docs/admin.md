@@ -71,6 +71,15 @@ Choose one captcha provider:
 | reCAPTCHA v3         | Requires a Google reCAPTCHA v3 site key + secret. Invisible.         |
 | Proof-of-Work        | No third-party service. Difficulty 20 = ~0.1–2 s on modern hardware. |
 
+When **Cloudflare Turnstile** is selected, a **Challenge Endpoint** setting
+chooses which host serves the widget script: the global
+`challenges.cloudflare.com` or the Mainland-China-accelerated mirror
+`challenges.cloudflare-cn.com`. Server-side verification always uses the global
+host, so this only affects how the widget loads in the visitor's browser.
+Options: always global, always China, or pick automatically by browser language
+(client-side), by request region (server-side), or by browser region
+(client-side). See [`turnstile_endpoint_mode`](configuration.md#bot-protection-captcha).
+
 ### Email
 
 The email settings are split into two sub-tabs: **Send** and **Receive**.

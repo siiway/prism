@@ -617,6 +617,7 @@ export function Verify2FA() {
             <Captcha
               provider={data.captcha_provider}
               siteKey={data.captcha_site_key}
+              turnstileEndpoint={data.turnstile_endpoint}
               onVerified={handleCaptchaVerified}
             />
           </div>

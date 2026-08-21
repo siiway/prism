@@ -1949,6 +1949,16 @@ export const api = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** Server-resolved directive telling the client which Turnstile challenge-script
+ *  host to load. "server_region" has already been collapsed server-side into a
+ *  concrete "global"/"china"; the client-side modes are resolved in the browser
+ *  by the Captcha component. Absent on older servers → treated as "global". */
+export type TurnstileEndpointDirective =
+  | "global"
+  | "china"
+  | "client_language"
+  | "client_region";
+
 export interface SitePublicConfig {
   site_name: string;
   site_description: string;
@@ -1957,6 +1967,7 @@ export interface SitePublicConfig {
   invite_only: boolean;
   captcha_provider: string;
   captcha_site_key: string;
+  turnstile_endpoint?: TurnstileEndpointDirective;
   pow_difficulty: number;
   require_email_verification: boolean;
   email_verify_methods: "link" | "send" | "both";
@@ -2250,6 +2261,7 @@ export interface JoinPageInfo {
   collects_email: boolean;
   captcha_provider: string;
   captcha_site_key: string;
+  turnstile_endpoint?: TurnstileEndpointDirective;
   pow_difficulty: number;
   /** Always true: the page must state that dissolving the team deletes the
    *  accounts it created, before anyone signs up. */
@@ -2810,6 +2822,8 @@ export interface OAuth2FAInfo {
   captcha_provider: string;
   /** Site key for the configured provider (empty string when not required). */
   captcha_site_key: string;
+  /** Resolved Turnstile script-host directive (see TurnstileEndpointDirective). */
+  turnstile_endpoint?: TurnstileEndpointDirective;
 }
 
 export interface OAuth2FAAuthorizeBody {

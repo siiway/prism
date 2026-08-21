@@ -106,6 +106,7 @@ app.patch("/config", async (c) => {
     "captcha_provider",
     "captcha_site_key",
     "captcha_secret_key",
+    "turnstile_endpoint_mode",
     "pow_difficulty",
     "domain_reverify_days",
     "session_ttl_days",

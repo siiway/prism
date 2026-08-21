@@ -2,6 +2,8 @@
 
 import { Hono } from "hono";
 import { configBag, getConfig, getRsaKeyPair } from "../lib/config";
+import { getGeo } from "../lib/geo";
+import { resolveTurnstileEndpoint } from "../lib/turnstile";
 import {
   encryptSecret,
   hashSecret,
@@ -1508,6 +1510,10 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     captcha_required: captchaRequired,
     captcha_provider: captchaRequired ? config.captcha_provider : "none",
     captcha_site_key: captchaRequired ? config.captcha_site_key : "",
+    turnstile_endpoint: resolveTurnstileEndpoint(
+      config.turnstile_endpoint_mode,
+      getGeo(c).country,
+    ),
   });
 });
 

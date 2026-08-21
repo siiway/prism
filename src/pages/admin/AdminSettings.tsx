@@ -1125,6 +1125,40 @@ export function AdminSettings() {
                   </Field>
                 </>
               )}
+            {get("captcha_provider") === "turnstile" && (
+              <Field
+                label={t("admin.turnstileEndpoint")}
+                hint={t("admin.turnstileEndpointHint")}
+              >
+                <Dropdown
+                  value={t(
+                    `admin.turnstileEndpoint_${
+                      get("turnstile_endpoint_mode") ?? "global"
+                    }`,
+                  )}
+                  selectedOptions={[get("turnstile_endpoint_mode") ?? "global"]}
+                  onOptionSelect={(_, d) =>
+                    set("turnstile_endpoint_mode", d.optionValue)
+                  }
+                >
+                  <Option value="global">
+                    {t("admin.turnstileEndpoint_global")}
+                  </Option>
+                  <Option value="china">
+                    {t("admin.turnstileEndpoint_china")}
+                  </Option>
+                  <Option value="client_language">
+                    {t("admin.turnstileEndpoint_client_language")}
+                  </Option>
+                  <Option value="server_region">
+                    {t("admin.turnstileEndpoint_server_region")}
+                  </Option>
+                  <Option value="client_region">
+                    {t("admin.turnstileEndpoint_client_region")}
+                  </Option>
+                </Dropdown>
+              </Field>
+            )}
             {get("captcha_provider") === "pow" && (
               <Field label={t("admin.powDifficulty")}>
                 <Input
