@@ -36,6 +36,7 @@ const CHINA_TIMEZONES = new Set([
 ]);
 
 function browserIsChineseLanguage(): boolean {
+  if (typeof navigator === "undefined") return false;
   const langs =
     navigator.languages && navigator.languages.length > 0
       ? navigator.languages
@@ -44,6 +45,7 @@ function browserIsChineseLanguage(): boolean {
 }
 
 function browserInChinaTimezone(): boolean {
+  if (typeof Intl === "undefined") return false;
   try {
     return CHINA_TIMEZONES.has(Intl.DateTimeFormat().resolvedOptions().timeZone);
   } catch {
