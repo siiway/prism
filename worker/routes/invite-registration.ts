@@ -24,6 +24,8 @@ import { hashPassword } from "../lib/crypto";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 import { requireAuth } from "../middleware/auth";
 import { getConfig, getConfigValue } from "../lib/config";
+import { getGeo } from "../lib/geo";
+import { resolveTurnstileEndpoint } from "../lib/turnstile";
 import { getIp } from "../lib/clientIp";
 import { rateLimitIp } from "../middleware/rateLimit";
 import { verifyCaptchaToken } from "../middleware/captcha";
@@ -158,6 +160,10 @@ app.get("/join/:teamId", async (c) => {
     collects_email: !exemptions.email_verification,
     captcha_provider: config.captcha_provider,
     captcha_site_key: config.captcha_site_key,
+    turnstile_endpoint: resolveTurnstileEndpoint(
+      config.turnstile_endpoint_mode,
+      getGeo(c).country,
+    ),
     pow_difficulty: config.pow_difficulty,
     // Surfaced so the page can state it plainly before anyone signs up:
     // dissolving this team deletes the accounts it created.

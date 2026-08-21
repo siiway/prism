@@ -58,6 +58,8 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 | reCAPTCHA v3         | 需要 Google reCAPTCHA v3 站点密钥 + 密钥，无感验证 |
 | 工作量证明           | 无需第三方服务，难度 20 在现代硬件上约需 0.1–2 秒  |
 
+选择 **Cloudflare Turnstile** 后，会出现**验证端点**设置，用于选择分发组件脚本的主机：全球 `challenges.cloudflare.com` 或中国大陆加速镜像 `challenges.cloudflare-cn.com`。服务端校验始终使用全球主机，因此该设置只影响组件在访客浏览器中的加载方式。可选：始终全球、始终中国大陆，或按浏览器语言（客户端）、按请求地区（服务端）、按浏览器地区（客户端）自动选择。参见 [`turnstile_endpoint_mode`](configuration.md#机器人防护验证码)。
+
 ### 邮件
 
 邮件设置分为两个子标签页：**发送**和**接收**。

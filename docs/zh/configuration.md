@@ -38,12 +38,21 @@ description: 所有存储在 D1 中的运行时配置项，以及 Wrangler 绑�
 
 同一时刻只能启用一个 provider。注册、登录、改密、重发邮箱验证、以及管理员显式启用的流程都会触发验证码。
 
-| 键                   | 类型   | 默认值   | 说明                                                        |
-| -------------------- | ------ | -------- | ----------------------------------------------------------- |
-| `captcha_provider`   | string | `"none"` | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow` |
-| `captcha_site_key`   | string | `""`     | 所选服务商的公开 site key                                   |
-| `captcha_secret_key` | string | `""`     | 所选服务商的服务端密钥（加密存储）                          |
-| `pow_difficulty`     | number | `20`     | 工作量证明所需的前导零比特数（越高越难）                    |
+| 键                        | 类型   | 默认值     | 说明                                                        |
+| ------------------------- | ------ | ---------- | ----------------------------------------------------------- |
+| `captcha_provider`        | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow` |
+| `captcha_site_key`        | string | `""`       | 所选服务商的公开 site key                                   |
+| `captcha_secret_key`      | string | `""`       | 所选服务商的服务端密钥（加密存储）                          |
+| `turnstile_endpoint_mode` | string | `"global"` | 仅 Turnstile。选择加载组件脚本的主机（见下）                |
+| `pow_difficulty`          | number | `20`       | 工作量证明所需的前导零比特数（越高越难）                    |
+
+**Turnstile 端点。** Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆加速镜像（`challenges.cloudflare-cn.com`）分发 Turnstile 组件脚本。`turnstile_endpoint_mode` 决定访客浏览器加载哪一个——服务端的令牌校验始终使用全球主机，不受影响。可选模式：
+
+- `global`——始终加载全球主机。
+- `china`——始终加载中国大陆镜像。
+- `client_language`——浏览器语言为中文（`zh*`）时加载中国大陆镜像，否则加载全球主机。
+- `server_region`——请求的边缘地理位置为 `CN` 时由服务端选择中国大陆镜像，否则全球主机。
+- `client_region`——浏览器时区属于中国大陆时区时加载中国大陆镜像，否则全球主机。
 
 **Proof-of-work** 不依赖任何第三方服务。`pow/` 中的 Rust→WASM 求解器比 JS 兜底快约 10 倍。难度 20 时一般在 0.1–2 秒内完成。高于 24 可能在低端设备上超时。PoW 一次性使用，通过 `pow_used` 表防重放。
 

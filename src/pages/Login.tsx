@@ -310,6 +310,7 @@ export function Login() {
               key={captchaKey}
               provider={site.captcha_provider}
               siteKey={site.captcha_site_key}
+              turnstileEndpoint={site.turnstile_endpoint}
               onVerified={setCaptcha}
               onError={setError}
             />

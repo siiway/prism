@@ -18,6 +18,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   captcha_provider: "none",
   captcha_site_key: "",
   captcha_secret_key: "",
+  turnstile_endpoint_mode: "global",
   pow_difficulty: 20,
   domain_reverify_days: 30,
   session_ttl_days: 30,

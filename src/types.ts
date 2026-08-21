@@ -10,6 +10,14 @@ export interface SiteConfig {
   captcha_provider: "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow";
   captcha_site_key: string;
   captcha_secret_key: string;
+  /** Turnstile challenge-script host selection strategy (only used when
+   *  captcha_provider is "turnstile"). */
+  turnstile_endpoint_mode:
+    | "global"
+    | "china"
+    | "client_language"
+    | "server_region"
+    | "client_region";
   pow_difficulty: number;
   domain_reverify_days: number;
   session_ttl_days: number;

@@ -45,12 +45,25 @@ Exactly one provider can be active at a time. The captcha is challenged on
 register, login, password change, email-verification resend, and any flow the
 admin enables.
 
-| Key                  | Type   | Default  | Description                                                    |
-| -------------------- | ------ | -------- | -------------------------------------------------------------- |
-| `captcha_provider`   | string | `"none"` | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow`    |
-| `captcha_site_key`   | string | `""`     | Public site key for the chosen provider                        |
-| `captcha_secret_key` | string | `""`     | Server-side secret for the chosen provider (encrypted at rest) |
-| `pow_difficulty`     | number | `20`     | Leading zero bits required for proof-of-work (higher = harder) |
+| Key                       | Type   | Default    | Description                                                    |
+| ------------------------- | ------ | ---------- | -------------------------------------------------------------- |
+| `captcha_provider`        | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow`    |
+| `captcha_site_key`        | string | `""`       | Public site key for the chosen provider                        |
+| `captcha_secret_key`      | string | `""`       | Server-side secret for the chosen provider (encrypted at rest) |
+| `turnstile_endpoint_mode` | string | `"global"` | Turnstile-only. Which host serves the widget script (see below) |
+| `pow_difficulty`          | number | `20`       | Leading zero bits required for proof-of-work (higher = harder) |
+
+**Turnstile endpoint.** Cloudflare serves the Turnstile widget script from the
+global host (`challenges.cloudflare.com`) and a Mainland-China-accelerated
+mirror (`challenges.cloudflare-cn.com`). `turnstile_endpoint_mode` picks which
+one the visitor's browser loads — server-side token verification always uses the
+global host and is unaffected. Modes:
+
+- `global` — always load the global host.
+- `china` — always load the China mirror.
+- `client_language` — the browser loads the China mirror when its language is Chinese (`zh*`), else the global host.
+- `server_region` — the server loads the China mirror when the request's edge geolocation is `CN`, else the global host.
+- `client_region` — the browser loads the China mirror when its timezone is a Mainland-China zone, else the global host.
 
 **Proof-of-work** requires no third-party service. The Rust→WASM solver in
 `pow/` runs ~10× faster than the JS fallback. Difficulty 20 takes ~0.1–2 s

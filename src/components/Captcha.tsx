@@ -15,13 +15,61 @@ export interface CaptchaValue {
 interface CaptchaProps {
   provider: string;
   siteKey: string;
+  /** Server-resolved Turnstile host directive (see the site config's
+   *  turnstile_endpoint_mode). Chooses the global vs. China-mirror widget
+   *  host. Only used when provider === "turnstile"; defaults to the global
+   *  host when absent. */
+  turnstileEndpoint?: string;
   onVerified: (value: CaptchaValue) => void;
   onError?: (err: string) => void;
+}
+
+// IANA timezones served by the Mainland-China Turnstile mirror. Hong Kong and
+// Macau are intentionally excluded — the cloudflare-cn.com endpoint targets
+// Mainland China.
+const CHINA_TIMEZONES = new Set([
+  "Asia/Shanghai",
+  "Asia/Urumqi",
+  "Asia/Chongqing",
+  "Asia/Harbin",
+  "Asia/Kashgar",
+]);
+
+function browserIsChineseLanguage(): boolean {
+  const langs =
+    navigator.languages && navigator.languages.length > 0
+      ? navigator.languages
+      : [navigator.language];
+  return langs.some((l) => l?.toLowerCase().startsWith("zh"));
+}
+
+function browserInChinaTimezone(): boolean {
+  try {
+    return CHINA_TIMEZONES.has(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  } catch {
+    return false;
+  }
+}
+
+// Resolve the server directive to the actual Turnstile challenge-script URL.
+// The client-side modes ("client_language", "client_region") are decided here
+// in the browser; the rest arrive already resolved from the server.
+function turnstileScriptSrc(directive?: string): string {
+  let useChina = false;
+  if (directive === "china") useChina = true;
+  else if (directive === "client_language")
+    useChina = browserIsChineseLanguage();
+  else if (directive === "client_region") useChina = browserInChinaTimezone();
+  const host = useChina
+    ? "https://challenges.cloudflare-cn.com"
+    : "https://challenges.cloudflare.com";
+  return `${host}/turnstile/v0/api.js?render=explicit`;
 }
 
 export function Captcha({
   provider,
   siteKey,
+  turnstileEndpoint,
   onVerified,
   onError,
 }: CaptchaProps) {
@@ -37,8 +85,7 @@ export function Captcha({
     if (provider !== "turnstile") return;
 
     const script = document.createElement("script");
-    script.src =
-      "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    script.src = turnstileScriptSrc(turnstileEndpoint);
     script.async = true;
     script.onload = () => {
       if (!containerRef.current) return;
@@ -54,7 +101,7 @@ export function Captcha({
     return () => {
       document.body.removeChild(script);
     };
-  }, [provider, siteKey, onVerified, onError, t]);
+  }, [provider, siteKey, turnstileEndpoint, onVerified, onError, t]);
 
   // ─── hCaptcha ───────────────────────────────────────────────────────────
   useEffect(() => {
