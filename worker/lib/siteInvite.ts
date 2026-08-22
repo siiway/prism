@@ -72,13 +72,39 @@ export async function validateSiteInvite(
   return { ok: true, invite };
 }
 
-/** Increment an invite's use_count. Call once, after the user is created. */
-export async function consumeSiteInvite(
+/**
+ * Take one use of an invite, atomically. Returns false when there was none
+ * left to take.
+ *
+ * The cap cannot be enforced by validateSiteInvite's read: concurrent
+ * registrations all see the same use_count, all pass, and all increment —
+ * which on an invite-only instance turns one leaked link into as many
+ * accounts as the attacker can request at once. The condition therefore lives
+ * in the UPDATE, so exactly one racing request can take the last use.
+ *
+ * Claim before inserting the user and release on failure, so a rejected
+ * insert does not burn a use. This mirrors the team-invite registration path.
+ */
+export async function claimSiteInvite(
+  env: Env,
+  invite: SiteInviteRow,
+): Promise<boolean> {
+  const res = await env.DB.prepare(
+    `UPDATE site_invites SET use_count = use_count + 1
+        WHERE id = ? AND (max_uses IS NULL OR use_count < max_uses)`,
+  )
+    .bind(invite.id)
+    .run();
+  return res.meta.changes === 1;
+}
+
+/** Hand back a use taken by claimSiteInvite when the account was not created. */
+export async function releaseSiteInvite(
   env: Env,
   invite: SiteInviteRow,
 ): Promise<void> {
   await env.DB.prepare(
-    "UPDATE site_invites SET use_count = use_count + 1 WHERE id = ?",
+    "UPDATE site_invites SET use_count = use_count - 1 WHERE id = ? AND use_count > 0",
   )
     .bind(invite.id)
     .run();

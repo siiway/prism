@@ -53,7 +53,11 @@ import {
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
 import { teamsBlockingDowngrade } from "../lib/teamRequirements";
-import { validateSiteInvite, consumeSiteInvite } from "../lib/siteInvite";
+import {
+  validateSiteInvite,
+  claimSiteInvite,
+  releaseSiteInvite,
+} from "../lib/siteInvite";
 import type {
   AuthUser,
   PasskeyRow,
@@ -243,6 +247,12 @@ app.post("/register", async (c) => {
     : null;
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
 
+  // Take the invite use before creating the account, so concurrent
+  // registrations cannot all pass the earlier check and overrun the cap. The
+  // claim is released below if the insert is rejected.
+  if (usedInvite && !(await claimSiteInvite(c.env, usedInvite)))
+    return c.json({ error: "Invite token has reached its usage limit" }, 403);
+
   try {
     await c.env.DB.prepare(
       `INSERT INTO users (id, email, username, password_hash, display_name, role, email_verified, email_verify_token, is_active, created_at, updated_at)
@@ -261,15 +271,11 @@ app.post("/register", async (c) => {
       )
       .run();
   } catch (err) {
+    if (usedInvite) await releaseSiteInvite(c.env, usedInvite);
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
       return c.json({ error: "Email or username already taken" }, 409);
     throw err;
-  }
-
-  // Mark invite as used
-  if (usedInvite) {
-    await consumeSiteInvite(c.env, usedInvite);
   }
 
   if (verifyToken && config.email_provider !== "none") {

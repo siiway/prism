@@ -12,7 +12,11 @@ import { getConfig, getJwtSecret } from "../lib/config";
 import { getIp } from "../lib/clientIp";
 import { geoJson, recordSessionIp } from "../lib/geo";
 import { decryptSecret, encryptSecret } from "../lib/secretCrypto";
-import { validateSiteInvite, consumeSiteInvite } from "../lib/siteInvite";
+import {
+  validateSiteInvite,
+  claimSiteInvite,
+  releaseSiteInvite,
+} from "../lib/siteInvite";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { signJWT } from "../lib/jwt";
 import { setSessionCookie } from "../lib/cookies";
@@ -1217,20 +1221,30 @@ app.post("/complete", async (c) => {
     // `1` here would let an attacker who set victim@example.com on a
     // fresh, unverified Discord account claim that address on Prism.
     const trustedEmail = state.providerEmail;
-    await c.env.DB.prepare(
-      `INSERT INTO users (id, email, username, display_name, role, email_verified, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'user', ?, 1, ?, ?)`,
-    )
-      .bind(
-        newUserId,
-        trustedEmail ?? `${state.provider}_${state.providerUserId}@prism.local`,
-        username,
-        display_name,
-        trustedEmail ? 1 : 0,
-        now,
-        now,
+    // Take the invite use before the insert — see claimSiteInvite. Released
+    // below if creating the account fails.
+    if (usedInvite && !(await claimSiteInvite(c.env, usedInvite)))
+      return c.json({ error: "Invite token has reached its usage limit" }, 403);
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO users (id, email, username, display_name, role, email_verified, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'user', ?, 1, ?, ?)`,
       )
-      .run();
+        .bind(
+          newUserId,
+          trustedEmail ??
+            `${state.provider}_${state.providerUserId}@prism.local`,
+          username,
+          display_name,
+          trustedEmail ? 1 : 0,
+          now,
+          now,
+        )
+        .run();
+    } catch (err) {
+      if (usedInvite) await releaseSiteInvite(c.env, usedInvite);
+      throw err;
+    }
 
     const storedAccess = await encryptSecret(c.env, state.accessToken);
     const storedRefresh = await encryptSecret(c.env, state.refreshToken);
@@ -1254,11 +1268,6 @@ app.post("/complete", async (c) => {
       .bind(newUserId)
       .first<UserRow>();
     if (!user) return c.json({ error: "Failed to create user" }, 500);
-
-    // Consume the invite only after the account exists, matching auth.ts.
-    if (usedInvite) {
-      await consumeSiteInvite(c.env, usedInvite);
-    }
 
     return c.json({
       token: await issueJWT(c, user),
