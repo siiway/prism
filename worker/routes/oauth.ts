@@ -1951,9 +1951,18 @@ app.post("/token", async (c) => {
 
     // Consume code — match the row we just selected (codeRow.code is
     // already in stored form, so a single direct compare is enough).
-    await c.env.DB.prepare("DELETE FROM oauth_codes WHERE code = ?")
+    //
+    // The delete is what makes the code single-use, so its result decides
+    // whether this request may continue: two redemptions racing here both
+    // pass the checks above, and only the one that actually removes the row
+    // gets to mint tokens.
+    const consumed = await c.env.DB.prepare(
+      "DELETE FROM oauth_codes WHERE code = ?",
+    )
       .bind(codeRow.code)
       .run();
+    if (consumed.meta.changes !== 1)
+      return c.json({ error: "invalid_grant" }, 400);
 
     const user = await c.env.DB.prepare(
       "SELECT * FROM users WHERE id = ? AND kind = 'user'",
