@@ -10,7 +10,7 @@
 
 import { Hono } from "hono";
 import type { Variables } from "../types";
-import { isBlockedHost } from "../lib/safeFetch";
+import { isBlockedHost, safeFetch } from "../lib/safeFetch";
 import { registerImageProxyMapping } from "../lib/proxyImage";
 import { requireAuth } from "../middleware/auth";
 
@@ -134,12 +134,15 @@ app.get("/:id", async (c) => {
 
   let upstream: Response;
   try {
-    upstream = await fetch(rawUrl, {
+    // safeFetch re-applies the host check to every redirect hop. Without it
+    // the mapping's host is checked once here and the upstream is free to
+    // bounce the worker onto a blocked address afterwards.
+    upstream = await safeFetch(rawUrl, {
       method: "GET",
       headers: { Accept: "image/*" },
       // Ask Cloudflare to cache the upstream response
       cf: { cacheTtl: 3600, cacheEverything: true },
-    });
+    } as RequestInit);
   } catch {
     return c.json({ error: "Could not reach upstream URL" }, 502);
   }

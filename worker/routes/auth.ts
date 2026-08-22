@@ -27,12 +27,13 @@ import {
 } from "../lib/secretCrypto";
 import { signJWT } from "../lib/jwt";
 import {
+  claimEnrolmentCounter,
   generateBackupCodes,
   generateTotpSecret,
   hashBackupCodes,
+  matchTotpCounter,
   totpUri,
   verifyAnyTotp,
-  verifyTotp,
 } from "../lib/totp";
 import {
   beginPasskeyAuthentication,
@@ -44,7 +45,7 @@ import {
 import { verifyClearsign } from "../lib/gpg";
 import { verifyCaptchaToken } from "../middleware/captcha";
 import { issuePowChallenge } from "../lib/pow";
-import { rateLimitIp } from "../middleware/rateLimit";
+import { rateLimit, rateLimitIp } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
@@ -52,7 +53,11 @@ import {
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
 import { teamsBlockingDowngrade } from "../lib/teamRequirements";
-import { validateSiteInvite, consumeSiteInvite } from "../lib/siteInvite";
+import {
+  validateSiteInvite,
+  claimSiteInvite,
+  releaseSiteInvite,
+} from "../lib/siteInvite";
 import type {
   AuthUser,
   PasskeyRow,
@@ -242,6 +247,12 @@ app.post("/register", async (c) => {
     : null;
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
 
+  // Take the invite use before creating the account, so concurrent
+  // registrations cannot all pass the earlier check and overrun the cap. The
+  // claim is released below if the insert is rejected.
+  if (usedInvite && !(await claimSiteInvite(c.env, usedInvite)))
+    return c.json({ error: "Invite token has reached its usage limit" }, 403);
+
   try {
     await c.env.DB.prepare(
       `INSERT INTO users (id, email, username, password_hash, display_name, role, email_verified, email_verify_token, is_active, created_at, updated_at)
@@ -260,15 +271,11 @@ app.post("/register", async (c) => {
       )
       .run();
   } catch (err) {
+    if (usedInvite) await releaseSiteInvite(c.env, usedInvite);
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
       return c.json({ error: "Email or username already taken" }, 409);
     throw err;
-  }
-
-  // Mark invite as used
-  if (usedInvite) {
-    await consumeSiteInvite(c.env, usedInvite);
   }
 
   if (verifyToken && config.email_provider !== "none") {
@@ -376,6 +383,34 @@ app.post("/login", async (c) => {
 
   const isEmail = body.identifier.includes("@");
   const identifier = body.identifier.toLowerCase().trim();
+
+  // Per-account throttle, alongside the per-IP one above. The IP limit alone
+  // bounds nothing for an attacker spread across many addresses, which is the
+  // shape both password spraying and TOTP guessing take. Keyed on the
+  // identifier as typed rather than on a resolved user id, so an unknown
+  // account throttles exactly like a real one and the 429 reveals nothing
+  // about who exists.
+  const idRl = await rateLimit(
+    c.env.KV_SESSIONS,
+    `login-id:${await sha256(identifier)}`,
+    10,
+    300,
+  );
+  if (!idRl.allowed) {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "rate_limited",
+        body.identifier ?? null,
+        ip,
+        ua,
+        geoJson(c),
+        {},
+      ).catch(() => {}),
+    );
+    return c.json({ error: "Too many requests" }, 429);
+  }
+
   let user: UserRow | null;
   if (isEmail) {
     // Check primary email first, then alternate emails. kind='user' filter
@@ -811,8 +846,14 @@ app.post("/totp/verify", requireAuth, async (c) => {
   if (auth.enabled) return c.json({ error: "Already enabled" }, 409);
 
   const plainSecret = (await decryptSecret(c.env, auth.secret)) ?? auth.secret;
-  const ok = await verifyTotp(body.code, plainSecret);
-  if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
+  const counter = await matchTotpCounter(body.code, plainSecret);
+  if (counter === null) return c.json({ error: "Invalid TOTP code" }, 400);
+
+  // Retire the enrolment code before enabling anything - otherwise a failure
+  // between the two leaves 2FA on with the code the user just typed still live
+  // at the login form. Claiming first can only ever leave a counter recorded
+  // against an authenticator that was never enabled, which costs nothing.
+  await claimEnrolmentCounter(c.env.DB, body.id, counter);
 
   await c.env.DB.prepare(
     "UPDATE totp_authenticators SET enabled = 1 WHERE id = ?",
@@ -1123,6 +1164,10 @@ app.post("/passkey/auth/finish", async (c) => {
   const stored = await c.env.KV_CACHE.get(`passkey:auth:${body.challenge}`);
   if (!stored) return c.json({ error: "Authentication session expired" }, 400);
 
+  // Spend the challenge up front rather than on success only: a failed
+  // attempt otherwise leaves it usable for the rest of its TTL.
+  await c.env.KV_CACHE.delete(`passkey:auth:${body.challenge}`);
+
   const options = JSON.parse(stored) as { challenge: string };
 
   // Find passkey by credential id
@@ -1151,8 +1196,6 @@ app.post("/passkey/auth/finish", async (c) => {
 
   if (!verification.verified)
     return c.json({ error: "Verification failed" }, 400);
-
-  await c.env.KV_CACHE.delete(`passkey:auth:${body.challenge}`);
 
   // Update counter
   const now = Math.floor(Date.now() / 1000);
@@ -1512,6 +1555,7 @@ app.post("/gpg-login", async (c) => {
   const body = await c.req.json<{
     identifier: string;
     signed_message: string;
+    totp_code?: string;
   }>();
   if (!body.identifier?.trim() || !body.signed_message?.trim())
     return c.json({ error: "identifier and signed_message are required" }, 400);
@@ -1631,6 +1675,35 @@ app.post("/gpg-login", async (c) => {
       ).catch(() => {}),
     );
     return c.json({ error: "Challenge expired or invalid" }, 401);
+  }
+
+  // Same 2FA gate the password flow applies. A GPG key is a possession
+  // factor, not a second one: without this, an account that enabled TOTP
+  // could still be entered with the key alone, which is not what enabling it
+  // promises. Checked before the challenge is consumed so the client can
+  // resubmit the signed message with a code instead of signing again.
+  const gpgTotpCount = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
+  )
+    .bind(user.id)
+    .first<{ n: number }>();
+  if ((gpgTotpCount?.n ?? 0) > 0) {
+    if (!body.totp_code)
+      return c.json({ error: "TOTP code required", totp_required: true }, 200);
+    if (!(await verifyAnyTotp(c.env, user.id, body.totp_code))) {
+      c.executionCtx.waitUntil(
+        logLoginError(
+          c.env.DB,
+          "totp_invalid",
+          body.identifier,
+          ip,
+          ua,
+          geoJson(c),
+          { user_id: user.id },
+        ).catch(() => {}),
+      );
+      return c.json({ error: "Invalid TOTP code" }, 401);
+    }
   }
 
   // Consume the challenge (one-time use)

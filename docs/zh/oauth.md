@@ -256,6 +256,11 @@ grant_type=refresh_token
 &client_secret=<CLIENT_SECRET>
 ```
 
+响应中会返回**新的** `refresh_token`，请用它替换原有的令牌。刷新令牌每次使用后
+都会轮换，出示已被替换的旧令牌会导致整个授权被撤销——无论是客户端保留了旧值，
+还是令牌遭到窃取，处理方式都一样。新令牌沿用原有的过期时间，轮换不会延长授权
+有效期。
+
 ## 令牌内省（RFC 7662）
 
 用于服务端间验证，无需解析 JWT：
@@ -267,6 +272,9 @@ Authorization: Basic <base64(client_id:client_secret)>
 
 token=<ACCESS_TOKEN>
 ```
+
+必须提供客户端凭据，且客户端只能内省签发给自己的令牌，其他令牌一律返回
+`{"active": false}`。
 
 ### 响应（有效令牌）
 
@@ -291,6 +299,9 @@ token=<ACCESS_OR_REFRESH_TOKEN>
 &client_id=<CLIENT_ID>
 &client_secret=<CLIENT_SECRET>
 ```
+
+必须提供客户端凭据，且只会撤销该客户端自己的令牌。出示已被替换的刷新令牌会撤销
+它所属的整个授权。
 
 ## ID 令牌
 

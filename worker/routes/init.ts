@@ -43,12 +43,21 @@ app.post("/", async (c) => {
   const passwordHash = await hashPassword(body.password);
   const now = Math.floor(Date.now() / 1000);
 
+  // The isInitialized() check above is a fast path, not a guarantee: two
+  // requests arriving together both read "not initialized" and both go on to
+  // create an admin. The INSERT therefore carries the condition itself —
+  // SQLite evaluates the NOT EXISTS as part of the statement, so exactly one
+  // of the racing requests inserts a row and the other sees changes === 0.
+  let created: D1Result;
   try {
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        `INSERT INTO users (id, email, username, password_hash, display_name, role, email_verified, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'admin', 1, 1, ?, ?)`,
-      ).bind(
+    created = await c.env.DB.prepare(
+      `INSERT INTO users (id, email, username, password_hash, display_name, role, email_verified, is_active, created_at, updated_at)
+       SELECT ?, ?, ?, ?, ?, 'admin', 1, 1, ?, ?
+        WHERE NOT EXISTS (
+          SELECT 1 FROM users WHERE role = 'admin' AND kind = 'user'
+        )`,
+    )
+      .bind(
         userId,
         body.email.toLowerCase().trim(),
         body.username.toLowerCase().trim(),
@@ -56,14 +65,17 @@ app.post("/", async (c) => {
         body.display_name ?? body.username,
         now,
         now,
-      ),
-    ]);
+      )
+      .run();
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE")) {
       return c.json({ error: "Email or username already taken" }, 409);
     }
     throw err;
+  }
+  if (created.meta.changes !== 1) {
+    return c.json({ error: "Platform already initialized" }, 409);
   }
 
   // Mark initialized and optionally set site name

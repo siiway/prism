@@ -289,6 +289,9 @@ export interface OAuthTokenRow {
   id: string;
   access_token: string;
   refresh_token: string | null;
+  /** The refresh token this row last rotated away, so presenting it again can
+   *  be recognised as a replay. Stored in the same hashed form. */
+  previous_refresh_token: string | null;
   client_id: string;
   user_id: string;
   scopes: string; // JSON string[]

@@ -8,6 +8,7 @@
 import type { MiddlewareHandler } from "hono";
 import type { Variables } from "../types";
 import { geoJson } from "./geo";
+import { safeFetch } from "./safeFetch";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 
@@ -42,6 +43,14 @@ const REDACTED_FIELDS = new Set([
   "email_verify_code",
   "email_verify_token",
   "invite_token",
+  // otpauth:// URI — carries the TOTP seed in its query string, so it is as
+  // sensitive as `secret` itself.
+  "uri",
+  // Opaque handles that complete a pending social login / 2FA step. They
+  // arrive as query parameters, which is exactly the position that used to
+  // skip redaction entirely.
+  "key",
+  "state",
   "github_readme_token",
   "github_client_secret",
   "google_client_secret",
@@ -170,15 +179,14 @@ async function writeOutboundLog(
     .run();
 }
 
-export async function loggedFetch(
+async function withOutboundLog(
   env: Env,
-  input: RequestInfo | URL,
-  init?: RequestInit,
+  req: Request,
+  run: () => Promise<Response>,
 ): Promise<Response> {
-  const req = new Request(input, init);
   const start = Date.now();
   try {
-    const res = await fetch(req.clone());
+    const res = await run();
     await writeOutboundLog(
       env,
       req,
@@ -193,6 +201,30 @@ export async function loggedFetch(
     );
     throw err;
   }
+}
+
+export async function loggedFetch(
+  env: Env,
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const req = new Request(input, init);
+  return withOutboundLog(env, req, () => fetch(req.clone()));
+}
+
+/**
+ * loggedFetch for a destination the user chose — a webhook endpoint. The URL
+ * is checked against the SSRF blocklist before the request and again at every
+ * redirect, so an endpoint that validated when it was saved cannot later
+ * bounce the worker somewhere it should not reach.
+ */
+export async function loggedSafeFetch(
+  env: Env,
+  url: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const req = new Request(url, init);
+  return withOutboundLog(env, req, () => safeFetch(url, init));
 }
 
 // ─── Module-level KV flag cache (avoids a KV read on every request) ───────────
@@ -324,7 +356,7 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
     details = JSON.stringify({
       req: {
         headers: redactHeaders(c.req.raw.headers),
-        query: Object.fromEntries(parsedUrl.searchParams),
+        query: redactObject(Object.fromEntries(parsedUrl.searchParams)),
         body: parseBody(reqBodyText, reqContentType),
       },
       res: {
