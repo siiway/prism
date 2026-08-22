@@ -2231,8 +2231,15 @@ app.post("/introspect", async (c) => {
   // RFC 7662 §2.1: the endpoint has to be authorized. Unauthenticated, it
   // answers whether any token is live and hands back its scopes, client and
   // subject — a convenient way to triage tokens picked up somewhere else.
+  //
+  // Public clients are refused outright. They authenticate with nothing but a
+  // client_id, which is not secret, so admitting them would leave the oracle
+  // open to anyone who can read an app's public configuration. Introspection
+  // is for confidential resource servers; a public client that wants to know
+  // whether its token still works can simply use it.
   const caller = await authenticateCallingClient(c, params);
-  if (!caller) return c.json({ error: "invalid_client" }, 401);
+  if (!caller || caller.is_public)
+    return c.json({ error: "invalid_client" }, 401);
 
   const token = params.token;
   if (!token) return c.json({ active: false });
@@ -2289,6 +2296,11 @@ app.post("/revoke", async (c) => {
   // RFC 7009 §2.1: authenticate the client, and revoke only what belongs to
   // it — otherwise anyone who learns a token value can invalidate it, including
   // one issued to a different client.
+  //
+  // Public clients are allowed here, unlike introspection: signing out of an
+  // SPA or a mobile app should revoke the token it holds, and the caller has
+  // to present that token anyway. The client_id only narrows the delete to
+  // that app's own grants.
   const caller = await authenticateCallingClient(c, params);
   if (!caller) return c.json({ error: "invalid_client" }, 401);
 
