@@ -61,7 +61,7 @@ and `entry-server.tsx` is hot-reloaded just like client code.
 worker/
 ├── index.ts                # App entry; CORS, secureHeaders, route mounting, scheduled(), email()
 ├── ssr.ts                  # SSR glue → src/entry-server.tsx
-├── types.ts                # D1 row types, Variables, SiteConfig
+├── types.ts                # D1 row types, Variables; re-exports shared/types.ts
 │
 ├── db/migrations/
 │   └── 0001_init.sql … 0053_audit_webhook_delivery.sql
@@ -127,6 +127,12 @@ worker/
     ├── wellknown.ts        # /.well-known/openid-configuration, /.well-known/jwks.json
     └── admin.ts            # Admin: config, users, apps, teams, audit log, request logs, secrets migration
 ```
+
+Types that both tiers must agree on — `SiteConfig`, the capability
+vocabularies, the notification-rule shapes — live in `shared/types.ts` and are
+re-exported by `worker/types.ts` and the frontend (`src/types.ts`,
+`src/lib/api.ts`). Both tsconfig projects include `shared/`, so a field added
+on one side cannot go missing on the other.
 
 ## Data model
 
