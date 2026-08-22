@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Button, Spinner, Text, ProgressBar } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
+import type { TurnstileEndpointDirective } from "../lib/api";
 import { solvePoW } from "../lib/pow";
 
 export interface CaptchaValue {
@@ -19,7 +20,7 @@ interface CaptchaProps {
    *  turnstile_endpoint_mode). Chooses the global vs. China-mirror widget
    *  host. Only used when provider === "turnstile"; defaults to the global
    *  host when absent. */
-  turnstileEndpoint?: string;
+  turnstileEndpoint?: TurnstileEndpointDirective;
   onVerified: (value: CaptchaValue) => void;
   onError?: (err: string) => void;
 }
@@ -47,25 +48,72 @@ function browserIsChineseLanguage(): boolean {
 function browserInChinaTimezone(): boolean {
   if (typeof Intl === "undefined") return false;
   try {
-    return CHINA_TIMEZONES.has(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    return CHINA_TIMEZONES.has(
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
   } catch {
     return false;
   }
 }
 
+const TURNSTILE_HOST_GLOBAL = "https://challenges.cloudflare.com";
+const TURNSTILE_HOST_CHINA = "https://challenges.cloudflare-cn.com";
+
 // Resolve the server directive to the actual Turnstile challenge-script URL.
 // The client-side modes ("client_language", "client_region") are decided here
 // in the browser; the rest arrive already resolved from the server.
-function turnstileScriptSrc(directive?: string): string {
-  let useChina = false;
-  if (directive === "china") useChina = true;
-  else if (directive === "client_language")
-    useChina = browserIsChineseLanguage();
-  else if (directive === "client_region") useChina = browserInChinaTimezone();
-  const host = useChina
-    ? "https://challenges.cloudflare-cn.com"
-    : "https://challenges.cloudflare.com";
+function turnstileScriptSrc(directive?: TurnstileEndpointDirective): string {
+  let useChina: boolean;
+  switch (directive) {
+    case "china":
+      useChina = true;
+      break;
+    case "client_language":
+      useChina = browserIsChineseLanguage();
+      break;
+    case "client_region":
+      useChina = browserInChinaTimezone();
+      break;
+    // "global", and an unknown directive from a newer server.
+    default:
+      useChina = false;
+  }
+  const host = useChina ? TURNSTILE_HOST_CHINA : TURNSTILE_HOST_GLOBAL;
   return `${host}/turnstile/v0/api.js?render=explicit`;
+}
+
+// Append a provider's script tag and hand back the effect teardown. `remove()`
+// tolerates an already-detached node, unlike document.body.removeChild.
+function injectScript(src: string, onLoad: () => void): () => void {
+  const script = document.createElement("script");
+  let torndown = false;
+  script.src = src;
+  script.async = true;
+  // Detaching the tag does not abort a load already in flight, so the flag is
+  // what keeps a late onLoad from rendering into a container the next effect
+  // run already owns.
+  script.onload = () => {
+    if (!torndown) onLoad();
+  };
+  document.body.appendChild(script);
+  return () => {
+    torndown = true;
+    script.remove();
+  };
+}
+
+// Detach a rendered widget. The container element outlives the effect, and
+// both providers refuse to render twice into the same element — so a re-run
+// (language switch, changed endpoint directive) must clear the old widget or
+// the new one never appears. Throws once the provider global is gone, which is
+// exactly the case where there is nothing left to remove.
+function removeWidget(name: "turnstile" | "hcaptcha", id: string | null): void {
+  if (id === null) return;
+  try {
+    widgetApi(name).remove(id);
+  } catch {
+    // Already detached.
+  }
 }
 
 export function Captcha({
@@ -86,22 +134,24 @@ export function Captcha({
   useEffect(() => {
     if (provider !== "turnstile") return;
 
-    const script = document.createElement("script");
-    script.src = turnstileScriptSrc(turnstileEndpoint);
-    script.async = true;
-    script.onload = () => {
-      if (!containerRef.current) return;
-      widgetIdRef.current = (
-        window as unknown as TurnstileWindow
-      ).turnstile.render(containerRef.current, {
-        sitekey: siteKey,
-        callback: (token: string) => onVerified({ captcha_token: token }),
-        "error-callback": () => onError?.(t("captcha.turnstileFailed")),
-      });
-    };
-    document.body.appendChild(script);
+    const removeScript = injectScript(
+      turnstileScriptSrc(turnstileEndpoint),
+      () => {
+        if (!containerRef.current) return;
+        widgetIdRef.current = widgetApi("turnstile").render(
+          containerRef.current,
+          {
+            sitekey: siteKey,
+            callback: (token: string) => onVerified({ captcha_token: token }),
+            "error-callback": () => onError?.(t("captcha.turnstileFailed")),
+          },
+        );
+      },
+    );
     return () => {
-      document.body.removeChild(script);
+      removeWidget("turnstile", widgetIdRef.current);
+      widgetIdRef.current = null;
+      removeScript();
     };
   }, [provider, siteKey, turnstileEndpoint, onVerified, onError, t]);
 
@@ -109,21 +159,23 @@ export function Captcha({
   useEffect(() => {
     if (provider !== "hcaptcha") return;
 
-    const script = document.createElement("script");
-    script.src = "https://js.hcaptcha.com/1/api.js?render=explicit";
-    script.async = true;
-    script.onload = () => {
-      if (!containerRef.current) return;
-      widgetIdRef.current = (
-        window as unknown as HCaptchaWindow
-      ).hcaptcha.render(containerRef.current, {
-        sitekey: siteKey,
-        callback: (token: string) => onVerified({ captcha_token: token }),
-      });
-    };
-    document.body.appendChild(script);
+    const removeScript = injectScript(
+      "https://js.hcaptcha.com/1/api.js?render=explicit",
+      () => {
+        if (!containerRef.current) return;
+        widgetIdRef.current = widgetApi("hcaptcha").render(
+          containerRef.current,
+          {
+            sitekey: siteKey,
+            callback: (token: string) => onVerified({ captcha_token: token }),
+          },
+        );
+      },
+    );
     return () => {
-      document.body.removeChild(script);
+      removeWidget("hcaptcha", widgetIdRef.current);
+      widgetIdRef.current = null;
+      removeScript();
     };
   }, [provider, siteKey, onVerified, onError]);
 
@@ -131,25 +183,23 @@ export function Captcha({
   useEffect(() => {
     if (provider !== "recaptcha") return;
 
-    const script = document.createElement("script");
-    script.src = `https://www.google.com/recaptcha/api.js?render=${siteKey}`;
-    script.async = true;
-    script.onload = () => {
-      (window as unknown as RecaptchaWindow).grecaptcha.ready(async () => {
-        try {
-          const token = await (
-            window as unknown as RecaptchaWindow
-          ).grecaptcha.execute(siteKey, { action: "login" });
-          onVerified({ captcha_token: token });
-        } catch {
-          onError?.(t("captcha.recaptchaFailed"));
-        }
-      });
-    };
-    document.body.appendChild(script);
-    return () => {
-      document.body.removeChild(script);
-    };
+    // No widget to tear down — v3 runs invisibly and returns a token.
+    return injectScript(
+      `https://www.google.com/recaptcha/api.js?render=${siteKey}`,
+      () => {
+        const grecaptcha = (window as unknown as RecaptchaWindow).grecaptcha;
+        grecaptcha.ready(async () => {
+          try {
+            const token = await grecaptcha.execute(siteKey, {
+              action: "login",
+            });
+            onVerified({ captcha_token: token });
+          } catch {
+            onError?.(t("captcha.recaptchaFailed"));
+          }
+        });
+      },
+    );
   }, [provider, siteKey, onVerified, onError, t]);
 
   // ─── Proof of Work ──────────────────────────────────────────────────────
@@ -219,16 +269,19 @@ export function Captcha({
   return <div ref={containerRef} />;
 }
 
-// Type stubs for injected globals
-interface TurnstileWindow extends Window {
-  turnstile: { render: (el: HTMLElement, opts: object) => string };
-}
-interface HCaptchaWindow extends Window {
-  hcaptcha: { render: (el: HTMLElement, opts: object) => string };
+// Type stubs for injected globals. Turnstile and hCaptcha share the same
+// explicit-render surface, so one accessor covers both.
+interface WidgetApi {
+  render: (el: HTMLElement, opts: object) => string;
+  remove: (id: string) => void;
 }
 interface RecaptchaWindow extends Window {
   grecaptcha: {
     ready: (fn: () => void) => void;
     execute: (key: string, opts: object) => Promise<string>;
   };
+}
+
+function widgetApi(name: "turnstile" | "hcaptcha"): WidgetApi {
+  return (window as unknown as Record<string, WidgetApi>)[name];
 }

@@ -2,8 +2,7 @@
 
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
-import { getGeo } from "../lib/geo";
-import { resolveTurnstileEndpoint } from "../lib/turnstile";
+import { turnstileEndpointFor } from "../lib/turnstile";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
   resolveProviderIconUrl,
@@ -80,10 +79,7 @@ app.get("/site", async (c) => {
     invite_only: config.invite_only,
     captcha_provider: config.captcha_provider,
     captcha_site_key: config.captcha_site_key,
-    turnstile_endpoint: resolveTurnstileEndpoint(
-      config.turnstile_endpoint_mode,
-      getGeo(c).country,
-    ),
+    turnstile_endpoint: turnstileEndpointFor(c, config),
     pow_difficulty: config.pow_difficulty,
     require_email_verification: config.require_email_verification,
     email_verify_methods: config.email_verify_methods,

@@ -83,6 +83,17 @@ const useStyles = makeStyles({
   },
 });
 
+// Turnstile challenge-endpoint modes, in the order they are offered. Each one
+// labels itself from `admin.turnstileEndpoint_<mode>`, so the list stays the
+// single place a mode is named.
+const TURNSTILE_ENDPOINT_MODES: SiteConfig["turnstile_endpoint_mode"][] = [
+  "global",
+  "china",
+  "client_language",
+  "server_region",
+  "client_region",
+];
+
 export function AdminSettings() {
   const styles = useStyles();
   const qc = useQueryClient();
@@ -182,6 +193,10 @@ export function AdminSettings() {
   // Read once — the whole invite-registration block keys its disabled state
   // off this flag.
   const inviteRegOn = get("enable_team_invite_registration") ?? false;
+
+  // Read once — both the dropdown label and its selection need it, and a
+  // config row written before the setting existed has no value at all.
+  const turnstileMode = get("turnstile_endpoint_mode") ?? "global";
 
   /** Numeric config setter that refuses to store a non-number.
    *
@@ -1131,31 +1146,17 @@ export function AdminSettings() {
                 hint={t("admin.turnstileEndpointHint")}
               >
                 <Dropdown
-                  value={t(
-                    `admin.turnstileEndpoint_${
-                      get("turnstile_endpoint_mode") ?? "global"
-                    }`,
-                  )}
-                  selectedOptions={[get("turnstile_endpoint_mode") ?? "global"]}
+                  value={t(`admin.turnstileEndpoint_${turnstileMode}`)}
+                  selectedOptions={[turnstileMode]}
                   onOptionSelect={(_, d) =>
                     set("turnstile_endpoint_mode", d.optionValue)
                   }
                 >
-                  <Option value="global">
-                    {t("admin.turnstileEndpoint_global")}
-                  </Option>
-                  <Option value="china">
-                    {t("admin.turnstileEndpoint_china")}
-                  </Option>
-                  <Option value="client_language">
-                    {t("admin.turnstileEndpoint_client_language")}
-                  </Option>
-                  <Option value="server_region">
-                    {t("admin.turnstileEndpoint_server_region")}
-                  </Option>
-                  <Option value="client_region">
-                    {t("admin.turnstileEndpoint_client_region")}
-                  </Option>
+                  {TURNSTILE_ENDPOINT_MODES.map((mode) => (
+                    <Option key={mode} value={mode}>
+                      {t(`admin.turnstileEndpoint_${mode}`)}
+                    </Option>
+                  ))}
                 </Dropdown>
               </Field>
             )}
