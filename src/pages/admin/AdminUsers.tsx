@@ -23,6 +23,7 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -30,10 +31,12 @@ import {
   DeleteRegular,
   EditRegular,
   SearchRegular,
+  SettingsRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { CopyIdButton } from "../../components/CopyIdButton";
@@ -67,6 +70,7 @@ const useStyles = makeStyles({
 export function AdminUsers() {
   const styles = useStyles();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const { user } = useAuthStore();
 
@@ -203,6 +207,20 @@ export function AdminUsers() {
                         }}
                       >
                         <CopyIdButton id={u.id} />
+                        {/* The inline dialog covers the three toggles; the
+                            detail page is where credentials, factors, tokens
+                            and the account's audit log live. */}
+                        <Tooltip
+                          relationship="label"
+                          content={t("admin.manageUser")}
+                        >
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<SettingsRegular />}
+                            onClick={() => navigate(`/admin/users/${u.id}`)}
+                          />
+                        </Tooltip>
                         <Button
                           size="small"
                           appearance="subtle"

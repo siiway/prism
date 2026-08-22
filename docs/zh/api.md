@@ -518,6 +518,30 @@ OAuth scope 版本：
 | `POST /api/admin/test-email`                                 | 发送测试发件邮件                                                                  |
 | `POST /api/admin/test-email-receiving`                       | 生成验证邮箱接收测试码                                                            |
 
+### 单账号管理
+
+即 `/api/user/me/*` 那一套，按用户 ID 寻址。全部仅限管理员、仅接受会话认证，并**同时**审计进平台日志和目标用户自己的 user 作用域日志（带 `site_admin: true` 标记）。详见 [管理员 → 账号详情页](admin.md#账号详情页)。
+
+| Method           | Path                                               | 说明                                                                    |
+| ---------------- | -------------------------------------------------- | ----------------------------------------------------------------------- |
+| `PATCH`          | `/api/admin/users/:id`                             | 现在还接受 `username`、`email`、`display_name`、`avatar_url`。修改 `email` 会清除其已验证状态，除非同一请求中带上 `email_verified`。用户名/邮箱被占用时返回 `409` |
+| `POST`           | `/api/admin/users/:id/password`                    | `{ password, revoke_sessions? }`。`password: null` 表示清除 —— 若没有可用的第三方登录则拒绝 |
+| `GET`            | `/api/admin/users/:id/security`                    | 认证器、Passkey、恢复码数量、是否设置了密码                             |
+| `DELETE`         | `/api/admin/users/:id/2fa`                         | 移除全部因素与恢复码 —— 账号恢复按钮                                    |
+| `DELETE`         | `/api/admin/users/:id/totp/:totpId`                | 移除单个认证器                                                          |
+| `DELETE`         | `/api/admin/users/:id/passkeys/:passkeyId`         | 移除单个 Passkey                                                        |
+| `GET` / `DELETE` | `/api/admin/users/:id/tokens[/:tokenId]`           | 个人访问令牌。令牌值永不返回                                            |
+| `GET` / `DELETE` | `/api/admin/users/:id/connections[/:connId]`       | 已绑定的第三方。解绑最后一种登录方式会被拒绝                            |
+| `GET` / `DELETE` | `/api/admin/users/:id/gpg-keys[/:keyId]`           | GPG 密钥                                                                |
+| `GET`            | `/api/admin/users/:id/emails`                      | 主邮箱与备用邮箱                                                        |
+| `POST`           | `/api/admin/users/:id/emails/:emailId/verify`      | 标记为已验证。`:emailId` 用 `primary` 表示 users 行上的主地址           |
+| `POST`           | `/api/admin/users/:id/emails/:emailId/set-primary` | 提升备用地址为主邮箱，原主邮箱降级进备用列表                            |
+| `DELETE`         | `/api/admin/users/:id/emails/:emailId`             | 删除备用地址                                                            |
+| `GET` / `DELETE` | `/api/admin/users/:id/domains[/:domainId]`         | 该账号的个人域名                                                        |
+| `GET` / `DELETE` | `/api/admin/users/:id/authorizations[/:consentId]` | OAuth 授权。撤销时会一并删除据此签发的令牌与授权码                      |
+| `GET`            | `/api/admin/users/:id/teams`                       | 团队成员关系（只读 —— 请在团队页修改）                                  |
+| `GET`            | `/api/admin/users/:id/lockdown`                    | `LOCKDOWN_USERS` 是否保护该账号不被删除                                 |
+
 ### 数据库
 
 直接访问 D1。仅限管理员、仅接受会话认证，且每次调用都会被审计。详见 [管理员 → 数据库](admin.md#数据库)。

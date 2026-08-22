@@ -1816,8 +1816,164 @@ export const api = {
       getToken(),
     ),
 
+  // ── Per-account admin control ─────────────────────────────────────────────
+  // The `/me` surface, addressed by user id. Admin-only and audited into both
+  // the platform log and the user's own.
+  adminUserSecurity: (id: string) =>
+    request<AdminUserSecurity>(
+      "GET",
+      `/admin/users/${id}/security`,
+      undefined,
+      getToken(),
+    ),
+  adminSetUserPassword: (
+    id: string,
+    password: string | null,
+    opts: { revokeSessions?: boolean } = {},
+  ) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/users/${id}/password`,
+      { password, revoke_sessions: opts.revokeSessions ?? true },
+      getToken(),
+    ),
+  adminReset2fa: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/2fa`,
+      undefined,
+      getToken(),
+    ),
+  adminDeleteUserTotp: (id: string, totpId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/totp/${totpId}`,
+      undefined,
+      getToken(),
+    ),
+  adminDeleteUserPasskey: (id: string, passkeyId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/passkeys/${passkeyId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserTokens: (id: string, page = 1) =>
+    request<{
+      tokens: AdminUserToken[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/users/${id}/tokens?page=${page}`, undefined, getToken()),
+  adminRevokeUserToken: (id: string, tokenId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/tokens/${tokenId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserConnections: (id: string) =>
+    request<{ connections: AdminUserConnection[] }>(
+      "GET",
+      `/admin/users/${id}/connections`,
+      undefined,
+      getToken(),
+    ),
+  adminRemoveUserConnection: (id: string, connId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/connections/${connId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserGpgKeys: (id: string) =>
+    request<{ keys: AdminUserGpgKey[] }>(
+      "GET",
+      `/admin/users/${id}/gpg-keys`,
+      undefined,
+      getToken(),
+    ),
+  adminRemoveUserGpgKey: (id: string, keyId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/gpg-keys/${keyId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserEmails: (id: string) =>
+    request<AdminUserEmails>(
+      "GET",
+      `/admin/users/${id}/emails`,
+      undefined,
+      getToken(),
+    ),
+  /** `emailId` is "primary" for the address on the users row itself. */
+  adminVerifyUserEmail: (id: string, emailId: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/users/${id}/emails/${emailId}/verify`,
+      {},
+      getToken(),
+    ),
+  adminSetPrimaryUserEmail: (id: string, emailId: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/users/${id}/emails/${emailId}/set-primary`,
+      {},
+      getToken(),
+    ),
+  adminRemoveUserEmail: (id: string, emailId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/emails/${emailId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserDomains: (id: string) =>
+    request<{ domains: AdminUserDomain[] }>(
+      "GET",
+      `/admin/users/${id}/domains`,
+      undefined,
+      getToken(),
+    ),
+  adminRemoveUserDomain: (id: string, domainId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/domains/${domainId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserAuthorizations: (id: string) =>
+    request<{ authorizations: AdminUserAuthorization[] }>(
+      "GET",
+      `/admin/users/${id}/authorizations`,
+      undefined,
+      getToken(),
+    ),
+  adminRevokeUserAuthorization: (id: string, consentId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/authorizations/${consentId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserTeams: (id: string) =>
+    request<{ teams: AdminUserTeam[] }>(
+      "GET",
+      `/admin/users/${id}/teams`,
+      undefined,
+      getToken(),
+    ),
+
   // ── Direct database access ────────────────────────────────────────────────
   // Every call here is admin-only and audited server-side.
+  adminDbStatus: () =>
+    request<{ mode: "full" | "read-only" | "off"; writable: boolean }>(
+      "GET",
+      "/admin/db/status",
+      undefined,
+      getToken(),
+    ),
   adminDbTables: () =>
     request<{ tables: DbTable[] }>(
       "GET",
@@ -2639,6 +2795,90 @@ export interface AdminTeam {
   dissolving_at: number | null;
   created_at: number;
   updated_at: number;
+}
+
+// ─── Per-account admin control ────────────────────────────────────────────────
+
+export interface AdminUserSecurity {
+  has_password: boolean;
+  totp_authenticators: Array<{
+    id: string;
+    name: string;
+    enabled: boolean;
+    created_at: number;
+  }>;
+  passkeys: Array<{
+    id: string;
+    name: string | null;
+    device_type: string;
+    backed_up: boolean;
+    created_at: number;
+    last_used_at: number | null;
+  }>;
+  /** `count` is -1 when the stored blob could not be parsed. */
+  recovery_codes: { count: number; updated_at: number | null };
+}
+
+export interface AdminUserToken {
+  id: string;
+  name: string;
+  scopes: string[];
+  expires_at: number | null;
+  last_used_at: number | null;
+  created_at: number;
+}
+
+export interface AdminUserConnection {
+  id: string;
+  provider: string;
+  provider_user_id: string;
+  token_expires_at: number | null;
+  connected_at: number;
+}
+
+export interface AdminUserGpgKey {
+  id: string;
+  fingerprint: string;
+  key_id: string;
+  name: string;
+  created_at: number;
+  last_used_at: number | null;
+}
+
+export interface AdminUserEmails {
+  primary: { email: string; verified: boolean; verified_at: number | null };
+  emails: Array<{
+    id: string;
+    email: string;
+    verified: boolean;
+    verified_via: string | null;
+    verified_at: number | null;
+    created_at: number;
+  }>;
+}
+
+export interface AdminUserDomain {
+  id: string;
+  domain: string;
+  verified: boolean;
+  created_at: number;
+}
+
+export interface AdminUserAuthorization {
+  id: string;
+  client_id: string;
+  scopes: string[];
+  granted_at: number;
+  app_name: string | null;
+  icon_url: string;
+}
+
+export interface AdminUserTeam {
+  id: string;
+  name: string;
+  avatar_url: string;
+  role: string;
+  joined_at: number;
 }
 
 // ─── Direct database access ───────────────────────────────────────────────────

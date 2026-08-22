@@ -70,6 +70,7 @@ import {
 import { hashLookupCandidate } from "../lib/secretCrypto";
 
 import adminDbRoutes from "./admin-db";
+import adminUserRoutes from "./admin-users";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -990,6 +991,14 @@ app.patch("/users/:id", async (c) => {
     role?: "admin" | "user";
     is_active?: boolean;
     email_verified?: boolean;
+    // Identity fields. The self-serve API has no path to any of these —
+    // username is fixed at registration and the primary address moves only
+    // by promoting a verified alternate — so an operator fixing a typo made
+    // during sign-up had nowhere to go but the database.
+    username?: string;
+    email?: string;
+    display_name?: string;
+    avatar_url?: string | null;
   }>();
 
   const user = await c.env.DB.prepare(
@@ -1022,14 +1031,63 @@ app.patch("/users/:id", async (c) => {
     updates.push("email_verified = ?");
     values.push(body.email_verified ? 1 : 0);
   }
+  if (body.username !== undefined) {
+    // Same shape the registration endpoint enforces — an admin-set username
+    // that registration would have rejected is still a broken username.
+    const username = body.username.toLowerCase().trim();
+    if (!/^[a-z0-9_.-]{2,32}$/.test(username))
+      return c.json(
+        { error: "Username must be 2-32 characters of a-z, 0-9, _ . -" },
+        400,
+      );
+    updates.push("username = ?");
+    values.push(username);
+  }
+  if (body.email !== undefined) {
+    const email = body.email.toLowerCase().trim();
+    if (!email.includes("@") || email.length > 254)
+      return c.json({ error: "A valid email address is required" }, 400);
+    updates.push("email = ?");
+    values.push(email);
+    // Changing the address invalidates whatever proved the old one. The
+    // admin can mark the new one verified in the same request, or from the
+    // user's email list — but it must not inherit the old verdict silently.
+    if (body.email_verified === undefined) {
+      updates.push("email_verified = ?", "email_verified_at = ?");
+      values.push(0, null);
+    }
+    updates.push("email_verify_token = ?", "email_verify_code = ?");
+    values.push(null, null);
+  }
+  if (body.display_name !== undefined) {
+    if (body.display_name.length < 1 || body.display_name.length > 64)
+      return c.json({ error: "display_name must be 1-64 characters" }, 400);
+    updates.push("display_name = ?");
+    values.push(body.display_name);
+  }
+  if (body.avatar_url !== undefined) {
+    if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
+      const imgErr = await validateImageUrl(body.avatar_url);
+      if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+    }
+    updates.push("avatar_url = ?");
+    values.push(body.avatar_url || null);
+  }
   if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
 
   updates.push("updated_at = ?");
   values.push(Math.floor(Date.now() / 1000), id);
 
-  await c.env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  try {
+    await c.env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
+      .bind(...values)
+      .run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("UNIQUE"))
+      return c.json({ error: "Email or username already taken" }, 409);
+    throw err;
+  }
 
   await logAudit(
     c.env,
@@ -1106,6 +1164,12 @@ app.delete("/users/:id/sessions", async (c) => {
     .run();
   return c.json({ message: "Sessions terminated" });
 });
+
+// Per-account credential, factor, token and address management — the `/me`
+// surface addressed by user id. Mounted *after* the routes above so `/users`,
+// `/users/:id` and `/users/:id/sessions` keep their handlers here and only
+// the deeper paths fall through.
+app.route("/users", adminUserRoutes);
 
 // ─── App moderation ───────────────────────────────────────────────────────────
 

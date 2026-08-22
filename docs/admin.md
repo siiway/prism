@@ -275,6 +275,49 @@ If a username is listed in the `LOCKDOWN_USERS` env var in `wrangler.jsonc`,
 the delete button is hidden and the API returns a 403 — that user is permanently
 protected from deletion. See [Configuration → Wrangler bindings & variables](configuration.md#wrangler-bindings--variables).
 
+### The account detail page
+
+**Admin → Users → Manage** opens one account in full. The list view gives you
+a row and three toggles; this is the page for everything a user can do to
+*themselves*, which until now lived only behind `/api/user/me/*` and was
+therefore reachable by nobody else.
+
+**Overview**
+
+| Action                       | Notes                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| Edit username / email / display name | The self-serve API has no path to any of these. Changing the address clears its verified status unless you set it in the same request |
+| Set or clear the password    | The user is not notified and never learns it — hand it over out of band and have them change it. Clearing is refused unless a linked provider remains to sign in with |
+| Reset 2FA                    | Removes every authenticator, passkey **and** recovery code. After it the password alone gets someone in |
+| Remove one factor            | For the case where only one authenticator is lost                             |
+| Verify / promote / remove an email | Including the primary address, which the self-serve flow can only change by promoting an already-verified alternate |
+
+**Access** — personal access tokens, linked providers, GPG keys and authorized
+applications, each with a revoke. Revoking an authorization also deletes the
+tokens and codes issued under it; revoking the record and leaving the access
+would be worse than doing nothing. Unlinking the last provider on an account
+with no password is refused.
+
+**Resources** — personal domains, and every team the account belongs to.
+Memberships are changed on the team itself, which a site admin can open for
+any team.
+
+**Audit** — the account's own log: everything it did, and everything an
+administrator did to it.
+
+Every action on this page is written to **both** the platform log and the
+user's own audit log, the latter marked `site_admin: true`. That second copy
+is the point: an operator changing someone's credentials is exactly the event
+the account holder needs to be able to find.
+
+Tokens are never returned in plaintext here. They are stored hashed and an
+admin has no more business reading one than anyone else.
+
+**Signing in as another user is deliberately not offered.** Every action above
+carries the operator's name; a session minted for someone else would launder
+those actions into the user's own history, and no logging at the point of
+issue fixes what the rest of the system then records.
+
 ## Applications
 
 The app table lists all OAuth apps across all users, including:
@@ -416,6 +459,21 @@ kept before the cron sweeps them.
 **Admin → Database** is direct access to the D1 database behind the instance:
 a schema browser with an inline row editor, and a SQL console.
 
+### Turning it down
+
+The `D1_CONSOLE` variable in `wrangler.jsonc` decides how much of this exists.
+
+| Value                                             | Effect                                                                       |
+| ------------------------------------------------- | ---------------------------------------------------------------------------- |
+| unset (or anything unrecognised)                  | Full access — browse, edit rows, run any statement                           |
+| `read-only` / `readonly` / `read`                 | Browse and `SELECT`. Every write is refused, including one sent with `allow_write` — the caller cannot opt back over the operator's setting |
+| `off` / `false` / `0` / `no` / `disabled` / `none`| The surface is gone. Endpoints 404 and the tab disappears                     |
+
+It defaults to full because the operator who deployed the instance is the
+audience for this feature and already owns the database. Operators who would
+rather not carry the risk turn it down; the setting is read per request, so a
+`wrangler deploy` is all it takes to change.
+
 It exists because every other admin screen is a curated view of the database,
 and curated views always end one column short of the thing you actually need.
 It is also the most dangerous surface in the product — a single statement can
@@ -516,6 +574,17 @@ webhooks. It is a paginated, append-only list of significant events:
 | `admin.db.query.write`                      | SQL console ran a statement that writes    |
 | `admin.db.query.error`                      | A console statement was rejected or failed |
 | `admin.db.row.insert` / `update` / `delete` | Row edited through the table browser       |
+| `admin.user.password_set`                   | Admin set or cleared an account's password |
+| `admin.user.2fa_reset`                      | Admin removed every second factor          |
+| `admin.user.totp_removed` / `passkey_removed` | Admin removed one factor                 |
+| `admin.user.token_revoked`                  | Admin revoked a personal access token      |
+| `admin.user.connection_removed`             | Admin unlinked a social provider           |
+| `admin.user.gpg_key_removed`                | Admin removed a GPG key                    |
+| `admin.user.email_verified`                 | Admin marked an address verified           |
+| `admin.user.primary_email_changed`          | Admin promoted an alternate address        |
+| `admin.user.email_removed`                  | Admin removed an alternate address         |
+| `admin.user.domain_removed`                 | Admin removed a personal domain            |
+| `admin.user.authorization_revoked`          | Admin revoked an OAuth grant               |
 
 Each entry records the acting `user_id` (or `null` for system actions), the
 `action`, optional `resource_type` / `resource_id`, a `metadata` JSON object,

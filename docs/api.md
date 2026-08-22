@@ -589,6 +589,33 @@ All admin endpoints require auth with `role = admin`.
 | `POST /api/admin/test-email`                                 | Send a test outbound email                                                                      |
 | `POST /api/admin/test-email-receiving`                       | Generate a test verify-by-email code                                                            |
 
+### Per-account control
+
+The `/api/user/me/*` surface, addressed by user id. Every call is admin-only,
+session-only, and audited into **both** the platform log and the target's own
+user-scope log (marked `site_admin: true`). See
+[Admin → The account detail page](admin.md#the-account-detail-page).
+
+| Method            | Path                                                    | Notes                                                                                    |
+| ----------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `PATCH`           | `/api/admin/users/:id`                                  | Now also accepts `username`, `email`, `display_name`, `avatar_url`. Changing `email` clears its verified state unless `email_verified` is sent in the same request. `409` on a taken username/email |
+| `POST`            | `/api/admin/users/:id/password`                         | `{ password, revoke_sessions? }`. `password: null` clears it — refused when no linked provider remains |
+| `GET`             | `/api/admin/users/:id/security`                         | Authenticators, passkeys, recovery-code count, whether a password is set                  |
+| `DELETE`          | `/api/admin/users/:id/2fa`                              | Remove every factor and recovery code — the account-recovery button                       |
+| `DELETE`          | `/api/admin/users/:id/totp/:totpId`                     | Remove one authenticator                                                                  |
+| `DELETE`          | `/api/admin/users/:id/passkeys/:passkeyId`              | Remove one passkey                                                                        |
+| `GET` / `DELETE`  | `/api/admin/users/:id/tokens[/:tokenId]`                | Personal access tokens. The token value is never returned                                 |
+| `GET` / `DELETE`  | `/api/admin/users/:id/connections[/:connId]`            | Linked providers. Unlinking the last sign-in method is refused                            |
+| `GET` / `DELETE`  | `/api/admin/users/:id/gpg-keys[/:keyId]`                | GPG keys                                                                                  |
+| `GET`             | `/api/admin/users/:id/emails`                           | Primary address plus alternates                                                           |
+| `POST`            | `/api/admin/users/:id/emails/:emailId/verify`           | Mark verified. `:emailId` is `primary` for the address on the users row                   |
+| `POST`            | `/api/admin/users/:id/emails/:emailId/set-primary`      | Promote an alternate, demoting the current primary into the alternates list               |
+| `DELETE`          | `/api/admin/users/:id/emails/:emailId`                  | Remove an alternate                                                                       |
+| `GET` / `DELETE`  | `/api/admin/users/:id/domains[/:domainId]`              | The account's personal domains                                                            |
+| `GET` / `DELETE`  | `/api/admin/users/:id/authorizations[/:consentId]`      | OAuth grants. Revoking also deletes the tokens and codes issued under the grant           |
+| `GET`             | `/api/admin/users/:id/teams`                            | Team memberships (read-only — change them on the team)                                    |
+| `GET`             | `/api/admin/users/:id/lockdown`                         | Whether `LOCKDOWN_USERS` protects this account from deletion                              |
+
 ### Database
 
 Direct D1 access. Admin-only, session-only, and every call is audited. See

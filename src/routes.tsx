@@ -413,6 +413,13 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
+              path: "users/:id",
+              lazy: () =>
+                import("./pages/admin/AdminUserDetail").then((m) => ({
+                  Component: m.AdminUserDetail,
+                })),
+            },
+            {
               path: "apps",
               lazy: () =>
                 import("./pages/admin/AdminApps").then((m) => ({

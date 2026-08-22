@@ -516,6 +516,22 @@ registerScope("/me", async (c) => {
   return { ok: true, scope: "user", scopeId: user.id };
 });
 
+// user scope by id — the account holder, or a site admin.
+//
+// The team and platform scopes both let an admin in; the user scope did not,
+// which left the one log an operator most often needs (what happened to this
+// account?) reachable only by reading the table directly. Everything an admin
+// does to an account is written into this same log, so the account holder
+// still sees it from their own side.
+registerScope("/user/:userId", async (c) => {
+  const user = c.get("user");
+  const userId = c.req.param("userId");
+  if (!userId) return { ok: false };
+  if (userId === user.id || user.role === "admin")
+    return { ok: true, scope: "user", scopeId: userId };
+  return { ok: false };
+});
+
 // team scope — owner / co-owner (or platform admin)
 registerScope("/team/:teamId", async (c) => {
   const user = c.get("user");
