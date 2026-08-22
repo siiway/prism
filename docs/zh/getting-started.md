@@ -149,10 +149,25 @@ bash scripts/build.sh --skip-frontend
 ## 8. 部署到生产
 
 ```bash
-bun deploy
+bash scripts/deploy.sh          # 或：pwsh scripts/deploy.ps1
+                                # 或：python scripts/deploy.py
 ```
 
-这一步会跑 `tsc -b && vite build` 并紧跟一次 `wrangler deploy`。构建会生成可直接部署的 `dist/prism/wrangler.json` — 生产部署必须使用它，否则 `wrangler deploy` 会重新打包源码并丢失 Vite 的 SSR 处理。提供的构建脚本会自动把生成的配置拷回原位。
+部署脚本会依次执行构建、应用待处理的 D1 迁移、发布 Worker。顺序是刻意安排的：编译失败会在任何东西进入生产环境之前中断整个流程；迁移先于依赖它的代码上线。Prism 的迁移都是增量式的，因此在部署完成前，线上正在运行的 Worker 仍能正常使用新库结构。
+
+确认提示之前会先列出待应用的迁移，方便你确认即将执行的内容。常用参数：
+
+| 参数                | 作用                             |
+| ------------------- | -------------------------------- |
+| `--dry-run`         | 只打印将要执行的命令，不实际执行 |
+| `-y`、`--yes`       | 跳过确认提示（用于 CI）          |
+| `--migrations-only` | 只应用迁移，不部署               |
+| `--skip-migrations` | 只部署，不改动数据库             |
+| `--skip-build`      | 直接部署 `dist/` 中已有的产物    |
+
+`bun deploy` 仍然可用，它会跑 `tsc -b && vite build` 再执行 `wrangler deploy` — 但它**不会**应用迁移，使用它时请自行执行 `bun db:migrate:prod`。
+
+两种方式都会生成可直接部署的 `dist/prism/wrangler.json` — 生产部署必须使用它，否则 `wrangler deploy` 会重新打包源码并丢失 Vite 的 SSR 处理。提供的构建脚本会自动把生成的配置拷回原位。
 
 ## 9. 部署后：迁移密钥
 

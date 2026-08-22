@@ -169,14 +169,36 @@ bash scripts/build.sh --skip-frontend
 ## 8. Deploy to production
 
 ```bash
-bun deploy
+bash scripts/deploy.sh          # or: pwsh scripts/deploy.ps1
+                                # or: python scripts/deploy.py
 ```
 
-This runs `tsc -b && vite build` then `wrangler deploy`. The build emits a
-deploy-ready `dist/prism/wrangler.json` — production deploys must use that
-config so Vite's SSR pass is preserved (a plain `wrangler deploy` from the
-project root re-bundles the source and skips SSR). The provided build scripts
-copy the generated config back into place automatically.
+The deploy scripts build, apply any pending D1 migrations, and publish the
+Worker, in that order: a compile error stops the run before anything reaches
+production, and migrations land before the code that depends on them. Prism's
+migrations are additive, so the currently-deployed Worker keeps running
+against the new schema while the deploy finishes.
+
+Pending migrations are listed before the confirmation prompt, so you see what
+is about to be applied. Useful options:
+
+| Option              | Effect                                   |
+| ------------------- | ---------------------------------------- |
+| `--dry-run`         | Print each command instead of running it |
+| `-y`, `--yes`       | Skip the confirmation prompt (for CI)    |
+| `--migrations-only` | Apply migrations without deploying       |
+| `--skip-migrations` | Publish without touching the database    |
+| `--skip-build`      | Deploy what is already in `dist/`        |
+
+`bun deploy` remains available and runs `tsc -b && vite build` then
+`wrangler deploy` — note that it does **not** apply migrations, so apply them
+yourself (`bun db:migrate:prod`) if you use it.
+
+Either way the build emits a deploy-ready `dist/prism/wrangler.json` —
+production deploys must use that config so Vite's SSR pass is preserved (a
+plain `wrangler deploy` from the project root re-bundles the source and skips
+SSR). The provided build scripts copy the generated config back into place
+automatically.
 
 ## 9. Post-deploy: encrypt secrets
 
