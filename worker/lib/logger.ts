@@ -43,6 +43,14 @@ const REDACTED_FIELDS = new Set([
   "email_verify_code",
   "email_verify_token",
   "invite_token",
+  // otpauth:// URI — carries the TOTP seed in its query string, so it is as
+  // sensitive as `secret` itself.
+  "uri",
+  // Opaque handles that complete a pending social login / 2FA step. They
+  // arrive as query parameters, which is exactly the position that used to
+  // skip redaction entirely.
+  "key",
+  "state",
   "github_readme_token",
   "github_client_secret",
   "google_client_secret",
@@ -348,7 +356,7 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
     details = JSON.stringify({
       req: {
         headers: redactHeaders(c.req.raw.headers),
-        query: Object.fromEntries(parsedUrl.searchParams),
+        query: redactObject(Object.fromEntries(parsedUrl.searchParams)),
         body: parseBody(reqBodyText, reqContentType),
       },
       res: {
