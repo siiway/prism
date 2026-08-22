@@ -70,6 +70,8 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [totpRequired, setTotpRequired] = useState(false);
+  // Which sign-in method is waiting on the shared 2FA prompt.
+  const [totpFlow, setTotpFlow] = useState<"password" | "gpg">("password");
   const [captcha, setCaptcha] = useState<CaptchaValue>({});
   const [captchaKey, setCaptchaKey] = useState(0);
   const [error, setError] = useState("");
@@ -114,6 +116,12 @@ export function Login() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    // The 2FA prompt is shared by both sign-in methods — hand the code back
+    // to whichever one asked for it.
+    if (totpRequired && totpFlow === "gpg") {
+      await handleGpgVerify();
+      return;
+    }
     setError("");
     setLoading(true);
     try {
@@ -197,8 +205,19 @@ export function Login() {
     setError("");
     setGpgLoading(true);
     try {
-      const res = await api.gpgLogin(identifier, gpgSignedMessage);
-      setAuth(res.token, res.user);
+      const res = await api.gpgLogin(
+        identifier,
+        gpgSignedMessage,
+        totpRequired ? totpCode : undefined,
+      );
+      if (res.totp_required) {
+        // The account has 2FA: reuse the shared prompt, then come back here
+        // with the code and the same signed message.
+        setTotpFlow("gpg");
+        setTotpRequired(true);
+        return;
+      }
+      if (res.token && res.user) setAuth(res.token, res.user);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("auth.gpgFailed"));
     } finally {
@@ -340,6 +359,7 @@ export function Login() {
               appearance="subtle"
               onClick={() => {
                 setTotpRequired(false);
+                setTotpFlow("password");
                 setCaptcha({});
                 setCaptchaKey((v) => v + 1);
               }}

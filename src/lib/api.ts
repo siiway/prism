@@ -423,10 +423,17 @@ export const api = {
       "/auth/gpg-challenge",
       { identifier },
     ),
-  gpgLogin: (identifier: string, signed_message: string) =>
-    request<{ token: string; user: UserProfile }>("POST", "/auth/gpg-login", {
+  /** Returns `{ totp_required: true }` instead of a session when the account
+   *  has 2FA enabled — resubmit the same signed message with `totp_code`. */
+  gpgLogin: (identifier: string, signed_message: string, totp_code?: string) =>
+    request<{
+      token?: string;
+      user?: UserProfile;
+      totp_required?: boolean;
+    }>("POST", "/auth/gpg-login", {
       identifier,
       signed_message,
+      totp_code,
     }),
 
   // ─── Sessions ────────────────────────────────────────────────────────────

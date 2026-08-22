@@ -1552,6 +1552,7 @@ app.post("/gpg-login", async (c) => {
   const body = await c.req.json<{
     identifier: string;
     signed_message: string;
+    totp_code?: string;
   }>();
   if (!body.identifier?.trim() || !body.signed_message?.trim())
     return c.json({ error: "identifier and signed_message are required" }, 400);
@@ -1671,6 +1672,35 @@ app.post("/gpg-login", async (c) => {
       ).catch(() => {}),
     );
     return c.json({ error: "Challenge expired or invalid" }, 401);
+  }
+
+  // Same 2FA gate the password flow applies. A GPG key is a possession
+  // factor, not a second one: without this, an account that enabled TOTP
+  // could still be entered with the key alone, which is not what enabling it
+  // promises. Checked before the challenge is consumed so the client can
+  // resubmit the signed message with a code instead of signing again.
+  const gpgTotpCount = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
+  )
+    .bind(user.id)
+    .first<{ n: number }>();
+  if ((gpgTotpCount?.n ?? 0) > 0) {
+    if (!body.totp_code)
+      return c.json({ error: "TOTP code required", totp_required: true }, 200);
+    if (!(await verifyAnyTotp(c.env, user.id, body.totp_code))) {
+      c.executionCtx.waitUntil(
+        logLoginError(
+          c.env.DB,
+          "totp_invalid",
+          body.identifier,
+          ip,
+          ua,
+          geoJson(c),
+          { user_id: user.id },
+        ).catch(() => {}),
+      );
+      return c.json({ error: "Invalid TOTP code" }, 401);
+    }
   }
 
   // Consume the challenge (one-time use)
