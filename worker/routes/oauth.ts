@@ -1,9 +1,9 @@
 // OAuth 2.0 Authorization Server (Authorization Code + PKCE, OpenID Connect)
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { configBag, getConfig, getRsaKeyPair } from "../lib/config";
-import { getGeo } from "../lib/geo";
-import { resolveTurnstileEndpoint } from "../lib/turnstile";
+import { turnstileEndpointFor } from "../lib/turnstile";
 import {
   encryptSecret,
   hashSecret,
@@ -81,47 +81,12 @@ import type {
   AppAccessRuleRow,
   Variables,
 } from "../types";
+import { APP_REQUESTABLE_SCOPES } from "../../shared/scopes";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
-const VALID_SCOPES = new Set([
-  "openid",
-  "profile",
-  "profile:write",
-  "email",
-  "apps:read",
-  "apps:write",
-  "teams:read",
-  "teams:write",
-  "teams:create",
-  "teams:delete",
-  "domains:read",
-  "domains:write",
-  "gpg:read",
-  "gpg:write",
-  "social:read",
-  "social:write",
-  "admin:users:read",
-  "admin:users:write",
-  "admin:users:delete",
-  "admin:config:read",
-  "admin:config:write",
-  "admin:invites:read",
-  "admin:invites:create",
-  "admin:invites:delete",
-  "offline_access",
-  // Site-level scopes — full cross-user access, admin-only grant, requires 2FA + confirmation
-  "site:user:read",
-  "site:user:write",
-  "site:user:delete",
-  "site:team:read",
-  "site:team:write",
-  "site:team:delete",
-  "site:config:read",
-  "site:config:write",
-  "site:token:revoke",
-]);
+const VALID_SCOPES = new Set(APP_REQUESTABLE_SCOPES);
 
 const SITE_SCOPES = new Set([
   "site:user:read",
@@ -1510,10 +1475,9 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     captcha_required: captchaRequired,
     captcha_provider: captchaRequired ? config.captcha_provider : "none",
     captcha_site_key: captchaRequired ? config.captcha_site_key : "",
-    turnstile_endpoint: resolveTurnstileEndpoint(
-      config.turnstile_endpoint_mode,
-      getGeo(c).country,
-    ),
+    turnstile_endpoint: captchaRequired
+      ? turnstileEndpointFor(c, config)
+      : "global",
   });
 });
 
@@ -3408,65 +3372,79 @@ async function requireAdminToken(
   return resolved;
 }
 
+// The /me/admin/* and /me/site/* user endpoints are one feature reached
+// through two scope families — the older admin:users:* set and the site:user:*
+// set. Only the demanded scope differs, so both share these handlers instead
+// of being kept in sync by hand.
+const USER_COLUMNS =
+  "id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at";
+
+function listUsersByScope(requiredScope: string) {
+  return async (c: Context<AppEnv>) => {
+    const resolved = await requireAdminToken(c, requiredScope);
+    if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+    const { page, limit, offset } = readPage(
+      c.req.query("page"),
+      c.req.query("limit"),
+      50,
+      100,
+    );
+    const q = c.req.query("q");
+    const where = q
+      ? `WHERE (username LIKE ? ESCAPE '\\'
+                OR email LIKE ? ESCAPE '\\'
+                OR display_name LIKE ? ESCAPE '\\')`
+      : "";
+    const filterBinds = q ? Array<string>(3).fill(likePattern(q)) : [];
+
+    const { results } = await c.env.DB.prepare(
+      `SELECT ${USER_COLUMNS} FROM users ${where}
+       ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...filterBinds, limit, offset)
+      .all();
+
+    const countRow = await c.env.DB.prepare(
+      `SELECT COUNT(*) AS total FROM users ${where}`,
+    )
+      .bind(...filterBinds)
+      .first<{ total: number }>();
+
+    return c.json({
+      users: await Promise.all(
+        results.map((u) => proxyUserAvatar(c.env.APP_URL, c.env.DB, u)),
+      ),
+      total: countRow?.total ?? 0,
+      page,
+      limit,
+    });
+  };
+}
+
+function getUserByScope(requiredScope: string) {
+  return async (c: Context<AppEnv>) => {
+    const resolved = await requireAdminToken(c, requiredScope);
+    if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+
+    const user = await c.env.DB.prepare(
+      `SELECT ${USER_COLUMNS} FROM users WHERE id = ?`,
+    )
+      .bind(c.req.param("id"))
+      .first();
+
+    if (!user) return c.json({ error: "User not found" }, 404);
+    return c.json({
+      user: await proxyUserAvatar(c.env.APP_URL, c.env.DB, user),
+    });
+  };
+}
+
 // GET /api/oauth/me/admin/users — list all users (requires admin:users:read)
-app.get("/me/admin/users", async (c) => {
-  const resolved = await requireAdminToken(c, "admin:users:read");
-  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
-
-  const { page = "1", limit = "50", q } = c.req.query();
-  const pageNum = Math.max(1, parseInt(page, 10));
-  const pageSize = Math.min(100, Math.max(1, parseInt(limit, 10)));
-  const offset = (pageNum - 1) * pageSize;
-
-  let query =
-    "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users";
-  const binds: unknown[] = [];
-
-  if (q) {
-    query += " WHERE (username LIKE ? OR email LIKE ? OR display_name LIKE ?)";
-    const like = `%${q}%`;
-    binds.push(like, like, like);
-  }
-
-  query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-  binds.push(pageSize, offset);
-
-  const { results } = await c.env.DB.prepare(query)
-    .bind(...binds)
-    .all();
-
-  const countQuery = q
-    ? "SELECT COUNT(*) AS total FROM users WHERE username LIKE ? OR email LIKE ? OR display_name LIKE ?"
-    : "SELECT COUNT(*) AS total FROM users";
-  const countBinds = q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [];
-  const countRow = await c.env.DB.prepare(countQuery)
-    .bind(...countBinds)
-    .first<{ total: number }>();
-
-  return c.json({
-    users: await Promise.all(
-      results.map((u) => proxyUserAvatar(c.env.APP_URL, c.env.DB, u)),
-    ),
-    total: countRow?.total ?? 0,
-    page: pageNum,
-    limit: pageSize,
-  });
-});
+app.get("/me/admin/users", listUsersByScope("admin:users:read"));
 
 // GET /api/oauth/me/admin/users/:id — get a user by id (requires admin:users:read)
-app.get("/me/admin/users/:id", async (c) => {
-  const resolved = await requireAdminToken(c, "admin:users:read");
-  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
-
-  const user = await c.env.DB.prepare(
-    "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users WHERE id = ?",
-  )
-    .bind(c.req.param("id"))
-    .first();
-
-  if (!user) return c.json({ error: "User not found" }, 404);
-  return c.json({ user: await proxyUserAvatar(c.env.APP_URL, c.env.DB, user) });
-});
+app.get("/me/admin/users/:id", getUserByScope("admin:users:read"));
 
 // PATCH /api/oauth/me/admin/users/:id — update a user (requires admin:users:write)
 app.patch("/me/admin/users/:id", async (c) => {
@@ -3573,64 +3551,10 @@ app.delete("/me/admin/users/:id", async (c) => {
 });
 
 // GET /api/oauth/me/site/users — list all users (requires site:user:read, token owner must be admin)
-app.get("/me/site/users", async (c) => {
-  const resolved = await requireAdminToken(c, "site:user:read");
-  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
-
-  const { page = "1", limit = "50", q } = c.req.query();
-  const pageNum = Math.max(1, parseInt(page, 10));
-  const pageSize = Math.min(100, Math.max(1, parseInt(limit, 10)));
-  const offset = (pageNum - 1) * pageSize;
-
-  let query =
-    "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users";
-  const binds: unknown[] = [];
-
-  if (q) {
-    query += " WHERE (username LIKE ? OR email LIKE ? OR display_name LIKE ?)";
-    const like = `%${q}%`;
-    binds.push(like, like, like);
-  }
-
-  query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-  binds.push(pageSize, offset);
-
-  const { results } = await c.env.DB.prepare(query)
-    .bind(...binds)
-    .all();
-
-  const countQuery = q
-    ? "SELECT COUNT(*) AS total FROM users WHERE username LIKE ? OR email LIKE ? OR display_name LIKE ?"
-    : "SELECT COUNT(*) AS total FROM users";
-  const countBinds = q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [];
-  const countRow = await c.env.DB.prepare(countQuery)
-    .bind(...countBinds)
-    .first<{ total: number }>();
-
-  return c.json({
-    users: await Promise.all(
-      results.map((u) => proxyUserAvatar(c.env.APP_URL, c.env.DB, u)),
-    ),
-    total: countRow?.total ?? 0,
-    page: pageNum,
-    limit: pageSize,
-  });
-});
+app.get("/me/site/users", listUsersByScope("site:user:read"));
 
 // GET /api/oauth/me/site/users/:id — get a user by id (requires site:user:read, token owner must be admin)
-app.get("/me/site/users/:id", async (c) => {
-  const resolved = await requireAdminToken(c, "site:user:read");
-  if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
-
-  const user = await c.env.DB.prepare(
-    "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users WHERE id = ?",
-  )
-    .bind(c.req.param("id"))
-    .first();
-
-  if (!user) return c.json({ error: "User not found" }, 404);
-  return c.json({ user: await proxyUserAvatar(c.env.APP_URL, c.env.DB, user) });
-});
+app.get("/me/site/users/:id", getUserByScope("site:user:read"));
 
 // ─── Team-scoped OAuth routes ─────────────────────────────────────────────────
 // All routes below require a bound team scope: team:<teamId>:<permission>

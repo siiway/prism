@@ -26,7 +26,7 @@ import {
 } from "../lib/redirectUri";
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
-import { sendEmail } from "../lib/email";
+import { emailConfigFromSite, sendEmail } from "../lib/email";
 import { readPage, likePattern } from "../lib/pagination";
 import {
   deliverUserEmailNotifications,
@@ -1420,7 +1420,7 @@ async function listTeamMembers(
   if (opts.query) {
     // LIKE with an escaped pattern — the input is user-supplied and % or _
     // would otherwise silently widen the match.
-    const pattern = `%${opts.query.replace(/[\\%_]/g, "\\$&")}%`;
+    const pattern = likePattern(opts.query);
     where.push(
       "(LOWER(u.display_name) LIKE LOWER(?) ESCAPE '\\' OR LOWER(u.username) LIKE LOWER(?) ESCAPE '\\')",
     );
@@ -1516,10 +1516,11 @@ app.get("/:id/members", async (c) => {
   const eff = await getEffectiveMember(c.env.DB, id, user.id);
   if (!eff) return c.json({ error: "Not found" }, 404);
 
-  const page = Math.max(1, Number(c.req.query("page")) || 1);
-  const limit = Math.min(
+  const { page, limit } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    MEMBER_PAGE_SIZE,
     100,
-    Math.max(1, Number(c.req.query("limit")) || MEMBER_PAGE_SIZE),
   );
 
   const result = await listTeamMembers(c.env.DB, c.env.APP_URL, id, {
@@ -2407,16 +2408,7 @@ app.post("/:id/invites", async (c) => {
           </div>`,
           text: `${user.display_name} invited you to join a team. Accept: ${inviteLink}`,
         },
-        {
-          provider: config.email_provider,
-          from: config.email_from,
-          apiKey: config.email_api_key,
-          smtpHost: config.smtp_host,
-          smtpPort: config.smtp_port,
-          smtpSecure: config.smtp_secure,
-          smtpUser: config.smtp_user,
-          smtpPassword: config.smtp_password,
-        },
+        emailConfigFromSite(config),
       ).catch(() => {
         /* non-fatal */
       });

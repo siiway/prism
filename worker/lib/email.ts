@@ -2,6 +2,7 @@
 
 import { decryptSecret } from "./secretCrypto";
 import { loggedFetch } from "./logger";
+import type { SiteConfig } from "../types";
 
 export interface EmailOptions {
   to: string;
@@ -21,6 +22,34 @@ export interface EmailConfig {
   smtpSecure?: boolean;
   smtpUser?: string;
   smtpPassword?: string;
+}
+
+/** The sender half of the site configuration. Every caller maps exactly
+ *  these eight fields, so the mapping lives here rather than being spelled
+ *  out again at each send site. */
+export function emailConfigFromSite(
+  config: Pick<
+    SiteConfig,
+    | "email_provider"
+    | "email_from"
+    | "email_api_key"
+    | "smtp_host"
+    | "smtp_port"
+    | "smtp_secure"
+    | "smtp_user"
+    | "smtp_password"
+  >,
+): EmailConfig {
+  return {
+    provider: config.email_provider,
+    from: config.email_from,
+    apiKey: config.email_api_key,
+    smtpHost: config.smtp_host,
+    smtpPort: config.smtp_port,
+    smtpSecure: config.smtp_secure,
+    smtpUser: config.smtp_user,
+    smtpPassword: config.smtp_password,
+  };
 }
 
 export async function sendEmail(

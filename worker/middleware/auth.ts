@@ -7,7 +7,7 @@ import { readSessionCookie } from "../lib/cookies";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 import { getIp } from "../lib/clientIp";
 import { geoJson, recordSessionIp } from "../lib/geo";
-import type { Variables } from "../types";
+import type { AuthUser, Variables } from "../types";
 
 // Fire-and-forget: append the request's IP + Cloudflare geolocation to the
 // session's history so the security page can show where a session has been
@@ -42,6 +42,57 @@ function readSessionToken(c: Context<AppEnv>): string | null {
   return readSessionCookie(c);
 }
 
+/**
+ * Resolve a session token to the user it authenticates, or null when the
+ * token, the session or the account is unusable.
+ *
+ * The JWT proves only that this session was issued to this user; every claim
+ * baked into it is a snapshot from login time and cannot be revoked before it
+ * expires. So everything the server makes an authorization decision on — the
+ * role, whether the account is still active, whether the address is verified
+ * — is read from the users row on each request. A demotion then takes effect
+ * on the very next request instead of whenever the token happens to lapse.
+ *
+ * The remaining claims are display-only and stay on the token; avatar_url in
+ * particular is the proxied URL, which the users row does not carry.
+ */
+async function loadSession(
+  c: Context<AppEnv>,
+  token: string,
+): Promise<{ user: AuthUser; sessionId: string } | null> {
+  const secret = await getJwtSecret(c.env.KV_SESSIONS);
+  const payload = await verifyJWT(token, secret);
+
+  const row = await c.env.DB.prepare(
+    `SELECT s.id AS session_id, u.role, u.email_verified, u.is_active
+       FROM sessions s
+       JOIN users u ON s.user_id = u.id
+      WHERE s.id = ? AND u.kind = 'user' AND s.expires_at > ?`,
+  )
+    .bind(payload.sessionId, Math.floor(Date.now() / 1000))
+    .first<{
+      session_id: string;
+      role: "admin" | "user";
+      email_verified: number;
+      is_active: number;
+    }>();
+
+  if (!row || !row.is_active) return null;
+
+  return {
+    sessionId: row.session_id,
+    user: {
+      id: payload.sub,
+      email: payload.email as string,
+      username: payload.username as string,
+      display_name: payload.display_name as string,
+      avatar_url: (payload.avatar_url as string) ?? null,
+      role: row.role,
+      email_verified: row.email_verified === 1,
+    },
+  };
+}
+
 export async function requireAuth(c: Context<AppEnv>, next: Next) {
   // An earlier middleware may have authenticated this request via an alternate
   // scheme (e.g. app client credentials). Don't clobber that.
@@ -54,30 +105,12 @@ export async function requireAuth(c: Context<AppEnv>, next: Next) {
   }
 
   try {
-    const secret = await getJwtSecret(c.env.KV_SESSIONS);
-    const payload = await verifyJWT(token, secret);
+    const session = await loadSession(c, token);
+    if (!session) return c.json({ error: "Unauthorized" }, 401);
 
-    const session = await c.env.DB.prepare(
-      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user' AND s.expires_at > ?",
-    )
-      .bind(payload.sessionId, Math.floor(Date.now() / 1000))
-      .first<{ id: string; is_active: number }>();
-
-    if (!session || !session.is_active) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    c.set("user", {
-      id: payload.sub,
-      email: payload.email as string,
-      username: payload.username as string,
-      display_name: payload.display_name as string,
-      avatar_url: (payload.avatar_url as string) ?? null,
-      role: payload.role,
-      email_verified: payload.email_verified as boolean,
-    });
-    c.set("sessionId", payload.sessionId);
-    trackSessionIp(c, payload.sessionId);
+    c.set("user", session.user);
+    c.set("sessionId", session.sessionId);
+    trackSessionIp(c, session.sessionId);
     await next();
   } catch {
     return c.json({ error: "Unauthorized" }, 401);
@@ -90,31 +123,17 @@ export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!token) return c.json({ error: "Unauthorized" }, 401);
 
   try {
-    const secret = await getJwtSecret(c.env.KV_SESSIONS);
-    const payload = await verifyJWT(token, secret);
-    if (payload.role !== "admin") return c.json({ error: "Forbidden" }, 403);
+    const session = await loadSession(c, token);
+    if (!session) return c.json({ error: "Unauthorized" }, 401);
 
-    const session = await c.env.DB.prepare(
-      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user' AND s.expires_at > ?",
-    )
-      .bind(payload.sessionId, Math.floor(Date.now() / 1000))
-      .first<{ id: string; is_active: number }>();
+    // The role as it stands right now, not the one the token was minted with:
+    // an admin who has since been demoted loses access here, immediately.
+    if (session.user.role !== "admin")
+      return c.json({ error: "Forbidden" }, 403);
 
-    if (!session || !session.is_active) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    c.set("user", {
-      id: payload.sub,
-      email: payload.email as string,
-      username: payload.username as string,
-      display_name: payload.display_name as string,
-      avatar_url: (payload.avatar_url as string) ?? null,
-      role: payload.role,
-      email_verified: payload.email_verified as boolean,
-    });
-    c.set("sessionId", payload.sessionId);
-    trackSessionIp(c, payload.sessionId);
+    c.set("user", session.user);
+    c.set("sessionId", session.sessionId);
+    trackSessionIp(c, session.sessionId);
     await next();
   } catch {
     return c.json({ error: "Unauthorized" }, 401);
@@ -219,27 +238,11 @@ export async function optionalAuth(c: Context<AppEnv>, next: Next) {
 
   if (token) {
     try {
-      const secret = await getJwtSecret(c.env.KV_SESSIONS);
-      const payload = await verifyJWT(token, secret);
-
-      const session = await c.env.DB.prepare(
-        "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user' AND s.expires_at > ?",
-      )
-        .bind(payload.sessionId, Math.floor(Date.now() / 1000))
-        .first<{ id: string; is_active: number }>();
-
-      if (session && session.is_active) {
-        c.set("user", {
-          id: payload.sub,
-          email: payload.email as string,
-          username: payload.username as string,
-          display_name: payload.display_name as string,
-          avatar_url: (payload.avatar_url as string) ?? null,
-          role: payload.role,
-          email_verified: payload.email_verified as boolean,
-        });
-        c.set("sessionId", payload.sessionId);
-        trackSessionIp(c, payload.sessionId);
+      const session = await loadSession(c, token);
+      if (session) {
+        c.set("user", session.user);
+        c.set("sessionId", session.sessionId);
+        trackSessionIp(c, session.sessionId);
       }
     } catch {
       // ignore invalid tokens for optional auth

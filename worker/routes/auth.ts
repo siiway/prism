@@ -13,7 +13,11 @@ import {
   randomBase64url,
   verifyPassword,
 } from "../lib/crypto";
-import { sendEmail, verifyEmailTemplate } from "../lib/email";
+import {
+  emailConfigFromSite,
+  sendEmail,
+  verifyEmailTemplate,
+} from "../lib/email";
 import {
   encryptSecret,
   hashSecret,
@@ -277,16 +281,7 @@ app.post("/register", async (c) => {
         subject: `Verify your email — ${config.site_name}`,
         ...tmpl,
       },
-      {
-        provider: config.email_provider,
-        from: config.email_from,
-        apiKey: config.email_api_key,
-        smtpHost: config.smtp_host,
-        smtpPort: config.smtp_port,
-        smtpSecure: config.smtp_secure,
-        smtpUser: config.smtp_user,
-        smtpPassword: config.smtp_password,
-      },
+      emailConfigFromSite(config),
     );
   }
 
@@ -751,16 +746,7 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
       subject: `Verify your email — ${config.site_name}`,
       ...tmpl,
     },
-    {
-      provider: config.email_provider,
-      from: config.email_from,
-      apiKey: config.email_api_key,
-      smtpHost: config.smtp_host,
-      smtpPort: config.smtp_port,
-      smtpSecure: config.smtp_secure,
-      smtpUser: config.smtp_user,
-      smtpPassword: config.smtp_password,
-    },
+    emailConfigFromSite(config),
   );
 
   return c.json({ message: "Verification email sent" });

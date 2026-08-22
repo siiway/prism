@@ -38,50 +38,10 @@ import type {
   AppAccessRuleRow,
   Variables,
 } from "../types";
+import { PLATFORM_SCOPES } from "../../shared/scopes";
 
 // Mirror of the platform scope set in oauth.ts — used to validate app:* inner scopes
-const VALID_PLATFORM_SCOPES = new Set([
-  "openid",
-  "profile",
-  "profile:write",
-  "email",
-  "apps:read",
-  "apps:write",
-  "teams:read",
-  "teams:write",
-  "teams:create",
-  "teams:delete",
-  "domains:read",
-  "domains:write",
-  "gpg:read",
-  "gpg:write",
-  "social:read",
-  "social:write",
-  "admin:users:read",
-  "admin:users:write",
-  "admin:users:delete",
-  "admin:config:read",
-  "admin:config:write",
-  "admin:invites:read",
-  "admin:invites:create",
-  "admin:invites:delete",
-  "site:user:read",
-  "site:user:write",
-  "site:user:delete",
-  "site:team:read",
-  "site:team:write",
-  "site:team:delete",
-  "site:config:read",
-  "site:config:write",
-  "site:token:revoke",
-  "team:read",
-  "team:write",
-  "team:delete",
-  "team:member:read",
-  "team:member:write",
-  "team:member:profile:read",
-  "offline_access",
-]);
+const VALID_PLATFORM_SCOPES = new Set(PLATFORM_SCOPES);
 
 /** Exported so the team-app endpoint validates scopes with exactly this
  *  function rather than its own list — the two drifted once already, and a

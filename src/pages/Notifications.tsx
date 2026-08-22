@@ -37,7 +37,7 @@ import type {
   NotificationTgRule,
   NotificationDiscordRule,
   NotificationRuleset,
-  NotificationRule,
+  NotificationRulesetRule,
   NotificationRuleSendChannel,
   NotificationLevel,
   NotifEmail,
@@ -802,7 +802,7 @@ function RulesetSection(props: {
   editingRulesetId: string | null;
   setEditingRulesetId: (id: string | null) => void;
   activeRuleset: NotificationRuleset | null;
-  draftRules: NotificationRule[];
+  draftRules: NotificationRulesetRule[];
   draftDirty: boolean;
   emails: NotifEmail[];
   tgConnections: NotifTgConnection[];
@@ -818,7 +818,7 @@ function RulesetSection(props: {
   onToggleActive: (rs: NotificationRuleset) => void;
   onSaveDraft: () => void;
   onDiscardDraft: () => void;
-  onPatchRule: (idx: number, patch: Partial<NotificationRule>) => void;
+  onPatchRule: (idx: number, patch: Partial<NotificationRulesetRule>) => void;
   onMoveRule: (idx: number, delta: number) => void;
   onDeleteRule: (idx: number) => void;
   onAddRule: () => void;
@@ -1087,14 +1087,14 @@ function RuleAccountFilter(props: {
 
 function RuleEditorCard(props: {
   index: number;
-  rule: NotificationRule;
+  rule: NotificationRulesetRule;
   emails: NotifEmail[];
   tgConnections: NotifTgConnection[];
   discordConnections: NotifDiscordConnection[];
   knownEvents: string[];
   isFirst: boolean;
   isLast: boolean;
-  onPatch: (p: Partial<NotificationRule>) => void;
+  onPatch: (p: Partial<NotificationRulesetRule>) => void;
   onMove: (delta: number) => void;
   onDelete: () => void;
 }) {
@@ -1447,7 +1447,7 @@ export function Notifications() {
   // ruleset; saving PUTs the rule array. Activating one ruleset
   // automatically deactivates any other.
   const [editingRulesetId, setEditingRulesetId] = useState<string | null>(null);
-  const [draftRules, setDraftRules] = useState<NotificationRule[]>([]);
+  const [draftRules, setDraftRules] = useState<NotificationRulesetRule[]>([]);
   // Dialog state for ruleset name input (replaces window.prompt) and
   // delete confirmation (replaces window.confirm).
   const [nameDialog, setNameDialog] = useState<
@@ -1497,7 +1497,7 @@ export function Notifications() {
   const createRulesetMut = useMutation({
     mutationFn: (body: {
       name: string;
-      rules: NotificationRule[];
+      rules: NotificationRulesetRule[];
       is_active?: boolean;
     }) => api.createNotificationRuleset(body),
     onSuccess: (res) => {
@@ -1523,7 +1523,7 @@ export function Notifications() {
       id: string;
       body: {
         name?: string;
-        rules?: NotificationRule[];
+        rules?: NotificationRulesetRule[];
         is_active?: boolean;
       };
     }) => api.updateNotificationRuleset(id, body),
@@ -1607,7 +1607,7 @@ export function Notifications() {
   }
 
   // Rule-array editing helpers operate on draftRules.
-  function newRule(): NotificationRule {
+  function newRule(): NotificationRulesetRule {
     return {
       id: `r_${Math.random().toString(36).slice(2, 10)}`,
       enabled: true,
@@ -1616,7 +1616,10 @@ export function Notifications() {
     };
   }
 
-  function patchDraftRule(idx: number, patch: Partial<NotificationRule>) {
+  function patchDraftRule(
+    idx: number,
+    patch: Partial<NotificationRulesetRule>,
+  ) {
     setDraftRules((prev) =>
       prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)),
     );

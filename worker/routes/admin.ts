@@ -17,7 +17,11 @@ import {
   isHashedSecret,
   isSecretsKeyConfigured,
 } from "../lib/secretCrypto";
-import { sendEmail } from "../lib/email";
+import {
+  emailConfigFromSite,
+  inviteEmailTemplate,
+  sendEmail,
+} from "../lib/email";
 import { loggedFetch } from "../lib/logger";
 import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
@@ -35,7 +39,6 @@ import {
   buildVerifiedTeamDomainsMap,
   computeVerified,
 } from "../lib/domainVerify";
-import { inviteEmailTemplate } from "../lib/email";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { hashBackupCodes } from "../lib/totp";
 import {
@@ -888,17 +891,22 @@ app.post("/d1-secrets/migrate", async (c) => {
 // ─── User management ──────────────────────────────────────────────────────────
 
 app.get("/users", async (c) => {
-  const page = parseInt(c.req.query("page") ?? "1");
-  const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100);
-  const offset = (page - 1) * limit;
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+    100,
+  );
   const search = c.req.query("search") ?? "";
 
   // Hide synthetic team-user rows from the user list — they're surfaced
   // through the dedicated teams admin page.
   const whereClause = search
-    ? "WHERE u.kind = 'user' AND (u.email LIKE ? OR u.username LIKE ? OR u.display_name LIKE ?)"
+    ? `WHERE u.kind = 'user' AND (u.email LIKE ? ESCAPE '\\'
+                                  OR u.username LIKE ? ESCAPE '\\'
+                                  OR u.display_name LIKE ? ESCAPE '\\')`
     : "WHERE u.kind = 'user'";
-  const searchParam = `%${search}%`;
+  const searchParam = likePattern(search);
   const params = search ? [searchParam, searchParam, searchParam] : [];
 
   const [usersResult, countResult] = await Promise.all([
@@ -978,7 +986,9 @@ app.patch("/users/:id", async (c) => {
     email_verified?: boolean;
   }>();
 
-  const user = await c.env.DB.prepare("SELECT id, username FROM users WHERE id = ?")
+  const user = await c.env.DB.prepare(
+    "SELECT id, username FROM users WHERE id = ?",
+  )
     .bind(id)
     .first<{ id: string; username: string }>();
   if (!user) return c.json({ error: "User not found" }, 404);
@@ -1094,9 +1104,12 @@ app.delete("/users/:id/sessions", async (c) => {
 // ─── App moderation ───────────────────────────────────────────────────────────
 
 app.get("/apps", async (c) => {
-  const page = parseInt(c.req.query("page") ?? "1");
-  const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100);
-  const offset = (page - 1) * limit;
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+    100,
+  );
 
   const [apps, count] = await Promise.all([
     c.env.DB.prepare(
@@ -1166,7 +1179,9 @@ app.patch("/apps/:id", async (c) => {
     is_first_party?: boolean;
   }>();
 
-  const app = await c.env.DB.prepare("SELECT id, name FROM oauth_apps WHERE id = ?")
+  const app = await c.env.DB.prepare(
+    "SELECT id, name FROM oauth_apps WHERE id = ?",
+  )
     .bind(id)
     .first<{ id: string; name: string }>();
   if (!app) return c.json({ error: "App not found" }, 404);
@@ -1738,20 +1753,20 @@ app.post("/sweep-image-proxy", async (c) => {
 // matches the URL substring case-insensitively.
 
 app.get("/image-proxy", async (c) => {
-  const page = Math.max(1, parseInt(c.req.query("page") ?? "1", 10) || 1);
-  const limit = Math.min(
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    50,
     100,
-    Math.max(1, parseInt(c.req.query("limit") ?? "50", 10) || 50),
   );
-  const offset = (page - 1) * limit;
   const q = (c.req.query("q") ?? "").trim();
   const createdBy = (c.req.query("created_by") ?? "").trim();
 
   const where: string[] = [];
   const binds: unknown[] = [];
   if (q) {
-    where.push("LOWER(m.url) LIKE ?");
-    binds.push(`%${q.toLowerCase()}%`);
+    where.push("LOWER(m.url) LIKE ? ESCAPE '\\'");
+    binds.push(likePattern(q.toLowerCase()));
   }
   if (createdBy) {
     if (createdBy === "system") {
@@ -1879,9 +1894,12 @@ app.post("/migrate-recovery-codes", async (c) => {
 // ─── Team administration ──────────────────────────────────────────────────────
 
 app.get("/teams", async (c) => {
-  const page = parseInt(c.req.query("page") ?? "1");
-  const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 100);
-  const offset = (page - 1) * limit;
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+    100,
+  );
 
   const [teams, count] = await Promise.all([
     c.env.DB.prepare(
@@ -2212,12 +2230,12 @@ app.get("/stats", async (c) => {
 // ─── Login error log ──────────────────────────────────────────────────────────
 
 app.get("/login-errors", async (c) => {
-  const page = Math.max(1, parseInt(c.req.query("page") ?? "1"));
-  const limit = Math.min(
-    Math.max(1, parseInt(c.req.query("limit") ?? "50")),
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    50,
     200,
   );
-  const offset = (page - 1) * limit;
   const qCode = c.req.query("error_code") ?? "";
   const qIdentifier = c.req.query("identifier") ?? "";
   const qIp = c.req.query("ip") ?? "";
@@ -2242,12 +2260,12 @@ app.get("/login-errors", async (c) => {
     params.push(qCode);
   }
   if (qIdentifier) {
-    conditions.push("identifier LIKE ?");
-    params.push(`%${qIdentifier}%`);
+    conditions.push("identifier LIKE ? ESCAPE '\\'");
+    params.push(likePattern(qIdentifier));
   }
   if (qIp) {
-    conditions.push("ip_address LIKE ?");
-    params.push(`%${qIp}%`);
+    conditions.push("ip_address LIKE ? ESCAPE '\\'");
+    params.push(likePattern(qIp));
   }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -2268,12 +2286,12 @@ app.get("/login-errors", async (c) => {
 // ─── Request logs ─────────────────────────────────────────────────────────────
 
 app.get("/request-logs", async (c) => {
-  const page = Math.max(1, parseInt(c.req.query("page") ?? "1"));
-  const limit = Math.min(
-    Math.max(1, parseInt(c.req.query("limit") ?? "50")),
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    50,
     200,
   );
-  const offset = (page - 1) * limit;
   const qMethod = c.req.query("method") ?? "";
   const qPath = c.req.query("path") ?? "";
   const qStatus = c.req.query("status") ?? "";
@@ -2286,8 +2304,8 @@ app.get("/request-logs", async (c) => {
     params.push(qMethod.toUpperCase());
   }
   if (qPath) {
-    conditions.push("path LIKE ?");
-    params.push(`%${qPath}%`);
+    conditions.push("path LIKE ? ESCAPE '\\'");
+    params.push(likePattern(qPath));
   }
   if (qStatus) {
     const s = parseInt(qStatus);
@@ -2349,8 +2367,8 @@ app.get("/request-logs/export", async (c) => {
     params.push(qMethod.toUpperCase());
   }
   if (qPath) {
-    conditions.push("path LIKE ?");
-    params.push(`%${qPath}%`);
+    conditions.push("path LIKE ? ESCAPE '\\'");
+    params.push(likePattern(qPath));
   }
   if (qStatus) {
     const s = parseInt(qStatus);
@@ -2691,16 +2709,7 @@ app.post("/invites", async (c) => {
         subject: `You've been invited to ${config.site_name}`,
         ...tmpl,
       },
-      {
-        provider: config.email_provider,
-        from: config.email_from,
-        apiKey: config.email_api_key,
-        smtpHost: config.smtp_host,
-        smtpPort: config.smtp_port,
-        smtpSecure: config.smtp_secure,
-        smtpUser: config.smtp_user,
-        smtpPassword: config.smtp_password,
-      },
+      emailConfigFromSite(config),
     );
   }
 

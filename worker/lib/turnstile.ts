@@ -11,7 +11,8 @@
 // against the global https://challenges.cloudflare.com/turnstile/v0/siteverify,
 // so worker/middleware/captcha.ts needs no host switch.
 
-import type { TurnstileEndpointMode } from "../types";
+import type { SiteConfig, TurnstileEndpointMode } from "../types";
+import { getGeo } from "./geo";
 
 /** Directive sent to the browser. The server has already collapsed
  *  "server_region" into a concrete "global"/"china"; the client-side modes
@@ -28,7 +29,7 @@ export type TurnstileEndpointDirective =
  * geolocation (see lib/geo.ts), null when unknown — used only by
  * "server_region".
  */
-export function resolveTurnstileEndpoint(
+function resolveTurnstileEndpoint(
   mode: TurnstileEndpointMode | undefined,
   country: string | null,
 ): TurnstileEndpointDirective {
@@ -45,4 +46,19 @@ export function resolveTurnstileEndpoint(
     default:
       return "global";
   }
+}
+
+/**
+ * Directive for this request. Every public payload that carries a Turnstile
+ * site key (site info, team-join info, OAuth 2FA info) carries this alongside
+ * it so the browser knows which host to load the widget from.
+ */
+export function turnstileEndpointFor(
+  c: { req: { raw: Request } },
+  config: Pick<SiteConfig, "turnstile_endpoint_mode">,
+): TurnstileEndpointDirective {
+  return resolveTurnstileEndpoint(
+    config.turnstile_endpoint_mode,
+    getGeo(c).country,
+  );
 }

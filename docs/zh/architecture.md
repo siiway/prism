@@ -50,7 +50,7 @@ Worker 在渲染前会读取 session cookie，若已登录则预拉用户信息�
 worker/
 ├── index.ts                # 入口；CORS、secureHeaders、路由挂载、scheduled()、email()
 ├── ssr.ts                  # SSR 胶水 → src/entry-server.tsx
-├── types.ts                # D1 行类型、Variables、SiteConfig
+├── types.ts                # D1 行类型、Variables；重导出 shared/types.ts
 │
 ├── db/migrations/
 │   └── 0001_init.sql … 0053_audit_webhook_delivery.sql
@@ -116,6 +116,10 @@ worker/
     ├── wellknown.ts        # /.well-known/openid-configuration、jwks.json
     └── admin.ts            # 配置、用户、应用、团队、审计、请求日志、密钥迁移
 ```
+
+两端必须保持一致的类型——`SiteConfig`、各类能力枚举、通知规则结构——统一定义在
+`shared/types.ts`，由 `worker/types.ts` 与前端（`src/types.ts`、`src/lib/api.ts`）
+重导出。两个 tsconfig 项目都包含 `shared/`，因此一端新增的字段不会在另一端缺失。
 
 ## 数据模型
 

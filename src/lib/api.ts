@@ -1,3 +1,25 @@
+import type {
+  NotificationEmailRule,
+  NotificationTgRule,
+  NotificationDiscordRule,
+  NotificationRule,
+  NotificationRules,
+  RestrictedCapability,
+  TeamCapability,
+  TeamRolePermissions,
+} from "../../shared/types";
+
+export type {
+  NotificationEmailRule,
+  NotificationTgRule,
+  NotificationDiscordRule,
+  NotificationRule,
+  NotificationRules,
+  RestrictedCapability,
+  TeamCapability,
+  TeamRolePermissions,
+};
+
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../store/auth";
 
@@ -1316,7 +1338,7 @@ export const api = {
     ),
   createNotificationRuleset: (body: {
     name: string;
-    rules: NotificationRule[];
+    rules: NotificationRulesetRule[];
     is_active?: boolean;
   }) =>
     request<{ ruleset: NotificationRuleset }>(
@@ -1327,7 +1349,11 @@ export const api = {
     ),
   updateNotificationRuleset: (
     id: string,
-    body: { name?: string; rules?: NotificationRule[]; is_active?: boolean },
+    body: {
+      name?: string;
+      rules?: NotificationRulesetRule[];
+      is_active?: boolean;
+    },
   ) =>
     request<{ ruleset: NotificationRuleset }>(
       "PUT",
@@ -2274,14 +2300,7 @@ export interface JoinRequirements {
   forced_by_site: { require_2fa: boolean; require_verified_email: boolean };
 }
 
-export type RestrictedCapability =
-  | "team:create"
-  | "app:create"
-  | "domain:create"
-  | "pat:create"
-  | "profile:public"
-  | "gpg:manage"
-  | "self:convert";
+// RestrictedCapability — see shared/types.ts.
 
 /** Whether the signed-in account is operating under invite-registration
  *  restrictions, and what it would take to lift them. */
@@ -2363,12 +2382,7 @@ export interface Team {
   updated_at: number;
 }
 
-/** Capabilities a team owner can grant to or withhold from admins. */
-export type TeamCapability = "groups:manage" | "groups:assign";
-
-export interface TeamRolePermissions {
-  admin?: Partial<Record<TeamCapability, boolean>>;
-}
+// TeamCapability / TeamRolePermissions — see shared/types.ts.
 
 /** A group definition as managed on the team. */
 export interface TeamGroup {
@@ -2988,32 +3002,11 @@ export interface NotifDiscordConnection {
   username: string | null;
 }
 
-export interface NotificationEmailRule {
-  email_id: string;
-  level: "brief" | "full";
-}
-
-export interface NotificationTgRule {
-  connection_id: string;
-  level: "brief" | "full";
-}
-
-export interface NotificationDiscordRule {
-  connection_id: string;
-  level: "brief" | "full";
-}
-
-export interface NotificationRule {
-  email?: NotificationEmailRule[];
-  tg?: NotificationTgRule[];
-  discord?: NotificationDiscordRule[];
-}
-
-export type NotificationRules = Record<string, NotificationRule>;
+// Notification rule shapes — see shared/types.ts.
 
 // ─── Rule-engine ruleset (new model) ─────────────────────────────────────────
 //
-// A ruleset is an ordered list of NotificationRule entries. The active
+// A ruleset is an ordered list of NotificationRulesetRule entries. The active
 // ruleset replaces the legacy per-event NotificationRules at dispatch.
 //
 // match.event is a glob: "*" matches everything, "security.*" matches
@@ -3041,7 +3034,7 @@ export type NotificationRuleAction =
   | { type: "drop" }
   | { type: "send"; channels: NotificationRuleSendChannel[] };
 
-export interface NotificationRule {
+export interface NotificationRulesetRule {
   id: string;
   name?: string;
   enabled?: boolean;
@@ -3053,7 +3046,7 @@ export interface NotificationRule {
 export interface NotificationRuleset {
   id: string;
   name: string;
-  rules: NotificationRule[];
+  rules: NotificationRulesetRule[];
   is_active: boolean;
   created_at: number;
   updated_at: number;

@@ -1,8 +1,7 @@
-// Small helpers shared by list endpoints that paginate + search.
-//
-// The team-members listing (worker/routes/teams.ts) and the admin listings
-// (worker/routes/admin.ts) predate this module and keep their own inline
-// parsing — new code should use these so the param names stay consistent.
+// Small helpers shared by list endpoints that paginate + search. Every list
+// endpoint goes through them, so the param names, the bounds, and the LIKE
+// escaping stay consistent — and a hostile `?limit=-1` cannot turn a page
+// request into a full-table dump.
 
 export interface PageOptions {
   page: number;

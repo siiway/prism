@@ -40,13 +40,18 @@ import { getConfig, getConfigValue } from "../lib/config";
 import { readPage, likePattern } from "../lib/pagination";
 import { getGithubReadmeFromCache } from "../lib/githubReadme";
 import { encryptSecret, hashSecret } from "../lib/secretCrypto";
-import { sendEmail, verifyEmailTemplate } from "../lib/email";
+import {
+  emailConfigFromSite,
+  sendEmail,
+  verifyEmailTemplate,
+} from "../lib/email";
 import type {
   UserRow,
   UserEmailRow,
   UserNotificationPrefsRow,
   Variables,
 } from "../types";
+import { USER_GRANTABLE_SCOPES } from "../../shared/scopes";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -366,7 +371,10 @@ app.patch("/me", async (c) => {
 
   const auditMeta = auditRequestMeta(c);
   const changedFieldNames = Object.keys(changedFields).filter(
-    (f) => f !== "updated_at" && f !== "profile_readme_updated_at" && f !== "profile_readme_source_meta"
+    (f) =>
+      f !== "updated_at" &&
+      f !== "profile_readme_updated_at" &&
+      f !== "profile_readme_source_meta",
   );
   await recordAudit(c.env, c.executionCtx, {
     scope: "user",
@@ -785,16 +793,7 @@ app.post("/me/emails", async (c) => {
           subject: `Verify your email — ${config.site_name}`,
           ...tmpl,
         },
-        {
-          provider: config.email_provider,
-          from: config.email_from,
-          apiKey: config.email_api_key,
-          smtpHost: config.smtp_host,
-          smtpPort: config.smtp_port,
-          smtpSecure: config.smtp_secure,
-          smtpUser: config.smtp_user,
-          smtpPassword: config.smtp_password,
-        },
+        emailConfigFromSite(config),
       ).catch(() => {}),
     );
   }
@@ -832,16 +831,7 @@ app.post("/me/emails/:id/resend", async (c) => {
       subject: `Verify your email — ${config.site_name}`,
       ...tmpl,
     },
-    {
-      provider: config.email_provider,
-      from: config.email_from,
-      apiKey: config.email_api_key,
-      smtpHost: config.smtp_host,
-      smtpPort: config.smtp_port,
-      smtpSecure: config.smtp_secure,
-      smtpUser: config.smtp_user,
-      smtpPassword: config.smtp_password,
-    },
+    emailConfigFromSite(config),
   );
 
   return c.json({ message: "Verification email sent" });
@@ -1095,33 +1085,7 @@ app.delete("/me/emails/:id", async (c) => {
 
 // ─── Personal Access Tokens ───────────────────────────────────────────────────
 
-const VALID_PAT_SCOPES = new Set([
-  "openid",
-  "profile",
-  "profile:write",
-  "email",
-  "apps:read",
-  "apps:write",
-  "teams:read",
-  "teams:write",
-  "teams:create",
-  "teams:delete",
-  "domains:read",
-  "domains:write",
-  "gpg:read",
-  "gpg:write",
-  "social:read",
-  "social:write",
-  "admin:users:read",
-  "admin:users:write",
-  "admin:users:delete",
-  "admin:config:read",
-  "admin:config:write",
-  "admin:invites:read",
-  "admin:invites:create",
-  "admin:invites:delete",
-  "offline_access",
-]);
+const VALID_PAT_SCOPES = new Set(USER_GRANTABLE_SCOPES);
 
 // GET /api/user/tokens — list own PATs
 app.get("/tokens", async (c) => {
