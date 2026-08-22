@@ -27,12 +27,13 @@ import {
 } from "../lib/secretCrypto";
 import { signJWT } from "../lib/jwt";
 import {
+  claimEnrolmentCounter,
   generateBackupCodes,
   generateTotpSecret,
   hashBackupCodes,
+  matchTotpCounter,
   totpUri,
   verifyAnyTotp,
-  verifyTotp,
 } from "../lib/totp";
 import {
   beginPasskeyAuthentication,
@@ -811,14 +812,17 @@ app.post("/totp/verify", requireAuth, async (c) => {
   if (auth.enabled) return c.json({ error: "Already enabled" }, 409);
 
   const plainSecret = (await decryptSecret(c.env, auth.secret)) ?? auth.secret;
-  const ok = await verifyTotp(body.code, plainSecret);
-  if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
+  const counter = await matchTotpCounter(body.code, plainSecret);
+  if (counter === null) return c.json({ error: "Invalid TOTP code" }, 400);
 
   await c.env.DB.prepare(
     "UPDATE totp_authenticators SET enabled = 1 WHERE id = ?",
   )
     .bind(body.id)
     .run();
+  // Retire the enrolment code too — otherwise the code the user just typed
+  // here is still live at the login form for the rest of its window.
+  await claimEnrolmentCounter(c.env.DB, body.id, counter);
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(

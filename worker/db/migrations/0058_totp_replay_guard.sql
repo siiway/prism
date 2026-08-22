@@ -1,0 +1,15 @@
+-- Single-use TOTP codes.
+--
+-- RFC 6238 section 5.2: "The verifier MUST NOT accept the second attempt of
+-- the OTP after the successful validation has been issued for the first OTP."
+-- Verification previously only recomputed the HMAC over the accepted window
+-- (+/- one 30s step), so a code stayed valid for its whole window and could be
+-- replayed by anyone who observed it once — a phishing proxy, a screenshot, a
+-- shoulder-surfer — for up to ~90 seconds, minting as many sessions as it liked.
+--
+-- last_used_counter records the time step of the most recent code this
+-- authenticator accepted. Verification refuses any code whose counter is at or
+-- below it, which retires the used code and every earlier step in the window.
+-- NULL means "never used" — existing authenticators keep working, and the
+-- first successful verification after this migration sets the floor.
+ALTER TABLE totp_authenticators ADD COLUMN last_used_counter INTEGER;

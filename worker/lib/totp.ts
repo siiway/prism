@@ -81,21 +81,36 @@ export async function generateTotp(
   return code.toString().padStart(6, "0");
 }
 
+/**
+ * Which time step a code matches at, or null when it matches none in the
+ * accepted window. Callers that need single-use semantics record the returned
+ * counter and refuse anything at or below it (see verifyAnyTotp).
+ */
+export async function matchTotpCounter(
+  token: string,
+  secret: string,
+  window = 1,
+  timestampMs = Date.now(),
+): Promise<bigint | null> {
+  const normalized = token.replace(/\s+/g, "");
+  if (normalized.length !== 6 || !/^\d{6}$/.test(normalized)) return null;
+  const secretBytes = base32ToBytes(secret);
+  const counter = BigInt(Math.floor(timestampMs / 30_000));
+  for (let i = -window; i <= window; i++) {
+    const step = counter + BigInt(i);
+    const code = await hotp(secretBytes, step);
+    if (code.toString().padStart(6, "0") === normalized) return step;
+  }
+  return null;
+}
+
 export async function verifyTotp(
   token: string,
   secret: string,
   window = 1,
   timestampMs = Date.now(),
 ): Promise<boolean> {
-  const normalized = token.replace(/\s+/g, "");
-  if (normalized.length !== 6 || !/^\d{6}$/.test(normalized)) return false;
-  const secretBytes = base32ToBytes(secret);
-  const counter = BigInt(Math.floor(timestampMs / 30_000));
-  for (let i = -window; i <= window; i++) {
-    const code = await hotp(secretBytes, counter + BigInt(i));
-    if (code.toString().padStart(6, "0") === normalized) return true;
-  }
-  return false;
+  return (await matchTotpCounter(token, secret, window, timestampMs)) !== null;
 }
 
 export function generateBackupCodes(count = 10): string[] {
@@ -190,12 +205,56 @@ export async function verifyAnyTotp(
       secret: string;
       enabled: number;
       created_at: number;
+      last_used_counter: number | null;
     }>();
   for (const t of totps.results) {
     const plainSecret = (await decryptSecret(env, t.secret)) ?? t.secret;
-    if (await verifyTotp(code, plainSecret)) return true;
+    const counter = await matchTotpCounter(code, plainSecret);
+    if (counter === null) continue;
+    if (!(await claimTotpCounter(db, t.id, counter, t.last_used_counter)))
+      return false;
+    return true;
   }
   return false;
+}
+
+/**
+ * Retire a time step so its code cannot be presented twice (RFC 6238 §5.2).
+ *
+ * Returns false when the step is at or below the last one this authenticator
+ * accepted — a replay of the code just used, or of an earlier code still
+ * inside the window. The UPDATE carries the same condition, so two requests
+ * racing with the same code cannot both win it: whichever lands second
+ * changes no rows and is refused.
+ */
+async function claimTotpCounter(
+  db: D1Database,
+  authenticatorId: string,
+  counter: bigint,
+  lastUsed: number | null,
+): Promise<boolean> {
+  const step = Number(counter);
+  if (lastUsed !== null && step <= lastUsed) return false;
+  const res = await db
+    .prepare(
+      `UPDATE totp_authenticators SET last_used_counter = ?
+        WHERE id = ? AND (last_used_counter IS NULL OR last_used_counter < ?)`,
+    )
+    .bind(step, authenticatorId, step)
+    .run();
+  return res.meta.changes === 1;
+}
+
+/**
+ * Record the step an enrolment code matched at, so the code the user typed to
+ * prove possession cannot then be replayed against the login form.
+ */
+export async function claimEnrolmentCounter(
+  db: D1Database,
+  authenticatorId: string,
+  counter: bigint,
+): Promise<void> {
+  await claimTotpCounter(db, authenticatorId, counter, null);
 }
 
 export function totpUri(secret: string, email: string, issuer: string): string {
