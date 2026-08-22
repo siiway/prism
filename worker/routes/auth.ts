@@ -849,14 +849,17 @@ app.post("/totp/verify", requireAuth, async (c) => {
   const counter = await matchTotpCounter(body.code, plainSecret);
   if (counter === null) return c.json({ error: "Invalid TOTP code" }, 400);
 
+  // Retire the enrolment code before enabling anything - otherwise a failure
+  // between the two leaves 2FA on with the code the user just typed still live
+  // at the login form. Claiming first can only ever leave a counter recorded
+  // against an authenticator that was never enabled, which costs nothing.
+  await claimEnrolmentCounter(c.env.DB, body.id, counter);
+
   await c.env.DB.prepare(
     "UPDATE totp_authenticators SET enabled = 1 WHERE id = ?",
   )
     .bind(body.id)
     .run();
-  // Retire the enrolment code too — otherwise the code the user just typed
-  // here is still live at the login form for the rest of its window.
-  await claimEnrolmentCounter(c.env.DB, body.id, counter);
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
