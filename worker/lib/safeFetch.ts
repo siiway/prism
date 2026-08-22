@@ -101,22 +101,74 @@ export function isBlockedHost(host: string): boolean {
  * Throws when a hop is rejected or the chain runs too long; callers already
  * treat a thrown fetch as "could not reach the URL".
  */
+/** Credentials that must not travel to a host other than the one they were
+ *  minted for. Authorization and Cookie are what fetch itself drops across an
+ *  origin change; X-Prism-Signature is ours — the HMAC over a webhook body,
+ *  which is addressed to that endpoint and nobody else. */
+const CROSS_ORIGIN_STRIP = [
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+  "x-prism-signature",
+];
+
 export async function safeFetch(
   url: string,
   init: RequestInit = {},
   maxRedirects = 5,
 ): Promise<Response> {
   let current = url;
+  let method = (init.method ?? "GET").toUpperCase();
+  let body = init.body;
+  const headers = new Headers(init.headers as HeadersInit | undefined);
+
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const err = validateOutboundUrl(current);
     if (err) throw new Error(`Blocked URL: ${err}`);
 
-    const res = await fetch(current, { ...init, redirect: "manual" });
+    const res = await fetch(current, {
+      ...init,
+      method,
+      body,
+      headers,
+      redirect: "manual",
+    });
     if (res.status < 300 || res.status > 399) return res;
 
     const location = res.headers.get("location");
     if (!location) return res;
-    current = new URL(location, current).toString();
+
+    // Taking redirects over from fetch means taking on its rules too.
+    // Following one by replaying the original request would re-POST a webhook
+    // payload — and the signature addressed to the first endpoint — at
+    // whatever host the redirect names.
+    const next = new URL(location, current);
+    const crossOrigin = next.origin !== new URL(current).origin;
+
+    if (crossOrigin) {
+      for (const name of CROSS_ORIGIN_STRIP) headers.delete(name);
+    }
+
+    if (
+      res.status === 303 ||
+      (method !== "GET" &&
+        method !== "HEAD" &&
+        (res.status === 301 || res.status === 302))
+    ) {
+      // RFC 9110 §15.4: these turn into a GET, and the body does not travel.
+      method = "GET";
+      body = undefined;
+      headers.delete("content-type");
+      headers.delete("content-length");
+    } else if (body !== undefined && body !== null && crossOrigin) {
+      // 307/308 keep the method and body by definition. Across origins that
+      // is precisely the leak, so refuse rather than deliver it elsewhere.
+      throw new Error(
+        "Refusing to replay a request body across an origin change",
+      );
+    }
+
+    current = next.toString();
   }
   throw new Error("Too many redirects");
 }
