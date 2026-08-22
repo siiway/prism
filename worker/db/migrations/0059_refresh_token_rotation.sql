@@ -1,0 +1,16 @@
+-- Refresh token rotation with reuse detection.
+--
+-- The refresh grant used to mint a new access token and leave the refresh
+-- token untouched, so a stolen one stayed usable for the whole
+-- refresh_token_ttl_days window (30 by default) with nothing to reveal the
+-- theft. That matters most for public clients: they authenticate with no
+-- secret — correctly, since PKCE binds the code exchange — but PKCE does not
+-- cover the refresh exchange, leaving the refresh token as the only
+-- credential. OAuth 2.0 Security BCP (RFC 9700 section 4.14.2) asks for
+-- rotation with reuse detection or sender constraining.
+--
+-- Each refresh now issues a new token and records the one it replaced here.
+-- Presenting a superseded token is a replay: either the client kept the old
+-- value or someone stole it, and neither is recoverable from, so the whole
+-- token row is revoked and both parties have to start over.
+ALTER TABLE oauth_tokens ADD COLUMN previous_refresh_token TEXT;

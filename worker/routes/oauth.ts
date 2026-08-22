@@ -2063,7 +2063,24 @@ app.post("/token", async (c) => {
       .bind(refresh_token, refreshLookup)
       .first<OAuthTokenRow>();
 
-    if (!tokenRow || tokenRow.client_id !== clientId)
+    // A token that matches nothing current may still be one this row already
+    // rotated away. That is a replay — the client kept a superseded value, or
+    // someone else is using a stolen one — and there is no way to tell which
+    // from here, so the grant is revoked and both have to re-authorise.
+    if (!tokenRow) {
+      const superseded = await c.env.DB.prepare(
+        "SELECT id FROM oauth_tokens WHERE previous_refresh_token = ? OR previous_refresh_token = ?",
+      )
+        .bind(refresh_token, refreshLookup)
+        .first<{ id: string }>();
+      if (superseded) {
+        await c.env.DB.prepare("DELETE FROM oauth_tokens WHERE id = ?")
+          .bind(superseded.id)
+          .run();
+      }
+      return c.json({ error: "invalid_grant" }, 400);
+    }
+    if (tokenRow.client_id !== clientId)
       return c.json({ error: "invalid_grant" }, 400);
     if (!tokenRow.refresh_expires_at || tokenRow.refresh_expires_at < now) {
       return c.json(
@@ -2105,18 +2122,39 @@ app.post("/token", async (c) => {
     }
 
     const storedNewAccess = await hashSecret(c.env, newAccessToken);
-    await c.env.DB.prepare(
-      "UPDATE oauth_tokens SET access_token = ?, expires_at = ? WHERE id = ?",
+
+    // Rotate the refresh token as well. The row remembers the value being
+    // replaced so a later presentation of it can be recognised as a replay
+    // (see the reuse check above). refresh_expires_at is deliberately left
+    // alone: rotation should not extend the grant's lifetime.
+    const newRefreshToken = randomBase64url(48);
+    const storedNewRefresh = await hashSecret(c.env, newRefreshToken);
+    const rotated = await c.env.DB.prepare(
+      `UPDATE oauth_tokens
+          SET access_token = ?, expires_at = ?,
+              refresh_token = ?, previous_refresh_token = ?
+        WHERE id = ? AND refresh_token = ?`,
     )
-      .bind(storedNewAccess, now + atTtl, tokenRow.id)
+      .bind(
+        storedNewAccess,
+        now + atTtl,
+        storedNewRefresh,
+        tokenRow.refresh_token,
+        tokenRow.id,
+        tokenRow.refresh_token,
+      )
       .run();
+    // Lost a race with a concurrent refresh of the same token: that request
+    // rotated first, so this one is holding a superseded value.
+    if (rotated.meta.changes !== 1)
+      return c.json({ error: "invalid_grant" }, 400);
 
     return c.json({
       access_token: newAccessToken,
       token_type: "Bearer",
       expires_in: atTtl,
       scope: scopes.join(" "),
-      refresh_token,
+      refresh_token: newRefreshToken,
     });
   }
 
