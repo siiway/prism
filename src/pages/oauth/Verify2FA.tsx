@@ -2,8 +2,6 @@
 // sensitive action with TOTP or passkey before continuing.
 
 import {
-  Avatar,
-  Badge,
   Button,
   Checkbox,
   Input,
@@ -16,11 +14,8 @@ import {
 import {
   CheckmarkRegular,
   DismissRegular,
-  GlobeRegular,
   KeyRegular,
   LockClosedRegular,
-  ShieldRegular,
-  WarningRegular,
 } from "@fluentui/react-icons";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useState, useCallback, useEffect } from "react";
@@ -31,6 +26,7 @@ import { api, ApiError } from "../../lib/api";
 import { AuthShell } from "../../components/AuthShell";
 import { useAuthStore } from "../../store/auth";
 import { Captcha, type CaptchaValue } from "../../components/Captcha";
+import { OAuthConsentHeader } from "../../components/OAuthConsentHeader";
 
 const useStyles = makeStyles({
   page: {
@@ -41,14 +37,6 @@ const useStyles = makeStyles({
     background: tokens.colorNeutralBackground1,
     padding: "16px",
     boxSizing: "border-box",
-  },
-  appRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-    padding: "16px",
-    background: tokens.colorNeutralBackground3,
-    borderRadius: "8px",
   },
   divider: {
     borderTop: `1px solid ${tokens.colorNeutralStroke1}`,
@@ -81,15 +69,6 @@ const useStyles = makeStyles({
     borderRadius: "8px",
     border: `1px solid ${tokens.colorPaletteGreenBorder1}`,
     background: tokens.colorPaletteGreenBackground1,
-  },
-  publicClientWarning: {
-    padding: "12px 14px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorPaletteMarigoldBorder1}`,
-    background: tokens.colorPaletteMarigoldBackground1,
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "10px",
   },
   actions: {
     display: "flex",
@@ -323,104 +302,7 @@ export function Verify2FA() {
       <>
         <Title2>{t("oauth.twoFa.title")}</Title2>
 
-        <div className={styles.appRow}>
-          {data.app.icon_url ? (
-            <Avatar
-              image={{ src: data.app.icon_url }}
-              name={data.app.name}
-              size={48}
-            />
-          ) : (
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 8,
-                background: tokens.colorBrandBackground,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <GlobeRegular
-                fontSize={24}
-                style={{ color: tokens.colorNeutralForegroundOnBrand }}
-              />
-            </div>
-          )}
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <Text weight="semibold" size={400}>
-                {data.app.name}
-              </Text>
-              {data.app.is_official && (
-                <Badge color="brand" appearance="filled" size="small">
-                  {t("oauth.official")}
-                </Badge>
-              )}
-              {data.app.is_verified && (
-                <Badge
-                  color="success"
-                  appearance="filled"
-                  size="small"
-                  icon={<ShieldRegular />}
-                >
-                  {t("oauth.verified")}
-                </Badge>
-              )}
-            </div>
-            {data.app.website_url && (
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground3 }}
-              >
-                {data.app.website_url}
-              </Text>
-            )}
-          </div>
-        </div>
-
-        {data.app.is_public && (
-          <div className={styles.publicClientWarning}>
-            <WarningRegular
-              fontSize={20}
-              style={{
-                color: tokens.colorPaletteMarigoldForeground1,
-                flexShrink: 0,
-                marginTop: 2,
-              }}
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <Text
-                weight="semibold"
-                size={300}
-                style={{ color: tokens.colorPaletteMarigoldForeground1 }}
-              >
-                {t("oauth.publicClientWarningTitle")}
-              </Text>
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground2 }}
-              >
-                {t("oauth.publicClientWarningDesc")}
-              </Text>
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("oauth.signingInAs")}
-          </Text>
-          <Avatar
-            name={user.display_name}
-            image={user.avatar_url ? { src: user.avatar_url } : undefined}
-            size={20}
-          />
-          <Text size={200} weight="semibold">
-            @{user.username}
-          </Text>
-        </div>
+        <OAuthConsentHeader app={data.app} user={user} />
 
         <div className={styles.divider} />
 
