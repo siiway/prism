@@ -607,20 +607,6 @@ app.post("/me/readme/sync", async (c) => {
   );
 });
 
-// Serve R2 assets
-app.get("/assets/*", async (c) => {
-  if (!c.env.R2_ASSETS) return c.json({ error: "Not found" }, 404);
-  const r2 = c.env.R2_ASSETS;
-  const key = c.req.path.replace("/api/assets/", "");
-  const obj = await r2.get(key);
-  if (!obj) return c.json({ error: "Not found" }, 404);
-
-  const headers = new Headers();
-  obj.writeHttpMetadata(headers);
-  headers.set("Cache-Control", "public, max-age=86400");
-  return new Response(obj.body, { headers });
-});
-
 // Delete account
 app.delete("/me", async (c) => {
   const user = c.get("user");
