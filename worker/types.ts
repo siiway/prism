@@ -519,4 +519,16 @@ export type Variables = {
    *  (HTTP Basic) rather than a user session. Only populated for endpoints that
    *  opt into app-self authentication. */
   appSelfAuth?: { appId: string; clientId: string };
+  /** Set when a Personal Access Token authenticated the request instead of a
+   *  session. A PAT carries only the scopes stamped on it, so privilege that
+   *  rides on the *account* rather than the token — notably the site-admin
+   *  override over every team — is deliberately withheld here: an
+   *  `apps:write` token must not become a master key just because its owner
+   *  happens to be an admin. */
+  patAuth?: boolean;
+  /** Per-team record of whether this request's authority over that team came
+   *  from the site-admin override rather than membership. Populated by the
+   *  team-authority helper and read when writing audit entries, so a team can
+   *  tell an owner's action apart from the site acting over their heads. */
+  teamElevation?: Map<string, boolean>;
 };

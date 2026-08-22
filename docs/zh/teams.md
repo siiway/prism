@@ -18,11 +18,13 @@ description: 协作管理 OAuth 应用与已验证域名 — 角色、邀请、�
 
 每个团队恰好有一名 owner。转移所有权是一次性的、可审计的操作；原 owner 自动降级为 co-owner。
 
+**站点管理员**无需加入任何团队即对每个团队拥有所有者级权限，添加成员时还可以覆盖团队自身的加入门槛。其操作会带 `site_admin: true` 记入该团队的审计日志。详见 [管理员 → 站点管理员对所有团队的权限](admin.md#站点管理员对所有团队的权限)。
+
 ## 加入团队
 
 三种方式：
 
-1. **直接添加** — 由 admin/co-owner/owner 在 **Teams → \<team\> → Members → Add member** 中添加。
+1. **直接添加** — 由 admin/co-owner/owner 在 **Teams → \<team\> → Members → Add member** 中添加。站点管理员可在 **Admin → Teams → 添加成员** 中对任意团队执行此操作。
 2. **邀请链接** — 在 **Members → Generate invite** 生成。可选邮箱锁定、最大使用次数、过期时间。访问 `/teams/join/:token` 会显示团队资料以及任何未满足的[加入门槛](#加入门槛)。
 3. **API** — 携带会话 bearer 调用 `POST /api/teams/join/:token`。
 
@@ -392,18 +394,18 @@ OAuth 应用可以直接在团队下创建（**Teams → \<team\> → Apps → N
 
 ```
 GET    /api/teams                            列出加入的团队
-POST   /api/teams                            创建
+POST   /api/teams                            创建（管理员可用 owner_username 指定所有者）
 PATCH  /api/teams/:id                        更新设置与门槛
 GET    /api/teams/:id/members                列成员（分页，支持 ?q= 与 ?group=）
 POST   /api/teams/:id/members                按用户名/ID 添加
-PATCH  /api/teams/:id/members/:userId        改角色
+PATCH  /api/teams/:id/members/:userId        改角色（站点管理员还可设为 owner，等同转移）
 DELETE /api/teams/:id/members/:userId        移除（self 即退出）
 GET    /api/teams/:id/groups                 列出身份组定义与有效权限
 POST   /api/teams/:id/groups                 创建身份组
 PATCH  /api/teams/:id/groups/:groupId        改名/改色（slug 不可改）
 DELETE /api/teams/:id/groups/:groupId        删除（连带解除所有分配）
 PUT    /api/teams/:id/members/:userId/groups 覆盖某成员的身份组集合
-POST   /api/teams/:id/transfer-ownership     转交给 co-owner
+POST   /api/teams/:id/transfer-ownership     转移所有权（owner，或任意站点管理员）
 GET    /api/teams/join/:token                预览邀请（认证可选）
 POST   /api/teams/join/:token                接受邀请
 ```

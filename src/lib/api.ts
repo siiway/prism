@@ -1395,6 +1395,9 @@ export const api = {
     description?: string;
     avatar_url?: string;
     parent_team_id?: string | null;
+    /** Site admins only — hand the new team straight to its intended owner. */
+    owner_id?: string;
+    owner_username?: string;
   }) => request<{ team: Team }>("POST", "/teams", body, getToken()),
   listSubTeams: (
     parentTeamId: string,
@@ -1579,7 +1582,10 @@ export const api = {
       getToken(),
     );
   },
-  addTeamMember: (teamId: string, body: { username: string; role?: string }) =>
+  addTeamMember: (
+    teamId: string,
+    body: { username?: string; user_id?: string; role?: string },
+  ) =>
     request<{ message: string }>(
       "POST",
       `/teams/${teamId}/members`,
@@ -1807,6 +1813,72 @@ export const api = {
       "DELETE",
       `/admin/teams/${id}`,
       undefined,
+      getToken(),
+    ),
+
+  // ── Direct database access ────────────────────────────────────────────────
+  // Every call here is admin-only and audited server-side.
+  adminDbTables: () =>
+    request<{ tables: DbTable[] }>(
+      "GET",
+      "/admin/db/tables",
+      undefined,
+      getToken(),
+    ),
+  adminDbRows: (
+    table: string,
+    params: {
+      page?: number;
+      limit?: number;
+      order_by?: string;
+      dir?: "asc" | "desc";
+      where?: string;
+    } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.order_by) search.set("order_by", params.order_by);
+    if (params.dir) search.set("dir", params.dir);
+    if (params.where) search.set("where", params.where);
+    const qs = search.toString();
+    return request<DbRowPage>(
+      "GET",
+      `/admin/db/tables/${encodeURIComponent(table)}/rows${qs ? `?${qs}` : ""}`,
+      undefined,
+      getToken(),
+    );
+  },
+  adminDbInsertRow: (table: string, values: Record<string, unknown>) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/db/tables/${encodeURIComponent(table)}/rows`,
+      { values },
+      getToken(),
+    ),
+  adminDbUpdateRow: (
+    table: string,
+    key: Record<string, unknown>,
+    values: Record<string, unknown>,
+  ) =>
+    request<{ message: string }>(
+      "PATCH",
+      `/admin/db/tables/${encodeURIComponent(table)}/rows`,
+      { key, values },
+      getToken(),
+    ),
+  adminDbDeleteRow: (table: string, key: Record<string, unknown>) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/db/tables/${encodeURIComponent(table)}/rows`,
+      { key },
+      getToken(),
+    ),
+  adminDbQuery: (sql: string, opts: { allowWrite?: boolean } = {}) =>
+    request<{ results: DbQueryResult[]; duration_ms: number }>(
+      "POST",
+      "/admin/db/query",
+      { sql, allow_write: opts.allowWrite ?? false },
       getToken(),
     ),
 
@@ -2338,6 +2410,10 @@ export interface Team {
   /** When this listing entry surfaced via inheritance from an ancestor
    *  team, carries that ancestor's id. `null` for direct memberships. */
   inherited_from?: string | null;
+  /** Set on the team detail response when `my_role` came from the site-admin
+   *  override rather than a membership — the page says so rather than
+   *  passing the viewer off as an owner. */
+  site_admin_access?: boolean;
   /** Set on the team detail response — chain of ancestor teams, immediate
    *  parent first → root last. */
   ancestors?: TeamAncestor[];
@@ -2563,6 +2639,50 @@ export interface AdminTeam {
   dissolving_at: number | null;
   created_at: number;
   updated_at: number;
+}
+
+// ─── Direct database access ───────────────────────────────────────────────────
+
+export interface DbColumn {
+  name: string;
+  type: string;
+  notnull: boolean;
+  default_value: string | null;
+  pk: boolean;
+}
+
+export interface DbTable {
+  name: string;
+  /** null when the count query failed (a view-like or corrupt table). */
+  row_count: number | null;
+  /** The CREATE TABLE statement, straight from sqlite_master. */
+  sql: string | null;
+  columns: DbColumn[];
+}
+
+export interface DbRowPage {
+  table: string;
+  columns: DbColumn[];
+  /** Columns that address a single row — the declared PK, or ["rowid"]. */
+  key_columns: string[];
+  /** False when no row can be addressed individually; edits go through SQL. */
+  editable: boolean;
+  rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface DbQueryResult {
+  sql: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  /** True when the result set was cut off at the server's row cap. */
+  truncated: boolean;
+  row_count: number;
+  rows_written: number;
+  last_row_id: number | null;
+  duration_ms: number | null;
 }
 
 export type RedirectUriMatchType = "equals" | "regex" | "wildcard";

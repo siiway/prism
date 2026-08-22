@@ -298,16 +298,57 @@ have been reviewed by an admin.
 **Admin → Teams** lists every team across the instance with its owner, member
 count, and join-requirement flags.
 
-| Action  | Effect                                                                                          |
-| ------- | ----------------------------------------------------------------------------------------------- |
-| Inspect | View members, owned apps, and verified domains for the team                                     |
-| Disband | Remove the team. Team-owned apps are reassigned to the team's owner so they survive the cascade |
+| Action     | Effect                                                                                          |
+| ---------- | ----------------------------------------------------------------------------------------------- |
+| Inspect    | View members, owned apps, and verified domains for the team                                     |
+| Manage     | Open the team's own page with owner-level access, without joining it                            |
+| Add member | Add any account to the team, at any role up to co-owner                                         |
+| Create     | Stand up a new team and name its owner                                                          |
+| Disband    | Remove the team. Team-owned apps are reassigned to the team's owner so they survive the cascade |
 
 If a team name is listed in the `LOCKDOWN_TEAMS` env var, the disband button is
 hidden and the API returns a 403. See [Configuration → Wrangler bindings & variables](configuration.md#wrangler-bindings--variables).
 
 `disable_user_create_team` hides the "New team" button from non-admins. With it
 on, only admins can create teams (existing teams keep working).
+
+### Site-admin access to every team
+
+A site administrator holds **owner-level authority on every team**, whether or
+not they are a member. There is no separate admin-only copy of the team API —
+`/api/teams/*` simply treats an admin as the owner, so the ordinary team page
+at `/teams/:id` is the management screen and never drifts out of step with a
+parallel implementation.
+
+What that unlocks, from outside the team:
+
+- Open and edit any team — name, description, avatar, profile visibility,
+  join requirements, role permissions, groups, apps and domains.
+- Add anyone to any team. The team's own join requirements (2FA, verified
+  email) and the restricted-account scope rule are **overridden**; the audit
+  entry records exactly which checks were waived under `bypassed`.
+- Change any member's role, including promoting a member to `owner` — which
+  demotes the sitting owner to co-owner in the same operation.
+- Remove any member, the owner included. The seat never stays empty: the most
+  senior remaining member (longest-serving on a tie) is promoted in the same
+  batch. Removing the owner of a one-member team is refused — delete the team
+  instead of emptying it.
+- Transfer ownership, including to someone who isn't a member yet.
+
+Two limits still apply to admins, because they protect an invariant rather
+than a permission:
+
+- Ownership cannot be handed to an account registered through a team invite —
+  it would let the restriction be reconfigured from inside.
+- `LOCKDOWN_TEAMS` still blocks deletion.
+
+Every elevated action is written to the team's own audit log with
+`site_admin: true` in its metadata, so a team can tell an owner's change apart
+from the site acting over their heads.
+
+Elevation is bound to a **session**. A Personal Access Token carries only the
+scopes stamped on it, so an admin's `apps:write` token stays an `apps:write`
+token and does not become a site-wide master key.
 
 ## Invite-link registration
 
@@ -370,6 +411,65 @@ wrong TOTP, expired challenge, etc.) with their error code, identifier, IP, and
 metadata. The `login_error_retention_days` config controls how long rows are
 kept before the cron sweeps them.
 
+## Database
+
+**Admin → Database** is direct access to the D1 database behind the instance:
+a schema browser with an inline row editor, and a SQL console.
+
+It exists because every other admin screen is a curated view of the database,
+and curated views always end one column short of the thing you actually need.
+It is also the most dangerous surface in the product — a single statement can
+empty a table or hand out admin — so three things hold it in place:
+
+1. **Writes must be asked for.** Anything that isn't a plain read is refused
+   unless write mode is on, so a mistyped console session can't destroy data it
+   only meant to read. `PRAGMA x = y` counts as a write; classification errs
+   toward "write" whenever it is unsure.
+2. **Everything is audited.** Every statement — read, write, and rejected —
+   lands in the platform audit log with the SQL, the row counts and the caller.
+3. **Identifiers are never interpolated from input.** The browser and row
+   editor resolve table and column names against the live schema before
+   quoting them. Only the console takes raw SQL, and it takes it as one
+   explicit, audited act.
+
+### Browse tables
+
+Pick a table to page through its rows. The header marks primary-key columns,
+the DDL that created the table is shown above the grid, and the filter box
+takes a raw SQL `WHERE` fragment (without the keyword).
+
+Rows are edited, inserted and deleted in place. An update sends only the
+columns you actually changed. An empty input means `NULL`, which the grid also
+renders distinctly from an empty string — the two are not the same value and
+must not look alike in a table you are about to edit.
+
+A table with no primary key is browsable but not row-editable: there is no way
+to address a single row. SQLite's `rowid` is used where one exists, so this
+only affects `WITHOUT ROWID` tables. Those are edited from the console.
+
+### SQL console
+
+Runs one or more statements against the live database. Multiple statements
+separated by semicolons run inside a single transaction, so a script that
+fails halfway leaves nothing behind. Result sets are capped at 500 rows and
+marked as truncated when they hit it.
+
+Write mode is a switch, and turning it on adds a confirmation step that shows
+the statement one more time before it runs.
+
+### Endpoints
+
+| Endpoint                                       | Purpose                                    |
+| ---------------------------------------------- | ------------------------------------------ |
+| `GET /api/admin/db/tables`                     | Tables with row counts, columns and DDL    |
+| `GET /api/admin/db/tables/:table/rows`         | Page rows (`page`, `limit`, `order_by`, `dir`, `where`) |
+| `POST /api/admin/db/tables/:table/rows`        | Insert a row                               |
+| `PATCH /api/admin/db/tables/:table/rows`       | Update a row by primary key                |
+| `DELETE /api/admin/db/tables/:table/rows`      | Delete a row by primary key                |
+| `POST /api/admin/db/query`                     | Run SQL (`allow_write` required to modify) |
+
+All of them sit behind `requireAdmin` and are session-only.
+
 ## Audit Log
 
 The **Audit log** tab shows the platform-scope log (Transparent Platform
@@ -412,6 +512,10 @@ webhooks. It is a paginated, append-only list of significant events:
 | `admin.team.delete`                         | Admin disbanded a team                     |
 | `admin.secrets.migrate`                     | Site-config or D1 secrets migration ran    |
 | `admin.reset.*`                             | Site-reset request / cancel / confirm      |
+| `admin.db.query.read`                       | SQL console ran a read-only statement      |
+| `admin.db.query.write`                      | SQL console ran a statement that writes    |
+| `admin.db.query.error`                      | A console statement was rejected or failed |
+| `admin.db.row.insert` / `update` / `delete` | Row edited through the table browser       |
 
 Each entry records the acting `user_id` (or `null` for system actions), the
 `action`, optional `resource_type` / `resource_id`, a `metadata` JSON object,

@@ -41,6 +41,7 @@ export function AdminLayout() {
     { value: "/admin/login-errors", label: t("admin.loginErrorsTab") },
     { value: "/admin/logs", label: t("admin.logsTab") },
     { value: "/admin/image-proxy", label: t("admin.imageProxyTab") },
+    { value: "/admin/database", label: t("admin.databaseTab") },
   ];
 
   const currentTab =

@@ -628,6 +628,13 @@ export function TeamDetail() {
         )}
       </div>
 
+      {/* The role badge above says "owner" for a site admin who isn't a
+          member. Say where that came from rather than letting the page read
+          as though they belong to the team. */}
+      {team.site_admin_access && (
+        <MessageBar intent="warning">{t("teams.siteAdminAccess")}</MessageBar>
+      )}
+
       <TabList
         selectedValue={tab}
         onTabSelect={(_, d) => {

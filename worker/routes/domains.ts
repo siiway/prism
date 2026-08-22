@@ -20,6 +20,7 @@ import {
 } from "../lib/domainOwnership";
 import { normalizeDomainInput } from "../lib/domainVerify";
 import type { DomainRow, Variables } from "../types";
+import { hasRole, teamAuthority } from "./teams";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -284,18 +285,10 @@ app.post("/:id/transfer", async (c) => {
   const body = await c.req.json<{ team_id: string }>();
   if (!body.team_id) return c.json({ error: "team_id is required" }, 400);
 
-  // Requester must be admin+ in the target team
-  const member = await c.env.DB.prepare(
-    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
-  )
-    .bind(body.team_id, user.id)
-    .first<{ role: string }>();
-  if (
-    !member ||
-    (member.role !== "owner" &&
-      member.role !== "co-owner" &&
-      member.role !== "admin")
-  )
+  // Requester must be admin+ in the target team — or a site admin, who holds
+  // that authority over every team without being a member of any.
+  const member = await teamAuthority(c, body.team_id);
+  if (!member || !hasRole(member.role, "admin"))
     return c.json({ error: "Forbidden: must be team admin or owner" }, 403);
 
   // Team must not already have this domain
@@ -328,18 +321,10 @@ app.post("/:id/share", async (c) => {
   const body = await c.req.json<{ team_id: string }>();
   if (!body.team_id) return c.json({ error: "team_id is required" }, 400);
 
-  // Requester must be admin+ in the target team
-  const member = await c.env.DB.prepare(
-    "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
-  )
-    .bind(body.team_id, user.id)
-    .first<{ role: string }>();
-  if (
-    !member ||
-    (member.role !== "owner" &&
-      member.role !== "co-owner" &&
-      member.role !== "admin")
-  )
+  // Requester must be admin+ in the target team — or a site admin, who holds
+  // that authority over every team without being a member of any.
+  const member = await teamAuthority(c, body.team_id);
+  if (!member || !hasRole(member.role, "admin"))
     return c.json({ error: "Forbidden: must be team admin or owner" }, 403);
 
   // Target team must not already have this domain

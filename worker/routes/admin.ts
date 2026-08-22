@@ -69,10 +69,16 @@ import {
 } from "../lib/userCapabilities";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 
+import adminDbRoutes from "./admin-db";
+
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
 app.use("*", requireAdmin);
+
+// Direct database access — schema browser, row editor and SQL console.
+// Mounted here so it inherits requireAdmin rather than re-deriving it.
+app.route("/db", adminDbRoutes);
 
 // ─── Site configuration ───────────────────────────────────────────────────────
 

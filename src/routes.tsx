@@ -475,6 +475,13 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                   Component: m.AdminImageProxy,
                 })),
             },
+            {
+              path: "database",
+              lazy: () =>
+                import("./pages/admin/AdminDatabase").then((m) => ({
+                  Component: m.AdminDatabase,
+                })),
+            },
           ],
         },
       ],
