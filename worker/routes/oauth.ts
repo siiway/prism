@@ -2201,9 +2201,39 @@ app.get("/userinfo", async (c) => {
 
 // ─── Token introspection ─────────────────────────────────────────────────────
 
+/**
+ * Authenticate the calling client from HTTP Basic or form parameters, the two
+ * forms the token endpoint already accepts. Returns the app row, or null when
+ * the credentials do not check out.
+ */
+async function authenticateCallingClient(
+  c: Context<AppEnv>,
+  params: Record<string, string>,
+): Promise<OAuthAppRow | null> {
+  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
+  const clientId = basicAuth?.clientId ?? params.client_id;
+  const clientSecret = basicAuth?.clientSecret ?? params.client_secret;
+  if (!clientId) return null;
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(clientId)
+    .first<OAuthAppRow>();
+  if (!oauthApp) return null;
+  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) return null;
+  return oauthApp;
+}
+
 app.post("/introspect", async (c) => {
   const body = await c.req.text();
   const params = Object.fromEntries(new URLSearchParams(body));
+
+  // RFC 7662 §2.1: the endpoint has to be authorized. Unauthenticated, it
+  // answers whether any token is live and hands back its scopes, client and
+  // subject — a convenient way to triage tokens picked up somewhere else.
+  const caller = await authenticateCallingClient(c, params);
+  if (!caller) return c.json({ error: "invalid_client" }, 401);
+
   const token = params.token;
   if (!token) return c.json({ active: false });
 
@@ -2235,6 +2265,8 @@ app.post("/introspect", async (c) => {
   }
 
   if (!tokenRow || tokenRow.expires_at < now) return c.json({ active: false });
+  // A client may only introspect what was issued to it.
+  if (tokenRow.client_id !== caller.client_id) return c.json({ active: false });
 
   const scopes = JSON.parse(tokenRow.scopes) as string[];
   return c.json({
@@ -2253,6 +2285,13 @@ app.post("/introspect", async (c) => {
 app.post("/revoke", async (c) => {
   const body = await c.req.text();
   const params = Object.fromEntries(new URLSearchParams(body));
+
+  // RFC 7009 §2.1: authenticate the client, and revoke only what belongs to
+  // it — otherwise anyone who learns a token value can invalidate it, including
+  // one issued to a different client.
+  const caller = await authenticateCallingClient(c, params);
+  if (!caller) return c.json({ error: "invalid_client" }, 401);
+
   const token = params.token;
   if (token) {
     const tokenLookup = await hashLookupCandidate(c.env, token);
@@ -2261,9 +2300,21 @@ app.post("/revoke", async (c) => {
     // accept and no-op.
     if (tokenLookup) {
       await c.env.DB.prepare(
-        "DELETE FROM oauth_tokens WHERE access_token = ? OR access_token = ? OR refresh_token = ? OR refresh_token = ?",
+        `DELETE FROM oauth_tokens
+          WHERE client_id = ?
+            AND (access_token = ? OR access_token = ?
+                 OR refresh_token = ? OR refresh_token = ?
+                 OR previous_refresh_token = ? OR previous_refresh_token = ?)`,
       )
-        .bind(token, tokenLookup, token, tokenLookup)
+        .bind(
+          caller.client_id,
+          token,
+          tokenLookup,
+          token,
+          tokenLookup,
+          token,
+          tokenLookup,
+        )
         .run();
     }
   }

@@ -298,6 +298,12 @@ grant_type=refresh_token
 &client_secret=<CLIENT_SECRET>
 ```
 
+The response carries a **new** `refresh_token`; store it in place of the one
+you sent. Refresh tokens rotate on every use, and presenting a superseded one
+revokes the whole grant — whether it was replayed by a client that kept the
+old value or by someone who stole it, the safe reading is the same. The new
+token inherits the original expiry: rotating does not extend the grant.
+
 ## Token introspection (RFC 7662)
 
 For server-to-server verification without parsing JWTs:
@@ -309,6 +315,9 @@ Authorization: Basic <base64(client_id:client_secret)>
 
 token=<ACCESS_TOKEN>
 ```
+
+Client credentials are required, and a client can only introspect tokens that
+were issued to it — anything else answers `{"active": false}`.
 
 ### Response (active token)
 
@@ -333,6 +342,9 @@ token=<ACCESS_OR_REFRESH_TOKEN>
 &client_id=<CLIENT_ID>
 &client_secret=<CLIENT_SECRET>
 ```
+
+Client credentials are required, and only the calling client's own tokens are
+revoked. A superseded refresh token revokes the grant it belonged to.
 
 ## ID token
 
