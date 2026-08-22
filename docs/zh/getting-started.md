@@ -165,6 +165,8 @@ bash scripts/deploy.sh          # 或：pwsh scripts/deploy.ps1
 | `--skip-migrations` | 只部署，不改动数据库             |
 | `--skip-build`      | 直接部署 `dist/` 中已有的产物    |
 
+Cloudflare Workers Builds 在每次推送到 `main` 时执行同一套脚本：构建命令为 `bash scripts/build.sh`，部署命令为 `bash scripts/deploy.sh --skip-build --yes`，因此 CI 部署与本地部署一样会应用待处理的迁移。
+
 `bun deploy` 仍然可用，它会跑 `tsc -b && vite build` 再执行 `wrangler deploy` — 但它**不会**应用迁移，使用它时请自行执行 `bun db:migrate:prod`。
 
 两种方式都会生成可直接部署的 `dist/prism/wrangler.json` — 生产部署必须使用它，否则 `wrangler deploy` 会重新打包源码并丢失 Vite 的 SSR 处理。提供的构建脚本会自动把生成的配置拷回原位。

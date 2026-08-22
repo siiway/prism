@@ -190,6 +190,11 @@ is about to be applied. Useful options:
 | `--skip-migrations` | Publish without touching the database    |
 | `--skip-build`      | Deploy what is already in `dist/`        |
 
+Cloudflare Workers Builds runs the same script on every push to `main`: the
+build command is `bash scripts/build.sh` and the deploy command is
+`bash scripts/deploy.sh --skip-build --yes`, so CI deploys apply pending
+migrations exactly the way a local deploy does.
+
 `bun deploy` remains available and runs `tsc -b && vite build` then
 `wrangler deploy` — note that it does **not** apply migrations, so apply them
 yourself (`bun db:migrate:prod`) if you use it.

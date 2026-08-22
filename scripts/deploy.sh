@@ -72,24 +72,40 @@ run() {
   "$@"
 }
 
-# wrangler comes from the project's dev dependencies, invoked through whichever
-# package manager the build used.
-wrangler() {
-  if [ "$PM" = "pnpm" ]; then
-    run pnpm exec wrangler "$@"
+# How to invoke wrangler. It ships as a dev dependency, so the runner depends on
+# what the environment has: a CI deploy step does not necessarily inherit a PATH
+# that an earlier build step extended, which is why this falls back rather than
+# insisting on one package manager.
+WRANGLER_CMD=()
+resolve_wrangler() {
+  [ ${#WRANGLER_CMD[@]} -gt 0 ] && return 0
+  if has wrangler; then
+    WRANGLER_CMD=(wrangler)
+  elif [ "$PM" = "pnpm" ] && has pnpm; then
+    WRANGLER_CMD=(pnpm exec wrangler)
+  elif has bunx; then
+    WRANGLER_CMD=(bunx wrangler)
+  elif has pnpm; then
+    WRANGLER_CMD=(pnpm exec wrangler)
+  elif has npx; then
+    WRANGLER_CMD=(npx wrangler)
   else
-    run bunx wrangler "$@"
+    echo "ERROR: no way to run wrangler - install bun, pnpm, or node" >&2
+    exit 1
   fi
+}
+
+# Named wr(), not wrangler(), so `run wrangler ...` reaches the real binary
+# rather than recursing back into this function.
+wr() {
+  resolve_wrangler
+  run "${WRANGLER_CMD[@]}" "$@"
 }
 
 # ── Preflight ──────────────────────────────────────────────────────────────────
 step "Preflight"
-if [ "$PM" = "pnpm" ]; then
-  has pnpm || { echo "ERROR: pnpm not found - run scripts/build.sh first" >&2; exit 1; }
-else
-  has bun || { echo "ERROR: bun not found - see scripts/build.sh" >&2; exit 1; }
-fi
-ok "package manager: $PM"
+resolve_wrangler
+ok "wrangler: ${WRANGLER_CMD[*]}"
 info "worker:   $(grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' wrangler.jsonc | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
 info "database: $DATABASE"
 
@@ -103,6 +119,11 @@ fi
 # ── Build ──────────────────────────────────────────────────────────────────────
 if [ "$SKIP_BUILD" = false ] && [ "$MIGRATIONS_ONLY" = false ]; then
   step "Building"
+  if [ "$PM" = "pnpm" ]; then
+    has pnpm || { echo "ERROR: pnpm not found - see scripts/build.sh" >&2; exit 1; }
+  else
+    has bun || { echo "ERROR: bun not found - see scripts/build.sh" >&2; exit 1; }
+  fi
   run bash "$ROOT/scripts/build.sh" --package-manager "$PM"
 else
   step "Skipping build"
@@ -115,7 +136,7 @@ fi
 # ── Migrations ─────────────────────────────────────────────────────────────────
 if [ "$SKIP_MIGRATIONS" = false ]; then
   step "Pending migrations"
-  wrangler d1 migrations list "$DATABASE" --remote || true
+  wr d1 migrations list "$DATABASE" --remote || true
 fi
 
 # ── Confirm ────────────────────────────────────────────────────────────────────
@@ -136,7 +157,7 @@ fi
 
 if [ "$SKIP_MIGRATIONS" = false ]; then
   step "Applying migrations"
-  wrangler d1 migrations apply "$DATABASE" --remote
+  wr d1 migrations apply "$DATABASE" --remote
   ok "migrations applied"
 fi
 
@@ -148,7 +169,7 @@ if [ "$MIGRATIONS_ONLY" = true ]; then
 fi
 
 step "Deploying"
-wrangler deploy
+wr deploy
 
 echo
 echo "Deploy complete."

@@ -45,6 +45,7 @@ class Runner:
     def __init__(self, dry_run: bool, package_manager: str) -> None:
         self.dry_run = dry_run
         self.pm = package_manager
+        self._wrangler: tuple | None = None
 
     def run(self, *args: str, check: bool = True) -> int:
         if self.dry_run:
@@ -56,11 +57,30 @@ class Runner:
             sys.exit(result.returncode)
         return result.returncode
 
+    def wrangler_cmd(self) -> tuple:
+        """How to invoke wrangler. It ships as a dev dependency, so the runner
+        depends on what the environment has: a CI deploy step does not
+        necessarily inherit a PATH that an earlier build step extended, which
+        is why this falls back rather than insisting on one package manager."""
+        if self._wrangler is None:
+            if has("wrangler"):
+                self._wrangler = ("wrangler",)
+            elif self.pm == "pnpm" and has("pnpm"):
+                self._wrangler = ("pnpm", "exec", "wrangler")
+            elif has("bunx"):
+                self._wrangler = ("bunx", "wrangler")
+            elif has("pnpm"):
+                self._wrangler = ("pnpm", "exec", "wrangler")
+            elif has("npx"):
+                self._wrangler = ("npx", "wrangler")
+            else:
+                print("ERROR: no way to run wrangler - install bun, pnpm, or node",
+                      file=sys.stderr)
+                sys.exit(1)
+        return self._wrangler
+
     def wrangler(self, *args: str, check: bool = True) -> int:
-        """wrangler comes from the project's dev dependencies, invoked through
-        whichever package manager the build used."""
-        prefix = ("pnpm", "exec", "wrangler") if self.pm == "pnpm" else ("bunx", "wrangler")
-        return self.run(*prefix, *args, check=check)
+        return self.run(*self.wrangler_cmd(), *args, check=check)
 
 
 def worker_name() -> str:
@@ -133,17 +153,17 @@ def main() -> None:
     r = Runner(args.dry_run, args.package_manager)
 
     step("Preflight")
-    required = "pnpm" if args.package_manager == "pnpm" else "bun"
-    if not has(required):
-        print(f"ERROR: {required} not found - see scripts/build.py", file=sys.stderr)
-        sys.exit(1)
-    ok(f"package manager: {args.package_manager}")
+    ok("wrangler: " + " ".join(r.wrangler_cmd()))
     info(f"worker:   {worker_name()}")
     info(f"database: {args.database}")
     git_summary()
 
     if not args.skip_build and not args.migrations_only:
         step("Building")
+        required = "pnpm" if args.package_manager == "pnpm" else "bun"
+        if not has(required):
+            print(f"ERROR: {required} not found - see scripts/build.py", file=sys.stderr)
+            sys.exit(1)
         r.run(sys.executable, str(ROOT / "scripts" / "build.py"),
               "--package-manager", args.package_manager)
     else:

@@ -42,14 +42,25 @@ try {
         if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
-    # wrangler comes from the project's dev dependencies, invoked through
-    # whichever package manager the build used.
+    # How to invoke wrangler. It ships as a dev dependency, so the runner
+    # depends on what the environment has: a CI deploy step does not
+    # necessarily inherit a PATH that an earlier build step extended, which is
+    # why this falls back rather than insisting on one package manager.
+    $script:WranglerCmd = $null
+    function Resolve-Wrangler {
+        if ($script:WranglerCmd) { return $script:WranglerCmd }
+        $script:WranglerCmd =
+            if     (Has 'wrangler')                            { @('wrangler') }
+            elseif ($PackageManager -eq 'pnpm' -and (Has 'pnpm')) { @('pnpm', 'exec', 'wrangler') }
+            elseif (Has 'bunx')                                { @('bunx', 'wrangler') }
+            elseif (Has 'pnpm')                                { @('pnpm', 'exec', 'wrangler') }
+            elseif (Has 'npx')                                 { @('npx', 'wrangler') }
+            else { throw 'no way to run wrangler - install bun, pnpm, or node' }
+        return $script:WranglerCmd
+    }
+
     function Invoke-Wrangler([string[]]$wranglerArgs, [switch]$IgnoreFailure) {
-        $cmd = if ($PackageManager -eq 'pnpm') {
-            @('pnpm', 'exec', 'wrangler') + $wranglerArgs
-        } else {
-            @('bunx', 'wrangler') + $wranglerArgs
-        }
+        $cmd = (Resolve-Wrangler) + $wranglerArgs
         if ($DryRun) { Info "would run: $($cmd -join ' ')"; return }
         & $cmd[0] $cmd[1..($cmd.Length - 1)]
         if ($LASTEXITCODE -and $LASTEXITCODE -ne 0 -and -not $IgnoreFailure) {
@@ -59,12 +70,7 @@ try {
 
     # ── Preflight ──────────────────────────────────────────────────────────────
     Step 'Preflight'
-    if ($PackageManager -eq 'pnpm') {
-        if (-not (Has 'pnpm')) { throw 'pnpm not found - run scripts/build.ps1 first' }
-    } elseif (-not (Has 'bun')) {
-        throw 'bun not found - see scripts/build.ps1'
-    }
-    Ok "package manager: $PackageManager"
+    Ok "wrangler: $((Resolve-Wrangler) -join ' ')"
 
     $workerName = (Select-String -Path (Join-Path $Root 'wrangler.jsonc') `
         -Pattern '"name"\s*:\s*"([^"]*)"' | Select-Object -First 1).Matches.Groups[1].Value
@@ -82,6 +88,11 @@ try {
     # ── Build ──────────────────────────────────────────────────────────────────
     if (-not $SkipBuild -and -not $MigrationsOnly) {
         Step 'Building'
+        if ($PackageManager -eq 'pnpm') {
+            if (-not (Has 'pnpm')) { throw 'pnpm not found - see scripts/build.ps1' }
+        } elseif (-not (Has 'bun')) {
+            throw 'bun not found - see scripts/build.ps1'
+        }
         if ($DryRun) {
             Info "would run: scripts/build.ps1 -PackageManager $PackageManager"
         } else {
