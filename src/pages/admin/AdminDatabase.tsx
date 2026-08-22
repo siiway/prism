@@ -274,10 +274,13 @@ function RowEditor({
 function TableBrowser({
   table,
   ddl,
+  writable,
   showMsg,
 }: {
   table: string;
   ddl: string | null;
+  /** False when D1_CONSOLE puts the instance in read-only mode. */
+  writable: boolean;
   showMsg: (intent: "success" | "error", text: string) => void;
 }) {
   const styles = useStyles();
@@ -355,14 +358,16 @@ function TableBrowser({
         >
           {t("common.refresh")}
         </Button>
-        <Button
-          icon={<AddRegular />}
-          appearance="primary"
-          disabled={!data}
-          onClick={() => setEditing({ row: null })}
-        >
-          {t("admin.dbInsertRow")}
-        </Button>
+        {writable && (
+          <Button
+            icon={<AddRegular />}
+            appearance="primary"
+            disabled={!data}
+            onClick={() => setEditing({ row: null })}
+          >
+            {t("admin.dbInsertRow")}
+          </Button>
+        )}
       </div>
 
       {ddl && <pre className={styles.ddl}>{ddl}</pre>}
@@ -373,7 +378,7 @@ function TableBrowser({
         </MessageBar>
       )}
 
-      {data && !data.editable && (
+      {writable && data && !data.editable && (
         <MessageBar intent="warning">{t("admin.dbNotEditable")}</MessageBar>
       )}
 
@@ -395,12 +400,17 @@ function TableBrowser({
                   )}
                 </TableHeaderCell>
               ))}
-              <TableHeaderCell>{t("admin.actionsHeader")}</TableHeaderCell>
+              {writable && (
+                <TableHeaderCell>{t("admin.actionsHeader")}</TableHeaderCell>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={6} cols={columns.length + 1} />
+              <SkeletonTableRows
+                rows={6}
+                cols={columns.length + (writable ? 1 : 0)}
+              />
             ) : (
               data?.rows.map((row, i) => (
                 <TableRow key={i}>
@@ -409,30 +419,32 @@ function TableBrowser({
                       <CellValue value={row[col.name]} />
                     </TableCell>
                   ))}
-                  <TableCell>
-                    <Button
-                      size="small"
-                      appearance="subtle"
-                      icon={<EditRegular />}
-                      disabled={!data.editable}
-                      aria-label={t("common.edit")}
-                      onClick={() => setEditing({ row })}
-                    />
-                    <Button
-                      size="small"
-                      appearance="subtle"
-                      icon={<DeleteRegular />}
-                      disabled={!data.editable}
-                      aria-label={t("common.delete")}
-                      onClick={() =>
-                        setPendingDelete(
-                          Object.fromEntries(
-                            data.key_columns.map((name) => [name, row[name]]),
-                          ),
-                        )
-                      }
-                    />
-                  </TableCell>
+                  {writable && (
+                    <TableCell>
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<EditRegular />}
+                        disabled={!data.editable}
+                        aria-label={t("common.edit")}
+                        onClick={() => setEditing({ row })}
+                      />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<DeleteRegular />}
+                        disabled={!data.editable}
+                        aria-label={t("common.delete")}
+                        onClick={() =>
+                          setPendingDelete(
+                            Object.fromEntries(
+                              data.key_columns.map((name) => [name, row[name]]),
+                            ),
+                          )
+                        }
+                      />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -506,9 +518,12 @@ function TableBrowser({
 
 function SqlConsole({
   tables,
+  writable,
   showMsg,
 }: {
   tables: string[];
+  /** False when D1_CONSOLE puts the instance in read-only mode. */
+  writable: boolean;
   showMsg: (intent: "success" | "error", text: string) => void;
 }) {
   const styles = useStyles();
@@ -571,11 +586,13 @@ function SqlConsole({
         >
           {run.isPending ? <Spinner size="tiny" /> : t("admin.dbRun")}
         </Button>
-        <Switch
-          checked={allowWrite}
-          onChange={(_, d) => setAllowWrite(d.checked)}
-          label={t("admin.dbWriteMode")}
-        />
+        {writable && (
+          <Switch
+            checked={allowWrite}
+            onChange={(_, d) => setAllowWrite(d.checked)}
+            label={t("admin.dbWriteMode")}
+          />
+        )}
       </div>
 
       {allowWrite && (
@@ -671,6 +688,15 @@ export function AdminDatabase() {
     queryKey: ["admin-db-tables"],
     queryFn: () => api.adminDbTables(),
   });
+  // D1_CONSOLE can put the whole surface in read-only mode. Assume writable
+  // until told otherwise so the controls don't flicker in on load; the server
+  // refuses the write either way, so a wrong guess costs an error toast.
+  const { data: status } = useQuery({
+    queryKey: ["admin-db-status"],
+    queryFn: () => api.adminDbStatus(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const writable = status?.writable ?? true;
 
   const tables = data?.tables ?? [];
   const active = selected ?? tables[0]?.name ?? null;
@@ -678,7 +704,9 @@ export function AdminDatabase() {
 
   return (
     <div className={styles.root}>
-      <MessageBar intent="warning">{t("admin.dbDangerNotice")}</MessageBar>
+      <MessageBar intent={writable ? "warning" : "info"}>
+        {writable ? t("admin.dbDangerNotice") : t("admin.dbReadOnlyNotice")}
+      </MessageBar>
       {message && (
         <MessageBar intent={message.type}>{message.text}</MessageBar>
       )}
@@ -731,6 +759,7 @@ export function AdminDatabase() {
               key={active}
               table={active}
               ddl={activeTable?.sql ?? null}
+              writable={writable}
               showMsg={showMsg}
             />
           ) : (
@@ -738,7 +767,11 @@ export function AdminDatabase() {
           )}
         </div>
       ) : (
-        <SqlConsole tables={tables.map((tbl) => tbl.name)} showMsg={showMsg} />
+        <SqlConsole
+          tables={tables.map((tbl) => tbl.name)}
+          writable={writable}
+          showMsg={showMsg}
+        />
       )}
     </div>
   );

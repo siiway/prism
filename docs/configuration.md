@@ -286,6 +286,7 @@ These are configured in `wrangler.jsonc` and not editable from the admin panel.
 | `LOCKDOWN_USERS`    | No       | Comma / semicolon / whitespace separated list of usernames that cannot be deleted by anyone (including admins). Leave empty to disable.                 |
 | `LOCKDOWN_TEAMS`    | No       | Comma / semicolon / whitespace separated list of team names that cannot be deleted by anyone (including admins). Leave empty to disable.                |
 | `ENABLE_RESET`      | No       | Set to `"true"` to enable the **Admin → Settings → Danger Zone → Site reset** button. When unset or anything else the button is hidden (destructive).   |
+| `D1_CONSOLE`        | No       | Availability of **Admin → Database**. Unset (or anything unrecognised) = full access. `"read-only"` (also `"readonly"` / `"read"`) allows browsing and `SELECT` but refuses every write, including one that sets `allow_write`. `"off"` (also `"false"` / `"0"` / `"no"` / `"disabled"` / `"none"`) removes the surface: the endpoints 404 and the tab disappears. |
 | `NO_RESET_COOLDOWN` | No       | Set to `"true"` to skip the 30-minute cooldown between requesting a reset and being allowed to confirm it. 2FA is still required even when this is set. |
 
 ### Bindings

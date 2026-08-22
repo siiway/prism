@@ -30,6 +30,12 @@ interface Env {
   // Comma / semicolon / whitespace separated list of team names
   // that cannot be deleted.
   LOCKDOWN_TEAMS?: string;
+  // Availability of Admin Panel → Database (direct D1 access).
+  // Unset / anything else = full access. "read-only" (or "readonly" / "read")
+  // allows browsing and SELECT but refuses every write. "off" (or "false" /
+  // "0" / "no" / "disabled" / "none") removes the surface entirely — the
+  // endpoints 404 and the tab disappears.
+  D1_CONSOLE?: string;
   // Cloudflare Secrets Store binding for the master encryption key used to
   // wrap OAuth client secrets, OAuth source credentials, and other
   // sensitive site_config fields at rest in D1. Optional — when unset the

@@ -75,6 +75,11 @@
     // Comma / semicolon / whitespace separated list of team names
     // that cannot be deleted. Leave empty to disable.
     "LOCKDOWN_TEAMS": "",
+    // Admin Panel → Database (direct D1 access). Unset or anything else
+    // means full access; "read-only" allows browsing and SELECT but refuses
+    // every write; "off" removes the surface entirely (endpoints 404, the
+    // tab disappears).
+    "D1_CONSOLE": "",
   },
   "routes": [
     {

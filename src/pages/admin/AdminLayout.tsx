@@ -3,6 +3,8 @@
 import { Tab, TabList, makeStyles } from "@fluentui/react-components";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../../lib/api";
 import { PageHeader } from "../../components/PageHeader";
 
 const useStyles = makeStyles({
@@ -29,6 +31,14 @@ export function AdminLayout() {
   const { pathname } = useLocation();
   const { t } = useTranslation();
 
+  // The database tab only exists when the operator left it on. Shares its
+  // query key with the page itself, so this costs one request per session.
+  const { data: dbStatus } = useQuery({
+    queryKey: ["admin-db-status"],
+    queryFn: () => api.adminDbStatus(),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const TABS = [
     { value: "/admin", label: t("admin.overview") },
     { value: "/admin/users", label: t("admin.usersTab") },
@@ -41,7 +51,9 @@ export function AdminLayout() {
     { value: "/admin/login-errors", label: t("admin.loginErrorsTab") },
     { value: "/admin/logs", label: t("admin.logsTab") },
     { value: "/admin/image-proxy", label: t("admin.imageProxyTab") },
-    { value: "/admin/database", label: t("admin.databaseTab") },
+    ...(dbStatus && dbStatus.mode === "off"
+      ? []
+      : [{ value: "/admin/database", label: t("admin.databaseTab") }]),
   ];
 
   const currentTab =

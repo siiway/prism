@@ -31,6 +31,54 @@ import type { Variables } from "../types";
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
+// ─── Availability ─────────────────────────────────────────────────────────────
+
+export type D1ConsoleMode = "full" | "read-only" | "off";
+
+/** Read the `D1_CONSOLE` var.
+ *
+ *  Unset means "full", because the operator who deploys the instance is the
+ *  audience for this feature and shouldn't have to opt in to reach their own
+ *  database. Operators who'd rather not carry the risk turn it down:
+ *
+ *    "off"                       — the whole surface 404s
+ *    "read-only" / "readonly" / "read"
+ *                                — browse and SELECT; every write refused
+ *
+ *  A value that parses as false ("0", "false", "no", "off") is also "off", so
+ *  `D1_CONSOLE: "false"` does the obvious thing rather than silently leaving
+ *  the console wide open. */
+export function d1ConsoleMode(env: Env): D1ConsoleMode {
+  const raw = env.D1_CONSOLE?.trim().toLowerCase();
+  if (!raw) return "full";
+  if (["read-only", "readonly", "read"].includes(raw)) return "read-only";
+  if (["0", "false", "no", "off", "disabled", "none"].includes(raw))
+    return "off";
+  return "full";
+}
+
+// `off` hides the surface rather than 403-ing it: an operator who turned this
+// off wants it gone, and a 404 is the honest answer to "is there a database
+// console here".
+app.use("*", async (c, next) => {
+  if (d1ConsoleMode(c.env) === "off")
+    return c.json({ error: "Not found" }, 404);
+  await next();
+});
+
+/** Refuse a mutating request when the console is in read-only mode. */
+function readOnlyRefusal(c: import("hono").Context<AppEnv>) {
+  if (d1ConsoleMode(c.env) !== "read-only") return null;
+  return c.json(
+    {
+      error:
+        "The database console is in read-only mode (D1_CONSOLE). Writes are disabled.",
+      read_only: true,
+    },
+    403,
+  );
+}
+
 /** Hard cap on rows returned by any one call. The console is a browser tab,
  *  not a data pipeline — a SELECT over a large table should truncate rather
  *  than try to serialize the lot into a JSON response. */
@@ -269,6 +317,12 @@ function serializeRows(
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+/** What this instance allows. The UI reads it to decide whether to render the
+ *  write-mode switch and the row-editing controls at all. */
+app.get("/status", (c) =>
+  c.json({ mode: d1ConsoleMode(c.env), writable: d1ConsoleMode(c.env) === "full" }),
+);
+
 /** Table list with row counts, columns, and the DDL that created each one. */
 app.get("/tables", async (c) => {
   const names = await listTableNames(c.env.DB);
@@ -358,6 +412,8 @@ app.get("/tables/:table/rows", async (c) => {
 /** Insert one row. `values` is a column → value map; columns left out take
  *  their schema default. */
 app.post("/tables/:table/rows", async (c) => {
+  const refusal = readOnlyRefusal(c);
+  if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
   if (!table) return c.json({ error: "Table not found" }, 404);
 
@@ -376,24 +432,27 @@ app.post("/tables/:table/rows", async (c) => {
     `(${entries.map(([k]) => quoteIdent(k)).join(", ")}) ` +
     `VALUES (${entries.map(() => "?").join(", ")})`;
 
+  let result;
   try {
-    const result = await c.env.DB.prepare(sql)
+    result = await c.env.DB.prepare(sql)
       .bind(...entries.map(([, v]) => v as never))
       .run();
-    auditDb(
-      c,
-      "admin.db.row.insert",
-      { table, columns: entries.map(([k]) => k) },
-      table,
-    );
-    return c.json({ message: "Row inserted", meta: result.meta }, 201);
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
+  auditDb(
+    c,
+    "admin.db.row.insert",
+    { table, columns: entries.map(([k]) => k) },
+    table,
+  );
+  return c.json({ message: "Row inserted", meta: result.meta }, 201);
 });
 
 /** Update one row, addressed by its primary key (or rowid). */
 app.patch("/tables/:table/rows", async (c) => {
+  const refusal = readOnlyRefusal(c);
+  if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
   if (!table) return c.json({ error: "Table not found" }, 404);
 
@@ -423,32 +482,35 @@ app.patch("/tables/:table/rows", async (c) => {
     `${sets.map(([k]) => `${quoteIdent(k)} = ?`).join(", ")} WHERE ` +
     `${keyEntries.map(([k]) => `${quoteIdent(k)} = ?`).join(" AND ")}`;
 
+  let result;
   try {
-    const result = await c.env.DB.prepare(sql)
+    result = await c.env.DB.prepare(sql)
       .bind(
         ...sets.map(([, v]) => v as never),
         ...keyEntries.map(([, v]) => v as never),
       )
       .run();
-    auditDb(
-      c,
-      "admin.db.row.update",
-      {
-        table,
-        key: body.key,
-        columns: sets.map(([k]) => k),
-        rows_written: result.meta?.changes ?? null,
-      },
-      table,
-    );
-    return c.json({ message: "Row updated", meta: result.meta });
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
+  auditDb(
+    c,
+    "admin.db.row.update",
+    {
+      table,
+      key: body.key,
+      columns: sets.map(([k]) => k),
+      rows_written: result.meta?.changes ?? null,
+    },
+    table,
+  );
+  return c.json({ message: "Row updated", meta: result.meta });
 });
 
 /** Delete one row, addressed by its primary key (or rowid). */
 app.delete("/tables/:table/rows", async (c) => {
+  const refusal = readOnlyRefusal(c);
+  if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
   if (!table) return c.json({ error: "Table not found" }, 404);
 
@@ -471,20 +533,21 @@ app.delete("/tables/:table/rows", async (c) => {
     `DELETE FROM ${quoteIdent(table)} WHERE ` +
     `${keyEntries.map(([k]) => `${quoteIdent(k)} = ?`).join(" AND ")}`;
 
+  let result;
   try {
-    const result = await c.env.DB.prepare(sql)
+    result = await c.env.DB.prepare(sql)
       .bind(...keyEntries.map(([, v]) => v as never))
       .run();
-    auditDb(
-      c,
-      "admin.db.row.delete",
-      { table, key: body.key, rows_written: result.meta?.changes ?? null },
-      table,
-    );
-    return c.json({ message: "Row deleted", meta: result.meta });
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
+  auditDb(
+    c,
+    "admin.db.row.delete",
+    { table, key: body.key, rows_written: result.meta?.changes ?? null },
+    table,
+  );
+  return c.json({ message: "Row deleted", meta: result.meta });
 });
 
 /** The console. Runs one or more statements against D1.
@@ -511,6 +574,19 @@ app.post("/query", async (c) => {
     );
 
   const writes = statements.filter((s) => !isReadOnlyStatement(s));
+  // Read-only mode outranks `allow_write` — the caller cannot opt back into
+  // something the operator turned off.
+  if (writes.length) {
+    const refusal = readOnlyRefusal(c);
+    if (refusal) {
+      auditDb(c, "admin.db.query.error", {
+        sql: script.slice(0, 4000),
+        error: "read-only mode",
+        write: true,
+      });
+      return refusal;
+    }
+  }
   if (writes.length && !body.allow_write) {
     return c.json(
       {
