@@ -1161,6 +1161,10 @@ app.post("/passkey/auth/finish", async (c) => {
   const stored = await c.env.KV_CACHE.get(`passkey:auth:${body.challenge}`);
   if (!stored) return c.json({ error: "Authentication session expired" }, 400);
 
+  // Spend the challenge up front rather than on success only: a failed
+  // attempt otherwise leaves it usable for the rest of its TTL.
+  await c.env.KV_CACHE.delete(`passkey:auth:${body.challenge}`);
+
   const options = JSON.parse(stored) as { challenge: string };
 
   // Find passkey by credential id
@@ -1189,8 +1193,6 @@ app.post("/passkey/auth/finish", async (c) => {
 
   if (!verification.verified)
     return c.json({ error: "Verification failed" }, 400);
-
-  await c.env.KV_CACHE.delete(`passkey:auth:${body.challenge}`);
 
   // Update counter
   const now = Math.floor(Date.now() / 1000);
