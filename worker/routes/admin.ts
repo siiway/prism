@@ -17,7 +17,11 @@ import {
   isHashedSecret,
   isSecretsKeyConfigured,
 } from "../lib/secretCrypto";
-import { sendEmail } from "../lib/email";
+import {
+  emailConfigFromSite,
+  inviteEmailTemplate,
+  sendEmail,
+} from "../lib/email";
 import { loggedFetch } from "../lib/logger";
 import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
@@ -35,7 +39,6 @@ import {
   buildVerifiedTeamDomainsMap,
   computeVerified,
 } from "../lib/domainVerify";
-import { inviteEmailTemplate } from "../lib/email";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { hashBackupCodes } from "../lib/totp";
 import {
@@ -2706,16 +2709,7 @@ app.post("/invites", async (c) => {
         subject: `You've been invited to ${config.site_name}`,
         ...tmpl,
       },
-      {
-        provider: config.email_provider,
-        from: config.email_from,
-        apiKey: config.email_api_key,
-        smtpHost: config.smtp_host,
-        smtpPort: config.smtp_port,
-        smtpSecure: config.smtp_secure,
-        smtpUser: config.smtp_user,
-        smtpPassword: config.smtp_password,
-      },
+      emailConfigFromSite(config),
     );
   }
 

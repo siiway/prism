@@ -26,7 +26,7 @@ import {
 } from "../lib/redirectUri";
 import type { DomainRow } from "../types";
 import { getConfig } from "../lib/config";
-import { sendEmail } from "../lib/email";
+import { emailConfigFromSite, sendEmail } from "../lib/email";
 import { readPage, likePattern } from "../lib/pagination";
 import {
   deliverUserEmailNotifications,
@@ -2408,16 +2408,7 @@ app.post("/:id/invites", async (c) => {
           </div>`,
           text: `${user.display_name} invited you to join a team. Accept: ${inviteLink}`,
         },
-        {
-          provider: config.email_provider,
-          from: config.email_from,
-          apiKey: config.email_api_key,
-          smtpHost: config.smtp_host,
-          smtpPort: config.smtp_port,
-          smtpSecure: config.smtp_secure,
-          smtpUser: config.smtp_user,
-          smtpPassword: config.smtp_password,
-        },
+        emailConfigFromSite(config),
       ).catch(() => {
         /* non-fatal */
       });

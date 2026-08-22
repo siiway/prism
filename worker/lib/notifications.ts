@@ -1,7 +1,7 @@
 // User email notifications — fired on the same events as user webhooks
 
 import { getConfig } from "./config";
-import { sendEmail } from "./email";
+import { emailConfigFromSite, sendEmail } from "./email";
 import { loggedFetch } from "./logger";
 import { decryptSecret } from "./secretCrypto";
 
@@ -1391,16 +1391,7 @@ export async function deliverUserEmailNotifications(
           sendEmail(
             env,
             { to: emailAddress, subject, html, text },
-            {
-              provider: config.email_provider,
-              from: config.email_from,
-              apiKey: config.email_api_key,
-              smtpHost: config.smtp_host,
-              smtpPort: config.smtp_port,
-              smtpSecure: config.smtp_secure,
-              smtpUser: config.smtp_user,
-              smtpPassword: config.smtp_password,
-            },
+            emailConfigFromSite(config),
           ),
         );
       }
