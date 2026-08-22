@@ -81,47 +81,12 @@ import type {
   AppAccessRuleRow,
   Variables,
 } from "../types";
+import { APP_REQUESTABLE_SCOPES } from "../../shared/scopes";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
-const VALID_SCOPES = new Set([
-  "openid",
-  "profile",
-  "profile:write",
-  "email",
-  "apps:read",
-  "apps:write",
-  "teams:read",
-  "teams:write",
-  "teams:create",
-  "teams:delete",
-  "domains:read",
-  "domains:write",
-  "gpg:read",
-  "gpg:write",
-  "social:read",
-  "social:write",
-  "admin:users:read",
-  "admin:users:write",
-  "admin:users:delete",
-  "admin:config:read",
-  "admin:config:write",
-  "admin:invites:read",
-  "admin:invites:create",
-  "admin:invites:delete",
-  "offline_access",
-  // Site-level scopes — full cross-user access, admin-only grant, requires 2FA + confirmation
-  "site:user:read",
-  "site:user:write",
-  "site:user:delete",
-  "site:team:read",
-  "site:team:write",
-  "site:team:delete",
-  "site:config:read",
-  "site:config:write",
-  "site:token:revoke",
-]);
+const VALID_SCOPES = new Set(APP_REQUESTABLE_SCOPES);
 
 const SITE_SCOPES = new Set([
   "site:user:read",

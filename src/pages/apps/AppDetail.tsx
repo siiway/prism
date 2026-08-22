@@ -58,6 +58,7 @@ import {
   SkeletonFormCard,
   SkeletonTableRows,
 } from "../../components/Skeletons";
+import { PLATFORM_SCOPES } from "../../../shared/scopes";
 
 const useStyles = makeStyles({
   header: {
@@ -87,49 +88,6 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
   },
 });
-
-const PLATFORM_SCOPES = [
-  "openid",
-  "profile",
-  "profile:write",
-  "email",
-  "offline_access",
-  "apps:read",
-  "apps:write",
-  "teams:read",
-  "teams:write",
-  "teams:create",
-  "teams:delete",
-  "domains:read",
-  "domains:write",
-  "gpg:read",
-  "gpg:write",
-  "social:read",
-  "social:write",
-  "admin:users:read",
-  "admin:users:write",
-  "admin:users:delete",
-  "admin:config:read",
-  "admin:config:write",
-  "admin:invites:read",
-  "admin:invites:create",
-  "admin:invites:delete",
-  "site:user:read",
-  "site:user:write",
-  "site:user:delete",
-  "site:team:read",
-  "site:team:write",
-  "site:team:delete",
-  "site:config:read",
-  "site:config:write",
-  "site:token:revoke",
-  "team:read",
-  "team:write",
-  "team:delete",
-  "team:member:read",
-  "team:member:write",
-  "team:member:profile:read",
-];
 
 // Keep SCOPES alias for the app-permissions field (needs all non-offline scopes)
 const SCOPES = PLATFORM_SCOPES;

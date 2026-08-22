@@ -4,34 +4,9 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { getRsaKeyPair } from "../lib/config";
 import type { Variables } from "../types";
+import { USER_GRANTABLE_SCOPES } from "../../shared/scopes";
 
-const SCOPES_SUPPORTED = [
-  "openid",
-  "profile",
-  "profile:write",
-  "email",
-  "apps:read",
-  "apps:write",
-  "teams:read",
-  "teams:write",
-  "teams:create",
-  "teams:delete",
-  "domains:read",
-  "domains:write",
-  "gpg:read",
-  "gpg:write",
-  "social:read",
-  "social:write",
-  "admin:users:read",
-  "admin:users:write",
-  "admin:users:delete",
-  "admin:config:read",
-  "admin:config:write",
-  "admin:invites:read",
-  "admin:invites:create",
-  "admin:invites:delete",
-  "offline_access",
-];
+const SCOPES_SUPPORTED = USER_GRANTABLE_SCOPES;
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 

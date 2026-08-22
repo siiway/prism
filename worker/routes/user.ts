@@ -47,6 +47,7 @@ import type {
   UserNotificationPrefsRow,
   Variables,
 } from "../types";
+import { USER_GRANTABLE_SCOPES } from "../../shared/scopes";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -1095,33 +1096,7 @@ app.delete("/me/emails/:id", async (c) => {
 
 // ─── Personal Access Tokens ───────────────────────────────────────────────────
 
-const VALID_PAT_SCOPES = new Set([
-  "openid",
-  "profile",
-  "profile:write",
-  "email",
-  "apps:read",
-  "apps:write",
-  "teams:read",
-  "teams:write",
-  "teams:create",
-  "teams:delete",
-  "domains:read",
-  "domains:write",
-  "gpg:read",
-  "gpg:write",
-  "social:read",
-  "social:write",
-  "admin:users:read",
-  "admin:users:write",
-  "admin:users:delete",
-  "admin:config:read",
-  "admin:config:write",
-  "admin:invites:read",
-  "admin:invites:create",
-  "admin:invites:delete",
-  "offline_access",
-]);
+const VALID_PAT_SCOPES = new Set(USER_GRANTABLE_SCOPES);
 
 // GET /api/user/tokens — list own PATs
 app.get("/tokens", async (c) => {
