@@ -184,13 +184,20 @@ export async function verifyAnyTotp(
     }
     if (idx !== -1) {
       codes.splice(idx, 1);
-      await db
+      // Compare-and-swap against the list this request read. Writing the
+      // whole blob unconditionally loses to concurrency twice over: two
+      // logins presenting the same code both find it and both succeed, and
+      // two presenting different codes overwrite each other, leaving one of
+      // them still valid after it was accepted. Whoever writes against a
+      // list that has since changed is refused and the code stays unspent.
+      const claimed = await db
         .prepare(
-          "UPDATE user_totp_recovery SET backup_codes = ? WHERE user_id = ?",
+          `UPDATE user_totp_recovery SET backup_codes = ?
+            WHERE user_id = ? AND backup_codes = ?`,
         )
-        .bind(JSON.stringify(codes), userId)
+        .bind(JSON.stringify(codes), userId, recovery.backup_codes)
         .run();
-      return true;
+      return claimed.meta.changes === 1;
     }
   }
   const totps = await db
