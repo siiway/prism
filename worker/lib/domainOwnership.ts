@@ -2,6 +2,8 @@
 // Each method checks the same token in a different place, so users can pick
 // whichever they have access to: DNS records, a well-known file, or a meta tag.
 
+import { safeFetch } from "./safeFetch";
+
 export const VERIFICATION_METHODS = [
   "dns-txt",
   "http-file",
@@ -39,11 +41,15 @@ export function methodInstructions(
 const FETCH_TIMEOUT_MS = 10_000;
 const HTML_MAX_BYTES = 1 << 20; // 1 MiB
 
+// The domain here is whatever the user claimed. It passed a hostname-shaped
+// regex on the way in, but a name that looks fine can still resolve to a
+// loopback or link-local address, so the fetch goes through safeFetch — which
+// applies that check to the initial URL and to every redirect it follows.
 async function fetchWithTimeout(url: string): Promise<Response | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    return await fetch(url, {
+    return await safeFetch(url, {
       signal: ctrl.signal,
       headers: { "User-Agent": "Prism-Domain-Verify/1.0" },
     });

@@ -4,7 +4,7 @@
 // and the app-webhook test endpoints. The former instance-wide "audit" webhook
 // system has been replaced by the scoped audit-log webhooks (see audit.ts).
 
-import { loggedFetch } from "./logger";
+import { loggedSafeFetch } from "./logger";
 
 const DELIVERY_TIMEOUT_MS = 10_000;
 
@@ -42,7 +42,7 @@ export async function deliverOnce(
   let response: string | null;
 
   try {
-    const res = await loggedFetch(env, url, {
+    const res = await loggedSafeFetch(env, url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -88,3 +88,35 @@ export function isBlockedHost(host: string): boolean {
   if (h.includes(":")) return isBlockedIPv6(h);
   return false;
 }
+
+/**
+ * Fetch a user-supplied URL with the blocklist applied to *every* hop.
+ *
+ * `fetch` follows redirects itself, which quietly defeats the check above:
+ * a host that passes validation can answer 302 and send the worker anywhere
+ * it likes, including the addresses the blocklist exists to keep it away
+ * from. So redirects are handled here instead — each Location is resolved
+ * against the URL it came from and re-validated before the next request.
+ *
+ * Throws when a hop is rejected or the chain runs too long; callers already
+ * treat a thrown fetch as "could not reach the URL".
+ */
+export async function safeFetch(
+  url: string,
+  init: RequestInit = {},
+  maxRedirects = 5,
+): Promise<Response> {
+  let current = url;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const err = validateOutboundUrl(current);
+    if (err) throw new Error(`Blocked URL: ${err}`);
+
+    const res = await fetch(current, { ...init, redirect: "manual" });
+    if (res.status < 300 || res.status > 399) return res;
+
+    const location = res.headers.get("location");
+    if (!location) return res;
+    current = new URL(location, current).toString();
+  }
+  throw new Error("Too many redirects");
+}

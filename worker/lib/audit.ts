@@ -13,7 +13,7 @@
 
 import { randomId } from "./crypto";
 import { decryptSecret } from "./secretCrypto";
-import { loggedFetch } from "./logger";
+import { loggedFetch, loggedSafeFetch } from "./logger";
 import { validateOutboundUrl } from "./safeFetch";
 import { geoJson } from "./geo";
 
@@ -413,7 +413,7 @@ async function deliverDiscord(
       },
     ],
   });
-  const res = await loggedFetch(env, url, {
+  const res = await loggedSafeFetch(env, url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,
@@ -487,6 +487,6 @@ async function deliverGeneral(
   if (method !== "GET" && method !== "HEAD" && config.body != null) {
     init.body = interpolate(String(config.body), values);
   }
-  const res = await loggedFetch(env, url, init);
+  const res = await loggedSafeFetch(env, url, init);
   return summarizeResponse(res);
 }

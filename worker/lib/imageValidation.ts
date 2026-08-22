@@ -3,7 +3,7 @@
 // Returns an error string on failure, null on success.
 // An empty string is treated as "no image" and is always valid.
 
-import { isBlockedHost } from "./safeFetch";
+import { isBlockedHost, safeFetch } from "./safeFetch";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
@@ -31,7 +31,9 @@ export async function validateImageUrl(url: string): Promise<string | null> {
 
   let res: Response;
   try {
-    res = await fetch(url, { method: "HEAD" });
+    // safeFetch, not fetch: a host that passes the check above can still
+    // redirect the worker onto a blocked one.
+    res = await safeFetch(url, { method: "HEAD" });
   } catch {
     return "Could not reach the image URL";
   }
