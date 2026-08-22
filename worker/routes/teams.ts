@@ -1420,7 +1420,7 @@ async function listTeamMembers(
   if (opts.query) {
     // LIKE with an escaped pattern — the input is user-supplied and % or _
     // would otherwise silently widen the match.
-    const pattern = `%${opts.query.replace(/[\\%_]/g, "\\$&")}%`;
+    const pattern = likePattern(opts.query);
     where.push(
       "(LOWER(u.display_name) LIKE LOWER(?) ESCAPE '\\' OR LOWER(u.username) LIKE LOWER(?) ESCAPE '\\')",
     );
@@ -1516,10 +1516,11 @@ app.get("/:id/members", async (c) => {
   const eff = await getEffectiveMember(c.env.DB, id, user.id);
   if (!eff) return c.json({ error: "Not found" }, 404);
 
-  const page = Math.max(1, Number(c.req.query("page")) || 1);
-  const limit = Math.min(
+  const { page, limit } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    MEMBER_PAGE_SIZE,
     100,
-    Math.max(1, Number(c.req.query("limit")) || MEMBER_PAGE_SIZE),
   );
 
   const result = await listTeamMembers(c.env.DB, c.env.APP_URL, id, {
