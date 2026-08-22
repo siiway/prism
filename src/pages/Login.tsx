@@ -95,7 +95,17 @@ export function Login() {
   const [gpgPassphrase, setGpgPassphrase] = useState("");
   const [gpgAutoSigning, setGpgAutoSigning] = useState(false);
   const gpgFileRef = useRef<HTMLInputElement>(null);
-  const redirectTo = searchParams.get("redirect") ?? "/";
+  // Only ever bounce to a path on this site. A protocol-relative value like
+  // "//example.com" resolves to another origin, which react-router's history
+  // push falls back to window.location.assign for — an open redirect on a
+  // sign-in page, which is the worst place to have one.
+  const redirectParam = searchParams.get("redirect");
+  const redirectTo =
+    redirectParam &&
+    redirectParam.startsWith("/") &&
+    !redirectParam.startsWith("//")
+      ? redirectParam
+      : "/";
   const errorParam = searchParams.get("error");
   const errorParamMessage = errorParam
     ? t(
