@@ -45,7 +45,7 @@ import {
 import { verifyClearsign } from "../lib/gpg";
 import { verifyCaptchaToken } from "../middleware/captcha";
 import { issuePowChallenge } from "../lib/pow";
-import { rateLimitIp } from "../middleware/rateLimit";
+import { rateLimit, rateLimitIp } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
@@ -377,6 +377,34 @@ app.post("/login", async (c) => {
 
   const isEmail = body.identifier.includes("@");
   const identifier = body.identifier.toLowerCase().trim();
+
+  // Per-account throttle, alongside the per-IP one above. The IP limit alone
+  // bounds nothing for an attacker spread across many addresses, which is the
+  // shape both password spraying and TOTP guessing take. Keyed on the
+  // identifier as typed rather than on a resolved user id, so an unknown
+  // account throttles exactly like a real one and the 429 reveals nothing
+  // about who exists.
+  const idRl = await rateLimit(
+    c.env.KV_SESSIONS,
+    `login-id:${await sha256(identifier)}`,
+    10,
+    300,
+  );
+  if (!idRl.allowed) {
+    c.executionCtx.waitUntil(
+      logLoginError(
+        c.env.DB,
+        "rate_limited",
+        body.identifier ?? null,
+        ip,
+        ua,
+        geoJson(c),
+        {},
+      ).catch(() => {}),
+    );
+    return c.json({ error: "Too many requests" }, 429);
+  }
+
   let user: UserRow | null;
   if (isEmail) {
     // Check primary email first, then alternate emails. kind='user' filter
