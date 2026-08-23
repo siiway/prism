@@ -169,6 +169,8 @@ Cloudflare Workers Builds 在每次推送到 `main` 时执行同一套脚本：�
 
 `bun deploy` 仍然可用，它会跑 `tsc -b && vite build` 再执行 `wrangler deploy` — 但它**不会**应用迁移，使用它时请自行执行 `bun db:migrate:prod`。
 
+部署与迁移是两条命令，没有任何机制让它们变成原子操作。因此，存储来自迁移的功能都按「能撑过这个空档」来编写：如果它的表还不存在，该功能会声明自己不可用，其他一切不受影响。[公告板](admin.md#公告板)是目前的例子 —— 公告板读取为空，**Admin → Notices** 返回 503 并写明需要执行的命令，而不是让缺失的表拖垮每一个渲染公告板的页面。
+
 两种方式都会生成可直接部署的 `dist/prism/wrangler.json` — 生产部署必须使用它，否则 `wrangler deploy` 会重新打包源码并丢失 Vite 的 SSR 处理。提供的构建脚本会自动把生成的配置拷回原位。
 
 ## 9. 部署后：迁移密钥

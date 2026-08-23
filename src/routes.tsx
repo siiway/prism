@@ -413,6 +413,13 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
+              path: "users/:id",
+              lazy: () =>
+                import("./pages/admin/AdminUserDetail").then((m) => ({
+                  Component: m.AdminUserDetail,
+                })),
+            },
+            {
               path: "apps",
               lazy: () =>
                 import("./pages/admin/AdminApps").then((m) => ({
@@ -473,6 +480,34 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
               lazy: () =>
                 import("./pages/admin/AdminImageProxy").then((m) => ({
                   Component: m.AdminImageProxy,
+                })),
+            },
+            {
+              path: "domains",
+              lazy: () =>
+                import("./pages/admin/AdminDomains").then((m) => ({
+                  Component: m.AdminDomains,
+                })),
+            },
+            {
+              path: "notices",
+              lazy: () =>
+                import("./pages/admin/AdminNotices").then((m) => ({
+                  Component: m.AdminNotices,
+                })),
+            },
+            {
+              path: "scope-grants",
+              lazy: () =>
+                import("./pages/admin/AdminScopeGrants").then((m) => ({
+                  Component: m.AdminScopeGrants,
+                })),
+            },
+            {
+              path: "database",
+              lazy: () =>
+                import("./pages/admin/AdminDatabase").then((m) => ({
+                  Component: m.AdminDatabase,
                 })),
             },
           ],

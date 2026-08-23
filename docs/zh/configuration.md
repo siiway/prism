@@ -247,6 +247,8 @@ https://your-domain/api/connections/<slug>/callback
 | `LOCKDOWN_USERS`    | 否   | 逗号/分号/空格分隔的用户名列表，列表中的用户无法被任何人（包括管理员）删除。留空即禁用。                          |
 | `LOCKDOWN_TEAMS`    | 否   | 逗号/分号/空格分隔的团队名称列表，列表中的团队无法被任何人（包括管理员）删除。留空即禁用。                        |
 | `ENABLE_RESET`      | 否   | 设为 `"true"` 以启用 **Admin → Settings → Danger Zone → Site reset** 按钮。未设置或为其他值时隐藏（具有破坏性）。 |
+| `KV_CONSOLE`        | 否   | 同一面板中键值浏览器的可用性。取值与 `D1_CONSOLE` 相同。**未设置时跟随 `D1_CONSOLE`** —— 两者是同一实例存储的两扇窗，因此关闭数据库控制台默认也是对它的表态，除非这里另行指定。 |
+| `D1_CONSOLE`        | 否   | **Admin → Database** 的可用性。未设置（或无法识别的值）表示完全访问。`"read-only"`（也接受 `"readonly"` / `"read"`）允许浏览与 `SELECT`，但拒绝一切写入，包括显式带 `allow_write` 的请求。`"off"`（也接受 `"false"` / `"0"` / `"no"` / `"disabled"` / `"none"`）会移除整个界面：端点返回 404，标签页消失。 |
 | `NO_RESET_COOLDOWN` | 否   | 设为 `"true"` 以跳过请求重置与确认之间的 30 分钟冷却期。即使设置此项，2FA 仍然要求。                              |
 
 ### 绑定

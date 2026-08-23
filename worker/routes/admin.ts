@@ -69,10 +69,33 @@ import {
 } from "../lib/userCapabilities";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 
+import adminDbRoutes from "./admin-db";
+import adminKvRoutes from "./admin-kv";
+import adminMaintenanceRoutes from "./admin-maintenance";
+import adminOpsRoutes from "./admin-ops";
+import { adminRoutes as adminNoticeRoutes } from "./notices";
+import adminUserRoutes from "./admin-users";
+
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
 app.use("*", requireAdmin);
+
+// Direct database access — schema browser, row editor and SQL console.
+// Mounted here so it inherits requireAdmin rather than re-deriving it.
+app.route("/db", adminDbRoutes);
+// The same window onto KV.
+app.route("/kv", adminKvRoutes);
+// Instance-wide operations: mass revocation, site-wide domains, application
+// transfer, lifting an account restriction. Registered before the concrete
+// routes below so its /domains and /apps/:id/transfer paths resolve; the
+// deeper /users/:id/* routes it adds sit alongside adminUserRoutes.
+app.route("/", adminOpsRoutes);
+// The scheduled jobs, runnable on demand.
+app.route("/maintenance", adminMaintenanceRoutes);
+// Notice board authoring. The reader half is mounted at /api/notices with
+// optional auth, since public notices exist for people who cannot sign in.
+app.route("/notices", adminNoticeRoutes);
 
 // ─── Site configuration ───────────────────────────────────────────────────────
 
@@ -969,6 +992,12 @@ app.get("/users/:id", async (c) => {
       email_verified: user.email_verified === 1,
       is_active: user.is_active === 1,
       created_at: user.created_at,
+      // Restriction state. The account page needs it to decide whether to
+      // offer "lift the restriction" at all — a button that only ever
+      // returns 400 for most accounts is worse than no button.
+      origin_team_id: user.origin_team_id,
+      origin_join_completed: user.origin_join_completed === 1,
+      converted_at: user.converted_at,
     },
     apps: apps.results,
     connections: connections.results,
@@ -984,6 +1013,14 @@ app.patch("/users/:id", async (c) => {
     role?: "admin" | "user";
     is_active?: boolean;
     email_verified?: boolean;
+    // Identity fields. The self-serve API has no path to any of these —
+    // username is fixed at registration and the primary address moves only
+    // by promoting a verified alternate — so an operator fixing a typo made
+    // during sign-up had nowhere to go but the database.
+    username?: string;
+    email?: string;
+    display_name?: string;
+    avatar_url?: string | null;
   }>();
 
   const user = await c.env.DB.prepare(
@@ -1016,14 +1053,63 @@ app.patch("/users/:id", async (c) => {
     updates.push("email_verified = ?");
     values.push(body.email_verified ? 1 : 0);
   }
+  if (body.username !== undefined) {
+    // Same shape the registration endpoint enforces — an admin-set username
+    // that registration would have rejected is still a broken username.
+    const username = body.username.toLowerCase().trim();
+    if (!/^[a-z0-9_.-]{2,32}$/.test(username))
+      return c.json(
+        { error: "Username must be 2-32 characters of a-z, 0-9, _ . -" },
+        400,
+      );
+    updates.push("username = ?");
+    values.push(username);
+  }
+  if (body.email !== undefined) {
+    const email = body.email.toLowerCase().trim();
+    if (!email.includes("@") || email.length > 254)
+      return c.json({ error: "A valid email address is required" }, 400);
+    updates.push("email = ?");
+    values.push(email);
+    // Changing the address invalidates whatever proved the old one. The
+    // admin can mark the new one verified in the same request, or from the
+    // user's email list — but it must not inherit the old verdict silently.
+    if (body.email_verified === undefined) {
+      updates.push("email_verified = ?", "email_verified_at = ?");
+      values.push(0, null);
+    }
+    updates.push("email_verify_token = ?", "email_verify_code = ?");
+    values.push(null, null);
+  }
+  if (body.display_name !== undefined) {
+    if (body.display_name.length < 1 || body.display_name.length > 64)
+      return c.json({ error: "display_name must be 1-64 characters" }, 400);
+    updates.push("display_name = ?");
+    values.push(body.display_name);
+  }
+  if (body.avatar_url !== undefined) {
+    if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
+      const imgErr = await validateImageUrl(body.avatar_url);
+      if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+    }
+    updates.push("avatar_url = ?");
+    values.push(body.avatar_url || null);
+  }
   if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
 
   updates.push("updated_at = ?");
   values.push(Math.floor(Date.now() / 1000), id);
 
-  await c.env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  try {
+    await c.env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
+      .bind(...values)
+      .run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("UNIQUE"))
+      return c.json({ error: "Email or username already taken" }, 409);
+    throw err;
+  }
 
   await logAudit(
     c.env,
@@ -1100,6 +1186,12 @@ app.delete("/users/:id/sessions", async (c) => {
     .run();
   return c.json({ message: "Sessions terminated" });
 });
+
+// Per-account credential, factor, token and address management — the `/me`
+// surface addressed by user id. Mounted *after* the routes above so `/users`,
+// `/users/:id` and `/users/:id/sessions` keep their handlers here and only
+// the deeper paths fall through.
+app.route("/users", adminUserRoutes);
 
 // ─── App moderation ───────────────────────────────────────────────────────────
 

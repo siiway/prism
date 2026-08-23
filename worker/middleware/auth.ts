@@ -217,6 +217,10 @@ export function tryPatAuth(scopes: {
       role: user.role,
       email_verified: user.email_verified === 1,
     });
+    // Mark the request as token-authenticated. Routes that hand extra
+    // authority to site admins consult this so a scoped PAT never inherits
+    // it — the token's scopes are the whole of what it may do.
+    c.set("patAuth", true);
 
     // Best-effort: bump last-used timestamp; never block the request on this
     c.executionCtx.waitUntil(

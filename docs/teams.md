@@ -22,11 +22,17 @@ member leaving the team.
 There is exactly one owner per team. Transferring ownership is a single,
 audited operation; the previous owner is demoted to co-owner.
 
+**Site administrators** hold owner-level authority on every team without being
+members of any, and can override the team's own join requirements when adding
+people. Their actions land in the team's audit log marked `site_admin: true`.
+See [Admin → Site-admin access to every team](admin.md#site-admin-access-to-every-team).
+
 ## Joining a team
 
 There are three ways to join:
 
 1. **Direct add** by an admin/co-owner/owner from **Teams → \<team\> → Members → Add member**.
+   A site administrator can do this for any team, from **Admin → Teams → Add member**.
 2. **Invite link** generated from **Members → Generate invite**. Optional email
    lock, max-uses cap, and expiry. Visiting `/teams/join/:token` shows the team
    profile and any unmet [requirements](#join-requirements) before accepting.
@@ -603,21 +609,21 @@ See [API → Teams](api.md#teams) for the full table. The most-used endpoints:
 
 ```
 GET    /api/teams                            list memberships (expanded with inherited)
-POST   /api/teams                            create (optionally with parent_team_id)
+POST   /api/teams                            create (optionally with parent_team_id; admins may set owner_username)
 PATCH  /api/teams/:id                        update settings, requirements, parent_team_id
 GET    /api/teams/:id                        team + ancestors + sub_teams summary
 GET    /api/teams/:id/sub-teams              list immediate children
 POST   /api/teams/:id/sub-teams              create a sub-team under :id
 GET    /api/teams/:id/members                list members (direct only) — paginated, ?q= and ?group=
 POST   /api/teams/:id/members                add by username/id
-PATCH  /api/teams/:id/members/:userId        change role
+PATCH  /api/teams/:id/members/:userId        change role (site admins may also set role=owner, which transfers)
 DELETE /api/teams/:id/members/:userId        remove (or leave with self)
 GET    /api/teams/:id/groups                 list group definitions + capabilities
 POST   /api/teams/:id/groups                 create a group
 PATCH  /api/teams/:id/groups/:groupId        rename / recolour (slug immutable)
 DELETE /api/teams/:id/groups/:groupId        delete (unassigns everywhere)
 PUT    /api/teams/:id/members/:userId/groups replace a member's group set
-POST   /api/teams/:id/transfer-ownership     transfer to a co-owner (direct owner only)
+POST   /api/teams/:id/transfer-ownership     transfer to another member (owner, or any site admin)
 GET    /api/teams/join/:token                preview an invite (auth optional)
 POST   /api/teams/join/:token                accept
 ```

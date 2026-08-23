@@ -9,10 +9,12 @@ import {
   DialogContent,
   DialogSurface,
   DialogTitle,
+  Dropdown,
   Field,
   Image,
   Input,
   MessageBar,
+  Option,
   Spinner,
   Switch,
   Table,
@@ -22,13 +24,20 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { EditRegular } from "@fluentui/react-icons";
+import {
+  ArrowSwapRegular,
+  EditRegular,
+  OpenRegular,
+  PlugDisconnectedRegular,
+} from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { CopyIdButton } from "../../components/CopyIdButton";
@@ -50,9 +59,74 @@ const useStyles = makeStyles({
 export function AdminApps() {
   const styles = useStyles();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const { message, showMsg } = useToastMessage();
+
+  // Moving an app between owners and cutting one off entirely are both
+  // incident responses rather than edits, so they live outside the edit
+  // dialog with their own confirmations.
+  const [transferring, setTransferring] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [transferTarget, setTransferTarget] = useState("");
+  const [transferKind, setTransferKind] = useState<"user" | "team">("user");
+  const [revoking, setRevoking] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  const [revokeDeactivate, setRevokeDeactivate] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const handleTransfer = async () => {
+    if (!transferring || !transferTarget.trim()) return;
+    setBusy(true);
+    try {
+      const res = await api.adminTransferApp(
+        transferring.id,
+        transferKind === "team"
+          ? { team_id: transferTarget.trim() }
+          : { owner_id: transferTarget.trim() },
+      );
+      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
+      setTransferring(null);
+      setTransferTarget("");
+      showMsg("success", res.message);
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRevoke = async () => {
+    if (!revoking) return;
+    setBusy(true);
+    try {
+      const res = await api.adminRevokeApp(revoking.id, revokeDeactivate);
+      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
+      setRevoking(null);
+      setRevokeDeactivate(false);
+      showMsg(
+        "success",
+        t("admin.revokeAppDone", {
+          tokens: res.tokens_revoked,
+          consents: res.consents_revoked,
+        }),
+      );
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [editOfficial, setEditOfficial] = useState<boolean | null>(null);
@@ -232,6 +306,46 @@ export function AdminApps() {
                       style={{ display: "flex", justifyContent: "flex-end" }}
                     >
                       <CopyIdButton id={app.id} />
+                      {/* Admins have full access to every app through the
+                          ordinary app API, so the normal detail page is the
+                          editor — this dialog only covers moderation flags. */}
+                      <Tooltip
+                        relationship="label"
+                        content={t("admin.openApp")}
+                      >
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<OpenRegular />}
+                          onClick={() => navigate(`/apps/${app.id}`)}
+                        />
+                      </Tooltip>
+                      <Tooltip
+                        relationship="label"
+                        content={t("admin.transferApp")}
+                      >
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<ArrowSwapRegular />}
+                          onClick={() =>
+                            setTransferring({ id: app.id, name: app.name })
+                          }
+                        />
+                      </Tooltip>
+                      <Tooltip
+                        relationship="label"
+                        content={t("admin.revokeAppTooltip")}
+                      >
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<PlugDisconnectedRegular />}
+                          onClick={() =>
+                            setRevoking({ id: app.id, name: app.name })
+                          }
+                        />
+                      </Tooltip>
                       <Button
                         size="small"
                         appearance="subtle"
@@ -360,6 +474,125 @@ export function AdminApps() {
                 icon={saving ? <Spinner size="tiny" /> : undefined}
               >
                 {t("common.save")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Transfer. The client_id and secret stay put — the whole point is to
+          change who owns the app without breaking what already uses it. */}
+      <Dialog
+        open={transferring !== null}
+        onOpenChange={(_, d) => !d.open && setTransferring(null)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>
+              {t("admin.transferAppTitle", { name: transferring?.name ?? "" })}
+            </DialogTitle>
+            <DialogContent>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  paddingTop: 8,
+                }}
+              >
+                <MessageBar intent="info">
+                  {t("admin.transferAppHint")}
+                </MessageBar>
+                <Field label={t("admin.transferTargetKind")}>
+                  <Dropdown
+                    value={
+                      transferKind === "user"
+                        ? t("admin.transferToUser")
+                        : t("admin.transferToTeam")
+                    }
+                    selectedOptions={[transferKind]}
+                    onOptionSelect={(_, d) =>
+                      setTransferKind((d.optionValue as "user" | "team") ?? "user")
+                    }
+                  >
+                    <Option value="user" text={t("admin.transferToUser")}>
+                      {t("admin.transferToUser")}
+                    </Option>
+                    <Option value="team" text={t("admin.transferToTeam")}>
+                      {t("admin.transferToTeam")}
+                    </Option>
+                  </Dropdown>
+                </Field>
+                <Field
+                  label={
+                    transferKind === "user"
+                      ? t("admin.transferUserLabel")
+                      : t("admin.transferTeamLabel")
+                  }
+                >
+                  <Input
+                    value={transferTarget}
+                    onChange={(_, d) => setTransferTarget(d.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleTransfer()}
+                  />
+                </Field>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setTransferring(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                disabled={!transferTarget.trim() || busy}
+                onClick={handleTransfer}
+              >
+                {t("admin.transferApp")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Cut the app off. Consents go with the tokens, or every user walks
+          back through the consent screen without being asked again. */}
+      <Dialog
+        open={revoking !== null}
+        onOpenChange={(_, d) => !d.open && setRevoking(null)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>
+              {t("admin.revokeAppTitle", { name: revoking?.name ?? "" })}
+            </DialogTitle>
+            <DialogContent>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  paddingTop: 8,
+                }}
+              >
+                <Text block>{t("admin.revokeAppBody")}</Text>
+                <Switch
+                  checked={revokeDeactivate}
+                  onChange={(_, d) => setRevokeDeactivate(d.checked)}
+                  label={t("admin.revokeAppDeactivate")}
+                />
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setRevoking(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                style={{ background: tokens.colorPaletteRedBackground3 }}
+                disabled={busy}
+                onClick={handleRevoke}
+              >
+                {t("common.revoke")}
               </Button>
             </DialogActions>
           </DialogBody>

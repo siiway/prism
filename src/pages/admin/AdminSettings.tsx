@@ -26,7 +26,7 @@ import {
 } from "@fluentui/react-components";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
 import { useToastMessage } from "../../lib/useToastMessage";
@@ -104,6 +104,66 @@ export function AdminSettings() {
   const { data, isLoading } = useQuery({
     queryKey: ["admin-config"],
     queryFn: api.adminConfig,
+  });
+
+  // Mass session revocation. The preview is what turns the button from a
+  // dare into a decision — an operator should know how many people they are
+  // about to sign out before they do it.
+  const revokePreview = useQuery({
+    queryKey: ["admin-revoke-preview"],
+    queryFn: () => api.adminRevokePreview(),
+  });
+  const [revokeIncludeSelf, setRevokeIncludeSelf] = useState(false);
+
+  // The cron tasks, runnable on demand. Awaited server-side, so the result
+  // reports what the job actually did rather than that it was queued.
+  const maintenanceJobs = useQuery({
+    queryKey: ["admin-maintenance-jobs"],
+    queryFn: () => api.adminMaintenanceJobs(),
+  });
+  const [runningJob, setRunningJob] = useState<string | null>(null);
+  const runJob = useMutation({
+    mutationFn: (key: string) => api.adminRunMaintenanceJob(key),
+    onSuccess: (res) => {
+      setRunningJob(null);
+      showMsg(
+        "success",
+        res.processed === null
+          ? t("admin.jobDone", { ms: res.duration_ms })
+          : t("admin.jobDoneCount", {
+              count: res.processed,
+              ms: res.duration_ms,
+            }),
+      );
+    },
+    onError: (err) => {
+      setRunningJob(null);
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    },
+  });
+  const revokeSessions = useMutation({
+    mutationFn: () => api.adminRevokeAllSessions(revokeIncludeSelf),
+    onSuccess: async (res) => {
+      await qc.invalidateQueries({ queryKey: ["admin-revoke-preview"] });
+      showMsg(
+        "success",
+        t("admin.revokeSessionsDone", { count: res.deleted }),
+      );
+      // Revoking your own session leaves the page holding a token the server
+      // has already forgotten; clear it rather than let the next request 401.
+      if (!res.your_session_kept) {
+        clearAuth();
+        navigate("/login");
+      }
+    },
+    onError: (err) =>
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      ),
   });
 
   const { data: oauthSourcesData } = useQuery({
@@ -1901,6 +1961,80 @@ export function AdminSettings() {
               icon={migratingImageProxy ? <Spinner size="tiny" /> : undefined}
             >
               {t("admin.migrateImageProxyButton")}
+            </Button>
+          </div>
+          {/* The scheduled jobs, on demand. Not destructive in the way the
+              controls below are — these are the same tasks cron runs every
+              six hours — so they sit above the red line. */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <Text weight="semibold">{t("admin.maintenanceTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.maintenanceDesc", {
+                schedule: maintenanceJobs.data?.schedule ?? "0 */6 * * *",
+              })}
+            </Text>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {maintenanceJobs.data?.jobs.map((job) => (
+                <Button
+                  key={job.key}
+                  size="small"
+                  appearance="outline"
+                  disabled={runJob.isPending}
+                  icon={
+                    runJob.isPending && runningJob === job.key ? (
+                      <Spinner size="tiny" />
+                    ) : undefined
+                  }
+                  onClick={() => {
+                    setRunningJob(job.key);
+                    runJob.mutate(job.key);
+                  }}
+                >
+                  {t(`admin.job_${job.key.replace(/-/g, "_")}`)}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {/* Sign everyone out. Sits above the site reset because it is the
+              one destructive control an operator reaches for during an
+              incident rather than at the end of one. */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+              borderTop: `1px solid ${tokens.colorPaletteRedBorder2}`,
+              paddingTop: 16,
+            }}
+          >
+            <Text weight="semibold">{t("admin.revokeSessionsTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.revokeSessionsDesc", {
+                count: revokePreview.data?.sessions ?? 0,
+              })}
+            </Text>
+            <Switch
+              checked={revokeIncludeSelf}
+              onChange={(_, d) => setRevokeIncludeSelf(d.checked)}
+              label={t("admin.revokeIncludeSelf")}
+            />
+            <Button
+              appearance="outline"
+              disabled={revokeSessions.isPending}
+              icon={
+                revokeSessions.isPending ? <Spinner size="tiny" /> : undefined
+              }
+              onClick={() => revokeSessions.mutate()}
+            >
+              {t("admin.revokeSessionsButton")}
             </Button>
           </div>
           <div

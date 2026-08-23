@@ -8,8 +8,8 @@ it, and each has its own real-time webhooks.
 
 | Scope                            | Who can view          | What it records                                                                                           |
 | -------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Transparent User Control**     | the user themselves   | their own login / authorization / revoke / rebind / account changes, plus authorizations of apps they own |
-| **Transparent Team Control**     | team owner / co-owner | every edit and membership change in the team, plus authorizations of apps the team owns                   |
+| **Transparent User Control**     | the user, and site admins | their own login / authorization / revoke / rebind / account changes, plus authorizations of apps they own |
+| **Transparent Team Control**     | team owner / co-owner, and site admins | every edit and membership change in the team, plus authorizations of apps the team owns          |
 | **Transparent Platform Control** | platform admins       | every admin operation                                                                                     |
 
 ## Where to find it
@@ -17,6 +17,31 @@ it, and each has its own real-time webhooks.
 - **User** — Dashboard → **Notifications → Audit log** tab.
 - **Team** — the team page → **Audit log** tab (between _Invites_ and _Settings_).
 - **Platform** — Admin panel → **Audit log** tab.
+- **Any user, as an admin** — Admin → Users → Manage → **Audit** tab
+  (`GET /api/audit/user/:userId/events`).
+
+### Admin visibility
+
+A site administrator can read every scope. That is not a hole in the model, it
+is the other half of it: when an admin acts on a team or an account, the entry
+is written into *that* scope's log — marked `site_admin: true` — so the people
+responsible for it can see what was done to them. An operator who could act
+without being able to read would produce records nobody ever reconciles.
+
+The one thing that is not offered is signing in as another user. Every admin
+action carries the operator's name; a session minted for someone else would
+launder those actions into the user's own history.
+
+## Export
+
+Every scope has an export, not just the platform one: a team asked to account
+for something needs its own log in a form it can hand over, and a user asking
+what an instance holds about them is the same request.
+
+`GET /api/audit/<scope>/export?format=csv|json` takes the same filters as the
+table, so what you export is what you were looking at. Capped at 10,000 events
+— a truncated export that arrives beats a complete one that times out. CSV
+timestamps are ISO strings; the JSON export keeps the raw unix seconds.
 
 ## What each event captures
 

@@ -12,6 +12,7 @@ import { Image, makeStyles, tokens } from "@fluentui/react-components";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { NoticeBoard } from "./NoticeBoard";
 
 const useStyles = makeStyles({
   page: {
@@ -92,6 +93,12 @@ export function AuthShell({
           />
         </div>
       )}
+      {/* Public notices, above the card. "Maintenance at 02:00" is most
+          useful to the person who cannot sign in, so it belongs here and not
+          only behind the login. */}
+      <div style={{ width: "100%", maxWidth }}>
+        <NoticeBoard />
+      </div>
       <div className={styles.card} style={{ maxWidth, gap: cardGap }}>
         {children}
       </div>

@@ -109,6 +109,100 @@ async function queryEvents(
   return { events: results, total: countRow?.n ?? 0 };
 }
 
+/** Hard cap on an export. Large enough to be a real record, small enough that
+ *  the response is built in memory without gambling on the worker's limits —
+ *  a truncated export that arrives beats a complete one that 500s. */
+const EXPORT_LIMIT = 10_000;
+
+/** The same query as {@link queryEvents}, unpaginated up to the cap.
+ *
+ *  Deliberately a separate function rather than a `page: 0` special case:
+ *  paging and exporting want different limits and different failure modes,
+ *  and folding them together is how one of them quietly acquires the other's. */
+async function exportEvents(
+  env: Env,
+  scope: AuditScope,
+  scopeId: string | null,
+  f: EventFilters,
+): Promise<AuditEventRow[]> {
+  const where: string[] = ["scope = ?"];
+  const args: unknown[] = [scope];
+  if (scopeId === null) where.push("scope_id IS NULL");
+  else {
+    where.push("scope_id = ?");
+    args.push(scopeId);
+  }
+  if (f.from !== undefined) {
+    where.push("created_at >= ?");
+    args.push(f.from);
+  }
+  if (f.to !== undefined) {
+    where.push("created_at <= ?");
+    args.push(f.to);
+  }
+  if (f.action) {
+    where.push("action = ?");
+    args.push(f.action);
+  }
+  if (f.actorId) {
+    where.push("actor_id = ?");
+    args.push(f.actorId);
+  }
+  if (f.resourceType) {
+    where.push("resource_type = ?");
+    args.push(f.resourceType);
+  }
+  if (f.resourceId) {
+    where.push("resource_id = ?");
+    args.push(f.resourceId);
+  }
+
+  const { results } = await env.DB.prepare(
+    `SELECT * FROM audit_events WHERE ${where.join(" AND ")}
+      ORDER BY created_at DESC, id DESC LIMIT ?`,
+  )
+    .bind(...args, EXPORT_LIMIT)
+    .all<AuditEventRow>();
+  return results;
+}
+
+/** RFC 4180 quoting: wrap every field, double any embedded quote. Metadata is
+ *  a JSON blob and will contain both commas and quotes, so nothing here is
+ *  safe to emit bare. */
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return '""';
+  const s = typeof value === "string" ? value : String(value);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+const CSV_COLUMNS: Array<keyof AuditEventRow> = [
+  "created_at",
+  "action",
+  "actor_id",
+  "actor_name",
+  "resource_type",
+  "resource_id",
+  "resource_name",
+  "ip",
+  "user_agent",
+  "ip_geo",
+  "metadata",
+];
+
+function auditCsv(events: AuditEventRow[]): string {
+  const header = ["timestamp", ...CSV_COLUMNS.slice(1)].join(",");
+  const rows = events.map((e) =>
+    CSV_COLUMNS.map((col) =>
+      // created_at is a unix second; an ISO string is what a spreadsheet and
+      // a human both read correctly, and the raw value is in the JSON export.
+      col === "created_at"
+        ? csvCell(new Date(e.created_at * 1000).toISOString())
+        : csvCell(e[col]),
+    ).join(","),
+  );
+  return [header, ...rows].join("\n");
+}
+
 /** Distinct action types present in a scope — powers the type filter dropdown. */
 async function distinctActions(
   env: Env,
@@ -463,6 +557,36 @@ function registerScope(
     return c.json({ events, total, page: filters.page, actions });
   });
 
+  // Export, on every scope rather than just the platform one. A team asked to
+  // account for something needs its own log in a form it can hand over, and a
+  // user asking what an instance holds about them is the same request. The
+  // filters are the ones the table already uses, so what you export is what
+  // you were looking at.
+  app.get(`${base}/export`, async (c) => {
+    const r = await resolveScope(c);
+    if (!r.ok) return c.json({ error: "Forbidden" }, 403);
+    const format = c.req.query("format") === "csv" ? "csv" : "json";
+    const events = await exportEvents(c.env, r.scope, r.scopeId, readFilters(c));
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const name = `audit-${r.scope}${r.scopeId ? `-${r.scopeId}` : ""}-${stamp}`;
+
+    if (format === "csv") {
+      return new Response(auditCsv(events), {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${name}.csv"`,
+        },
+      });
+    }
+    return new Response(JSON.stringify(events, null, 2), {
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${name}.json"`,
+      },
+    });
+  });
+
   app.get(`${base}/webhooks`, async (c) => {
     const r = await resolveScope(c);
     if (!r.ok) return c.json({ error: "Forbidden" }, 403);
@@ -514,6 +638,22 @@ function registerScope(
 registerScope("/me", async (c) => {
   const user = c.get("user");
   return { ok: true, scope: "user", scopeId: user.id };
+});
+
+// user scope by id — the account holder, or a site admin.
+//
+// The team and platform scopes both let an admin in; the user scope did not,
+// which left the one log an operator most often needs (what happened to this
+// account?) reachable only by reading the table directly. Everything an admin
+// does to an account is written into this same log, so the account holder
+// still sees it from their own side.
+registerScope("/user/:userId", async (c) => {
+  const user = c.get("user");
+  const userId = c.req.param("userId");
+  if (!userId) return { ok: false };
+  if (userId === user.id || user.role === "admin")
+    return { ok: true, scope: "user", scopeId: userId };
+  return { ok: false };
 });
 
 // team scope — owner / co-owner (or platform admin)

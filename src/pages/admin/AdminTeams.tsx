@@ -10,9 +10,11 @@ import {
   DialogSurface,
   DialogTitle,
   DialogTrigger,
+  Dropdown,
   Field,
   Input,
   MessageBar,
+  Option,
   Tooltip,
   Table,
   TableBody,
@@ -25,15 +27,19 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  AddRegular,
   DeleteRegular,
   DismissCircleRegular,
   EditRegular,
   MailRegular,
+  PeopleTeamRegular,
   PersonAddRegular,
+  SettingsRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { CopyIdButton } from "../../components/CopyIdButton";
@@ -55,6 +61,7 @@ const useStyles = makeStyles({
 export function AdminTeams() {
   const styles = useStyles();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const { message, showMsg } = useToastMessage();
@@ -134,6 +141,64 @@ export function AdminTeams() {
     }
   };
 
+  // Adding a member and creating a team both go through the ordinary team
+  // API — the site-admin override means an admin is treated as owner of every
+  // team, so there is no separate admin-only path to keep in step with it.
+  const [addingTo, setAddingTo] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  const [addUsername, setAddUsername] = useState("");
+  const [addRole, setAddRole] = useState("member");
+  const [creating, setCreating] = useState(false);
+  const [newTeam, setNewTeam] = useState({
+    name: "",
+    description: "",
+    owner: "",
+  });
+
+  const handleAddMember = async () => {
+    if (!addingTo || !addUsername.trim()) return;
+    setBusyTeam(addingTo.id);
+    try {
+      await api.addTeamMember(addingTo.id, {
+        username: addUsername.trim(),
+        role: addRole,
+      });
+      await qc.invalidateQueries({ queryKey: ["admin-teams"] });
+      setAddingTo(null);
+      setAddUsername("");
+      setAddRole("member");
+      showMsg("success", t("admin.teamMemberAdded"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    } finally {
+      setBusyTeam(null);
+    }
+  };
+
+  const handleCreateTeam = async () => {
+    if (!newTeam.name.trim()) return;
+    try {
+      await api.createTeam({
+        name: newTeam.name.trim(),
+        description: newTeam.description.trim() || undefined,
+        owner_username: newTeam.owner.trim() || undefined,
+      });
+      await qc.invalidateQueries({ queryKey: ["admin-teams"] });
+      setCreating(false);
+      setNewTeam({ name: "", description: "", owner: "" });
+      showMsg("success", t("admin.teamCreated"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    }
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await api.adminDeleteTeam(id);
@@ -157,6 +222,16 @@ export function AdminTeams() {
           {message.text}
         </MessageBar>
       )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button
+          appearance="primary"
+          icon={<AddRegular />}
+          onClick={() => setCreating(true)}
+        >
+          {t("admin.teamCreate")}
+        </Button>
+      </div>
 
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={4} />
@@ -219,6 +294,33 @@ export function AdminTeams() {
                       }}
                     >
                       <CopyIdButton id={team.id} />
+                      {/* Site admins hold owner-level authority on every
+                          team, so the ordinary team page is the management
+                          screen — no second, half-featured admin copy of it. */}
+                      <Tooltip
+                        relationship="label"
+                        content={t("admin.manageTeamTooltip")}
+                      >
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<SettingsRegular />}
+                          onClick={() => navigate(`/teams/${team.id}`)}
+                        />
+                      </Tooltip>
+                      <Tooltip
+                        relationship="label"
+                        content={t("admin.teamAddMember")}
+                      >
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<PeopleTeamRegular />}
+                          onClick={() =>
+                            setAddingTo({ id: team.id, name: team.name })
+                          }
+                        />
+                      </Tooltip>
                       {/* Teams that minted accounts cannot be deleted in one
                           shot — the staged flow deactivates first and the
                           reaper clears the accounts over several ticks. */}
@@ -471,6 +573,130 @@ export function AdminTeams() {
                 onClick={handleStartDissolve}
               >
                 {t("admin.stagedDissolveStart")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Add anyone to any team. The team's own join requirements (2FA,
+          verified email) and the restricted-account scope rule are overridden
+          here on purpose — the server records what it waived in the team's
+          audit log. */}
+      <Dialog
+        open={addingTo !== null}
+        onOpenChange={(_, d) => !d.open && setAddingTo(null)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>
+              {t("admin.teamAddMemberTitle", { team: addingTo?.name ?? "" })}
+            </DialogTitle>
+            <DialogContent>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  paddingTop: 8,
+                }}
+              >
+                <MessageBar intent="info">
+                  {t("admin.teamAddMemberHint")}
+                </MessageBar>
+                <Field label={t("admin.teamMemberUsername")}>
+                  <Input
+                    value={addUsername}
+                    onChange={(_, d) => setAddUsername(d.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleAddMember()}
+                  />
+                </Field>
+                <Field label={t("admin.teamMemberRole")}>
+                  <Dropdown
+                    value={addRole}
+                    selectedOptions={[addRole]}
+                    onOptionSelect={(_, d) =>
+                      setAddRole(d.optionValue ?? "member")
+                    }
+                  >
+                    <Option value="member">member</Option>
+                    <Option value="admin">admin</Option>
+                    <Option value="co-owner">co-owner</Option>
+                  </Dropdown>
+                </Field>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setAddingTo(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                disabled={!addUsername.trim() || busyTeam === addingTo?.id}
+                onClick={handleAddMember}
+              >
+                {t("common.add")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      <Dialog
+        open={creating}
+        onOpenChange={(_, d) => !d.open && setCreating(false)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("admin.teamCreateTitle")}</DialogTitle>
+            <DialogContent>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  paddingTop: 8,
+                }}
+              >
+                <Field label={t("admin.teamNameLabel")}>
+                  <Input
+                    value={newTeam.name}
+                    onChange={(_, d) =>
+                      setNewTeam((prev) => ({ ...prev, name: d.value }))
+                    }
+                  />
+                </Field>
+                <Field label={t("admin.teamDescriptionLabel")}>
+                  <Input
+                    value={newTeam.description}
+                    onChange={(_, d) =>
+                      setNewTeam((prev) => ({ ...prev, description: d.value }))
+                    }
+                  />
+                </Field>
+                <Field
+                  label={t("admin.teamOwnerLabel")}
+                  hint={t("admin.teamOwnerHint")}
+                >
+                  <Input
+                    value={newTeam.owner}
+                    onChange={(_, d) =>
+                      setNewTeam((prev) => ({ ...prev, owner: d.value }))
+                    }
+                  />
+                </Field>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setCreating(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                disabled={!newTeam.name.trim()}
+                onClick={handleCreateTeam}
+              >
+                {t("common.create")}
               </Button>
             </DialogActions>
           </DialogBody>

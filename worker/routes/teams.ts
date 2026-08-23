@@ -88,6 +88,11 @@ function auditTeam(
 ): void {
   const actor = c.get("user");
   const meta = auditRequestMeta(c);
+  // An action taken through the site-admin override is the site acting on the
+  // team, not one of its members — say so in the entry, or the team's own log
+  // would show an outsider's change as if a member had made it.
+  const elevated = actedAsSiteAdmin(c, teamId);
+  const metadata = opts.metadata ?? {};
   void recordAudit(c.env, c.executionCtx, {
     scope: "team",
     scopeId: teamId,
@@ -100,7 +105,12 @@ function auditTeam(
     ip: meta.ip,
     userAgent: meta.userAgent,
     geo: meta.geo,
-    metadata: opts.metadata ?? {},
+    metadata:
+      elevated && metadata && typeof metadata === "object"
+        ? { ...(metadata as Record<string, unknown>), site_admin: true }
+        : elevated
+          ? { site_admin: true }
+          : metadata,
   });
 }
 
@@ -278,6 +288,106 @@ export async function getEffectiveMember(
     direct,
     inherited_from: best.teamId === teamId ? null : best.teamId,
   };
+}
+
+// ─── Site-admin elevation ─────────────────────────────────────────────────────
+
+/** What an actor may do on a team, and where that authority came from.
+ *
+ *  For an ordinary user this is exactly {@link getEffectiveMember}. For a site
+ *  admin it is `owner` on every team that exists, member or not — the admin
+ *  panel drives teams "from the outside" through these same endpoints rather
+ *  than a parallel, always-drifting set of admin-only ones.
+ *
+ *  `elevated` says whether the site-admin override is what granted the role.
+ *  Routes read it to relax guards that only make sense between members (a
+ *  team's own join requirements, for instance), and every audit entry carries
+ *  it so the team can see that the site — not one of its members — acted. */
+export interface TeamAuthority {
+  role: "owner" | "co-owner" | "admin" | "member";
+  /** The actor's own row on this team, or null when they aren't a member. */
+  direct: TeamMemberRow | null;
+  /** Ancestor the role was inherited from; null for direct or elevated. */
+  inherited_from: string | null;
+  /** True when site-admin override granted (or raised) the role. */
+  elevated: boolean;
+}
+
+/** The actor an authority check should run as.
+ *
+ *  `role` is the *site* role. Callers pass "user" to deliberately suppress the
+ *  override — see {@link actorFor}, which does so for PAT-authenticated
+ *  requests. */
+export interface TeamActor {
+  id: string;
+  role: "admin" | "user";
+}
+
+/** Resolve the acting principal for a request.
+ *
+ *  A Personal Access Token carries only its own scopes, so an admin's
+ *  `apps:write` token stays an `apps:write` token here instead of quietly
+ *  becoming a site-wide master key. Session-authenticated admins get the
+ *  override. */
+export function actorFor(c: import("hono").Context<AppEnv>): TeamActor {
+  const user = c.get("user");
+  return { id: user.id, role: c.get("patAuth") ? "user" : user.role };
+}
+
+/** Is this request driven by a site administrator on their own session? */
+export function isSiteAdmin(c: import("hono").Context<AppEnv>): boolean {
+  return actorFor(c).role === "admin";
+}
+
+export async function getTeamAuthority(
+  db: D1Database,
+  teamId: string,
+  actor: TeamActor,
+): Promise<TeamAuthority | null> {
+  const eff = await getEffectiveMember(db, teamId, actor.id);
+  if (actor.role !== "admin")
+    return eff ? { ...eff, elevated: false } : null;
+  // Already the owner by membership — nothing to elevate, and the action is
+  // the member's own rather than the site's.
+  if (eff?.role === "owner") return { ...eff, elevated: false };
+  // The override reaches every team that exists; an unknown id is still a 404.
+  const exists = await db
+    .prepare("SELECT 1 AS n FROM teams WHERE id = ?")
+    .bind(teamId)
+    .first<{ n: number }>();
+  if (!exists) return null;
+  return {
+    role: "owner",
+    direct: eff?.direct ?? null,
+    inherited_from: null,
+    elevated: true,
+  };
+}
+
+/** Request-scoped {@link getTeamAuthority} — the form nearly every route wants.
+ *
+ *  Also records, per team, whether the override was used, so {@link auditTeam}
+ *  can stamp the entry without every call site threading the flag through. */
+export async function teamAuthority(
+  c: import("hono").Context<AppEnv>,
+  teamId: string,
+): Promise<TeamAuthority | null> {
+  const auth = await getTeamAuthority(c.env.DB, teamId, actorFor(c));
+  let map = c.get("teamElevation");
+  if (!map) {
+    map = new Map<string, boolean>();
+    c.set("teamElevation", map);
+  }
+  map.set(teamId, auth?.elevated ?? false);
+  return auth;
+}
+
+/** Did the site-admin override grant this request its authority over `teamId`? */
+export function actedAsSiteAdmin(
+  c: import("hono").Context<AppEnv>,
+  teamId: string,
+): boolean {
+  return c.get("teamElevation")?.get(teamId) === true;
 }
 
 /** Returns true if moving `teamId` under `newParentId` would create a cycle
@@ -781,6 +891,9 @@ app.post("/", async (c) => {
     description?: string;
     avatar_url?: string;
     parent_team_id?: string | null;
+    /** Site admins only — stand the team up under someone else's name. */
+    owner_id?: string;
+    owner_username?: string;
   }>();
   if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
 
@@ -797,11 +910,7 @@ app.post("/", async (c) => {
       .bind(body.parent_team_id)
       .first<{ id: string }>();
     if (!parentRow) return c.json({ error: "Parent team not found" }, 404);
-    const eff = await getEffectiveMember(
-      c.env.DB,
-      body.parent_team_id,
-      user.id,
-    );
+    const eff = await teamAuthority(c, body.parent_team_id);
     if (!eff || !hasRole(eff.role, "admin"))
       return c.json(
         { error: "Forbidden: must be admin+ of the parent team" },
@@ -822,6 +931,22 @@ app.post("/", async (c) => {
   // an ancestor membership.
   const capErr = await guardCapability(c.env.DB, user.id, "team:create");
   if (capErr) return c.json({ error: capErr }, 403);
+
+  // A site admin provisioning a team for someone else shouldn't end up owning
+  // it — the admin panel names the owner up front and the admin keeps only
+  // the site-wide authority they already had.
+  let ownerId = user.id;
+  if (body.owner_id || body.owner_username) {
+    if (!isSiteAdmin(c))
+      return c.json({ error: "Only site admins can set the owner" }, 403);
+    const owner = await c.env.DB.prepare(
+      "SELECT id FROM users WHERE kind = 'user' AND (id = ? OR username = ?)",
+    )
+      .bind(body.owner_id ?? "", body.owner_username ?? "")
+      .first<{ id: string }>();
+    if (!owner) return c.json({ error: "Owner not found" }, 404);
+    ownerId = owner.id;
+  }
 
   if (body.avatar_url) {
     const imgErr = await validateImageUrl(body.avatar_url);
@@ -861,7 +986,7 @@ app.post("/", async (c) => {
     ),
     c.env.DB.prepare(
       "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
-    ).bind(id, user.id, now),
+    ).bind(id, ownerId, now),
   ]);
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
@@ -870,7 +995,10 @@ app.post("/", async (c) => {
 
   auditTeam(c, id, "team.create", {
     resourceName: body.name.trim(),
-    metadata: { parent_team_id: parentId },
+    metadata: {
+      parent_team_id: parentId,
+      ...(ownerId === user.id ? {} : { owner_id: ownerId }),
+    },
   });
 
   return c.json({ team: { ...serializeTeamRow(team!), role: "owner" } }, 201);
@@ -879,14 +1007,13 @@ app.post("/", async (c) => {
 // List immediate sub-teams of a parent team.
 // Members of an ancestor team (inherited or direct) may list.
 app.get("/:id/sub-teams", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
   const enabled = await getConfigValue(c.env.DB, "enable_sub_teams");
   if (!enabled)
     return c.json({ error: "Sub-teams are disabled on this instance" }, 403);
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
 
   const { page, limit, offset } = readPage(
@@ -956,7 +1083,7 @@ app.post("/:id/sub-teams", async (c) => {
     .bind(id)
     .first<{ id: string }>();
   if (!parentRow) return c.json({ error: "Parent team not found" }, 404);
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff || !hasRole(eff.role, "admin"))
     return c.json(
       { error: "Forbidden: must be admin+ of the parent team" },
@@ -1020,10 +1147,9 @@ app.post("/:id/sub-teams", async (c) => {
 //     visible by inspecting ancestor teams, which the client can do on its
 //     own; surfacing them here would multiply listings on every sub-team).
 app.get("/:id", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
 
   // First page only. This used to return every member, which made the team
@@ -1080,6 +1206,9 @@ app.get("/:id", async (c) => {
       unproxied_avatar_url: team.avatar_url,
       my_role: eff.role,
       inherited_from: eff.inherited_from,
+      // The page is being viewed through the site-admin override rather than
+      // a membership — the UI says so instead of impersonating an owner.
+      site_admin_access: eff.elevated,
       ancestors: ancestorChain,
       sub_teams: await Promise.all(
         subTeamPage.results.map(async (s) => ({
@@ -1105,10 +1234,9 @@ app.get("/:id", async (c) => {
 
 // Update team
 app.patch("/:id", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
   const member = { role: eff.role };
@@ -1191,11 +1319,7 @@ app.patch("/:id", async (c) => {
         403,
       );
     if (body.parent_team_id) {
-      const parentEff = await getEffectiveMember(
-        c.env.DB,
-        body.parent_team_id,
-        user.id,
-      );
+      const parentEff = await teamAuthority(c, body.parent_team_id);
       if (!parentEff || !hasRole(parentEff.role, "admin"))
         return c.json(
           { error: "Forbidden: must be admin+ of the new parent team" },
@@ -1333,7 +1457,7 @@ app.delete("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "owner"))
     return c.json({ error: "Only the team owner can delete the team" }, 403);
@@ -1510,10 +1634,9 @@ async function listTeamMembers(
 // The team detail response carries the first page for the initial render;
 // everything after that (paging, search, group filter) comes through here.
 app.get("/:id/members", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
 
   const { page, limit } = readPage(
@@ -1537,35 +1660,51 @@ app.get("/:id/members", async (c) => {
 
 // Add member by username
 app.post("/:id/members", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
-  const body = await c.req.json<{ username: string; role?: string }>();
+  // `user_id` is what the admin panel has to hand; `username` is what the
+  // team page's picker produces. Either identifies the account.
+  const body = await c.req.json<{
+    username?: string;
+    user_id?: string;
+    role?: string;
+  }>();
+  if (!body.username && !body.user_id)
+    return c.json({ error: "username or user_id is required" }, 400);
   let role: string = "member";
   if (body.role === "admin") role = "admin";
   if (body.role === "co-owner" && eff.role === "owner") role = "co-owner";
 
   const target = await c.env.DB.prepare(
-    "SELECT id FROM users WHERE username = ? AND kind = 'user'",
+    "SELECT id, username FROM users WHERE kind = 'user' AND (id = ? OR username = ?)",
   )
-    .bind(body.username)
-    .first<{ id: string }>();
+    .bind(body.user_id ?? "", body.username ?? "")
+    .first<{ id: string; username: string }>();
   if (!target) return c.json({ error: "User not found" }, 404);
 
   const existing = await getMember(c.env.DB, id, target.id);
   if (existing) return c.json({ error: "Already a member" }, 409);
 
+  // Both gates below are the *team's* policy about who may join it. A site
+  // admin adding someone is the site overruling that policy on purpose, so
+  // the checks are skipped rather than failed — and what was skipped is
+  // written into the audit entry, which is the part the team needs to see.
+  const bypassed: string[] = [];
+
   // A restricted account may only ever belong inside its own origin team's
-  // subtree — being *added* by someone else is not an exception, or the
+  // subtree — being *added* by another member is not an exception, or the
   // constraint would be one invitation away from meaningless.
   const targetState = await getRestrictionState(c.env.DB, target.id);
   if (targetState) {
     const joinErr = await checkTeamJoinAllowed(c.env.DB, targetState, id);
-    if (joinErr) return c.json({ error: joinErr }, 403);
+    if (joinErr) {
+      if (!eff.elevated) return c.json({ error: joinErr }, 403);
+      bypassed.push("restricted_account_scope");
+    }
   }
 
   const teamReq = await getEffectiveTeamRequirements(c.env.DB, id);
@@ -1573,14 +1712,17 @@ app.post("/:id/members", async (c) => {
     const state = await getUserSecurityState(c.env.DB, target.id);
     const unmet = unmetRequirements(teamReq, state);
     if (unmet.length) {
-      return c.json(
-        {
-          error:
-            "User doesn't meet this team's join requirements (e.g. 2FA, verified email)",
-          unmet_requirements: unmet,
-        },
-        403,
-      );
+      if (!eff.elevated) {
+        return c.json(
+          {
+            error:
+              "User doesn't meet this team's join requirements (e.g. 2FA, verified email)",
+            unmet_requirements: unmet,
+          },
+          403,
+        );
+      }
+      bypassed.push(...unmet);
     }
   }
 
@@ -1593,8 +1735,8 @@ app.post("/:id/members", async (c) => {
   auditTeam(c, id, "team.member.add", {
     resourceType: "user",
     resourceId: target.id,
-    resourceName: `@${body.username}`,
-    metadata: { role },
+    resourceName: `@${target.username}`,
+    metadata: { role, ...(bypassed.length ? { bypassed } : {}) },
   });
 
   // Notify the added user
@@ -1625,27 +1767,91 @@ app.patch("/:id/members/:userId", async (c) => {
   const id = c.req.param("id");
   const targetUserId = c.req.param("userId");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "co-owner"))
     return c.json({ error: "Only owners and co-owners can change roles" }, 403);
-  if (targetUserId === user.id)
+  // A member cannot promote themselves; a site admin reaching in from outside
+  // is not "themselves" in the team's sense, so the guard doesn't apply.
+  if (targetUserId === user.id && !eff.elevated)
     return c.json({ error: "Cannot change your own role" }, 400);
 
   const body = await c.req.json<{ role: string }>();
-  if (!["co-owner", "admin", "member"].includes(body.role))
-    return c.json({ error: "Role must be co-owner, admin, or member" }, 400);
+  // `owner` is admin-only, and means a transfer: a team has exactly one.
+  const allowedRoles = eff.elevated
+    ? ["owner", "co-owner", "admin", "member"]
+    : ["co-owner", "admin", "member"];
+  if (!allowedRoles.includes(body.role))
+    return c.json(
+      { error: `Role must be ${allowedRoles.join(", ")}` },
+      400,
+    );
 
   // Target must be a *direct* member of this team — inherited memberships
   // are managed at the ancestor team they originate from.
   const target = await getMember(c.env.DB, id, targetUserId);
   if (!target) return c.json({ error: "Member not found" }, 404);
-  if (target.role === "owner")
-    return c.json({ error: "Cannot change owner role" }, 403);
+  if (target.role === "owner") {
+    // Demoting the owner outright would leave the team without one. Promoting
+    // someone else does the demotion as part of the same operation, so point
+    // at that instead of inventing an ownerless state.
+    return c.json(
+      {
+        error: eff.elevated
+          ? "Promote another member to owner instead — that demotes the current one"
+          : "Cannot change owner role",
+      },
+      403,
+    );
+  }
   if (target.role === "co-owner" && eff.role !== "owner")
     return c.json({ error: "Only the owner can change co-owner roles" }, 403);
   if (body.role === "co-owner" && eff.role !== "owner")
     return c.json({ error: "Only the owner can assign co-owner role" }, 403);
+
+  const now = Math.floor(Date.now() / 1000);
+  if (body.role === "owner") {
+    // Same invariant the transfer endpoint enforces: a restricted account
+    // must not end up owning the team that restricts it.
+    const restriction = await getRestrictionState(c.env.DB, targetUserId);
+    if (restriction && isRestricted(restriction))
+      return c.json(
+        {
+          error:
+            "Cannot transfer ownership to an account registered through a team invite",
+        },
+        403,
+      );
+    const currentOwner = await c.env.DB.prepare(
+      "SELECT user_id FROM team_members WHERE team_id = ? AND role = 'owner'",
+    )
+      .bind(id)
+      .first<{ user_id: string }>();
+    const statements = [
+      c.env.DB.prepare(
+        "UPDATE team_members SET role = 'owner' WHERE team_id = ? AND user_id = ?",
+      ).bind(id, targetUserId),
+    ];
+    if (currentOwner)
+      statements.push(
+        c.env.DB.prepare(
+          "UPDATE team_members SET role = 'co-owner' WHERE team_id = ? AND user_id = ?",
+        ).bind(id, currentOwner.user_id),
+      );
+    statements.push(
+      c.env.DB.prepare("UPDATE teams SET updated_at = ? WHERE id = ?").bind(
+        now,
+        id,
+      ),
+    );
+    await c.env.DB.batch(statements);
+    auditTeam(c, id, "team.ownership.transfer", {
+      resourceType: "user",
+      resourceId: targetUserId,
+      metadata: { from: currentOwner?.user_id ?? null, to: targetUserId },
+    });
+    return c.json({ message: "Ownership transferred" });
+  }
 
   await c.env.DB.prepare(
     "UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ?",
@@ -1671,23 +1877,50 @@ app.delete("/:id/members/:userId", async (c) => {
 
   const isSelf = targetUserId === user.id;
   let actorRole: string;
+  let elevated = false;
   if (isSelf) {
     const direct = await getMember(c.env.DB, id, user.id);
     if (!direct)
       return c.json({ error: "You are not a direct member of this team" }, 404);
     actorRole = direct.role;
   } else {
-    const eff = await getEffectiveMember(c.env.DB, id, user.id);
+    const eff = await teamAuthority(c, id);
     if (!eff) return c.json({ error: "Not found" }, 404);
     if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
     actorRole = eff.role;
+    elevated = eff.elevated;
   }
 
   const target = await getMember(c.env.DB, id, targetUserId);
   if (!target) return c.json({ error: "Member not found" }, 404);
 
-  if (target.role === "owner" && !isSelf)
-    return c.json({ error: "Cannot remove the team owner" }, 403);
+  // A site admin may remove the owner — someone has to be able to, when the
+  // owner is the problem. The seat doesn't stay empty: the most senior
+  // remaining member (longest-serving on a tie) is promoted in the same
+  // batch, so the team never exists without an owner.
+  let successorId: string | null = null;
+  if (target.role === "owner" && !isSelf) {
+    if (!elevated)
+      return c.json({ error: "Cannot remove the team owner" }, 403);
+    const { results } = await c.env.DB.prepare(
+      `SELECT user_id, role FROM team_members
+        WHERE team_id = ? AND user_id != ?
+        ORDER BY CASE role WHEN 'co-owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+                 joined_at ASC
+        LIMIT 1`,
+    )
+      .bind(id, targetUserId)
+      .all<{ user_id: string; role: string }>();
+    successorId = results[0]?.user_id ?? null;
+    if (!successorId)
+      return c.json(
+        {
+          error:
+            "The owner is this team's only member — delete the team instead of emptying it",
+        },
+        409,
+      );
+  }
   // Only owner can remove co-owners
   if (target.role === "co-owner" && !isSelf && actorRole !== "owner")
     return c.json({ error: "Only the owner can remove co-owners" }, 403);
@@ -1721,11 +1954,31 @@ app.delete("/:id/members/:userId", async (c) => {
     return c.json({ message: "Team deleted" });
   }
 
-  await c.env.DB.prepare(
-    "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
-  )
-    .bind(id, targetUserId)
-    .run();
+  if (successorId) {
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
+      ).bind(id, targetUserId),
+      c.env.DB.prepare(
+        "UPDATE team_members SET role = 'owner' WHERE team_id = ? AND user_id = ?",
+      ).bind(id, successorId),
+      c.env.DB.prepare("UPDATE teams SET updated_at = ? WHERE id = ?").bind(
+        Math.floor(Date.now() / 1000),
+        id,
+      ),
+    ]);
+    auditTeam(c, id, "team.ownership.transfer", {
+      resourceType: "user",
+      resourceId: successorId,
+      metadata: { from: targetUserId, to: successorId, reason: "owner_removed" },
+    });
+  } else {
+    await c.env.DB.prepare(
+      "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
+    )
+      .bind(id, targetUserId)
+      .run();
+  }
 
   auditTeam(c, id, isSelf ? "team.member.leave" : "team.member.remove", {
     resourceType: "user",
@@ -1759,26 +2012,37 @@ app.delete("/:id/members/:userId", async (c) => {
   return c.json({ message: "Member removed" });
 });
 
-// Transfer ownership to another member (owner only)
+// Transfer ownership to another member (owner only, or a site admin from
+// outside the team). A site admin may also name someone who isn't a member
+// yet — the alternative is a two-step dance through the add-member endpoint
+// that ends in the same place.
 app.post("/:id/transfer-ownership", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
-  const member = await getMember(c.env.DB, id, user.id);
-  if (!member) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(member.role, "owner"))
+  const auth = await teamAuthority(c, id);
+  if (!auth) return c.json({ error: "Not found" }, 404);
+  if (!hasRole(auth.role, "owner"))
     return c.json({ error: "Only the owner can transfer ownership" }, 403);
 
   const body = await c.req.json<{ user_id: string }>();
-  if (body.user_id === user.id)
-    return c.json({ error: "Already the owner" }, 400);
+  if (!body.user_id) return c.json({ error: "user_id is required" }, 400);
 
-  const target = await getMember(c.env.DB, id, body.user_id);
-  if (!target) return c.json({ error: "Target is not a team member" }, 404);
+  // Whoever holds the title right now — normally the caller, but an admin
+  // acting from outside is not a member and must not be the one demoted.
+  const currentOwner = await c.env.DB.prepare(
+    "SELECT user_id FROM team_members WHERE team_id = ? AND role = 'owner'",
+  )
+    .bind(id)
+    .first<{ user_id: string }>();
+  if (currentOwner && body.user_id === currentOwner.user_id)
+    return c.json({ error: "Already the owner" }, 400);
 
   // Ownership carries every setting on the team, including the invite
   // registration switches. Handing it to a restricted account would let the
-  // restriction be reconfigured from inside.
+  // restriction be reconfigured from inside — which is exactly as true when
+  // a site admin does it, so this one holds for everybody. Checked before the
+  // membership row below, or a refused transfer would still leave the target
+  // sitting in the team.
   const targetRestriction = await getRestrictionState(c.env.DB, body.user_id);
   if (targetRestriction && isRestricted(targetRestriction))
     return c.json(
@@ -1790,23 +2054,48 @@ app.post("/:id/transfer-ownership", async (c) => {
     );
 
   const now = Math.floor(Date.now() / 1000);
-  await c.env.DB.batch([
+  const target = await getMember(c.env.DB, id, body.user_id);
+  if (!target) {
+    // Only the site-admin path gets here: a team owner still has to add
+    // someone before handing them the team.
+    if (!auth.elevated)
+      return c.json({ error: "Target is not a team member" }, 404);
+    const exists = await c.env.DB.prepare(
+      "SELECT id FROM users WHERE id = ? AND kind = 'user'",
+    )
+      .bind(body.user_id)
+      .first<{ id: string }>();
+    if (!exists) return c.json({ error: "User not found" }, 404);
+    await c.env.DB.prepare(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)",
+    )
+      .bind(id, body.user_id, now)
+      .run();
+  }
+
+  const statements = [
     c.env.DB.prepare(
       "UPDATE team_members SET role = 'owner' WHERE team_id = ? AND user_id = ?",
     ).bind(id, body.user_id),
-    c.env.DB.prepare(
-      "UPDATE team_members SET role = 'co-owner' WHERE team_id = ? AND user_id = ?",
-    ).bind(id, user.id),
+  ];
+  if (currentOwner)
+    statements.push(
+      c.env.DB.prepare(
+        "UPDATE team_members SET role = 'co-owner' WHERE team_id = ? AND user_id = ?",
+      ).bind(id, currentOwner.user_id),
+    );
+  statements.push(
     c.env.DB.prepare("UPDATE teams SET updated_at = ? WHERE id = ?").bind(
       now,
       id,
     ),
-  ]);
+  );
+  await c.env.DB.batch(statements);
 
   auditTeam(c, id, "team.ownership.transfer", {
     resourceType: "user",
     resourceId: body.user_id,
-    metadata: { from: user.id, to: body.user_id },
+    metadata: { from: currentOwner?.user_id ?? null, to: body.user_id },
   });
 
   return c.json({ message: "Ownership transferred" });
@@ -1823,15 +2112,15 @@ app.post("/:id/transfer-ownership", async (c) => {
  *  the two inputs every capability check needs. Returns null when the caller
  *  has no membership at all. */
 async function groupContext(
-  db: D1Database,
+  c: import("hono").Context<AppEnv>,
   teamId: string,
-  userId: string,
 ): Promise<{
   team: TeamRow;
   role: string;
   siteDefaults: TeamRolePermissions;
 } | null> {
-  const eff = await getEffectiveMember(db, teamId, userId);
+  const db = c.env.DB;
+  const eff = await teamAuthority(c, teamId);
   if (!eff) return null;
   const [team, siteDefaults] = await Promise.all([
     db
@@ -1848,10 +2137,9 @@ async function groupContext(
 // labels exist is harmless, and the client needs the capability flags to
 // decide what to render.
 app.get("/:id/groups", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
-  const ctx = await groupContext(c.env.DB, id, user.id);
+  const ctx = await groupContext(c, id);
   if (!ctx) return c.json({ error: "Not found" }, 404);
 
   // Definitions are listed even while the feature is off, so an owner can
@@ -1886,10 +2174,9 @@ app.get("/:id/groups", async (c) => {
 });
 
 app.post("/:id/groups", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
-  const ctx = await groupContext(c.env.DB, id, user.id);
+  const ctx = await groupContext(c, id);
   if (!ctx) return c.json({ error: "Not found" }, 404);
   if (ctx.team.enable_groups !== 1)
     return c.json({ error: "Member groups are disabled for this team" }, 403);
@@ -1996,11 +2283,10 @@ app.post("/:id/groups", async (c) => {
 });
 
 app.patch("/:id/groups/:groupId", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
   const groupId = c.req.param("groupId");
 
-  const ctx = await groupContext(c.env.DB, id, user.id);
+  const ctx = await groupContext(c, id);
   if (!ctx) return c.json({ error: "Not found" }, 404);
   if (ctx.team.enable_groups !== 1)
     return c.json({ error: "Member groups are disabled for this team" }, 403);
@@ -2099,11 +2385,10 @@ app.patch("/:id/groups/:groupId", async (c) => {
 });
 
 app.delete("/:id/groups/:groupId", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
   const groupId = c.req.param("groupId");
 
-  const ctx = await groupContext(c.env.DB, id, user.id);
+  const ctx = await groupContext(c, id);
   if (!ctx) return c.json({ error: "Not found" }, 404);
   if (ctx.team.enable_groups !== 1)
     return c.json({ error: "Member groups are disabled for this team" }, 403);
@@ -2137,11 +2422,10 @@ app.delete("/:id/groups/:groupId", async (c) => {
 // deltas keeps the dashboard's multi-select honest — the client sends the
 // state it wants and the server reconciles.
 app.put("/:id/members/:userId/groups", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
   const targetUserId = c.req.param("userId");
 
-  const ctx = await groupContext(c.env.DB, id, user.id);
+  const ctx = await groupContext(c, id);
   if (!ctx) return c.json({ error: "Not found" }, 404);
   if (ctx.team.enable_groups !== 1)
     return c.json({ error: "Member groups are disabled for this team" }, 403);
@@ -2239,10 +2523,9 @@ app.put("/:id/members/:userId/groups", async (c) => {
 
 // List active invites for a team
 app.get("/:id/invites", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -2290,7 +2573,7 @@ app.post("/:id/invites", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -2435,11 +2718,10 @@ app.post("/:id/invites", async (c) => {
 
 // Revoke an invite
 app.delete("/:id/invites/:token", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
   const token = c.req.param("token");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -2466,9 +2748,8 @@ const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
 // the `inherit_team_domains` site config — when disabled the response
 // contains direct domains only.
 app.get(":id/domains", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not a team member" }, 403);
 
   const { page, limit, offset } = readPage(
@@ -2532,7 +2813,7 @@ app.get(":id/domains", async (c) => {
 app.post(":id/domains", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not a team member" }, 403);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -2600,10 +2881,9 @@ app.post(":id/domains", async (c) => {
 // Verify team domain. Body: { method?: "dns-txt" | "http-file" | "html-meta" }
 // If method is omitted, every method is tried until one succeeds.
 app.post(":id/domains/:domainId/verify", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not a team member" }, 403);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -2677,10 +2957,9 @@ app.post(":id/domains/:domainId/verify", async (c) => {
 
 // Delete team domain
 app.delete(":id/domains/:domainId", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not a team member" }, 403);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -2699,10 +2978,9 @@ app.delete(":id/domains/:domainId", async (c) => {
 
 // Return team domain to its creator's personal domains
 app.post(":id/domains/:domainId/to-personal", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not a team member" }, 403);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -2737,7 +3015,7 @@ app.post(":id/domains/:domainId/share-to-team", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not a team member" }, 403);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -2754,7 +3032,7 @@ app.post(":id/domains/:domainId/share-to-team", async (c) => {
     return c.json({ error: "Cannot share to the same team" }, 400);
 
   // Requester must be admin+ in the target team (effective)
-  const targetEff = await getEffectiveMember(c.env.DB, body.team_id, user.id);
+  const targetEff = await teamAuthority(c, body.team_id);
   if (!targetEff || !hasRole(targetEff.role, "admin"))
     return c.json(
       { error: "Forbidden: must be admin or owner of target team" },
@@ -2802,7 +3080,7 @@ app.post(":id/domains/:domainId/share-to-personal", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not a team member" }, 403);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -2882,10 +3160,9 @@ async function verifiedTeamParentDomain(
 
 // List team apps
 app.get("/:id/apps", async (c) => {
-  const user = c.get("user");
   const id = c.req.param("id");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
 
   const { page, limit, offset } = readPage(
@@ -2940,7 +3217,7 @@ app.post("/:id/apps", async (c) => {
   const capErr = await guardCapability(c.env.DB, user.id, "app:create");
   if (capErr) return c.json({ error: capErr }, 403);
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -3043,7 +3320,7 @@ app.post("/:id/apps/transfer", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
@@ -3094,7 +3371,7 @@ app.delete("/:id/apps/:appId/transfer", async (c) => {
   const id = c.req.param("id");
   const appId = c.req.param("appId");
 
-  const eff = await getEffectiveMember(c.env.DB, id, user.id);
+  const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 

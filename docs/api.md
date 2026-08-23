@@ -374,23 +374,23 @@ See [Teams](teams.md) for the full guide. Endpoint summary:
 | Method                    | Path                                                 | Notes                                                                                                                                                                                                                                               |
 | ------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`                     | `/api/teams`                                         | List teams the user can reach (direct + inherited via sub-team nesting; each entry carries `parent_team_id` + `inherited_from`)                                                                                                                     |
-| `POST`                    | `/api/teams`                                         | Create team. Optional `parent_team_id` makes it a sub-team — caller must be admin+ (direct or inherited) of the parent, depth ≤ `max_team_depth`                                                                                                    |
+| `POST`                    | `/api/teams`                                         | Create team. Optional `parent_team_id` makes it a sub-team — caller must be admin+ (direct or inherited) of the parent, depth ≤ `max_team_depth`. Site admins may pass `owner_username` / `owner_id` to hand the team to someone else                                                                                                    |
 | `GET`                     | `/api/teams/:id`                                     | Team details + `my_role` (effective), `inherited_from`, `ancestors[]` (parent → root), `sub_teams[]` (immediate children with member counts), direct members                                                                                        |
 | `PATCH`                   | `/api/teams/:id`                                     | Update name, description, avatar, public-profile flags (incl. `profile_show_sub_teams`), `parent_team_id` (owner-only, cycle/depth-checked), `require_2fa`, `require_verified_email`, `enable_groups` (owner-only), `role_permissions` (owner-only) |
 | `DELETE`                  | `/api/teams/:id`                                     | Disband (owner — direct or inherited). Cascades to every sub-team; each level's apps fall back to that level's own owner                                                                                                                            |
 | `GET`                     | `/api/teams/:id/sub-teams`                           | List immediate sub-teams. `?page=`, `?limit=`, `?q=`, returns `total`. Members of an ancestor team (direct or inherited) may list                                                                                                                   |
 | `POST`                    | `/api/teams/:id/sub-teams`                           | Create a sub-team under `:id` — convenience alias for `POST /api/teams` with `parent_team_id`                                                                                                                                                       |
 | `GET`                     | `/api/teams/:id/members`                             | Paginated member list. `?page=`, `?limit=` (max 100), `?q=` (display name / username), `?group=` (slug, matches inherited labels too)                                                                                                               |
-| `POST`                    | `/api/teams/:id/members`                             | Add member by username/id (admins+)                                                                                                                                                                                                                 |
-| `PATCH`                   | `/api/teams/:id/members/:userId`                     | Change role                                                                                                                                                                                                                                         |
-| `DELETE`                  | `/api/teams/:id/members/:userId`                     | Remove member (or leave the team if `:userId = self`)                                                                                                                                                                                               |
+| `POST`                    | `/api/teams/:id/members`                             | Add member by `username` or `user_id` (admins+). A site admin overrides the team's join requirements and the restricted-account scope rule; the audit entry lists what was `bypassed`                                                                                                                                                                                                                 |
+| `PATCH`                   | `/api/teams/:id/members/:userId`                     | Change role. Site admins may also set `owner`, which transfers ownership and demotes the sitting owner to co-owner                                                                                                                                                                                                                                       |
+| `DELETE`                  | `/api/teams/:id/members/:userId`                     | Remove member (or leave the team if `:userId = self`). A site admin may remove the owner — the most senior remaining member is promoted in the same batch; refused when the owner is the only member                                                                                                                                                                                               |
 | `PATCH`                   | `/api/teams/:id/membership/show-on-profile`          | Per-member opt-in to appear in the team's public member list                                                                                                                                                                                        |
 | `GET`                     | `/api/teams/:id/groups`                              | List [member group](teams.md#member-groups) definitions plus the resolved admin capabilities (any member)                                                                                                                                           |
 | `POST`                    | `/api/teams/:id/groups`                              | Create a group. Requires the `groups:manage` capability; `admin_assignable` is owner-only                                                                                                                                                           |
 | `PATCH`                   | `/api/teams/:id/groups/:groupId`                     | Update name/description/colour. `slug` is immutable; `admin_assignable` is owner-only                                                                                                                                                               |
 | `DELETE`                  | `/api/teams/:id/groups/:groupId`                     | Delete a group — cascades to every assignment                                                                                                                                                                                                       |
 | `PUT`                     | `/api/teams/:id/members/:userId/groups`              | Replace a member's group set (`{ group_ids: [...] }`). Only the groups that change are permission-checked                                                                                                                                           |
-| `POST`                    | `/api/teams/:id/transfer-ownership`                  | Transfer ownership to another member                                                                                                                                                                                                                |
+| `POST`                    | `/api/teams/:id/transfer-ownership`                  | Transfer ownership to another member. Site admins can call this from outside the team, and may name someone who isn't a member yet                                                                                                                                                                                                                |
 | `GET`                     | `/api/teams/:id/invites`                             | List active invite tokens. `?page=`, `?limit=`, `?q=` email search, returns `total`                                                                                                                                                                 |
 | `POST`                    | `/api/teams/:id/invites`                             | Mint an invite token (optional email lock + max uses + expiry)                                                                                                                                                                                      |
 | `DELETE`                  | `/api/teams/:id/invites/:token`                      | Revoke an invite                                                                                                                                                                                                                                    |
@@ -589,11 +589,109 @@ All admin endpoints require auth with `role = admin`.
 | `POST /api/admin/test-email`                                 | Send a test outbound email                                                                      |
 | `POST /api/admin/test-email-receiving`                       | Generate a test verify-by-email code                                                            |
 
+### Per-account control
+
+The `/api/user/me/*` surface, addressed by user id. Every call is admin-only,
+session-only, and audited into **both** the platform log and the target's own
+user-scope log (marked `site_admin: true`). See
+[Admin → The account detail page](admin.md#the-account-detail-page).
+
+| Method            | Path                                                    | Notes                                                                                    |
+| ----------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `PATCH`           | `/api/admin/users/:id`                                  | Now also accepts `username`, `email`, `display_name`, `avatar_url`. Changing `email` clears its verified state unless `email_verified` is sent in the same request. `409` on a taken username/email |
+| `POST`            | `/api/admin/users/:id/password`                         | `{ password, revoke_sessions? }`. `password: null` clears it — refused when no linked provider remains |
+| `GET`             | `/api/admin/users/:id/security`                         | Authenticators, passkeys, recovery-code count, whether a password is set                  |
+| `DELETE`          | `/api/admin/users/:id/2fa`                              | Remove every factor and recovery code — the account-recovery button                       |
+| `DELETE`          | `/api/admin/users/:id/totp/:totpId`                     | Remove one authenticator                                                                  |
+| `DELETE`          | `/api/admin/users/:id/passkeys/:passkeyId`              | Remove one passkey                                                                        |
+| `GET` / `DELETE`  | `/api/admin/users/:id/tokens[/:tokenId]`                | Personal access tokens. The token value is never returned                                 |
+| `GET` / `DELETE`  | `/api/admin/users/:id/connections[/:connId]`            | Linked providers. Unlinking the last sign-in method is refused                            |
+| `GET` / `DELETE`  | `/api/admin/users/:id/gpg-keys[/:keyId]`                | GPG keys                                                                                  |
+| `GET`             | `/api/admin/users/:id/emails`                           | Primary address plus alternates                                                           |
+| `POST`            | `/api/admin/users/:id/emails/:emailId/verify`           | Mark verified. `:emailId` is `primary` for the address on the users row                   |
+| `POST`            | `/api/admin/users/:id/emails/:emailId/set-primary`      | Promote an alternate, demoting the current primary into the alternates list               |
+| `DELETE`          | `/api/admin/users/:id/emails/:emailId`                  | Remove an alternate                                                                       |
+| `GET` / `DELETE`  | `/api/admin/users/:id/domains[/:domainId]`              | The account's personal domains                                                            |
+| `GET` / `DELETE`  | `/api/admin/users/:id/authorizations[/:consentId]`      | OAuth grants. Revoking also deletes the tokens and codes issued under the grant           |
+| `GET`             | `/api/admin/users/:id/teams`                            | Team memberships (read-only — change them on the team)                                    |
+| `GET`             | `/api/admin/users/:id/lockdown`                         | Whether `LOCKDOWN_USERS` protects this account from deletion                              |
+
+### Key–value browser
+
+Same gating as the database console, via `KV_CONSOLE` (which follows
+`D1_CONSOLE` when unset). See [Admin → Key–value browser](admin.md#keyvalue-browser).
+
+| Method   | Path                                | Notes                                                                                  |
+| -------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET`    | `/api/admin/kv/status`              | Mode, writability, available namespaces                                                |
+| `GET`    | `/api/admin/kv/:ns/keys`            | List keys. `?prefix=`, `?cursor=`, `?limit=` (max 1000). Returns KV's opaque `cursor`   |
+| `GET`    | `/api/admin/kv/:ns/keys/:key`       | Read one value (key URL-encoded). Key material returns `protected: true` and `value: null` |
+| `PUT`    | `/api/admin/kv/:ns/keys/:key`       | Write. `{ value, expiration_ttl? }`; TTL floor is 60s. Refused for key material         |
+| `DELETE` | `/api/admin/kv/:ns/keys/:key`       | Delete. Allowed for key material — that is rotation                                     |
+| `POST`   | `/api/admin/kv/:ns/purge?prefix=`   | Delete every key under a prefix, one page per call. Skips key material                 |
+
+`:ns` is `sessions` or `cache`.
+
+### Instance-wide operations
+
+| Method   | Path                                       | Notes                                                                        |
+| -------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET`    | `/api/admin/revoke/preview`                | What a mass revocation would destroy, without destroying it                  |
+| `POST`   | `/api/admin/revoke/sessions`               | Delete every session. `{ include_self? }` — the caller's is kept by default   |
+| `POST`   | `/api/admin/revoke/app/:appId`             | Delete an app's tokens, codes and consents. `{ deactivate? }`                 |
+| `POST`   | `/api/admin/revoke/user/:userId/grants`    | The same for one account across every application                            |
+| `GET`    | `/api/admin/domains`                       | Every domain. `?page=`, `?limit=`, `?q=`, `?verified=0\|1`                     |
+| `POST`   | `/api/admin/domains/:id/verify`            | `{ verified }` — an override, logged as `admin_override` rather than a check  |
+| `DELETE` | `/api/admin/domains/:id`                   | Delete a domain                                                              |
+| `POST`   | `/api/admin/apps/:id/transfer`             | `{ owner_id }` or `{ team_id }`. Client ID and secret unchanged               |
+| `POST`   | `/api/admin/users/:id/convert`             | Lift an invite-registration restriction. `{ require_verified_email? }`        |
+| `GET`    | `/api/admin/scope-grants/site`             | Elevated site-level OAuth grants                                             |
+| `GET`    | `/api/admin/scope-grants/team`             | Team-level grants. `?team_id=` filters                                       |
+| `DELETE` | `/api/admin/scope-grants/:kind/:id`        | Withdraw one grant (`:kind` is `site` or `team`). Existing tokens are untouched — revoke the app for those |
+| `GET`    | `/api/admin/users/:id/sessions`            | Live sessions with the IP/geo history behind each                            |
+| `DELETE` | `/api/admin/users/:id/sessions/:sessionId` | End one session (`DELETE …/sessions` still ends all)                         |
+| `GET`    | `/api/admin/maintenance/jobs`              | The runnable scheduled jobs, and the cron they normally run on               |
+| `POST`   | `/api/admin/maintenance/jobs/:key/run`     | Run one now. Awaited — returns `processed` (or `null` where the task keeps no count) and `duration_ms` |
+| `POST`   | `/api/admin/users/bulk`                    | `{ user_ids, action }` where action is `activate` \| `deactivate` \| `delete`. Max 50 ids; the caller and `LOCKDOWN_USERS` accounts are skipped and named in `skipped` |
+| `GET`    | `/api/admin/team-invites`                  | Every outstanding team invite. `?page=`, `?limit=`, `?q=` team/email, `?registration=1` |
+| `DELETE` | `/api/admin/team-invites/:token`           | Revoke one invite link                                                       |
+| `GET`    | `/api/admin/users/:id/notifications`       | Ruleset names, active flag and rule counts — not their contents              |
+| `DELETE` | `/api/admin/users/:id/notification-rulesets` | Reset routing to the per-event defaults                                    |
+
+### Notice board
+
+Reading takes optional auth — public notices exist for people who cannot sign
+in. Writing is admin-only. See [Admin → Notice board](admin.md#notice-board).
+
+| Method   | Path                              | Notes                                                                        |
+| -------- | --------------------------------- | ------------------------------------------------------------------------------ |
+| `GET`    | `/api/notices`                    | Notices for the current viewer: published, in window, matching their audience, not already dismissed. Signed out returns the `public` ones |
+| `POST`   | `/api/notices/:id/dismiss`        | Dismiss for the calling user. 401 signed out, 403 when the notice is not dismissible |
+| `GET`    | `/api/admin/notices`              | Every notice, drafts included, with dismissal counts                         |
+| `POST`   | `/api/admin/notices`              | Create. `{ title, body, level?, audience?, team_id?, is_published?, starts_at?, ends_at?, is_dismissible?, pinned? }` — a draft unless `is_published` |
+| `PATCH`  | `/api/admin/notices/:id`          | Update. Validated against the merged row, so moving one bound still checks the other. `{ reset_dismissals: true }` brings it back for everyone who hid it |
+| `DELETE` | `/api/admin/notices/:id`          | Delete, cascading to dismissals. Unpublish instead to keep it as a draft     |
+
+### Database
+
+Direct D1 access. Admin-only, session-only, and every call is audited. See
+[Admin → Database](admin.md#database).
+
+| Method   | Path                                     | Notes                                                                    |
+| -------- | ---------------------------------------- | ------------------------------------------------------------------------ |
+| `GET`    | `/api/admin/db/tables`                   | Every table with row counts, columns and its `CREATE TABLE` statement    |
+| `GET`    | `/api/admin/db/tables/:table/rows`       | Page rows. `?page=`, `?limit=` (max 500), `?order_by=`, `?dir=`, `?where=` raw SQL fragment |
+| `POST`   | `/api/admin/db/tables/:table/rows`       | Insert. Body `{ values }` — unknown columns are dropped                  |
+| `PATCH`  | `/api/admin/db/tables/:table/rows`       | Update one row. Body `{ key, values }`, keyed on the primary key or `rowid` |
+| `DELETE` | `/api/admin/db/tables/:table/rows`       | Delete one row. Body `{ key }`                                           |
+| `POST`   | `/api/admin/db/query`                    | Run SQL. Body `{ sql, params?, allow_write? }`. Anything that isn't a plain read is refused without `allow_write`; multiple statements run in one transaction |
+
 ### Audit / request logs / login errors
 
 | Method   | Path                                  | Notes                            |
 | -------- | ------------------------------------- | -------------------------------- |
 | `GET`    | `/api/admin/audit-log?page=…`         | Audit events                     |
+| `GET`    | `/api/audit/:scope/export`            | Export any scope the caller can read. `?format=csv\|json` plus the table's filters. Capped at 10,000 events |
 | `GET`    | `/api/admin/login-errors`             | Failed-login table               |
 | `GET`    | `/api/admin/request-logs`             | Filterable per-request log       |
 | `GET`    | `/api/admin/request-logs/export`      | CSV export of the current filter |

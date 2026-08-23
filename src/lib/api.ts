@@ -1395,6 +1395,9 @@ export const api = {
     description?: string;
     avatar_url?: string;
     parent_team_id?: string | null;
+    /** Site admins only — hand the new team straight to its intended owner. */
+    owner_id?: string;
+    owner_username?: string;
   }) => request<{ team: Team }>("POST", "/teams", body, getToken()),
   listSubTeams: (
     parentTeamId: string,
@@ -1579,7 +1582,10 @@ export const api = {
       getToken(),
     );
   },
-  addTeamMember: (teamId: string, body: { username: string; role?: string }) =>
+  addTeamMember: (
+    teamId: string,
+    body: { username?: string; user_id?: string; role?: string },
+  ) =>
     request<{ message: string }>(
       "POST",
       `/teams/${teamId}/members`,
@@ -1807,6 +1813,540 @@ export const api = {
       "DELETE",
       `/admin/teams/${id}`,
       undefined,
+      getToken(),
+    ),
+
+  // ── Per-account admin control ─────────────────────────────────────────────
+  // The `/me` surface, addressed by user id. Admin-only and audited into both
+  // the platform log and the user's own.
+  adminUserSecurity: (id: string) =>
+    request<AdminUserSecurity>(
+      "GET",
+      `/admin/users/${id}/security`,
+      undefined,
+      getToken(),
+    ),
+  adminSetUserPassword: (
+    id: string,
+    password: string | null,
+    opts: { revokeSessions?: boolean } = {},
+  ) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/users/${id}/password`,
+      { password, revoke_sessions: opts.revokeSessions ?? true },
+      getToken(),
+    ),
+  adminReset2fa: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/2fa`,
+      undefined,
+      getToken(),
+    ),
+  adminDeleteUserTotp: (id: string, totpId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/totp/${totpId}`,
+      undefined,
+      getToken(),
+    ),
+  adminDeleteUserPasskey: (id: string, passkeyId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/passkeys/${passkeyId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserTokens: (id: string, page = 1) =>
+    request<{
+      tokens: AdminUserToken[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/users/${id}/tokens?page=${page}`, undefined, getToken()),
+  adminRevokeUserToken: (id: string, tokenId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/tokens/${tokenId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserConnections: (id: string) =>
+    request<{ connections: AdminUserConnection[] }>(
+      "GET",
+      `/admin/users/${id}/connections`,
+      undefined,
+      getToken(),
+    ),
+  adminRemoveUserConnection: (id: string, connId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/connections/${connId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserGpgKeys: (id: string) =>
+    request<{ keys: AdminUserGpgKey[] }>(
+      "GET",
+      `/admin/users/${id}/gpg-keys`,
+      undefined,
+      getToken(),
+    ),
+  adminRemoveUserGpgKey: (id: string, keyId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/gpg-keys/${keyId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserEmails: (id: string) =>
+    request<AdminUserEmails>(
+      "GET",
+      `/admin/users/${id}/emails`,
+      undefined,
+      getToken(),
+    ),
+  /** `emailId` is "primary" for the address on the users row itself. */
+  adminVerifyUserEmail: (id: string, emailId: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/users/${id}/emails/${emailId}/verify`,
+      {},
+      getToken(),
+    ),
+  adminSetPrimaryUserEmail: (id: string, emailId: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/users/${id}/emails/${emailId}/set-primary`,
+      {},
+      getToken(),
+    ),
+  adminRemoveUserEmail: (id: string, emailId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/emails/${emailId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserDomains: (id: string) =>
+    request<{ domains: AdminUserDomain[] }>(
+      "GET",
+      `/admin/users/${id}/domains`,
+      undefined,
+      getToken(),
+    ),
+  adminRemoveUserDomain: (id: string, domainId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/domains/${domainId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserAuthorizations: (id: string) =>
+    request<{ authorizations: AdminUserAuthorization[] }>(
+      "GET",
+      `/admin/users/${id}/authorizations`,
+      undefined,
+      getToken(),
+    ),
+  adminRevokeUserAuthorization: (id: string, consentId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/authorizations/${consentId}`,
+      undefined,
+      getToken(),
+    ),
+  adminUserTeams: (id: string) =>
+    request<{ teams: AdminUserTeam[] }>(
+      "GET",
+      `/admin/users/${id}/teams`,
+      undefined,
+      getToken(),
+    ),
+
+  // ── Direct database access ────────────────────────────────────────────────
+  // Every call here is admin-only and audited server-side.
+  adminDbStatus: () =>
+    request<{ mode: "full" | "read-only" | "off"; writable: boolean }>(
+      "GET",
+      "/admin/db/status",
+      undefined,
+      getToken(),
+    ),
+  adminDbTables: () =>
+    request<{ tables: DbTable[] }>(
+      "GET",
+      "/admin/db/tables",
+      undefined,
+      getToken(),
+    ),
+  adminDbRows: (
+    table: string,
+    params: {
+      page?: number;
+      limit?: number;
+      order_by?: string;
+      dir?: "asc" | "desc";
+      where?: string;
+    } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.order_by) search.set("order_by", params.order_by);
+    if (params.dir) search.set("dir", params.dir);
+    if (params.where) search.set("where", params.where);
+    const qs = search.toString();
+    return request<DbRowPage>(
+      "GET",
+      `/admin/db/tables/${encodeURIComponent(table)}/rows${qs ? `?${qs}` : ""}`,
+      undefined,
+      getToken(),
+    );
+  },
+  adminDbInsertRow: (table: string, values: Record<string, unknown>) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/db/tables/${encodeURIComponent(table)}/rows`,
+      { values },
+      getToken(),
+    ),
+  adminDbUpdateRow: (
+    table: string,
+    key: Record<string, unknown>,
+    values: Record<string, unknown>,
+  ) =>
+    request<{ message: string }>(
+      "PATCH",
+      `/admin/db/tables/${encodeURIComponent(table)}/rows`,
+      { key, values },
+      getToken(),
+    ),
+  adminDbDeleteRow: (table: string, key: Record<string, unknown>) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/db/tables/${encodeURIComponent(table)}/rows`,
+      { key },
+      getToken(),
+    ),
+  adminDbQuery: (sql: string, opts: { allowWrite?: boolean } = {}) =>
+    request<{ results: DbQueryResult[]; duration_ms: number }>(
+      "POST",
+      "/admin/db/query",
+      { sql, allow_write: opts.allowWrite ?? false },
+      getToken(),
+    ),
+
+  // ── Key-value browser ─────────────────────────────────────────────────────
+  adminKvStatus: () =>
+    request<{
+      mode: "full" | "read-only" | "off";
+      writable: boolean;
+      namespaces: Array<{ key: string; description: string }>;
+    }>("GET", "/admin/kv/status", undefined, getToken()),
+  adminKvKeys: (
+    ns: string,
+    params: { prefix?: string; cursor?: string; limit?: number } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.prefix) search.set("prefix", params.prefix);
+    if (params.cursor) search.set("cursor", params.cursor);
+    if (params.limit) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return request<KvKeyPage>(
+      "GET",
+      `/admin/kv/${ns}/keys${qs ? `?${qs}` : ""}`,
+      undefined,
+      getToken(),
+    );
+  },
+  adminKvGet: (ns: string, key: string) =>
+    request<KvEntry>(
+      "GET",
+      `/admin/kv/${ns}/keys/${encodeURIComponent(key)}`,
+      undefined,
+      getToken(),
+    ),
+  adminKvPut: (
+    ns: string,
+    key: string,
+    value: string,
+    expirationTtl?: number | null,
+  ) =>
+    request<{ message: string }>(
+      "PUT",
+      `/admin/kv/${ns}/keys/${encodeURIComponent(key)}`,
+      { value, expiration_ttl: expirationTtl ?? null },
+      getToken(),
+    ),
+  adminKvDelete: (ns: string, key: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/kv/${ns}/keys/${encodeURIComponent(key)}`,
+      undefined,
+      getToken(),
+    ),
+  adminKvPurge: (ns: string, prefix: string) =>
+    request<{
+      message: string;
+      deleted: number;
+      skipped_protected: number;
+      more: boolean;
+    }>(
+      "POST",
+      `/admin/kv/${ns}/purge?prefix=${encodeURIComponent(prefix)}`,
+      {},
+      getToken(),
+    ),
+
+  // ── Instance-wide operations ──────────────────────────────────────────────
+  adminRevokePreview: () =>
+    request<{
+      sessions: number;
+      oauth_tokens: number;
+      oauth_consents: number;
+      personal_access_tokens: number;
+    }>("GET", "/admin/revoke/preview", undefined, getToken()),
+  adminRevokeAllSessions: (includeSelf = false) =>
+    request<{ message: string; deleted: number; your_session_kept: boolean }>(
+      "POST",
+      "/admin/revoke/sessions",
+      { include_self: includeSelf },
+      getToken(),
+    ),
+  adminRevokeApp: (appId: string, deactivate = false) =>
+    request<{
+      message: string;
+      tokens_revoked: number;
+      consents_revoked: number;
+      deactivated: boolean;
+    }>("POST", `/admin/revoke/app/${appId}`, { deactivate }, getToken()),
+  adminRevokeUserGrants: (userId: string) =>
+    request<{
+      message: string;
+      tokens_revoked: number;
+      consents_revoked: number;
+    }>("POST", `/admin/revoke/user/${userId}/grants`, {}, getToken()),
+  adminListDomains: (
+    params: { page?: number; limit?: number; q?: string; verified?: "0" | "1" } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    if (params.verified) search.set("verified", params.verified);
+    const qs = search.toString();
+    return request<{
+      domains: AdminDomain[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/domains${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
+  adminSetDomainVerified: (id: string, verified: boolean) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/domains/${id}/verify`,
+      { verified },
+      getToken(),
+    ),
+  adminDeleteDomain: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/domains/${id}`,
+      undefined,
+      getToken(),
+    ),
+  adminTransferApp: (
+    appId: string,
+    target: { owner_id?: string; team_id?: string },
+  ) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/apps/${appId}/transfer`,
+      target,
+      getToken(),
+    ),
+  /** Download the audit log for any scope the caller can read.
+   *
+   *  Saves the file the way adminExportRequestLogs does, and uses the
+   *  filename the server chose — it already knows the scope and the date. */
+  auditExport: async (
+    base: string,
+    format: "csv" | "json",
+    params: AuditQuery = {},
+  ): Promise<void> => {
+    const qs = new URLSearchParams({ format });
+    for (const [k, v] of Object.entries(params))
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    const token = getToken();
+    const res = await fetch(`${BASE}/audit/${base}/export?${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, "Export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download =
+      /filename="([^"]+)"/.exec(
+        res.headers.get("Content-Disposition") ?? "",
+      )?.[1] ?? `audit.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+  adminTeamInvites: (
+    params: { page?: number; limit?: number; q?: string; registration?: boolean } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    if (params.registration) search.set("registration", "1");
+    const qs = search.toString();
+    return request<{
+      invites: AdminTeamInvite[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/team-invites${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
+  adminRevokeTeamInvite: (token: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/team-invites/${encodeURIComponent(token)}`,
+      undefined,
+      getToken(),
+    ),
+  adminBulkUsers: (
+    userIds: string[],
+    action: "deactivate" | "activate" | "delete",
+  ) =>
+    request<{
+      message: string;
+      action: string;
+      affected: number;
+      skipped: Array<{ id: string; username: string; reason: string }>;
+    }>("POST", "/admin/users/bulk", { user_ids: userIds, action }, getToken()),
+  adminUserNotifications: (id: string) =>
+    request<{
+      rulesets: Array<{
+        id: string;
+        name: string;
+        is_active: boolean;
+        rule_count: number;
+      }>;
+      legacy_pref_count: number;
+    }>("GET", `/admin/users/${id}/notifications`, undefined, getToken()),
+  adminResetUserNotifications: (id: string) =>
+    request<{ message: string; removed: number }>(
+      "DELETE",
+      `/admin/users/${id}/notification-rulesets`,
+      undefined,
+      getToken(),
+    ),
+  // ── Notice board ──────────────────────────────────────────────────────────
+  /** Notices for the current viewer. Works signed out — public notices are
+   *  the case a maintenance announcement most needs to reach. */
+  notices: () =>
+    request<{ notices: Notice[] }>("GET", "/notices", undefined, getToken()),
+  dismissNotice: (id: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/notices/${id}/dismiss`,
+      {},
+      getToken(),
+    ),
+  adminListNotices: (page = 1) =>
+    request<{
+      notices: AdminNotice[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/notices?page=${page}`, undefined, getToken()),
+  adminCreateNotice: (body: NoticeInput) =>
+    request<{ notice: AdminNotice }>("POST", "/admin/notices", body, getToken()),
+  adminUpdateNotice: (
+    id: string,
+    body: Partial<NoticeInput> & { reset_dismissals?: boolean },
+  ) =>
+    request<{ notice: AdminNotice; dismissals_reset: number }>(
+      "PATCH",
+      `/admin/notices/${id}`,
+      body,
+      getToken(),
+    ),
+  adminDeleteNotice: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/notices/${id}`,
+      undefined,
+      getToken(),
+    ),
+
+  adminScopeGrants: (kind: "site" | "team", page = 1, teamId?: string) => {
+    const search = new URLSearchParams({ page: String(page) });
+    if (teamId) search.set("team_id", teamId);
+    return request<{
+      grants: AdminScopeGrant[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
+      "GET",
+      `/admin/scope-grants/${kind}?${search.toString()}`,
+      undefined,
+      getToken(),
+    );
+  },
+  adminRevokeScopeGrant: (kind: "site" | "team", id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/scope-grants/${kind}/${id}`,
+      undefined,
+      getToken(),
+    ),
+  /** End every session for one account. */
+  adminTerminateSessions: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/sessions`,
+      undefined,
+      getToken(),
+    ),
+  adminUserSessions: (id: string) =>
+    request<{ sessions: AdminSession[] }>(
+      "GET",
+      `/admin/users/${id}/sessions`,
+      undefined,
+      getToken(),
+    ),
+  adminRevokeSession: (id: string, sessionId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/sessions/${sessionId}`,
+      undefined,
+      getToken(),
+    ),
+  adminMaintenanceJobs: () =>
+    request<{
+      jobs: Array<{ key: string; writes: boolean }>;
+      schedule: string;
+    }>("GET", "/admin/maintenance/jobs", undefined, getToken()),
+  adminRunMaintenanceJob: (key: string) =>
+    request<{
+      message: string;
+      job: string;
+      /** null when the task keeps no count — not the same as zero. */
+      processed: number | null;
+      duration_ms: number;
+    }>("POST", `/admin/maintenance/jobs/${key}/run`, {}, getToken()),
+  adminConvertUser: (id: string, requireVerifiedEmail = true) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/users/${id}/convert`,
+      { require_verified_email: requireVerifiedEmail },
       getToken(),
     ),
 
@@ -2338,6 +2878,10 @@ export interface Team {
   /** When this listing entry surfaced via inheritance from an ancestor
    *  team, carries that ancestor's id. `null` for direct memberships. */
   inherited_from?: string | null;
+  /** Set on the team detail response when `my_role` came from the site-admin
+   *  override rather than a membership — the page says so rather than
+   *  passing the viewer off as an owner. */
+  site_admin_access?: boolean;
   /** Set on the team detail response — chain of ancestor teams, immediate
    *  parent first → root last. */
   ancestors?: TeamAncestor[];
@@ -2563,6 +3107,266 @@ export interface AdminTeam {
   dissolving_at: number | null;
   created_at: number;
   updated_at: number;
+}
+
+// ─── Per-account admin control ────────────────────────────────────────────────
+
+export interface AdminUserSecurity {
+  has_password: boolean;
+  totp_authenticators: Array<{
+    id: string;
+    name: string;
+    enabled: boolean;
+    created_at: number;
+  }>;
+  passkeys: Array<{
+    id: string;
+    name: string | null;
+    device_type: string;
+    backed_up: boolean;
+    created_at: number;
+    last_used_at: number | null;
+  }>;
+  /** `count` is -1 when the stored blob could not be parsed. */
+  recovery_codes: { count: number; updated_at: number | null };
+}
+
+export interface AdminUserToken {
+  id: string;
+  name: string;
+  scopes: string[];
+  expires_at: number | null;
+  last_used_at: number | null;
+  created_at: number;
+}
+
+export interface AdminUserConnection {
+  id: string;
+  provider: string;
+  provider_user_id: string;
+  token_expires_at: number | null;
+  connected_at: number;
+}
+
+export interface AdminUserGpgKey {
+  id: string;
+  fingerprint: string;
+  key_id: string;
+  name: string;
+  created_at: number;
+  last_used_at: number | null;
+}
+
+export interface AdminUserEmails {
+  primary: { email: string; verified: boolean; verified_at: number | null };
+  emails: Array<{
+    id: string;
+    email: string;
+    verified: boolean;
+    verified_via: string | null;
+    verified_at: number | null;
+    created_at: number;
+  }>;
+}
+
+export interface AdminUserDomain {
+  id: string;
+  domain: string;
+  verified: boolean;
+  created_at: number;
+}
+
+export interface AdminUserAuthorization {
+  id: string;
+  client_id: string;
+  scopes: string[];
+  granted_at: number;
+  app_name: string | null;
+  icon_url: string;
+}
+
+export interface AdminUserTeam {
+  id: string;
+  name: string;
+  avatar_url: string;
+  role: string;
+  joined_at: number;
+}
+
+// ─── Direct database access ───────────────────────────────────────────────────
+
+export interface DbColumn {
+  name: string;
+  type: string;
+  notnull: boolean;
+  default_value: string | null;
+  pk: boolean;
+}
+
+export interface DbTable {
+  name: string;
+  /** null when the count query failed (a view-like or corrupt table). */
+  row_count: number | null;
+  /** The CREATE TABLE statement, straight from sqlite_master. */
+  sql: string | null;
+  columns: DbColumn[];
+}
+
+export interface DbRowPage {
+  table: string;
+  columns: DbColumn[];
+  /** Columns that address a single row — the declared PK, or ["rowid"]. */
+  key_columns: string[];
+  /** False when no row can be addressed individually; edits go through SQL. */
+  editable: boolean;
+  rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface DbQueryResult {
+  sql: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  /** True when the result set was cut off at the server's row cap. */
+  truncated: boolean;
+  row_count: number;
+  rows_written: number;
+  last_row_id: number | null;
+  duration_ms: number | null;
+}
+
+// ─── Key-value browser ────────────────────────────────────────────────────────
+
+export interface KvKeyPage {
+  keys: Array<{
+    name: string;
+    expiration: number | null;
+    metadata: unknown;
+    /** Key material — its value is withheld and it cannot be written here. */
+    protected: boolean;
+  }>;
+  list_complete: boolean;
+  /** Opaque continuation token; null when the listing is complete. */
+  cursor: string | null;
+}
+
+export interface KvEntry {
+  key: string;
+  protected: boolean;
+  exists: boolean;
+  /** Always null for a protected key. */
+  value: string | null;
+  metadata: unknown;
+  /** Why the value was withheld, when it was. */
+  reason?: string;
+}
+
+export interface AdminDomain {
+  id: string;
+  domain: string;
+  verified: boolean;
+  verified_at: number | null;
+  user_id: string | null;
+  team_id: string | null;
+  owner_username: string | null;
+  team_name: string | null;
+  team_avatar: string;
+  created_at: number;
+}
+
+/** A site- or team-level scope grant. The two tables differ enough that the
+ *  fields specific to each are optional here rather than split into two
+ *  types the UI would have to branch on twice. */
+export interface AdminScopeGrant {
+  id: string;
+  client_id: string;
+  app_name: string | null;
+  granted_at: number;
+  /** site grants */
+  scopes?: string[];
+  admin_username?: string | null;
+  grantee_username?: string | null;
+  /** team grants */
+  team_id?: string;
+  team_name?: string | null;
+  grantor_username?: string | null;
+  permissions?: unknown;
+}
+
+// ─── Notice board ─────────────────────────────────────────────────────────────
+
+export type NoticeLevel = "info" | "warning" | "critical";
+/** `public` also reaches the signed-out pages; `team` needs a team_id. */
+export type NoticeAudience = "public" | "users" | "admins" | "team";
+
+export interface Notice {
+  id: string;
+  title: string;
+  /** Markdown — render through lib/markdown, never as raw HTML. */
+  body: string;
+  level: NoticeLevel;
+  audience: NoticeAudience;
+  team_id: string | null;
+  team_name?: string | null;
+  is_dismissible: boolean;
+  pinned: boolean;
+  starts_at: number | null;
+  ends_at: number | null;
+  created_at: number;
+}
+
+export interface AdminNotice extends Notice {
+  is_published: boolean;
+  created_by: string | null;
+  created_by_username?: string | null;
+  dismissal_count?: number;
+  updated_at: number;
+}
+
+export interface NoticeInput {
+  title: string;
+  body: string;
+  level?: NoticeLevel;
+  audience?: NoticeAudience;
+  team_id?: string | null;
+  is_published?: boolean;
+  starts_at?: number | null;
+  ends_at?: number | null;
+  is_dismissible?: boolean;
+  pinned?: boolean;
+}
+
+export interface AdminTeamInvite {
+  /** The credential itself — shown so a leaked link can be matched to a row. */
+  token: string;
+  team_id: string;
+  team_name: string | null;
+  role: string;
+  email: string | null;
+  max_uses: number | null;
+  uses: number;
+  expires_at: number | null;
+  created_at: number;
+  created_by_username: string | null;
+  /** True when this invite mints accounts rather than adding existing ones. */
+  allows_registration: boolean;
+}
+
+export interface AdminSession {
+  id: string;
+  user_agent: string | null;
+  ip_address: string | null;
+  created_at: number;
+  expires_at: number;
+  /** Where this session has been used from, most recent first. */
+  ips: Array<{
+    ip_address: string | null;
+    geo: unknown;
+    first_seen: number;
+    last_seen: number;
+  }>;
 }
 
 export type RedirectUriMatchType = "equals" | "regex" | "wildcard";
@@ -2984,7 +3788,14 @@ export interface AdminUserList {
 }
 
 export interface AdminUserDetail {
-  user: UserProfile & { is_active: boolean };
+  user: UserProfile & {
+    is_active: boolean;
+    /** Team whose invite minted this account; null for ordinary accounts. */
+    origin_team_id: string | null;
+    origin_join_completed: boolean;
+    /** When the restriction was lifted; null while it still applies. */
+    converted_at: number | null;
+  };
   apps: unknown[];
   connections: unknown[];
   sessions: unknown[];

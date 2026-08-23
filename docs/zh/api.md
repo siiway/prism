@@ -328,23 +328,23 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 | Method                    | Path                                                 | 说明                                                                                                                                                                                                                       |
 | ------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`                     | `/api/teams`                                         | 列出当前用户可达的团队（直接 + 通过子团队继承可见；每条携带 `parent_team_id` 与 `inherited_from`）                                                                                                                         |
-| `POST`                    | `/api/teams`                                         | 创建团队。可选 `parent_team_id` 表示创建子团队 — 调用者需在上级团队上是 admin+（直接或继承），且深度 ≤ `max_team_depth`                                                                                                    |
+| `POST`                    | `/api/teams`                                         | 创建团队。可选 `parent_team_id` 表示创建子团队 — 调用者需在上级团队上是 admin+（直接或继承），且深度 ≤ `max_team_depth`。站点管理员可传 `owner_username` / `owner_id` 把团队直接交给他人                                                                                                    |
 | `GET`                     | `/api/teams/:id`                                     | 团队详情 + `my_role`（有效）、`inherited_from`、`ancestors[]`（直接父 → 根）、`sub_teams[]`（直接子团队 + 成员数）、直接成员                                                                                               |
 | `PATCH`                   | `/api/teams/:id`                                     | 更新名称、描述、头像、公开资料开关（含 `profile_show_sub_teams`）、`parent_team_id`（owner-only，校验环 & 深度）、`require_2fa`、`require_verified_email`、`enable_groups`（owner-only）、`role_permissions`（owner-only） |
 | `DELETE`                  | `/api/teams/:id`                                     | 解散（owner，直接或继承）。级联到所有子团队；每一层的应用回退给该层自己的 owner                                                                                                                                            |
 | `GET`                     | `/api/teams/:id/sub-teams`                           | 列出直接子团队。`?page=`、`?limit=`、`?q=`，返回 `total`。上级团队的成员（直接或继承）可查看                                                                                                                               |
 | `POST`                    | `/api/teams/:id/sub-teams`                           | 在 `:id` 下创建子团队 — 等价于 `POST /api/teams` 带 `parent_team_id`                                                                                                                                                       |
 | `GET`                     | `/api/teams/:id/members`                             | 分页成员列表。`?page=`、`?limit=`（上限 100）、`?q=`（显示名/用户名）、`?group=`（slug，继承来的标签同样命中）                                                                                                             |
-| `POST`                    | `/api/teams/:id/members`                             | 按用户名/ID 添加成员（admin 及以上）                                                                                                                                                                                       |
-| `PATCH`                   | `/api/teams/:id/members/:userId`                     | 修改角色                                                                                                                                                                                                                   |
-| `DELETE`                  | `/api/teams/:id/members/:userId`                     | 移除成员；`:userId = self` 即退出团队                                                                                                                                                                                      |
+| `POST`                    | `/api/teams/:id/members`                             | 按 `username` 或 `user_id` 添加成员（admin 及以上）。站点管理员会覆盖团队加入门槛与受限账号范围限制；审计记录会在 `bypassed` 中列出跳过项                                                                                                                                                                                       |
+| `PATCH`                   | `/api/teams/:id/members/:userId`                     | 修改角色。站点管理员还可设为 `owner`，等同转移所有权并把在任所有者降为 co-owner                                                                                                                                                                                                                 |
+| `DELETE`                  | `/api/teams/:id/members/:userId`                     | 移除成员；`:userId = self` 即退出团队。站点管理员可移除所有者 —— 同一批次中会提升剩余成员里级别最高者；若所有者是唯一成员则拒绝                                                                                                                                                                                      |
 | `PATCH`                   | `/api/teams/:id/membership/show-on-profile`          | 单成员开关：是否出现在团队公开成员列表                                                                                                                                                                                     |
 | `GET`                     | `/api/teams/:id/groups`                              | 列出[身份组](teams.md#身份组)定义与解析后的管理员权限（任意成员可读）                                                                                                                                                      |
 | `POST`                    | `/api/teams/:id/groups`                              | 创建身份组。需要 `groups:manage` 能力；`admin_assignable` 仅 owner 可设                                                                                                                                                    |
 | `PATCH`                   | `/api/teams/:id/groups/:groupId`                     | 更新名称/描述/颜色。`slug` 不可变；`admin_assignable` 仅 owner 可设                                                                                                                                                        |
 | `DELETE`                  | `/api/teams/:id/groups/:groupId`                     | 删除身份组 —— 级联解除所有分配                                                                                                                                                                                             |
 | `PUT`                     | `/api/teams/:id/members/:userId/groups`              | 覆盖某成员的身份组集合（`{ group_ids: [...] }`）。仅对发生变化的身份组做权限校验                                                                                                                                           |
-| `POST`                    | `/api/teams/:id/transfer-ownership`                  | 把所有权转给另一名成员                                                                                                                                                                                                     |
+| `POST`                    | `/api/teams/:id/transfer-ownership`                  | 把所有权转给另一名成员。站点管理员可从团队外部调用，目标甚至可以尚未加入                                                                                                                                                                                                     |
 | `GET`                     | `/api/teams/:id/invites`                             | 列出有效邀请 token。`?page=`、`?limit=`、`?q=` 邮箱搜索，返回 `total`                                                                                                                                                      |
 | `POST`                    | `/api/teams/:id/invites`                             | 生成邀请 token（可选邮箱锁定 + 最大次数 + 过期）                                                                                                                                                                           |
 | `DELETE`                  | `/api/teams/:id/invites/:token`                      | 撤销邀请                                                                                                                                                                                                                   |
@@ -518,11 +518,103 @@ OAuth scope 版本：
 | `POST /api/admin/test-email`                                 | 发送测试发件邮件                                                                  |
 | `POST /api/admin/test-email-receiving`                       | 生成验证邮箱接收测试码                                                            |
 
+### 单账号管理
+
+即 `/api/user/me/*` 那一套，按用户 ID 寻址。全部仅限管理员、仅接受会话认证，并**同时**审计进平台日志和目标用户自己的 user 作用域日志（带 `site_admin: true` 标记）。详见 [管理员 → 账号详情页](admin.md#账号详情页)。
+
+| Method           | Path                                               | 说明                                                                    |
+| ---------------- | -------------------------------------------------- | ----------------------------------------------------------------------- |
+| `PATCH`          | `/api/admin/users/:id`                             | 现在还接受 `username`、`email`、`display_name`、`avatar_url`。修改 `email` 会清除其已验证状态，除非同一请求中带上 `email_verified`。用户名/邮箱被占用时返回 `409` |
+| `POST`           | `/api/admin/users/:id/password`                    | `{ password, revoke_sessions? }`。`password: null` 表示清除 —— 若没有可用的第三方登录则拒绝 |
+| `GET`            | `/api/admin/users/:id/security`                    | 认证器、Passkey、恢复码数量、是否设置了密码                             |
+| `DELETE`         | `/api/admin/users/:id/2fa`                         | 移除全部因素与恢复码 —— 账号恢复按钮                                    |
+| `DELETE`         | `/api/admin/users/:id/totp/:totpId`                | 移除单个认证器                                                          |
+| `DELETE`         | `/api/admin/users/:id/passkeys/:passkeyId`         | 移除单个 Passkey                                                        |
+| `GET` / `DELETE` | `/api/admin/users/:id/tokens[/:tokenId]`           | 个人访问令牌。令牌值永不返回                                            |
+| `GET` / `DELETE` | `/api/admin/users/:id/connections[/:connId]`       | 已绑定的第三方。解绑最后一种登录方式会被拒绝                            |
+| `GET` / `DELETE` | `/api/admin/users/:id/gpg-keys[/:keyId]`           | GPG 密钥                                                                |
+| `GET`            | `/api/admin/users/:id/emails`                      | 主邮箱与备用邮箱                                                        |
+| `POST`           | `/api/admin/users/:id/emails/:emailId/verify`      | 标记为已验证。`:emailId` 用 `primary` 表示 users 行上的主地址           |
+| `POST`           | `/api/admin/users/:id/emails/:emailId/set-primary` | 提升备用地址为主邮箱，原主邮箱降级进备用列表                            |
+| `DELETE`         | `/api/admin/users/:id/emails/:emailId`             | 删除备用地址                                                            |
+| `GET` / `DELETE` | `/api/admin/users/:id/domains[/:domainId]`         | 该账号的个人域名                                                        |
+| `GET` / `DELETE` | `/api/admin/users/:id/authorizations[/:consentId]` | OAuth 授权。撤销时会一并删除据此签发的令牌与授权码                      |
+| `GET`            | `/api/admin/users/:id/teams`                       | 团队成员关系（只读 —— 请在团队页修改）                                  |
+| `GET`            | `/api/admin/users/:id/lockdown`                    | `LOCKDOWN_USERS` 是否保护该账号不被删除                                 |
+
+### 键值浏览器
+
+与数据库控制台使用相同的开关，通过 `KV_CONSOLE`（未设置时跟随 `D1_CONSOLE`）。详见 [管理员 → 键值浏览器](admin.md#键值浏览器)。
+
+| Method   | Path                              | 说明                                                                    |
+| -------- | --------------------------------- | ----------------------------------------------------------------------- |
+| `GET`    | `/api/admin/kv/status`            | 模式、是否可写、可用命名空间                                            |
+| `GET`    | `/api/admin/kv/:ns/keys`          | 列出键。`?prefix=`、`?cursor=`、`?limit=`（上限 1000）。返回 KV 的不透明 `cursor` |
+| `GET`    | `/api/admin/kv/:ns/keys/:key`     | 读取单个值（键需 URL 编码）。密钥材料返回 `protected: true` 与 `value: null` |
+| `PUT`    | `/api/admin/kv/:ns/keys/:key`     | 写入。`{ value, expiration_ttl? }`；TTL 下限 60 秒。密钥材料会被拒绝    |
+| `DELETE` | `/api/admin/kv/:ns/keys/:key`     | 删除。密钥材料允许删除 —— 那是轮换                                      |
+| `POST`   | `/api/admin/kv/:ns/purge?prefix=` | 删除某前缀下的全部键，每次调用一页。跳过密钥材料                        |
+
+`:ns` 取值为 `sessions` 或 `cache`。
+
+### 实例级操作
+
+| Method   | Path                                    | 说明                                                             |
+| -------- | --------------------------------------- | ---------------------------------------------------------------- |
+| `GET`    | `/api/admin/revoke/preview`             | 大规模撤销会销毁什么，但不执行                                   |
+| `POST`   | `/api/admin/revoke/sessions`            | 删除全部会话。`{ include_self? }` —— 默认保留调用者自己的会话    |
+| `POST`   | `/api/admin/revoke/app/:appId`          | 删除某应用的令牌、授权码与同意记录。`{ deactivate? }`            |
+| `POST`   | `/api/admin/revoke/user/:userId/grants` | 对某账号在全部应用上执行同样操作                                 |
+| `GET`    | `/api/admin/domains`                    | 全部域名。`?page=`、`?limit=`、`?q=`、`?verified=0\|1`         |
+| `POST`   | `/api/admin/domains/:id/verify`         | `{ verified }` —— 属于覆盖，记录为 `admin_override` 而非校验     |
+| `DELETE` | `/api/admin/domains/:id`                | 删除域名                                                         |
+| `POST`   | `/api/admin/apps/:id/transfer`          | `{ owner_id }` 或 `{ team_id }`。client ID 与密钥保持不变        |
+| `POST`   | `/api/admin/users/:id/convert`          | 解除邀请注册限制。`{ require_verified_email? }`                  |
+| `GET`    | `/api/admin/scope-grants/site`          | 提升权限的站点级 OAuth 授权                                      |
+| `GET`    | `/api/admin/scope-grants/team`          | 团队级授权。`?team_id=` 可筛选                                   |
+| `DELETE` | `/api/admin/scope-grants/:kind/:id`     | 撤销单个授权（`:kind` 为 `site` 或 `team`）。已签发的令牌不受影响 —— 需要的话请另行撤销该应用 |
+| `GET`    | `/api/admin/users/:id/sessions`         | 活跃会话及其 IP / 地理位置历史                                   |
+| `DELETE` | `/api/admin/users/:id/sessions/:sessionId` | 结束单个会话（`DELETE …/sessions` 仍然结束全部）              |
+| `GET`    | `/api/admin/maintenance/jobs`           | 可执行的定时任务，以及它们平时运行的 cron 表达式                 |
+| `POST`   | `/api/admin/maintenance/jobs/:key/run`  | 立即执行。会 await —— 返回 `processed`（任务无计数时为 `null`）与 `duration_ms` |
+| `POST`   | `/api/admin/users/bulk`                 | `{ user_ids, action }`，action 为 `activate` \| `deactivate` \| `delete`。最多 50 个 ID；调用者本人及 `LOCKDOWN_USERS` 中的账号会被跳过并列入 `skipped` |
+| `GET`    | `/api/admin/team-invites`               | 全部未失效的团队邀请。`?page=`、`?limit=`、`?q=` 团队/邮箱、`?registration=1` |
+| `DELETE` | `/api/admin/team-invites/:token`        | 撤销单个邀请链接                                                 |
+| `GET`    | `/api/admin/users/:id/notifications`    | 规则集名称、是否生效与规则数量 —— 不含具体内容                   |
+| `DELETE` | `/api/admin/users/:id/notification-rulesets` | 将路由重置为按事件的默认设置                                |
+
+### 公告板
+
+读取使用可选认证 —— 公开公告正是为无法登录的人而存在。撰写仅限管理员。详见 [管理员 → 公告板](admin.md#公告板)。
+
+| Method   | Path                        | 说明                                                             |
+| -------- | --------------------------- | ---------------------------------------------------------------- |
+| `GET`    | `/api/notices`              | 当前查看者可见的公告：已发布、在展示窗口内、受众匹配、且未被关闭。未登录时返回 `public` 公告 |
+| `POST`   | `/api/notices/:id/dismiss`  | 为调用者关闭该公告。未登录返回 401，公告不可关闭时返回 403       |
+| `GET`    | `/api/admin/notices`        | 全部公告（含草稿），带关闭次数统计                               |
+| `POST`   | `/api/admin/notices`        | 创建。`{ title, body, level?, audience?, team_id?, is_published?, starts_at?, ends_at?, is_dismissible?, pinned? }` —— 未设 `is_published` 时为草稿 |
+| `PATCH`  | `/api/admin/notices/:id`    | 更新。基于合并后的记录校验，因此只改一端时间也会与另一端比对。`{ reset_dismissals: true }` 会让它对所有关闭过的人重新出现 |
+| `DELETE` | `/api/admin/notices/:id`    | 删除，并级联删除关闭记录。若只是想撤下，请改用取消发布           |
+
+### 数据库
+
+直接访问 D1。仅限管理员、仅接受会话认证，且每次调用都会被审计。详见 [管理员 → 数据库](admin.md#数据库)。
+
+| Method   | Path                               | 说明                                                                     |
+| -------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| `GET`    | `/api/admin/db/tables`             | 全部表，含行数、列与 `CREATE TABLE` 语句                                 |
+| `GET`    | `/api/admin/db/tables/:table/rows` | 分页读取行。`?page=`、`?limit=`（上限 500）、`?order_by=`、`?dir=`、`?where=` 原始 SQL 片段 |
+| `POST`   | `/api/admin/db/tables/:table/rows` | 插入。请求体 `{ values }` —— 未知列会被忽略                              |
+| `PATCH`  | `/api/admin/db/tables/:table/rows` | 更新单行。请求体 `{ key, values }`，按主键或 `rowid` 定位                |
+| `DELETE` | `/api/admin/db/tables/:table/rows` | 删除单行。请求体 `{ key }`                                               |
+| `POST`   | `/api/admin/db/query`              | 执行 SQL。请求体 `{ sql, params?, allow_write? }`。非纯读取语句在没有 `allow_write` 时会被拒绝；多条语句在同一事务中执行 |
+
 ### 审计 / 请求日志 / 登录错误
 
 | Method   | Path                                  | 说明               |
 | -------- | ------------------------------------- | ------------------ |
 | `GET`    | `/api/admin/audit-log?page=…`         | 审计事件           |
+| `GET`    | `/api/audit/:scope/export`            | 导出调用者有权读取的任意作用域。`?format=csv\|json` 及表格的筛选条件。上限 10000 条 |
 | `GET`    | `/api/admin/login-errors`             | 失败登录表         |
 | `GET`    | `/api/admin/request-logs`             | 可筛选的请求日志   |
 | `GET`    | `/api/admin/request-logs/export`      | 当前筛选导出 CSV   |

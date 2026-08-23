@@ -199,6 +199,14 @@ migrations exactly the way a local deploy does.
 `wrangler deploy` — note that it does **not** apply migrations, so apply them
 yourself (`bun db:migrate:prod`) if you use it.
 
+A deploy and a migration are two commands, and nothing makes them atomic.
+Features whose storage arrived in a migration are written to survive the gap:
+if their tables are not there yet, that feature reports itself unavailable and
+nothing else is affected. The [notice board](admin.md#notice-board) is the
+current example — its board reads as empty and **Admin → Notices** returns a
+503 naming the command to run, rather than the missing table taking down every
+page that renders the board.
+
 Either way the build emits a deploy-ready `dist/prism/wrangler.json` —
 production deploys must use that config so Vite's SSR pass is preserved (a
 plain `wrangler deploy` from the project root re-bundles the source and skips
