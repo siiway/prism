@@ -16,6 +16,7 @@ import { decryptSecret } from "./secretCrypto";
 import { loggedFetch, loggedSafeFetch } from "./logger";
 import { validateOutboundUrl } from "./safeFetch";
 import { geoJson } from "./geo";
+import type { WaitUntilCtx } from "../types";
 
 export type AuditScope = "user" | "team" | "platform";
 
@@ -68,7 +69,7 @@ const DELIVERY_TIMEOUT_MS = 10_000;
  */
 export async function recordAudit(
   env: Env,
-  ctx: ExecutionContext | { waitUntil: (p: Promise<unknown>) => void },
+  ctx: WaitUntilCtx,
   inputs: AuditInput | AuditInput[],
   opts: { awaitDelivery?: boolean } = {},
 ): Promise<void> {
@@ -136,7 +137,7 @@ export async function recordAudit(
  */
 export async function recordAccountDeletion(
   env: Env,
-  ctx: ExecutionContext | { waitUntil: (p: Promise<unknown>) => void },
+  ctx: WaitUntilCtx,
   user: { id: string; username: string },
   opts: {
     /** Who performed it: the user themselves, an admin, or the reaper. */

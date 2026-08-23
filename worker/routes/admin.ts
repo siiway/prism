@@ -59,6 +59,7 @@ import type {
   TeamRow,
   UserRow,
   Variables,
+  WaitUntilCtx,
 } from "../types";
 import { isUserLocked, isTeamLocked } from "../lib/lockdown";
 import { sanitizeRolePermissions } from "../lib/teamGroups";
@@ -2687,7 +2688,7 @@ async function logAudit(
   resourceId: string | null,
   metadata: unknown,
   ip: string,
-  ctx: ExecutionContext,
+  ctx: WaitUntilCtx,
   extra?: {
     actorName?: string | null;
     resourceName?: string | null;

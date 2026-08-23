@@ -97,7 +97,7 @@ async function loadTemplate(c: Context<AppEnv>): Promise<string | null> {
 type AppFetch = (
   req: Request,
   env: Env,
-  ctx: ExecutionContext,
+  ctx: Context<AppEnv>["executionCtx"],
 ) => Response | Promise<Response>;
 
 export async function ssrHandler(

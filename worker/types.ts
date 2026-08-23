@@ -511,6 +511,16 @@ export interface LoginErrorRow {
 
 // ─── Application types ────────────────────────────────────────────────────────
 
+/** Anything that can defer work past the response.
+ *
+ *  Deliberately structural rather than the runtime's `ExecutionContext`: the
+ *  two contexts in play are not interchangeable. @cloudflare/workers-types
+ *  declares a required `tracing` field that Hono's runtime-agnostic stand-in
+ *  (what `c.executionCtx` hands back) does not have, so a helper that names
+ *  the global type cannot be called from a route handler. Helpers only ever
+ *  fire-and-forget, so this is all they need to ask for. */
+export type WaitUntilCtx = { waitUntil: (p: Promise<unknown>) => void };
+
 export type SocialProvider = "github" | "google" | "microsoft" | "discord";
 
 export type {

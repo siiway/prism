@@ -37,6 +37,7 @@ import type {
   AppScopeAccessRuleRow,
   AppAccessRuleRow,
   Variables,
+  WaitUntilCtx,
 } from "../types";
 import { PLATFORM_SCOPES } from "../../shared/scopes";
 
@@ -1489,7 +1490,7 @@ app.delete("/:id/access-rules/:ruleId", async (c) => {
 function auditAppLifecycle(
   c: {
     env: Env;
-    executionCtx: ExecutionContext;
+    executionCtx: WaitUntilCtx;
     req: { header: (h: string) => string | undefined; raw: Request };
     get: (k: "user") => { id: string; username: string };
   },
