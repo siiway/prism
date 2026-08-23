@@ -371,19 +371,38 @@ What that unlocks, from outside the team:
   email) and the restricted-account scope rule are **overridden**; the audit
   entry records exactly which checks were waived under `bypassed`.
 - Change any member's role, including promoting a member to `owner` — which
-  demotes the sitting owner to co-owner in the same operation.
-- Remove any member, the owner included. The seat never stays empty: the most
-  senior remaining member (longest-serving on a tie) is promoted in the same
-  batch. Removing the owner of a one-member team is refused — delete the team
-  instead of emptying it.
+  demotes the sitting owner to co-owner in the same operation — and including
+  demoting the owner outright.
+- Remove any member, the owner included. Where there is someone to promote,
+  the most senior remaining member (longest-serving on a tie) takes the seat
+  in the same batch, so the common case never leaves a team ownerless by
+  accident.
 - Transfer ownership, including to someone who isn't a member yet.
 
-Two limits still apply to admins, because they protect an invariant rather
-than a permission:
+### Teams without an owner
+
+Demoting or removing an owner with nobody to promote leaves the team with no
+owner. That is a reachable state on purpose: the alternative is refusing, and
+telling an administrator to promote someone they may not want promoted, which
+is the team owner outranking the site.
+
+Nothing breaks. No schema constraint requires an owner row, an ownerless team
+is what every team looks like between creation and its first member, and
+`dissolveTeam` already falls back to the acting admin when reassigning apps.
+The admin team list shows the owner as `—`, and any admin can promote someone
+into the seat.
+
+Both operations say so in their response (`owner_vacated`), and the audit
+entry carries the same flag, so the team can see it happened rather than
+discover it.
+
+Two limits still apply to admins. Neither is the owner outranking them — both
+bind a team owner equally:
 
 - Ownership cannot be handed to an account registered through a team invite —
   it would let the restriction be reconfigured from inside.
-- `LOCKDOWN_TEAMS` still blocks deletion.
+- `LOCKDOWN_TEAMS` still blocks deletion. That list is set by whoever deploys
+  the instance, which is a level above any administrator.
 
 Every elevated action is written to the team's own audit log with
 `site_admin: true` in its metadata, so a team can tell an owner's change apart

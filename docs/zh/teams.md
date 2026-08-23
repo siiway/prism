@@ -398,7 +398,7 @@ POST   /api/teams                            创建（管理员可用 owner_user
 PATCH  /api/teams/:id                        更新设置与门槛
 GET    /api/teams/:id/members                列成员（分页，支持 ?q= 与 ?group=）
 POST   /api/teams/:id/members                按用户名/ID 添加
-PATCH  /api/teams/:id/members/:userId        改角色（站点管理员还可设为 owner，等同转移）
+PATCH  /api/teams/:id/members/:userId        改角色（站点管理员可设为 owner，也可直接降级所有者）
 DELETE /api/teams/:id/members/:userId        移除（self 即退出）
 GET    /api/teams/:id/groups                 列出身份组定义与有效权限
 POST   /api/teams/:id/groups                 创建身份组

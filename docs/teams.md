@@ -616,7 +616,7 @@ GET    /api/teams/:id/sub-teams              list immediate children
 POST   /api/teams/:id/sub-teams              create a sub-team under :id
 GET    /api/teams/:id/members                list members (direct only) — paginated, ?q= and ?group=
 POST   /api/teams/:id/members                add by username/id
-PATCH  /api/teams/:id/members/:userId        change role (site admins may also set role=owner, which transfers)
+PATCH  /api/teams/:id/members/:userId        change role (site admins may set role=owner, or demote the owner)
 DELETE /api/teams/:id/members/:userId        remove (or leave with self)
 GET    /api/teams/:id/groups                 list group definitions + capabilities
 POST   /api/teams/:id/groups                 create a group
