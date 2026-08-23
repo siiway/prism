@@ -2130,7 +2130,12 @@ export const api = {
       consents_revoked: number;
     }>("POST", `/admin/revoke/user/${userId}/grants`, {}, getToken()),
   adminListDomains: (
-    params: { page?: number; limit?: number; q?: string; verified?: "0" | "1" } = {},
+    params: {
+      page?: number;
+      limit?: number;
+      q?: string;
+      verified?: "0" | "1";
+    } = {},
   ) => {
     const search = new URLSearchParams();
     if (params.page) search.set("page", String(params.page));
@@ -2198,7 +2203,12 @@ export const api = {
     URL.revokeObjectURL(url);
   },
   adminTeamInvites: (
-    params: { page?: number; limit?: number; q?: string; registration?: boolean } = {},
+    params: {
+      page?: number;
+      limit?: number;
+      q?: string;
+      registration?: boolean;
+    } = {},
   ) => {
     const search = new URLSearchParams();
     if (params.page) search.set("page", String(params.page));
@@ -2211,7 +2221,12 @@ export const api = {
       total: number;
       page: number;
       limit: number;
-    }>("GET", `/admin/team-invites${qs ? `?${qs}` : ""}`, undefined, getToken());
+    }>(
+      "GET",
+      `/admin/team-invites${qs ? `?${qs}` : ""}`,
+      undefined,
+      getToken(),
+    );
   },
   adminRevokeTeamInvite: (token: string) =>
     request<{ message: string }>(
@@ -2267,7 +2282,12 @@ export const api = {
       limit: number;
     }>("GET", `/admin/notices?page=${page}`, undefined, getToken()),
   adminCreateNotice: (body: NoticeInput) =>
-    request<{ notice: AdminNotice }>("POST", "/admin/notices", body, getToken()),
+    request<{ notice: AdminNotice }>(
+      "POST",
+      "/admin/notices",
+      body,
+      getToken(),
+    ),
   adminUpdateNotice: (
     id: string,
     body: Partial<NoticeInput> & { reset_dismissals?: boolean },

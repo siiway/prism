@@ -126,9 +126,7 @@ export function AdminDomains() {
 
   return (
     <div className={styles.root}>
-      {message && (
-        <MessageBar intent={message.type}>{message.text}</MessageBar>
-      )}
+      {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
 
       <div className={styles.toolbar}>
         <Input

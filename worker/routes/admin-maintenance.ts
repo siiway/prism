@@ -23,7 +23,10 @@ import { getIp } from "../lib/clientIp";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { runReverification } from "../cron/reverify";
 import { sweepExpiredSessions } from "../cron/sessions";
-import { reapPendingRegistrations, reapDissolvedTeams } from "../cron/restricted";
+import {
+  reapPendingRegistrations,
+  reapDissolvedTeams,
+} from "../cron/restricted";
 import { sweepExpiredPowUsed } from "../lib/pow";
 import { purgeAppEventQueue } from "../lib/app-events";
 import { sweepOrphanedImageProxyMappings } from "../lib/proxyImage";
@@ -155,7 +158,8 @@ app.post("/jobs/:key/run", async (c) => {
     metadata: { job: job.key, processed, duration_ms: durationMs, error },
   });
 
-  if (error) return c.json({ error, job: job.key, duration_ms: durationMs }, 500);
+  if (error)
+    return c.json({ error, job: job.key, duration_ms: durationMs }, 500);
   return c.json({
     message: "Job finished",
     job: job.key,

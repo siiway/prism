@@ -203,7 +203,10 @@ function RowEditor({
             ([name, value]) =>
               isInsert || value !== toInputValue(row?.[name] ?? null),
           )
-          .map(([name, value]) => [name, parseInput(value, columnByName.get(name))]),
+          .map(([name, value]) => [
+            name,
+            parseInput(value, columnByName.get(name)),
+          ]),
       );
       if (!Object.keys(values).length)
         throw new ApiError(400, t("admin.dbNoChanges"));
@@ -240,9 +243,7 @@ function RowEditor({
               >
                 <Input
                   value={draft[col.name] ?? ""}
-                  placeholder={
-                    draft[col.name] === "" ? "NULL" : undefined
-                  }
+                  placeholder={draft[col.name] === "" ? "NULL" : undefined}
                   onChange={(_, d) =>
                     setDraft((prev) => ({ ...prev, [col.name]: d.value }))
                   }
@@ -290,9 +291,9 @@ function TableBrowser({
   const [page, setPage] = useState(1);
   const [whereDraft, setWhereDraft] = useState("");
   const [where, setWhere] = useState("");
-  const [editing, setEditing] = useState<
-    { row: Record<string, unknown> | null } | null
-  >(null);
+  const [editing, setEditing] = useState<{
+    row: Record<string, unknown> | null;
+  } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Record<
     string,
     unknown
@@ -455,9 +456,7 @@ function TableBrowser({
 
       {data && (
         <div className={styles.resultMeta}>
-          <Text size={200}>
-            {t("admin.dbRowCount", { count: data.total })}
-          </Text>
+          <Text size={200}>{t("admin.dbRowCount", { count: data.total })}</Text>
           {isFetching && <Spinner size="tiny" />}
           <Pagination
             page={page}
@@ -733,17 +732,13 @@ export function AdminDatabase() {
           })}
         </MessageBar>
       ) : null}
-      {message && (
-        <MessageBar intent={message.type}>{message.text}</MessageBar>
-      )}
+      {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
 
       <TabList
         selectedValue={activeTab}
         onTabSelect={(_, d) => setTab(d.value as "browse" | "sql" | "kv")}
       >
-        {dbAvailable && (
-          <Tab value="browse">{t("admin.dbBrowseTab")}</Tab>
-        )}
+        {dbAvailable && <Tab value="browse">{t("admin.dbBrowseTab")}</Tab>}
         {dbAvailable && <Tab value="sql">{t("admin.dbSqlTab")}</Tab>}
         {kvAvailable && <Tab value="kv">{t("admin.kvTab")}</Tab>}
       </TabList>

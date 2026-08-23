@@ -122,22 +122,22 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 
 公告在发布前是草稿，因此半成品永远不会出现在屏幕上。编辑器使用与公告板相同的净化流程预览渲染结果 —— 正文是 Markdown，即便由管理员撰写也按不可信内容处理，因为「存储型 XSS 会触达每一个登录用户」的地方，不该同时是「没有任何检查」的地方。
 
-| 字段         | 作用                                                             |
-| ------------ | ---------------------------------------------------------------- |
-| 级别         | `info`、`warning` 或 `critical` —— 决定配色                     |
-| 受众         | 见下                                                             |
+| 字段          | 作用                                                                                   |
+| ------------- | -------------------------------------------------------------------------------------- |
+| 级别          | `info`、`warning` 或 `critical` —— 决定配色                                            |
+| 受众          | 见下                                                                                   |
 | 开始/结束时间 | 展示窗口。只是存储，而非由任务调度：读取查询本身就按时间过滤，因此公告会自行出现与消失 |
-| 可关闭       | 对必须留在屏幕上的内容（如进行中的事故）关闭此项                 |
-| 置顶         | 无论新旧都排在其他公告之上                                       |
+| 可关闭        | 对必须留在屏幕上的内容（如进行中的事故）关闭此项                                       |
+| 置顶          | 无论新旧都排在其他公告之上                                                             |
 
 ### 受众
 
-| 受众      | 谁能看到                                             |
-| --------- | ---------------------------------------------------- |
-| `public`  | 所有人，**包括未登录访客**，显示在登录与注册页面     |
-| `users`   | 所有已登录账号                                       |
-| `admins`  | 仅站点管理员                                         |
-| `team`    | 某个团队的直接成员                                   |
+| 受众     | 谁能看到                                         |
+| -------- | ------------------------------------------------ |
+| `public` | 所有人，**包括未登录访客**，显示在登录与注册页面 |
+| `users`  | 所有已登录账号                                   |
+| `admins` | 仅站点管理员                                     |
+| `team`   | 某个团队的直接成员                               |
 
 `public` 是最值得用的一个：「02:00 UTC 维护」对无法登录的人最有价值。
 
@@ -276,13 +276,13 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 **概览**
 
-| 操作                         | 说明                                                                       |
-| ---------------------------- | -------------------------------------------------------------------------- |
-| 修改用户名 / 邮箱 / 显示名称 | 自助 API 没有任何路径能改这些。修改邮箱会清除其已验证状态，除非在同一请求中一并设置 |
+| 操作                         | 说明                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 修改用户名 / 邮箱 / 显示名称 | 自助 API 没有任何路径能改这些。修改邮箱会清除其已验证状态，除非在同一请求中一并设置                                      |
 | 设置或清除密码               | 系统不会通知用户，用户也不会知道该密码 —— 请通过带外渠道交付并让其自行修改。若账号没有可用的第三方登录，清除密码会被拒绝 |
-| 重置 2FA                     | 移除全部认证器、Passkey**以及**恢复码。此后仅凭密码即可登录                |
-| 移除单个因素                 | 适用于只丢了一个认证器的情况                                               |
-| 验证 / 提升 / 删除邮箱       | 包括主邮箱 —— 自助流程只能通过提升一个已验证的备用地址来更换主邮箱        |
+| 重置 2FA                     | 移除全部认证器、Passkey**以及**恢复码。此后仅凭密码即可登录                                                              |
+| 移除单个因素                 | 适用于只丢了一个认证器的情况                                                                                             |
+| 验证 / 提升 / 删除邮箱       | 包括主邮箱 —— 自助流程只能通过提升一个已验证的备用地址来更换主邮箱                                                       |
 
 **访问凭据** —— 个人访问令牌、已绑定的第三方、GPG 密钥和已授权的应用，每项都可撤销。撤销授权时会一并删除据此签发的令牌和授权码；只撤销记录却留下访问权，比什么都不做更糟。若账号没有密码且只剩最后一个第三方绑定，解绑会被拒绝。
 
@@ -396,11 +396,11 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 **Admin → Domains** 列出实例上的全部域名，个人与团队的都在内，支持搜索并按验证状态筛选。此前域名只能通过其所有者账号或团队访问，而这对运营者真正关心的问题来说是错误的索引：谁声明了 `example.com`？
 
-| 操作     | 效果                              |
-| -------- | --------------------------------- |
-| 强制验证 | **不检查 DNS** 直接标记为已验证   |
-| 撤销验证 | 清除已验证标记                    |
-| 删除     | 从其所有者处移除该域名            |
+| 操作     | 效果                            |
+| -------- | ------------------------------- |
+| 强制验证 | **不检查 DNS** 直接标记为已验证 |
+| 撤销验证 | 清除已验证标记                  |
+| 删除     | 从其所有者处移除该域名          |
 
 强制验证是覆盖，不是校验。它面向 worker 无法访问其 DNS 的域名 —— split-horizon、内部 TLD、注册商故障 —— 在这些场景下的替代方案是该域名永远无法使用。审计记录会写入 `method: admin_override`，正是为了让「管理员断言的已验证」与「DNS 记录证实的已验证」始终可区分。
 
@@ -454,11 +454,11 @@ OAuth 令牌不受影响，那些按应用或按账号撤销，见下文。
 
 `wrangler.jsonc` 中的 `D1_CONSOLE` 变量决定这个界面存在多少。
 
-| 取值                                                             | 效果                                                                 |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| **未设置**（以及 `off` / `false` / `0` / `no`，或任何无法识别的值） | **默认值。** 界面消失 —— 端点返回 404，标签页不再显示                |
-| `read-only` / `readonly` / `read`                                | 仅浏览与 `SELECT`。一切写入都会被拒绝，包括显式带 `allow_write` 的请求 —— 调用方无法翻越运营者的设置 |
-| `full` / `on` / `true` / `1`                                     | 完全访问，但下述审计日志除外                                         |
+| 取值                                                                | 效果                                                                                                 |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **未设置**（以及 `off` / `false` / `0` / `no`，或任何无法识别的值） | **默认值。** 界面消失 —— 端点返回 404，标签页不再显示                                                |
+| `read-only` / `readonly` / `read`                                   | 仅浏览与 `SELECT`。一切写入都会被拒绝，包括显式带 `allow_write` 的请求 —— 调用方无法翻越运营者的设置 |
+| `full` / `on` / `true` / `1`                                        | 完全访问，但下述审计日志除外                                                                         |
 
 默认关闭，因为这是产品中最宽的一扇门，而「因为没人说不」就打开的门，对一个能清空整张表的功能来说是错误的默认。无法识别的值同样视为关闭，因此拼写错误会安全地失败。该设置每次请求都会读取，因此改动只需一次 `wrangler deploy`。
 
@@ -496,14 +496,14 @@ OAuth 令牌不受影响，那些按应用或按账号撤销，见下文。
 
 ### 端点
 
-| 端点                                      | 用途                                       |
-| ----------------------------------------- | ------------------------------------------ |
-| `GET /api/admin/db/tables`                | 表清单，含行数、列与 DDL                   |
+| 端点                                      | 用途                                                      |
+| ----------------------------------------- | --------------------------------------------------------- |
+| `GET /api/admin/db/tables`                | 表清单，含行数、列与 DDL                                  |
 | `GET /api/admin/db/tables/:table/rows`    | 分页读取行（`page`、`limit`、`order_by`、`dir`、`where`） |
-| `POST /api/admin/db/tables/:table/rows`   | 插入一行                                   |
-| `PATCH /api/admin/db/tables/:table/rows`  | 按主键更新一行                             |
-| `DELETE /api/admin/db/tables/:table/rows` | 按主键删除一行                             |
-| `POST /api/admin/db/query`                | 执行 SQL（修改数据需 `allow_write`）       |
+| `POST /api/admin/db/tables/:table/rows`   | 插入一行                                                  |
+| `PATCH /api/admin/db/tables/:table/rows`  | 按主键更新一行                                            |
+| `DELETE /api/admin/db/tables/:table/rows` | 按主键删除一行                                            |
+| `POST /api/admin/db/query`                | 执行 SQL（修改数据需 `allow_write`）                      |
 
 以上全部位于 `requireAdmin` 之后，且仅接受会话认证。
 
@@ -523,73 +523,73 @@ KV 没有结构定义，因此导航是命名空间选择器加前缀输入框�
 
 **审核日志**标签页展示平台作用域日志（Transparent Platform Control）——即所有管理员操作。用户与团队各自拥有独立的作用域日志；完整模型、筛选与作用域化 Webhook 详见 [审核日志](audit-logs.md)。它是一个分页的追加型重要事件列表：
 
-| 事件                                        | 触发条件                                |
-| ------------------------------------------- | --------------------------------------- |
-| `user.register`                             | 成功注册                                |
-| `user.login`                                | 成功登录                                |
-| `user.login.failed`                         | 登录失败                                |
-| `user.logout`                               | 退出登录                                |
-| `user.delete`                               | 账号删除                                |
-| `user.password_changed`                     | 通过 资料 → 安全 改密                   |
-| `totp.enabled`                              | TOTP 认证器启用                         |
-| `totp.disabled`                             | TOTP 认证器移除                         |
-| `passkey.registered`                        | 新 Passkey 已添加                       |
-| `passkey.deleted`                           | Passkey 已删除                          |
-| `gpg.key_added`                             | 注册了 GPG 公钥                         |
-| `gpg.key_deleted`                           | 删除了 GPG 公钥                         |
-| `gpg.login`                                 | 通过 GPG 签名挑战登录                   |
-| `oauth.authorize`                           | 用户批准了 OAuth 应用                   |
-| `oauth.token`                               | 令牌已颁发                              |
-| `oauth.consent_revoked`                     | 用户撤销了应用授权                      |
-| `oauth.2fa.verify`                          | 步骤提升 2FA 完成                       |
-| `oauth.2fa.sudo_revoked`                    | 用户主动结束了 sudo 宽限期              |
-| `team.created`                              | 团队创建                                |
-| `team.member_added`                         | 成员加入（邀请或管理员添加）            |
-| `team.member_removed`                       | 成员退出或被移除                        |
-| `team.transferred`                          | 团队所有权转移                          |
-| `domain.added` / `verified` / `deleted`     | 域名生命周期                            |
-| `connection.added` / `removed`              | 社交账号绑定生命周期                    |
-| `oauth_source.create` / `update` / `delete` | OAuth 源生命周期                        |
-| `invite.create` / `revoke`                  | 站点邀请生命周期                        |
-| `admin.config.update`                       | 站点配置已更改                          |
-| `admin.user.update`                         | 管理员修改了用户                        |
-| `admin.user.delete`                         | 管理员删除了用户                        |
-| `admin.app.update`                          | 管理员验证或停用了应用                  |
-| `admin.team.delete`                         | 管理员解散了团队                        |
-| `admin.secrets.migrate`                     | 触发了 site_config 或 D1 secrets 的迁移 |
-| `admin.reset.*`                             | 站点重置请求 / 取消 / 确认              |
-| `admin.db.query.read`                       | SQL 控制台执行了只读语句                |
-| `admin.db.query.write`                      | SQL 控制台执行了写入语句                |
-| `admin.db.query.error`                      | 控制台语句被拒绝或执行失败              |
-| `admin.db.row.insert` / `update` / `delete` | 通过表浏览器编辑了行                    |
-| `admin.user.password_set`                   | 管理员设置或清除了账号密码              |
-| `admin.user.2fa_reset`                      | 管理员移除了全部第二因素                |
-| `admin.user.totp_removed` / `passkey_removed` | 管理员移除了单个因素                  |
-| `admin.user.token_revoked`                  | 管理员撤销了个人访问令牌                |
-| `admin.user.connection_removed`             | 管理员解绑了社交账号                    |
-| `admin.user.gpg_key_removed`                | 管理员移除了 GPG 密钥                   |
-| `admin.user.email_verified`                 | 管理员将地址标记为已验证                |
-| `admin.user.primary_email_changed`          | 管理员提升了备用地址为主邮箱            |
-| `admin.user.email_removed`                  | 管理员删除了备用地址                    |
-| `admin.user.domain_removed`                 | 管理员移除了个人域名                    |
-| `admin.user.authorization_revoked`          | 管理员撤销了 OAuth 授权                 |
-| `admin.user.converted`                      | 管理员解除了邀请注册限制                |
-| `admin.revoke.all_sessions`                 | 实例上的全部会话被删除                  |
-| `admin.revoke.app`                          | 某应用的令牌与同意记录被撤销            |
-| `admin.revoke.user_grants`                  | 某账号的 OAuth 授权被撤销               |
-| `admin.app.transfer`                        | 应用更换了所有者                        |
-| `admin.domain.force_verify` / `unverify`    | 管理员断言或撤销了域名验证              |
-| `admin.domain.delete`                       | 管理员删除了域名                        |
-| `admin.kv.read` / `write` / `delete`        | 读取或修改了某个键值条目                |
-| `admin.kv.purge`                            | 删除了某前缀下的全部键                  |
-| `admin.scope_grant.revoke`                  | 撤销了站点或团队作用域授权              |
-| `admin.session.revoke`                      | 管理员结束了单个会话                    |
-| `admin.maintenance.run` / `error`           | 按需执行了定时任务                      |
-| `admin.users.bulk_delete` / `_deactivate` / `_activate` | 对多个账号执行了批量操作     |
-| `admin.team_invite.revoke`                  | 管理员撤销了团队邀请链接                |
-| `admin.user.notification_rulesets_cleared`  | 管理员重置了账号的通知规则              |
-| `admin.notice.create` / `update` / `delete` | 撰写或删除了公告                        |
-| `admin.notice.publish` / `unpublish`        | 公告上线，或被撤下                      |
+| 事件                                                    | 触发条件                                |
+| ------------------------------------------------------- | --------------------------------------- |
+| `user.register`                                         | 成功注册                                |
+| `user.login`                                            | 成功登录                                |
+| `user.login.failed`                                     | 登录失败                                |
+| `user.logout`                                           | 退出登录                                |
+| `user.delete`                                           | 账号删除                                |
+| `user.password_changed`                                 | 通过 资料 → 安全 改密                   |
+| `totp.enabled`                                          | TOTP 认证器启用                         |
+| `totp.disabled`                                         | TOTP 认证器移除                         |
+| `passkey.registered`                                    | 新 Passkey 已添加                       |
+| `passkey.deleted`                                       | Passkey 已删除                          |
+| `gpg.key_added`                                         | 注册了 GPG 公钥                         |
+| `gpg.key_deleted`                                       | 删除了 GPG 公钥                         |
+| `gpg.login`                                             | 通过 GPG 签名挑战登录                   |
+| `oauth.authorize`                                       | 用户批准了 OAuth 应用                   |
+| `oauth.token`                                           | 令牌已颁发                              |
+| `oauth.consent_revoked`                                 | 用户撤销了应用授权                      |
+| `oauth.2fa.verify`                                      | 步骤提升 2FA 完成                       |
+| `oauth.2fa.sudo_revoked`                                | 用户主动结束了 sudo 宽限期              |
+| `team.created`                                          | 团队创建                                |
+| `team.member_added`                                     | 成员加入（邀请或管理员添加）            |
+| `team.member_removed`                                   | 成员退出或被移除                        |
+| `team.transferred`                                      | 团队所有权转移                          |
+| `domain.added` / `verified` / `deleted`                 | 域名生命周期                            |
+| `connection.added` / `removed`                          | 社交账号绑定生命周期                    |
+| `oauth_source.create` / `update` / `delete`             | OAuth 源生命周期                        |
+| `invite.create` / `revoke`                              | 站点邀请生命周期                        |
+| `admin.config.update`                                   | 站点配置已更改                          |
+| `admin.user.update`                                     | 管理员修改了用户                        |
+| `admin.user.delete`                                     | 管理员删除了用户                        |
+| `admin.app.update`                                      | 管理员验证或停用了应用                  |
+| `admin.team.delete`                                     | 管理员解散了团队                        |
+| `admin.secrets.migrate`                                 | 触发了 site_config 或 D1 secrets 的迁移 |
+| `admin.reset.*`                                         | 站点重置请求 / 取消 / 确认              |
+| `admin.db.query.read`                                   | SQL 控制台执行了只读语句                |
+| `admin.db.query.write`                                  | SQL 控制台执行了写入语句                |
+| `admin.db.query.error`                                  | 控制台语句被拒绝或执行失败              |
+| `admin.db.row.insert` / `update` / `delete`             | 通过表浏览器编辑了行                    |
+| `admin.user.password_set`                               | 管理员设置或清除了账号密码              |
+| `admin.user.2fa_reset`                                  | 管理员移除了全部第二因素                |
+| `admin.user.totp_removed` / `passkey_removed`           | 管理员移除了单个因素                    |
+| `admin.user.token_revoked`                              | 管理员撤销了个人访问令牌                |
+| `admin.user.connection_removed`                         | 管理员解绑了社交账号                    |
+| `admin.user.gpg_key_removed`                            | 管理员移除了 GPG 密钥                   |
+| `admin.user.email_verified`                             | 管理员将地址标记为已验证                |
+| `admin.user.primary_email_changed`                      | 管理员提升了备用地址为主邮箱            |
+| `admin.user.email_removed`                              | 管理员删除了备用地址                    |
+| `admin.user.domain_removed`                             | 管理员移除了个人域名                    |
+| `admin.user.authorization_revoked`                      | 管理员撤销了 OAuth 授权                 |
+| `admin.user.converted`                                  | 管理员解除了邀请注册限制                |
+| `admin.revoke.all_sessions`                             | 实例上的全部会话被删除                  |
+| `admin.revoke.app`                                      | 某应用的令牌与同意记录被撤销            |
+| `admin.revoke.user_grants`                              | 某账号的 OAuth 授权被撤销               |
+| `admin.app.transfer`                                    | 应用更换了所有者                        |
+| `admin.domain.force_verify` / `unverify`                | 管理员断言或撤销了域名验证              |
+| `admin.domain.delete`                                   | 管理员删除了域名                        |
+| `admin.kv.read` / `write` / `delete`                    | 读取或修改了某个键值条目                |
+| `admin.kv.purge`                                        | 删除了某前缀下的全部键                  |
+| `admin.scope_grant.revoke`                              | 撤销了站点或团队作用域授权              |
+| `admin.session.revoke`                                  | 管理员结束了单个会话                    |
+| `admin.maintenance.run` / `error`                       | 按需执行了定时任务                      |
+| `admin.users.bulk_delete` / `_deactivate` / `_activate` | 对多个账号执行了批量操作                |
+| `admin.team_invite.revoke`                              | 管理员撤销了团队邀请链接                |
+| `admin.user.notification_rulesets_cleared`              | 管理员重置了账号的通知规则              |
+| `admin.notice.create` / `update` / `delete`             | 撰写或删除了公告                        |
+| `admin.notice.publish` / `unpublish`                    | 公告上线，或被撤下                      |
 
 每条记录包含操作的 `user_id`（系统操作为 `null`）、`action`、可选的 `resource_type` / `resource_id`、`metadata` JSON 以及 `ip_address`。
 

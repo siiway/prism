@@ -148,10 +148,7 @@ export function AdminSettings() {
     mutationFn: () => api.adminRevokeAllSessions(revokeIncludeSelf),
     onSuccess: async (res) => {
       await qc.invalidateQueries({ queryKey: ["admin-revoke-preview"] });
-      showMsg(
-        "success",
-        t("admin.revokeSessionsDone", { count: res.deleted }),
-      );
+      showMsg("success", t("admin.revokeSessionsDone", { count: res.deleted }));
       // Revoking your own session leaves the page holding a token the server
       // has already forgotten; clear it rather than let the next request 401.
       if (!res.your_session_kept) {

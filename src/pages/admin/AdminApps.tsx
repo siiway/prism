@@ -512,7 +512,9 @@ export function AdminApps() {
                     }
                     selectedOptions={[transferKind]}
                     onOptionSelect={(_, d) =>
-                      setTransferKind((d.optionValue as "user" | "team") ?? "user")
+                      setTransferKind(
+                        (d.optionValue as "user" | "team") ?? "user",
+                      )
                     }
                   >
                     <Option value="user" text={t("admin.transferToUser")}>

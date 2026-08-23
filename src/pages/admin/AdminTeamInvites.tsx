@@ -47,7 +47,12 @@ const PAGE_SIZE = 20;
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 },
-  toolbar: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" },
+  toolbar: {
+    display: "flex",
+    gap: "8px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
   search: { flexGrow: 1, minWidth: "200px" },
   tableScroll: { overflowX: "auto" },
   token: {
@@ -103,9 +108,7 @@ export function AdminTeamInvites() {
 
   return (
     <div className={styles.root}>
-      {message && (
-        <MessageBar intent={message.type}>{message.text}</MessageBar>
-      )}
+      {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
 
       <div className={styles.toolbar}>
         <Input
@@ -184,7 +187,9 @@ export function AdminTeamInvites() {
                   </TableCell>
                   <TableCell>
                     <Text size={200}>
-                      {row.max_uses ? `${row.uses} / ${row.max_uses}` : row.uses}
+                      {row.max_uses
+                        ? `${row.uses} / ${row.max_uses}`
+                        : row.uses}
                     </Text>
                   </TableCell>
                   <TableCell>

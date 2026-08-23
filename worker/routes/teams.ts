@@ -345,8 +345,7 @@ export async function getTeamAuthority(
   actor: TeamActor,
 ): Promise<TeamAuthority | null> {
   const eff = await getEffectiveMember(db, teamId, actor.id);
-  if (actor.role !== "admin")
-    return eff ? { ...eff, elevated: false } : null;
+  if (actor.role !== "admin") return eff ? { ...eff, elevated: false } : null;
   // Already the owner by membership — nothing to elevate, and the action is
   // the member's own rather than the site's.
   if (eff?.role === "owner") return { ...eff, elevated: false };
@@ -1782,10 +1781,7 @@ app.patch("/:id/members/:userId", async (c) => {
     ? ["owner", "co-owner", "admin", "member"]
     : ["co-owner", "admin", "member"];
   if (!allowedRoles.includes(body.role))
-    return c.json(
-      { error: `Role must be ${allowedRoles.join(", ")}` },
-      400,
-    );
+    return c.json({ error: `Role must be ${allowedRoles.join(", ")}` }, 400);
 
   // Target must be a *direct* member of this team — inherited memberships
   // are managed at the ancestor team they originate from.
@@ -1977,7 +1973,11 @@ app.delete("/:id/members/:userId", async (c) => {
     auditTeam(c, id, "team.ownership.transfer", {
       resourceType: "user",
       resourceId: successorId,
-      metadata: { from: targetUserId, to: successorId, reason: "owner_removed" },
+      metadata: {
+        from: targetUserId,
+        to: successorId,
+        reason: "owner_removed",
+      },
     });
   } else {
     await c.env.DB.prepare(

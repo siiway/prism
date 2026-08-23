@@ -115,7 +115,11 @@ export function NoticeBoard() {
   if (!notices.length) return null;
 
   return (
-    <div className={styles.board} role="region" aria-label={t("notices.region")}>
+    <div
+      className={styles.board}
+      role="region"
+      aria-label={t("notices.region")}
+    >
       {notices.map((notice) => (
         <MessageBar key={notice.id} intent={INTENT[notice.level] ?? "info"}>
           <MessageBarBody>
@@ -124,7 +128,9 @@ export function NoticeBoard() {
             {notice.team_name && (
               <>
                 {" "}
-                <Link as="span">{t("notices.forTeam", { team: notice.team_name })}</Link>
+                <Link as="span">
+                  {t("notices.forTeam", { team: notice.team_name })}
+                </Link>
               </>
             )}
           </MessageBarBody>

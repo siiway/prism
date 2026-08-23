@@ -45,13 +45,13 @@ Exactly one provider can be active at a time. The captcha is challenged on
 register, login, password change, email-verification resend, and any flow the
 admin enables.
 
-| Key                       | Type   | Default    | Description                                                    |
-| ------------------------- | ------ | ---------- | -------------------------------------------------------------- |
-| `captcha_provider`        | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow`    |
-| `captcha_site_key`        | string | `""`       | Public site key for the chosen provider                        |
-| `captcha_secret_key`      | string | `""`       | Server-side secret for the chosen provider (encrypted at rest) |
+| Key                       | Type   | Default    | Description                                                     |
+| ------------------------- | ------ | ---------- | --------------------------------------------------------------- |
+| `captcha_provider`        | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow`     |
+| `captcha_site_key`        | string | `""`       | Public site key for the chosen provider                         |
+| `captcha_secret_key`      | string | `""`       | Server-side secret for the chosen provider (encrypted at rest)  |
 | `turnstile_endpoint_mode` | string | `"global"` | Turnstile-only. Which host serves the widget script (see below) |
-| `pow_difficulty`          | number | `20`       | Leading zero bits required for proof-of-work (higher = harder) |
+| `pow_difficulty`          | number | `20`       | Leading zero bits required for proof-of-work (higher = harder)  |
 
 **Turnstile endpoint.** Cloudflare serves the Turnstile widget script from the
 global host (`challenges.cloudflare.com`) and a Mainland-China-accelerated
@@ -280,15 +280,15 @@ These are configured in `wrangler.jsonc` and not editable from the admin panel.
 
 ### Variables
 
-| Variable            | Required | Description                                                                                                                                             |
-| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `APP_URL`           | Yes      | Full origin of the deployment, e.g. `https://auth.example.com`                                                                                          |
-| `LOCKDOWN_USERS`    | No       | Comma / semicolon / whitespace separated list of usernames that cannot be deleted by anyone (including admins). Leave empty to disable.                 |
-| `LOCKDOWN_TEAMS`    | No       | Comma / semicolon / whitespace separated list of team names that cannot be deleted by anyone (including admins). Leave empty to disable.                |
-| `ENABLE_RESET`      | No       | Set to `"true"` to enable the **Admin → Settings → Danger Zone → Site reset** button. When unset or anything else the button is hidden (destructive).   |
+| Variable            | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_URL`           | Yes      | Full origin of the deployment, e.g. `https://auth.example.com`                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `LOCKDOWN_USERS`    | No       | Comma / semicolon / whitespace separated list of usernames that cannot be deleted by anyone (including admins). Leave empty to disable.                                                                                                                                                                                                                                                                                                                                                                              |
+| `LOCKDOWN_TEAMS`    | No       | Comma / semicolon / whitespace separated list of team names that cannot be deleted by anyone (including admins). Leave empty to disable.                                                                                                                                                                                                                                                                                                                                                                             |
+| `ENABLE_RESET`      | No       | Set to `"true"` to enable the **Admin → Settings → Danger Zone → Site reset** button. When unset or anything else the button is hidden (destructive).                                                                                                                                                                                                                                                                                                                                                                |
 | `D1_CONSOLE`        | No       | Availability of **Admin → Database**. **Off unless set.** Unset, `"off"` (also `"false"` / `"0"` / `"no"` / `"disabled"` / `"none"`) and anything unrecognised all remove the surface: the endpoints 404 and the tab disappears. `"read-only"` (also `"readonly"` / `"read"`) allows browsing and `SELECT` but refuses every write, including one that sets `allow_write`. `"full"` (also `"on"` / `"true"` / `"1"`) is unrestricted — except the audit log, which is append-only from the console at every setting. |
-| `KV_CONSOLE`        | No       | Availability of the key–value browser in the same panel. Same values as `D1_CONSOLE`. **Unset follows `D1_CONSOLE`** — the two are windows onto the same instance's storage, so a setting for one is a statement about both unless this one says otherwise. With neither set, both are off. |
-| `NO_RESET_COOLDOWN` | No       | Set to `"true"` to skip the 30-minute cooldown between requesting a reset and being allowed to confirm it. 2FA is still required even when this is set. |
+| `KV_CONSOLE`        | No       | Availability of the key–value browser in the same panel. Same values as `D1_CONSOLE`. **Unset follows `D1_CONSOLE`** — the two are windows onto the same instance's storage, so a setting for one is a statement about both unless this one says otherwise. With neither set, both are off.                                                                                                                                                                                                                          |
+| `NO_RESET_COOLDOWN` | No       | Set to `"true"` to skip the 30-minute cooldown between requesting a reset and being allowed to confirm it. 2FA is still required even when this is set.                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Bindings
 

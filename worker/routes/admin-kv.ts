@@ -49,7 +49,8 @@ app.get("/status", (c) => {
 });
 
 app.use("*", async (c, next) => {
-  if (kvConsoleMode(c.env) === "off") return c.json({ error: "Not found" }, 404);
+  if (kvConsoleMode(c.env) === "off")
+    return c.json({ error: "Not found" }, 404);
   await next();
 });
 
@@ -233,11 +234,7 @@ app.put("/:ns/keys/:key{.+}", async (c) => {
       );
   }
 
-  await ns.kv.put(
-    key,
-    body.value,
-    ttl ? { expirationTtl: ttl } : undefined,
-  );
+  await ns.kv.put(key, body.value, ttl ? { expirationTtl: ttl } : undefined);
   auditKv(c, "admin.kv.write", {
     namespace: ns.key,
     key,

@@ -71,7 +71,11 @@ async function countRows(db: D1Database, sql: string, binds: unknown[] = []) {
 app.get("/revoke/preview", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const [sessions, oauthTokens, consents, pats] = await Promise.all([
-    countRows(c.env.DB, "SELECT COUNT(*) AS n FROM sessions WHERE expires_at > ?", [now]),
+    countRows(
+      c.env.DB,
+      "SELECT COUNT(*) AS n FROM sessions WHERE expires_at > ?",
+      [now],
+    ),
     countRows(c.env.DB, "SELECT COUNT(*) AS n FROM oauth_tokens"),
     countRows(c.env.DB, "SELECT COUNT(*) AS n FROM oauth_consents"),
     countRows(c.env.DB, "SELECT COUNT(*) AS n FROM personal_access_tokens"),
@@ -146,9 +150,11 @@ app.post("/revoke/app/:appId", async (c) => {
     .catch(() => ({}) as { deactivate?: boolean });
 
   const [tokens, consents] = await Promise.all([
-    countRows(c.env.DB, "SELECT COUNT(*) AS n FROM oauth_tokens WHERE client_id = ?", [
-      row.client_id,
-    ]),
+    countRows(
+      c.env.DB,
+      "SELECT COUNT(*) AS n FROM oauth_tokens WHERE client_id = ?",
+      [row.client_id],
+    ),
     countRows(
       c.env.DB,
       "SELECT COUNT(*) AS n FROM oauth_consents WHERE client_id = ?",
@@ -213,9 +219,11 @@ app.post("/revoke/user/:userId/grants", async (c) => {
   if (!user) return c.json({ error: "User not found" }, 404);
 
   const [tokens, consents] = await Promise.all([
-    countRows(c.env.DB, "SELECT COUNT(*) AS n FROM oauth_tokens WHERE user_id = ?", [
-      userId,
-    ]),
+    countRows(
+      c.env.DB,
+      "SELECT COUNT(*) AS n FROM oauth_tokens WHERE user_id = ?",
+      [userId],
+    ),
     countRows(
       c.env.DB,
       "SELECT COUNT(*) AS n FROM oauth_consents WHERE user_id = ?",
@@ -287,9 +295,7 @@ app.get("/domains", async (c) => {
           team_avatar: string | null;
         }
       >(),
-    c.env.DB.prepare(
-      `SELECT COUNT(*) AS n FROM domains d ${whereSql}`,
-    )
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM domains d ${whereSql}`)
       .bind(...(args as never[]))
       .first<{ n: number }>(),
   ]);
@@ -412,7 +418,9 @@ app.post("/apps/:id/transfer", async (c) => {
   let newOwnerId: string;
   let newTeamId: string | null;
   if (body.team_id) {
-    const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
+    const team = await c.env.DB.prepare(
+      "SELECT id, name FROM teams WHERE id = ?",
+    )
       .bind(body.team_id)
       .first<{ id: string; name: string }>();
     if (!team) return c.json({ error: "Team not found" }, 404);
@@ -634,7 +642,10 @@ app.post("/users/bulk", async (c) => {
     return c.json({ error: "user_ids is required" }, 400);
   if (body.user_ids.length > BULK_LIMIT)
     return c.json(
-      { error: `At most ${BULK_LIMIT} accounts per request`, limit: BULK_LIMIT },
+      {
+        error: `At most ${BULK_LIMIT} accounts per request`,
+        limit: BULK_LIMIT,
+      },
       400,
     );
   if (!["deactivate", "activate", "delete"].includes(body.action))
@@ -764,9 +775,9 @@ app.get("/scope-grants/site", async (c) => {
         admin_username: string | null;
         grantee_username: string | null;
       }>(),
-    c.env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM site_scope_grants",
-    ).first<{ n: number }>(),
+    c.env.DB.prepare("SELECT COUNT(*) AS n FROM site_scope_grants").first<{
+      n: number;
+    }>(),
   ]);
 
   return c.json({
@@ -818,9 +829,7 @@ app.get("/scope-grants/team", async (c) => {
         team_name: string | null;
         grantor_username: string | null;
       }>(),
-    c.env.DB.prepare(
-      `SELECT COUNT(*) AS n FROM team_scope_grants g ${where}`,
-    )
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM team_scope_grants g ${where}`)
       .bind(...(args as never[]))
       .first<{ n: number }>(),
   ]);

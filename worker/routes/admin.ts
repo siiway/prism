@@ -1101,7 +1101,9 @@ app.patch("/users/:id", async (c) => {
   values.push(Math.floor(Date.now() / 1000), id);
 
   try {
-    await c.env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
+    await c.env.DB.prepare(
+      `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
+    )
       .bind(...values)
       .run();
   } catch (err) {

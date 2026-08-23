@@ -185,10 +185,8 @@ function NoticeEditor({
       setError(err instanceof ApiError ? err.message : String(err)),
   });
 
-  const set = <K extends keyof typeof form>(
-    key: K,
-    value: (typeof form)[K],
-  ) => setForm((prev) => ({ ...prev, [key]: value }));
+  const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
@@ -208,7 +206,10 @@ function NoticeEditor({
               />
             </Field>
 
-            <Field label={t("admin.noticeBody")} hint={t("admin.noticeBodyHint")}>
+            <Field
+              label={t("admin.noticeBody")}
+              hint={t("admin.noticeBodyHint")}
+            >
               <Textarea
                 className={styles.body}
                 resize="vertical"
@@ -250,7 +251,11 @@ function NoticeEditor({
                   }
                 >
                   {LEVELS.map((l) => (
-                    <Option key={l} value={l} text={t(`admin.noticeLevel_${l}`)}>
+                    <Option
+                      key={l}
+                      value={l}
+                      text={t(`admin.noticeLevel_${l}`)}
+                    >
                       {t(`admin.noticeLevel_${l}`)}
                     </Option>
                   ))}
@@ -264,7 +269,10 @@ function NoticeEditor({
                   value={t(`admin.noticeAudience_${form.audience}`)}
                   selectedOptions={[form.audience ?? "users"]}
                   onOptionSelect={(_, d) =>
-                    set("audience", (d.optionValue as NoticeAudience) ?? "users")
+                    set(
+                      "audience",
+                      (d.optionValue as NoticeAudience) ?? "users",
+                    )
                   }
                 >
                   {AUDIENCES.map((a) => (
@@ -334,7 +342,9 @@ function NoticeEditor({
             </DialogTrigger>
             <Button
               appearance="primary"
-              disabled={!form.title.trim() || !form.body.trim() || save.isPending}
+              disabled={
+                !form.title.trim() || !form.body.trim() || save.isPending
+              }
               onClick={() => save.mutate()}
             >
               {t("common.save")}
@@ -378,22 +388,20 @@ export function AdminNotices() {
 
   const mutate =
     (fn: () => Promise<{ message?: string } | unknown>) => async () => {
-    try {
-      const res = (await fn()) as { message?: string } | undefined;
-      await invalidate();
-      showMsg("success", res?.message ?? t("admin.noticeUpdated"));
-    } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : String(err));
-    }
-  };
+      try {
+        const res = (await fn()) as { message?: string } | undefined;
+        await invalidate();
+        showMsg("success", res?.message ?? t("admin.noticeUpdated"));
+      } catch (err) {
+        showMsg("error", err instanceof ApiError ? err.message : String(err));
+      }
+    };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
   return (
     <div className={styles.root}>
-      {message && (
-        <MessageBar intent={message.type}>{message.text}</MessageBar>
-      )}
+      {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
 
       {error && (
         <MessageBar intent="warning">

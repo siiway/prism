@@ -6,11 +6,11 @@ Prism records security-relevant actions in an append-only audit log split
 across three scopes. Each scope is visible only to the people responsible for
 it, and each has its own real-time webhooks.
 
-| Scope                            | Who can view          | What it records                                                                                           |
-| -------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Transparent User Control**     | the user, and site admins | their own login / authorization / revoke / rebind / account changes, plus authorizations of apps they own |
-| **Transparent Team Control**     | team owner / co-owner, and site admins | every edit and membership change in the team, plus authorizations of apps the team owns          |
-| **Transparent Platform Control** | platform admins       | every admin operation                                                                                     |
+| Scope                            | Who can view                           | What it records                                                                                           |
+| -------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Transparent User Control**     | the user, and site admins              | their own login / authorization / revoke / rebind / account changes, plus authorizations of apps they own |
+| **Transparent Team Control**     | team owner / co-owner, and site admins | every edit and membership change in the team, plus authorizations of apps the team owns                   |
+| **Transparent Platform Control** | platform admins                        | every admin operation                                                                                     |
 
 ## Where to find it
 
@@ -24,7 +24,7 @@ it, and each has its own real-time webhooks.
 
 A site administrator can read every scope. That is not a hole in the model, it
 is the other half of it: when an admin acts on a team or an account, the entry
-is written into *that* scope's log — marked `site_admin: true` — so the people
+is written into _that_ scope's log — marked `site_admin: true` — so the people
 responsible for it can see what was done to them. An operator who could act
 without being able to read would produce records nobody ever reconciles.
 

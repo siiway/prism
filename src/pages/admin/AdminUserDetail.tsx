@@ -78,7 +78,10 @@ const useStyles = makeStyles({
     flexWrap: "wrap",
   },
   muted: { color: tokens.colorNeutralForeground3 },
-  mono: { fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase200 },
+  mono: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
+  },
   tableScroll: { overflowX: "auto" },
   empty: { color: tokens.colorNeutralForeground3, padding: "8px 0" },
   danger: { background: tokens.colorPaletteRedBackground3 },
@@ -312,7 +315,10 @@ function SecurityCard({
       }
     >
       <div className={styles.row}>
-        <Badge appearance="tint" color={data.has_password ? "success" : "informative"}>
+        <Badge
+          appearance="tint"
+          color={data.has_password ? "success" : "informative"}
+        >
           {data.has_password
             ? t("admin.hasPassword")
             : t("admin.noPasswordSocialOnly")}
@@ -949,20 +955,19 @@ export function AdminUserDetail() {
             @{user.username} · {user.email}
           </Text>
         </div>
-        <Badge appearance="tint" color={user.role === "admin" ? "brand" : "subtle"}>
+        <Badge
+          appearance="tint"
+          color={user.role === "admin" ? "brand" : "subtle"}
+        >
           {user.role}
         </Badge>
         <Badge appearance="tint" color={user.is_active ? "success" : "danger"}>
-          {user.is_active
-            ? t("admin.activeStatus")
-            : t("admin.disabledStatus")}
+          {user.is_active ? t("admin.activeStatus") : t("admin.disabledStatus")}
         </Badge>
         <CopyIdButton id={user.id} />
       </div>
 
-      {message && (
-        <MessageBar intent={message.type}>{message.text}</MessageBar>
-      )}
+      {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
 
       <TabList
         selectedValue={tab}
@@ -1107,9 +1112,7 @@ export function AdminUserDetail() {
             rows={gpgKeys.data?.keys.map((row) => ({
               id: row.id,
               primary: row.name,
-              secondary: (
-                <span className={styles.mono}>{row.fingerprint}</span>
-              ),
+              secondary: <span className={styles.mono}>{row.fingerprint}</span>,
               meta: ts(row.created_at),
             }))}
             emptyText={t("admin.noGpgKeys")}

@@ -279,18 +279,18 @@ protected from deletion. See [Configuration → Wrangler bindings & variables](c
 
 **Admin → Users → Manage** opens one account in full. The list view gives you
 a row and three toggles; this is the page for everything a user can do to
-*themselves*, which until now lived only behind `/api/user/me/*` and was
+_themselves_, which until now lived only behind `/api/user/me/*` and was
 therefore reachable by nobody else.
 
 **Overview**
 
-| Action                       | Notes                                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------ |
-| Edit username / email / display name | The self-serve API has no path to any of these. Changing the address clears its verified status unless you set it in the same request |
-| Set or clear the password    | The user is not notified and never learns it — hand it over out of band and have them change it. Clearing is refused unless a linked provider remains to sign in with |
-| Reset 2FA                    | Removes every authenticator, passkey **and** recovery code. After it the password alone gets someone in |
-| Remove one factor            | For the case where only one authenticator is lost                             |
-| Verify / promote / remove an email | Including the primary address, which the self-serve flow can only change by promoting an already-verified alternate |
+| Action                               | Notes                                                                                                                                                                 |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Edit username / email / display name | The self-serve API has no path to any of these. Changing the address clears its verified status unless you set it in the same request                                 |
+| Set or clear the password            | The user is not notified and never learns it — hand it over out of band and have them change it. Clearing is refused unless a linked provider remains to sign in with |
+| Reset 2FA                            | Removes every authenticator, passkey **and** recovery code. After it the password alone gets someone in                                                               |
+| Remove one factor                    | For the case where only one authenticator is lost                                                                                                                     |
+| Verify / promote / remove an email   | Including the primary address, which the self-serve flow can only change by promoting an already-verified alternate                                                   |
 
 **Access** — personal access tokens, linked providers, GPG keys and authorized
 applications, each with a revoke. Revoking an authorization also deletes the
@@ -545,22 +545,22 @@ uses — the body is markdown, treated as untrusted even though an administrator
 wrote it, because the one place a stored-XSS bug would reach every signed-in
 user should not be the one place nothing checks.
 
-| Field           | Effect                                                                      |
-| --------------- | ---------------------------------------------------------------------------- |
-| Level           | `info`, `warning` or `critical` — drives the colour                            |
-| Audience        | See below                                                                    |
+| Field             | Effect                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Level             | `info`, `warning` or `critical` — drives the colour                                                                       |
+| Audience          | See below                                                                                                                 |
 | Show from / until | The window. Stored, not scheduled by a job: the read query filters on time, so a notice appears and disappears on its own |
-| Dismissible     | Off for something that must stay on screen, like an active incident          |
-| Pinned          | Sorts above the rest regardless of age                                       |
+| Dismissible       | Off for something that must stay on screen, like an active incident                                                       |
+| Pinned            | Sorts above the rest regardless of age                                                                                    |
 
 ### Audience
 
-| Audience  | Who sees it                                                        |
-| --------- | ------------------------------------------------------------------- |
-| `public`  | Everyone, **including signed-out visitors** on the sign-in and registration pages |
-| `users`   | Every signed-in account                                            |
-| `admins`  | Site administrators only                                           |
-| `team`    | Direct members of one team                                         |
+| Audience | Who sees it                                                                       |
+| -------- | --------------------------------------------------------------------------------- |
+| `public` | Everyone, **including signed-out visitors** on the sign-in and registration pages |
+| `users`  | Every signed-in account                                                           |
+| `admins` | Site administrators only                                                          |
+| `team`   | Direct members of one team                                                        |
 
 `public` is the one worth reaching for: "maintenance at 02:00 UTC" is most
 useful to the person who cannot sign in.
@@ -589,11 +589,11 @@ searchable and filterable by verification state. Domains were previously
 reachable only through the account or team that owned them, which is the wrong
 index for the question an operator actually has: who claims `example.com`?
 
-| Action                 | Effect                                                                    |
-| ---------------------- | ------------------------------------------------------------------------- |
-| Force verify           | Marks the domain verified **without checking DNS**                        |
-| Withdraw verification  | Clears the verified flag                                                  |
-| Delete                 | Removes the domain from its owner                                         |
+| Action                | Effect                                             |
+| --------------------- | -------------------------------------------------- |
+| Force verify          | Marks the domain verified **without checking DNS** |
+| Withdraw verification | Clears the verified flag                           |
+| Delete                | Removes the domain from its owner                  |
 
 Force-verify is an override, not a check. It exists for domains whose DNS the
 worker cannot reach — split-horizon, an internal TLD, a registrar outage —
@@ -691,11 +691,11 @@ a schema browser with an inline row editor, and a SQL console.
 
 The `D1_CONSOLE` variable in `wrangler.jsonc` decides how much of this exists.
 
-| Value                                                          | Effect                                                                       |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **unset** (also `off` / `false` / `0` / `no`, or anything unrecognised) | **The default.** The surface is gone — endpoints 404 and the tab disappears |
-| `read-only` / `readonly` / `read`                              | Browse and `SELECT`. Every write is refused, including one sent with `allow_write` — the caller cannot opt back over the operator's setting |
-| `full` / `on` / `true` / `1`                                   | Unrestricted, except the audit log below                                     |
+| Value                                                                   | Effect                                                                                                                                      |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **unset** (also `off` / `false` / `0` / `no`, or anything unrecognised) | **The default.** The surface is gone — endpoints 404 and the tab disappears                                                                 |
+| `read-only` / `readonly` / `read`                                       | Browse and `SELECT`. Every write is refused, including one sent with `allow_write` — the caller cannot opt back over the operator's setting |
+| `full` / `on` / `true` / `1`                                            | Unrestricted, except the audit log below                                                                                                    |
 
 Off is the default because this is the widest door in the product, and a door
 that opens because nobody said otherwise is the wrong default for something
@@ -775,14 +775,14 @@ the statement one more time before it runs.
 
 ### Endpoints
 
-| Endpoint                                       | Purpose                                    |
-| ---------------------------------------------- | ------------------------------------------ |
-| `GET /api/admin/db/tables`                     | Tables with row counts, columns and DDL    |
-| `GET /api/admin/db/tables/:table/rows`         | Page rows (`page`, `limit`, `order_by`, `dir`, `where`) |
-| `POST /api/admin/db/tables/:table/rows`        | Insert a row                               |
-| `PATCH /api/admin/db/tables/:table/rows`       | Update a row by primary key                |
-| `DELETE /api/admin/db/tables/:table/rows`      | Delete a row by primary key                |
-| `POST /api/admin/db/query`                     | Run SQL (`allow_write` required to modify) |
+| Endpoint                                  | Purpose                                                 |
+| ----------------------------------------- | ------------------------------------------------------- |
+| `GET /api/admin/db/tables`                | Tables with row counts, columns and DDL                 |
+| `GET /api/admin/db/tables/:table/rows`    | Page rows (`page`, `limit`, `order_by`, `dir`, `where`) |
+| `POST /api/admin/db/tables/:table/rows`   | Insert a row                                            |
+| `PATCH /api/admin/db/tables/:table/rows`  | Update a row by primary key                             |
+| `DELETE /api/admin/db/tables/:table/rows` | Delete a row by primary key                             |
+| `POST /api/admin/db/query`                | Run SQL (`allow_write` required to modify)              |
 
 All of them sit behind `requireAdmin` and are session-only.
 
@@ -821,73 +821,73 @@ Control) — every admin operation. Users and teams have their own scoped logs;
 see [Audit Logs](audit-logs.md) for the full model, filtering, and scoped
 webhooks. It is a paginated, append-only list of significant events:
 
-| Event                                       | Triggered by                               |
-| ------------------------------------------- | ------------------------------------------ |
-| `user.register`                             | Successful registration                    |
-| `user.login`                                | Successful login                           |
-| `user.login.failed`                         | Failed login attempt                       |
-| `user.logout`                               | Logout                                     |
-| `user.delete`                               | Account deletion                           |
-| `user.password_changed`                     | Password changed via Profile → Security    |
-| `totp.enabled`                              | TOTP authenticator setup completed         |
-| `totp.disabled`                             | TOTP authenticator removed                 |
-| `passkey.registered`                        | New passkey added                          |
-| `passkey.deleted`                           | Passkey removed                            |
-| `gpg.key_added`                             | GPG public key registered                  |
-| `gpg.key_deleted`                           | GPG public key removed                     |
-| `gpg.login`                                 | Signed-in via GPG challenge                |
-| `oauth.authorize`                           | User approved an OAuth app                 |
-| `oauth.token`                               | Token issued                               |
-| `oauth.consent_revoked`                     | User revoked an app's access               |
-| `oauth.2fa.verify`                          | Step-up 2FA confirmed                      |
-| `oauth.2fa.sudo_revoked`                    | User revoked a sudo grace window           |
-| `team.created`                              | Team created                               |
-| `team.member_added`                         | Member joined a team (invite or admin add) |
-| `team.member_removed`                       | Member left or was removed                 |
-| `team.transferred`                          | Team ownership transferred                 |
-| `domain.added` / `verified` / `deleted`     | Domain lifecycle                           |
-| `connection.added` / `removed`              | Social connection lifecycle                |
-| `oauth_source.create` / `update` / `delete` | OAuth source lifecycle                     |
-| `invite.create` / `revoke`                  | Site invite lifecycle                      |
-| `admin.config.update`                       | Site config changed                        |
-| `admin.user.update`                         | Admin changed a user                       |
-| `admin.user.delete`                         | Admin deleted a user                       |
-| `admin.app.update`                          | Admin verified or deactivated an app       |
-| `admin.team.delete`                         | Admin disbanded a team                     |
-| `admin.secrets.migrate`                     | Site-config or D1 secrets migration ran    |
-| `admin.reset.*`                             | Site-reset request / cancel / confirm      |
-| `admin.db.query.read`                       | SQL console ran a read-only statement      |
-| `admin.db.query.write`                      | SQL console ran a statement that writes    |
-| `admin.db.query.error`                      | A console statement was rejected or failed |
-| `admin.db.row.insert` / `update` / `delete` | Row edited through the table browser       |
-| `admin.user.password_set`                   | Admin set or cleared an account's password |
-| `admin.user.2fa_reset`                      | Admin removed every second factor          |
-| `admin.user.totp_removed` / `passkey_removed` | Admin removed one factor                 |
-| `admin.user.token_revoked`                  | Admin revoked a personal access token      |
-| `admin.user.connection_removed`             | Admin unlinked a social provider           |
-| `admin.user.gpg_key_removed`                | Admin removed a GPG key                    |
-| `admin.user.email_verified`                 | Admin marked an address verified           |
-| `admin.user.primary_email_changed`          | Admin promoted an alternate address        |
-| `admin.user.email_removed`                  | Admin removed an alternate address         |
-| `admin.user.domain_removed`                 | Admin removed a personal domain            |
-| `admin.user.authorization_revoked`          | Admin revoked an OAuth grant               |
-| `admin.user.converted`                      | Admin lifted an invite-registration restriction |
-| `admin.revoke.all_sessions`                 | Every session on the instance was deleted  |
-| `admin.revoke.app`                          | An application's tokens and consents were revoked |
-| `admin.revoke.user_grants`                  | One account's OAuth grants were revoked    |
-| `admin.app.transfer`                        | An application changed owner               |
-| `admin.domain.force_verify` / `unverify`    | Verification asserted or withdrawn by an admin |
-| `admin.domain.delete`                       | Admin deleted a domain                     |
-| `admin.kv.read` / `write` / `delete`        | A key–value entry was read or changed      |
-| `admin.kv.purge`                            | Every key under a prefix was deleted       |
-| `admin.scope_grant.revoke`                  | A site or team scope grant was withdrawn   |
-| `admin.session.revoke`                      | Admin ended one session                    |
-| `admin.maintenance.run` / `error`           | A scheduled job was run on demand          |
-| `admin.users.bulk_delete` / `_deactivate` / `_activate` | A bulk action was applied to several accounts |
-| `admin.team_invite.revoke`                  | Admin revoked a team invite link           |
-| `admin.user.notification_rulesets_cleared`  | Admin reset an account's notification rules |
-| `admin.notice.create` / `update` / `delete` | Notice-board entry authored or removed     |
-| `admin.notice.publish` / `unpublish`        | A notice went live, or was taken down      |
+| Event                                                   | Triggered by                                      |
+| ------------------------------------------------------- | ------------------------------------------------- |
+| `user.register`                                         | Successful registration                           |
+| `user.login`                                            | Successful login                                  |
+| `user.login.failed`                                     | Failed login attempt                              |
+| `user.logout`                                           | Logout                                            |
+| `user.delete`                                           | Account deletion                                  |
+| `user.password_changed`                                 | Password changed via Profile → Security           |
+| `totp.enabled`                                          | TOTP authenticator setup completed                |
+| `totp.disabled`                                         | TOTP authenticator removed                        |
+| `passkey.registered`                                    | New passkey added                                 |
+| `passkey.deleted`                                       | Passkey removed                                   |
+| `gpg.key_added`                                         | GPG public key registered                         |
+| `gpg.key_deleted`                                       | GPG public key removed                            |
+| `gpg.login`                                             | Signed-in via GPG challenge                       |
+| `oauth.authorize`                                       | User approved an OAuth app                        |
+| `oauth.token`                                           | Token issued                                      |
+| `oauth.consent_revoked`                                 | User revoked an app's access                      |
+| `oauth.2fa.verify`                                      | Step-up 2FA confirmed                             |
+| `oauth.2fa.sudo_revoked`                                | User revoked a sudo grace window                  |
+| `team.created`                                          | Team created                                      |
+| `team.member_added`                                     | Member joined a team (invite or admin add)        |
+| `team.member_removed`                                   | Member left or was removed                        |
+| `team.transferred`                                      | Team ownership transferred                        |
+| `domain.added` / `verified` / `deleted`                 | Domain lifecycle                                  |
+| `connection.added` / `removed`                          | Social connection lifecycle                       |
+| `oauth_source.create` / `update` / `delete`             | OAuth source lifecycle                            |
+| `invite.create` / `revoke`                              | Site invite lifecycle                             |
+| `admin.config.update`                                   | Site config changed                               |
+| `admin.user.update`                                     | Admin changed a user                              |
+| `admin.user.delete`                                     | Admin deleted a user                              |
+| `admin.app.update`                                      | Admin verified or deactivated an app              |
+| `admin.team.delete`                                     | Admin disbanded a team                            |
+| `admin.secrets.migrate`                                 | Site-config or D1 secrets migration ran           |
+| `admin.reset.*`                                         | Site-reset request / cancel / confirm             |
+| `admin.db.query.read`                                   | SQL console ran a read-only statement             |
+| `admin.db.query.write`                                  | SQL console ran a statement that writes           |
+| `admin.db.query.error`                                  | A console statement was rejected or failed        |
+| `admin.db.row.insert` / `update` / `delete`             | Row edited through the table browser              |
+| `admin.user.password_set`                               | Admin set or cleared an account's password        |
+| `admin.user.2fa_reset`                                  | Admin removed every second factor                 |
+| `admin.user.totp_removed` / `passkey_removed`           | Admin removed one factor                          |
+| `admin.user.token_revoked`                              | Admin revoked a personal access token             |
+| `admin.user.connection_removed`                         | Admin unlinked a social provider                  |
+| `admin.user.gpg_key_removed`                            | Admin removed a GPG key                           |
+| `admin.user.email_verified`                             | Admin marked an address verified                  |
+| `admin.user.primary_email_changed`                      | Admin promoted an alternate address               |
+| `admin.user.email_removed`                              | Admin removed an alternate address                |
+| `admin.user.domain_removed`                             | Admin removed a personal domain                   |
+| `admin.user.authorization_revoked`                      | Admin revoked an OAuth grant                      |
+| `admin.user.converted`                                  | Admin lifted an invite-registration restriction   |
+| `admin.revoke.all_sessions`                             | Every session on the instance was deleted         |
+| `admin.revoke.app`                                      | An application's tokens and consents were revoked |
+| `admin.revoke.user_grants`                              | One account's OAuth grants were revoked           |
+| `admin.app.transfer`                                    | An application changed owner                      |
+| `admin.domain.force_verify` / `unverify`                | Verification asserted or withdrawn by an admin    |
+| `admin.domain.delete`                                   | Admin deleted a domain                            |
+| `admin.kv.read` / `write` / `delete`                    | A key–value entry was read or changed             |
+| `admin.kv.purge`                                        | Every key under a prefix was deleted              |
+| `admin.scope_grant.revoke`                              | A site or team scope grant was withdrawn          |
+| `admin.session.revoke`                                  | Admin ended one session                           |
+| `admin.maintenance.run` / `error`                       | A scheduled job was run on demand                 |
+| `admin.users.bulk_delete` / `_deactivate` / `_activate` | A bulk action was applied to several accounts     |
+| `admin.team_invite.revoke`                              | Admin revoked a team invite link                  |
+| `admin.user.notification_rulesets_cleared`              | Admin reset an account's notification rules       |
+| `admin.notice.create` / `update` / `delete`             | Notice-board entry authored or removed            |
+| `admin.notice.publish` / `unpublish`                    | A notice went live, or was taken down             |
 
 Each entry records the acting `user_id` (or `null` for system actions), the
 `action`, optional `resource_type` / `resource_id`, a `metadata` JSON object,

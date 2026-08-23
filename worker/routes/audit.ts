@@ -566,7 +566,12 @@ function registerScope(
     const r = await resolveScope(c);
     if (!r.ok) return c.json({ error: "Forbidden" }, 403);
     const format = c.req.query("format") === "csv" ? "csv" : "json";
-    const events = await exportEvents(c.env, r.scope, r.scopeId, readFilters(c));
+    const events = await exportEvents(
+      c.env,
+      r.scope,
+      r.scopeId,
+      readFilters(c),
+    );
 
     const stamp = new Date().toISOString().slice(0, 10);
     const name = `audit-${r.scope}${r.scopeId ? `-${r.scopeId}` : ""}-${stamp}`;
@@ -688,7 +693,12 @@ app.get("/platform/legacy-webhooks-status", async (c) => {
      FROM webhooks w`,
   )
     .bind(user.id)
-    .all<{ id: string; name: string; user_id: string | null; migrated: number | null }>();
+    .all<{
+      id: string;
+      name: string;
+      user_id: string | null;
+      migrated: number | null;
+    }>();
 
   const total = results.length;
   const unmigrated = results.filter((r) => !r.migrated).length;

@@ -92,9 +92,7 @@ export function AdminScopeGrants() {
 
   return (
     <div className={styles.root}>
-      {message && (
-        <MessageBar intent={message.type}>{message.text}</MessageBar>
-      )}
+      {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
       <MessageBar intent="info">{t("admin.scopeGrantsNotice")}</MessageBar>
 
       <TabList
@@ -225,7 +223,8 @@ export function AdminScopeGrants() {
             <DialogContent>
               <Text block>
                 {t("admin.revokeGrantBody", {
-                  app: pendingRevoke?.app_name ?? pendingRevoke?.client_id ?? "",
+                  app:
+                    pendingRevoke?.app_name ?? pendingRevoke?.client_id ?? "",
                 })}
               </Text>
             </DialogContent>

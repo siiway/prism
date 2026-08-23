@@ -586,14 +586,7 @@ app.post("/:id/emails/:emailId/set-primary", async (c) => {
       `UPDATE users SET email = ?, email_verified = ?, email_verified_via = ?,
               email_verified_at = ?, email_verify_token = NULL,
               email_verify_code = NULL, updated_at = ? WHERE id = ?`,
-    ).bind(
-      row.email,
-      row.verified,
-      row.verified_via,
-      row.verified_at,
-      now,
-      id,
-    ),
+    ).bind(row.email, row.verified, row.verified_via, row.verified_at, now, id),
     c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?").bind(row.id),
   ]);
 
@@ -650,9 +643,7 @@ app.delete("/:id/domains/:domainId", async (c) => {
     .first<{ id: string; domain: string }>();
   if (!row) return c.json({ error: "Domain not found" }, 404);
 
-  await c.env.DB.prepare("DELETE FROM domains WHERE id = ?")
-    .bind(row.id)
-    .run();
+  await c.env.DB.prepare("DELETE FROM domains WHERE id = ?").bind(row.id).run();
   auditUser(c, id, target.username, "user.domain_removed", {
     domain: row.domain,
   });
@@ -787,7 +778,10 @@ app.delete("/:id/notification-rulesets", async (c) => {
   auditUser(c, id, target.username, "user.notification_rulesets_cleared", {
     removed: count?.n ?? 0,
   });
-  return c.json({ message: "Notification rules reset", removed: count?.n ?? 0 });
+  return c.json({
+    message: "Notification rules reset",
+    removed: count?.n ?? 0,
+  });
 });
 
 // ─── Team memberships ─────────────────────────────────────────────────────────
@@ -814,7 +808,11 @@ app.get("/:id/teams", async (c) => {
     teams: await Promise.all(
       results.map(async (row) => ({
         ...row,
-        avatar_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, row.avatar_url),
+        avatar_url: await proxyImageUrl(
+          c.env.APP_URL,
+          c.env.DB,
+          row.avatar_url,
+        ),
       })),
     ),
   });

@@ -317,7 +317,8 @@ export function AdminUsers() {
                 <TableHeaderCell style={{ width: 1 }}>
                   <Checkbox
                     checked={
-                      pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+                      pageIds.length > 0 &&
+                      pageIds.every((id) => selected.has(id))
                         ? true
                         : pageIds.some((id) => selected.has(id))
                           ? "mixed"

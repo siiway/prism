@@ -127,10 +127,7 @@ function touchesAppendOnly(sql: string): string | null {
   return null;
 }
 
-function appendOnlyRefusal(
-  c: import("hono").Context<AppEnv>,
-  table: string,
-) {
+function appendOnlyRefusal(c: import("hono").Context<AppEnv>, table: string) {
   return c.json(
     {
       error: `${table} is append-only and cannot be modified from the console. The audit log is what makes every other admin action accountable; editing it here is not offered at any setting.`,
@@ -528,7 +525,10 @@ app.patch("/tables/:table/rows", async (c) => {
 
   const keyEntries = keys.columns.map((k) => [k, body.key?.[k]] as const);
   if (keyEntries.some(([, v]) => v === undefined))
-    return c.json({ error: `key must include: ${keys.columns.join(", ")}` }, 400);
+    return c.json(
+      { error: `key must include: ${keys.columns.join(", ")}` },
+      400,
+    );
 
   const sql =
     `UPDATE ${quoteIdent(table)} SET ` +
@@ -573,15 +573,17 @@ app.delete("/tables/:table/rows", async (c) => {
   if (!keys)
     return c.json(
       {
-        error:
-          "This table has no primary key — delete it from the SQL console",
+        error: "This table has no primary key — delete it from the SQL console",
       },
       400,
     );
 
   const keyEntries = keys.columns.map((k) => [k, body.key?.[k]] as const);
   if (keyEntries.some(([, v]) => v === undefined))
-    return c.json({ error: `key must include: ${keys.columns.join(", ")}` }, 400);
+    return c.json(
+      { error: `key must include: ${keys.columns.join(", ")}` },
+      400,
+    );
 
   const sql =
     `DELETE FROM ${quoteIdent(table)} WHERE ` +

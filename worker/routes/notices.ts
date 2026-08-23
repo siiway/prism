@@ -211,7 +211,8 @@ async function validate(
   if (body.title !== undefined) {
     const t = body.title.trim();
     if (!t) return "title is required";
-    if (t.length > MAX_TITLE) return `title must be ${MAX_TITLE} characters or fewer`;
+    if (t.length > MAX_TITLE)
+      return `title must be ${MAX_TITLE} characters or fewer`;
   }
   if (body.body !== undefined) {
     if (!body.body.trim()) return "body is required";
@@ -266,7 +267,9 @@ adminRoutes.get("/", async (c) => {
     )
       .bind(limit, offset)
       .all<NoticeRow & Record<string, unknown>>(),
-    c.env.DB.prepare("SELECT COUNT(*) AS n FROM notices").first<{ n: number }>(),
+    c.env.DB.prepare("SELECT COUNT(*) AS n FROM notices").first<{
+      n: number;
+    }>(),
   ]);
 
   return c.json({
@@ -371,7 +374,8 @@ adminRoutes.patch("/:id", async (c) => {
     ...body,
     audience: body.audience ?? (existing.audience as NoticeAudience),
     team_id: body.team_id ?? existing.team_id,
-    starts_at: body.starts_at !== undefined ? body.starts_at : existing.starts_at,
+    starts_at:
+      body.starts_at !== undefined ? body.starts_at : existing.starts_at,
     ends_at: body.ends_at !== undefined ? body.ends_at : existing.ends_at,
   });
   if (err) return c.json({ error: err }, 400);
@@ -390,11 +394,15 @@ adminRoutes.patch("/:id", async (c) => {
     set("audience", body.audience);
     // A notice that stops being team-scoped must not keep pointing at a team;
     // the read query would ignore it, but the admin list would still show one.
-    set("team_id", body.audience === "team" ? (body.team_id ?? existing.team_id) : null);
+    set(
+      "team_id",
+      body.audience === "team" ? (body.team_id ?? existing.team_id) : null,
+    );
   } else if (body.team_id !== undefined && existing.audience === "team") {
     set("team_id", body.team_id);
   }
-  if (body.is_published !== undefined) set("is_published", body.is_published ? 1 : 0);
+  if (body.is_published !== undefined)
+    set("is_published", body.is_published ? 1 : 0);
   if (body.starts_at !== undefined) set("starts_at", body.starts_at);
   if (body.ends_at !== undefined) set("ends_at", body.ends_at);
   if (body.is_dismissible !== undefined)
@@ -406,7 +414,9 @@ adminRoutes.patch("/:id", async (c) => {
 
   if (updates.length) {
     set("updated_at", Math.floor(Date.now() / 1000));
-    await c.env.DB.prepare(`UPDATE notices SET ${updates.join(", ")} WHERE id = ?`)
+    await c.env.DB.prepare(
+      `UPDATE notices SET ${updates.join(", ")} WHERE id = ?`,
+    )
       .bind(...(values as never[]), id)
       .run();
   }
