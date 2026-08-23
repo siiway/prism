@@ -2246,6 +2246,45 @@ export const api = {
       undefined,
       getToken(),
     ),
+  // ── Notice board ──────────────────────────────────────────────────────────
+  /** Notices for the current viewer. Works signed out — public notices are
+   *  the case a maintenance announcement most needs to reach. */
+  notices: () =>
+    request<{ notices: Notice[] }>("GET", "/notices", undefined, getToken()),
+  dismissNotice: (id: string) =>
+    request<{ message: string }>(
+      "POST",
+      `/notices/${id}/dismiss`,
+      {},
+      getToken(),
+    ),
+  adminListNotices: (page = 1) =>
+    request<{
+      notices: AdminNotice[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/notices?page=${page}`, undefined, getToken()),
+  adminCreateNotice: (body: NoticeInput) =>
+    request<{ notice: AdminNotice }>("POST", "/admin/notices", body, getToken()),
+  adminUpdateNotice: (
+    id: string,
+    body: Partial<NoticeInput> & { reset_dismissals?: boolean },
+  ) =>
+    request<{ notice: AdminNotice; dismissals_reset: number }>(
+      "PATCH",
+      `/admin/notices/${id}`,
+      body,
+      getToken(),
+    ),
+  adminDeleteNotice: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/notices/${id}`,
+      undefined,
+      getToken(),
+    ),
+
   adminScopeGrants: (kind: "site" | "team", page = 1, teamId?: string) => {
     const search = new URLSearchParams({ page: String(page) });
     if (teamId) search.set("team_id", teamId);
@@ -3254,6 +3293,49 @@ export interface AdminScopeGrant {
   team_name?: string | null;
   grantor_username?: string | null;
   permissions?: unknown;
+}
+
+// ─── Notice board ─────────────────────────────────────────────────────────────
+
+export type NoticeLevel = "info" | "warning" | "critical";
+/** `public` also reaches the signed-out pages; `team` needs a team_id. */
+export type NoticeAudience = "public" | "users" | "admins" | "team";
+
+export interface Notice {
+  id: string;
+  title: string;
+  /** Markdown — render through lib/markdown, never as raw HTML. */
+  body: string;
+  level: NoticeLevel;
+  audience: NoticeAudience;
+  team_id: string | null;
+  team_name?: string | null;
+  is_dismissible: boolean;
+  pinned: boolean;
+  starts_at: number | null;
+  ends_at: number | null;
+  created_at: number;
+}
+
+export interface AdminNotice extends Notice {
+  is_published: boolean;
+  created_by: string | null;
+  created_by_username?: string | null;
+  dismissal_count?: number;
+  updated_at: number;
+}
+
+export interface NoticeInput {
+  title: string;
+  body: string;
+  level?: NoticeLevel;
+  audience?: NoticeAudience;
+  team_id?: string | null;
+  is_published?: boolean;
+  starts_at?: number | null;
+  ends_at?: number | null;
+  is_dismissible?: boolean;
+  pinned?: boolean;
 }
 
 export interface AdminTeamInvite {

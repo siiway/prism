@@ -495,6 +495,63 @@ someone routes what to is a different thing and is not offered here. A ruleset
 that routes everything nowhere looks, from the user's side, exactly like
 notifications being broken — the reset is the fix.
 
+## Notice board
+
+**Admin → Notices** writes announcements that appear inside the product:
+planned downtime, a policy change, a security advisory.
+
+It exists instead of emailing everyone. An announcement is not an event anyone
+subscribed to, so it cannot honour the per-event notification preferences; a
+send to every account is unbounded outbound volume on a shared sending domain;
+and mail arrives whether or not the recipient is affected. A notice sits where
+the affected people already are, costs nothing to publish, and can be taken
+down.
+
+### Writing one
+
+Notices are drafts until published, so nothing half-written is ever on screen.
+The composer previews the rendered result through the same sanitizer the board
+uses — the body is markdown, treated as untrusted even though an administrator
+wrote it, because the one place a stored-XSS bug would reach every signed-in
+user should not be the one place nothing checks.
+
+| Field           | Effect                                                                      |
+| --------------- | ---------------------------------------------------------------------------- |
+| Level           | `info`, `warning` or `critical` — drives the colour                            |
+| Audience        | See below                                                                    |
+| Show from / until | The window. Stored, not scheduled by a job: the read query filters on time, so a notice appears and disappears on its own |
+| Dismissible     | Off for something that must stay on screen, like an active incident          |
+| Pinned          | Sorts above the rest regardless of age                                       |
+
+### Audience
+
+| Audience  | Who sees it                                                        |
+| --------- | ------------------------------------------------------------------- |
+| `public`  | Everyone, **including signed-out visitors** on the sign-in and registration pages |
+| `users`   | Every signed-in account                                            |
+| `admins`  | Site administrators only                                           |
+| `team`    | Direct members of one team                                         |
+
+`public` is the one worth reaching for: "maintenance at 02:00 UTC" is most
+useful to the person who cannot sign in.
+
+Audience is a small enum rather than a rules engine because every audience a
+notice board actually needs is answerable from the request alone, and none of
+them require a query the viewer's session cannot already answer.
+
+### Dismissal
+
+Readers dismiss a notice for themselves; it stays for everyone else. Editing a
+notice does **not** bring it back — someone who dismissed a typo does not want
+it back because the typo was fixed. **Show again** is a separate, deliberate
+action, and reports how many dismissals it cleared.
+
+Signed-out viewers cannot dismiss: there is nowhere to record it, and a notice
+that reappeared on the next page load would be worse than no dismiss button.
+
+Deleting a notice takes its dismissal records with it. Unpublishing keeps it as
+a draft instead, which is usually what "take it down" means.
+
 ## Domains
 
 **Admin → Domains** is every domain on the instance, personal and team-owned,
@@ -769,6 +826,8 @@ webhooks. It is a paginated, append-only list of significant events:
 | `admin.users.bulk_delete` / `_deactivate` / `_activate` | A bulk action was applied to several accounts |
 | `admin.team_invite.revoke`                  | Admin revoked a team invite link           |
 | `admin.user.notification_rulesets_cleared`  | Admin reset an account's notification rules |
+| `admin.notice.create` / `update` / `delete` | Notice-board entry authored or removed     |
+| `admin.notice.publish` / `unpublish`        | A notice went live, or was taken down      |
 
 Each entry records the acting `user_id` (or `null` for system actions), the
 `action`, optional `resource_type` / `resource_id`, a `metadata` JSON object,

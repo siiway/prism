@@ -327,6 +327,28 @@ export interface SocialConnectionRow {
   connected_at: number;
 }
 
+/** A notice-board entry. See worker/db/migrations/0060_notices.sql. */
+export interface NoticeRow {
+  id: string;
+  title: string;
+  /** Markdown, rendered client-side through the profile-README sanitizer. */
+  body: string;
+  level: "info" | "warning" | "critical";
+  /** 'public' | 'users' | 'admins' | 'team' */
+  audience: string;
+  /** Set only when audience = 'team'. */
+  team_id: string | null;
+  is_published: number;
+  /** NULL start = as soon as published; NULL end = until unpublished. */
+  starts_at: number | null;
+  ends_at: number | null;
+  is_dismissible: number;
+  pinned: number;
+  created_by: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface UserEmailRow {
   id: string;
   user_id: string;

@@ -45,6 +45,7 @@ export function AdminLayout() {
     { value: "/admin/apps", label: t("admin.applicationsTab") },
     { value: "/admin/teams", label: t("admin.teamsTab") },
     { value: "/admin/settings", label: t("admin.settingsTab") },
+    { value: "/admin/notices", label: t("admin.noticesTab") },
     { value: "/admin/invites", label: t("admin.invitesTab") },
     { value: "/admin/connections", label: t("admin.connectionsTab") },
     { value: "/admin/audit", label: t("admin.auditLogTab") },

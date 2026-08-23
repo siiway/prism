@@ -45,6 +45,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 import { useThemeStore, type ThemeMode } from "../store/theme";
+import { NoticeBoard } from "./NoticeBoard";
 
 const useStyles = makeStyles({
   shell: {
@@ -535,6 +536,9 @@ export function Layout() {
 
       <main className={styles.main}>
         <div className={styles.content}>
+          {/* Above the page, not inside it — a notice about the instance is
+              not part of whatever the user came here to do. */}
+          <NoticeBoard />
           <Outlet />
         </div>
       </main>

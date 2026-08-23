@@ -490,6 +490,13 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
+              path: "notices",
+              lazy: () =>
+                import("./pages/admin/AdminNotices").then((m) => ({
+                  Component: m.AdminNotices,
+                })),
+            },
+            {
               path: "scope-grants",
               lazy: () =>
                 import("./pages/admin/AdminScopeGrants").then((m) => ({

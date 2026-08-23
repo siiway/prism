@@ -658,6 +658,20 @@ Same gating as the database console, via `KV_CONSOLE` (which follows
 | `GET`    | `/api/admin/users/:id/notifications`       | Ruleset names, active flag and rule counts — not their contents              |
 | `DELETE` | `/api/admin/users/:id/notification-rulesets` | Reset routing to the per-event defaults                                    |
 
+### Notice board
+
+Reading takes optional auth — public notices exist for people who cannot sign
+in. Writing is admin-only. See [Admin → Notice board](admin.md#notice-board).
+
+| Method   | Path                              | Notes                                                                        |
+| -------- | --------------------------------- | ------------------------------------------------------------------------------ |
+| `GET`    | `/api/notices`                    | Notices for the current viewer: published, in window, matching their audience, not already dismissed. Signed out returns the `public` ones |
+| `POST`   | `/api/notices/:id/dismiss`        | Dismiss for the calling user. 401 signed out, 403 when the notice is not dismissible |
+| `GET`    | `/api/admin/notices`              | Every notice, drafts included, with dismissal counts                         |
+| `POST`   | `/api/admin/notices`              | Create. `{ title, body, level?, audience?, team_id?, is_published?, starts_at?, ends_at?, is_dismissible?, pinned? }` — a draft unless `is_published` |
+| `PATCH`  | `/api/admin/notices/:id`          | Update. Validated against the merged row, so moving one bound still checks the other. `{ reset_dismissals: true }` brings it back for everyone who hid it |
+| `DELETE` | `/api/admin/notices/:id`          | Delete, cascading to dismissals. Unpublish instead to keep it as a draft     |
+
 ### Database
 
 Direct D1 access. Admin-only, session-only, and every call is audited. See

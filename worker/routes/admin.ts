@@ -73,6 +73,7 @@ import adminDbRoutes from "./admin-db";
 import adminKvRoutes from "./admin-kv";
 import adminMaintenanceRoutes from "./admin-maintenance";
 import adminOpsRoutes from "./admin-ops";
+import { adminRoutes as adminNoticeRoutes } from "./notices";
 import adminUserRoutes from "./admin-users";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -92,6 +93,9 @@ app.route("/kv", adminKvRoutes);
 app.route("/", adminOpsRoutes);
 // The scheduled jobs, runnable on demand.
 app.route("/maintenance", adminMaintenanceRoutes);
+// Notice board authoring. The reader half is mounted at /api/notices with
+// optional auth, since public notices exist for people who cannot sign in.
+app.route("/notices", adminNoticeRoutes);
 
 // ─── Site configuration ───────────────────────────────────────────────────────
 

@@ -583,6 +583,19 @@ OAuth scope 版本：
 | `GET`    | `/api/admin/users/:id/notifications`    | 规则集名称、是否生效与规则数量 —— 不含具体内容                   |
 | `DELETE` | `/api/admin/users/:id/notification-rulesets` | 将路由重置为按事件的默认设置                                |
 
+### 公告板
+
+读取使用可选认证 —— 公开公告正是为无法登录的人而存在。撰写仅限管理员。详见 [管理员 → 公告板](admin.md#公告板)。
+
+| Method   | Path                        | 说明                                                             |
+| -------- | --------------------------- | ---------------------------------------------------------------- |
+| `GET`    | `/api/notices`              | 当前查看者可见的公告：已发布、在展示窗口内、受众匹配、且未被关闭。未登录时返回 `public` 公告 |
+| `POST`   | `/api/notices/:id/dismiss`  | 为调用者关闭该公告。未登录返回 401，公告不可关闭时返回 403       |
+| `GET`    | `/api/admin/notices`        | 全部公告（含草稿），带关闭次数统计                               |
+| `POST`   | `/api/admin/notices`        | 创建。`{ title, body, level?, audience?, team_id?, is_published?, starts_at?, ends_at?, is_dismissible?, pinned? }` —— 未设 `is_published` 时为草稿 |
+| `PATCH`  | `/api/admin/notices/:id`    | 更新。基于合并后的记录校验，因此只改一端时间也会与另一端比对。`{ reset_dismissals: true }` 会让它对所有关闭过的人重新出现 |
+| `DELETE` | `/api/admin/notices/:id`    | 删除，并级联删除关闭记录。若只是想撤下，请改用取消发布           |
+
 ### 数据库
 
 直接访问 D1。仅限管理员、仅接受会话认证，且每次调用都会被审计。详见 [管理员 → 数据库](admin.md#数据库)。
