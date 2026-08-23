@@ -52,6 +52,7 @@ import type { DbColumn, DbQueryResult, DbRowPage } from "../../lib/api";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 import { useToastMessage } from "../../lib/useToastMessage";
+import { AdminKvBrowser } from "./AdminKvBrowser";
 
 const PAGE_SIZE = 50;
 
@@ -681,7 +682,7 @@ export function AdminDatabase() {
   const styles = useStyles();
   const { t } = useTranslation();
   const { message, showMsg } = useToastMessage();
-  const [tab, setTab] = useState<"browse" | "sql">("browse");
+  const [tab, setTab] = useState<"browse" | "sql" | "kv">("browse");
   const [selected, setSelected] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -697,6 +698,14 @@ export function AdminDatabase() {
     staleTime: 5 * 60 * 1000,
   });
   const writable = status?.writable ?? true;
+  // KV can be turned off independently of the database console.
+  const { data: kvStatus } = useQuery({
+    queryKey: ["admin-kv-status"],
+    queryFn: () => api.adminKvStatus(),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const kvAvailable = kvStatus ? kvStatus.mode !== "off" : true;
 
   const tables = data?.tables ?? [];
   const active = selected ?? tables[0]?.name ?? null;
@@ -713,13 +722,16 @@ export function AdminDatabase() {
 
       <TabList
         selectedValue={tab}
-        onTabSelect={(_, d) => setTab(d.value as "browse" | "sql")}
+        onTabSelect={(_, d) => setTab(d.value as "browse" | "sql" | "kv")}
       >
         <Tab value="browse">{t("admin.dbBrowseTab")}</Tab>
         <Tab value="sql">{t("admin.dbSqlTab")}</Tab>
+        {kvAvailable && <Tab value="kv">{t("admin.kvTab")}</Tab>}
       </TabList>
 
-      {tab === "browse" ? (
+      {tab === "kv" && kvAvailable ? (
+        <AdminKvBrowser showMsg={showMsg} />
+      ) : tab === "browse" ? (
         <div className={styles.split}>
           <div>
             <Field label={t("admin.dbTablesLabel")}>

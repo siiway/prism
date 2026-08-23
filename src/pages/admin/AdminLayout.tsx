@@ -50,6 +50,7 @@ export function AdminLayout() {
     { value: "/admin/audit", label: t("admin.auditLogTab") },
     { value: "/admin/login-errors", label: t("admin.loginErrorsTab") },
     { value: "/admin/logs", label: t("admin.logsTab") },
+    { value: "/admin/domains", label: t("admin.domainsTab") },
     { value: "/admin/image-proxy", label: t("admin.imageProxyTab") },
     ...(dbStatus && dbStatus.mode === "off"
       ? []

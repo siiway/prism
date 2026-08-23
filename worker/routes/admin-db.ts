@@ -26,36 +26,13 @@ import { Hono } from "hono";
 import { getIp } from "../lib/clientIp";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { readPage } from "../lib/pagination";
+import { d1ConsoleMode } from "../lib/consoleMode";
 import type { Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
 // ─── Availability ─────────────────────────────────────────────────────────────
-
-export type D1ConsoleMode = "full" | "read-only" | "off";
-
-/** Read the `D1_CONSOLE` var.
- *
- *  Unset means "full", because the operator who deploys the instance is the
- *  audience for this feature and shouldn't have to opt in to reach their own
- *  database. Operators who'd rather not carry the risk turn it down:
- *
- *    "off"                       — the whole surface 404s
- *    "read-only" / "readonly" / "read"
- *                                — browse and SELECT; every write refused
- *
- *  A value that parses as false ("0", "false", "no", "off") is also "off", so
- *  `D1_CONSOLE: "false"` does the obvious thing rather than silently leaving
- *  the console wide open. */
-export function d1ConsoleMode(env: Env): D1ConsoleMode {
-  const raw = env.D1_CONSOLE?.trim().toLowerCase();
-  if (!raw) return "full";
-  if (["read-only", "readonly", "read"].includes(raw)) return "read-only";
-  if (["0", "false", "no", "off", "disabled", "none"].includes(raw))
-    return "off";
-  return "full";
-}
 
 // `off` hides the surface rather than 403-ing it: an operator who turned this
 // off wants it gone, and a 404 is the honest answer to "is there a database

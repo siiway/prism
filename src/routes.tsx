@@ -483,6 +483,13 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
+              path: "domains",
+              lazy: () =>
+                import("./pages/admin/AdminDomains").then((m) => ({
+                  Component: m.AdminDomains,
+                })),
+            },
+            {
               path: "database",
               lazy: () =>
                 import("./pages/admin/AdminDatabase").then((m) => ({

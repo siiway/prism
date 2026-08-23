@@ -70,6 +70,8 @@ import {
 import { hashLookupCandidate } from "../lib/secretCrypto";
 
 import adminDbRoutes from "./admin-db";
+import adminKvRoutes from "./admin-kv";
+import adminOpsRoutes from "./admin-ops";
 import adminUserRoutes from "./admin-users";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -80,6 +82,13 @@ app.use("*", requireAdmin);
 // Direct database access — schema browser, row editor and SQL console.
 // Mounted here so it inherits requireAdmin rather than re-deriving it.
 app.route("/db", adminDbRoutes);
+// The same window onto KV.
+app.route("/kv", adminKvRoutes);
+// Instance-wide operations: mass revocation, site-wide domains, application
+// transfer, lifting an account restriction. Registered before the concrete
+// routes below so its /domains and /apps/:id/transfer paths resolve; the
+// deeper /users/:id/* routes it adds sit alongside adminUserRoutes.
+app.route("/", adminOpsRoutes);
 
 // ─── Site configuration ───────────────────────────────────────────────────────
 
@@ -976,6 +985,12 @@ app.get("/users/:id", async (c) => {
       email_verified: user.email_verified === 1,
       is_active: user.is_active === 1,
       created_at: user.created_at,
+      // Restriction state. The account page needs it to decide whether to
+      // offer "lift the restriction" at all — a button that only ever
+      // returns 400 for most accounts is worse than no button.
+      origin_team_id: user.origin_team_id,
+      origin_join_completed: user.origin_join_completed === 1,
+      converted_at: user.converted_at,
     },
     apps: apps.results,
     connections: connections.results,

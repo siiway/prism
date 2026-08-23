@@ -2038,6 +2038,144 @@ export const api = {
       getToken(),
     ),
 
+  // ── Key-value browser ─────────────────────────────────────────────────────
+  adminKvStatus: () =>
+    request<{
+      mode: "full" | "read-only" | "off";
+      writable: boolean;
+      namespaces: Array<{ key: string; description: string }>;
+    }>("GET", "/admin/kv/status", undefined, getToken()),
+  adminKvKeys: (
+    ns: string,
+    params: { prefix?: string; cursor?: string; limit?: number } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.prefix) search.set("prefix", params.prefix);
+    if (params.cursor) search.set("cursor", params.cursor);
+    if (params.limit) search.set("limit", String(params.limit));
+    const qs = search.toString();
+    return request<KvKeyPage>(
+      "GET",
+      `/admin/kv/${ns}/keys${qs ? `?${qs}` : ""}`,
+      undefined,
+      getToken(),
+    );
+  },
+  adminKvGet: (ns: string, key: string) =>
+    request<KvEntry>(
+      "GET",
+      `/admin/kv/${ns}/keys/${encodeURIComponent(key)}`,
+      undefined,
+      getToken(),
+    ),
+  adminKvPut: (
+    ns: string,
+    key: string,
+    value: string,
+    expirationTtl?: number | null,
+  ) =>
+    request<{ message: string }>(
+      "PUT",
+      `/admin/kv/${ns}/keys/${encodeURIComponent(key)}`,
+      { value, expiration_ttl: expirationTtl ?? null },
+      getToken(),
+    ),
+  adminKvDelete: (ns: string, key: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/kv/${ns}/keys/${encodeURIComponent(key)}`,
+      undefined,
+      getToken(),
+    ),
+  adminKvPurge: (ns: string, prefix: string) =>
+    request<{
+      message: string;
+      deleted: number;
+      skipped_protected: number;
+      more: boolean;
+    }>(
+      "POST",
+      `/admin/kv/${ns}/purge?prefix=${encodeURIComponent(prefix)}`,
+      {},
+      getToken(),
+    ),
+
+  // ── Instance-wide operations ──────────────────────────────────────────────
+  adminRevokePreview: () =>
+    request<{
+      sessions: number;
+      oauth_tokens: number;
+      oauth_consents: number;
+      personal_access_tokens: number;
+    }>("GET", "/admin/revoke/preview", undefined, getToken()),
+  adminRevokeAllSessions: (includeSelf = false) =>
+    request<{ message: string; deleted: number; your_session_kept: boolean }>(
+      "POST",
+      "/admin/revoke/sessions",
+      { include_self: includeSelf },
+      getToken(),
+    ),
+  adminRevokeApp: (appId: string, deactivate = false) =>
+    request<{
+      message: string;
+      tokens_revoked: number;
+      consents_revoked: number;
+      deactivated: boolean;
+    }>("POST", `/admin/revoke/app/${appId}`, { deactivate }, getToken()),
+  adminRevokeUserGrants: (userId: string) =>
+    request<{
+      message: string;
+      tokens_revoked: number;
+      consents_revoked: number;
+    }>("POST", `/admin/revoke/user/${userId}/grants`, {}, getToken()),
+  adminListDomains: (
+    params: { page?: number; limit?: number; q?: string; verified?: "0" | "1" } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    if (params.verified) search.set("verified", params.verified);
+    const qs = search.toString();
+    return request<{
+      domains: AdminDomain[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/domains${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
+  adminSetDomainVerified: (id: string, verified: boolean) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/domains/${id}/verify`,
+      { verified },
+      getToken(),
+    ),
+  adminDeleteDomain: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/domains/${id}`,
+      undefined,
+      getToken(),
+    ),
+  adminTransferApp: (
+    appId: string,
+    target: { owner_id?: string; team_id?: string },
+  ) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/apps/${appId}/transfer`,
+      target,
+      getToken(),
+    ),
+  adminConvertUser: (id: string, requireVerifiedEmail = true) =>
+    request<{ message: string }>(
+      "POST",
+      `/admin/users/${id}/convert`,
+      { require_verified_email: requireVerifiedEmail },
+      getToken(),
+    ),
+
   // Site invites
   adminListInvites: (
     params: { page?: number; limit?: number; q?: string } = {},
@@ -2925,6 +3063,45 @@ export interface DbQueryResult {
   duration_ms: number | null;
 }
 
+// ─── Key-value browser ────────────────────────────────────────────────────────
+
+export interface KvKeyPage {
+  keys: Array<{
+    name: string;
+    expiration: number | null;
+    metadata: unknown;
+    /** Key material — its value is withheld and it cannot be written here. */
+    protected: boolean;
+  }>;
+  list_complete: boolean;
+  /** Opaque continuation token; null when the listing is complete. */
+  cursor: string | null;
+}
+
+export interface KvEntry {
+  key: string;
+  protected: boolean;
+  exists: boolean;
+  /** Always null for a protected key. */
+  value: string | null;
+  metadata: unknown;
+  /** Why the value was withheld, when it was. */
+  reason?: string;
+}
+
+export interface AdminDomain {
+  id: string;
+  domain: string;
+  verified: boolean;
+  verified_at: number | null;
+  user_id: string | null;
+  team_id: string | null;
+  owner_username: string | null;
+  team_name: string | null;
+  team_avatar: string;
+  created_at: number;
+}
+
 export type RedirectUriMatchType = "equals" | "regex" | "wildcard";
 
 export interface RedirectUri {
@@ -3344,7 +3521,14 @@ export interface AdminUserList {
 }
 
 export interface AdminUserDetail {
-  user: UserProfile & { is_active: boolean };
+  user: UserProfile & {
+    is_active: boolean;
+    /** Team whose invite minted this account; null for ordinary accounts. */
+    origin_team_id: string | null;
+    origin_join_completed: boolean;
+    /** When the restriction was lifted; null while it still applies. */
+    converted_at: number | null;
+  };
   apps: unknown[];
   connections: unknown[];
   sessions: unknown[];

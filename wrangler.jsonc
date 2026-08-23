@@ -80,6 +80,9 @@
     // every write; "off" removes the surface entirely (endpoints 404, the
     // tab disappears).
     "D1_CONSOLE": "",
+    // The key-value browser in the same panel. Same values as D1_CONSOLE;
+    // leave empty to follow whatever D1_CONSOLE is set to.
+    "KV_CONSOLE": "",
   },
   "routes": [
     {

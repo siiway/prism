@@ -454,6 +454,73 @@ wrong TOTP, expired challenge, etc.) with their error code, identifier, IP, and
 metadata. The `login_error_retention_days` config controls how long rows are
 kept before the cron sweeps them.
 
+## Domains
+
+**Admin → Domains** is every domain on the instance, personal and team-owned,
+searchable and filterable by verification state. Domains were previously
+reachable only through the account or team that owned them, which is the wrong
+index for the question an operator actually has: who claims `example.com`?
+
+| Action                 | Effect                                                                    |
+| ---------------------- | ------------------------------------------------------------------------- |
+| Force verify           | Marks the domain verified **without checking DNS**                        |
+| Withdraw verification  | Clears the verified flag                                                  |
+| Delete                 | Removes the domain from its owner                                         |
+
+Force-verify is an override, not a check. It exists for domains whose DNS the
+worker cannot reach — split-horizon, an internal TLD, a registrar outage —
+where the alternative is the domain never working at all. The audit entry
+records `method: admin_override` precisely so a verified badge asserted by an
+administrator stays distinguishable from one demonstrated by a DNS record.
+
+## Instance-wide operations
+
+The rest of the admin surface works one row at a time. These apply to
+everything at once, and each is a response to an incident rather than a
+routine task.
+
+### Sign everyone out
+
+**Admin → Settings → Danger Zone → Sign everyone out** deletes every active
+session. The count is shown before you press it. Your own session is kept by
+default — an operator who signs themselves out mid-incident has to log back in
+through whatever they were trying to contain — and "include my own session" is
+there for when your session is the thing you are worried about.
+
+OAuth tokens are not affected. Those are revoked per application or per
+account, below.
+
+### Cut off an application
+
+**Admin → Applications → Revoke all access** deletes every token, refresh
+token, pending authorization code **and consent record** for one app. The
+consent records are the part that matters: leave them and every user walks
+straight back through the consent screen without being asked, which is not
+what "revoked" means to whoever pressed this during a leak. Optionally
+deactivates the app in the same operation.
+
+### Cut off an account
+
+**Admin → Users → Manage → Access → Revoke all authorizations** does the same
+for one account across every application. Personal access tokens are separate
+and revoked in their own section — they are the account's own credentials
+rather than something granted to a third party.
+
+### Transfer an application
+
+**Admin → Applications → Transfer** moves an app to any user or team. Apps
+could already move between a user and their own teams; nothing could move one
+to an unrelated account, which is what is needed when the owner leaves or an
+app was created under the wrong identity. The client ID and secret are
+untouched, so deployed integrations keep working.
+
+### Lift an invite-registration restriction
+
+**Admin → Users → Manage → Lift restriction** converts an account minted
+through a team invite into an ordinary one. The self-serve path requires a
+verified real address first; an operator who has confirmed the holder some
+other way can waive that, and the audit entry records that they did.
+
 ## Database
 
 **Admin → Database** is direct access to the D1 database behind the instance:
@@ -528,6 +595,34 @@ the statement one more time before it runs.
 
 All of them sit behind `requireAdmin` and are session-only.
 
+### Key–value browser
+
+The third tab in **Admin → Database**. KV holds most of what makes an instance
+behave the way it does on a given day — the debug switches, in-flight OAuth
+states, sudo grants, the pending site reset — and nothing else renders any of
+it.
+
+KV has no schema, so navigation is a namespace picker and a prefix box rather
+than a table list. Two namespaces are exposed: `sessions` (sessions, system
+flags, signing keys) and `cache`. Listing pages with KV's own opaque cursor,
+so it moves forward and back rather than jumping to a page number.
+
+**Key material is withheld.** `system:jwt_secret` and the signing keypairs
+come back flagged, without their value, and cannot be written through this
+surface. Reading the JWT secret is equivalent to being able to mint a session
+for any account — which is [the one thing this admin surface deliberately does
+not offer](#the-account-detail-page), and a chosen signing key is the same
+power as a stolen one. Deleting such a key **is** allowed: that is rotation,
+it is loud in the audit log, and the next request regenerates it. Every
+session and token that depended on the old key stops working.
+
+Purging a prefix is bounded to one page per call and skips key material; the
+response says how many it removed, how many it skipped, and whether more
+remain.
+
+`KV_CONSOLE` gates this the same way `D1_CONSOLE` gates the database tabs, and
+follows `D1_CONSOLE` when unset.
+
 ## Audit Log
 
 The **Audit log** tab shows the platform-scope log (Transparent Platform
@@ -585,6 +680,15 @@ webhooks. It is a paginated, append-only list of significant events:
 | `admin.user.email_removed`                  | Admin removed an alternate address         |
 | `admin.user.domain_removed`                 | Admin removed a personal domain            |
 | `admin.user.authorization_revoked`          | Admin revoked an OAuth grant               |
+| `admin.user.converted`                      | Admin lifted an invite-registration restriction |
+| `admin.revoke.all_sessions`                 | Every session on the instance was deleted  |
+| `admin.revoke.app`                          | An application's tokens and consents were revoked |
+| `admin.revoke.user_grants`                  | One account's OAuth grants were revoked    |
+| `admin.app.transfer`                        | An application changed owner               |
+| `admin.domain.force_verify` / `unverify`    | Verification asserted or withdrawn by an admin |
+| `admin.domain.delete`                       | Admin deleted a domain                     |
+| `admin.kv.read` / `write` / `delete`        | A key–value entry was read or changed      |
+| `admin.kv.purge`                            | Every key under a prefix was deleted       |
 
 Each entry records the acting `user_id` (or `null` for system actions), the
 `action`, optional `resource_type` / `resource_id`, a `metadata` JSON object,

@@ -542,6 +542,35 @@ OAuth scope 版本：
 | `GET`            | `/api/admin/users/:id/teams`                       | 团队成员关系（只读 —— 请在团队页修改）                                  |
 | `GET`            | `/api/admin/users/:id/lockdown`                    | `LOCKDOWN_USERS` 是否保护该账号不被删除                                 |
 
+### 键值浏览器
+
+与数据库控制台使用相同的开关，通过 `KV_CONSOLE`（未设置时跟随 `D1_CONSOLE`）。详见 [管理员 → 键值浏览器](admin.md#键值浏览器)。
+
+| Method   | Path                              | 说明                                                                    |
+| -------- | --------------------------------- | ----------------------------------------------------------------------- |
+| `GET`    | `/api/admin/kv/status`            | 模式、是否可写、可用命名空间                                            |
+| `GET`    | `/api/admin/kv/:ns/keys`          | 列出键。`?prefix=`、`?cursor=`、`?limit=`（上限 1000）。返回 KV 的不透明 `cursor` |
+| `GET`    | `/api/admin/kv/:ns/keys/:key`     | 读取单个值（键需 URL 编码）。密钥材料返回 `protected: true` 与 `value: null` |
+| `PUT`    | `/api/admin/kv/:ns/keys/:key`     | 写入。`{ value, expiration_ttl? }`；TTL 下限 60 秒。密钥材料会被拒绝    |
+| `DELETE` | `/api/admin/kv/:ns/keys/:key`     | 删除。密钥材料允许删除 —— 那是轮换                                      |
+| `POST`   | `/api/admin/kv/:ns/purge?prefix=` | 删除某前缀下的全部键，每次调用一页。跳过密钥材料                        |
+
+`:ns` 取值为 `sessions` 或 `cache`。
+
+### 实例级操作
+
+| Method   | Path                                    | 说明                                                             |
+| -------- | --------------------------------------- | ---------------------------------------------------------------- |
+| `GET`    | `/api/admin/revoke/preview`             | 大规模撤销会销毁什么，但不执行                                   |
+| `POST`   | `/api/admin/revoke/sessions`            | 删除全部会话。`{ include_self? }` —— 默认保留调用者自己的会话    |
+| `POST`   | `/api/admin/revoke/app/:appId`          | 删除某应用的令牌、授权码与同意记录。`{ deactivate? }`            |
+| `POST`   | `/api/admin/revoke/user/:userId/grants` | 对某账号在全部应用上执行同样操作                                 |
+| `GET`    | `/api/admin/domains`                    | 全部域名。`?page=`、`?limit=`、`?q=`、`?verified=0\|1`         |
+| `POST`   | `/api/admin/domains/:id/verify`         | `{ verified }` —— 属于覆盖，记录为 `admin_override` 而非校验     |
+| `DELETE` | `/api/admin/domains/:id`                | 删除域名                                                         |
+| `POST`   | `/api/admin/apps/:id/transfer`          | `{ owner_id }` 或 `{ team_id }`。client ID 与密钥保持不变        |
+| `POST`   | `/api/admin/users/:id/convert`          | 解除邀请注册限制。`{ require_verified_email? }`                  |
+
 ### 数据库
 
 直接访问 D1。仅限管理员、仅接受会话认证，且每次调用都会被审计。详见 [管理员 → 数据库](admin.md#数据库)。

@@ -45,6 +45,7 @@ import {
   CheckmarkCircleRegular,
   DeleteRegular,
   KeyResetRegular,
+  PlugDisconnectedRegular,
   StarRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -739,6 +740,41 @@ export function AdminUserDetail() {
     enabled: tab === "resources",
   });
 
+  const qc = useQueryClient();
+
+  const revokeGrants = useMutation({
+    mutationFn: () => api.adminRevokeUserGrants(id),
+    onSuccess: async (res) => {
+      await qc.invalidateQueries({
+        queryKey: ["admin-user-authorizations", id],
+      });
+      showMsg(
+        "success",
+        t("admin.revokeGrantsDone", {
+          tokens: res.tokens_revoked,
+          consents: res.consents_revoked,
+        }),
+      );
+    },
+    onError: (err) =>
+      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+  });
+
+  // Only meaningful for an account minted through a team invite; the button
+  // stays hidden otherwise rather than failing when pressed.
+  const convert = useMutation({
+    mutationFn: (waiveEmail: boolean) => api.adminConvertUser(id, !waiveEmail),
+    onSuccess: async (res) => {
+      await qc.invalidateQueries({ queryKey: ["admin-user", id] });
+      setConverting(false);
+      showMsg("success", res.message);
+    },
+    onError: (err) =>
+      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+  });
+  const [converting, setConverting] = useState(false);
+  const [waiveEmail, setWaiveEmail] = useState(false);
+
   if (isLoading) return <Spinner />;
   if (error || !data)
     return (
@@ -797,10 +833,87 @@ export function AdminUserDetail() {
       {tab === "overview" && (
         <>
           <IdentityCard userId={id} showMsg={showMsg} />
+          {/* Only accounts minted through a team invite carry a restriction,
+              so the section is absent rather than empty for everyone else. */}
+          {user.origin_team_id && (
+            <Section
+              title={t("admin.restrictionSection")}
+              action={
+                !user.converted_at && (
+                  <Button size="small" onClick={() => setConverting(true)}>
+                    {t("admin.liftRestriction")}
+                  </Button>
+                )
+              }
+            >
+              <div className={styles.row}>
+                <Badge
+                  appearance="tint"
+                  color={user.converted_at ? "success" : "warning"}
+                >
+                  {user.converted_at
+                    ? t("admin.restrictionLifted")
+                    : t("admin.restrictionActive")}
+                </Badge>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  onClick={() => navigate(`/teams/${user.origin_team_id}`)}
+                >
+                  {t("admin.originTeam")}
+                </Button>
+                {user.converted_at && (
+                  <Text size={200} className={styles.muted}>
+                    {ts(user.converted_at)}
+                  </Text>
+                )}
+              </div>
+            </Section>
+          )}
           <SecurityCard userId={id} showMsg={showMsg} />
           <EmailsCard userId={id} showMsg={showMsg} />
         </>
       )}
+
+      <Dialog
+        open={converting}
+        onOpenChange={(_, d) => !d.open && setConverting(false)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("admin.liftRestrictionTitle")}</DialogTitle>
+            <DialogContent>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  paddingTop: 8,
+                }}
+              >
+                <Text block>{t("admin.liftRestrictionBody")}</Text>
+                <Switch
+                  checked={waiveEmail}
+                  onChange={(_, d) => setWaiveEmail(d.checked)}
+                  label={t("admin.waiveEmailVerification")}
+                />
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <DialogTrigger disableButtonEnhancement>
+                <Button>{t("common.cancel")}</Button>
+              </DialogTrigger>
+              <Button
+                appearance="primary"
+                disabled={convert.isPending}
+                onClick={() => convert.mutate(waiveEmail)}
+              >
+                {t("admin.liftRestriction")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       {tab === "access" && (
         <>
@@ -864,6 +977,29 @@ export function AdminUserDetail() {
             removeLabel={t("common.remove")}
             showMsg={showMsg}
           />
+          {/* The per-row revoke below handles one app; this handles a
+              compromised account, where the answer is all of them. */}
+          <Section
+            title={t("admin.revokeGrantsSection")}
+            action={
+              <Button
+                size="small"
+                icon={<PlugDisconnectedRegular />}
+                disabled={
+                  revokeGrants.isPending ||
+                  authorizations.data?.authorizations.length === 0
+                }
+                onClick={() => revokeGrants.mutate()}
+              >
+                {t("admin.revokeAllGrants")}
+              </Button>
+            }
+          >
+            <Text size={200} className={styles.muted}>
+              {t("admin.revokeGrantsHint")}
+            </Text>
+          </Section>
+
           <RemovableList
             title={t("admin.authorizationsSection")}
             rows={authorizations.data?.authorizations.map((row) => ({

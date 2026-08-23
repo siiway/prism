@@ -616,6 +616,36 @@ user-scope log (marked `site_admin: true`). See
 | `GET`             | `/api/admin/users/:id/teams`                            | Team memberships (read-only — change them on the team)                                    |
 | `GET`             | `/api/admin/users/:id/lockdown`                         | Whether `LOCKDOWN_USERS` protects this account from deletion                              |
 
+### Key–value browser
+
+Same gating as the database console, via `KV_CONSOLE` (which follows
+`D1_CONSOLE` when unset). See [Admin → Key–value browser](admin.md#keyvalue-browser).
+
+| Method   | Path                                | Notes                                                                                  |
+| -------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET`    | `/api/admin/kv/status`              | Mode, writability, available namespaces                                                |
+| `GET`    | `/api/admin/kv/:ns/keys`            | List keys. `?prefix=`, `?cursor=`, `?limit=` (max 1000). Returns KV's opaque `cursor`   |
+| `GET`    | `/api/admin/kv/:ns/keys/:key`       | Read one value (key URL-encoded). Key material returns `protected: true` and `value: null` |
+| `PUT`    | `/api/admin/kv/:ns/keys/:key`       | Write. `{ value, expiration_ttl? }`; TTL floor is 60s. Refused for key material         |
+| `DELETE` | `/api/admin/kv/:ns/keys/:key`       | Delete. Allowed for key material — that is rotation                                     |
+| `POST`   | `/api/admin/kv/:ns/purge?prefix=`   | Delete every key under a prefix, one page per call. Skips key material                 |
+
+`:ns` is `sessions` or `cache`.
+
+### Instance-wide operations
+
+| Method   | Path                                       | Notes                                                                        |
+| -------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET`    | `/api/admin/revoke/preview`                | What a mass revocation would destroy, without destroying it                  |
+| `POST`   | `/api/admin/revoke/sessions`               | Delete every session. `{ include_self? }` — the caller's is kept by default   |
+| `POST`   | `/api/admin/revoke/app/:appId`             | Delete an app's tokens, codes and consents. `{ deactivate? }`                 |
+| `POST`   | `/api/admin/revoke/user/:userId/grants`    | The same for one account across every application                            |
+| `GET`    | `/api/admin/domains`                       | Every domain. `?page=`, `?limit=`, `?q=`, `?verified=0\|1`                     |
+| `POST`   | `/api/admin/domains/:id/verify`            | `{ verified }` — an override, logged as `admin_override` rather than a check  |
+| `DELETE` | `/api/admin/domains/:id`                   | Delete a domain                                                              |
+| `POST`   | `/api/admin/apps/:id/transfer`             | `{ owner_id }` or `{ team_id }`. Client ID and secret unchanged               |
+| `POST`   | `/api/admin/users/:id/convert`             | Lift an invite-registration restriction. `{ require_verified_email? }`        |
+
 ### Database
 
 Direct D1 access. Admin-only, session-only, and every call is audited. See
