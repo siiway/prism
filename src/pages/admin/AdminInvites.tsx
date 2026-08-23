@@ -13,6 +13,8 @@ import {
   Input,
   MessageBar,
   Spinner,
+  Tab,
+  TabList,
   Switch,
   Table,
   TableBody,
@@ -36,6 +38,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type SiteInvite } from "../../lib/api";
+import { AdminTeamInvites } from "./AdminTeamInvites";
 import { formatDate } from "../../lib/datetime";
 import { EmptyState } from "../../components/EmptyState";
 import { Pagination } from "../../components/Pagination";
@@ -108,6 +111,7 @@ export function AdminInvites() {
   const { t } = useTranslation();
   const qc = useQueryClient();
 
+  const [tab, setTab] = useState<"site" | "team">("site");
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -198,8 +202,34 @@ export function AdminInvites() {
 
   const totalPages = data ? Math.ceil(data.total / 20) : 1;
 
+  // Site invites create accounts on the instance; team invites add people to
+  // a team (and, when granted, create accounts too). Different lifecycles,
+  // same question when one leaks — so they share a screen rather than a table.
+  if (tab === "team") {
+    return (
+      <div className={styles.section}>
+        <TabList
+          selectedValue={tab}
+          onTabSelect={(_, d) => setTab(d.value as "site" | "team")}
+        >
+          <Tab value="site">{t("admin.siteInvitesTab")}</Tab>
+          <Tab value="team">{t("admin.teamInvitesTab")}</Tab>
+        </TabList>
+        <AdminTeamInvites />
+      </div>
+    );
+  }
+
   return (
     <div className={styles.section}>
+      <TabList
+        selectedValue={tab}
+        onTabSelect={(_, d) => setTab(d.value as "site" | "team")}
+      >
+        <Tab value="site">{t("admin.siteInvitesTab")}</Tab>
+        <Tab value="team">{t("admin.teamInvitesTab")}</Tab>
+      </TabList>
+
       <Title3>{t("admin.invites")}</Title3>
 
       <form onSubmit={handleCreate} className={styles.form}>

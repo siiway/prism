@@ -720,6 +720,76 @@ app.delete("/:id/authorizations/:consentId", async (c) => {
   return c.json({ message: "Authorization revoked" });
 });
 
+// ─── Notification routing ─────────────────────────────────────────────────────
+
+/** How this account's notifications are routed, in outline.
+ *
+ *  Counts rather than contents. An operator handling "I stopped getting
+ *  emails" needs to know whether a ruleset is active and how many rules it
+ *  has; reading which addresses and chat accounts someone routes what to is a
+ *  different thing, and not one this ticket requires. */
+app.get("/:id/notifications", async (c) => {
+  const id = c.req.param("id");
+  const [rulesets, prefs] = await Promise.all([
+    c.env.DB.prepare(
+      "SELECT id, name, is_active, rules FROM notification_rulesets WHERE user_id = ?",
+    )
+      .bind(id)
+      .all<{ id: string; name: string; is_active: number; rules: string }>(),
+    c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM user_notification_prefs WHERE user_id = ?",
+    )
+      .bind(id)
+      .first<{ n: number }>(),
+  ]);
+
+  return c.json({
+    rulesets: rulesets.results.map((row) => {
+      let ruleCount = 0;
+      try {
+        const parsed = JSON.parse(row.rules) as unknown;
+        if (Array.isArray(parsed)) ruleCount = parsed.length;
+      } catch {
+        ruleCount = -1;
+      }
+      return {
+        id: row.id,
+        name: row.name,
+        is_active: row.is_active === 1,
+        /** -1 when the stored blob could not be parsed — itself a finding. */
+        rule_count: ruleCount,
+      };
+    }),
+    legacy_pref_count: prefs?.n ?? 0,
+  });
+});
+
+/** Clear the account's notification routing back to defaults.
+ *
+ *  A ruleset that routes everything nowhere looks identical, from the user's
+ *  side, to notifications being broken. Deleting the rulesets drops the
+ *  account back to the per-event preferences, which is a state that works. */
+app.delete("/:id/notification-rulesets", async (c) => {
+  const id = c.req.param("id");
+  const target = await loadTarget(c.env.DB, id);
+  if (!target) return c.json({ error: "User not found" }, 404);
+
+  const count = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM notification_rulesets WHERE user_id = ?",
+  )
+    .bind(id)
+    .first<{ n: number }>();
+
+  await c.env.DB.prepare("DELETE FROM notification_rulesets WHERE user_id = ?")
+    .bind(id)
+    .run();
+
+  auditUser(c, id, target.username, "user.notification_rulesets_cleared", {
+    removed: count?.n ?? 0,
+  });
+  return c.json({ message: "Notification rules reset", removed: count?.n ?? 0 });
+});
+
 // ─── Team memberships ─────────────────────────────────────────────────────────
 
 /** Where this account sits across the instance. Read-only here; the team

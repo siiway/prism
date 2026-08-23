@@ -866,7 +866,25 @@ export function AdminUserDetail() {
     enabled: tab === "resources",
   });
 
+  const notifications = useQuery({
+    queryKey: ["admin-user-notifications", id],
+    queryFn: () => api.adminUserNotifications(id),
+    enabled: tab === "resources",
+  });
+
   const qc = useQueryClient();
+
+  const resetNotifications = useMutation({
+    mutationFn: () => api.adminResetUserNotifications(id),
+    onSuccess: async (res) => {
+      await qc.invalidateQueries({
+        queryKey: ["admin-user-notifications", id],
+      });
+      showMsg("success", res.message);
+    },
+    onError: (err) =>
+      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+  });
 
   const revokeGrants = useMutation({
     mutationFn: () => api.adminRevokeUserGrants(id),
@@ -1174,6 +1192,52 @@ export function AdminUserDetail() {
             removeLabel={t("common.remove")}
             showMsg={showMsg}
           />
+
+          {/* Counts, not contents. An operator handling "I stopped getting
+              emails" needs to know whether a ruleset is active; reading which
+              addresses someone routes what to is a different thing. */}
+          <Section
+            title={t("admin.notificationsSection")}
+            action={
+              <Button
+                size="small"
+                disabled={
+                  resetNotifications.isPending ||
+                  (notifications.data?.rulesets.length ?? 0) === 0
+                }
+                onClick={() => resetNotifications.mutate()}
+              >
+                {t("admin.resetNotificationRules")}
+              </Button>
+            }
+          >
+            {!notifications.data ? (
+              <Spinner size="tiny" />
+            ) : (
+              <div className={styles.row}>
+                {notifications.data.rulesets.length === 0 ? (
+                  <Text className={styles.muted}>
+                    {t("admin.noRulesets", {
+                      count: notifications.data.legacy_pref_count,
+                    })}
+                  </Text>
+                ) : (
+                  notifications.data.rulesets.map((r) => (
+                    <Badge
+                      key={r.id}
+                      appearance="tint"
+                      color={r.is_active ? "success" : "subtle"}
+                    >
+                      {r.name} ·{" "}
+                      {r.rule_count < 0
+                        ? t("admin.rulesUnreadable")
+                        : t("admin.ruleCount", { count: r.rule_count })}
+                    </Badge>
+                  ))
+                )}
+              </div>
+            )}
+          </Section>
 
           <Section title={t("admin.teamsSection")}>
             {!teams.data ? (

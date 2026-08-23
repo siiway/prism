@@ -577,6 +577,11 @@ OAuth scope 版本：
 | `DELETE` | `/api/admin/users/:id/sessions/:sessionId` | 结束单个会话（`DELETE …/sessions` 仍然结束全部）              |
 | `GET`    | `/api/admin/maintenance/jobs`           | 可执行的定时任务，以及它们平时运行的 cron 表达式                 |
 | `POST`   | `/api/admin/maintenance/jobs/:key/run`  | 立即执行。会 await —— 返回 `processed`（任务无计数时为 `null`）与 `duration_ms` |
+| `POST`   | `/api/admin/users/bulk`                 | `{ user_ids, action }`，action 为 `activate` \| `deactivate` \| `delete`。最多 50 个 ID；调用者本人及 `LOCKDOWN_USERS` 中的账号会被跳过并列入 `skipped` |
+| `GET`    | `/api/admin/team-invites`               | 全部未失效的团队邀请。`?page=`、`?limit=`、`?q=` 团队/邮箱、`?registration=1` |
+| `DELETE` | `/api/admin/team-invites/:token`        | 撤销单个邀请链接                                                 |
+| `GET`    | `/api/admin/users/:id/notifications`    | 规则集名称、是否生效与规则数量 —— 不含具体内容                   |
+| `DELETE` | `/api/admin/users/:id/notification-rulesets` | 将路由重置为按事件的默认设置                                |
 
 ### 数据库
 
@@ -596,6 +601,7 @@ OAuth scope 版本：
 | Method   | Path                                  | 说明               |
 | -------- | ------------------------------------- | ------------------ |
 | `GET`    | `/api/admin/audit-log?page=…`         | 审计事件           |
+| `GET`    | `/api/audit/:scope/export`            | 导出调用者有权读取的任意作用域。`?format=csv\|json` 及表格的筛选条件。上限 10000 条 |
 | `GET`    | `/api/admin/login-errors`             | 失败登录表         |
 | `GET`    | `/api/admin/request-logs`             | 可筛选的请求日志   |
 | `GET`    | `/api/admin/request-logs/export`      | 当前筛选导出 CSV   |

@@ -16,6 +16,12 @@ import {
   DialogActions,
   Dropdown,
   Input,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  MessageBar,
   Option,
   Spinner,
   Text,
@@ -24,6 +30,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  ArrowDownloadRegular,
   DismissRegular,
   FilterRegular,
   SearchRegular,
@@ -32,7 +39,7 @@ import {
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, type AuditEvent } from "../lib/api";
+import { api, ApiError, type AuditEvent } from "../lib/api";
 import { maskIp, parseClient } from "../lib/auditFormat";
 import { formatIpGeo } from "../lib/geo";
 import { AuditWebhooks } from "./AuditWebhooks";
@@ -138,6 +145,29 @@ export function AuditLog({ base }: { base: string }) {
     setPage(1);
   };
 
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const runExport = async (format: "csv" | "json") => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await api.auditExport(base, format, {
+        from: toUnix(filters.from),
+        to: toUnix(filters.to),
+        action: filters.action,
+        actor_id: filters.actorId,
+        resource_type: filters.resourceType,
+        resource_id: filters.resourceId,
+      });
+    } catch (err) {
+      setExportError(
+        err instanceof ApiError ? err.message : t("audit.exportFailed"),
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (showWebhooks) {
     return <AuditWebhooks base={base} onBack={() => setShowWebhooks(false)} />;
   }
@@ -188,6 +218,21 @@ export function AuditLog({ base }: { base: string }) {
           </Button>
         )}
         <div style={{ flex: 1 }} />
+        {/* Exports what the filters currently select, not the whole log —
+            otherwise the file and the table on screen disagree. */}
+        <Menu>
+          <MenuTrigger disableButtonEnhancement>
+            <Button icon={<ArrowDownloadRegular />} disabled={exporting}>
+              {t("audit.export")}
+            </Button>
+          </MenuTrigger>
+          <MenuPopover>
+            <MenuList>
+              <MenuItem onClick={() => runExport("csv")}>CSV</MenuItem>
+              <MenuItem onClick={() => runExport("json")}>JSON</MenuItem>
+            </MenuList>
+          </MenuPopover>
+        </Menu>
         <Button
           icon={<PlugConnectedRegular />}
           onClick={() => setShowWebhooks(true)}
@@ -195,6 +240,7 @@ export function AuditLog({ base }: { base: string }) {
           {t("audit.editWebhooks")}
         </Button>
       </div>
+      {exportError && <MessageBar intent="error">{exportError}</MessageBar>}
 
       {(filters.actorId || filters.resourceId || filters.resourceType) && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

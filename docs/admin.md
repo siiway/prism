@@ -454,6 +454,47 @@ wrong TOTP, expired challenge, etc.) with their error code, identifier, IP, and
 metadata. The `login_error_retention_days` config controls how long rows are
 kept before the cron sweeps them.
 
+### Bulk account actions
+
+**Admin → Users** selects accounts with checkboxes and applies activate,
+deactivate or delete to the set.
+
+The selection is by explicit id and is sent as one, so what the server acts on
+is exactly what was on screen — a filter re-evaluated server-side can match
+rows that appeared between the preview and the press. Fifty accounts per call
+is the cap; it is a blast-radius limit rather than a performance one. Deleting
+asks for the count to be typed back, which is the one thing a mis-click cannot
+supply.
+
+Your own account is always skipped, and `LOCKDOWN_USERS` still protects its
+accounts from deletion (not from deactivation — that list exists so an instance
+keeps a usable administrator, and deactivation is reversible). Skipped accounts
+come back named with a reason rather than merely counted.
+
+### Team invites
+
+**Admin → Invites → Team invites** lists every outstanding team invite on the
+instance, filterable to the account-creating ones. Invites were visible only
+from inside the team that issued them, which is the wrong index when a link has
+leaked and the question is what else its creator handed out.
+
+The token is shown, because tracing a leaked link means matching what someone
+was sent against what exists. Revoking kills the link immediately; accounts
+already created through it are unaffected — `GET /api/admin/restricted-users?invite_token=…`
+finds those.
+
+### Notification routing
+
+**Admin → Users → Manage → Resources** shows whether an account has a custom
+notification ruleset and how many rules it holds, and can reset it to the
+per-event defaults.
+
+Counts, not contents. An operator handling "I stopped getting emails" needs to
+know whether a ruleset is active; reading which addresses and chat accounts
+someone routes what to is a different thing and is not offered here. A ruleset
+that routes everything nowhere looks, from the user's side, exactly like
+notifications being broken — the reset is the fix.
+
 ## Domains
 
 **Admin → Domains** is every domain on the instance, personal and team-owned,
@@ -725,6 +766,9 @@ webhooks. It is a paginated, append-only list of significant events:
 | `admin.scope_grant.revoke`                  | A site or team scope grant was withdrawn   |
 | `admin.session.revoke`                      | Admin ended one session                    |
 | `admin.maintenance.run` / `error`           | A scheduled job was run on demand          |
+| `admin.users.bulk_delete` / `_deactivate` / `_activate` | A bulk action was applied to several accounts |
+| `admin.team_invite.revoke`                  | Admin revoked a team invite link           |
+| `admin.user.notification_rulesets_cleared`  | Admin reset an account's notification rules |
 
 Each entry records the acting `user_id` (or `null` for system actions), the
 `action`, optional `resource_type` / `resource_id`, a `metadata` JSON object,

@@ -15,7 +15,12 @@
 
 import { Hono } from "hono";
 import { getIp } from "../lib/clientIp";
-import { recordAudit, auditRequestMeta } from "../lib/audit";
+import {
+  recordAudit,
+  recordAccountDeletion,
+  auditRequestMeta,
+} from "../lib/audit";
+import { isUserLocked } from "../lib/lockdown";
 import { readPage, likePattern } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
 import type { DomainRow, Variables } from "../types";
@@ -507,6 +512,211 @@ app.post("/users/:id/convert", async (c) => {
     { type: "user", id: user.id, name: user.username },
   );
   return c.json({ message: "Restriction lifted" });
+});
+
+// ─── Team invites ─────────────────────────────────────────────────────────────
+
+/** Every outstanding team invite on the instance.
+ *
+ *  Invites were visible only from inside the team that issued them, which is
+ *  the wrong index when a link has leaked and the question is "what else did
+ *  this creator hand out". Registration-capable invites — the ones that mint
+ *  accounts — are the reason this needs to be one list rather than a tour of
+ *  every team page. */
+app.get("/team-invites", async (c) => {
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+    100,
+  );
+  const query = c.req.query("q")?.trim() ?? "";
+  const registrationOnly = c.req.query("registration") === "1";
+
+  const where: string[] = [];
+  const args: unknown[] = [];
+  if (query) {
+    where.push(
+      "(LOWER(t.name) LIKE LOWER(?) ESCAPE '\\' OR LOWER(i.email) LIKE LOWER(?) ESCAPE '\\')",
+    );
+    args.push(likePattern(query), likePattern(query));
+  }
+  if (registrationOnly) where.push("i.allows_registration = 1");
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const [rows, count] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT i.token, i.team_id, i.role, i.email, i.max_uses, i.uses,
+              i.expires_at, i.created_at, i.allows_registration,
+              t.name AS team_name, u.username AS created_by_username
+         FROM team_invites i
+         LEFT JOIN teams t ON t.id = i.team_id
+         LEFT JOIN users u ON u.id = i.created_by
+         ${whereSql}
+        ORDER BY i.created_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...(args as never[]), limit, offset)
+      .all<Record<string, unknown>>(),
+    c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM team_invites i
+         LEFT JOIN teams t ON t.id = i.team_id ${whereSql}`,
+    )
+      .bind(...(args as never[]))
+      .first<{ n: number }>(),
+  ]);
+
+  return c.json({
+    // The token is the credential. It is shown because an operator tracing a
+    // leaked link needs to match what they were sent against what exists —
+    // the same reason `GET /restricted-users?invite_token=` takes one.
+    invites: rows.results.map((row) => ({
+      ...row,
+      allows_registration: row.allows_registration === 1,
+    })),
+    total: count?.n ?? 0,
+    page,
+    limit,
+  });
+});
+
+app.delete("/team-invites/:token", async (c) => {
+  const token = c.req.param("token");
+  const row = await c.env.DB.prepare(
+    `SELECT i.token, i.team_id, i.uses, t.name AS team_name
+       FROM team_invites i LEFT JOIN teams t ON t.id = i.team_id
+      WHERE i.token = ?`,
+  )
+    .bind(token)
+    .first<{
+      token: string;
+      team_id: string;
+      uses: number;
+      team_name: string | null;
+    }>();
+  if (!row) return c.json({ error: "Invite not found" }, 404);
+
+  await c.env.DB.prepare("DELETE FROM team_invites WHERE token = ?")
+    .bind(token)
+    .run();
+
+  auditOps(
+    c,
+    "admin.team_invite.revoke",
+    { team_id: row.team_id, uses: row.uses },
+    { type: "team", id: row.team_id, name: row.team_name },
+  );
+  return c.json({ message: "Invite revoked" });
+});
+
+// ─── Bulk account actions ─────────────────────────────────────────────────────
+
+/** Cap on one bulk call.
+ *
+ *  Not a performance limit — it is a blast-radius limit. An operator who means
+ *  to act on more than this should say so more than once, and a request that
+ *  can only ever affect fifty accounts is a mistake you can recover from. */
+const BULK_LIMIT = 50;
+
+/** Apply one action to several accounts.
+ *
+ *  Deliberately not a filter-based "deactivate everyone matching X": the
+ *  caller sends explicit ids, so what they confirmed on screen is exactly what
+ *  the server acts on. A filter evaluated server-side can match rows that
+ *  appeared between the preview and the press. */
+app.post("/users/bulk", async (c) => {
+  const admin = c.get("user");
+  const body = await c.req.json<{
+    user_ids: string[];
+    action: "deactivate" | "activate" | "delete";
+  }>();
+
+  if (!Array.isArray(body.user_ids) || body.user_ids.length === 0)
+    return c.json({ error: "user_ids is required" }, 400);
+  if (body.user_ids.length > BULK_LIMIT)
+    return c.json(
+      { error: `At most ${BULK_LIMIT} accounts per request`, limit: BULK_LIMIT },
+      400,
+    );
+  if (!["deactivate", "activate", "delete"].includes(body.action))
+    return c.json(
+      { error: "action must be deactivate, activate or delete" },
+      400,
+    );
+
+  const placeholders = body.user_ids.map(() => "?").join(", ");
+  const { results: targets } = await c.env.DB.prepare(
+    `SELECT id, username FROM users
+      WHERE id IN (${placeholders}) AND kind = 'user'`,
+  )
+    .bind(...(body.user_ids as never[]))
+    .all<{ id: string; username: string }>();
+
+  const skipped: Array<{ id: string; username: string; reason: string }> = [];
+  const actionable = targets.filter((t) => {
+    // An operator who bulk-deletes themselves out of the instance has no way
+    // back, and LOCKDOWN_USERS exists precisely so a list like this cannot
+    // take the last administrator with it.
+    if (t.id === admin.id) {
+      skipped.push({ ...t, reason: "self" });
+      return false;
+    }
+    if (body.action === "delete" && isUserLocked(c.env, t.username)) {
+      skipped.push({ ...t, reason: "locked" });
+      return false;
+    }
+    return true;
+  });
+
+  const now = Math.floor(Date.now() / 1000);
+  let affected = 0;
+  for (const target of actionable) {
+    if (body.action === "delete") {
+      // Per-account so the team fan-out and the deletion record still happen;
+      // a bulk DELETE would be faster and would silently skip both.
+      await recordAccountDeletion(
+        c.env,
+        c.executionCtx,
+        { id: target.id, username: target.username },
+        {
+          actorId: admin.id,
+          actorName: admin.username,
+          cause: "admin",
+          ...auditRequestMeta(c),
+        },
+      );
+      await c.env.DB.prepare("DELETE FROM users WHERE id = ?")
+        .bind(target.id)
+        .run();
+    } else {
+      await c.env.DB.prepare(
+        "UPDATE users SET is_active = ?, updated_at = ? WHERE id = ?",
+      )
+        .bind(body.action === "activate" ? 1 : 0, now, target.id)
+        .run();
+      // A deactivated account with live sessions is still signed in.
+      if (body.action === "deactivate")
+        await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?")
+          .bind(target.id)
+          .run();
+    }
+    affected++;
+  }
+
+  auditOps(c, `admin.users.bulk_${body.action}`, {
+    requested: body.user_ids.length,
+    affected,
+    skipped,
+    usernames: actionable.map((t) => t.username),
+  });
+
+  return c.json({
+    message: "Done",
+    action: body.action,
+    affected,
+    // Named, not just counted — "3 skipped" is not something an operator can
+    // act on, and one of them being their own account matters.
+    skipped,
+  });
 });
 
 // ─── Elevated scope grants ────────────────────────────────────────────────────

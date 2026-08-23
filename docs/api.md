@@ -652,6 +652,11 @@ Same gating as the database console, via `KV_CONSOLE` (which follows
 | `DELETE` | `/api/admin/users/:id/sessions/:sessionId` | End one session (`DELETE …/sessions` still ends all)                         |
 | `GET`    | `/api/admin/maintenance/jobs`              | The runnable scheduled jobs, and the cron they normally run on               |
 | `POST`   | `/api/admin/maintenance/jobs/:key/run`     | Run one now. Awaited — returns `processed` (or `null` where the task keeps no count) and `duration_ms` |
+| `POST`   | `/api/admin/users/bulk`                    | `{ user_ids, action }` where action is `activate` \| `deactivate` \| `delete`. Max 50 ids; the caller and `LOCKDOWN_USERS` accounts are skipped and named in `skipped` |
+| `GET`    | `/api/admin/team-invites`                  | Every outstanding team invite. `?page=`, `?limit=`, `?q=` team/email, `?registration=1` |
+| `DELETE` | `/api/admin/team-invites/:token`           | Revoke one invite link                                                       |
+| `GET`    | `/api/admin/users/:id/notifications`       | Ruleset names, active flag and rule counts — not their contents              |
+| `DELETE` | `/api/admin/users/:id/notification-rulesets` | Reset routing to the per-event defaults                                    |
 
 ### Database
 
@@ -672,6 +677,7 @@ Direct D1 access. Admin-only, session-only, and every call is audited. See
 | Method   | Path                                  | Notes                            |
 | -------- | ------------------------------------- | -------------------------------- |
 | `GET`    | `/api/admin/audit-log?page=…`         | Audit events                     |
+| `GET`    | `/api/audit/:scope/export`            | Export any scope the caller can read. `?format=csv\|json` plus the table's filters. Capped at 10,000 events |
 | `GET`    | `/api/admin/login-errors`             | Failed-login table               |
 | `GET`    | `/api/admin/request-logs`             | Filterable per-request log       |
 | `GET`    | `/api/admin/request-logs/export`      | CSV export of the current filter |

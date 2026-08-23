@@ -2,6 +2,7 @@
 
 import {
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogBody,
@@ -13,6 +14,8 @@ import {
   Field,
   Input,
   MessageBar,
+  MessageBarActions,
+  MessageBarBody,
   Option,
   Spinner,
   Switch,
@@ -47,6 +50,10 @@ import { SkeletonTableRows } from "../../components/Skeletons";
 
 type AdminUser = UserProfile & { app_count: number; is_active: boolean };
 
+/** Mirrors the server's own per-request cap so the UI can say why the buttons
+ *  are disabled instead of letting the call fail. */
+const BULK_LIMIT = 50;
+
 const useStyles = makeStyles({
   toolbar: { display: "flex", gap: "8px", marginBottom: "16px" },
   // Let the table scroll sideways on narrow screens instead of
@@ -71,6 +78,40 @@ export function AdminUsers() {
   const styles = useStyles();
   const qc = useQueryClient();
   const navigate = useNavigate();
+
+  // Selection is by explicit id and survives paging, which is why the count
+  // in the bar is worth showing — it can exceed what is on screen.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirmingBulkDelete, setConfirmingBulkDelete] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState("");
+
+  const runBulk = async (action: "activate" | "deactivate" | "delete") => {
+    setBulkBusy(true);
+    try {
+      const res = await api.adminBulkUsers([...selected], action);
+      await qc.invalidateQueries({ queryKey: ["admin-users"] });
+      setSelected(new Set());
+      setConfirmingBulkDelete(false);
+      setBulkDeleteConfirm("");
+      showMsg(
+        "success",
+        res.skipped.length
+          ? t("admin.bulkDoneSkipped", {
+              count: res.affected,
+              skipped: res.skipped.map((s) => `@${s.username}`).join(", "),
+            })
+          : t("admin.bulkDone", { count: res.affected }),
+      );
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  };
   const { t } = useTranslation();
   const { user } = useAuthStore();
 
@@ -88,6 +129,13 @@ export function AdminUsers() {
     queryKey: ["admin-users", page, search],
     queryFn: () => api.adminListUsers(page, 20, search),
   });
+
+  // The caller's own row is never selectable, so it is excluded from the
+  // header checkbox's idea of "all" too — otherwise it reads as indeterminate
+  // forever on a page containing yourself.
+  const pageIds = (data?.users ?? [])
+    .map((u) => u.id)
+    .filter((id) => id !== user?.id);
 
   const handleSearch = () => {
     setSearch(searchInput);
@@ -165,6 +213,100 @@ export function AdminUsers() {
         </Button>
       </div>
 
+      {/* The bulk bar only exists once something is selected, so the
+          destructive actions are never just sitting there. */}
+      {selected.size > 0 && (
+        <MessageBar intent={selected.size > BULK_LIMIT ? "warning" : "info"}>
+          <MessageBarBody>
+            {selected.size > BULK_LIMIT
+              ? t("admin.bulkOverLimit", {
+                  count: selected.size,
+                  limit: BULK_LIMIT,
+                })
+              : t("admin.bulkSelected", { count: selected.size })}
+          </MessageBarBody>
+          <MessageBarActions>
+            <Button
+              size="small"
+              onClick={() => setSelected(new Set())}
+              disabled={bulkBusy}
+            >
+              {t("common.clear")}
+            </Button>
+            <Button
+              size="small"
+              disabled={bulkBusy || selected.size > BULK_LIMIT}
+              onClick={() => runBulk("activate")}
+            >
+              {t("admin.bulkActivate")}
+            </Button>
+            <Button
+              size="small"
+              disabled={bulkBusy || selected.size > BULK_LIMIT}
+              onClick={() => runBulk("deactivate")}
+            >
+              {t("admin.bulkDeactivate")}
+            </Button>
+            <Button
+              size="small"
+              disabled={bulkBusy || selected.size > BULK_LIMIT}
+              onClick={() => setConfirmingBulkDelete(true)}
+            >
+              {t("admin.bulkDelete")}
+            </Button>
+          </MessageBarActions>
+        </MessageBar>
+      )}
+
+      {/* Deleting accounts in bulk asks for the count to be typed back. The
+          number is the one thing a mis-click cannot supply. */}
+      <Dialog
+        open={confirmingBulkDelete}
+        onOpenChange={(_, d) => {
+          if (!d.open) {
+            setConfirmingBulkDelete(false);
+            setBulkDeleteConfirm("");
+          }
+        }}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("admin.bulkDeleteTitle")}</DialogTitle>
+            <DialogContent>
+              <Text block>
+                {t("admin.bulkDeleteBody", { count: selected.size })}
+              </Text>
+              <Field
+                label={t("admin.bulkDeleteConfirmLabel", {
+                  count: selected.size,
+                })}
+                style={{ marginTop: 12 }}
+              >
+                <Input
+                  value={bulkDeleteConfirm}
+                  onChange={(_, d) => setBulkDeleteConfirm(d.value)}
+                />
+              </Field>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmingBulkDelete(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                style={{ background: tokens.colorPaletteRedBackground3 }}
+                disabled={
+                  bulkBusy || bulkDeleteConfirm.trim() !== String(selected.size)
+                }
+                onClick={() => runBulk("delete")}
+              >
+                {t("common.delete")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={3} />
       ) : (
@@ -172,6 +314,31 @@ export function AdminUsers() {
           <Table style={{ tableLayout: "auto" }}>
             <TableHeader>
               <TableRow>
+                <TableHeaderCell style={{ width: 1 }}>
+                  <Checkbox
+                    checked={
+                      pageIds.length > 0 && pageIds.every((id) => selected.has(id))
+                        ? true
+                        : pageIds.some((id) => selected.has(id))
+                          ? "mixed"
+                          : false
+                    }
+                    onChange={(_, d) =>
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        // Only this page's rows — a select-all that silently
+                        // reached rows you have not seen is how bulk actions
+                        // become accidents.
+                        for (const id of pageIds) {
+                          if (d.checked) next.add(id);
+                          else next.delete(id);
+                        }
+                        return next;
+                      })
+                    }
+                    aria-label={t("admin.selectAllOnPage")}
+                  />
+                </TableHeaderCell>
                 <TableHeaderCell>{t("admin.userHeader")}</TableHeaderCell>
                 <TableHeaderCell>{t("admin.emailHeader")}</TableHeaderCell>
                 <TableHeaderCell style={{ width: 1 }} />
@@ -182,6 +349,21 @@ export function AdminUsers() {
                 const au = u as unknown as AdminUser;
                 return (
                   <TableRow key={u.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selected.has(u.id)}
+                        disabled={u.id === user?.id}
+                        onChange={(_, d) =>
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            if (d.checked) next.add(u.id);
+                            else next.delete(u.id);
+                            return next;
+                          })
+                        }
+                        aria-label={u.username}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div>
                         <Text weight="semibold" block>

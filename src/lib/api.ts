@@ -2168,6 +2168,84 @@ export const api = {
       target,
       getToken(),
     ),
+  /** Download the audit log for any scope the caller can read.
+   *
+   *  Saves the file the way adminExportRequestLogs does, and uses the
+   *  filename the server chose — it already knows the scope and the date. */
+  auditExport: async (
+    base: string,
+    format: "csv" | "json",
+    params: AuditQuery = {},
+  ): Promise<void> => {
+    const qs = new URLSearchParams({ format });
+    for (const [k, v] of Object.entries(params))
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    const token = getToken();
+    const res = await fetch(`${BASE}/audit/${base}/export?${qs}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, "Export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download =
+      /filename="([^"]+)"/.exec(
+        res.headers.get("Content-Disposition") ?? "",
+      )?.[1] ?? `audit.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+  adminTeamInvites: (
+    params: { page?: number; limit?: number; q?: string; registration?: boolean } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.q) search.set("q", params.q);
+    if (params.registration) search.set("registration", "1");
+    const qs = search.toString();
+    return request<{
+      invites: AdminTeamInvite[];
+      total: number;
+      page: number;
+      limit: number;
+    }>("GET", `/admin/team-invites${qs ? `?${qs}` : ""}`, undefined, getToken());
+  },
+  adminRevokeTeamInvite: (token: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/team-invites/${encodeURIComponent(token)}`,
+      undefined,
+      getToken(),
+    ),
+  adminBulkUsers: (
+    userIds: string[],
+    action: "deactivate" | "activate" | "delete",
+  ) =>
+    request<{
+      message: string;
+      action: string;
+      affected: number;
+      skipped: Array<{ id: string; username: string; reason: string }>;
+    }>("POST", "/admin/users/bulk", { user_ids: userIds, action }, getToken()),
+  adminUserNotifications: (id: string) =>
+    request<{
+      rulesets: Array<{
+        id: string;
+        name: string;
+        is_active: boolean;
+        rule_count: number;
+      }>;
+      legacy_pref_count: number;
+    }>("GET", `/admin/users/${id}/notifications`, undefined, getToken()),
+  adminResetUserNotifications: (id: string) =>
+    request<{ message: string; removed: number }>(
+      "DELETE",
+      `/admin/users/${id}/notification-rulesets`,
+      undefined,
+      getToken(),
+    ),
   adminScopeGrants: (kind: "site" | "team", page = 1, teamId?: string) => {
     const search = new URLSearchParams({ page: String(page) });
     if (teamId) search.set("team_id", teamId);
@@ -3176,6 +3254,22 @@ export interface AdminScopeGrant {
   team_name?: string | null;
   grantor_username?: string | null;
   permissions?: unknown;
+}
+
+export interface AdminTeamInvite {
+  /** The credential itself — shown so a leaked link can be matched to a row. */
+  token: string;
+  team_id: string;
+  team_name: string | null;
+  role: string;
+  email: string | null;
+  max_uses: number | null;
+  uses: number;
+  expires_at: number | null;
+  created_at: number;
+  created_by_username: string | null;
+  /** True when this invite mints accounts rather than adding existing ones. */
+  allows_registration: boolean;
 }
 
 export interface AdminSession {

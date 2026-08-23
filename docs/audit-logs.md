@@ -32,6 +32,17 @@ The one thing that is not offered is signing in as another user. Every admin
 action carries the operator's name; a session minted for someone else would
 launder those actions into the user's own history.
 
+## Export
+
+Every scope has an export, not just the platform one: a team asked to account
+for something needs its own log in a form it can hand over, and a user asking
+what an instance holds about them is the same request.
+
+`GET /api/audit/<scope>/export?format=csv|json` takes the same filters as the
+table, so what you export is what you were looking at. Capped at 10,000 events
+— a truncated export that arrives beats a complete one that times out. CSV
+timestamps are ISO strings; the JSON export keeps the raw unix seconds.
+
 ## What each event captures
 
 Every event stores and displays:
