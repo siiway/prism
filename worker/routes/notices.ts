@@ -16,6 +16,7 @@ import { getIp } from "../lib/clientIp";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { readPage } from "../lib/pagination";
 import { optionalAuth } from "../middleware/auth";
+import { MIGRATIONS_PENDING, readWithFallback } from "../lib/schema";
 import type { NoticeRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -80,26 +81,36 @@ readerRoutes.get("/", async (c) => {
   args.push(now, now);
   if (user) args.push(user.id);
 
-  const { results } = await c.env.DB.prepare(
-    `SELECT n.*, t.name AS team_name
-       FROM notices n
-       LEFT JOIN teams t ON t.id = n.team_id
-      WHERE n.is_published = 1
-        AND (n.audience IN (${placeholders}) ${teamClause})
-        AND (n.starts_at IS NULL OR n.starts_at <= ?)
-        AND (n.ends_at IS NULL OR n.ends_at > ?)
-        ${
-          user
-            ? `AND n.id NOT IN (
-                 SELECT notice_id FROM notice_dismissals WHERE user_id = ?
-               )`
-            : ""
-        }
-      ORDER BY n.pinned DESC, n.created_at DESC
-      LIMIT 20`,
-  )
-    .bind(...(args as never[]))
-    .all<NoticeRow & { team_name: string | null }>();
+  // This query runs on every page load, signed in or out. If the notices
+  // migration has not been applied yet it must read as "there are no
+  // notices", not as a 500 on the login screen — the board is the only thing
+  // that should be missing when its tables are.
+  const results = await readWithFallback(
+    async () =>
+      (
+        await c.env.DB.prepare(
+          `SELECT n.*, t.name AS team_name
+             FROM notices n
+             LEFT JOIN teams t ON t.id = n.team_id
+            WHERE n.is_published = 1
+              AND (n.audience IN (${placeholders}) ${teamClause})
+              AND (n.starts_at IS NULL OR n.starts_at <= ?)
+              AND (n.ends_at IS NULL OR n.ends_at > ?)
+              ${
+                user
+                  ? `AND n.id NOT IN (
+                       SELECT notice_id FROM notice_dismissals WHERE user_id = ?
+                     )`
+                  : ""
+              }
+            ORDER BY n.pinned DESC, n.created_at DESC
+            LIMIT 20`,
+        )
+          .bind(...(args as never[]))
+          .all<NoticeRow & { team_name: string | null }>()
+      ).results,
+    [] as Array<NoticeRow & { team_name: string | null }>,
+  );
 
   return c.json({ notices: results.map(serialize) });
 });
@@ -113,11 +124,16 @@ readerRoutes.post("/:id/dismiss", async (c) => {
   const user = c.get("user");
   if (!user) return c.json({ error: "Unauthorized" }, 401);
 
-  const notice = await c.env.DB.prepare(
-    "SELECT id, is_dismissible FROM notices WHERE id = ?",
-  )
-    .bind(c.req.param("id"))
-    .first<{ id: string; is_dismissible: number }>();
+  // Unreachable in practice — with no tables the list is empty, so there is
+  // nothing on screen to dismiss. Handled anyway because a stale tab from
+  // before a rollback is exactly the case that produces one of these.
+  const notice = await readWithFallback(
+    () =>
+      c.env.DB.prepare("SELECT id, is_dismissible FROM notices WHERE id = ?")
+        .bind(c.req.param("id"))
+        .first<{ id: string; is_dismissible: number }>(),
+    null,
+  );
   if (!notice) return c.json({ error: "Notice not found" }, 404);
   if (notice.is_dismissible !== 1)
     return c.json({ error: "This notice cannot be dismissed" }, 403);
@@ -135,6 +151,25 @@ readerRoutes.post("/:id/dismiss", async (c) => {
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 export const adminRoutes = new Hono<AppEnv>();
+
+// The authoring side says so plainly rather than degrading: an administrator
+// who opens this page wants to write a notice, and silently showing an empty
+// list would leave them composing into a table that does not exist. 503
+// because the feature is unavailable rather than the request wrong, and the
+// message names the command that fixes it.
+//
+// Asks the schema directly instead of catching the failed query: Hono's
+// dispatcher handles a downstream rejection itself, so a `try { await next() }`
+// here never sees one. One indexed lookup against sqlite_master, only on the
+// authoring routes — not a page anyone loads in a loop.
+adminRoutes.use("*", async (c, next) => {
+  const present = await c.env.DB.prepare(
+    "SELECT 1 AS n FROM sqlite_master WHERE type = 'table' AND name = 'notices'",
+  ).first<{ n: number }>();
+  if (!present)
+    return c.json({ error: MIGRATIONS_PENDING, migrations_pending: true }, 503);
+  await next();
+});
 
 function auditNotice(
   c: import("hono").Context<AppEnv>,

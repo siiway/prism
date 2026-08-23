@@ -1813,7 +1813,9 @@
     "resetDismissals": "Show again to the {{count}} who dismissed it",
     "dismissalsReset": "{{count}} dismissals cleared — the notice is back for them",
     "deleteNoticeTitle": "Delete this notice?",
-    "deleteNoticeBody": "{{title}} is removed for everyone, along with the record of who dismissed it. Unpublishing keeps it as a draft instead."
+    "deleteNoticeBody": "{{title}} is removed for everyone, along with the record of who dismissed it. Unpublishing keeps it as a draft instead.",
+    "noticesUnavailable": "Notice board unavailable",
+    "noticesUnknown": "Could not load notices."
   },
   "webhooks": {
     "title": "Webhooks",

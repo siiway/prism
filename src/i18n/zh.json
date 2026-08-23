@@ -1813,7 +1813,9 @@
     "resetDismissals": "对已关闭它的 {{count}} 人重新展示",
     "dismissalsReset": "已清除 {{count}} 条关闭记录 —— 公告对他们重新出现",
     "deleteNoticeTitle": "删除该公告？",
-    "deleteNoticeBody": "{{title}} 将对所有人移除，连同谁关闭过它的记录一并删除。若只是想收回，请改用「取消发布」保留为草稿。"
+    "deleteNoticeBody": "{{title}} 将对所有人移除，连同谁关闭过它的记录一并删除。若只是想收回，请改用「取消发布」保留为草稿。",
+    "noticesUnavailable": "公告板不可用",
+    "noticesUnknown": "无法加载公告。"
   },
   "webhooks": {
     "title": "Webhooks",

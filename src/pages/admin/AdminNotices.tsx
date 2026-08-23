@@ -358,10 +358,17 @@ export function AdminNotices() {
   );
   const [pendingDelete, setPendingDelete] = useState<AdminNotice | null>(null);
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ["admin-notices", page],
     queryFn: () => api.adminListNotices(page),
+    // A 503 here means the migration has not been applied. Retrying will not
+    // change that, and the message below says what will.
+    retry: false,
   });
+
+  // Distinguished from any other failure because the remedy is specific and
+  // an empty table would otherwise read as "no notices yet".
+  const migrationsPending = error instanceof ApiError && error.status === 503;
 
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: ["admin-notices"] });
@@ -388,11 +395,25 @@ export function AdminNotices() {
         <MessageBar intent={message.type}>{message.text}</MessageBar>
       )}
 
+      {error && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            <MessageBarTitle>
+              {migrationsPending
+                ? t("admin.noticesUnavailable")
+                : t("common.error")}
+            </MessageBarTitle>
+            {error instanceof ApiError ? error.message : String(error)}
+          </MessageBarBody>
+        </MessageBar>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
         <Text className={styles.muted}>{t("admin.noticesIntro")}</Text>
         <Button
           appearance="primary"
           icon={<AddRegular />}
+          disabled={!!error}
           onClick={() => setEditing({ notice: null })}
         >
           {t("admin.newNotice")}
@@ -413,10 +434,14 @@ export function AdminNotices() {
           <TableBody>
             {isLoading ? (
               <SkeletonTableRows rows={6} cols={5} />
-            ) : data?.notices.length === 0 ? (
+            ) : !data || data.notices.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5}>
-                  <Text className={styles.muted}>{t("admin.noNotices")}</Text>
+                  <Text className={styles.muted}>
+                    {/* Not "no notices yet" when the query failed — that
+                        would be a lie about the state of the board. */}
+                    {error ? t("admin.noticesUnknown") : t("admin.noNotices")}
+                  </Text>
                 </TableCell>
               </TableRow>
             ) : (

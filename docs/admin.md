@@ -507,6 +507,17 @@ and mail arrives whether or not the recipient is affected. A notice sits where
 the affected people already are, costs nothing to publish, and can be taken
 down.
 
+### If migrations are pending
+
+The notice board's tables arrive in a migration, and a Worker deploy does not
+apply one. Until `wrangler d1 migrations apply` has run, the board reads as
+empty everywhere — including the sign-in pages, where it renders on every load
+— and **Admin → Notices** returns a 503 saying so and naming the command.
+
+Nothing else on the instance is affected. The detection is narrow on purpose:
+only "no such table" and "no such column" degrade, so a real database fault
+still surfaces as a failure rather than as an empty board.
+
 ### Writing one
 
 Notices are drafts until published, so nothing half-written is ever on screen.
