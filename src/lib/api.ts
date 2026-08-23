@@ -1968,12 +1968,13 @@ export const api = {
   // ── Direct database access ────────────────────────────────────────────────
   // Every call here is admin-only and audited server-side.
   adminDbStatus: () =>
-    request<{ mode: "full" | "read-only" | "off"; writable: boolean }>(
-      "GET",
-      "/admin/db/status",
-      undefined,
-      getToken(),
-    ),
+    request<{
+      mode: "full" | "read-only" | "off";
+      writable: boolean;
+      /** Tables no setting lets the console write to — the audit log and the
+       *  schema table that could be used to rename it. */
+      append_only: string[];
+    }>("GET", "/admin/db/status", undefined, getToken()),
   adminDbTables: () =>
     request<{ tables: DbTable[] }>(
       "GET",

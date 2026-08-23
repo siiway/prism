@@ -1815,7 +1815,8 @@
     "deleteNoticeTitle": "删除该公告？",
     "deleteNoticeBody": "{{title}} 将对所有人移除，连同谁关闭过它的记录一并删除。若只是想收回，请改用「取消发布」保留为草稿。",
     "noticesUnavailable": "公告板不可用",
-    "noticesUnknown": "无法加载公告。"
+    "noticesUnknown": "无法加载公告。",
+    "dbAppendOnlyNotice": "审计日志在这里是只追加的：无论任何设置，{{tables}} 都不能通过该控制台修改。正是它让其他所有管理操作可被追责。"
   },
   "webhooks": {
     "title": "Webhooks",

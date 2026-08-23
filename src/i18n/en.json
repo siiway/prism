@@ -1815,7 +1815,8 @@
     "deleteNoticeTitle": "Delete this notice?",
     "deleteNoticeBody": "{{title}} is removed for everyone, along with the record of who dismissed it. Unpublishing keeps it as a draft instead.",
     "noticesUnavailable": "Notice board unavailable",
-    "noticesUnknown": "Could not load notices."
+    "noticesUnknown": "Could not load notices.",
+    "dbAppendOnlyNotice": "The audit log is append-only here: {{tables}} cannot be modified from this console at any setting. It is what makes every other admin action accountable."
   },
   "webhooks": {
     "title": "Webhooks",

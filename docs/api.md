@@ -674,17 +674,24 @@ in. Writing is admin-only. See [Admin → Notice board](admin.md#notice-board).
 
 ### Database
 
-Direct D1 access. Admin-only, session-only, and every call is audited. See
-[Admin → Database](admin.md#database).
+Direct D1 access. Admin-only, session-only, and every call is audited.
+**Off unless `D1_CONSOLE` is set** — every endpoint below 404s by default.
+See [Admin → Database](admin.md#database).
 
 | Method   | Path                                     | Notes                                                                    |
 | -------- | ---------------------------------------- | ------------------------------------------------------------------------ |
+| `GET`    | `/api/admin/db/status`                   | Mode, writability, and the `append_only` table list. Answers even when the console is off, so the UI can decide whether to render the tab |
 | `GET`    | `/api/admin/db/tables`                   | Every table with row counts, columns and its `CREATE TABLE` statement    |
 | `GET`    | `/api/admin/db/tables/:table/rows`       | Page rows. `?page=`, `?limit=` (max 500), `?order_by=`, `?dir=`, `?where=` raw SQL fragment |
 | `POST`   | `/api/admin/db/tables/:table/rows`       | Insert. Body `{ values }` — unknown columns are dropped                  |
 | `PATCH`  | `/api/admin/db/tables/:table/rows`       | Update one row. Body `{ key, values }`, keyed on the primary key or `rowid` |
 | `DELETE` | `/api/admin/db/tables/:table/rows`       | Delete one row. Body `{ key }`                                           |
 | `POST`   | `/api/admin/db/query`                    | Run SQL. Body `{ sql, params?, allow_write? }`. Anything that isn't a plain read is refused without `allow_write`; multiple statements run in one transaction |
+
+Writes to `audit_events`, `audit_log` and `sqlite_master` are refused with
+`403 { append_only: true }` at every setting, on both the row endpoints and
+the console — reads are unaffected. See
+[Admin → The audit log is append-only here](admin.md#the-audit-log-is-append-only-here).
 
 ### Audit / request logs / login errors
 

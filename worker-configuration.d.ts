@@ -31,15 +31,17 @@ interface Env {
   // that cannot be deleted.
   LOCKDOWN_TEAMS?: string;
   // Availability of Admin Panel → Database (direct D1 access).
-  // Unset / anything else = full access. "read-only" (or "readonly" / "read")
-  // allows browsing and SELECT but refuses every write. "off" (or "false" /
-  // "0" / "no" / "disabled" / "none") removes the surface entirely — the
-  // endpoints 404 and the tab disappears.
+  // OFF by default: unset, "off" (or "false" / "0" / "no" / "disabled" /
+  // "none") and anything unrecognised all remove the surface entirely — the
+  // endpoints 404 and the tab disappears. "read-only" (or "readonly" /
+  // "read") allows browsing and SELECT but refuses every write. "full" (or
+  // "on" / "true" / "1") is unrestricted, except that the audit log is
+  // append-only from this console at every setting.
   D1_CONSOLE?: string;
   // Availability of the key-value browser inside Admin Panel → Database.
   // Same values as D1_CONSOLE. Unset follows D1_CONSOLE — the two are windows
-  // onto the same instance's storage, so turning the database console off is
-  // a statement about both unless this one says otherwise.
+  // onto the same instance's storage, so a setting for one is a statement
+  // about both unless this one says otherwise. With neither set, both are off.
   KV_CONSOLE?: string;
   // Cloudflare Secrets Store binding for the master encryption key used to
   // wrap OAuth client secrets, OAuth source credentials, and other

@@ -75,13 +75,15 @@
     // Comma / semicolon / whitespace separated list of team names
     // that cannot be deleted. Leave empty to disable.
     "LOCKDOWN_TEAMS": "",
-    // Admin Panel → Database (direct D1 access). Unset or anything else
-    // means full access; "read-only" allows browsing and SELECT but refuses
-    // every write; "off" removes the surface entirely (endpoints 404, the
-    // tab disappears).
+    // Admin Panel → Database (direct D1 access). OFF unless you turn it on:
+    // empty, "off" or anything unrecognised removes the surface entirely
+    // (endpoints 404, the tab disappears). "read-only" allows browsing and
+    // SELECT but refuses every write. "full" is unrestricted — except the
+    // audit log, which is append-only from this console at every setting.
     "D1_CONSOLE": "",
     // The key-value browser in the same panel. Same values as D1_CONSOLE;
-    // leave empty to follow whatever D1_CONSOLE is set to.
+    // leave empty to follow whatever D1_CONSOLE is set to (so both are off
+    // by default).
     "KV_CONSOLE": "",
   },
   "routes": [

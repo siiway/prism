@@ -687,20 +687,50 @@ included.
 **Admin → Database** is direct access to the D1 database behind the instance:
 a schema browser with an inline row editor, and a SQL console.
 
-### Turning it down
+### It is off unless you turn it on
 
 The `D1_CONSOLE` variable in `wrangler.jsonc` decides how much of this exists.
 
-| Value                                             | Effect                                                                       |
-| ------------------------------------------------- | ---------------------------------------------------------------------------- |
-| unset (or anything unrecognised)                  | Full access — browse, edit rows, run any statement                           |
-| `read-only` / `readonly` / `read`                 | Browse and `SELECT`. Every write is refused, including one sent with `allow_write` — the caller cannot opt back over the operator's setting |
-| `off` / `false` / `0` / `no` / `disabled` / `none`| The surface is gone. Endpoints 404 and the tab disappears                     |
+| Value                                                          | Effect                                                                       |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **unset** (also `off` / `false` / `0` / `no`, or anything unrecognised) | **The default.** The surface is gone — endpoints 404 and the tab disappears |
+| `read-only` / `readonly` / `read`                              | Browse and `SELECT`. Every write is refused, including one sent with `allow_write` — the caller cannot opt back over the operator's setting |
+| `full` / `on` / `true` / `1`                                   | Unrestricted, except the audit log below                                     |
 
-It defaults to full because the operator who deployed the instance is the
-audience for this feature and already owns the database. Operators who would
-rather not carry the risk turn it down; the setting is read per request, so a
-`wrangler deploy` is all it takes to change.
+Off is the default because this is the widest door in the product, and a door
+that opens because nobody said otherwise is the wrong default for something
+that can empty a table. An unrecognised value is also off, so a typo fails
+closed. The setting is read per request, so a `wrangler deploy` is all it
+takes to change.
+
+`KV_CONSOLE` gates the key–value browser the same way and follows
+`D1_CONSOLE` when unset, so leaving both alone leaves an instance with no
+direct storage access at all.
+
+### The audit log is append-only here
+
+`audit_events` and `audit_log` can be **read** from the console and never
+written to it — not in `full` mode, not with `allow_write`, not by an
+operator who really means it. The row editor refuses insert, update and
+delete; the SQL console refuses any non-read statement that so much as names
+one. `sqlite_master` (and `PRAGMA writable_schema`) is refused for the same
+reason at one remove: it is how you would rename a table out from under a
+guard that names it.
+
+The reason is the rest of this page. A site administrator can reach into any
+team, reset anyone's credentials and read most of the database — and the
+answer to "who did that" is those two tables. A console that could edit them
+would make the answer worth nothing.
+
+The statement check is deliberately over-broad: a write to some other table
+that happens to contain the string `audit_events` is refused too. That costs
+a rephrase; the opposite mistake costs an audit log.
+
+This is a guard on **this surface**, not a cryptographic guarantee. Anyone
+holding the Cloudflare account can run SQL against D1 directly and nothing
+here prevents that. What it does is stop the product from offering the
+operation, so tampering means leaving the product — a different act, with a
+different trail.
 
 It exists because every other admin screen is a curated view of the database,
 and curated views always end one column short of the thing you actually need.

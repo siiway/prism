@@ -688,6 +688,9 @@ export function AdminDatabase() {
   const { data, isLoading } = useQuery({
     queryKey: ["admin-db-tables"],
     queryFn: () => api.adminDbTables(),
+    // 404s when D1_CONSOLE is off, which is the default. The tabs below
+    // simply aren't rendered in that case; retrying would only make noise.
+    retry: false,
   });
   // D1_CONSOLE can put the whole surface in read-only mode. Assume writable
   // until told otherwise so the controls don't flicker in on load; the server
@@ -698,14 +701,17 @@ export function AdminDatabase() {
     staleTime: 5 * 60 * 1000,
   });
   const writable = status?.writable ?? true;
-  // KV can be turned off independently of the database console.
+  // The two halves are configured independently, so either can be absent.
   const { data: kvStatus } = useQuery({
     queryKey: ["admin-kv-status"],
     queryFn: () => api.adminKvStatus(),
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
+  const dbAvailable = status ? status.mode !== "off" : true;
   const kvAvailable = kvStatus ? kvStatus.mode !== "off" : true;
+  // Land on whichever half exists rather than an empty D1 pane.
+  const activeTab = !dbAvailable && tab !== "kv" ? "kv" : tab;
 
   const tables = data?.tables ?? [];
   const active = selected ?? tables[0]?.name ?? null;
@@ -713,25 +719,38 @@ export function AdminDatabase() {
 
   return (
     <div className={styles.root}>
-      <MessageBar intent={writable ? "warning" : "info"}>
-        {writable ? t("admin.dbDangerNotice") : t("admin.dbReadOnlyNotice")}
-      </MessageBar>
+      {dbAvailable && (
+        <MessageBar intent={writable ? "warning" : "info"}>
+          {writable ? t("admin.dbDangerNotice") : t("admin.dbReadOnlyNotice")}
+        </MessageBar>
+      )}
+      {/* The one rule no setting relaxes, said where someone about to write
+          SQL will read it. */}
+      {dbAvailable && writable && status?.append_only?.length ? (
+        <MessageBar intent="info">
+          {t("admin.dbAppendOnlyNotice", {
+            tables: status.append_only.join(", "),
+          })}
+        </MessageBar>
+      ) : null}
       {message && (
         <MessageBar intent={message.type}>{message.text}</MessageBar>
       )}
 
       <TabList
-        selectedValue={tab}
+        selectedValue={activeTab}
         onTabSelect={(_, d) => setTab(d.value as "browse" | "sql" | "kv")}
       >
-        <Tab value="browse">{t("admin.dbBrowseTab")}</Tab>
-        <Tab value="sql">{t("admin.dbSqlTab")}</Tab>
+        {dbAvailable && (
+          <Tab value="browse">{t("admin.dbBrowseTab")}</Tab>
+        )}
+        {dbAvailable && <Tab value="sql">{t("admin.dbSqlTab")}</Tab>}
         {kvAvailable && <Tab value="kv">{t("admin.kvTab")}</Tab>}
       </TabList>
 
-      {tab === "kv" && kvAvailable ? (
+      {activeTab === "kv" && kvAvailable ? (
         <AdminKvBrowser showMsg={showMsg} />
-      ) : tab === "browse" ? (
+      ) : activeTab === "browse" ? (
         <div className={styles.split}>
           <div>
             <Field label={t("admin.dbTablesLabel")}>

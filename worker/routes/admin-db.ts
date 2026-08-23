@@ -7,18 +7,20 @@
 // actually need at 3am.
 //
 // It is also, unavoidably, the most dangerous surface in the product — a
-// single statement here can empty a table or hand out admin. Three things
-// keep it honest rather than safe, because "safe" isn't on offer:
+// single statement here can empty a table or hand out admin. Four things keep
+// it honest rather than safe, because "safe" isn't on offer:
 //
-//   1. Writes must be asked for. A statement that changes anything is
+//   1. It is off unless an operator turned it on. `D1_CONSOLE` defaults to
+//      off: a door this wide should not open because nobody said otherwise.
+//   2. Writes must be asked for. A statement that changes anything is
 //      refused unless the caller sets `allow_write`, so a mistyped console
 //      session cannot destroy data it only meant to read.
-//   2. Everything is audited. Every statement, read or write, lands in the
-//      platform audit log with the SQL, the row counts and the caller.
-//   3. Identifiers are never interpolated from user input. The browse and
-//      row-edit endpoints resolve table and column names against the live
-//      schema first and quote them; only the console takes raw SQL, and it
-//      takes it as one explicit, audited act.
+//   3. The audit log is append-only here, at every setting. See
+//      APPEND_ONLY_TABLES — this is the one rule no configuration relaxes.
+//   4. Everything is audited, and identifiers are never interpolated from
+//      user input. The browse and row-edit endpoints resolve table and column
+//      names against the live schema first and quote them; only the console
+//      takes raw SQL, and it takes it as one explicit, audited act.
 //
 // Mounted under /api/admin, which already sits behind requireAdmin.
 
@@ -34,9 +36,23 @@ const app = new Hono<AppEnv>();
 
 // ─── Availability ─────────────────────────────────────────────────────────────
 
+/** What this instance allows. Answers even when the console is off, because
+ *  the admin UI needs it to decide whether to render the tab at all — and a
+ *  mode an administrator can already infer from the config file is not
+ *  something to withhold from them. Registered above the gate so it survives
+ *  it. */
+app.get("/status", (c) =>
+  c.json({
+    mode: d1ConsoleMode(c.env),
+    writable: d1ConsoleMode(c.env) === "full",
+    /** Tables no setting will let this console write to. */
+    append_only: [...APPEND_ONLY_TABLES],
+  }),
+);
+
 // `off` hides the surface rather than 403-ing it: an operator who turned this
 // off wants it gone, and a 404 is the honest answer to "is there a database
-// console here".
+// console here". This is now the default — direct storage access is opt-in.
 app.use("*", async (c, next) => {
   if (d1ConsoleMode(c.env) === "off")
     return c.json({ error: "Not found" }, 404);
@@ -60,6 +76,70 @@ function readOnlyRefusal(c: import("hono").Context<AppEnv>) {
  *  not a data pipeline — a SELECT over a large table should truncate rather
  *  than try to serialize the lot into a JSON response. */
 const MAX_ROWS = 500;
+
+// ─── Append-only tables ───────────────────────────────────────────────────────
+
+/** Tables this console will not write to, at any setting.
+ *
+ *  The audit log is what makes every other administrative power accountable:
+ *  a site admin can reach into any team, reset anyone's credentials and read
+ *  most of the database, and the answer to "who did that" is these tables. A
+ *  console that could edit them would make that answer worth nothing, so it
+ *  cannot — not in full mode, not with `allow_write`, not by an operator who
+ *  really means it.
+ *
+ *  `sqlite_master` is on the list for the same reason at one remove: with
+ *  `PRAGMA writable_schema` it is the way to rename or redefine a table out
+ *  from under a guard that names it.
+ *
+ *  This is a guard on *this surface*, not a cryptographic guarantee. Anyone
+ *  with the Cloudflare account can run SQL against D1 directly, and nothing
+ *  here changes that. What it does is stop the product from offering the
+ *  operation — so tampering requires leaving the product, which is a
+ *  different act with a different trail. */
+const APPEND_ONLY_TABLES = new Set([
+  "audit_events",
+  "audit_log",
+  "sqlite_master",
+  "sqlite_schema",
+]);
+
+function isAppendOnly(table: string): boolean {
+  return APPEND_ONLY_TABLES.has(table.toLowerCase());
+}
+
+/** Does this statement write to a protected table?
+ *
+ *  Deliberately over-broad: any non-read statement that so much as names one
+ *  is refused, including a write to a different table that mentions
+ *  `audit_events` inside a string literal. The cost of that is a rejected
+ *  query someone can rephrase; the cost of the opposite is an editable audit
+ *  log, so the asymmetry decides it. */
+function touchesAppendOnly(sql: string): string | null {
+  for (const table of APPEND_ONLY_TABLES) {
+    // Word-bounded so `audit_events` does not match `my_audit_events_copy`,
+    // and quoted/bracketed forms are covered by the boundary either side.
+    if (new RegExp(`\\b${table}\\b`, "i").test(sql)) return table;
+  }
+  // `PRAGMA writable_schema = ON` names no table but exists to make the
+  // schema writable, which is the same intent by another route.
+  if (/\bwritable_schema\b/i.test(sql)) return "sqlite_master";
+  return null;
+}
+
+function appendOnlyRefusal(
+  c: import("hono").Context<AppEnv>,
+  table: string,
+) {
+  return c.json(
+    {
+      error: `${table} is append-only and cannot be modified from the console. The audit log is what makes every other admin action accountable; editing it here is not offered at any setting.`,
+      append_only: true,
+      table,
+    },
+    403,
+  );
+}
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -294,12 +374,6 @@ function serializeRows(
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-/** What this instance allows. The UI reads it to decide whether to render the
- *  write-mode switch and the row-editing controls at all. */
-app.get("/status", (c) =>
-  c.json({ mode: d1ConsoleMode(c.env), writable: d1ConsoleMode(c.env) === "full" }),
-);
-
 /** Table list with row counts, columns, and the DDL that created each one. */
 app.get("/tables", async (c) => {
   const names = await listTableNames(c.env.DB);
@@ -393,6 +467,7 @@ app.post("/tables/:table/rows", async (c) => {
   if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
   if (!table) return c.json({ error: "Table not found" }, 404);
+  if (isAppendOnly(table)) return appendOnlyRefusal(c, table);
 
   const body = await c.req.json<{ values: Record<string, unknown> }>();
   const columns = await tableColumns(c.env.DB, table);
@@ -432,6 +507,7 @@ app.patch("/tables/:table/rows", async (c) => {
   if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
   if (!table) return c.json({ error: "Table not found" }, 404);
+  if (isAppendOnly(table)) return appendOnlyRefusal(c, table);
 
   const body = await c.req.json<{
     key: Record<string, unknown>;
@@ -490,6 +566,7 @@ app.delete("/tables/:table/rows", async (c) => {
   if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
   if (!table) return c.json({ error: "Table not found" }, 404);
+  if (isAppendOnly(table)) return appendOnlyRefusal(c, table);
 
   const body = await c.req.json<{ key: Record<string, unknown> }>();
   const keys = await rowKeyColumns(c.env.DB, table);
@@ -551,6 +628,22 @@ app.post("/query", async (c) => {
     );
 
   const writes = statements.filter((s) => !isReadOnlyStatement(s));
+
+  // Checked before read-only mode and before `allow_write`, because this is
+  // not a setting anyone may trade against: the audit log stays append-only
+  // whatever else the console is allowed to do.
+  for (const statement of writes) {
+    const table = touchesAppendOnly(statement);
+    if (table) {
+      auditDb(c, "admin.db.query.error", {
+        sql: script.slice(0, 4000),
+        error: `refused: ${table} is append-only`,
+        write: true,
+      });
+      return appendOnlyRefusal(c, table);
+    }
+  }
+
   // Read-only mode outranks `allow_write` — the caller cannot opt back into
   // something the operator turned off.
   if (writes.length) {

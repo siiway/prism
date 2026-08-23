@@ -598,7 +598,7 @@ OAuth scope 版本：
 
 ### 数据库
 
-直接访问 D1。仅限管理员、仅接受会话认证，且每次调用都会被审计。详见 [管理员 → 数据库](admin.md#数据库)。
+直接访问 D1。仅限管理员、仅接受会话认证，且每次调用都会被审计。**未设置 `D1_CONSOLE` 时关闭** —— 下列端点默认全部返回 404。详见 [管理员 → 数据库](admin.md#数据库)。
 
 | Method   | Path                               | 说明                                                                     |
 | -------- | ---------------------------------- | ------------------------------------------------------------------------ |
@@ -608,6 +608,8 @@ OAuth scope 版本：
 | `PATCH`  | `/api/admin/db/tables/:table/rows` | 更新单行。请求体 `{ key, values }`，按主键或 `rowid` 定位                |
 | `DELETE` | `/api/admin/db/tables/:table/rows` | 删除单行。请求体 `{ key }`                                               |
 | `POST`   | `/api/admin/db/query`              | 执行 SQL。请求体 `{ sql, params?, allow_write? }`。非纯读取语句在没有 `allow_write` 时会被拒绝；多条语句在同一事务中执行 |
+
+对 `audit_events`、`audit_log` 与 `sqlite_master` 的写入，在任何设置下都会以 `403 { append_only: true }` 拒绝，行编辑端点与控制台皆然 —— 读取不受影响。详见 [管理员 → 审计日志在此处只追加](admin.md#审计日志在此处只追加)。
 
 ### 审计 / 请求日志 / 登录错误
 

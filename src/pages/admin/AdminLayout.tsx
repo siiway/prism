@@ -33,11 +33,22 @@ export function AdminLayout() {
 
   // The database tab only exists when the operator left it on. Shares its
   // query key with the page itself, so this costs one request per session.
+  // Both consoles are off unless an operator turned them on, so the tab is
+  // absent by default. Shown if *either* is available: they share a page, and
+  // an instance with only the key-value half enabled still needs a way in.
   const { data: dbStatus } = useQuery({
     queryKey: ["admin-db-status"],
     queryFn: () => api.adminDbStatus(),
     staleTime: 5 * 60 * 1000,
   });
+  const { data: kvStatus } = useQuery({
+    queryKey: ["admin-kv-status"],
+    queryFn: () => api.adminKvStatus(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const storageConsole =
+    (dbStatus && dbStatus.mode !== "off") ||
+    (kvStatus && kvStatus.mode !== "off");
 
   const TABS = [
     { value: "/admin", label: t("admin.overview") },
@@ -54,9 +65,9 @@ export function AdminLayout() {
     { value: "/admin/domains", label: t("admin.domainsTab") },
     { value: "/admin/scope-grants", label: t("admin.scopeGrantsTab") },
     { value: "/admin/image-proxy", label: t("admin.imageProxyTab") },
-    ...(dbStatus && dbStatus.mode === "off"
-      ? []
-      : [{ value: "/admin/database", label: t("admin.databaseTab") }]),
+    ...(storageConsole
+      ? [{ value: "/admin/database", label: t("admin.databaseTab") }]
+      : []),
   ];
 
   const currentTab =

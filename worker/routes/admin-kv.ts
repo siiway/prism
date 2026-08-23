@@ -34,6 +34,20 @@ const app = new Hono<AppEnv>();
 
 // ─── Availability ─────────────────────────────────────────────────────────────
 
+// Registered above the gate so the admin UI can still ask whether this exists
+// — it decides from the answer whether to render the tab at all. Off is the
+// default, so this is the common case rather than an edge one.
+app.get("/status", (c) => {
+  const mode = kvConsoleMode(c.env);
+  return c.json({
+    mode,
+    writable: mode === "full",
+    namespaces: (Object.keys(NAMESPACES) as NamespaceKey[])
+      .filter((key) => resolveNamespace(c.env, key) !== null)
+      .map((key) => ({ key, description: NAMESPACES[key].description })),
+  });
+});
+
 app.use("*", async (c, next) => {
   if (kvConsoleMode(c.env) === "off") return c.json({ error: "Not found" }, 404);
   await next();
@@ -116,17 +130,6 @@ function auditKv(
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-
-app.get("/status", (c) => {
-  const mode = kvConsoleMode(c.env);
-  return c.json({
-    mode,
-    writable: mode === "full",
-    namespaces: (Object.keys(NAMESPACES) as NamespaceKey[])
-      .filter((key) => resolveNamespace(c.env, key) !== null)
-      .map((key) => ({ key, description: NAMESPACES[key].description })),
-  });
-});
 
 /** List keys, optionally under a prefix.
  *

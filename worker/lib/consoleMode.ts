@@ -10,34 +10,37 @@ export type ConsoleMode = "full" | "read-only" | "off";
 
 /** Parse a console availability variable.
  *
- *  Unset means "full": the operator who deploys the instance is the audience
- *  for these tools and already owns the storage behind them. Operators who
- *  would rather not carry the risk turn it down.
- *
- *    "off"                              — the surface 404s
+ *    unset / "off" / "false" / "0" / …  — the surface 404s
  *    "read-only" / "readonly" / "read"  — reads allowed, every write refused
+ *    "full" / "on" / "true" / "1"       — unrestricted
  *
- *  A value that plainly reads as false ("0", "false", "no", …) is treated as
- *  "off", so `D1_CONSOLE: "false"` does the obvious thing instead of falling
- *  through to "unrecognised, therefore wide open". */
+ *  **Unset means off.** These are the two widest doors in the product, and a
+ *  door that opens because nobody said otherwise is the wrong default for
+ *  something that can empty a table. An operator who wants direct storage
+ *  access says so once in `wrangler.jsonc`; everyone who never thinks about
+ *  it gets an instance without one.
+ *
+ *  Anything unrecognised is also off, for the same reason: a typo in the
+ *  variable should fail closed. */
 export function parseConsoleMode(raw: string | undefined): ConsoleMode {
   const v = raw?.trim().toLowerCase();
-  if (!v) return "full";
+  if (!v) return "off";
   if (["read-only", "readonly", "read", "ro"].includes(v)) return "read-only";
-  if (["0", "false", "no", "off", "disabled", "none"].includes(v)) return "off";
-  return "full";
+  if (["full", "on", "true", "1", "yes", "enabled"].includes(v)) return "full";
+  return "off";
 }
 
 export function d1ConsoleMode(env: Env): ConsoleMode {
   return parseConsoleMode(env.D1_CONSOLE);
 }
 
-/** KV defaults to following `D1_CONSOLE` when `KV_CONSOLE` is unset.
+/** KV follows `D1_CONSOLE` when `KV_CONSOLE` is unset.
  *
- *  An operator who turned the database console off and then found a key–value
- *  browser sitting next to it would rightly consider that a bug: they are two
- *  windows onto the same instance's storage, and turning one off is a
- *  statement about both unless the other is named explicitly. */
+ *  An operator who turned the database console on and then found no key–value
+ *  browser beside it — or turned it off and found one — would rightly consider
+ *  either a bug: they are two windows onto the same instance's storage, and a
+ *  setting for one is a statement about both unless the other is named
+ *  explicitly. With neither set, both are off. */
 export function kvConsoleMode(env: Env): ConsoleMode {
   return parseConsoleMode(env.KV_CONSOLE ?? env.D1_CONSOLE);
 }
