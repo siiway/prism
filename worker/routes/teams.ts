@@ -1791,19 +1791,17 @@ app.patch("/:id/members/:userId", async (c) => {
   // are managed at the ancestor team they originate from.
   const target = await getMember(c.env.DB, id, targetUserId);
   if (!target) return c.json({ error: "Member not found" }, 404);
-  if (target.role === "owner") {
-    // Demoting the owner outright would leave the team without one. Promoting
-    // someone else does the demotion as part of the same operation, so point
-    // at that instead of inventing an ownerless state.
-    return c.json(
-      {
-        error: eff.elevated
-          ? "Promote another member to owner instead — that demotes the current one"
-          : "Cannot change owner role",
-      },
-      403,
-    );
-  }
+  // A member cannot touch the owner's role — they transfer instead. A site
+  // admin can, including straight down, which leaves the team without an
+  // owner until someone is promoted.
+  //
+  // That state is deliberate rather than tolerated: nothing in the schema
+  // requires an owner row, `dissolveTeam` already falls back to the acting
+  // admin when reassigning apps, and the alternative — refusing, and telling
+  // an administrator to promote someone they may not want promoted — is the
+  // team owner outranking the site, which is backwards.
+  if (target.role === "owner" && !eff.elevated)
+    return c.json({ error: "Cannot change owner role" }, 403);
   if (target.role === "co-owner" && eff.role !== "owner")
     return c.json({ error: "Only the owner can change co-owner roles" }, 403);
   if (body.role === "co-owner" && eff.role !== "owner")
@@ -1862,10 +1860,22 @@ app.patch("/:id/members/:userId", async (c) => {
   auditTeam(c, id, "team.member.role_change", {
     resourceType: "user",
     resourceId: targetUserId,
-    metadata: { from: target.role, to: body.role },
+    metadata: {
+      from: target.role,
+      to: body.role,
+      // The team now has no owner. Worth its own field rather than something
+      // to infer from `from: "owner"` — it is the fact a team reading its own
+      // log needs to see, and the fact the admin list renders.
+      ...(target.role === "owner" ? { owner_vacated: true } : {}),
+    },
   });
 
-  return c.json({ message: "Role updated" });
+  return c.json({
+    message: "Role updated",
+    // Said back, because an administrator who demoted the owner should not
+    // have to go and notice.
+    owner_vacated: target.role === "owner",
+  });
 });
 
 // Remove member (owner/admin; cannot remove an owner). Self-leave requires
@@ -1895,9 +1905,9 @@ app.delete("/:id/members/:userId", async (c) => {
   if (!target) return c.json({ error: "Member not found" }, 404);
 
   // A site admin may remove the owner — someone has to be able to, when the
-  // owner is the problem. The seat doesn't stay empty: the most senior
-  // remaining member (longest-serving on a tie) is promoted in the same
-  // batch, so the team never exists without an owner.
+  // owner is the problem. Where there is anyone to promote, the most senior
+  // remaining member (longest-serving on a tie) takes the seat in the same
+  // batch, so the common case never leaves a team ownerless by accident.
   let successorId: string | null = null;
   if (target.role === "owner" && !isSelf) {
     if (!elevated)
@@ -1912,14 +1922,11 @@ app.delete("/:id/members/:userId", async (c) => {
       .bind(id, targetUserId)
       .all<{ user_id: string; role: string }>();
     successorId = results[0]?.user_id ?? null;
-    if (!successorId)
-      return c.json(
-        {
-          error:
-            "The owner is this team's only member — delete the team instead of emptying it",
-        },
-        409,
-      );
+    // No one left to promote. The removal still goes ahead and the team is
+    // left empty rather than destroyed: "remove this member" should not
+    // silently delete a team, and the admin who wants it gone has a delete
+    // button. An empty team is a state the rest of the code already handles —
+    // it is what a team looks like between creation and its first member.
   }
   // Only owner can remove co-owners
   if (target.role === "co-owner" && !isSelf && actorRole !== "owner")
@@ -2009,7 +2016,14 @@ app.delete("/:id/members/:userId", async (c) => {
     }
   }
 
-  return c.json({ message: "Member removed" });
+  return c.json({
+    message: "Member removed",
+    // Who ended up holding the team, if anyone. Null after removing an owner
+    // with nobody to promote — the team is now empty and ownerless, which the
+    // caller should hear rather than discover.
+    new_owner_id: successorId,
+    owner_vacated: target.role === "owner" && !isSelf && !successorId,
+  });
 });
 
 // Transfer ownership to another member (owner only, or a site admin from
