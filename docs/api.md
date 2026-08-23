@@ -645,6 +645,13 @@ Same gating as the database console, via `KV_CONSOLE` (which follows
 | `DELETE` | `/api/admin/domains/:id`                   | Delete a domain                                                              |
 | `POST`   | `/api/admin/apps/:id/transfer`             | `{ owner_id }` or `{ team_id }`. Client ID and secret unchanged               |
 | `POST`   | `/api/admin/users/:id/convert`             | Lift an invite-registration restriction. `{ require_verified_email? }`        |
+| `GET`    | `/api/admin/scope-grants/site`             | Elevated site-level OAuth grants                                             |
+| `GET`    | `/api/admin/scope-grants/team`             | Team-level grants. `?team_id=` filters                                       |
+| `DELETE` | `/api/admin/scope-grants/:kind/:id`        | Withdraw one grant (`:kind` is `site` or `team`). Existing tokens are untouched — revoke the app for those |
+| `GET`    | `/api/admin/users/:id/sessions`            | Live sessions with the IP/geo history behind each                            |
+| `DELETE` | `/api/admin/users/:id/sessions/:sessionId` | End one session (`DELETE …/sessions` still ends all)                         |
+| `GET`    | `/api/admin/maintenance/jobs`              | The runnable scheduled jobs, and the cron they normally run on               |
+| `POST`   | `/api/admin/maintenance/jobs/:key/run`     | Run one now. Awaited — returns `processed` (or `null` where the task keeps no count) and `duration_ms` |
 
 ### Database
 

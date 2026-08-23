@@ -114,6 +114,36 @@ export function AdminSettings() {
     queryFn: () => api.adminRevokePreview(),
   });
   const [revokeIncludeSelf, setRevokeIncludeSelf] = useState(false);
+
+  // The cron tasks, runnable on demand. Awaited server-side, so the result
+  // reports what the job actually did rather than that it was queued.
+  const maintenanceJobs = useQuery({
+    queryKey: ["admin-maintenance-jobs"],
+    queryFn: () => api.adminMaintenanceJobs(),
+  });
+  const [runningJob, setRunningJob] = useState<string | null>(null);
+  const runJob = useMutation({
+    mutationFn: (key: string) => api.adminRunMaintenanceJob(key),
+    onSuccess: (res) => {
+      setRunningJob(null);
+      showMsg(
+        "success",
+        res.processed === null
+          ? t("admin.jobDone", { ms: res.duration_ms })
+          : t("admin.jobDoneCount", {
+              count: res.processed,
+              ms: res.duration_ms,
+            }),
+      );
+    },
+    onError: (err) => {
+      setRunningJob(null);
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    },
+  });
   const revokeSessions = useMutation({
     mutationFn: () => api.adminRevokeAllSessions(revokeIncludeSelf),
     onSuccess: async (res) => {
@@ -1932,6 +1962,45 @@ export function AdminSettings() {
             >
               {t("admin.migrateImageProxyButton")}
             </Button>
+          </div>
+          {/* The scheduled jobs, on demand. Not destructive in the way the
+              controls below are — these are the same tasks cron runs every
+              six hours — so they sit above the red line. */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <Text weight="semibold">{t("admin.maintenanceTitle")}</Text>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.maintenanceDesc", {
+                schedule: maintenanceJobs.data?.schedule ?? "0 */6 * * *",
+              })}
+            </Text>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {maintenanceJobs.data?.jobs.map((job) => (
+                <Button
+                  key={job.key}
+                  size="small"
+                  appearance="outline"
+                  disabled={runJob.isPending}
+                  icon={
+                    runJob.isPending && runningJob === job.key ? (
+                      <Spinner size="tiny" />
+                    ) : undefined
+                  }
+                  onClick={() => {
+                    setRunningJob(job.key);
+                    runJob.mutate(job.key);
+                  }}
+                >
+                  {t(`admin.job_${job.key.replace(/-/g, "_")}`)}
+                </Button>
+              ))}
+            </div>
           </div>
           {/* Sign everyone out. Sits above the site reset because it is the
               one destructive control an operator reaches for during an

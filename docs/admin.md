@@ -521,6 +521,39 @@ through a team invite into an ordinary one. The self-serve path requires a
 verified real address first; an operator who has confirmed the holder some
 other way can waive that, and the audit entry records that they did.
 
+## Scope grants
+
+**Admin → Scope grants** lists the elevated OAuth grants: `site:*`, which lets
+an application act across the instance, and `site:team:*`, which reaches into
+a team without its owner's consent.
+
+These were written at authorization time and then never surfaced again —
+nothing listed them and nothing revoked them, so the only way to find out what
+an application still held was to read the table. An authority nobody can
+enumerate is an authority nobody can withdraw.
+
+Revoking a grant stops that authority from being renewed. Tokens already
+issued under it keep working until they expire, because they are bound to the
+application rather than to this row — if you need them gone now, use
+[Cut off an application](#cut-off-an-application) as well.
+
+## Maintenance jobs
+
+**Admin → Settings → Maintenance jobs** runs any of the eight scheduled tasks
+on demand: domain re-verification, mailbox polling, the four sweeps, and the
+two reapers.
+
+They normally run from the cron trigger every six hours, which is the right
+cadence for steady state and the wrong one for every moment an operator
+actually thinks about them — DNS was just fixed and the domain is still
+unverified, a dissolution is staged and the accounts are still there.
+
+They are the same functions the scheduler calls, and they are awaited rather
+than deferred, so the response reports what the job did rather than that it
+started. Where a task keeps a count, it is returned; where it does not, the
+result is `null` rather than a fabricated zero. Every run is audited, failures
+included.
+
 ## Database
 
 **Admin → Database** is direct access to the D1 database behind the instance:
@@ -689,6 +722,9 @@ webhooks. It is a paginated, append-only list of significant events:
 | `admin.domain.delete`                       | Admin deleted a domain                     |
 | `admin.kv.read` / `write` / `delete`        | A key–value entry was read or changed      |
 | `admin.kv.purge`                            | Every key under a prefix was deleted       |
+| `admin.scope_grant.revoke`                  | A site or team scope grant was withdrawn   |
+| `admin.session.revoke`                      | Admin ended one session                    |
+| `admin.maintenance.run` / `error`           | A scheduled job was run on demand          |
 
 Each entry records the acting `user_id` (or `null` for system actions), the
 `action`, optional `resource_type` / `resource_id`, a `metadata` JSON object,

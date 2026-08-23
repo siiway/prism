@@ -570,6 +570,13 @@ OAuth scope 版本：
 | `DELETE` | `/api/admin/domains/:id`                | 删除域名                                                         |
 | `POST`   | `/api/admin/apps/:id/transfer`          | `{ owner_id }` 或 `{ team_id }`。client ID 与密钥保持不变        |
 | `POST`   | `/api/admin/users/:id/convert`          | 解除邀请注册限制。`{ require_verified_email? }`                  |
+| `GET`    | `/api/admin/scope-grants/site`          | 提升权限的站点级 OAuth 授权                                      |
+| `GET`    | `/api/admin/scope-grants/team`          | 团队级授权。`?team_id=` 可筛选                                   |
+| `DELETE` | `/api/admin/scope-grants/:kind/:id`     | 撤销单个授权（`:kind` 为 `site` 或 `team`）。已签发的令牌不受影响 —— 需要的话请另行撤销该应用 |
+| `GET`    | `/api/admin/users/:id/sessions`         | 活跃会话及其 IP / 地理位置历史                                   |
+| `DELETE` | `/api/admin/users/:id/sessions/:sessionId` | 结束单个会话（`DELETE …/sessions` 仍然结束全部）              |
+| `GET`    | `/api/admin/maintenance/jobs`           | 可执行的定时任务，以及它们平时运行的 cron 表达式                 |
+| `POST`   | `/api/admin/maintenance/jobs/:key/run`  | 立即执行。会 await —— 返回 `processed`（任务无计数时为 `null`）与 `duration_ms` |
 
 ### 数据库
 

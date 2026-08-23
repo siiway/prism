@@ -58,6 +58,7 @@ import { CopyIdButton } from "../../components/CopyIdButton";
 import { PasswordInput } from "../../components/PasswordInput";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { formatDateTime } from "../../lib/datetime";
+import { maskIp, parseClient } from "../../lib/auditFormat";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "20px", minWidth: 0 },
@@ -597,6 +598,131 @@ function EmailsCard({
   );
 }
 
+// ─── Sessions ─────────────────────────────────────────────────────────────────
+
+/** Live sessions with the places each has been used from.
+ *
+ *  "Is this login the attacker's" is a question about where a session has
+ *  been, not when it started — so the IP history is on screen rather than a
+ *  click away, and each session can be ended on its own without signing the
+ *  owner out of everything else. */
+function SessionsCard({
+  userId,
+  showMsg,
+}: {
+  userId: string;
+  showMsg: (type: "success" | "error", text: string) => void;
+}) {
+  const styles = useStyles();
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+
+  const { data } = useQuery({
+    queryKey: ["admin-user-sessions", userId],
+    queryFn: () => api.adminUserSessions(userId),
+  });
+
+  const end = useMutation({
+    mutationFn: (sessionId: string) =>
+      api.adminRevokeSession(userId, sessionId),
+    onSuccess: async (res) => {
+      await qc.invalidateQueries({ queryKey: ["admin-user-sessions", userId] });
+      showMsg("success", res.message);
+    },
+    onError: (err) =>
+      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+  });
+
+  const endAll = useMutation({
+    mutationFn: () => api.adminTerminateSessions(userId),
+    onSuccess: async (res) => {
+      await qc.invalidateQueries({ queryKey: ["admin-user-sessions", userId] });
+      showMsg("success", res.message);
+    },
+    onError: (err) =>
+      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+  });
+
+  if (!data) return <Spinner size="tiny" />;
+
+  return (
+    <Section
+      title={t("admin.sessionsSection")}
+      action={
+        <Button
+          size="small"
+          disabled={data.sessions.length === 0 || endAll.isPending}
+          onClick={() => endAll.mutate()}
+        >
+          {t("admin.endAllSessions")}
+        </Button>
+      }
+    >
+      {data.sessions.length === 0 ? (
+        <Text className={styles.empty}>{t("admin.noSessions")}</Text>
+      ) : (
+        <div className={styles.tableScroll}>
+          <Table size="small">
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>{t("admin.clientHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.seenFromHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.startedHeader")}</TableHeaderCell>
+                <TableHeaderCell />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.sessions.map((s) => (
+                <TableRow key={s.id}>
+                  <TableCell>{parseClient(s.user_agent)}</TableCell>
+                  <TableCell>
+                    <div className={styles.row}>
+                      {s.ips.length === 0 ? (
+                        <Text size={200} className={styles.muted}>
+                          {maskIp(s.ip_address)}
+                        </Text>
+                      ) : (
+                        s.ips.slice(0, 3).map((ip, i) => (
+                          <Tooltip
+                            key={i}
+                            relationship="description"
+                            withArrow
+                            content={`${ip.ip_address ?? "—"} · ${ts(ip.last_seen)}`}
+                          >
+                            <Badge appearance="tint" size="small">
+                              {maskIp(ip.ip_address)}
+                            </Badge>
+                          </Tooltip>
+                        ))
+                      )}
+                      {s.ips.length > 3 && (
+                        <Text size={200} className={styles.muted}>
+                          +{s.ips.length - 3}
+                        </Text>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>{ts(s.created_at)}</TableCell>
+                  <TableCell>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<DeleteRegular />}
+                      disabled={end.isPending}
+                      aria-label={t("admin.endSession")}
+                      onClick={() => end.mutate(s.id)}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 // ─── Generic "list with a remove button" sections ─────────────────────────────
 
 interface ListRow {
@@ -937,6 +1063,7 @@ export function AdminUserDetail() {
             removeLabel={t("common.revoke")}
             showMsg={showMsg}
           />
+          <SessionsCard userId={id} showMsg={showMsg} />
           <RemovableList
             title={t("admin.connectionsSection")}
             rows={connections.data?.connections.map((row) => ({

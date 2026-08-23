@@ -2168,6 +2168,63 @@ export const api = {
       target,
       getToken(),
     ),
+  adminScopeGrants: (kind: "site" | "team", page = 1, teamId?: string) => {
+    const search = new URLSearchParams({ page: String(page) });
+    if (teamId) search.set("team_id", teamId);
+    return request<{
+      grants: AdminScopeGrant[];
+      total: number;
+      page: number;
+      limit: number;
+    }>(
+      "GET",
+      `/admin/scope-grants/${kind}?${search.toString()}`,
+      undefined,
+      getToken(),
+    );
+  },
+  adminRevokeScopeGrant: (kind: "site" | "team", id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/scope-grants/${kind}/${id}`,
+      undefined,
+      getToken(),
+    ),
+  /** End every session for one account. */
+  adminTerminateSessions: (id: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/sessions`,
+      undefined,
+      getToken(),
+    ),
+  adminUserSessions: (id: string) =>
+    request<{ sessions: AdminSession[] }>(
+      "GET",
+      `/admin/users/${id}/sessions`,
+      undefined,
+      getToken(),
+    ),
+  adminRevokeSession: (id: string, sessionId: string) =>
+    request<{ message: string }>(
+      "DELETE",
+      `/admin/users/${id}/sessions/${sessionId}`,
+      undefined,
+      getToken(),
+    ),
+  adminMaintenanceJobs: () =>
+    request<{
+      jobs: Array<{ key: string; writes: boolean }>;
+      schedule: string;
+    }>("GET", "/admin/maintenance/jobs", undefined, getToken()),
+  adminRunMaintenanceJob: (key: string) =>
+    request<{
+      message: string;
+      job: string;
+      /** null when the task keeps no count — not the same as zero. */
+      processed: number | null;
+      duration_ms: number;
+    }>("POST", `/admin/maintenance/jobs/${key}/run`, {}, getToken()),
   adminConvertUser: (id: string, requireVerifiedEmail = true) =>
     request<{ message: string }>(
       "POST",
@@ -3100,6 +3157,40 @@ export interface AdminDomain {
   team_name: string | null;
   team_avatar: string;
   created_at: number;
+}
+
+/** A site- or team-level scope grant. The two tables differ enough that the
+ *  fields specific to each are optional here rather than split into two
+ *  types the UI would have to branch on twice. */
+export interface AdminScopeGrant {
+  id: string;
+  client_id: string;
+  app_name: string | null;
+  granted_at: number;
+  /** site grants */
+  scopes?: string[];
+  admin_username?: string | null;
+  grantee_username?: string | null;
+  /** team grants */
+  team_id?: string;
+  team_name?: string | null;
+  grantor_username?: string | null;
+  permissions?: unknown;
+}
+
+export interface AdminSession {
+  id: string;
+  user_agent: string | null;
+  ip_address: string | null;
+  created_at: number;
+  expires_at: number;
+  /** Where this session has been used from, most recent first. */
+  ips: Array<{
+    ip_address: string | null;
+    geo: unknown;
+    first_seen: number;
+    last_seen: number;
+  }>;
 }
 
 export type RedirectUriMatchType = "equals" | "regex" | "wildcard";

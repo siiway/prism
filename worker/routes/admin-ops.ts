@@ -509,4 +509,256 @@ app.post("/users/:id/convert", async (c) => {
   return c.json({ message: "Restriction lifted" });
 });
 
+// ─── Elevated scope grants ────────────────────────────────────────────────────
+//
+// `site:*` and `site:team:*` scopes are the highest-privilege grants the OAuth
+// layer issues: they let an application act across the instance, and the
+// site-team ones deliberately bypass the team owner's consent. They were
+// written at authorization time and then never surfaced again — nothing listed
+// them, nothing revoked them, and the only way to find out what an application
+// still held was to read the table.
+//
+// That is the wrong shape for the most dangerous grant in the system. An
+// authority nobody can enumerate is an authority nobody can withdraw.
+
+/** Site-level scope grants, newest first. */
+app.get("/scope-grants/site", async (c) => {
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+    100,
+  );
+  const [rows, count] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT g.id, g.client_id, g.scopes, g.granted_at,
+              g.admin_user_id, g.grantee_user_id,
+              a.name AS app_name,
+              admin.username AS admin_username,
+              grantee.username AS grantee_username
+         FROM site_scope_grants g
+         LEFT JOIN oauth_apps a ON a.client_id = g.client_id
+         LEFT JOIN users admin ON admin.id = g.admin_user_id
+         LEFT JOIN users grantee ON grantee.id = g.grantee_user_id
+        ORDER BY g.granted_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(limit, offset)
+      .all<{
+        id: string;
+        client_id: string;
+        scopes: string;
+        granted_at: number;
+        admin_user_id: string | null;
+        grantee_user_id: string | null;
+        app_name: string | null;
+        admin_username: string | null;
+        grantee_username: string | null;
+      }>(),
+    c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM site_scope_grants",
+    ).first<{ n: number }>(),
+  ]);
+
+  return c.json({
+    grants: rows.results.map((row) => ({
+      ...row,
+      scopes: row.scopes ? row.scopes.split(" ").filter(Boolean) : [],
+    })),
+    total: count?.n ?? 0,
+    page,
+    limit,
+  });
+});
+
+/** Team-level scope grants, newest first. */
+app.get("/scope-grants/team", async (c) => {
+  const { page, limit, offset } = readPage(
+    c.req.query("page"),
+    c.req.query("limit"),
+    20,
+    100,
+  );
+  const teamFilter = c.req.query("team_id")?.trim();
+  const where = teamFilter ? "WHERE g.team_id = ?" : "";
+  const args: unknown[] = teamFilter ? [teamFilter] : [];
+
+  const [rows, count] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT g.id, g.client_id, g.team_id, g.permissions, g.granted_at,
+              g.grantor_user_id,
+              a.name AS app_name,
+              t.name AS team_name,
+              u.username AS grantor_username
+         FROM team_scope_grants g
+         LEFT JOIN oauth_apps a ON a.client_id = g.client_id
+         LEFT JOIN teams t ON t.id = g.team_id
+         LEFT JOIN users u ON u.id = g.grantor_user_id
+         ${where}
+        ORDER BY g.granted_at DESC LIMIT ? OFFSET ?`,
+    )
+      .bind(...(args as never[]), limit, offset)
+      .all<{
+        id: string;
+        client_id: string;
+        team_id: string;
+        permissions: string;
+        granted_at: number;
+        grantor_user_id: string | null;
+        app_name: string | null;
+        team_name: string | null;
+        grantor_username: string | null;
+      }>(),
+    c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM team_scope_grants g ${where}`,
+    )
+      .bind(...(args as never[]))
+      .first<{ n: number }>(),
+  ]);
+
+  return c.json({
+    grants: rows.results.map((row) => ({
+      ...row,
+      permissions: row.permissions
+        ? (JSON.parse(row.permissions) as unknown)
+        : null,
+    })),
+    total: count?.n ?? 0,
+    page,
+    limit,
+  });
+});
+
+/** Withdraw one grant. `:kind` is `site` or `team`.
+ *
+ *  The tokens already minted under it are left alone on purpose: they are
+ *  bound to the application, not to this row, and cutting an application off
+ *  is its own operation with its own confirmation. Revoking here stops the
+ *  authority from being renewed. */
+app.delete("/scope-grants/:kind/:id", async (c) => {
+  const kind = c.req.param("kind");
+  if (kind !== "site" && kind !== "team")
+    return c.json({ error: "kind must be site or team" }, 400);
+
+  const table = kind === "site" ? "site_scope_grants" : "team_scope_grants";
+  const row = await c.env.DB.prepare(
+    `SELECT id, client_id FROM ${table} WHERE id = ?`,
+  )
+    .bind(c.req.param("id"))
+    .first<{ id: string; client_id: string }>();
+  if (!row) return c.json({ error: "Grant not found" }, 404);
+
+  await c.env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`)
+    .bind(row.id)
+    .run();
+
+  auditOps(
+    c,
+    "admin.scope_grant.revoke",
+    { kind, client_id: row.client_id },
+    { type: "scope_grant", id: row.id, name: row.client_id },
+  );
+  return c.json({ message: "Grant revoked" });
+});
+
+// ─── Sessions ─────────────────────────────────────────────────────────────────
+
+/** One account's live sessions, with where each has been used from.
+ *
+ *  The account detail endpoint already returns bare session rows. This adds
+ *  the IP history behind each one — the same data the user sees on their own
+ *  security page — because "is this login the attacker's" is a question about
+ *  where a session has been, not when it was created. */
+app.get("/users/:id/sessions", async (c) => {
+  const userId = c.req.param("id");
+  const now = Math.floor(Date.now() / 1000);
+
+  const { results: sessions } = await c.env.DB.prepare(
+    `SELECT id, user_agent, ip_address, created_at, expires_at
+       FROM sessions WHERE user_id = ? AND expires_at > ?
+      ORDER BY created_at DESC LIMIT 100`,
+  )
+    .bind(userId, now)
+    .all<{
+      id: string;
+      user_agent: string | null;
+      ip_address: string | null;
+      created_at: number;
+      expires_at: number;
+    }>();
+
+  if (!sessions.length) return c.json({ sessions: [] });
+
+  // One query for the whole page rather than one per session.
+  const placeholders = sessions.map(() => "?").join(", ");
+  const { results: ips } = await c.env.DB.prepare(
+    `SELECT session_id, ip_address, geo, first_seen, last_seen
+       FROM session_ips WHERE session_id IN (${placeholders})
+      ORDER BY last_seen DESC`,
+  )
+    .bind(...(sessions.map((s) => s.id) as never[]))
+    .all<{
+      session_id: string;
+      ip_address: string | null;
+      geo: string | null;
+      first_seen: number;
+      last_seen: number;
+    }>();
+
+  const bySession = new Map<string, typeof ips>();
+  for (const row of ips) {
+    const list = bySession.get(row.session_id) ?? [];
+    list.push(row);
+    bySession.set(row.session_id, list);
+  }
+
+  return c.json({
+    sessions: sessions.map((s) => ({
+      ...s,
+      ips: (bySession.get(s.id) ?? []).map((row) => ({
+        ip_address: row.ip_address,
+        geo: row.geo ? (JSON.parse(row.geo) as unknown) : null,
+        first_seen: row.first_seen,
+        last_seen: row.last_seen,
+      })),
+    })),
+  });
+});
+
+/** End one session.
+ *
+ *  `DELETE /users/:id/sessions` already ends all of them. Ending one is the
+ *  finer instrument: an account with a session from somewhere it shouldn't be
+ *  does not need its owner logged out of everything else to fix that. */
+app.delete("/users/:id/sessions/:sessionId", async (c) => {
+  const userId = c.req.param("id");
+  const user = await c.env.DB.prepare(
+    "SELECT id, username FROM users WHERE id = ? AND kind = 'user'",
+  )
+    .bind(userId)
+    .first<{ id: string; username: string }>();
+  if (!user) return c.json({ error: "User not found" }, 404);
+
+  const row = await c.env.DB.prepare(
+    "SELECT id, ip_address FROM sessions WHERE id = ? AND user_id = ?",
+  )
+    .bind(c.req.param("sessionId"), userId)
+    .first<{ id: string; ip_address: string | null }>();
+  if (!row) return c.json({ error: "Session not found" }, 404);
+
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(row.id),
+    c.env.DB.prepare("DELETE FROM session_ips WHERE session_id = ?").bind(
+      row.id,
+    ),
+  ]);
+
+  auditOps(
+    c,
+    "admin.session.revoke",
+    { session_id: row.id, ip: row.ip_address },
+    { type: "user", id: user.id, name: user.username },
+  );
+  return c.json({ message: "Session ended" });
+});
+
 export default app;

@@ -71,6 +71,7 @@ import { hashLookupCandidate } from "../lib/secretCrypto";
 
 import adminDbRoutes from "./admin-db";
 import adminKvRoutes from "./admin-kv";
+import adminMaintenanceRoutes from "./admin-maintenance";
 import adminOpsRoutes from "./admin-ops";
 import adminUserRoutes from "./admin-users";
 
@@ -89,6 +90,8 @@ app.route("/kv", adminKvRoutes);
 // routes below so its /domains and /apps/:id/transfer paths resolve; the
 // deeper /users/:id/* routes it adds sit alongside adminUserRoutes.
 app.route("/", adminOpsRoutes);
+// The scheduled jobs, runnable on demand.
+app.route("/maintenance", adminMaintenanceRoutes);
 
 // ─── Site configuration ───────────────────────────────────────────────────────
 
