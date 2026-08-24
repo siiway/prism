@@ -2865,6 +2865,7 @@ const VALID_PROVIDERS = new Set([
   "discord",
   "telegram",
   "x",
+  "cloudflare",
   "oidc",
   "oauth2",
 ]);

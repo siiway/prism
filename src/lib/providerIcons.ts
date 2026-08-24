@@ -8,6 +8,7 @@ export const PROVIDER_COLORS: Record<string, string> = {
   discord: "#5865f2",
   telegram: "#2AABEE",
   x: "#000000",
+  cloudflare: "#F38020",
 };
 
 export const PROVIDER_ICON_URLS: Record<string, string> = {
@@ -17,6 +18,7 @@ export const PROVIDER_ICON_URLS: Record<string, string> = {
   discord: "https://cdn.simpleicons.org/discord",
   telegram: "https://cdn.simpleicons.org/telegram",
   x: "https://cdn.simpleicons.org/x/000000",
+  cloudflare: "https://cdn.simpleicons.org/cloudflare",
 };
 
 /** Pick the icon URL for a provider entry on the login / connections page.

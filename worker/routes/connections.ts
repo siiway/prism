@@ -124,6 +124,21 @@ const PROVIDER_DEFS: Record<string, ProviderDef> = {
       "https://api.twitter.com/2/users/me?user.fields=profile_image_url,name,username",
     scopes: "users.read tweet.read offline.access",
   },
+  // Cloudflare — first-party OAuth 2.0 / OpenID Connect provider
+  // (dashboard: Manage Account -> OAuth clients). Fixed OIDC endpoints, taken
+  // from https://dash.cloudflare.com/.well-known/openid-configuration:
+  //   * `openid` yields the stable `sub` used as the provider_user_id.
+  //   * `offline_access` unlocks refresh_token issuance — the OAuth client must
+  //     also enable the refresh_token grant type for a token to come back.
+  //   * The token endpoint accepts client_secret_post, so the standard
+  //     body-based code exchange works unchanged — no PKCE or HTTP Basic
+  //     special-casing (unlike X). Profile extraction reuses the OIDC branch.
+  cloudflare: {
+    authUrl: "https://dash.cloudflare.com/oauth2/auth",
+    tokenUrl: "https://dash.cloudflare.com/oauth2/token",
+    userUrl: "https://dash.cloudflare.com/oauth2/userinfo",
+    scopes: "openid offline_access",
+  },
   // Generic providers — all URLs/scopes are configured per-source in oauth_sources table
   oidc: {
     authUrl: "",
@@ -1673,6 +1688,7 @@ function extractProviderUserId(
       return String(profile.id ?? "");
     case "google":
     case "oidc":
+    case "cloudflare":
       return String(profile.sub ?? "");
     default:
       // oauth2 and unknown — try sub first (OIDC-style), then id
@@ -1714,6 +1730,7 @@ function extractProviderEmail(
       return profile.verified === true ? email : null;
     case "google":
     case "oidc":
+    case "cloudflare":
       return profile.email_verified === true ? email : null;
     case "github":
       // The connection callback explicitly hits /user/emails and only puts a
@@ -1739,6 +1756,7 @@ function extractDisplayName(
       return (profile.name as string) || (profile.login as string) || "User";
     case "google":
     case "oidc":
+    case "cloudflare":
       return (
         (profile.name as string) ||
         (profile.preferred_username as string) ||
@@ -1809,6 +1827,7 @@ function extractProviderAvatar(
       return (profile.avatar_url as string) ?? null;
     case "google":
     case "oidc":
+    case "cloudflare":
       return (profile.picture as string) ?? null;
     case "discord": {
       const id = profile.id as string;

@@ -218,15 +218,15 @@ migration and is idempotent — re-running is safe.
 
 ### Source fields
 
-| Field         | Description                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------ |
-| Slug          | Unique URL key — appears in the callback URL as `/api/connections/<slug>/callback`               |
-| Provider      | Base OAuth type (GitHub, Google, Microsoft, Discord, Telegram, X, Generic OIDC, Generic OAuth 2) |
-| Display name  | Label shown on login/register buttons                                                            |
-| Client ID     | OAuth application client ID                                                                      |
-| Client Secret | OAuth application client secret                                                                  |
-| Trusted       | When `true` (default), social login through this source skips email verification                 |
-| Enabled       | Toggle to show/hide the source on login without deleting it                                      |
+| Field         | Description                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| Slug          | Unique URL key — appears in the callback URL as `/api/connections/<slug>/callback`                           |
+| Provider      | Base OAuth type (GitHub, Google, Microsoft, Discord, Telegram, X, Cloudflare, Generic OIDC, Generic OAuth 2) |
+| Display name  | Label shown on login/register buttons                                                                        |
+| Client ID     | OAuth application client ID                                                                                  |
+| Client Secret | OAuth application client secret                                                                              |
+| Trusted       | When `true` (default), social login through this source skips email verification                             |
+| Enabled       | Toggle to show/hide the source on login without deleting it                                                  |
 
 ### Generic OIDC sources
 
