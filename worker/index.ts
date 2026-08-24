@@ -37,6 +37,7 @@ import publicTeamsRoutes from "./routes/public-teams";
 import gpgRoutes from "./routes/gpg";
 import adminRoutes from "./routes/admin";
 import { readerRoutes as noticeRoutes } from "./routes/notices";
+import { readerRoutes as legalRoutes } from "./routes/legal";
 import auditRoutes from "./routes/audit";
 import proxyRoutes from "./routes/proxy";
 import { ssrHandler } from "./ssr";
@@ -89,6 +90,8 @@ app.route("/api/public/teams", publicTeamsRoutes);
 // Optional auth: the signed-out pages show `public` notices, which is the
 // case a maintenance announcement most needs to reach.
 app.route("/api/notices", noticeRoutes);
+// Public: the /privacy and /terms pages are reachable without signing in.
+app.route("/api/legal", legalRoutes);
 app.route("/api/admin", adminRoutes);
 app.route("/api/audit", auditRoutes);
 app.route("/api/proxy/image", proxyRoutes);

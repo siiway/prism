@@ -42,6 +42,17 @@ Settings are grouped into tabs. All changes take effect immediately — no redep
 - **Accent color** — hex color that drives the entire FluentUI theme. Changes are reflected immediately after saving.
 - **Custom CSS** — injected as a `<style>` block on every page. Useful for branding tweaks without forking the UI.
 
+### Legal
+
+- **Privacy Policy** — Markdown published at `/privacy`.
+- **Terms of Service** — Markdown published at `/terms`.
+
+Both are written in Markdown (rendered and sanitized the same way as profile
+READMEs) and are reachable without signing in. A link to each published page
+appears in the footer of every page. Leaving a field empty hides both that page
+and its footer link. Each document is capped at 256 KiB. See
+[Configuration → Legal pages](configuration.md#legal-pages).
+
 ### Security / Sessions
 
 - **Session TTL (days)** — how long a login session lasts

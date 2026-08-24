@@ -75,6 +75,7 @@ import adminKvRoutes from "./admin-kv";
 import adminMaintenanceRoutes from "./admin-maintenance";
 import adminOpsRoutes from "./admin-ops";
 import { adminRoutes as adminNoticeRoutes } from "./notices";
+import { adminRoutes as adminLegalRoutes } from "./legal";
 import adminUserRoutes from "./admin-users";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -97,6 +98,9 @@ app.route("/maintenance", adminMaintenanceRoutes);
 // Notice board authoring. The reader half is mounted at /api/notices with
 // optional auth, since public notices exist for people who cannot sign in.
 app.route("/notices", adminNoticeRoutes);
+// Legal page authoring (Privacy Policy, Terms of Service). The reader half is
+// mounted at /api/legal — the pages are public.
+app.route("/legal", adminLegalRoutes);
 
 // ─── Site configuration ───────────────────────────────────────────────────────
 

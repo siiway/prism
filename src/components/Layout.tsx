@@ -46,6 +46,7 @@ import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
 import { useThemeStore, type ThemeMode } from "../store/theme";
 import { NoticeBoard } from "./NoticeBoard";
+import { LegalFooter } from "./LegalFooter";
 
 const useStyles = makeStyles({
   shell: {
@@ -541,6 +542,7 @@ export function Layout() {
           <NoticeBoard />
           <Outlet />
         </div>
+        <LegalFooter />
       </main>
     </div>
   );

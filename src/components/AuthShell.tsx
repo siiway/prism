@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { NoticeBoard } from "./NoticeBoard";
+import { LegalFooter } from "./LegalFooter";
 
 const useStyles = makeStyles({
   page: {
@@ -101,6 +102,9 @@ export function AuthShell({
       </div>
       <div className={styles.card} style={{ maxWidth, gap: cardGap }}>
         {children}
+      </div>
+      <div style={{ width: "100%", maxWidth }}>
+        <LegalFooter />
       </div>
     </div>
   );

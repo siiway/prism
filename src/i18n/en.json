@@ -1336,6 +1336,16 @@
     "accentColor": "Accent Color",
     "customCss": "Custom CSS",
     "customCssHint": "Injected into the page head",
+    "legalTab": "Legal",
+    "legalTitle": "Legal pages",
+    "legalDesc": "Publish a Privacy Policy and Terms of Service. Each is written in Markdown and shown at its own public page (linked from the footer of every page). Leave a field empty to hide that page and its link.",
+    "privacyPolicy": "Privacy Policy",
+    "privacyPolicyPlaceholder": "# Privacy Policy\n\nHow this service collects, uses, and protects personal data…",
+    "termsOfService": "Terms of Service",
+    "termsOfServicePlaceholder": "# Terms of Service\n\nThe rules and conditions for using this service…",
+    "legalMarkdownHint": "Markdown supported. Rendered and sanitized the same way as profile READMEs.",
+    "legalPublishedAt": "Published at {{path}}",
+    "legalHiddenWhenEmpty": "Empty — this page and its footer link are hidden.",
     "dangerTitle": "Danger Zone",
     "dangerDesc": "Maintenance and one-way migrations live here. Read each section carefully before clicking.",
     "resetEverything": "Reset everything",
@@ -2166,5 +2176,15 @@
     "region": "Announcements",
     "dismiss": "Dismiss this notice",
     "forTeam": "For {{team}}"
+  },
+  "legal": {
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service",
+    "privacyTitle": "Privacy Policy",
+    "termsTitle": "Terms of Service",
+    "lastUpdated": "Last updated {{date}}",
+    "notPublished": "This page has not been published yet.",
+    "backHome": "Home",
+    "goBack": "Go back"
   }
 }

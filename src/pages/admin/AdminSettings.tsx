@@ -175,6 +175,29 @@ export function AdminSettings() {
   );
   const config = data?.config as SiteConfig | undefined;
 
+  // Legal pages live in their own table (not site_config), so they have their
+  // own query, draft state, and Save button rather than riding the shared
+  // config flow below.
+  const { data: legalData } = useQuery({
+    queryKey: ["admin-legal"],
+    queryFn: api.adminLegal,
+  });
+  const [legalDraft, setLegalDraft] = useState<Partial<Record<string, string>>>(
+    {},
+  );
+  const [savingLegal, setSavingLegal] = useState(false);
+  const legalDoc = (slug: string) =>
+    legalData?.documents.find((d) => d.slug === slug);
+  const getLegal = (slug: string) =>
+    slug in legalDraft
+      ? (legalDraft[slug] ?? "")
+      : (legalDoc(slug)?.content ?? "");
+  const setLegal = (slug: string, value: string) =>
+    setLegalDraft((d) => ({ ...d, [slug]: value }));
+  const legalDirty = Object.keys(legalDraft).some(
+    (slug) => legalDraft[slug] !== (legalDoc(slug)?.content ?? ""),
+  );
+
   const [localConfig, setLocalConfig] = useState<Partial<SiteConfig>>({});
   const [saving, setSaving] = useState(false);
   const { message, showMsg } = useToastMessage();
@@ -537,6 +560,37 @@ export function AdminSettings() {
   const saveConfigKey = async (key: keyof SiteConfig) =>
     saveConfigKeys(key as string, [key]);
 
+  // Persist only the documents whose draft differs from the stored value, so
+  // saving one policy doesn't bump the other's "last updated" date.
+  const handleSaveLegal = async () => {
+    setSavingLegal(true);
+    try {
+      const changed = Object.keys(legalDraft).filter(
+        (slug) => legalDraft[slug] !== (legalDoc(slug)?.content ?? ""),
+      );
+      for (const slug of changed) {
+        await api.adminUpdateLegal(
+          slug as "privacy" | "terms",
+          legalDraft[slug] ?? "",
+        );
+      }
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["admin-legal"] }),
+        qc.invalidateQueries({ queryKey: ["site"] }),
+        qc.invalidateQueries({ queryKey: ["legal"] }),
+      ]);
+      setLegalDraft({});
+      showMsg("success", t("admin.settingsSaved"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("admin.saveFailed"),
+      );
+    } finally {
+      setSavingLegal(false);
+    }
+  };
+
   if (isLoading) return <SkeletonFormCard rows={6} />;
 
   return (
@@ -558,6 +612,7 @@ export function AdminSettings() {
           <Tab value="captcha">{t("admin.captchaTab")}</Tab>
           <Tab value="email">{t("admin.emailTab")}</Tab>
           <Tab value="appearance">{t("admin.appearanceTab")}</Tab>
+          <Tab value="legal">{t("admin.legalTab")}</Tab>
           <Tab value="danger">{t("admin.dangerTab")}</Tab>
         </TabList>
       </div>
@@ -1711,6 +1766,69 @@ export function AdminSettings() {
                 placeholder=":root { /* custom styles */ }"
               />
             </Field>
+          </div>
+        </div>
+      )}
+
+      {tab === "legal" && (
+        <div className={styles.card}>
+          <Title3>{t("admin.legalTitle")}</Title3>
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("admin.legalDesc")}
+          </Text>
+          <div className={styles.form}>
+            {(
+              [
+                [
+                  "privacy",
+                  "admin.privacyPolicy",
+                  "admin.privacyPolicyPlaceholder",
+                  "/privacy",
+                ],
+                [
+                  "terms",
+                  "admin.termsOfService",
+                  "admin.termsOfServicePlaceholder",
+                  "/terms",
+                ],
+              ] as const
+            ).map(([slug, labelKey, placeholderKey, path]) => (
+              <div
+                key={slug}
+                style={{ display: "flex", flexDirection: "column", gap: 8 }}
+              >
+                <Field label={t(labelKey)} hint={t("admin.legalMarkdownHint")}>
+                  <Textarea
+                    value={getLegal(slug)}
+                    onChange={(e) => setLegal(slug, e.target.value)}
+                    rows={14}
+                    resize="vertical"
+                    placeholder={t(placeholderKey)}
+                  />
+                </Field>
+                <Text
+                  size={200}
+                  style={{ color: tokens.colorNeutralForeground3 }}
+                >
+                  {getLegal(slug)
+                    ? t("admin.legalPublishedAt", { path })
+                    : t("admin.legalHiddenWhenEmpty")}
+                </Text>
+              </div>
+            ))}
+            <div>
+              <Button
+                appearance="primary"
+                onClick={handleSaveLegal}
+                disabled={savingLegal || !legalDirty}
+              >
+                {savingLegal ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("admin.saveSettings")
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       )}

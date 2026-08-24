@@ -227,6 +227,34 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
         })),
     },
 
+    // ── Legal pages (public, operator-configured) ───────────────────────────
+    {
+      path: "/privacy",
+      loader: async () => {
+        await Promise.all([
+          prefetch(ctx.qc, ["site"], api.site),
+          prefetch(ctx.qc, ["legal", "privacy"], () => api.legal("privacy")),
+        ]);
+        return null;
+      },
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/Legal").then((m) => ({ Component: m.PrivacyPage })),
+    },
+    {
+      path: "/terms",
+      loader: async () => {
+        await Promise.all([
+          prefetch(ctx.qc, ["site"], api.site),
+          prefetch(ctx.qc, ["legal", "terms"], () => api.legal("terms")),
+        ]);
+        return null;
+      },
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/Legal").then((m) => ({ Component: m.TermsPage })),
+    },
+
     // ── Protected app shell ─────────────────────────────────────────────────
     {
       // Element is eager (Layout is on every authenticated page).

@@ -1336,6 +1336,16 @@
     "accentColor": "强调色",
     "customCss": "自定义 CSS",
     "customCssHint": "注入到页面头部",
+    "legalTab": "法律条款",
+    "legalTitle": "法律页面",
+    "legalDesc": "发布隐私政策和服务条款。每项均使用 Markdown 编写，并显示在各自的公开页面（每个页面的页脚都会链接到它们）。留空则隐藏该页面及其链接。",
+    "privacyPolicy": "隐私政策",
+    "privacyPolicyPlaceholder": "# 隐私政策\n\n本服务如何收集、使用和保护个人数据……",
+    "termsOfService": "服务条款",
+    "termsOfServicePlaceholder": "# 服务条款\n\n使用本服务的规则与条件……",
+    "legalMarkdownHint": "支持 Markdown。渲染与净化方式与个人主页 README 相同。",
+    "legalPublishedAt": "已发布于 {{path}}",
+    "legalHiddenWhenEmpty": "为空——此页面及其页脚链接将被隐藏。",
     "dangerTitle": "危险区域",
     "dangerDesc": "维护和单向迁移操作集中在这里。每次点击前请仔细阅读说明。",
     "resetEverything": "重置所有内容",
@@ -2166,5 +2176,15 @@
     "region": "公告",
     "dismiss": "关闭该公告",
     "forTeam": "面向 {{team}}"
+  },
+  "legal": {
+    "privacy": "隐私政策",
+    "terms": "服务条款",
+    "privacyTitle": "隐私政策",
+    "termsTitle": "服务条款",
+    "lastUpdated": "最后更新于 {{date}}",
+    "notPublished": "此页面尚未发布。",
+    "backHome": "首页",
+    "goBack": "返回"
   }
 }

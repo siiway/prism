@@ -32,6 +32,32 @@ config API.
 | `allow_alt_email_login`      | boolean | `true`                          | Let users sign in with any verified secondary email, not just primary      |
 | `initialized`                | boolean | `false`                         | Set to `true` after first-run setup. Do not change manually                |
 
+## Legal pages
+
+Two operator-authored documents — a Privacy Policy and Terms of Service — can be
+published from **Admin → Settings → Legal**. Each is written in Markdown (rendered
+and sanitized the same way as profile READMEs) and served at its own public page,
+reachable without signing in:
+
+| Document         | Page       | API endpoint             |
+| ---------------- | ---------- | ------------------------ |
+| Privacy Policy   | `/privacy` | `GET /api/legal/privacy` |
+| Terms of Service | `/terms`   | `GET /api/legal/terms`   |
+
+Unlike the settings above, these are **not** stored in `site_config` — they live
+in a dedicated `legal_documents` D1 table (slug, content, `updated_at`,
+`updated_by`). A policy is a large document, and `site_config` is read in full on
+essentially every request; keeping the documents out of it avoids loading them on
+the hot path. Each is capped at 256 KiB.
+
+A link to each published page appears in the footer of every page (signed in or
+out). Clearing a document (saving it empty) hides both the page and its footer
+link. The public `GET /api/site` payload does not include the full text — it only
+exposes the `has_privacy_policy` / `has_terms_of_service` booleans so the footer
+knows which links to render; the content is fetched on demand when a reader opens
+the page, and the endpoint returns the last-updated timestamp for a "Last updated"
+line.
+
 ## Sessions & tokens
 
 | Key                        | Type   | Default | Description                                                                                                          |

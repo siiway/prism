@@ -37,6 +37,16 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 - **Accent color** — 驱动整个 FluentUI 主题的十六进制颜色，保存后立即生效。
 - **Custom CSS** — 注入到每个页面的 `<style>` 块，适合在不修改源码的情况下进行品牌定制。
 
+### 法律条款
+
+- **隐私政策** — Markdown，发布于 `/privacy`。
+- **服务条款** — Markdown，发布于 `/terms`。
+
+两者均使用 Markdown 编写（渲染与净化方式与个人主页 README 相同），无需登录即可访问。
+每份已发布页面的链接都会出现在每个页面的页脚。留空某个字段会同时隐藏对应页面及其页脚
+链接。每份文档上限为 256 KiB。参见
+[配置 → 法律页面](configuration.md#法律页面)。
+
 ### 安全 / 会话
 
 - **Session TTL（天）** — 登录会话的有效期

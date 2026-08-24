@@ -231,6 +231,10 @@ export const api = {
 
   // ─── Site ────────────────────────────────────────────────────────────────
   site: () => request<SitePublicConfig>("GET", "/site"),
+  /** Fetch an operator-authored legal page ("privacy" | "terms"). Public —
+   *  the pages are reachable without signing in. `content` is raw markdown
+   *  (empty when unpublished); render it through renderMarkdown. */
+  legal: (doc: LegalDocType) => request<LegalDoc>("GET", `/legal/${doc}`),
 
   // ─── Auth ────────────────────────────────────────────────────────────────
   register: (body: RegisterBody) =>
@@ -903,6 +907,20 @@ export const api = {
     ),
   adminUpdateConfig: (updates: Record<string, unknown>) =>
     request<{ message: string }>("PATCH", "/admin/config", updates, getToken()),
+  /** Both legal documents (Privacy Policy, Terms of Service), with full
+   *  content, for the admin editor. Missing documents come back with empty
+   *  content. 503 with `migrations_pending` if the table isn't there yet. */
+  adminLegal: () =>
+    request<{ documents: AdminLegalDocument[] }>(
+      "GET",
+      "/admin/legal",
+      undefined,
+      getToken(),
+    ),
+  /** Publish, edit, or clear one legal document. An empty string unpublishes
+   *  it (hides the page and its footer link). */
+  adminUpdateLegal: (doc: LegalDocType, content: string) =>
+    request<LegalDoc>("PUT", `/admin/legal/${doc}`, { content }, getToken()),
   adminSecretsStatus: () =>
     request<AdminSecretsStatus>(
       "GET",
@@ -2575,6 +2593,12 @@ export interface SitePublicConfig {
   email_verify_methods: "link" | "send" | "both";
   accent_color: string;
   custom_css: string;
+  /** Whether the operator has published a Privacy Policy. The content itself
+   *  is fetched on demand via {@link api.legal}; this only gates the footer
+   *  link and the /privacy route's empty state. */
+  has_privacy_policy: boolean;
+  /** Whether the operator has published Terms of Service. */
+  has_terms_of_service: boolean;
   initialized: boolean;
   r2_enabled: boolean;
   tg_notify_source_slug: string;
@@ -2661,6 +2685,24 @@ export interface SitePublicConfig {
      *  via aria-label for icon-only modes. */
     icon_only?: 0 | 1 | 2;
   }[];
+}
+
+/** The two operator-authored legal documents, addressed by slug. */
+export type LegalDocType = "privacy" | "terms";
+
+export interface LegalDoc {
+  doc: LegalDocType;
+  /** Raw markdown. Empty string when the operator hasn't published it. */
+  content: string;
+  /** Unix seconds of the last edit, or null when unpublished. */
+  updated_at: number | null;
+}
+
+/** One legal document as returned to the admin editor. */
+export interface AdminLegalDocument {
+  slug: LegalDocType;
+  content: string;
+  updated_at: number | null;
 }
 
 export interface RegisterBody {

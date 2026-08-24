@@ -2,6 +2,8 @@
 
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
+import { listPublishedLegalSlugs } from "../lib/legal";
+import { readWithFallback } from "../lib/schema";
 import { turnstileEndpointFor } from "../lib/turnstile";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
@@ -68,6 +70,16 @@ app.get("/site", async (c) => {
 
   const turnstile = await turnstileEndpointFor(c, config);
 
+  // Published legal pages, so the footer knows which links to render. A probe,
+  // not the content — the documents live in their own table (see lib/legal.ts)
+  // and are fetched from /legal/:doc only when a reader opens the page. Falls
+  // back to "none published" if the migration hasn't been applied yet, so this
+  // hot-path query can't 500 the whole payload.
+  const publishedLegal = await readWithFallback(
+    () => listPublishedLegalSlugs(c.env.DB),
+    [] as string[],
+  );
+
   return c.json({
     site_name: config.site_name,
     site_description: config.site_description,
@@ -88,6 +100,8 @@ app.get("/site", async (c) => {
     email_verify_methods: config.email_verify_methods,
     accent_color: config.accent_color,
     custom_css: config.custom_css,
+    has_privacy_policy: publishedLegal.includes("privacy"),
+    has_terms_of_service: publishedLegal.includes("terms"),
     initialized: config.initialized,
     r2_enabled: !!c.env.R2_ASSETS,
     tg_notify_source_slug: config.tg_notify_source_slug,

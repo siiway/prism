@@ -26,6 +26,27 @@ description: 所有存储在 D1 中的运行时配置项，以及 Wrangler 绑�
 | `allow_alt_email_login`      | boolean | `true`                          | 允许使用任意已验证的次要邮箱登录，而不仅是主邮箱           |
 | `initialized`                | boolean | `false`                         | 首次初始化后设为 `true`，请勿手动修改                      |
 
+## 法律页面
+
+管理员可在 **管理 → 设置 → 法律条款** 中发布两份文档：隐私政策与服务条款。每份文档
+使用 Markdown 编写（渲染与净化方式与个人主页 README 相同），并显示在各自的公开页面，
+无需登录即可访问：
+
+| 文档     | 页面       | API 端点                 |
+| -------- | ---------- | ------------------------ |
+| 隐私政策 | `/privacy` | `GET /api/legal/privacy` |
+| 服务条款 | `/terms`   | `GET /api/legal/terms`   |
+
+与上面的设置不同，这两份文档**不**存放在 `site_config` 中，而是位于专用的
+`legal_documents` D1 表（slug、content、`updated_at`、`updated_by`）。政策文档体积较大，
+而 `site_config` 几乎在每个请求中都会被整表读取；将文档移出可避免在热路径上加载它们。
+每份文档上限为 256 KiB。
+
+每份已发布文档的链接都会出现在每个页面（无论是否登录）的页脚。清空某份文档（保存为空）
+会同时隐藏对应页面及其页脚链接。公开的 `GET /api/site` 响应不包含全文，只暴露
+`has_privacy_policy` / `has_terms_of_service` 布尔值，供页脚决定渲染哪些链接；正文在读者
+打开页面时按需获取，端点还会返回最后更新时间以显示「最后更新」信息。
+
 ## 会话与令牌
 
 | 键                         | 类型   | 默认值 | 说明                                                                   |
