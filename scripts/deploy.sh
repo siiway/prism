@@ -140,6 +140,20 @@ if [ "$SKIP_MIGRATIONS" = false ]; then
 fi
 
 # ── Confirm ────────────────────────────────────────────────────────────────────
+# A CI runner has no terminal to prompt on, and the commit that triggered the
+# build is already the approval — so a recognised runner implies --yes.
+#
+# This keys on CI environment variables rather than "stdin is not a tty" on
+# purpose. Someone piping input into this script, or running it from a cron or
+# an editor task, has not consented to a production deploy; they should still
+# hit the hard error below rather than silently ship.
+if [ "$ASSUME_YES" = false ] && [ "$DRY_RUN" = false ] &&
+  [ -n "${WORKERS_CI:-}${CI:-}${GITHUB_ACTIONS:-}${GITLAB_CI:-}" ]; then
+  ASSUME_YES=true
+  step "Confirm"
+  info "CI detected - proceeding without an interactive confirmation"
+fi
+
 if [ "$ASSUME_YES" = false ] && [ "$DRY_RUN" = false ]; then
   target="migrations + deploy"
   [ "$MIGRATIONS_ONLY" = true ] && target="migrations only"

@@ -10,6 +10,7 @@ live, and the currently-deployed code ignores columns it does not know about.
 """
 
 import argparse
+import os
 import platform
 import re
 import shutil
@@ -115,7 +116,25 @@ def git_summary() -> None:
     info(f"commit:   {head} on {branch}")
 
 
+# A CI runner has no terminal to prompt on, and the commit that triggered the
+# build is already the approval — so a recognised runner implies --yes.
+#
+# This keys on CI environment variables rather than "stdin is not a tty" on
+# purpose. Someone piping input into this script, or running it from a cron or
+# an editor task, has not consented to a production deploy; they should still
+# hit the hard error in confirm() rather than silently ship.
+CI_ENV_VARS = ("WORKERS_CI", "CI", "GITHUB_ACTIONS", "GITLAB_CI")
+
+
+def running_in_ci() -> bool:
+    return any(os.environ.get(v) for v in CI_ENV_VARS)
+
+
 def confirm(target: str) -> None:
+    if running_in_ci():
+        step("Confirm")
+        info("CI detected - proceeding without an interactive confirmation")
+        return
     print()
     try:
         reply = input(f"Apply to PRODUCTION ({target})? [y/N] ")

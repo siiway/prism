@@ -327,6 +327,13 @@ def build_frontend(pm: str) -> None:
         cfg["main"] = "dist/prism/index.js"
         if "assets" in cfg and isinstance(cfg["assets"], dict):
             cfg["assets"]["directory"] = "./dist/client"
+        # migrations_dir is emitted as "../../worker/db/migrations" — correct
+        # from dist/prism/, but two levels above the repo once the config sits
+        # at the root, where wrangler reports "No migrations present".
+        for db in cfg.get("d1_databases") or []:
+            md = db.get("migrations_dir")
+            if isinstance(md, str) and md.startswith("../../"):
+                db["migrations_dir"] = md[len("../../"):]
         with (ROOT / "wrangler.json").open("w", encoding="utf-8") as f:
             _json.dump(cfg, f, indent=2)
         ok("wrangler.json (root) updated for deploy")
