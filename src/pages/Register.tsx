@@ -179,6 +179,7 @@ export function Register() {
                 provider={site.captcha_provider}
                 siteKey={site.captcha_site_key}
                 turnstileEndpoint={site.turnstile_endpoint}
+                turnstileChinaSiteKey={site.turnstile_china_site_key}
                 onVerified={setCaptcha}
                 onError={setError}
               />

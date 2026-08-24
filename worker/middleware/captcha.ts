@@ -3,6 +3,7 @@
 import { getConfig } from "../lib/config";
 import { verifyPowChallenge } from "../lib/pow";
 import { decryptSecret } from "../lib/secretCrypto";
+import type { TurnstileVariant } from "../lib/turnstile";
 
 interface CaptchaResult {
   success: boolean;
@@ -85,6 +86,9 @@ export async function verifyCaptchaToken(
   powNonce: number | undefined,
   ip: string,
   env?: Env,
+  /** Which Turnstile widget the browser says minted `token` — see the secret
+   *  selection below. Ignored for every other provider. */
+  variant?: TurnstileVariant,
 ): Promise<CaptchaResult> {
   const config = await getConfig(db);
 
@@ -118,11 +122,33 @@ export async function verifyCaptchaToken(
     return { success: false, error: "Captcha token required" };
   }
 
+  // Turnstile can be configured with two widgets — the global one and a
+  // region:"china" one for visitors routed to challenges.cloudflare-cn.com —
+  // and a token only verifies against the secret of the widget that minted it.
+  // The browser reports which one it rendered; anything else (an old client, a
+  // forged value, a China widget that was never configured) falls back to the
+  // global secret, where a mismatched token simply fails to verify. Trusting
+  // the field costs nothing: it selects a secret, never a verdict.
+  // An empty China *site* key is how the config says "the China widget is not
+  // in use" — lib/turnstile.ts refuses to name the China host on that basis
+  // alone, so no honest client can be reporting "china" here. Requiring it
+  // keeps verification consistent with that decision, so a secret left behind
+  // after the site key was cleared cannot still admit tokens from a widget the
+  // site has stopped using.
+  const useChinaSecret =
+    config.captcha_provider === "turnstile" &&
+    variant === "china" &&
+    config.turnstile_china_site_key.trim() !== "" &&
+    config.turnstile_china_secret_key !== "";
+  const storedSecret = useChinaSecret
+    ? config.turnstile_china_secret_key
+    : config.captcha_secret_key;
+
   // Decrypt the captcha provider secret if it was encrypted at rest. No-op
   // when SECRETS_KEY isn't bound or the value is plain.
   const captchaSecret = env
-    ? ((await decryptSecret(env, config.captcha_secret_key)) ?? "")
-    : config.captcha_secret_key;
+    ? ((await decryptSecret(env, storedSecret)) ?? "")
+    : storedSecret;
 
   switch (config.captcha_provider) {
     case "turnstile":

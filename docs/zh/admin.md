@@ -58,7 +58,11 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 | reCAPTCHA v3         | 需要 Google reCAPTCHA v3 站点密钥 + 密钥，无感验证 |
 | 工作量证明           | 无需第三方服务，难度 20 在现代硬件上约需 0.1–2 秒  |
 
-选择 **Cloudflare Turnstile** 后，会出现**验证端点**设置，用于选择分发组件脚本的主机：全球 `challenges.cloudflare.com` 或中国大陆加速镜像 `challenges.cloudflare-cn.com`。服务端校验始终使用全球主机，因此该设置只影响组件在访客浏览器中的加载方式。可选：始终全球、始终中国大陆，或按浏览器语言（客户端）、按请求地区（服务端）、按浏览器地区（客户端）自动选择。参见 [`turnstile_endpoint_mode`](configuration.md#机器人防护验证码)。
+选择 **Cloudflare Turnstile** 后，会出现**验证端点**设置，用于选择分发组件的主机：全球 `challenges.cloudflare.com` 或中国大陆 `challenges.cloudflare-cn.com`。可选：始终全球、始终中国大陆，或按浏览器语言（客户端）、按请求地区（服务端）、按浏览器地区（客户端）自动选择。
+
+只要选择「始终全球」以外的任何模式，就会额外出现**中国大陆 site key** 和**中国大陆密钥**两个字段。它们是必需项而非可选项：Turnstile 组件的 region 在创建时即固定，且每个主机只接受属于自己 region 的密钥——因此中国大陆主机需要一个以 `region: "china"` 创建的第二组件，而这又需要 Cloudflare China Network 权限。
+
+若中国大陆 site key 留空，所有模式的行为都等同于「始终全球」，因此在无法支持的情况下选择偏向中国大陆的模式不会有任何代价：访客会得到全球组件，而不是卡在 `Error: 400020` 的组件上。Prism 还会在使用前用中国大陆主机验证已配置的密钥，不可用时回退到全球。参见 [`turnstile_endpoint_mode`](configuration.md#机器人防护验证码)。
 
 ### 邮件
 

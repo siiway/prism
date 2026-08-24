@@ -106,6 +106,7 @@ app.get("/config", async (c) => {
   const safeConfig = {
     ...config,
     captcha_secret_key: "***",
+    turnstile_china_secret_key: "***",
     github_client_secret: "***",
     google_client_secret: "***",
     microsoft_client_secret: "***",
@@ -134,6 +135,8 @@ app.patch("/config", async (c) => {
     "captcha_site_key",
     "captcha_secret_key",
     "turnstile_endpoint_mode",
+    "turnstile_china_site_key",
+    "turnstile_china_secret_key",
     "pow_difficulty",
     "domain_reverify_days",
     "session_ttl_days",

@@ -24,7 +24,7 @@ import { hashPassword } from "../lib/crypto";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 import { requireAuth } from "../middleware/auth";
 import { getConfig, getConfigValue } from "../lib/config";
-import { turnstileEndpointFor } from "../lib/turnstile";
+import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { getIp } from "../lib/clientIp";
 import { rateLimitIp } from "../middleware/rateLimit";
 import { verifyCaptchaToken } from "../middleware/captcha";
@@ -143,6 +143,8 @@ app.get("/join/:teamId", async (c) => {
     team.invite_registration_exemptions,
   );
 
+  const turnstile = await turnstileEndpointFor(c, config);
+
   return c.json({
     team: {
       id: team.id,
@@ -159,7 +161,8 @@ app.get("/join/:teamId", async (c) => {
     collects_email: !exemptions.email_verification,
     captcha_provider: config.captcha_provider,
     captcha_site_key: config.captcha_site_key,
-    turnstile_endpoint: turnstileEndpointFor(c, config),
+    turnstile_endpoint: turnstile.directive,
+    turnstile_china_site_key: turnstile.chinaSiteKey,
     pow_difficulty: config.pow_difficulty,
     // Surfaced so the page can state it plainly before anyone signs up:
     // dissolving this team deletes the accounts it created.
@@ -193,6 +196,7 @@ app.post("/auth/register-with-invite", async (c) => {
     display_name?: string;
     email?: string;
     captcha_token?: string;
+    captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
   }>();
@@ -212,6 +216,7 @@ app.post("/auth/register-with-invite", async (c) => {
     body.pow_nonce,
     ip,
     c.env,
+    body.captcha_variant,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);

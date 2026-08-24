@@ -1217,6 +1217,34 @@ export function AdminSettings() {
                 </Dropdown>
               </Field>
             )}
+            {/* The China host needs its own widget: a Turnstile sitekey's
+                region is fixed at creation, and each host only serves keys of
+                its own region. Without this pair every mode above falls back
+                to the global host. */}
+            {get("captcha_provider") === "turnstile" &&
+              turnstileMode !== "global" && (
+                <>
+                  <Field
+                    label={t("admin.turnstileChinaSiteKey")}
+                    hint={t("admin.turnstileChinaSiteKeyHint")}
+                  >
+                    <Input
+                      value={get("turnstile_china_site_key") ?? ""}
+                      onChange={(e) =>
+                        set("turnstile_china_site_key", e.target.value)
+                      }
+                    />
+                  </Field>
+                  <Field label={t("admin.turnstileChinaSecretKey")}>
+                    <PasswordInput
+                      value={get("turnstile_china_secret_key") ?? ""}
+                      onChange={(e) =>
+                        set("turnstile_china_secret_key", e.target.value)
+                      }
+                    />
+                  </Field>
+                </>
+              )}
             {get("captcha_provider") === "pow" && (
               <Field label={t("admin.powDifficulty")}>
                 <Input

@@ -19,6 +19,8 @@ const DEFAULT_CONFIG: SiteConfig = {
   captcha_site_key: "",
   captcha_secret_key: "",
   turnstile_endpoint_mode: "global",
+  turnstile_china_site_key: "",
+  turnstile_china_secret_key: "",
   pow_difficulty: 20,
   domain_reverify_days: 30,
   session_ttl_days: 30,

@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { configBag, getConfig, getRsaKeyPair } from "../lib/config";
-import { turnstileEndpointFor } from "../lib/turnstile";
+import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import {
   encryptSecret,
   hashSecret,
@@ -1458,6 +1458,12 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     config.captcha_provider !== "none" &&
     !sudoActive;
 
+  // The widget is only rendered when a captcha is actually required, so skip
+  // the China probe entirely when it is not.
+  const turnstile = captchaRequired
+    ? await turnstileEndpointFor(c, config)
+    : { directive: "global" as const, chinaSiteKey: "" };
+
   return c.json({
     app: await buildConsentAppSummary(c.env, oauthApp, isVerified),
     challenge_id,
@@ -1475,9 +1481,8 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     captcha_required: captchaRequired,
     captcha_provider: captchaRequired ? config.captcha_provider : "none",
     captcha_site_key: captchaRequired ? config.captcha_site_key : "",
-    turnstile_endpoint: captchaRequired
-      ? turnstileEndpointFor(c, config)
-      : "global",
+    turnstile_endpoint: turnstile.directive,
+    turnstile_china_site_key: turnstile.chinaSiteKey,
   });
 });
 
@@ -1502,6 +1507,7 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     enable_sudo?: boolean;
     use_sudo?: boolean;
     captcha_token?: string;
+    captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
   }>();
@@ -1547,6 +1553,7 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
       body.pow_nonce,
       ip,
       c.env,
+      body.captcha_variant,
     );
     if (!captchaResult.success) {
       return c.json(

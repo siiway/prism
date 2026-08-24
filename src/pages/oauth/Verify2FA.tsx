@@ -143,7 +143,14 @@ export function Verify2FA() {
         captchaRequired && decision === "approve" && captchaValue
           ? {
               ...(captchaValue.captcha_token
-                ? { captcha_token: captchaValue.captcha_token }
+                ? {
+                    captcha_token: captchaValue.captcha_token,
+                    // Names the widget that minted it, so the server picks the
+                    // matching secret.
+                    ...(captchaValue.captcha_variant
+                      ? { captcha_variant: captchaValue.captcha_variant }
+                      : {}),
+                  }
                 : {}),
               ...(captchaValue.pow_challenge
                 ? { pow_challenge: captchaValue.pow_challenge }
@@ -500,6 +507,7 @@ export function Verify2FA() {
               provider={data.captcha_provider}
               siteKey={data.captcha_site_key}
               turnstileEndpoint={data.turnstile_endpoint}
+              turnstileChinaSiteKey={data.turnstile_china_site_key}
               onVerified={handleCaptchaVerified}
             />
           </div>
