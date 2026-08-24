@@ -44,6 +44,7 @@ import {
 } from "../lib/webauthn";
 import { verifyClearsign } from "../lib/gpg";
 import { verifyCaptchaToken } from "../middleware/captcha";
+import type { TurnstileVariant } from "../lib/turnstile";
 import { issuePowChallenge } from "../lib/pow";
 import { rateLimit, rateLimitIp } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/auth";
@@ -200,6 +201,7 @@ app.post("/register", async (c) => {
     display_name?: string;
     invite_token?: string;
     captcha_token?: string;
+    captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
   }>();
@@ -225,6 +227,7 @@ app.post("/register", async (c) => {
     body.pow_nonce,
     ip,
     c.env,
+    body.captcha_variant,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
@@ -346,6 +349,7 @@ app.post("/login", async (c) => {
     password: string;
     totp_code?: string;
     captcha_token?: string;
+    captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
   }>();
@@ -365,6 +369,7 @@ app.post("/login", async (c) => {
     body.pow_nonce,
     ip,
     c.env,
+    body.captcha_variant,
   );
   if (!captchaOk.success) {
     c.executionCtx.waitUntil(
@@ -600,12 +605,14 @@ app.post("/email-verify-code", requireAuth, async (c) => {
   const body = await c.req
     .json<{
       captcha_token?: string;
+      captcha_variant?: TurnstileVariant;
       pow_challenge?: string;
       pow_nonce?: number;
     }>()
     .catch(
       (): {
         captcha_token?: string;
+        captcha_variant?: TurnstileVariant;
         pow_challenge?: string;
         pow_nonce?: number;
       } => ({}),
@@ -618,6 +625,7 @@ app.post("/email-verify-code", requireAuth, async (c) => {
     body.pow_nonce,
     ip,
     c.env,
+    body.captcha_variant,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);
@@ -722,12 +730,14 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
   const body = await c.req
     .json<{
       captcha_token?: string;
+      captcha_variant?: TurnstileVariant;
       pow_challenge?: string;
       pow_nonce?: number;
     }>()
     .catch(
       (): {
         captcha_token?: string;
+        captcha_variant?: TurnstileVariant;
         pow_challenge?: string;
         pow_nonce?: number;
       } => ({}),
@@ -740,6 +750,7 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
     body.pow_nonce,
     ip,
     c.env,
+    body.captcha_variant,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);

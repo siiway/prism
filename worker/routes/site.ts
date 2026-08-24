@@ -66,6 +66,8 @@ app.get("/site", async (c) => {
     }),
   );
 
+  const turnstile = await turnstileEndpointFor(c, config);
+
   return c.json({
     site_name: config.site_name,
     site_description: config.site_description,
@@ -79,7 +81,8 @@ app.get("/site", async (c) => {
     invite_only: config.invite_only,
     captcha_provider: config.captcha_provider,
     captcha_site_key: config.captcha_site_key,
-    turnstile_endpoint: turnstileEndpointFor(c, config),
+    turnstile_endpoint: turnstile.directive,
+    turnstile_china_site_key: turnstile.chinaSiteKey,
     pow_difficulty: config.pow_difficulty,
     require_email_verification: config.require_email_verification,
     email_verify_methods: config.email_verify_methods,

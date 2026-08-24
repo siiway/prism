@@ -7,7 +7,7 @@ description: 所有存储在 D1 中的运行时配置项，以及 Wrangler 绑�
 
 站点配置存储在 D1 的 `site_config` 表中，可通过 **Admin → Settings** 在运行时编辑。更改任何配置项均无需重新部署。
 
-敏感字段（验证码私钥、社交登录的 client_secret、SMTP/IMAP 密码、GitHub README PAT、Discord bot token 等）通过 Cloudflare Secrets Store 绑定 [`SECRETS_KEY`](#wrangler-绑定与变量) 使用 AES-GCM 在数据库中加密存储。管理面板读取时透明解密，配置 API 永远不会暴露其明文。
+敏感字段（验证码私钥，含全球与中国大陆两个 Turnstile 密钥、社交登录的 client_secret、SMTP/IMAP 密码、GitHub README PAT、Discord bot token 等）通过 Cloudflare Secrets Store 绑定 [`SECRETS_KEY`](#wrangler-绑定与变量) 使用 AES-GCM 在数据库中加密存储。管理面板读取时透明解密，配置 API 永远不会暴露其明文。
 
 ## 通用
 
@@ -38,21 +38,44 @@ description: 所有存储在 D1 中的运行时配置项，以及 Wrangler 绑�
 
 同一时刻只能启用一个 provider。注册、登录、改密、重发邮箱验证、以及管理员显式启用的流程都会触发验证码。
 
-| 键                        | 类型   | 默认值     | 说明                                                        |
-| ------------------------- | ------ | ---------- | ----------------------------------------------------------- |
-| `captcha_provider`        | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow` |
-| `captcha_site_key`        | string | `""`       | 所选服务商的公开 site key                                   |
-| `captcha_secret_key`      | string | `""`       | 所选服务商的服务端密钥（加密存储）                          |
-| `turnstile_endpoint_mode` | string | `"global"` | 仅 Turnstile。选择加载组件脚本的主机（见下）                |
-| `pow_difficulty`          | number | `20`       | 工作量证明所需的前导零比特数（越高越难）                    |
+| 键                           | 类型   | 默认值     | 说明                                                        |
+| ---------------------------- | ------ | ---------- | ----------------------------------------------------------- |
+| `captcha_provider`           | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow` |
+| `captcha_site_key`           | string | `""`       | 公开 site key。Turnstile 时为全球（`region: "world"`）组件  |
+| `captcha_secret_key`         | string | `""`       | 该密钥对应的服务端密钥（加密存储）                          |
+| `turnstile_endpoint_mode`    | string | `"global"` | 仅 Turnstile。选择分发组件的主机（见下）                    |
+| `turnstile_china_site_key`   | string | `""`       | 仅 Turnstile。`region: "china"` 组件的 site key（见下）     |
+| `turnstile_china_secret_key` | string | `""`       | 仅 Turnstile。该密钥对应的服务端密钥（加密存储）            |
+| `pow_difficulty`             | number | `20`       | 工作量证明所需的前导零比特数（越高越难）                    |
 
-**Turnstile 端点。** Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆加速镜像（`challenges.cloudflare-cn.com`）分发 Turnstile 组件脚本。`turnstile_endpoint_mode` 决定访客浏览器加载哪一个——服务端的令牌校验始终使用全球主机，不受影响。可选模式：
+### Turnstile：两个主机，两个组件
 
-- `global`——始终加载全球主机。
-- `china`——始终加载中国大陆镜像。
-- `client_language`——浏览器语言为中文（`zh*`）时加载中国大陆镜像，否则加载全球主机。
-- `server_region`——请求的边缘地理位置为 `CN` 时由服务端选择中国大陆镜像，否则全球主机。
-- `client_region`——浏览器时区属于中国大陆时区时加载中国大陆镜像，否则全球主机。
+Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆主机（`challenges.cloudflare-cn.com`）分发 Turnstile。两者**并不通用**，这决定了整个设置的形态：
+
+- 每个 Turnstile 组件都带有一个 **`region`**（`world` 或 `china`），在创建时确定。
+- 组件只能在与其 region 匹配的主机上工作。把 `region: "world"` 的 site key 发往中国大陆主机会得到 HTTP 400，组件将其显示为 `Error: 400020`，被它保护的表单从此无法提交。
+- `region` **不可修改**：API 会以 `you cannot change region` 拒绝更改。已有的全球密钥永远无法升级。
+- 创建 `region: "china"` 组件需要与 [China Network](https://developers.cloudflare.com/china-network/) 合同绑定的权限；没有该权限时 API 返回 `not entitled to create widgets with this region`。Cloudflare 的 China Network 文档也直接写明：_“Turnstile is not available within Mainland China.”_
+
+因此使用中国大陆主机意味着同时更换 **site key**。这正是 `turnstile_china_site_key` / `turnstile_china_secret_key` 的用途：一个以 `region: "china"` 创建的第二组件，与 `captcha_site_key` / `captcha_secret_key` 中的全球密钥对并列。
+
+**若 `turnstile_china_site_key` 为空，下面所有模式的行为都等同于 `global`。** 即使在没有权限的情况下选择了偏向中国大陆的模式也不会出问题——访客只会看到全球组件。
+
+### `turnstile_endpoint_mode`
+
+决定某个访客使用哪一组密钥对：
+
+- `global`——始终使用全球主机与密钥。
+- `china`——始终使用中国大陆主机与密钥。
+- `client_language`——浏览器语言为中文（`zh*`）时由浏览器选择中国大陆。
+- `server_region`——请求的边缘地理位置为 `CN` 时由服务端选择中国大陆。
+- `client_region`——浏览器时区属于中国大陆时区时由浏览器选择中国大陆。
+
+由于该决定同时选中主机和密钥，客户端模式下两个 site key 都会下发给浏览器；site key 本就是公开的，因此不会泄露任何信息。令牌回传时会附带签发它的组件标识（`captcha_variant`），服务端据此使用对应的密钥校验。
+
+**校验。** 配置的中国大陆密钥只有在实际可用后才会被采信：Prism 会向中国大陆主机为该密钥请求一次挑战，成功时在 `KV_CACHE` 中缓存 6 小时、失败时缓存 1 小时，失败则回退到 `global`。这能捕获填错字段的密钥、实际以 `region: "world"` 创建的组件，以及已失效的权限。探测在后台进行，因此缓存未命中时直接返回全球主机而不会等待。
+
+**为什么回退必须在服务端。** Turnstile 脚本在加载时只从自己的 `<script>` 标签读取一次挑战源，而能够覆盖它的 `base-url` 参数在生产版本中是关闭的。已经从错误主机加载的组件，不重新加载页面就无法改用另一个主机，因此这个选择必须在浏览器提交之前就是正确的。
 
 **Proof-of-work** 不依赖任何第三方服务。`pow/` 中的 Rust→WASM 求解器比 JS 兜底快约 10 倍。难度 20 时一般在 0.1–2 秒内完成。高于 24 可能在低端设备上超时。PoW 一次性使用，通过 `pow_used` 表防重放。
 

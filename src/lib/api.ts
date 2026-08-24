@@ -167,8 +167,7 @@ async function request<T>(
   const ssrFetch =
     typeof window === "undefined"
       ? ((globalThis as { __SSR_FETCH__?: typeof fetch }).__SSR_FETCH__ as
-          | typeof fetch
-          | undefined)
+          typeof fetch | undefined)
       : undefined;
   const doFetch = ssrFetch ?? fetch;
 
@@ -249,6 +248,7 @@ export const api = {
     /** Omitted when the team's invite path skips email collection. */
     email?: string;
     captcha_token?: string;
+    captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
   }) =>
@@ -298,6 +298,7 @@ export const api = {
     ),
   resendVerifyEmail: (captcha?: {
     captcha_token?: string;
+    captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
   }) =>
@@ -310,6 +311,7 @@ export const api = {
 
   emailVerifyCode: (captcha?: {
     captcha_token?: string;
+    captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
   }) =>
@@ -2548,10 +2550,12 @@ export const api = {
  *  concrete "global"/"china"; the client-side modes are resolved in the browser
  *  by the Captcha component. Absent on older servers → treated as "global". */
 export type TurnstileEndpointDirective =
-  | "global"
-  | "china"
-  | "client_language"
-  | "client_region";
+  "global" | "china" | "client_language" | "client_region";
+
+/** Which of the two configured Turnstile widgets minted a token. Sent back
+ *  with the token so the server verifies it against the matching secret — the
+ *  global and China widgets have separate sitekey/secret pairs. */
+export type TurnstileVariant = "global" | "china";
 
 export interface SitePublicConfig {
   site_name: string;
@@ -2562,6 +2566,10 @@ export interface SitePublicConfig {
   captcha_provider: string;
   captcha_site_key: string;
   turnstile_endpoint?: TurnstileEndpointDirective;
+  /** Sitekey of the region:"china" widget, present only when the directive can
+   *  actually route this visitor to the China host. Empty/absent → the global
+   *  widget is the only one available. */
+  turnstile_china_site_key?: string;
   pow_difficulty: number;
   require_email_verification: boolean;
   email_verify_methods: "link" | "send" | "both";
@@ -2662,6 +2670,7 @@ export interface RegisterBody {
   display_name?: string;
   invite_token?: string;
   captcha_token?: string;
+  captcha_variant?: TurnstileVariant;
   pow_challenge?: string;
   pow_nonce?: number;
 }
@@ -2671,6 +2680,7 @@ export interface LoginBody {
   password: string;
   totp_code?: string;
   captcha_token?: string;
+  captcha_variant?: TurnstileVariant;
   pow_challenge?: string;
   pow_nonce?: number;
 }
@@ -2856,6 +2866,10 @@ export interface JoinPageInfo {
   captcha_provider: string;
   captcha_site_key: string;
   turnstile_endpoint?: TurnstileEndpointDirective;
+  /** Sitekey of the region:"china" widget, present only when the directive can
+   *  actually route this visitor to the China host. Empty/absent → the global
+   *  widget is the only one available. */
+  turnstile_china_site_key?: string;
   pow_difficulty: number;
   /** Always true: the page must state that dissolving the team deletes the
    *  accounts it created, before anyone signs up. */
@@ -3670,6 +3684,10 @@ export interface OAuth2FAInfo {
   captcha_site_key: string;
   /** Resolved Turnstile script-host directive (see TurnstileEndpointDirective). */
   turnstile_endpoint?: TurnstileEndpointDirective;
+  /** Sitekey of the region:"china" widget, present only when the directive can
+   *  actually route this visitor to the China host. Empty/absent → the global
+   *  widget is the only one available. */
+  turnstile_china_site_key?: string;
 }
 
 export interface OAuth2FAAuthorizeBody {
@@ -3687,6 +3705,7 @@ export interface OAuth2FAAuthorizeBody {
   /** Captcha verification token. Required when info.captcha_required is true
    *  and provider is turnstile/hcaptcha/recaptcha. */
   captcha_token?: string;
+  captcha_variant?: TurnstileVariant;
   /** PoW solution challenge. Required when info.captcha_required is true and
    *  provider is "pow". */
   pow_challenge?: string;
@@ -3870,8 +3889,7 @@ export type NotificationRuleSendChannel =
   | { kind: "discord"; connection_id: string; level: NotificationLevel };
 
 export type NotificationRuleAction =
-  | { type: "drop" }
-  | { type: "send"; channels: NotificationRuleSendChannel[] };
+  { type: "drop" } | { type: "send"; channels: NotificationRuleSendChannel[] };
 
 export interface NotificationRulesetRule {
   id: string;

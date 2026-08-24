@@ -8,8 +8,9 @@ description: All runtime configuration keys stored in D1, plus Wrangler bindings
 Site configuration is stored in the `site_config` D1 table and editable at runtime
 through **Admin → Settings**. No redeployment is needed to change any of these values.
 
-Sensitive keys (captcha secret, social client secrets, SMTP/IMAP passwords, the
-GitHub README PAT, Discord bot token) are encrypted at rest with AES-GCM via the
+Sensitive keys (captcha secrets — both the global and the China Turnstile one —
+social client secrets, SMTP/IMAP passwords, the GitHub README PAT, Discord bot
+token) are encrypted at rest with AES-GCM via the
 [`SECRETS_KEY`](#wrangler-bindings--variables) Cloudflare Secrets Store binding.
 The admin panel transparently decrypts on read; values are never exposed via the
 config API.
@@ -45,25 +46,72 @@ Exactly one provider can be active at a time. The captcha is challenged on
 register, login, password change, email-verification resend, and any flow the
 admin enables.
 
-| Key                       | Type   | Default    | Description                                                     |
-| ------------------------- | ------ | ---------- | --------------------------------------------------------------- |
-| `captcha_provider`        | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow`     |
-| `captcha_site_key`        | string | `""`       | Public site key for the chosen provider                         |
-| `captcha_secret_key`      | string | `""`       | Server-side secret for the chosen provider (encrypted at rest)  |
-| `turnstile_endpoint_mode` | string | `"global"` | Turnstile-only. Which host serves the widget script (see below) |
-| `pow_difficulty`          | number | `20`       | Leading zero bits required for proof-of-work (higher = harder)  |
+| Key                          | Type   | Default    | Description                                                           |
+| ---------------------------- | ------ | ---------- | --------------------------------------------------------------------- |
+| `captcha_provider`           | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow`           |
+| `captcha_site_key`           | string | `""`       | Public site key. For Turnstile, the global (`region: "world"`) widget |
+| `captcha_secret_key`         | string | `""`       | Server-side secret for that key (encrypted at rest)                   |
+| `turnstile_endpoint_mode`    | string | `"global"` | Turnstile-only. Which host serves the widget (see below)              |
+| `turnstile_china_site_key`   | string | `""`       | Turnstile-only. Site key of a `region: "china"` widget (see below)    |
+| `turnstile_china_secret_key` | string | `""`       | Turnstile-only. Secret for that key (encrypted at rest)               |
+| `pow_difficulty`             | number | `20`       | Leading zero bits required for proof-of-work (higher = harder)        |
 
-**Turnstile endpoint.** Cloudflare serves the Turnstile widget script from the
-global host (`challenges.cloudflare.com`) and a Mainland-China-accelerated
-mirror (`challenges.cloudflare-cn.com`). `turnstile_endpoint_mode` picks which
-one the visitor's browser loads — server-side token verification always uses the
-global host and is unaffected. Modes:
+### Turnstile: two hosts, two widgets
 
-- `global` — always load the global host.
-- `china` — always load the China mirror.
-- `client_language` — the browser loads the China mirror when its language is Chinese (`zh*`), else the global host.
-- `server_region` — the server loads the China mirror when the request's edge geolocation is `CN`, else the global host.
-- `client_region` — the browser loads the China mirror when its timezone is a Mainland-China zone, else the global host.
+Cloudflare serves Turnstile from a global host (`challenges.cloudflare.com`) and
+a Mainland-China host (`challenges.cloudflare-cn.com`). The two are **not**
+interchangeable, which shapes the whole setting:
+
+- Every Turnstile widget carries a **`region`** — `world` or `china` — chosen when
+  the widget is created.
+- A widget only works on the host matching its region. A `region: "world"` site
+  key sent to the China host gets HTTP 400, which the widget reports as
+  `Error: 400020` on a form that can then never be submitted.
+- `region` is **immutable**: the API rejects a change with
+  `you cannot change region`. An existing global key can never be promoted.
+- Creating a `region: "china"` widget needs an entitlement tied to a
+  [China Network](https://developers.cloudflare.com/china-network/) contract —
+  without it the API answers `not entitled to create widgets with this region`.
+  Cloudflare's China Network docs put it plainly: _"Turnstile is not available
+  within Mainland China."_
+
+So using the China host means switching the **site key** as well as the host.
+That is what `turnstile_china_site_key` / `turnstile_china_secret_key` are for:
+a second widget, created with `region: "china"`, sitting beside the global pair
+in `captcha_site_key` / `captcha_secret_key`.
+
+**If `turnstile_china_site_key` is empty, every mode below behaves as `global`.**
+Nothing breaks if you pick a China-leaning mode without holding the entitlement —
+visitors are simply served the global widget.
+
+### `turnstile_endpoint_mode`
+
+Picks which of the two pairs a given visitor gets:
+
+- `global` — always the global host and key.
+- `china` — always the China host and key.
+- `client_language` — the browser picks China when its language is Chinese (`zh*`).
+- `server_region` — the server picks China when the request's edge geolocation is `CN`.
+- `client_region` — the browser picks China when its timezone is a Mainland-China zone.
+
+Because the decision selects a key as well as a host, both site keys are sent to
+the browser for the client-side modes; site keys are public, so this discloses
+nothing. The token comes back tagged with the widget that minted it
+(`captcha_variant`), and the server verifies it against that widget's secret.
+
+**Validation.** A configured China key is trusted only after it answers: Prism
+requests a challenge for it from the China host, caches the verdict in
+`KV_CACHE` for 6 h on success and 1 h on failure, and falls back to `global`
+whenever it fails. This catches a key typed into the wrong field, a widget that
+was actually created `region: "world"`, and a lapsed entitlement. The probe runs
+in the background, so a cold cache serves the global host rather than waiting on
+it.
+
+**Why the fallback is server-side.** The Turnstile bundle reads its challenge
+origin from its own `<script>` tag exactly once at load, and the `base-url`
+parameter that would override it is disabled in the production bundle. A widget
+that has already loaded from the wrong host cannot be redirected without
+reloading the page, so the choice has to be right before the browser commits.
 
 **Proof-of-work** requires no third-party service. The Rust→WASM solver in
 `pow/` runs ~10× faster than the JS fallback. Difficulty 20 takes ~0.1–2 s

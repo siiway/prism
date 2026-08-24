@@ -246,6 +246,7 @@ export function JoinRegister() {
               provider={info.captcha_provider}
               siteKey={info.captcha_site_key}
               turnstileEndpoint={info.turnstile_endpoint}
+              turnstileChinaSiteKey={info.turnstile_china_site_key}
               onVerified={setCaptcha}
               onError={setError}
             />

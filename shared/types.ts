@@ -8,24 +8,25 @@
 // missing on the other the way it did while each tier kept its own copy.
 
 export type CaptchaProvider =
-  | "none"
-  | "turnstile"
-  | "hcaptcha"
-  | "recaptcha"
-  | "pow";
+  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow";
 
-/** How the Turnstile challenge script host is chosen. Cloudflare serves the
- *  widget JS from a Mainland-China-accelerated mirror
- *  (challenges.cloudflare-cn.com) alongside the global host
- *  (challenges.cloudflare.com). Only the client-side script host is affected —
- *  server-side siteverify always hits the global host. Only applies when
- *  captcha_provider is "turnstile". */
+/** How the Turnstile challenge host is chosen. Cloudflare serves the widget
+ *  from a Mainland-China host (challenges.cloudflare-cn.com) alongside the
+ *  global one (challenges.cloudflare.com). Only applies when captcha_provider
+ *  is "turnstile".
+ *
+ *  The two hosts are not interchangeable: each Turnstile widget carries a
+ *  `region` fixed at creation ("world" or "china"), and a widget only works on
+ *  the host matching its region. So anything other than "global" additionally
+ *  needs a second widget configured via turnstile_china_site_key /
+ *  turnstile_china_secret_key; without one the site stays on the global host.
+ *  Creating a region:"china" widget requires a China Network entitlement. */
 export type TurnstileEndpointMode =
   | "global" // always the global host
-  | "china" // always the China mirror
-  | "client_language" // client picks the mirror when the browser language is Chinese
-  | "server_region" // server picks the mirror when the request geo is CN
-  | "client_region"; // client picks the mirror from its own timezone
+  | "china" // always the China host
+  | "client_language" // client picks China when the browser language is Chinese
+  | "server_region" // server picks China when the request geo is CN
+  | "client_region"; // client picks China from its own timezone
 
 export interface SiteConfig {
   site_name: string;
@@ -35,11 +36,22 @@ export interface SiteConfig {
   invite_only: boolean;
   require_email_verification: boolean;
   captcha_provider: CaptchaProvider;
+  /** Site key for the chosen provider. For Turnstile this is the global
+   *  (region:"world") widget — the pair used everywhere except visitors routed
+   *  to the China host. */
   captcha_site_key: string;
   captcha_secret_key: string;
-  /** Turnstile challenge-script host selection strategy. Only meaningful when
+  /** Turnstile challenge-host selection strategy. Only meaningful when
    *  captcha_provider is "turnstile". */
   turnstile_endpoint_mode: TurnstileEndpointMode;
+  /** Site key of a second Turnstile widget created with `region: "china"`,
+   *  used for visitors that turnstile_endpoint_mode routes to
+   *  challenges.cloudflare-cn.com. Empty disables the China host entirely, no
+   *  matter what the mode says — a region:"world" key cannot serve it. */
+  turnstile_china_site_key: string;
+  /** Secret for turnstile_china_site_key. Tokens minted by the China widget
+   *  verify against this, not captcha_secret_key. Encrypted at rest. */
+  turnstile_china_secret_key: string;
   pow_difficulty: number;
   domain_reverify_days: number;
   session_ttl_days: number;

@@ -4,23 +4,38 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Button, Spinner, Text, ProgressBar } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
-import type { TurnstileEndpointDirective } from "../lib/api";
+import type { TurnstileEndpointDirective, TurnstileVariant } from "../lib/api";
 import { solvePoW } from "../lib/pow";
 
 export interface CaptchaValue {
   captcha_token?: string;
+  /** Which Turnstile widget minted `captcha_token`. Sent back with it so the
+   *  server verifies against that widget's secret — the global and China
+   *  widgets are separate sitekey/secret pairs. Absent for the other
+   *  providers, which have only one pair. */
+  captcha_variant?: TurnstileVariant;
   pow_challenge?: string;
   pow_nonce?: number;
 }
 
 interface CaptchaProps {
   provider: string;
+  /** Site key for the provider. For Turnstile this is the global
+   *  (region:"world") widget. */
   siteKey: string;
   /** Server-resolved Turnstile host directive (see the site config's
-   *  turnstile_endpoint_mode). Chooses the global vs. China-mirror widget
-   *  host. Only used when provider === "turnstile"; defaults to the global
-   *  host when absent. */
+   *  turnstile_endpoint_mode). Chooses the global vs. China widget host. Only
+   *  used when provider === "turnstile"; defaults to the global host when
+   *  absent.
+   *
+   *  A directive that can put the browser on the China host only ever arrives
+   *  once the server has confirmed a China widget is configured and that the
+   *  host will serve it — see worker/lib/turnstile.ts for why that check has
+   *  to happen there and cannot be retried here. */
   turnstileEndpoint?: TurnstileEndpointDirective;
+  /** Site key of the region:"china" Turnstile widget. Required to use the
+   *  China host at all: a region:"world" key is rejected there. */
+  turnstileChinaSiteKey?: string;
   onVerified: (value: CaptchaValue) => void;
   onError?: (err: string) => void;
 }
@@ -59,27 +74,51 @@ function browserInChinaTimezone(): boolean {
 const TURNSTILE_HOST_GLOBAL = "https://challenges.cloudflare.com";
 const TURNSTILE_HOST_CHINA = "https://challenges.cloudflare-cn.com";
 
-// Resolve the server directive to the actual Turnstile challenge-script URL.
-// The client-side modes ("client_language", "client_region") are decided here
-// in the browser; the rest arrive already resolved from the server.
-function turnstileScriptSrc(directive?: TurnstileEndpointDirective): string {
-  let useChina: boolean;
+// Resolve the server directive into the host/sitekey pair to render. The
+// client-side modes ("client_language", "client_region") are decided here in
+// the browser; the rest arrive already resolved from the server.
+//
+// Host and sitekey move together and cannot be mixed: a Turnstile widget's
+// `region` is fixed at creation, and the China host rejects a region:"world"
+// sitekey (and vice versa). The pair is also final for the life of the page —
+// the Turnstile bundle reads its challenge origin off its own <script> tag
+// once, at load — which is why the server will not name the China host unless
+// it has confirmed the China widget works.
+function turnstileTarget(
+  directive: TurnstileEndpointDirective | undefined,
+  siteKey: string,
+  chinaSiteKey: string | undefined,
+): { src: string; sitekey: string; variant: TurnstileVariant } {
+  let wantsChina: boolean;
   switch (directive) {
     case "china":
-      useChina = true;
+      wantsChina = true;
       break;
     case "client_language":
-      useChina = browserIsChineseLanguage();
+      wantsChina = browserIsChineseLanguage();
       break;
     case "client_region":
-      useChina = browserInChinaTimezone();
+      wantsChina = browserInChinaTimezone();
       break;
     // "global", and an unknown directive from a newer server.
     default:
-      useChina = false;
+      wantsChina = false;
   }
-  const host = useChina ? TURNSTILE_HOST_CHINA : TURNSTILE_HOST_GLOBAL;
-  return `${host}/turnstile/v0/api.js?render=explicit`;
+  // No China widget configured means there is nothing to load there, whatever
+  // the directive says. The server already enforces this; repeating it keeps a
+  // stale or hand-edited payload from producing a guaranteed-broken widget.
+  const useChina = wantsChina && !!chinaSiteKey;
+  return useChina
+    ? {
+        src: `${TURNSTILE_HOST_CHINA}/turnstile/v0/api.js?render=explicit`,
+        sitekey: chinaSiteKey,
+        variant: "china",
+      }
+    : {
+        src: `${TURNSTILE_HOST_GLOBAL}/turnstile/v0/api.js?render=explicit`,
+        sitekey: siteKey,
+        variant: "global",
+      };
 }
 
 // Append a provider's script tag and hand back the effect teardown. `remove()`
@@ -120,6 +159,7 @@ export function Captcha({
   provider,
   siteKey,
   turnstileEndpoint,
+  turnstileChinaSiteKey,
   onVerified,
   onError,
 }: CaptchaProps) {
@@ -134,26 +174,41 @@ export function Captcha({
   useEffect(() => {
     if (provider !== "turnstile") return;
 
-    const removeScript = injectScript(
-      turnstileScriptSrc(turnstileEndpoint),
-      () => {
-        if (!containerRef.current) return;
-        widgetIdRef.current = widgetApi("turnstile").render(
-          containerRef.current,
-          {
-            sitekey: siteKey,
-            callback: (token: string) => onVerified({ captcha_token: token }),
-            "error-callback": () => onError?.(t("captcha.turnstileFailed")),
-          },
-        );
-      },
+    const target = turnstileTarget(
+      turnstileEndpoint,
+      siteKey,
+      turnstileChinaSiteKey,
     );
+
+    const removeScript = injectScript(target.src, () => {
+      if (!containerRef.current) return;
+      widgetIdRef.current = widgetApi("turnstile").render(
+        containerRef.current,
+        {
+          sitekey: target.sitekey,
+          callback: (token: string) =>
+            onVerified({
+              captcha_token: token,
+              captcha_variant: target.variant,
+            }),
+          "error-callback": () => onError?.(t("captcha.turnstileFailed")),
+        },
+      );
+    });
     return () => {
       removeWidget("turnstile", widgetIdRef.current);
       widgetIdRef.current = null;
       removeScript();
     };
-  }, [provider, siteKey, turnstileEndpoint, onVerified, onError, t]);
+  }, [
+    provider,
+    siteKey,
+    turnstileEndpoint,
+    turnstileChinaSiteKey,
+    onVerified,
+    onError,
+    t,
+  ]);
 
   // ─── hCaptcha ───────────────────────────────────────────────────────────
   useEffect(() => {
