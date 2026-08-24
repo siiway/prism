@@ -225,6 +225,14 @@ if (-not $SkipFrontend) {
         $cfg = Get-Content $distConfig -Raw | ConvertFrom-Json
         $cfg.main = 'dist/prism/index.js'
         if ($cfg.assets) { $cfg.assets.directory = './dist/client' }
+        # migrations_dir is emitted as '../../worker/db/migrations' — correct
+        # from dist/prism/, but two levels above the repo once the config sits
+        # at the root, where wrangler reports "No migrations present".
+        foreach ($db in $cfg.d1_databases) {
+            if ($db.migrations_dir -and $db.migrations_dir.StartsWith('../../')) {
+                $db.migrations_dir = $db.migrations_dir.Substring(6)
+            }
+        }
         $cfg | ConvertTo-Json -Depth 100 -Compress | Set-Content (Join-Path $Root 'wrangler.json') -NoNewline
         Ok 'wrangler.json (root) updated for deploy'
     } else {

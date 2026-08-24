@@ -208,13 +208,21 @@ if [ "$SKIP_FRONTEND" = false ]; then
   # worker/index.ts and skip Vite's SSR work entirely.
   #
   # Solution: copy that emitted config into wrangler.json at the project
-  # root (wrangler picks .json over .jsonc when both exist) and rewrite the
-  # two paths that were relative to dist/prism/ to be relative to the root.
+  # root (wrangler picks .json over .jsonc when both exist) and rewrite every
+  # path that was relative to dist/prism/ so it is relative to the root.
+  #
+  # migrations_dir is one of them, and it is the easiest to forget because
+  # nothing fails until a deploy actually reaches the migration step: Vite
+  # emits "../../worker/db/migrations", which is correct from dist/prism/ but
+  # points two levels *above* the repo once the config sits at the root. On a
+  # CI runner with the checkout at /opt/buildhome/repo that resolves to
+  # /opt/worker/db/migrations and wrangler reports "No migrations present".
   step "Generating deploy-ready wrangler.json"
   if [ -f dist/prism/wrangler.json ]; then
     sed \
       -e 's|"main":"index\.js"|"main":"dist/prism/index.js"|' \
       -e 's|"directory":"\.\./client"|"directory":"./dist/client"|' \
+      -e 's|"migrations_dir":"\.\./\.\./|"migrations_dir":"|g' \
       dist/prism/wrangler.json > wrangler.json
     ok "wrangler.json (root) updated for deploy"
   else

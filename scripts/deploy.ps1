@@ -114,6 +114,21 @@ try {
     }
 
     # ── Confirm ────────────────────────────────────────────────────────────────
+    # A CI runner has no terminal to prompt on, and the commit that triggered
+    # the build is already the approval — so a recognised runner implies -Yes.
+    #
+    # This keys on CI environment variables rather than "the host is not
+    # interactive" on purpose. Someone running this from a scheduled task or an
+    # editor has not consented to a production deploy, and should still meet the
+    # prompt (and Read-Host's failure) rather than silently ship.
+    $inCi = @('WORKERS_CI', 'CI', 'GITHUB_ACTIONS', 'GITLAB_CI') |
+        Where-Object { [Environment]::GetEnvironmentVariable($_) }
+    if (-not $Yes -and -not $DryRun -and $inCi) {
+        Step 'Confirm'
+        Info 'CI detected - proceeding without an interactive confirmation'
+        $Yes = $true
+    }
+
     if (-not $Yes -and -not $DryRun) {
         $target = 'migrations + deploy'
         if ($MigrationsOnly)  { $target = 'migrations only' }
