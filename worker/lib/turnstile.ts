@@ -134,14 +134,32 @@ async function chinaWidgetUsable(
   if (!siteKey) return false;
 
   const key = `${PROBE_KEY_PREFIX}${siteKey}`;
-  const cached = await env.KV_CACHE.get(key);
+
+  // This is a cache lookup on the path that renders the login page, so a KV
+  // outage must not become a sign-in outage. Any failure reads as a miss,
+  // which resolves to the global host — always a correct answer. No probe is
+  // scheduled in that case: the write would be going to the same KV that just
+  // failed to read.
+  let cached: string | null;
+  try {
+    cached = await env.KV_CACHE.get(key);
+  } catch {
+    return false;
+  }
   if (cached !== null) return cached === "1";
 
-  const refresh = probeChinaEndpoint(siteKey).then((ok) =>
-    env.KV_CACHE.put(key, ok ? "1" : "0", {
-      expirationTtl: ok ? PROBE_TTL_OK : PROBE_TTL_BAD,
-    }),
-  );
+  // Swallow probe and write failures rather than letting them escape. The
+  // caller has already fallen back to the global host, so the only thing lost
+  // is the cached verdict — whereas an unhandled rejection would fail the
+  // request outright on the awaited path below, and surface as a background
+  // error on the waitUntil one.
+  const refresh = probeChinaEndpoint(siteKey)
+    .then((ok) =>
+      env.KV_CACHE.put(key, ok ? "1" : "0", {
+        expirationTtl: ok ? PROBE_TTL_OK : PROBE_TTL_BAD,
+      }),
+    )
+    .catch(() => {});
 
   if (waitUntil) {
     waitUntil(refresh);

@@ -129,9 +129,16 @@ export async function verifyCaptchaToken(
   // forged value, a China widget that was never configured) falls back to the
   // global secret, where a mismatched token simply fails to verify. Trusting
   // the field costs nothing: it selects a secret, never a verdict.
+  // An empty China *site* key is how the config says "the China widget is not
+  // in use" — lib/turnstile.ts refuses to name the China host on that basis
+  // alone, so no honest client can be reporting "china" here. Requiring it
+  // keeps verification consistent with that decision, so a secret left behind
+  // after the site key was cleared cannot still admit tokens from a widget the
+  // site has stopped using.
   const useChinaSecret =
     config.captcha_provider === "turnstile" &&
     variant === "china" &&
+    config.turnstile_china_site_key.trim() !== "" &&
     config.turnstile_china_secret_key !== "";
   const storedSecret = useChinaSecret
     ? config.turnstile_china_secret_key
