@@ -86,6 +86,26 @@ try {
     }
 
     # ── Build ──────────────────────────────────────────────────────────────────
+    # Cloudflare Workers Builds runs a build command and then a deploy command,
+    # so by the time this script runs the artifacts normally already exist.
+    # Building again would repeat the same Rust and Vite work on every deploy
+    # for no gain.
+    #
+    # The skip is conditional on evidence that a build actually happened, not on
+    # CI alone: a runner configured with no build command still has to build
+    # here. And it is conditional on CI rather than applying everywhere, because
+    # a local dist/ is often stale — skipping there would quietly ship
+    # yesterday's code.
+    $buildSkipReason = ''
+    $ciNow = @('WORKERS_CI', 'CI', 'GITHUB_ACTIONS', 'GITLAB_CI') |
+        Where-Object { [Environment]::GetEnvironmentVariable($_) }
+    if (-not $SkipBuild -and -not $MigrationsOnly -and $ciNow -and
+        (Test-Path (Join-Path $Root 'wrangler.json')) -and
+        (Test-Path (Join-Path $Root 'dist\prism\index.js'))) {
+        $SkipBuild = $true
+        $buildSkipReason = 'CI build step already produced dist/ and wrangler.json'
+    }
+
     if (-not $SkipBuild -and -not $MigrationsOnly) {
         Step 'Building'
         if ($PackageManager -eq 'pnpm') {
@@ -101,6 +121,7 @@ try {
         }
     } else {
         Step 'Skipping build'
+        if ($buildSkipReason) { Info $buildSkipReason }
         if (-not $MigrationsOnly -and -not (Test-Path (Join-Path $Root 'wrangler.json'))) {
             Warn 'no root wrangler.json - wrangler will re-bundle from source instead of'
             Warn 'using the Vite build. Run without -SkipBuild for a normal deploy.'

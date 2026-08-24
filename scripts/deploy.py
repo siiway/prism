@@ -177,6 +177,23 @@ def main() -> None:
     info(f"database: {args.database}")
     git_summary()
 
+    # Cloudflare Workers Builds runs a build command and then a deploy command,
+    # so by the time this script runs the artifacts normally already exist.
+    # Building again would repeat the same Rust and Vite work on every deploy
+    # for no gain.
+    #
+    # The skip is conditional on evidence that a build actually happened, not on
+    # CI alone: a runner configured with no build command still has to build
+    # here. And it is conditional on CI rather than applying everywhere, because
+    # a local dist/ is often stale — skipping there would quietly ship
+    # yesterday's code.
+    build_skip_reason = ""
+    if (not args.skip_build and not args.migrations_only and running_in_ci()
+            and (ROOT / "wrangler.json").exists()
+            and (ROOT / "dist" / "prism" / "index.js").exists()):
+        args.skip_build = True
+        build_skip_reason = "CI build step already produced dist/ and wrangler.json"
+
     if not args.skip_build and not args.migrations_only:
         step("Building")
         required = "pnpm" if args.package_manager == "pnpm" else "bun"
@@ -187,6 +204,8 @@ def main() -> None:
               "--package-manager", args.package_manager)
     else:
         step("Skipping build")
+        if build_skip_reason:
+            info(build_skip_reason)
         if not args.migrations_only and not (ROOT / "wrangler.json").exists():
             warn("no root wrangler.json - wrangler will re-bundle from source instead of")
             warn("using the Vite build. Run without --skip-build for a normal deploy.")

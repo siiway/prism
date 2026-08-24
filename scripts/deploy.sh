@@ -117,6 +117,22 @@ if has git && git rev-parse --is-inside-work-tree &>/dev/null; then
 fi
 
 # ── Build ──────────────────────────────────────────────────────────────────────
+# Cloudflare Workers Builds runs a build command and then a deploy command, so
+# by the time this script runs the artifacts normally already exist. Building
+# again would repeat the same Rust and Vite work on every deploy for no gain.
+#
+# The skip is conditional on evidence that a build actually happened, not on CI
+# alone: a runner configured with no build command still has to build here. And
+# it is conditional on CI rather than applying everywhere, because a local
+# dist/ is often stale — skipping there would quietly ship yesterday's code.
+BUILD_SKIP_REASON=""
+if [ "$SKIP_BUILD" = false ] && [ "$MIGRATIONS_ONLY" = false ] &&
+  [ -n "${WORKERS_CI:-}${CI:-}${GITHUB_ACTIONS:-}${GITLAB_CI:-}" ] &&
+  [ -f "$ROOT/wrangler.json" ] && [ -f "$ROOT/dist/prism/index.js" ]; then
+  SKIP_BUILD=true
+  BUILD_SKIP_REASON="CI build step already produced dist/ and wrangler.json"
+fi
+
 if [ "$SKIP_BUILD" = false ] && [ "$MIGRATIONS_ONLY" = false ]; then
   step "Building"
   if [ "$PM" = "pnpm" ]; then
@@ -127,6 +143,7 @@ if [ "$SKIP_BUILD" = false ] && [ "$MIGRATIONS_ONLY" = false ]; then
   run bash "$ROOT/scripts/build.sh" --package-manager "$PM"
 else
   step "Skipping build"
+  [ -n "$BUILD_SKIP_REASON" ] && info "$BUILD_SKIP_REASON"
   if [ "$MIGRATIONS_ONLY" = false ] && [ ! -f "$ROOT/wrangler.json" ]; then
     warn "no root wrangler.json - wrangler will re-bundle from source instead of"
     warn "using the Vite build. Run without --skip-build for a normal deploy."
