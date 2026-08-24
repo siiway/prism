@@ -8,7 +8,7 @@ A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare W
 
 - **OAuth 2.0 + OpenID Connect** — authorization code + PKCE, RS256 ID tokens, introspection / revocation, UserInfo, Discovery, JWKS
 - **Step-up 2FA** — server-initiated, action-pinned re-confirmation with sudo grace windows for sensitive operations
-- **Social & federated login** — GitHub, Google, Microsoft, Discord, Telegram, X, Generic OIDC, Generic OAuth 2 — multiple sources of the same type
+- **Social & federated login** — GitHub, Google, Microsoft, Discord, Telegram, X, Cloudflare, Generic OIDC, Generic OAuth 2 — multiple sources of the same type
 - **Multi-factor auth** — multiple TOTP authenticators per account, passkeys (WebAuthn), GPG keys (incl. ML-DSA), backup codes
 - **Teams** — shared ownership of OAuth apps and domains, roles, invites, transfer-ownership, site-floor join requirements
 - **App registry** — users register and manage their own OAuth apps; admins can verify; cross-app permission scopes

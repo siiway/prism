@@ -12,6 +12,7 @@ export const PROVIDER_ICON_URLS: Record<string, string> = {
   discord: "https://cdn.simpleicons.org/discord",
   telegram: "https://cdn.simpleicons.org/telegram",
   x: "https://cdn.simpleicons.org/x",
+  cloudflare: "https://cdn.simpleicons.org/cloudflare",
 };
 
 // Providers whose built-in default icon is a near-pure-black silhouette

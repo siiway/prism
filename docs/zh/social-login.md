@@ -1,6 +1,6 @@
 ---
 title: 社交登录配置
-description: 在 Prism 中配置 OAuth 来源——内置提供商（GitHub、Google、Microsoft、Discord、Telegram、X）以及自定义通用 OIDC / OAuth 2.0 提供商。
+description: 在 Prism 中配置 OAuth 来源——内置提供商（GitHub、Google、Microsoft、Discord、Telegram、X、Cloudflare）以及自定义通用 OIDC / OAuth 2.0 提供商。
 ---
 
 # 社交登录配置
@@ -212,6 +212,48 @@ X 采用强制 PKCE 的 OAuth 2.0。Prism 会在每次授权请求中生成并�
 - Prism 请求的 scope 为 `users.read tweet.read offline.access`。其中 `offline.access` 是获取 `refresh_token` 的前提；缺失它时连接页的**刷新**按钮会要求用户重新授权。
 - Prism 调用 `/2/users/me?user.fields=profile_image_url,name,username`，并在写入前展开 v2 的 `data` 外层。
 - X 的令牌端点要求 HTTP Basic 认证，而非在请求体里附带 `client_secret`。Prism 在初次换码和刷新流程中已自动处理。
+
+### Cloudflare
+
+Cloudflare 控制台本身就是一个 OpenID Connect 提供商。**使用 Cloudflare 登录**让用户以其 Cloudflare 账号进行认证——与 Wrangler 等工具代表用户操作账号所用的是同一套流程。Prism 使用 Cloudflare 固定的 OIDC 端点（`https://dash.cloudflare.com/oauth2/{auth,token,userinfo}`），因此与通用 OIDC 不同，你**无需**填写任何端点 URL。
+
+#### 1. 创建 Cloudflare OAuth 客户端
+
+1. 在 [Cloudflare 控制台](https://dash.cloudflare.com/?to=/:account/oauth-clients)，进入 **Manage Account → OAuth clients**，点击 **Create client**。
+2. 填写表单：
+
+   | 字段         | 值                                                           |
+   | ------------ | ------------------------------------------------------------ |
+   | 客户端名称   | 你的站点名称                                                 |
+   | 响应类型     | `code`                                                       |
+   | 授权类型     | `authorization_code`（需要令牌刷新时再加上 `refresh_token`） |
+   | 令牌认证方式 | **Client secret post**（`client_secret_post`）               |
+   | 重定向 URL   | `https://your-prism-domain/api/connections/<slug>/callback`  |
+
+3. 在权限范围步骤，保留 **`openid`**（必需——它负责返回用户身份）。若启用了 `refresh_token` 授权，则同时保留 **`offline_access`**。
+4. 点击 **Create client**，立即复制 **Client ID** 与 **Client Secret**——密钥只显示一次。
+
+#### 2. 在 Prism 中添加来源
+
+进入 **Admin → OAuth Sources → Add source**：
+
+| 字段          | 值                               |
+| ------------- | -------------------------------- |
+| Slug          | `cloudflare`（或任意唯一键）     |
+| 提供商        | **Cloudflare**                   |
+| 显示名称      | `Cloudflare`（显示在登录按钮上） |
+| Client ID     | 从 Cloudflare 复制               |
+| Client Secret | 从 Cloudflare 复制               |
+
+保存后，登录页面会立即出现该按钮。
+
+#### 注意事项
+
+- Prism 请求的 scope 为 `openid offline_access`，并按标准声明映射 OIDC 用户信息（`sub` 作为提供商 ID，`name`/`preferred_username`，`picture`）。
+- **邮箱：** 仅当用户信息响应将邮箱标记为已验证（`email_verified`）时，Prism 才信任该 Cloudflare 邮箱。若在所授予的 scope 下 Cloudflare 未返回已验证邮箱，用户将获得占位邮箱（`cloudflare_<id>@prism.local`）且初始未验证——之后可在个人资料设置中添加并验证真实邮箱。与 Telegram、X 流程一致。
+- **刷新令牌：** 要让连接页的**刷新**按钮生效，OAuth 客户端必须启用 `refresh_token` 授权，且来源需保留 `offline_access` scope（Prism 默认发送）。否则 Cloudflare 不返回 `refresh_token`，用户须重新连接以续期。
+- **私有与公开客户端：** 新建的 OAuth 客户端为**私有**——只有创建它的账号成员才能授权。要让任意 Cloudflare 用户登录，需完成 Cloudflare 的相关要求并将客户端可见性改为**公开**（此操作不可逆）。
+- 令牌端点接受 `client_secret_post`，因此你无需配置 PKCE 或 HTTP Basic。
 
 ## 通用 OpenID Connect
 

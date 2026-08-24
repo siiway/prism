@@ -174,7 +174,7 @@ description: 所有存储在 D1 中的运行时配置项，以及 Wrangler 绑�
 
 ## 社交登录
 
-每个 OAuth 源（GitHub、Google、Microsoft、Discord、Telegram、X、Generic OIDC、Generic OAuth 2）都已迁入 `oauth_sources` 表 — 在 **Admin → OAuth Sources** 中管理，不在本页设置。下方的旧字段仍保留以兼容历史数据，新部署应直接使用 OAuth Sources。
+每个 OAuth 源（GitHub、Google、Microsoft、Discord、Telegram、X、Cloudflare、Generic OIDC、Generic OAuth 2）都已迁入 `oauth_sources` 表 — 在 **Admin → OAuth Sources** 中管理，不在本页设置。下方的旧字段仍保留以兼容历史数据，新部署应直接使用 OAuth Sources。
 
 | 键（旧）                  | 说明                                 |
 | ------------------------- | ------------------------------------ |

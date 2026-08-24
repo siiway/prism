@@ -8,7 +8,7 @@
 
 - **OAuth 2.0 + OpenID Connect** — 授权码 + PKCE、RS256 ID Token、令牌内省 / 撤销、UserInfo、Discovery、JWKS
 - **步骤提升 2FA** — 服务端发起、行动钉死的二次确认；为高风险操作提供 sudo 宽限期
-- **社交与联邦登录** — GitHub、Google、Microsoft、Discord、Telegram、X，Generic OIDC、Generic OAuth 2 — 同一类型可多源
+- **社交与联邦登录** — GitHub、Google、Microsoft、Discord、Telegram、X、Cloudflare，Generic OIDC、Generic OAuth 2 — 同一类型可多源
 - **多因素认证** — 单账号多 TOTP 认证器、Passkey（WebAuthn）、GPG 公钥（含 ML-DSA）、备用码
 - **团队** — OAuth 应用与域名的共享所有权；角色、邀请、所有权转移、站点级加入门槛
 - **应用注册** — 用户自助创建 OAuth 应用；管理员可验证；支持跨应用 scope

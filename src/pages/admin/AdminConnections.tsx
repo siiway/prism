@@ -112,6 +112,7 @@ const PROVIDER_OPTIONS = [
   { value: "discord", label: "Discord" },
   { value: "telegram", label: "Telegram" },
   { value: "x", label: "X (Twitter)" },
+  { value: "cloudflare", label: "Cloudflare" },
   { value: "oidc", label: "Generic OpenID Connect" },
   { value: "oauth2", label: "Generic OAuth 2" },
 ];

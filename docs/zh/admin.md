@@ -206,15 +206,15 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 
 ### 来源字段
 
-| 字段          | 说明                                                                                        |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| Slug          | 唯一 URL 键 — 出现在回调 URL 中，格式为 `/api/connections/<slug>/callback`                  |
-| 提供商        | 基础 OAuth 类型（GitHub、Google、Microsoft、Discord、Telegram、X、通用 OIDC、通用 OAuth 2） |
-| 显示名称      | 显示在登录/注册按钮上的标签                                                                 |
-| Client ID     | OAuth 应用的客户端 ID                                                                       |
-| Client Secret | OAuth 应用的客户端密钥                                                                      |
-| 受信任        | 为 `true`（默认）时，通过该来源的社交登录跳过邮箱验证                                       |
-| 启用          | 切换是否在登录页面显示该来源，禁用不会删除数据                                              |
+| 字段          | 说明                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| Slug          | 唯一 URL 键 — 出现在回调 URL 中，格式为 `/api/connections/<slug>/callback`                              |
+| 提供商        | 基础 OAuth 类型（GitHub、Google、Microsoft、Discord、Telegram、X、Cloudflare、通用 OIDC、通用 OAuth 2） |
+| 显示名称      | 显示在登录/注册按钮上的标签                                                                             |
+| Client ID     | OAuth 应用的客户端 ID                                                                                   |
+| Client Secret | OAuth 应用的客户端密钥                                                                                  |
+| 受信任        | 为 `true`（默认）时，通过该来源的社交登录跳过邮箱验证                                                   |
+| 启用          | 切换是否在登录页面显示该来源，禁用不会删除数据                                                          |
 
 ### 通用 OIDC 来源
 

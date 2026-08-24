@@ -1,6 +1,6 @@
 ---
 title: Social Login Setup
-description: Configure OAuth sources in Prism — built-in providers (GitHub, Google, Microsoft, Discord, Telegram, X) and custom Generic OIDC / OAuth 2.0 providers.
+description: Configure OAuth sources in Prism — built-in providers (GitHub, Google, Microsoft, Discord, Telegram, X, Cloudflare) and custom Generic OIDC / OAuth 2.0 providers.
 ---
 
 # Social Login Setup
@@ -213,6 +213,48 @@ Save. The button appears on the login page immediately.
 - Prism requests `users.read tweet.read offline.access`. `offline.access` is what allows the access token to be refreshed; without it X returns no `refresh_token` and the **Refresh** action on the Connections page will require the user to reconnect.
 - Prism calls `/2/users/me?user.fields=profile_image_url,name,username` and flattens the v2 `data` envelope before storing the profile.
 - The X token endpoint requires HTTP Basic authentication, not `client_secret` in the request body. Prism handles this automatically for both the initial token exchange and refreshes.
+
+### Cloudflare
+
+The Cloudflare dashboard is itself an OpenID Connect provider. **Sign in with Cloudflare** lets users authenticate with their Cloudflare account — the same flow that lets tools such as Wrangler act on a user's account. Prism uses Cloudflare's fixed OIDC endpoints (`https://dash.cloudflare.com/oauth2/{auth,token,userinfo}`), so — unlike Generic OIDC — you do **not** enter any endpoint URLs.
+
+#### 1. Create a Cloudflare OAuth client
+
+1. In the [Cloudflare dashboard](https://dash.cloudflare.com/?to=/:account/oauth-clients), go to **Manage Account → OAuth clients** and select **Create client**.
+2. Fill in the form:
+
+   | Field                       | Value                                                             |
+   | --------------------------- | ----------------------------------------------------------------- |
+   | Client name                 | Your site name                                                    |
+   | Response type               | `code`                                                            |
+   | Grant type                  | `authorization_code` (add `refresh_token` to allow token refresh) |
+   | Token authentication method | **Client secret post** (`client_secret_post`)                     |
+   | Redirect URLs               | `https://your-prism-domain/api/connections/<slug>/callback`       |
+
+3. On the scopes step, keep **`openid`** (required — it is what returns the user's identity). If you enabled the `refresh_token` grant, also keep **`offline_access`**.
+4. Select **Create client** and copy the **Client ID** and **Client Secret** immediately — the secret is only shown once.
+
+#### 2. Add the source in Prism
+
+Go to **Admin → OAuth Sources → Add source**:
+
+| Field         | Value                                |
+| ------------- | ------------------------------------ |
+| Slug          | `cloudflare` (or any unique key)     |
+| Provider      | **Cloudflare**                       |
+| Display name  | `Cloudflare` (shown on login button) |
+| Client ID     | Paste from Cloudflare                |
+| Client Secret | Paste from Cloudflare                |
+
+Save. The button appears on the login page immediately.
+
+#### Notes
+
+- Prism requests `openid offline_access` and maps the OIDC userinfo response with standard claims (`sub` for the provider ID, `name`/`preferred_username`, `picture`).
+- **Email:** Prism trusts a Cloudflare email only when the userinfo response marks it verified (`email_verified`). If Cloudflare returns no verified email for the granted scopes, the user gets a placeholder email (`cloudflare_<id>@prism.local`) and starts unverified — they can add and verify a real email from their profile settings later. This mirrors the Telegram and X flows.
+- **Refresh tokens:** to make the **Refresh** action on the Connections page work, the OAuth client must have the `refresh_token` grant enabled and the source must keep the `offline_access` scope (Prism sends it by default). Without it, Cloudflare returns no `refresh_token` and the user must reconnect to renew access.
+- **Private vs. public clients:** a new OAuth client is **private** — only members of the Cloudflare account that created it can authorize. To let any Cloudflare user sign in, complete Cloudflare's requirements and change the client's visibility to **public** (this is permanent).
+- The token endpoint accepts `client_secret_post`, so no PKCE or HTTP Basic configuration is needed on your side.
 
 ## Generic OpenID Connect
 
