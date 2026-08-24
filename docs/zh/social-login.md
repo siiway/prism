@@ -215,7 +215,11 @@ X 采用强制 PKCE 的 OAuth 2.0。Prism 会在每次授权请求中生成并�
 
 ### Cloudflare
 
-Cloudflare 控制台本身就是一个 OpenID Connect 提供商。**使用 Cloudflare 登录**让用户以其 Cloudflare 账号进行认证——与 Wrangler 等工具代表用户操作账号所用的是同一套流程。Prism 使用 Cloudflare 固定的 OIDC 端点（`https://dash.cloudflare.com/oauth2/{auth,token,userinfo}`），因此与通用 OIDC 不同，你**无需**填写任何端点 URL。
+**使用 Cloudflare 登录**让用户以其 Cloudflare 账号进行认证——与 Wrangler 等工具代表用户操作账号所用的是同一套 OAuth 机制。Cloudflare 的 OAuth 客户端是**API 访问**客户端（其 scope 即 Cloudflare API 令牌权限名），并非 OpenID Connect 提供商。因此 Prism 在 `https://dash.cloudflare.com/oauth2/{auth,token}` 完成授权后，再从 Cloudflare API（`GET https://api.cloudflare.com/client/v4/user`）读取登录用户的身份。与其他内置提供商一样，你**无需**填写任何端点 URL。
+
+::: warning 不要请求 `openid`
+Cloudflare 的自管理 OAuth 客户端无法请求 `openid` scope——权限范围选择器中根本没有该项，强行请求会在授权步骤报 `invalid_scope`（“The OAuth 2.0 Client is not allowed to request scope 'openid'”）。Prism 改为请求 **`user-details.read`**（见下）。
+:::
 
 #### 1. 创建 Cloudflare OAuth 客户端
 
@@ -230,7 +234,7 @@ Cloudflare 控制台本身就是一个 OpenID Connect 提供商。**使用 Cloud
    | 令牌认证方式 | **Client secret post**（`client_secret_post`）               |
    | 重定向 URL   | `https://your-prism-domain/api/connections/<slug>/callback`  |
 
-3. 在权限范围步骤，保留 **`openid`**（必需——它负责返回用户身份）。若启用了 `refresh_token` 授权，则同时保留 **`offline_access`**。
+3. 在权限范围步骤，选择 **User Details Read**（`user-details.read`，位于 **Account & Billing** 分类下）——Prism 依靠它读取登录用户的身份。若启用了 `refresh_token` 授权，则同时添加 **`offline_access`**。
 4. 点击 **Create client**，立即复制 **Client ID** 与 **Client Secret**——密钥只显示一次。
 
 #### 2. 在 Prism 中添加来源
@@ -249,8 +253,8 @@ Cloudflare 控制台本身就是一个 OpenID Connect 提供商。**使用 Cloud
 
 #### 注意事项
 
-- Prism 请求的 scope 为 `openid offline_access`，并按标准声明映射 OIDC 用户信息（`sub` 作为提供商 ID，`name`/`preferred_username`，`picture`）。
-- **邮箱：** 仅当用户信息响应将邮箱标记为已验证（`email_verified`）时，Prism 才信任该 Cloudflare 邮箱。若在所授予的 scope 下 Cloudflare 未返回已验证邮箱，用户将获得占位邮箱（`cloudflare_<id>@prism.local`）且初始未验证——之后可在个人资料设置中添加并验证真实邮箱。与 Telegram、X 流程一致。
+- Prism 请求的 scope 为 `user-details.read offline_access`，并从 `GET /client/v4/user` 读取身份，映射 `id`（提供商 ID）、`first_name`/`last_name`（显示名）与 `username`。Cloudflare 用户对象没有头像字段，因此不导入头像。
+- **邮箱：** Cloudflare API 用户对象不含邮箱验证标记，Prism 无法确认该地址，因此**不予信任**。每次 Cloudflare 登录都会获得占位邮箱（`cloudflare_<id>@prism.local`）且初始未验证——之后可在个人资料设置中添加并验证真实邮箱。与 Telegram、X 流程一致。
 - **刷新令牌：** 要让连接页的**刷新**按钮生效，OAuth 客户端必须启用 `refresh_token` 授权，且来源需保留 `offline_access` scope（Prism 默认发送）。否则 Cloudflare 不返回 `refresh_token`，用户须重新连接以续期。
 - **私有与公开客户端：** 新建的 OAuth 客户端为**私有**——只有创建它的账号成员才能授权。要让任意 Cloudflare 用户登录，需完成 Cloudflare 的相关要求并将客户端可见性改为**公开**（此操作不可逆）。
 - 令牌端点接受 `client_secret_post`，因此你无需配置 PKCE 或 HTTP Basic。

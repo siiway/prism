@@ -216,7 +216,11 @@ Save. The button appears on the login page immediately.
 
 ### Cloudflare
 
-The Cloudflare dashboard is itself an OpenID Connect provider. **Sign in with Cloudflare** lets users authenticate with their Cloudflare account — the same flow that lets tools such as Wrangler act on a user's account. Prism uses Cloudflare's fixed OIDC endpoints (`https://dash.cloudflare.com/oauth2/{auth,token,userinfo}`), so — unlike Generic OIDC — you do **not** enter any endpoint URLs.
+**Sign in with Cloudflare** lets users authenticate with their Cloudflare account — the same OAuth mechanism that lets tools such as Wrangler act on a user's account. Cloudflare's OAuth clients are **API-access** clients (their scopes are Cloudflare API-token permission names), not an OpenID Connect provider, so Prism authorizes against `https://dash.cloudflare.com/oauth2/{auth,token}` and then reads the signed-in user's identity from the Cloudflare API (`GET https://api.cloudflare.com/client/v4/user`). As with the other built-in providers, you do **not** enter any endpoint URLs.
+
+::: warning Do not request `openid`
+Cloudflare's self-managed OAuth clients cannot request the `openid` scope — it is not offered in the scope picker, and asking for it fails the authorize step with `invalid_scope` ("The OAuth 2.0 Client is not allowed to request scope 'openid'"). Prism requests **`user-details.read`** instead (see below).
+:::
 
 #### 1. Create a Cloudflare OAuth client
 
@@ -231,7 +235,7 @@ The Cloudflare dashboard is itself an OpenID Connect provider. **Sign in with Cl
    | Token authentication method | **Client secret post** (`client_secret_post`)                     |
    | Redirect URLs               | `https://your-prism-domain/api/connections/<slug>/callback`       |
 
-3. On the scopes step, keep **`openid`** (required — it is what returns the user's identity). If you enabled the `refresh_token` grant, also keep **`offline_access`**.
+3. On the scopes step, select **User Details Read** (`user-details.read`, listed under **Account & Billing**) — this is what lets Prism read the signed-in user's identity. If you enabled the `refresh_token` grant, also add **`offline_access`**.
 4. Select **Create client** and copy the **Client ID** and **Client Secret** immediately — the secret is only shown once.
 
 #### 2. Add the source in Prism
@@ -250,8 +254,8 @@ Save. The button appears on the login page immediately.
 
 #### Notes
 
-- Prism requests `openid offline_access` and maps the OIDC userinfo response with standard claims (`sub` for the provider ID, `name`/`preferred_username`, `picture`).
-- **Email:** Prism trusts a Cloudflare email only when the userinfo response marks it verified (`email_verified`). If Cloudflare returns no verified email for the granted scopes, the user gets a placeholder email (`cloudflare_<id>@prism.local`) and starts unverified — they can add and verify a real email from their profile settings later. This mirrors the Telegram and X flows.
+- Prism requests `user-details.read offline_access` and reads identity from `GET /client/v4/user`, mapping `id` (provider ID), `first_name`/`last_name` (display name), and `username`. Cloudflare's user object has no avatar field, so no avatar is imported.
+- **Email:** the Cloudflare API user object carries no email-verified flag, so Prism cannot confirm the address and does **not** trust it. Every Cloudflare sign-in gets a placeholder email (`cloudflare_<id>@prism.local`) and starts unverified — the user can add and verify a real email from their profile settings later. This mirrors the Telegram and X flows.
 - **Refresh tokens:** to make the **Refresh** action on the Connections page work, the OAuth client must have the `refresh_token` grant enabled and the source must keep the `offline_access` scope (Prism sends it by default). Without it, Cloudflare returns no `refresh_token` and the user must reconnect to renew access.
 - **Private vs. public clients:** a new OAuth client is **private** — only members of the Cloudflare account that created it can authorize. To let any Cloudflare user sign in, complete Cloudflare's requirements and change the client's visibility to **public** (this is permanent).
 - The token endpoint accepts `client_secret_post`, so no PKCE or HTTP Basic configuration is needed on your side.

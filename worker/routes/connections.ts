@@ -124,20 +124,29 @@ const PROVIDER_DEFS: Record<string, ProviderDef> = {
       "https://api.twitter.com/2/users/me?user.fields=profile_image_url,name,username",
     scopes: "users.read tweet.read offline.access",
   },
-  // Cloudflare — first-party OAuth 2.0 / OpenID Connect provider
-  // (dashboard: Manage Account -> OAuth clients). Fixed OIDC endpoints, taken
-  // from https://dash.cloudflare.com/.well-known/openid-configuration:
-  //   * `openid` yields the stable `sub` used as the provider_user_id.
-  //   * `offline_access` unlocks refresh_token issuance — the OAuth client must
-  //     also enable the refresh_token grant type for a token to come back.
+  // Cloudflare — account OAuth 2.0 provider (dashboard: Manage Account ->
+  // OAuth clients). Despite exposing an /oauth2 + openid-configuration surface,
+  // these are API-access clients, NOT an OIDC identity provider: a client's
+  // scopes are Cloudflare API-token permission names, and `openid` is not
+  // among the scopes a self-managed client may request — asking for it fails
+  // the authorize step with `invalid_scope` ("not allowed to request scope
+  // 'openid'"). So instead of the OIDC dance we:
+  //   * request `user-details.read` (API permission "User Details: Read",
+  //     shown under Account & Billing in the scope picker), which lets the
+  //     issued access token read the authenticated user's own identity;
+  //   * fetch that identity from the Cloudflare API `GET /client/v4/user`
+  //     rather than the OIDC userinfo endpoint. Its response is wrapped in the
+  //     standard `{ success, result }` envelope, unwrapped at the fetch sites,
+  //     and mapped by the `cloudflare` branches of the extractors below.
+  //   * `offline_access` still unlocks refresh_token issuance — the OAuth
+  //     client must also enable the refresh_token grant for a token to return.
   //   * The token endpoint accepts client_secret_post, so the standard
-  //     body-based code exchange works unchanged — no PKCE or HTTP Basic
-  //     special-casing (unlike X). Profile extraction reuses the OIDC branch.
+  //     body-based code exchange works unchanged (no PKCE / HTTP Basic).
   cloudflare: {
     authUrl: "https://dash.cloudflare.com/oauth2/auth",
     tokenUrl: "https://dash.cloudflare.com/oauth2/token",
-    userUrl: "https://dash.cloudflare.com/oauth2/userinfo",
-    scopes: "openid offline_access",
+    userUrl: "https://api.cloudflare.com/client/v4/user",
+    scopes: "user-details.read offline_access",
   },
   // Generic providers — all URLs/scopes are configured per-source in oauth_sources table
   oidc: {
@@ -767,6 +776,17 @@ app.get("/:provider/callback", async (c) => {
     typeof profileData.data === "object"
   ) {
     profileData = profileData.data as Record<string, unknown>;
+  }
+
+  // Cloudflare's API wraps every payload in a `{ success, result }` envelope.
+  // Unwrap `result` so the extractors see a flat user object like every other
+  // provider.
+  if (
+    provider === "cloudflare" &&
+    profileData.result &&
+    typeof profileData.result === "object"
+  ) {
+    profileData = profileData.result as Record<string, unknown>;
   }
 
   // GitHub's /user response carries `email` only when the user has set their
@@ -1522,6 +1542,16 @@ app.post("/:id/refresh", requireAuth, async (c) => {
     profileData = profileData.data as Record<string, unknown>;
   }
 
+  // Cloudflare wraps the payload in `{ success, result }` — unwrap it, same as
+  // the initial connection callback above.
+  if (
+    source.provider === "cloudflare" &&
+    profileData.result &&
+    typeof profileData.result === "object"
+  ) {
+    profileData = profileData.result as Record<string, unknown>;
+  }
+
   const providerUserId = extractProviderUserId(source.provider, profileData);
   if (!providerUserId) return c.json({ error: "no_user_id" }, 502);
   if (providerUserId !== conn.provider_user_id)
@@ -1685,10 +1715,12 @@ function extractProviderUserId(
     case "discord":
     case "telegram":
     case "x":
+    // Cloudflare's /client/v4/user returns the stable account id as `id`, like
+    // the id-based providers above rather than the OIDC `sub` below.
+    case "cloudflare": // eslint-disable-line no-fallthrough -- comment between stacked empty cases
       return String(profile.id ?? "");
     case "google":
     case "oidc":
-    case "cloudflare":
       return String(profile.sub ?? "");
     default:
       // oauth2 and unknown — try sub first (OIDC-style), then id
@@ -1730,8 +1762,13 @@ function extractProviderEmail(
       return profile.verified === true ? email : null;
     case "google":
     case "oidc":
-    case "cloudflare":
       return profile.email_verified === true ? email : null;
+    case "cloudflare":
+      // The Cloudflare API user object carries no email-verified flag, so we
+      // can't confirm the address the way the rule above requires. Treat it as
+      // unverified — the user gets the `${provider}_${id}@prism.local`
+      // placeholder and can add and verify a real email from their profile.
+      return null;
     case "github":
       // The connection callback explicitly hits /user/emails and only puts a
       // verified-primary into profile.email; if that wasn't done (e.g. a
@@ -1756,12 +1793,19 @@ function extractDisplayName(
       return (profile.name as string) || (profile.login as string) || "User";
     case "google":
     case "oidc":
-    case "cloudflare":
       return (
         (profile.name as string) ||
         (profile.preferred_username as string) ||
         "User"
       );
+    case "cloudflare": {
+      // Cloudflare's user object splits the name into first/last and has no
+      // display name. Fall back to the account username, then "User".
+      const parts = [profile.first_name as string, profile.last_name as string]
+        .filter(Boolean)
+        .join(" ");
+      return parts || (profile.username as string) || "User";
+    }
     case "microsoft":
       return (profile.displayName as string) || "User";
     case "discord":
@@ -1827,8 +1871,10 @@ function extractProviderAvatar(
       return (profile.avatar_url as string) ?? null;
     case "google":
     case "oidc":
-    case "cloudflare":
       return (profile.picture as string) ?? null;
+    case "cloudflare":
+      // Cloudflare's user object exposes no avatar/picture URL.
+      return null;
     case "discord": {
       const id = profile.id as string;
       const avatar = profile.avatar as string;
