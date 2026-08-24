@@ -69,6 +69,30 @@ const useStyles = makeStyles({
     background: tokens.colorNeutralBackground3,
     gap: "8px",
   },
+  // The identity column. `minWidth: 0` lets it shrink below its content's
+  // intrinsic width so the long, unbreakable values a provider can return
+  // (Cloudflare usernames and account ids are 32-char hex strings) truncate
+  // instead of shoving the action buttons out of the card.
+  connInfo: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flex: 1,
+    minWidth: 0,
+  },
+  truncate: {
+    display: "block",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  // The buttons never shrink — they are the whole point of the row staying
+  // within the card.
+  connActions: {
+    display: "flex",
+    gap: "4px",
+    flexShrink: 0,
+  },
 });
 
 // URL is pre-proxied by /api/site so no client-side proxy registration is
@@ -370,9 +394,7 @@ export function Connections() {
                   providerTypeBySlug.get(conn.provider) !== "telegram";
                 return (
                   <div key={conn.id} className={styles.connRow}>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 8 }}
-                    >
+                    <div className={styles.connInfo}>
                       <Avatar
                         size={32}
                         name={displayName ?? conn.provider_user_id}
@@ -380,23 +402,20 @@ export function Connections() {
                           profileAvatar ? { src: profileAvatar } : undefined
                         }
                       />
-                      <div style={{ minWidth: 0 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <Text
                           size={200}
                           weight="semibold"
-                          block
-                          style={{
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
+                          className={styles.truncate}
+                          title={displayName ?? conn.provider_user_id}
                         >
                           {displayName ?? conn.provider_user_id}
                         </Text>
                         {details.nickname ? (
                           <Text
                             size={100}
-                            block
+                            className={styles.truncate}
+                            title={details.nickname}
                             style={{ color: tokens.colorNeutralForeground3 }}
                           >
                             {t("connections.detailNickname", {
@@ -407,7 +426,8 @@ export function Connections() {
                         {details.username ? (
                           <Text
                             size={100}
-                            block
+                            className={styles.truncate}
+                            title={details.username}
                             style={{ color: tokens.colorNeutralForeground3 }}
                           >
                             {t("connections.detailUsername", {
@@ -418,7 +438,8 @@ export function Connections() {
                         {details.platformId ? (
                           <Text
                             size={100}
-                            block
+                            className={styles.truncate}
+                            title={details.platformId}
                             style={{ color: tokens.colorNeutralForeground3 }}
                           >
                             {t("connections.detailId", {
@@ -428,6 +449,7 @@ export function Connections() {
                         ) : null}
                         <Text
                           size={100}
+                          className={styles.truncate}
                           style={{ color: tokens.colorNeutralForeground3 }}
                         >
                           {t("connections.connectedOn", {
@@ -439,7 +461,7 @@ export function Connections() {
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", gap: 4 }}>
+                    <div className={styles.connActions}>
                       {canRefresh ? (
                         <Tooltip
                           content={t("connections.refreshAction")}
