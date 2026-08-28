@@ -67,6 +67,13 @@
     "addAccount": "Add another account",
     "auditLog": "Audit Log"
   },
+  "account": {
+    "accounts": "Accounts",
+    "current": "{{name}} (current account)",
+    "switchingTo": "Switching to {{name}}…",
+    "signingOut": "Signing out…",
+    "switchFailed": "Couldn't switch to @{{username}} — that session has expired."
+  },
   "auth": {
     "signIn": "Sign in",
     "signInTo": "Sign in to {{siteName}}",

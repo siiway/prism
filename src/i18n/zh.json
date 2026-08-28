@@ -67,6 +67,13 @@
     "addAccount": "添加其他账号",
     "auditLog": "审计日志"
   },
+  "account": {
+    "accounts": "账号",
+    "current": "{{name}}（当前账号）",
+    "switchingTo": "正在切换到 {{name}}…",
+    "signingOut": "正在退出…",
+    "switchFailed": "无法切换到 @{{username}} —— 该会话已过期。"
+  },
   "auth": {
     "signIn": "登录",
     "signInTo": "登录到 {{siteName}}",

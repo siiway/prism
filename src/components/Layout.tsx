@@ -7,6 +7,8 @@ import {
   Menu,
   MenuButton,
   MenuDivider,
+  MenuGroup,
+  MenuGroupHeader,
   MenuItem,
   MenuItemRadio,
   MenuList,
@@ -14,9 +16,14 @@ import {
   MenuTrigger,
   Spinner,
   Text,
+  Toast,
+  ToastTitle,
+  Toaster,
   makeStyles,
   mergeClasses,
   tokens,
+  useId,
+  useToastController,
 } from "@fluentui/react-components";
 import {
   AlertRegular,
@@ -189,6 +196,25 @@ const useStyles = makeStyles({
       padding: "12px",
     },
   },
+  // Full-viewport scrim shown while an account switch / sign-out round trip is
+  // in flight. The Fluent Menu closes the moment an item is clicked, so an
+  // inline per-row spinner would flash and vanish; this gives durable feedback
+  // and blocks interaction until the swap and cache reset finish.
+  switchOverlay: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 1000,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(0,0,0,0.35)",
+  },
+  switchCard: {
+    background: tokens.colorNeutralBackground1,
+    padding: "20px 28px",
+    borderRadius: tokens.borderRadiusLarge,
+    boxShadow: tokens.shadow16,
+  },
 });
 
 interface NavItemProps {
@@ -224,9 +250,11 @@ export function Layout() {
   const { user, accounts, switchAccount, removeAccount, clearAuth } =
     useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // userId currently being switched to (drives the inline spinner and blocks
-  // re-entrancy while the cookie-sync round trip is in flight).
-  const [switching, setSwitching] = useState<string | null>(null);
+  // Non-null while an account switch / sign-out is in flight: holds the label
+  // shown in the overlay, and gates re-entrancy so two swaps can't race.
+  const [busy, setBusy] = useState<string | null>(null);
+  const toasterId = useId("account-toaster");
+  const { dispatchToast } = useToastController(toasterId);
   const { t, i18n } = useTranslation();
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
@@ -264,43 +292,55 @@ export function Layout() {
   // later reload/SSR sees the same account), then the local active pointer
   // moves and the previous account's cached data is dropped.
   const handleSwitch = async (userId: string) => {
-    if (switching || userId === user?.id) return;
+    if (busy || userId === user?.id) return;
     const target = accounts.find((a) => a.user.id === userId);
     if (!target) return;
-    setSwitching(userId);
+    setBusy(t("account.switchingTo", { name: target.user.display_name }));
     try {
       await api.switchAccount(target.token);
       switchAccount(userId);
       await qc.clear();
       navigate("/", { replace: true });
     } catch {
-      // The stored session is gone (revoked or expired). Drop the dead account
-      // and stay signed in as the current one.
+      // The stored session is gone (revoked or expired). Drop the dead account,
+      // stay signed in as the current one, and say why it vanished.
       removeAccount(userId);
+      dispatchToast(
+        <Toast>
+          <ToastTitle>
+            {t("account.switchFailed", { username: target.user.username })}
+          </ToastTitle>
+        </Toast>,
+        { intent: "error" },
+      );
     } finally {
-      setSwitching(null);
+      setBusy(null);
     }
   };
 
   const handleAddAccount = () => navigate("/login?add=1");
 
   const handleLogout = async () => {
+    if (busy) return;
     const current = user;
     const others = accounts.filter((a) => a.user.id !== current?.id);
     // With another account available, "sign out" revokes the current session
     // and lands on the next account rather than dumping the user at /login.
     if (others.length > 0) {
       const next = others[0];
+      setBusy(t("account.switchingTo", { name: next.user.display_name }));
       try {
         await api.switchAccount(next.token, { logoutCurrent: true });
         if (current) removeAccount(current.id);
         await qc.clear();
         navigate("/", { replace: true });
+        setBusy(null);
         return;
       } catch {
         /* next account unusable — fall through to a full sign-out */
       }
     }
+    setBusy(t("account.signingOut"));
     try {
       await api.logout();
     } catch {
@@ -308,6 +348,7 @@ export function Layout() {
     }
     clearAuth();
     await qc.clear();
+    setBusy(null);
     navigate("/login");
   };
 
@@ -506,79 +547,85 @@ export function Layout() {
                   active one checked. Selecting another repoints the session;
                   "Add another account" opens the login form without dropping
                   the current session. */}
-              {accounts.map((a) => {
-                const isActive = a.user.id === user?.id;
-                return (
-                  <MenuItem
-                    key={a.user.id}
-                    disabled={switching !== null}
-                    onClick={() => {
-                      if (!isActive) void handleSwitch(a.user.id);
-                    }}
-                    icon={
-                      <Avatar
-                        name={a.user.display_name}
-                        image={
-                          a.user.avatar_url
-                            ? { src: a.user.avatar_url }
-                            : undefined
-                        }
-                        size={24}
-                      />
-                    }
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        width: "100%",
-                        minWidth: 180,
+              <MenuGroup>
+                <MenuGroupHeader>{t("account.accounts")}</MenuGroupHeader>
+                {accounts.map((a) => {
+                  const isActive = a.user.id === user?.id;
+                  return (
+                    <MenuItem
+                      key={a.user.id}
+                      disabled={busy !== null}
+                      aria-label={
+                        isActive
+                          ? t("account.current", { name: a.user.display_name })
+                          : undefined
+                      }
+                      onClick={() => {
+                        if (!isActive) void handleSwitch(a.user.id);
                       }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <Text
-                          block
-                          size={200}
-                          weight={isActive ? "semibold" : "regular"}
-                          truncate
-                          style={{ maxWidth: 160 }}
-                        >
-                          {a.user.display_name}
-                        </Text>
-                        <Text
-                          block
-                          size={100}
-                          truncate
-                          style={{
-                            maxWidth: 160,
-                            color: tokens.colorNeutralForeground3,
-                          }}
-                        >
-                          @{a.user.username}
-                        </Text>
-                      </div>
-                      {switching === a.user.id ? (
-                        <Spinner size="tiny" />
-                      ) : isActive ? (
-                        <CheckmarkRegular
-                          style={{
-                            flexShrink: 0,
-                            color: tokens.colorCompoundBrandForeground1,
-                          }}
+                      icon={
+                        <Avatar
+                          name={a.user.display_name}
+                          image={
+                            a.user.avatar_url
+                              ? { src: a.user.avatar_url }
+                              : undefined
+                          }
+                          size={24}
                         />
-                      ) : null}
-                    </div>
-                  </MenuItem>
-                );
-              })}
-              <MenuItem
-                icon={<PersonAddRegular />}
-                onClick={handleAddAccount}
-                disabled={switching !== null}
-              >
-                {t("nav.addAccount")}
-              </MenuItem>
+                      }
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          width: "100%",
+                          minWidth: 180,
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <Text
+                            block
+                            size={200}
+                            weight={isActive ? "semibold" : "regular"}
+                            truncate
+                            style={{ maxWidth: 160 }}
+                          >
+                            {a.user.display_name}
+                          </Text>
+                          <Text
+                            block
+                            size={100}
+                            truncate
+                            style={{
+                              maxWidth: 160,
+                              color: tokens.colorNeutralForeground3,
+                            }}
+                          >
+                            @{a.user.username}
+                          </Text>
+                        </div>
+                        {isActive && (
+                          <CheckmarkRegular
+                            style={{
+                              flexShrink: 0,
+                              color: tokens.colorCompoundBrandForeground1,
+                            }}
+                          />
+                        )}
+                      </div>
+                    </MenuItem>
+                  );
+                })}
+                <MenuItem
+                  icon={<PersonAddRegular />}
+                  onClick={handleAddAccount}
+                  disabled={busy !== null}
+                >
+                  {t("nav.addAccount")}
+                </MenuItem>
+              </MenuGroup>
               <MenuDivider />
               {/* Language toggle */}
               <MenuItem
@@ -671,6 +718,18 @@ export function Layout() {
         </div>
         <LegalFooter />
       </main>
+
+      {/* Transient failures from switching / signing out. */}
+      <Toaster toasterId={toasterId} />
+
+      {/* Blocking feedback while an account swap is in flight. */}
+      {busy && (
+        <div className={styles.switchOverlay} role="status" aria-live="polite">
+          <div className={styles.switchCard}>
+            <Spinner size="large" label={busy} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
