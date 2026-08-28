@@ -204,7 +204,13 @@ async function request<T>(
     // NOT log the user out — that's how clicking "Refresh" on a stale
     // social connection used to instantly nuke the dashboard session.
     if (res.status === 401 && SESSION_INVALID_ERRORS.has(message)) {
-      useAuthStore.getState().clearAuth();
+      // Sign out only the account whose token just failed. Any other accounts
+      // the switcher holds are kept: removeAccount clears the active pointer
+      // without promoting one, so the route guard sends the user to the login
+      // page's "Continue as" chooser to pick which account to resume.
+      const s = useAuthStore.getState();
+      if (s.user) s.removeAccount(s.user.id);
+      else s.clearAuth();
     }
 
     throw new ApiError(res.status, message, data);
@@ -293,8 +299,36 @@ export const api = {
     ),
   login: (body: LoginBody) =>
     request<LoginResponse>("POST", "/auth/login", body),
-  logout: () =>
-    request<{ message: string }>("POST", "/auth/logout", undefined, getToken()),
+  /** Revoke a session and clear the cookie. Pass a token to revoke a specific
+   *  account (defaults to the active one). */
+  logout: (token?: string) =>
+    request<{ message: string }>(
+      "POST",
+      "/auth/logout",
+      undefined,
+      token ?? getToken(),
+    ),
+  /**
+   * Revoke the session for another account the browser holds a token for,
+   * WITHOUT clearing the active account's cookie — the switcher's per-account
+   * "sign out". `token` is the target account's session token.
+   */
+  revokeAccount: (token: string) =>
+    request<{ message: string }>("POST", "/auth/revoke", { token }, getToken()),
+  /**
+   * Repoint the HttpOnly session cookie at another account the browser is
+   * already signed into, identified by the session token the client holds
+   * for it. Keeps SSR/reload auth consistent with the switcher's active
+   * account. `logoutCurrent` also revokes the caller's own session, folding
+   * "sign out and land on the next account" into one round trip.
+   */
+  switchAccount: (token: string, opts?: { logoutCurrent?: boolean }) =>
+    request<{ user: UserProfile }>(
+      "POST",
+      "/auth/switch",
+      { token, logout_current: opts?.logoutCurrent },
+      getToken(),
+    ),
   verifyEmail: (token: string) =>
     request<{ message: string }>(
       "GET",
