@@ -227,6 +227,11 @@ wrangler kv namespace create prism-staging-cache
   **preview** Worker（`prism-preview`）。preview 是一个共享 Worker、使用独立数据库，
   因此最近部署的那个 PR 就是当前线上的版本；工作流会把地址作为 PR 评论贴出。来自
   fork 的 PR 只跑检查、不部署（fork 无法访问 Secret）。
+  - **强制重新部署（跳过失败的检查）：** 在头部提交的信息中加入 `<!try_redeploy!>`。
+    若推送者在允许名单中，即使检查失败也会执行 preview 部署——适合在偶发失败或刚
+    补上 Secret 后重跑。它始终不会超出同仓库 PR 的范围。允许名单为仓库变量
+    `PREVIEW_DEPLOY_ALLOWLIST`（逗号分隔的 GitHub 用户名；未设置时默认为仓库所有者）。
+    普通提交不受影响——仍然只在检查通过时部署。
 - **Staging**（`.github/workflows/deploy-nonprod.yml`）在推送到 `staging` 分支时部署，
   也可手动运行（可选择 staging 或 preview）。
 

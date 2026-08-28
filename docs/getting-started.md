@@ -280,6 +280,13 @@ touches production; it covers the non-production Workers only.
   Preview is one shared Worker on its own database, so the most recently
   deployed PR is what is live there; the workflow posts the URL as a PR comment.
   Fork PRs get the checks but not the deploy (secrets are withheld from forks).
+  - **Force a redeploy past failing checks:** put `<!try_redeploy!>` in the
+    head commit's message. If the pushing user is on the allowlist, the preview
+    deploy runs even when the checks job failed — handy to re-run after a
+    transient failure or right after adding the secret. It never widens beyond
+    same-repo PRs. The allowlist is the repo variable `PREVIEW_DEPLOY_ALLOWLIST`
+    (comma-separated GitHub usernames; defaults to the repository owner when
+    unset). Ordinary commits are unaffected — they deploy only when checks pass.
 - **Staging** (`.github/workflows/deploy-nonprod.yml`) deploys on a push to the
   `staging` branch, or a manual run (which can target staging or preview).
 
