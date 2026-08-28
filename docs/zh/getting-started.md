@@ -182,6 +182,40 @@ Cloudflare Workers Builds 在每次推送到 `main` 时执行同一套脚本：�
 
 两者都是幂等的，重复执行安全。
 
+## 非生产环境（staging 与 preview）
+
+`wrangler.jsonc` 定义了两个非生产环境 —— `staging` 与 `preview`，每个都是独立的
+Worker，拥有各自隔离的 D1 数据库与 KV 命名空间，因此测试永远不会触及生产数据。它们
+与生产位于同一个 Cloudflare 账号，通过各自的 `*.workers.dev` 子域访问（不使用自定义
+域名，且关闭了域名重新核验的定时任务）。
+
+| 任务 | staging                  | preview                  |
+| ---- | ------------------------ | ------------------------ |
+| 开发 | `bun dev:staging`        | `bun dev:preview`        |
+| 迁移 | `bun db:migrate:staging` | `bun db:migrate:preview` |
+| 部署 | `bun deploy:staging`     | `bun deploy:preview`     |
+
+环境在构建时通过 `CLOUDFLARE_ENV` 变量选择（`dev:*` / `deploy:*` 脚本会替你设置）。这
+也是部署走生成的 `dist/prism/wrangler.json` 而非 `wrangler deploy --env <name>` 的原因
+—— Vite 插件每次构建只解析一个环境，因此产出的配置本身就是环境专属的。与 `bun deploy`
+一样，`deploy:*` 脚本**不会**自动执行迁移，请先运行对应的 `db:migrate:*`。
+
+每个环境都有各自的 `SECRETS_KEY` —— 生产、staging、preview 分别指向三个不同的 Secret
+Store 条目（`prism-secrets-key`、`prism-staging-secrets-key`、`prism-preview-secrets-key`，
+都在同一个 store 中）。这样一来，某个一次性非生产环境的泄漏或失误，绝不会暴露由其他
+环境密钥加密的数据。请为每个环境生成一把独立的 32 字节 base64url 密钥（见步骤 2），并在
+`env` 块中通过 `secret_name` 引用它。
+
+要从零搭建另一个非生产环境，先创建资源，并把 ID 填入 `wrangler.jsonc` 中新的 `env` 块：
+
+```bash
+wrangler d1 create prism-staging-db
+wrangler kv namespace create prism-staging-sessions
+wrangler kv namespace create prism-staging-cache
+```
+
+……然后在首次 `bun deploy:staging` 之前运行 `bun db:migrate:staging`。
+
 ## 社交登录配置
 
 每个 provider 都需要先到对应平台创建 OAuth 应用。在 **Admin → OAuth Sources** 添加 OAuth 源 — 同一类型可以加多个，每个有独立 slug。详见 [社交登录配置](social-login.md)；回调 URL 的格式见 [OAuth / OIDC 指南](oauth.md)。
