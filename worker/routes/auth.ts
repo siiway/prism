@@ -25,7 +25,7 @@ import {
   decryptSecret,
   isHashedSecret,
 } from "../lib/secretCrypto";
-import { signJWT } from "../lib/jwt";
+import { signJWT, verifyJWT } from "../lib/jwt";
 import {
   claimEnrolmentCounter,
   generateBackupCodes,
@@ -548,6 +548,73 @@ app.post("/logout", requireAuth, async (c) => {
     .run();
   clearSessionCookie(c);
   return c.json({ message: "Logged out" });
+});
+
+// ─── Account switch (multi-account switcher) ─────────────────────────────────
+//
+// The account switcher keeps every signed-in account's session token in the
+// browser and moves the HttpOnly session cookie between them. This endpoint
+// takes a token the client already holds — one it obtained from a prior login
+// on this device — validates that it still names a live session for an active
+// user, and rewrites the session cookie to point at it. Possessing a valid
+// session token already grants full access as that user, so relocating it into
+// the cookie confers nothing new; it only keeps the cookie (and therefore the
+// SSR/reload path) in step with the account the client switched to.
+//
+// `logout_current` folds the "sign out of the current account, land on the
+// next one" flow into a single call: after the target is validated and the
+// cookie is repointed, the caller's own session is revoked. Doing both here
+// avoids an ordering trap on the client, where revoking first would clear the
+// cookie we are about to set and invalidate the token the switch call itself
+// authenticates with.
+app.post("/switch", requireAuth, async (c) => {
+  const body = await c.req
+    .json<{ token?: string; logout_current?: boolean }>()
+    .catch((): { token?: string; logout_current?: boolean } => ({}));
+  const target = body.token?.trim();
+  if (!target) return c.json({ error: "token is required" }, 400);
+
+  const secret = await getJwtSecret(c.env.KV_SESSIONS);
+  let payload: Awaited<ReturnType<typeof verifyJWT>>;
+  try {
+    payload = await verifyJWT(target, secret);
+  } catch {
+    return c.json({ error: "Invalid token" }, 401);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  // The session row is authoritative for both liveness and the cookie TTL: a
+  // token whose session was revoked (e.g. "sign out everywhere else") must not
+  // become switchable again just because the JWT hasn't lapsed yet.
+  const row = await c.env.DB.prepare(
+    `SELECT s.expires_at, u.id AS user_id
+       FROM sessions s
+       JOIN users u ON s.user_id = u.id
+      WHERE s.id = ? AND u.kind = 'user' AND u.is_active = 1 AND s.expires_at > ?`,
+  )
+    .bind(payload.sessionId, now)
+    .first<{ expires_at: number; user_id: string }>();
+  if (!row) return c.json({ error: "Session not found or expired" }, 401);
+
+  const user = await c.env.DB.prepare(
+    "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+  )
+    .bind(row.user_id)
+    .first<UserRow>();
+  if (!user || !user.is_active)
+    return c.json({ error: "Account not found or disabled" }, 401);
+
+  if (body.logout_current) {
+    const currentSessionId = c.get("sessionId");
+    if (currentSessionId && currentSessionId !== payload.sessionId) {
+      await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
+        .bind(currentSessionId)
+        .run();
+    }
+  }
+
+  setSessionCookie(c, target, row.expires_at - now);
+  return c.json({ user: await safeUser(c.env.APP_URL, c.env.DB, user) });
 });
 
 // ─── Email verification ───────────────────────────────────────────────────────

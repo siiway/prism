@@ -127,6 +127,26 @@ If TOTP is enrolled but no code was provided:
 
 Revokes the current session. Requires auth.
 
+### `POST /api/auth/switch`
+
+Powers the account switcher. The browser keeps a session token for every
+account signed in on the device; this endpoint repoints the HttpOnly session
+cookie at one of them so a reload / server-side render resolves to the same
+account the UI switched to. Requires auth (any live session).
+
+```json
+{ "token": "<session token of the target account>", "logout_current": false }
+```
+
+`token` must name a live, unexpired session for an active user — a token whose
+session was revoked (e.g. via "sign out everywhere else") is rejected. Since a
+valid session token already grants full access as that user, moving it into the
+cookie confers no new authority. Set `logout_current: true` to also revoke the
+caller's own session in the same call — this is the "sign out and land on the
+next account" flow.
+
+**Response** — `{ "user": { ... } }`
+
 ### `GET /api/auth/verify-email?token=<token>`
 
 Verifies an email using the token sent by email.

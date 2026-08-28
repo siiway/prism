@@ -82,11 +82,15 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
 
   // The /login (and /register) route should bounce already-logged-in users
   // home, and bounce the platform to /init when not yet set up.
-  const publicAuthLoader = async () => {
+  const publicAuthLoader = async ({ request }: { request: Request }) => {
     await prefetch(ctx.qc, ["site"], api.site);
     const site = ctx.qc.getQueryData<{ initialized?: boolean }>(["site"]);
     if (site && site.initialized === false) throw redirect("/init");
-    if (getAuth(ctx).token) throw redirect("/");
+    // `?add=1` is the account switcher adding another account: the visitor is
+    // deliberately signed in already, so don't bounce them home — let the
+    // login form render so they can authenticate as a second account.
+    const addingAccount = new URL(request.url).searchParams.get("add") === "1";
+    if (!addingAccount && getAuth(ctx).token) throw redirect("/");
     return null;
   };
 

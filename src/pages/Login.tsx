@@ -36,7 +36,7 @@ function loadOpenPGP(): Promise<OpenPGP> {
 }
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
@@ -58,8 +58,15 @@ export function Login() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { setAuth, token } = useAuthStore();
+  const qc = useQueryClient();
+  const { setAuth, token, user } = useAuthStore();
   const { t } = useTranslation();
+  // Account switcher: `?add=1` means the visitor is already signed into one
+  // account and is adding another. We hold off the usual "you're logged in,
+  // go home" redirect on mount so the form can render, then send them home
+  // once a *new* login lands (a token change after mount).
+  const addMode = searchParams.get("add") === "1";
+  const mountedWithToken = useRef<boolean>(addMode && !!token);
   const { data: site } = useQuery({
     queryKey: ["site"],
     queryFn: api.site,
@@ -121,7 +128,18 @@ export function Login() {
 
   // Redirect whenever a token appears (on mount if already logged in, or after login)
   useEffect(() => {
-    if (token) navigate(redirectTo, { replace: true });
+    if (!token) return;
+    // Adding an account: the token present on mount is the *existing* account,
+    // so stay on the form. Only redirect once the newly added account's token
+    // replaces it.
+    if (mountedWithToken.current) {
+      mountedWithToken.current = false;
+      return;
+    }
+    // A freshly added account is now active; drop the previous account's
+    // cached queries so the app doesn't paint stale data before refetching.
+    if (addMode) qc.clear();
+    navigate(redirectTo, { replace: true });
   }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -292,8 +310,23 @@ export function Login() {
     <AuthShell>
       <>
         <Title2>
-          {t("auth.signInTo", { siteName: site?.site_name ?? "Prism" })}
+          {addMode
+            ? t("auth.addAccountTitle")
+            : t("auth.signInTo", { siteName: site?.site_name ?? "Prism" })}
         </Title2>
+
+        {addMode && (
+          <MessageBar intent="info">
+            <MessageBarBody>
+              {user
+                ? t("auth.addAccountWhileSignedIn", {
+                    name: user.display_name,
+                  })
+                : t("auth.addAccountHint")}{" "}
+              <Link onClick={() => navigate("/")}>{t("common.cancel")}</Link>
+            </MessageBarBody>
+          </MessageBar>
+        )}
 
         {errorParamMessage && (
           <MessageBar intent="error">

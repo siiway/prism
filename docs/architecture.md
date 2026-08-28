@@ -441,6 +441,7 @@ single binding addition and a migration click.
 - Rate limiting uses a KV-backed sliding window with IPv6 prefix bucketing
   (`ipv6_rate_limit_prefix`, default `/64`)
 - Sessions are revalidated against D1 on every authenticated request, so deleting the row immediately invalidates still-unexpired JWTs
+- The account switcher keeps each signed-in account's session token in the browser and relocates the session cookie between them via `POST /api/auth/switch`; because a valid session token already authenticates as that user, this grants no authority the browser did not already hold
 - All redirect URIs are checked against the app's registered list and the
   domain's verified-ownership state before issuing a code
 - Image proxy is closed: only registered URL → opaque-id mappings are served,

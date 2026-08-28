@@ -12,6 +12,7 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
+  Spinner,
   Text,
   makeStyles,
   mergeClasses,
@@ -20,6 +21,7 @@ import {
 import {
   AlertRegular,
   AppsRegular,
+  CheckmarkRegular,
   DesktopRegular,
   DismissRegular,
   GlobeRegular,
@@ -29,6 +31,7 @@ import {
   LockClosedRegular,
   NavigationRegular,
   PeopleRegular,
+  PersonAddRegular,
   PersonRegular,
   SettingsRegular,
   ShieldPersonRegular,
@@ -40,7 +43,7 @@ import {
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
 import { useAuthStore } from "../store/auth";
@@ -217,8 +220,13 @@ export function Layout() {
   const styles = useStyles();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, clearAuth } = useAuthStore();
+  const qc = useQueryClient();
+  const { user, accounts, switchAccount, removeAccount, clearAuth } =
+    useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // userId currently being switched to (drives the inline spinner and blocks
+  // re-entrancy while the cookie-sync round trip is in flight).
+  const [switching, setSwitching] = useState<string | null>(null);
   const { t, i18n } = useTranslation();
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
@@ -252,13 +260,54 @@ export function Layout() {
     restrictedCaps["domain:create"] ||
     restrictedCaps["pat:create"];
 
+  // Switch the active account. The cookie is repointed server-side first (so a
+  // later reload/SSR sees the same account), then the local active pointer
+  // moves and the previous account's cached data is dropped.
+  const handleSwitch = async (userId: string) => {
+    if (switching || userId === user?.id) return;
+    const target = accounts.find((a) => a.user.id === userId);
+    if (!target) return;
+    setSwitching(userId);
+    try {
+      await api.switchAccount(target.token);
+      switchAccount(userId);
+      await qc.clear();
+      navigate("/", { replace: true });
+    } catch {
+      // The stored session is gone (revoked or expired). Drop the dead account
+      // and stay signed in as the current one.
+      removeAccount(userId);
+    } finally {
+      setSwitching(null);
+    }
+  };
+
+  const handleAddAccount = () => navigate("/login?add=1");
+
   const handleLogout = async () => {
+    const current = user;
+    const others = accounts.filter((a) => a.user.id !== current?.id);
+    // With another account available, "sign out" revokes the current session
+    // and lands on the next account rather than dumping the user at /login.
+    if (others.length > 0) {
+      const next = others[0];
+      try {
+        await api.switchAccount(next.token, { logoutCurrent: true });
+        if (current) removeAccount(current.id);
+        await qc.clear();
+        navigate("/", { replace: true });
+        return;
+      } catch {
+        /* next account unusable — fall through to a full sign-out */
+      }
+    }
     try {
       await api.logout();
     } catch {
       /* ignore */
     }
     clearAuth();
+    await qc.clear();
     navigate("/login");
   };
 
@@ -453,6 +502,84 @@ export function Layout() {
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
+              {/* Account switcher: every account signed in on this device, the
+                  active one checked. Selecting another repoints the session;
+                  "Add another account" opens the login form without dropping
+                  the current session. */}
+              {accounts.map((a) => {
+                const isActive = a.user.id === user?.id;
+                return (
+                  <MenuItem
+                    key={a.user.id}
+                    disabled={switching !== null}
+                    onClick={() => {
+                      if (!isActive) void handleSwitch(a.user.id);
+                    }}
+                    icon={
+                      <Avatar
+                        name={a.user.display_name}
+                        image={
+                          a.user.avatar_url
+                            ? { src: a.user.avatar_url }
+                            : undefined
+                        }
+                        size={24}
+                      />
+                    }
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        width: "100%",
+                        minWidth: 180,
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Text
+                          block
+                          size={200}
+                          weight={isActive ? "semibold" : "regular"}
+                          truncate
+                          style={{ maxWidth: 160 }}
+                        >
+                          {a.user.display_name}
+                        </Text>
+                        <Text
+                          block
+                          size={100}
+                          truncate
+                          style={{
+                            maxWidth: 160,
+                            color: tokens.colorNeutralForeground3,
+                          }}
+                        >
+                          @{a.user.username}
+                        </Text>
+                      </div>
+                      {switching === a.user.id ? (
+                        <Spinner size="tiny" />
+                      ) : isActive ? (
+                        <CheckmarkRegular
+                          style={{
+                            flexShrink: 0,
+                            color: tokens.colorCompoundBrandForeground1,
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </MenuItem>
+                );
+              })}
+              <MenuItem
+                icon={<PersonAddRegular />}
+                onClick={handleAddAccount}
+                disabled={switching !== null}
+              >
+                {t("nav.addAccount")}
+              </MenuItem>
+              <MenuDivider />
               {/* Language toggle */}
               <MenuItem
                 icon={<LocalLanguageRegular />}

@@ -64,11 +64,15 @@
     "closeMenu": "关闭菜单",
     "openMenu": "打开菜单",
     "signOut": "退出登录",
+    "addAccount": "添加其他账号",
     "auditLog": "审计日志"
   },
   "auth": {
     "signIn": "登录",
     "signInTo": "登录到 {{siteName}}",
+    "addAccountTitle": "添加其他账号",
+    "addAccountWhileSignedIn": "当前登录为 {{name}}。在下方登录以添加其他账号。",
+    "addAccountHint": "在下方登录以添加其他账号。",
     "signInWithPasskey": "使用通行密钥登录",
     "signingIn": "登录中…",
     "authenticating": "验证中…",

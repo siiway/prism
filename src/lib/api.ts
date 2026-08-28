@@ -204,7 +204,22 @@ async function request<T>(
     // NOT log the user out — that's how clicking "Refresh" on a stale
     // social connection used to instantly nuke the dashboard session.
     if (res.status === 401 && SESSION_INVALID_ERRORS.has(message)) {
-      useAuthStore.getState().clearAuth();
+      // Sign out only the account whose token just failed. If the switcher
+      // holds other accounts, one is promoted so the person stays signed in
+      // rather than being bounced to the login page.
+      const s = useAuthStore.getState();
+      if (s.user) {
+        const next = s.removeAccount(s.user.id);
+        // Repoint the session cookie at the promoted account so a hard reload
+        // (which authenticates via the cookie, not the Bearer header) resolves
+        // to it too. Best-effort — if this account's token is also dead the
+        // next request's own 401 handling cascades to the one after it.
+        if (next && typeof window !== "undefined") {
+          void api.switchAccount(next.token).catch(() => {});
+        }
+      } else {
+        s.clearAuth();
+      }
     }
 
     throw new ApiError(res.status, message, data);
@@ -295,6 +310,20 @@ export const api = {
     request<LoginResponse>("POST", "/auth/login", body),
   logout: () =>
     request<{ message: string }>("POST", "/auth/logout", undefined, getToken()),
+  /**
+   * Repoint the HttpOnly session cookie at another account the browser is
+   * already signed into, identified by the session token the client holds
+   * for it. Keeps SSR/reload auth consistent with the switcher's active
+   * account. `logoutCurrent` also revokes the caller's own session, folding
+   * "sign out and land on the next account" into one round trip.
+   */
+  switchAccount: (token: string, opts?: { logoutCurrent?: boolean }) =>
+    request<{ user: UserProfile }>(
+      "POST",
+      "/auth/switch",
+      { token, logout_current: opts?.logoutCurrent },
+      getToken(),
+    ),
   verifyEmail: (token: string) =>
     request<{ message: string }>(
       "GET",
