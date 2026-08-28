@@ -1,0 +1,132 @@
+name: Preview redeploy (comment)
+
+# Manual preview (re)deploy triggered by a PULL REQUEST COMMENT. Comment
+# `<!try_redeploy!>` on a PR and, if you are on the allowlist and the PR is from
+# a same-repo branch, the PR's head code is (re)deployed to the shared preview
+# Worker — even if that PR's checks failed. This is separate from pr.yml, whose
+# ordinary on-commit deploy behavior is unchanged.
+#
+# Security: issue_comment always runs from the DEFAULT branch and, unlike a
+# forked pull_request, has repository secrets. Checking out and running PR code
+# with secrets is only safe for TRUSTED code, so the deploy is gated hard:
+#   * the comment is on a pull request (not a plain issue),
+#   * it contains the marker,
+#   * the commenter is on PREVIEW_DEPLOY_ALLOWLIST (repo variable; comma/space
+#     separated; defaults to the repo owner), and
+#   * the PR head is a SAME-REPO branch — a fork's code is never checked out.
+# That matches pr.yml's same-repo boundary, so it adds no new exposure.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  gate:
+    # Cheap pre-filter (no secrets, no checkout): a marker comment on a PR.
+    if: >-
+      github.event.issue.pull_request != null
+      && contains(github.event.comment.body, '<!try_redeploy!>')
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.g.outputs.allowed }}
+      same_repo: ${{ steps.g.outputs.same_repo }}
+      head_sha: ${{ steps.g.outputs.head_sha }}
+    steps:
+      - id: g
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALLOWLIST: ${{ vars.PREVIEW_DEPLOY_ALLOWLIST }}
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.event.comment.user.login }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          list="${ALLOWLIST:-$OWNER}"
+          allowed=false
+          for u in $(printf '%s' "$list" | tr ',;' '  '); do
+            [ "$u" = "$ACTOR" ] && allowed=true && break
+          done
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+
+          # Resolve the PR head from the API; head.repo.full_name is null when
+          # the source fork has been deleted, which we treat as not-same-repo.
+          info="$(gh api "repos/$REPO/pulls/$PR" \
+            --jq '[.head.sha, (.head.repo.full_name // "")] | @tsv')"
+          sha="$(printf '%s' "$info" | cut -f1)"
+          full="$(printf '%s' "$info" | cut -f2)"
+          echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
+          if [ "$full" = "$REPO" ]; then
+            echo "same_repo=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "same_repo=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: gate
+    if: needs.gate.outputs.allowed == 'true' && needs.gate.outputs.same_repo == 'true'
+    runs-on: ubuntu-latest
+    environment: preview
+    # Shared with pr.yml's deploy-preview job (same group name): one deploy to
+    # the preview Worker at a time, newest wins.
+    concurrency:
+      group: deploy-preview
+      cancel-in-progress: true
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Acknowledge the request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST \
+            "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
+            -f content=eyes >/dev/null || true
+      # Deploy the PR's head code (a same-repo commit, verified in `gate`).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache Bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+      - name: Cache Cargo + WASM build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            pow/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('pow/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build PoW WASM
+        run: |
+          cargo build --release --target wasm32-unknown-unknown --manifest-path pow/Cargo.toml
+          cp pow/target/wasm32-unknown-unknown/release/prism_pow.wasm public/pow.wasm
+      - name: Apply D1 migrations (preview)
+        run: bun run db:migrate:preview
+      - name: Deploy preview
+        run: bun run deploy:preview
+      - name: Comment preview URL
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.issue.number }}" \
+            --edit-last --create-if-none \
+            --body "Preview redeployed from this PR: https://prism-preview.siiway.workers.dev (shared preview Worker + database, so the newest deploy is what is live there)."

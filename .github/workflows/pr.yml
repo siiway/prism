@@ -37,41 +37,6 @@ permissions:
   contents: read
 
 jobs:
-  # Detect a manual "force redeploy" request: the head commit message carries
-  # the <!try_redeploy!> marker AND the pushing user is on the allowlist. This
-  # lets a trusted maintainer force the preview deploy to run even when the
-  # checks job failed (e.g. re-run after a transient failure or a secret fix).
-  # The allowlist is the comma/space separated repo variable
-  # PREVIEW_DEPLOY_ALLOWLIST, defaulting to the repo owner when unset.
-  detect:
-    runs-on: ubuntu-latest
-    outputs:
-      force: ${{ steps.d.outputs.force }}
-      allowed: ${{ steps.d.outputs.allowed }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 1
-      - id: d
-        env:
-          ALLOWLIST: ${{ vars.PREVIEW_DEPLOY_ALLOWLIST }}
-          OWNER: ${{ github.repository_owner }}
-          ACTOR: ${{ github.actor }}
-        run: |
-          msg="$(git log -1 --pretty=%B)"
-          if printf '%s' "$msg" | grep -qF '<!try_redeploy!>'; then
-            echo "force=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "force=false" >> "$GITHUB_OUTPUT"
-          fi
-          list="${ALLOWLIST:-$OWNER}"
-          allowed=false
-          for u in $(printf '%s' "$list" | tr ',;' '  '); do
-            [ "$u" = "$ACTOR" ] && allowed=true && break
-          done
-          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
-
   checks:
     runs-on: ubuntu-latest
     steps:
@@ -100,21 +65,12 @@ jobs:
         run: bunx vite build
 
   deploy-preview:
-    needs: [checks, detect]
-    # Same-repo PRs only — secrets are withheld from forked pull_request runs.
-    # Deploy when the checks passed (the unchanged default), OR when an
-    # allowlisted user forced it with <!try_redeploy!> even though checks did
-    # not pass. !cancelled() lets this evaluate after a failed checks job (but
-    # not when the run was superseded); the force path never widens beyond
-    # same-repo, so it adds no new exposure.
-    if: >-
-      !cancelled()
-      && github.event.pull_request.head.repo.full_name == github.repository
-      && (
-        needs.checks.result == 'success'
-        || (needs.detect.outputs.force == 'true'
-            && needs.detect.outputs.allowed == 'true')
-      )
+    needs: checks
+    # Secrets are unavailable to forked pull_request runs, so the deploy can
+    # only work for same-repo branches. Skip it (cleanly) for forks. (A comment
+    # `<!try_redeploy!>` can force a redeploy past failing checks — see
+    # preview-comment.yml.)
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Gate point: configure required reviewers / an environment-scoped secret on
     # the `preview` Environment to control deploys from same-repo PRs.
