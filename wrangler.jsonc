@@ -96,4 +96,117 @@
   "triggers": {
     "crons": ["0 */6 * * *"],
   },
+  // ── Non-production environments ─────────────────────────────────────────────
+  // Separate Workers with their own isolated D1 + KV so testing never touches
+  // production data. All resources live on the same (SiiWay) account as prod.
+  //
+  //   Deploy:   bun run deploy:staging      (CLOUDFLARE_ENV=staging build + deploy)
+  //   Migrate:  bun run db:migrate:staging  (apply migrations to the staging D1)
+  //   Dev:      bun run dev:staging         (vite dev with the staging bindings)
+  //
+  // The environment is chosen at build time via CLOUDFLARE_ENV (the package.json
+  // scripts set it): the Vite plugin resolves one environment per build and
+  // emits an already-environment-specific dist/prism/wrangler.json, so deploys
+  // use that generated config rather than `wrangler deploy --env <name>`.
+  //
+  // Inheritable keys (main, compatibility_date/flags, assets, observability) are
+  // deliberately not repeated — Wrangler inherits them from the top level.
+  // Bindings, vars and routes are per-environment and are NOT inherited, so each
+  // environment restates them. No custom-domain route is set, so each Worker is
+  // reachable at https://<name>.siiway.workers.dev.
+  //
+  // SECRETS_KEY: each environment has its own Secret Store entry (prod,
+  // staging, preview all use distinct keys), so a leak or slip in a throwaway
+  // non-prod environment can never expose data encrypted under another key.
+  // All three entries live in the same store; only secret_name differs.
+  "env": {
+    "staging": {
+      "name": "prism-staging",
+      // Pin the account so the deploy:/db:migrate: scripts resolve without a
+      // CLOUDFLARE_ACCOUNT_ID env var on multi-account credentials.
+      "account_id": "a55f78dc73452cce2da2a69798c86db3",
+      "workers_dev": true,
+      // Clear the inherited production custom-domain route so this Worker only
+      // ever answers on its own .workers.dev subdomain, never prism.siiway.org.
+      "routes": [],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "prism-staging-db",
+          "database_id": "4963fd88-5b5b-4809-b481-71473ed95743",
+          "migrations_dir": "worker/db/migrations",
+        },
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "KV_SESSIONS",
+          "id": "58e1059ced764328aa5493d077e2c576",
+        },
+        {
+          "binding": "KV_CACHE",
+          "id": "9e32bbd549e24f6aa6ff6b9f3b50b40a",
+        },
+      ],
+      "secrets_store_secrets": [
+        {
+          "binding": "SECRETS_KEY",
+          "store_id": "5ffcfaec1c6c4599989fb6a761d9583f",
+          "secret_name": "prism-staging-secrets-key",
+        },
+      ],
+      "vars": {
+        "APP_URL": "https://prism-staging.siiway.workers.dev",
+        "LOCKDOWN_USERS": "",
+        "LOCKDOWN_TEAMS": "",
+        "D1_CONSOLE": "",
+        "KV_CONSOLE": "",
+      },
+      // Non-prod does not run the scheduled domain re-verification.
+      "triggers": {
+        "crons": [],
+      },
+    },
+    "preview": {
+      "name": "prism-preview",
+      "account_id": "a55f78dc73452cce2da2a69798c86db3",
+      "workers_dev": true,
+      // Clear the inherited production custom-domain route (see staging above).
+      "routes": [],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "prism-preview-db",
+          "database_id": "5f8e6104-03f7-4b3c-b7c9-55e8ca5051a3",
+          "migrations_dir": "worker/db/migrations",
+        },
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "KV_SESSIONS",
+          "id": "d1f4dd9e67e74f1fb883c061fbb29e0e",
+        },
+        {
+          "binding": "KV_CACHE",
+          "id": "2b3121cba2d84a5c83ba72059a9e17b9",
+        },
+      ],
+      "secrets_store_secrets": [
+        {
+          "binding": "SECRETS_KEY",
+          "store_id": "5ffcfaec1c6c4599989fb6a761d9583f",
+          "secret_name": "prism-preview-secrets-key",
+        },
+      ],
+      "vars": {
+        "APP_URL": "https://prism-preview.siiway.workers.dev",
+        "LOCKDOWN_USERS": "",
+        "LOCKDOWN_TEAMS": "",
+        "D1_CONSOLE": "",
+        "KV_CONSOLE": "",
+      },
+      "triggers": {
+        "crons": [],
+      },
+    },
+  },
 }
