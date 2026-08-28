@@ -132,7 +132,7 @@ Revokes the current session. Requires auth.
 Powers the account switcher. The browser keeps a session token for every
 account signed in on the device; this endpoint repoints the HttpOnly session
 cookie at one of them so a reload / server-side render resolves to the same
-account the UI switched to. Requires auth (any live session).
+account the UI switched to.
 
 ```json
 { "token": "<session token of the target account>", "logout_current": false }
@@ -145,7 +145,26 @@ cookie confers no new authority. Set `logout_current: true` to also revoke the
 caller's own session in the same call — this is the "sign out and land on the
 next account" flow.
 
+Auth is optional: a signed-out visitor can call it to resume a stored account
+from the login page's "Continue as" chooser. Authorization rests entirely on
+the supplied `token` being a valid live session; `logout_current` only acts
+when a current session exists.
+
 **Response** — `{ "user": { ... } }`
+
+### `POST /api/auth/revoke`
+
+Revoke the session for another account the browser holds a token for — the
+switcher's per-account "sign out". Unlike `/logout` it never clears the session
+cookie, so signing out a background account does not disturb the active one.
+Requires auth.
+
+```json
+{ "token": "<session token of the account to sign out>" }
+```
+
+An unparseable or already-expired `token` is treated as success (its session is
+already gone). **Response** — `{ "message": "Revoked" }`
 
 ### `GET /api/auth/verify-email?token=<token>`
 

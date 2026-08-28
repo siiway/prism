@@ -204,22 +204,13 @@ async function request<T>(
     // NOT log the user out — that's how clicking "Refresh" on a stale
     // social connection used to instantly nuke the dashboard session.
     if (res.status === 401 && SESSION_INVALID_ERRORS.has(message)) {
-      // Sign out only the account whose token just failed. If the switcher
-      // holds other accounts, one is promoted so the person stays signed in
-      // rather than being bounced to the login page.
+      // Sign out only the account whose token just failed. Any other accounts
+      // the switcher holds are kept: removeAccount clears the active pointer
+      // without promoting one, so the route guard sends the user to the login
+      // page's "Continue as" chooser to pick which account to resume.
       const s = useAuthStore.getState();
-      if (s.user) {
-        const next = s.removeAccount(s.user.id);
-        // Repoint the session cookie at the promoted account so a hard reload
-        // (which authenticates via the cookie, not the Bearer header) resolves
-        // to it too. Best-effort — if this account's token is also dead the
-        // next request's own 401 handling cascades to the one after it.
-        if (next && typeof window !== "undefined") {
-          void api.switchAccount(next.token).catch(() => {});
-        }
-      } else {
-        s.clearAuth();
-      }
+      if (s.user) s.removeAccount(s.user.id);
+      else s.clearAuth();
     }
 
     throw new ApiError(res.status, message, data);
@@ -308,8 +299,22 @@ export const api = {
     ),
   login: (body: LoginBody) =>
     request<LoginResponse>("POST", "/auth/login", body),
-  logout: () =>
-    request<{ message: string }>("POST", "/auth/logout", undefined, getToken()),
+  /** Revoke a session and clear the cookie. Pass a token to revoke a specific
+   *  account (defaults to the active one). */
+  logout: (token?: string) =>
+    request<{ message: string }>(
+      "POST",
+      "/auth/logout",
+      undefined,
+      token ?? getToken(),
+    ),
+  /**
+   * Revoke the session for another account the browser holds a token for,
+   * WITHOUT clearing the active account's cookie — the switcher's per-account
+   * "sign out". `token` is the target account's session token.
+   */
+  revokeAccount: (token: string) =>
+    request<{ message: string }>("POST", "/auth/revoke", { token }, getToken()),
   /**
    * Repoint the HttpOnly session cookie at another account the browser is
    * already signed into, identified by the session token the client holds

@@ -53,10 +53,11 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../lib/api";
-import { useAuthStore } from "../store/auth";
+import { useAuthStore, type Account } from "../store/auth";
 import { useThemeStore, type ThemeMode } from "../store/theme";
 import { NoticeBoard } from "./NoticeBoard";
 import { LegalFooter } from "./LegalFooter";
+import { ManageAccountsDialog } from "./ManageAccountsDialog";
 
 const useStyles = makeStyles({
   shell: {
@@ -250,6 +251,7 @@ export function Layout() {
   const { user, accounts, switchAccount, removeAccount, clearAuth } =
     useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   // Non-null while an account switch / sign-out is in flight: holds the label
   // shown in the overlay, and gates re-entrancy so two swaps can't race.
   const [busy, setBusy] = useState<string | null>(null);
@@ -295,6 +297,7 @@ export function Layout() {
     if (busy || userId === user?.id) return;
     const target = accounts.find((a) => a.user.id === userId);
     if (!target) return;
+    setManageOpen(false);
     setBusy(t("account.switchingTo", { name: target.user.display_name }));
     try {
       await api.switchAccount(target.token);
@@ -318,29 +321,55 @@ export function Layout() {
     }
   };
 
-  const handleAddAccount = () => navigate("/login?add=1");
+  const handleAddAccount = () => {
+    setManageOpen(false);
+    navigate("/login?add=1");
+  };
 
-  const handleLogout = async () => {
-    if (busy) return;
-    const current = user;
-    const others = accounts.filter((a) => a.user.id !== current?.id);
-    // With another account available, "sign out" revokes the current session
-    // and lands on the next account rather than dumping the user at /login.
-    if (others.length > 0) {
-      const next = others[0];
-      setBusy(t("account.switchingTo", { name: next.user.display_name }));
-      try {
-        await api.switchAccount(next.token, { logoutCurrent: true });
-        if (current) removeAccount(current.id);
-        await qc.clear();
-        navigate("/", { replace: true });
-        setBusy(null);
-        return;
-      } catch {
-        /* next account unusable — fall through to a full sign-out */
-      }
-    }
+  // Sign out of the *active* account: revoke its session (which clears the
+  // cookie) and clear the active pointer. Any other accounts stay in the
+  // switcher, so the login page shows the "Continue as" chooser instead of
+  // silently assuming a different identity.
+  const signOutActive = async () => {
+    setManageOpen(false);
     setBusy(t("account.signingOut"));
+    try {
+      await api.logout();
+    } catch {
+      /* ignore */
+    }
+    if (user) removeAccount(user.id);
+    else clearAuth();
+    await qc.clear();
+    setBusy(null);
+    navigate("/login");
+  };
+
+  // Sign out of one account. The active account routes through signOutActive
+  // (cookie + navigation); a background account is revoked server-side and
+  // dropped locally without disturbing the active session or the current view.
+  const handleSignOutOne = async (account: Account) => {
+    if (busy) return;
+    if (account.user.id === user?.id) {
+      await signOutActive();
+      return;
+    }
+    try {
+      await api.revokeAccount(account.token);
+    } catch {
+      /* best-effort: the session may already be gone */
+    }
+    removeAccount(account.user.id);
+  };
+
+  const handleSignOutAll = async () => {
+    if (busy) return;
+    setManageOpen(false);
+    setBusy(t("account.signingOut"));
+    const others = accounts.filter((a) => a.user.id !== user?.id);
+    await Promise.all(
+      others.map((a) => api.revokeAccount(a.token).catch(() => {})),
+    );
     try {
       await api.logout();
     } catch {
@@ -606,11 +635,27 @@ export function Layout() {
                             @{a.user.username}
                           </Text>
                         </div>
-                        {isActive && (
+                        {isActive ? (
                           <CheckmarkRegular
                             style={{
                               flexShrink: 0,
                               color: tokens.colorCompoundBrandForeground1,
+                            }}
+                          />
+                        ) : (
+                          <Button
+                            appearance="subtle"
+                            size="small"
+                            icon={<DismissRegular />}
+                            aria-label={t("account.signOutOne", {
+                              username: a.user.username,
+                            })}
+                            disabled={busy !== null}
+                            style={{ flexShrink: 0 }}
+                            onClick={(e) => {
+                              // Don't let the row's switch handler fire too.
+                              e.stopPropagation();
+                              void handleSignOutOne(a);
                             }}
                           />
                         )}
@@ -624,6 +669,13 @@ export function Layout() {
                   disabled={busy !== null}
                 >
                   {t("nav.addAccount")}
+                </MenuItem>
+                <MenuItem
+                  icon={<PeopleRegular />}
+                  onClick={() => setManageOpen(true)}
+                  disabled={busy !== null}
+                >
+                  {t("account.manage")}
                 </MenuItem>
               </MenuGroup>
               <MenuDivider />
@@ -658,9 +710,21 @@ export function Layout() {
                 {t("theme.dark")}
               </MenuItemRadio>
               <MenuDivider />
-              <MenuItem icon={<SignOutRegular />} onClick={handleLogout}>
+              <MenuItem
+                icon={<SignOutRegular />}
+                onClick={() => void signOutActive()}
+                disabled={busy !== null}
+              >
                 {t("nav.signOut")}
               </MenuItem>
+              {accounts.length > 1 && (
+                <MenuItem
+                  onClick={() => void handleSignOutAll()}
+                  disabled={busy !== null}
+                >
+                  {t("account.signOutAll")}
+                </MenuItem>
+              )}
             </MenuList>
           </MenuPopover>
         </Menu>
@@ -718,6 +782,18 @@ export function Layout() {
         </div>
         <LegalFooter />
       </main>
+
+      <ManageAccountsDialog
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        accounts={accounts}
+        activeUserId={user?.id}
+        busy={busy !== null}
+        onSwitch={(id) => void handleSwitch(id)}
+        onSignOut={(a) => void handleSignOutOne(a)}
+        onAddAccount={handleAddAccount}
+        onSignOutAll={() => void handleSignOutAll()}
+      />
 
       {/* Transient failures from switching / signing out. */}
       <Toaster toasterId={toasterId} />

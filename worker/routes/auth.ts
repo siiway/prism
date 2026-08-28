@@ -47,7 +47,7 @@ import { verifyCaptchaToken } from "../middleware/captcha";
 import type { TurnstileVariant } from "../lib/turnstile";
 import { issuePowChallenge } from "../lib/pow";
 import { rateLimit, rateLimitIp } from "../middleware/rateLimit";
-import { requireAuth } from "../middleware/auth";
+import { optionalAuth, requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
   deliverUserEmailNotifications,
@@ -567,7 +567,13 @@ app.post("/logout", requireAuth, async (c) => {
 // avoids an ordering trap on the client, where revoking first would clear the
 // cookie we are about to set and invalidate the token the switch call itself
 // authenticates with.
-app.post("/switch", requireAuth, async (c) => {
+//
+// Auth is OPTIONAL, not required: the login-page "Continue as" chooser resumes
+// a stored account while the browser has no live session at all. Authorization
+// rests entirely on the target token being a valid, live session — which this
+// handler checks — since holding that token already grants access as its user.
+// `logout_current` only does anything when a current session exists to revoke.
+app.post("/switch", optionalAuth, async (c) => {
   const body = await c.req
     .json<{ token?: string; logout_current?: boolean }>()
     .catch((): { token?: string; logout_current?: boolean } => ({}));
@@ -615,6 +621,33 @@ app.post("/switch", requireAuth, async (c) => {
 
   setSessionCookie(c, target, row.expires_at - now);
   return c.json({ user: await safeUser(c.env.APP_URL, c.env.DB, user) });
+});
+
+// Revoke the session for a token the browser holds for ANOTHER account — the
+// switcher's per-account "sign out". Unlike /logout it never clears the session
+// cookie, so signing a background account out does not disturb the active one.
+// Holding a valid session token already authorizes acting as (and thus ending)
+// that session; requireAuth only keeps this from being an anonymous endpoint.
+app.post("/revoke", requireAuth, async (c) => {
+  const body = await c.req
+    .json<{ token?: string }>()
+    .catch((): { token?: string } => ({}));
+  const target = body.token?.trim();
+  if (!target) return c.json({ error: "token is required" }, 400);
+
+  const secret = await getJwtSecret(c.env.KV_SESSIONS);
+  let payload: Awaited<ReturnType<typeof verifyJWT>>;
+  try {
+    payload = await verifyJWT(target, secret);
+  } catch {
+    // An unparseable/expired token names no live session to revoke — the
+    // client's goal (that session gone) already holds, so report success.
+    return c.json({ message: "Revoked" });
+  }
+  await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
+    .bind(payload.sessionId)
+    .run();
+  return c.json({ message: "Revoked" });
 });
 
 // ─── Email verification ───────────────────────────────────────────────────────

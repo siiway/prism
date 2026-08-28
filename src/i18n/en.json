@@ -72,7 +72,17 @@
     "current": "{{name}} (current account)",
     "switchingTo": "Switching to {{name}}…",
     "signingOut": "Signing out…",
-    "switchFailed": "Couldn't switch to @{{username}} — that session has expired."
+    "switchFailed": "Couldn't switch to @{{username}} — that session has expired.",
+    "manage": "Manage accounts…",
+    "manageTitle": "Manage accounts",
+    "currentBadge": "Current",
+    "lastUsed": "Last used",
+    "switch": "Switch",
+    "signOutAll": "Sign out of all accounts",
+    "signOutOne": "Sign out of @{{username}}",
+    "continueAs": "Continue as",
+    "orSignIn": "or sign in",
+    "resumeFailed": "Couldn't resume {{name}} — that session has expired. Please sign in."
   },
   "auth": {
     "signIn": "Sign in",

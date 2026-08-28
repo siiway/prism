@@ -72,7 +72,17 @@
     "current": "{{name}}（当前账号）",
     "switchingTo": "正在切换到 {{name}}…",
     "signingOut": "正在退出…",
-    "switchFailed": "无法切换到 @{{username}} —— 该会话已过期。"
+    "switchFailed": "无法切换到 @{{username}} —— 该会话已过期。",
+    "manage": "管理账号…",
+    "manageTitle": "管理账号",
+    "currentBadge": "当前",
+    "lastUsed": "上次使用",
+    "switch": "切换",
+    "signOutAll": "退出所有账号",
+    "signOutOne": "退出 @{{username}}",
+    "continueAs": "继续使用",
+    "orSignIn": "或登录",
+    "resumeFailed": "无法恢复 {{name}} —— 该会话已过期，请重新登录。"
   },
   "auth": {
     "signIn": "登录",

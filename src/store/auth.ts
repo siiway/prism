@@ -18,6 +18,8 @@ import type { UserProfile } from "../lib/api";
 export interface Account {
   token: string;
   user: UserProfile;
+  /** Epoch ms this account was last made active; drives "last used" sorting. */
+  lastUsedAt?: number;
 }
 
 interface AuthState {
@@ -31,11 +33,12 @@ interface AuthState {
   /** Make an already-stored account active. Returns it, or null if unknown. */
   switchAccount: (userId: string) => Account | null;
   /**
-   * Drop one account. If it was the active one, the next stored account is
-   * promoted to active. Returns the account that is active afterwards (null
-   * when none remain).
+   * Drop one account. If it was the active one, the active pointer is cleared
+   * (token/user become null) but the remaining accounts stay — so the app
+   * lands on the login page's account chooser rather than silently assuming a
+   * different identity. Removing a non-active account leaves the active one be.
    */
-  removeAccount: (userId: string) => Account | null;
+  removeAccount: (userId: string) => void;
   /** Sign out of *every* account and wipe stored state. */
   clearAuth: () => void;
   setLoading: (v: boolean) => void;
@@ -89,16 +92,18 @@ function persistAccounts(accounts: Account[]): void {
   else localStorage.removeItem("accounts");
 }
 
-/** Insert or replace the account for this user, keeping list order stable. */
+/** Insert or replace the account for this user, keeping list order stable and
+ *  stamping it as most recently used. */
 function upsertAccount(
   accounts: Account[],
   token: string,
   user: UserProfile,
 ): Account[] {
+  const entry: Account = { token, user, lastUsedAt: Date.now() };
   const idx = accounts.findIndex((a) => a.user.id === user.id);
-  if (idx === -1) return [...accounts, { token, user }];
+  if (idx === -1) return [...accounts, entry];
   const next = accounts.slice();
-  next[idx] = { token, user };
+  next[idx] = entry;
   return next;
 }
 
@@ -118,29 +123,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   switchAccount: (userId) => {
     const acc = get().accounts.find((a) => a.user.id === userId);
     if (!acc) return null;
-    persistActive(acc.token, acc.user);
-    set({ token: acc.token, user: acc.user });
-    return acc;
+    // Re-stamp last-used so the manage view and any MRU ordering stay honest.
+    const stamped: Account = { ...acc, lastUsedAt: Date.now() };
+    const accounts = get().accounts.map((a) =>
+      a.user.id === userId ? stamped : a,
+    );
+    persistActive(stamped.token, stamped.user);
+    persistAccounts(accounts);
+    set({ token: stamped.token, user: stamped.user, accounts });
+    return stamped;
   },
 
   removeAccount: (userId) => {
-    const { user, token, accounts } = get();
+    const { user, accounts } = get();
     const remaining = accounts.filter((a) => a.user.id !== userId);
     persistAccounts(remaining);
     // Removing a non-active account leaves the active pointer untouched.
     if (user?.id !== userId) {
       set({ accounts: remaining });
-      return user && token ? { token, user } : null;
+      return;
     }
-    // The active account is going away — promote whatever remains.
-    const next = remaining[0] ?? null;
-    persistActive(next?.token ?? null, next?.user ?? null);
-    set({
-      token: next?.token ?? null,
-      user: next?.user ?? null,
-      accounts: remaining,
-    });
-    return next;
+    // The active account is going away. Clear the pointer without promoting a
+    // successor — the UI sends the user to the login-page chooser to pick.
+    persistActive(null, null);
+    set({ token: null, user: null, accounts: remaining });
   },
 
   clearAuth: () => {
