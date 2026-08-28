@@ -267,6 +267,23 @@ wrangler kv namespace create prism-staging-cache
 
 …then run `bun db:migrate:staging` before the first `bun deploy:staging`.
 
+### CI (GitHub Actions)
+
+Production is built and deployed by **Cloudflare Workers Builds** (the Git
+repository is connected in the dashboard under the `prism` Worker's
+**Settings → Builds**), which runs on pushes to the production branch.
+
+The non-production Workers are deployed by GitHub Actions instead
+(`.github/workflows/deploy-nonprod.yml`): pushing to the `staging` or `preview`
+branch — or running the workflow manually and picking an environment — applies
+that environment's D1 migrations and deploys its Worker. The two mechanisms
+never overlap: the workflow only ever touches `prism-staging` / `prism-preview`.
+
+It needs one repository secret, `CLOUDFLARE_API_TOKEN`, scoped to the account
+with **Workers Scripts:Edit**, **D1:Edit**, **Workers KV Storage:Edit**, and
+**Secrets Store:Read** (the Workers bind a Secrets Store `SECRETS_KEY`). The
+account id is pinned in `wrangler.jsonc`, so no account-id secret is required.
+
 ## Social login setup
 
 Each provider requires an OAuth app registration. Add OAuth Sources in
