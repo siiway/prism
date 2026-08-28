@@ -219,14 +219,18 @@ wrangler kv namespace create prism-staging-cache
 ### CI（GitHub Actions）
 
 生产环境由 **Cloudflare Workers Builds** 构建并部署（在控制台 `prism` Worker 的
-**Settings → Builds** 中连接了 Git 仓库），在推送到生产分支时触发。
+**Settings → Builds** 中连接了 Git 仓库），在推送到 `main` 时触发。GitHub Actions
+不会触及生产环境，只负责非生产 Worker。
 
-非生产 Worker 则由 GitHub Actions 部署（`.github/workflows/deploy-nonprod.yml`）：
-推送到 `staging` 或 `preview` 分支——或手动运行该工作流并选择环境——会为该环境应用
-D1 迁移并部署其 Worker。两套机制互不重叠：该工作流只会触及 `prism-staging` /
-`prism-preview`。
+- **Pull Request**（`.github/workflows/pr.yml`）先运行检查——类型检查（app +
+  worker）、lint、翻译一致性、构建——检查通过后把该 PR 的代码部署到共享的
+  **preview** Worker（`prism-preview`）。preview 是一个共享 Worker、使用独立数据库，
+  因此最近部署的那个 PR 就是当前线上的版本；工作流会把地址作为 PR 评论贴出。来自
+  fork 的 PR 只跑检查、不部署（fork 无法访问 Secret）。
+- **Staging**（`.github/workflows/deploy-nonprod.yml`）在推送到 `staging` 分支时部署，
+  也可手动运行（可选择 staging 或 preview）。
 
-它需要一个仓库 Secret `CLOUDFLARE_API_TOKEN`，其权限范围需覆盖该账号的
+两个部署工作流都需要一个仓库 Secret `CLOUDFLARE_API_TOKEN`，其权限范围需覆盖该账号的
 **Workers Scripts:Edit**、**D1:Edit**、**Workers KV Storage:Edit** 与
 **Secrets Store:Read**（这些 Worker 绑定了 Secrets Store 中的 `SECRETS_KEY`）。账号
 ID 已固定写在 `wrangler.jsonc` 中，因此无需再配置账号 ID 的 Secret。

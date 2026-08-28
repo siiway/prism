@@ -271,18 +271,23 @@ wrangler kv namespace create prism-staging-cache
 
 Production is built and deployed by **Cloudflare Workers Builds** (the Git
 repository is connected in the dashboard under the `prism` Worker's
-**Settings → Builds**), which runs on pushes to the production branch.
+**Settings → Builds**), which runs on pushes to `main`. GitHub Actions never
+touches production; it covers the non-production Workers only.
 
-The non-production Workers are deployed by GitHub Actions instead
-(`.github/workflows/deploy-nonprod.yml`): pushing to the `staging` or `preview`
-branch — or running the workflow manually and picking an environment — applies
-that environment's D1 migrations and deploys its Worker. The two mechanisms
-never overlap: the workflow only ever touches `prism-staging` / `prism-preview`.
+- **Pull requests** (`.github/workflows/pr.yml`) run the checks — typecheck
+  (app + worker), lint, translation parity, and a build — then deploy the PR's
+  code to the shared **preview** Worker (`prism-preview`) once the checks pass.
+  Preview is one shared Worker on its own database, so the most recently
+  deployed PR is what is live there; the workflow posts the URL as a PR comment.
+  Fork PRs get the checks but not the deploy (secrets are withheld from forks).
+- **Staging** (`.github/workflows/deploy-nonprod.yml`) deploys on a push to the
+  `staging` branch, or a manual run (which can target staging or preview).
 
-It needs one repository secret, `CLOUDFLARE_API_TOKEN`, scoped to the account
-with **Workers Scripts:Edit**, **D1:Edit**, **Workers KV Storage:Edit**, and
-**Secrets Store:Read** (the Workers bind a Secrets Store `SECRETS_KEY`). The
-account id is pinned in `wrangler.jsonc`, so no account-id secret is required.
+Both deploy workflows need one repository secret, `CLOUDFLARE_API_TOKEN`,
+scoped to the account with **Workers Scripts:Edit**, **D1:Edit**,
+**Workers KV Storage:Edit**, and **Secrets Store:Read** (the Workers bind a
+Secrets Store `SECRETS_KEY`). The account id is pinned in `wrangler.jsonc`, so
+no account-id secret is required.
 
 ## Social login setup
 

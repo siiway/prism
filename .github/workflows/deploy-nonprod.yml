@@ -8,8 +8,10 @@ name: Deploy non-production
 #
 # Triggers:
 #   * push to the `staging` branch   -> deploy the staging Worker
-#   * push to the `preview` branch   -> deploy the preview Worker
 #   * manual run (workflow_dispatch) -> deploy the chosen environment
+#
+# The preview Worker is driven by pull requests (see pr.yml), so it is not on
+# the push list here; workflow_dispatch can still deploy it manually.
 #
 # Requires a repository secret CLOUDFLARE_API_TOKEN scoped to the SiiWay
 # account with: Workers Scripts:Edit, D1:Edit, Workers KV Storage:Edit, and
@@ -18,7 +20,7 @@ name: Deploy non-production
 
 on:
   push:
-    branches: [staging, preview]
+    branches: [staging]
   workflow_dispatch:
     inputs:
       environment:
