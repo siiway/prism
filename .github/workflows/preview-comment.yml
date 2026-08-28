@@ -34,7 +34,6 @@ jobs:
     outputs:
       allowed: ${{ steps.g.outputs.allowed }}
       same_repo: ${{ steps.g.outputs.same_repo }}
-      head_sha: ${{ steps.g.outputs.head_sha }}
     steps:
       - id: g
         env:
@@ -53,13 +52,9 @@ jobs:
           done
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
 
-          # Resolve the PR head from the API; head.repo.full_name is null when
-          # the source fork has been deleted, which we treat as not-same-repo.
-          info="$(gh api "repos/$REPO/pulls/$PR" \
-            --jq '[.head.sha, (.head.repo.full_name // "")] | @tsv')"
-          sha="$(printf '%s' "$info" | cut -f1)"
-          full="$(printf '%s' "$info" | cut -f2)"
-          echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
+          # Same-repo check: head.repo.full_name is null when the source fork
+          # has been deleted, which we treat as not-same-repo.
+          full="$(gh api "repos/$REPO/pulls/$PR" --jq '.head.repo.full_name // ""')"
           if [ "$full" = "$REPO" ]; then
             echo "same_repo=true" >> "$GITHUB_OUTPUT"
           else
@@ -86,10 +81,12 @@ jobs:
           gh api -X POST \
             "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
             -f content=eyes >/dev/null || true
-      # Deploy the PR's head code (a same-repo commit, verified in `gate`).
+      # Deploy the PR merged into the base (same ref pr.yml builds), so the
+      # base branch's deploy scripts / wrangler config are present even if the
+      # PR branch predates them. Same-repo is verified in `gate`.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.gate.outputs.head_sha }}
+          ref: refs/pull/${{ github.event.issue.number }}/merge
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.11
