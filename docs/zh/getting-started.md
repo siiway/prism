@@ -216,6 +216,21 @@ wrangler kv namespace create prism-staging-cache
 
 ……然后在首次 `bun deploy:staging` 之前运行 `bun db:migrate:staging`。
 
+### CI（GitHub Actions）
+
+生产环境由 **Cloudflare Workers Builds** 构建并部署（在控制台 `prism` Worker 的
+**Settings → Builds** 中连接了 Git 仓库），在推送到生产分支时触发。
+
+非生产 Worker 则由 GitHub Actions 部署（`.github/workflows/deploy-nonprod.yml`）：
+推送到 `staging` 或 `preview` 分支——或手动运行该工作流并选择环境——会为该环境应用
+D1 迁移并部署其 Worker。两套机制互不重叠：该工作流只会触及 `prism-staging` /
+`prism-preview`。
+
+它需要一个仓库 Secret `CLOUDFLARE_API_TOKEN`，其权限范围需覆盖该账号的
+**Workers Scripts:Edit**、**D1:Edit**、**Workers KV Storage:Edit** 与
+**Secrets Store:Read**（这些 Worker 绑定了 Secrets Store 中的 `SECRETS_KEY`）。账号
+ID 已固定写在 `wrangler.jsonc` 中，因此无需再配置账号 ID 的 Secret。
+
 ## 社交登录配置
 
 每个 provider 都需要先到对应平台创建 OAuth 应用。在 **Admin → OAuth Sources** 添加 OAuth 源 — 同一类型可以加多个，每个有独立 slug。详见 [社交登录配置](social-login.md)；回调 URL 的格式见 [OAuth / OIDC 指南](oauth.md)。
