@@ -156,10 +156,6 @@
       ],
       "vars": {
         "APP_URL": "https://prism-staging.siiway.workers.dev",
-        "LOCKDOWN_USERS": "",
-        "LOCKDOWN_TEAMS": "",
-        "D1_CONSOLE": "",
-        "KV_CONSOLE": "",
       },
       // Non-prod does not run the scheduled domain re-verification.
       "triggers": {
@@ -199,10 +195,6 @@
       ],
       "vars": {
         "APP_URL": "https://prism-preview.siiway.workers.dev",
-        "LOCKDOWN_USERS": "",
-        "LOCKDOWN_TEAMS": "",
-        "D1_CONSOLE": "",
-        "KV_CONSOLE": "",
       },
       "triggers": {
         "crons": [],
