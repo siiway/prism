@@ -175,6 +175,8 @@ app.patch("/config", async (c) => {
     "smtp_password",
     "custom_css",
     "accent_color",
+    "security_contact",
+    "security_policy_url",
     "login_error_retention_days",
     "social_verify_ttl_days",
     "allow_alt_email_login",

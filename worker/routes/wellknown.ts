@@ -2,7 +2,7 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { getRsaKeyPair } from "../lib/config";
+import { getRsaKeyPair, getConfigValue } from "../lib/config";
 import type { Variables } from "../types";
 import { USER_GRANTABLE_SCOPES } from "../../shared/scopes";
 
@@ -144,6 +144,29 @@ app.get("/webfinger", (c) => {
   c.header("Content-Type", "application/jrd+json");
   return c.body(JSON.stringify({ subject: resource, links }));
 });
+
+// RFC 9116 security.txt — the operator's security contact / policy. Served only
+// when a contact is configured (a security.txt without Contact is invalid).
+app.get("/security.txt", async (c) => {
+  let contact = await getConfigValue(c.env.DB, "security_contact");
+  if (!contact) return c.text("security.txt is not configured", 404);
+  // A bare email address is normalised to a mailto: URI, as RFC 9116 requires
+  // Contact to be a URI.
+  if (contact.includes("@") && !contact.includes(":"))
+    contact = `mailto:${contact}`;
+  const policy = await getConfigValue(c.env.DB, "security_policy_url");
+  const expires = new Date(
+    Date.now() + 365 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  let body = `Contact: ${contact}\nExpires: ${expires}\n`;
+  if (policy) body += `Policy: ${policy}\n`;
+  c.header("Content-Type", "text/plain; charset=utf-8");
+  return c.body(body);
+});
+
+// W3C well-known change-password: send password managers to the page where a
+// user changes their password.
+app.get("/change-password", (c) => c.redirect(`${c.env.APP_URL}/profile`, 302));
 
 app.get("/jwks.json", async (c) => {
   const rsa = await getRsaKeyPair(c.env.KV_SESSIONS);

@@ -515,7 +515,11 @@ See the [OAuth / OIDC Guide](oauth.md) for the full walkthrough.
 | `GET` / `POST`       | `/api/oauth/end_session`                  | OIDC RP-Initiated Logout                                   |
 | `GET`                | `/.well-known/openid-configuration`       | OpenID Connect Discovery 1.0                               |
 | `GET`                | `/.well-known/oauth-authorization-server` | RFC 8414 Authorization Server Metadata                     |
+| `GET`                | `/.well-known/oauth-protected-resource`   | RFC 9728 Protected Resource Metadata                       |
+| `GET`                | `/.well-known/webfinger`                  | RFC 7033 issuer discovery                                  |
 | `GET`                | `/.well-known/jwks.json`                  | RSA public keys for ID token + JWT access tokens           |
+| `GET`                | `/.well-known/security.txt`               | RFC 9116 (when a security contact is configured)           |
+| `GET`                | `/.well-known/change-password`            | Redirects to the change-password page                      |
 
 ### Step-up 2FA
 

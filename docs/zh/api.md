@@ -461,7 +461,11 @@ OAuth scope 版本：
 | `GET` / `POST`       | `/api/oauth/end_session`                  | OIDC RP 发起的登出                       |
 | `GET`                | `/.well-known/openid-configuration`       | OpenID Connect Discovery 1.0             |
 | `GET`                | `/.well-known/oauth-authorization-server` | RFC 8414 授权服务器元数据                |
+| `GET`                | `/.well-known/oauth-protected-resource`   | RFC 9728 受保护资源元数据                |
+| `GET`                | `/.well-known/webfinger`                  | RFC 7033 issuer 发现                     |
 | `GET`                | `/.well-known/jwks.json`                  | ID Token 与 JWT access token 的 RSA 公钥 |
+| `GET`                | `/.well-known/security.txt`               | RFC 9116（配置了安全联系人时）           |
+| `GET`                | `/.well-known/change-password`            | 跳转到修改密码页面                       |
 
 ### 步骤提升 2FA
 
