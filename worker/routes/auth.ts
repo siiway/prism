@@ -7,6 +7,7 @@ import { getIp } from "../lib/clientIp";
 import { geoJson, recordSessionIp } from "../lib/geo";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { clearSessionCookie, setSessionCookie } from "../lib/cookies";
+import { deliverBackChannelLogout } from "../lib/backchannelLogout";
 import {
   hashPassword,
   randomId,
@@ -552,6 +553,10 @@ app.post("/login", async (c) => {
 
 app.post("/logout", requireAuth, async (c) => {
   const sessionId = c.get("sessionId");
+  const user = c.get("user");
+  // OIDC Back-Channel Logout: notify the user's clients that this session ended.
+  if (user)
+    await deliverBackChannelLogout(c.env, c.executionCtx, user.id, sessionId);
   await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
     .bind(sessionId)
     .run();

@@ -3524,6 +3524,7 @@ export interface OAuthApp {
   allow_self_manage_exported_permissions: boolean;
   access_whitelist_enabled: boolean;
   post_logout_redirect_uris: string[];
+  backchannel_logout_uri: string | null;
   team_id: string | null;
   created_at: number;
   updated_at: number;
@@ -3546,6 +3547,8 @@ export interface CreateAppBody {
   access_whitelist_enabled?: boolean;
   /** OIDC RP-Initiated Logout: exact-match allow-list of post-logout redirect URIs. */
   post_logout_redirect_uris?: string[];
+  /** OIDC Back-Channel Logout notification endpoint (https), or null to clear. */
+  backchannel_logout_uri?: string | null;
 }
 
 // ─── Audit logs (Transparent Control) ────────────────────────────────────────

@@ -110,6 +110,30 @@ export async function verifyIdTokenRS256(
   return JSON.parse(decodeBase64url(bodyB64)) as Record<string, unknown>;
 }
 
+// OIDC Back-Channel Logout token: RS256, typ "logout+jwt". Same signing path
+// as the ID token but with the logout media type so RPs can tell them apart.
+export async function signLogoutTokenRS256(
+  payload: Record<string, unknown>,
+  privateKey: CryptoKey,
+  kid: string,
+  expiresInSeconds: number,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = encodeBase64url({ alg: "RS256", typ: "logout+jwt", kid });
+  const body = encodeBase64url({
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds,
+  });
+  const message = `${header}.${body}`;
+  const sig = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    privateKey,
+    new TextEncoder().encode(message),
+  );
+  return `${message}.${bufToBase64url(sig)}`;
+}
+
 // ML-DSA-65 OIDC ID token signing (post-quantum, typ: "JWT" per OIDC spec)
 export function signIdToken(
   payload: Record<string, unknown>,

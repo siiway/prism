@@ -454,6 +454,8 @@
     "redirectUrisHint": "Add one or more redirect URIs, or leave empty.",
     "postLogoutRedirectUris": "Post-logout redirect URIs",
     "postLogoutRedirectUrisHint": "One URI per line. RP-initiated logout (end_session) only redirects to an exact match here.",
+    "backchannelLogoutUri": "Back-channel logout URI",
+    "backchannelLogoutUriHint": "HTTPS endpoint that receives a signed logout_token when the user signs out (OIDC Back-Channel Logout). Leave empty to disable.",
     "redirectUrisPlaceholder": "https://example.com/callback",
     "redirectUrisEmpty": "No redirect URIs. If left empty, the first redirect URI successfully used will be saved and locked in.",
     "redirectUrisAdd": "Add redirect URI",

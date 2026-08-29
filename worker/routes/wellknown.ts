@@ -44,8 +44,10 @@ function providerMetadata(base: string) {
     require_pushed_authorization_requests: false,
     // RFC 7591 Dynamic Client Registration
     registration_endpoint: `${base}/api/oauth/register`,
-    // OpenID Connect RP-Initiated Logout
+    // OpenID Connect RP-Initiated + Back-Channel Logout
     end_session_endpoint: `${base}/api/oauth/end_session`,
+    backchannel_logout_supported: true,
+    backchannel_logout_session_supported: true,
     jwks_uri: `${base}/.well-known/jwks.json`,
     scopes_supported: SCOPES_SUPPORTED,
     response_types_supported: ["code"],

@@ -507,6 +507,24 @@ GET /api/oauth/end_session?id_token_hint=<ID_TOKEN>&post_logout_redirect_uri=<UR
 跳转到该地址；否则落到 Prism 内置的登出页。`id_token_hint` 用于标识客户端（即使已
 过期也会被接受），建议提供。
 
+## 后端通道登出（OpenID Connect）
+
+为客户端注册 `backchannel_logout_uri`（应用详情 → 设置、DCR 元数据或应用 API）。当
+用户从 Prism 登出——通过 `end_session` 或仪表盘——Prism 会向该 URI POST 一个已签名的
+`logout_token`：
+
+```http
+POST <backchannel_logout_uri>
+Content-Type: application/x-www-form-urlencoded
+
+logout_token=<JWT>
+```
+
+`logout_token` 是一个 RS256 JWT（`typ: logout+jwt`），含 `iss`、`aud`（你的
+`client_id`）、`sub`、`iat`、`jti`、`sid`（结束的会话，也作为 `sid` 出现在 ID 令牌中）
+以及后端通道登出的 `events` 声明。请对照 JWKS 验证并终止用户会话。Discovery 会通告
+`backchannel_logout_supported` 与 `backchannel_logout_session_supported`。
+
 ## ID 令牌
 
 ID 令牌是一个签名的 JWT。默认算法为 **ML-DSA-65**（后量子，FIPS 204）；`/.well-known/jwks.json` 同时发布 **RS256** 公钥以兼容旧客户端。可通过 JWKS 端点发布的公钥进行验证，或使用内省端点进行服务端验证。

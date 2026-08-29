@@ -101,6 +101,7 @@ import {
   CLIENT_ASSERTION_TYPE,
 } from "../lib/clientAssertion";
 import { verifyDpopProof } from "../lib/dpop";
+import { deliverBackChannelLogout } from "../lib/backchannelLogout";
 import { clearSessionCookie } from "../lib/cookies";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -1422,8 +1423,8 @@ app.post("/authorize", requireAuth, async (c) => {
   const code = randomBase64url(32);
   const storedCode = await hashSecret(c.env, code);
   await c.env.DB.prepare(
-    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, resource, auth_time, amr, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, resource, auth_time, amr, session_id, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       storedCode,
@@ -1437,6 +1438,7 @@ app.post("/authorize", requireAuth, async (c) => {
       serializeResources(requestResources),
       authTime,
       sessionAmr,
+      c.get("sessionId") ?? null,
       now + 600,
       now,
     )
@@ -2387,6 +2389,7 @@ app.post("/token", async (c) => {
         {
           authTime: codeRow.auth_time,
           amr: codeRow.amr ? (JSON.parse(codeRow.amr) as string[]) : null,
+          sid: codeRow.session_id,
         },
       );
     }
@@ -3300,6 +3303,8 @@ async function buildClientInfoDoc(
       /* omit malformed */
     }
   }
+  if (app.backchannel_logout_uri)
+    doc.backchannel_logout_uri = app.backchannel_logout_uri;
   if (!app.is_public) {
     doc.client_secret =
       (await decryptSecret(env, app.client_secret)) ?? app.client_secret;
@@ -3320,6 +3325,7 @@ interface DcrMetadata {
   post_logout_redirect_uris?: string[];
   jwks?: unknown;
   jwks_uri?: string;
+  backchannel_logout_uri?: string;
 }
 
 /** Validate + normalise the mutable parts of a registration request. Returns an
@@ -3335,6 +3341,7 @@ function normaliseDcrMetadata(body: DcrMetadata):
       postLogout: string[];
       jwks: string | null;
       jwksUri: string | null;
+      backchannelLogoutUri: string | null;
     } {
   const redirectUris: { type: "equals"; value: string }[] = [];
   for (const uri of body.redirect_uris ?? []) {
@@ -3393,6 +3400,19 @@ function normaliseDcrMetadata(body: DcrMetadata):
     }
   }
 
+  let backchannelLogoutUri: string | null = null;
+  if (
+    typeof body.backchannel_logout_uri === "string" &&
+    body.backchannel_logout_uri
+  ) {
+    if (validateOutboundUrlDcr(body.backchannel_logout_uri))
+      return {
+        error: "Invalid backchannel_logout_uri",
+        code: "invalid_client_metadata",
+      };
+    backchannelLogoutUri = body.backchannel_logout_uri;
+  }
+
   return {
     redirectUris,
     isPublic: authMethod === "none" ? 1 : 0,
@@ -3401,6 +3421,7 @@ function normaliseDcrMetadata(body: DcrMetadata):
     postLogout,
     jwks,
     jwksUri,
+    backchannelLogoutUri,
   };
 }
 
@@ -3442,8 +3463,8 @@ app.post(
          (id, owner_id, name, description, website_url, icon_url, client_id, client_secret,
           redirect_uris, allowed_scopes, optional_scopes, oidc_fields, is_public, is_active, is_verified,
           post_logout_redirect_uris, registration_access_token, token_endpoint_auth_method, jwks, jwks_uri,
-          created_at, updated_at)
-       VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 1, 0, ?, ?, ?, ?, ?, ?, ?)`,
+          backchannel_logout_uri, created_at, updated_at)
+       VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         id,
@@ -3461,6 +3482,7 @@ app.post(
         norm.authMethod,
         norm.jwks,
         norm.jwksUri,
+        norm.backchannelLogoutUri,
         now,
         now,
       )
@@ -3523,7 +3545,8 @@ app.put("/register/:client_id", async (c) => {
     `UPDATE oauth_apps
         SET name = ?, website_url = ?, icon_url = ?, redirect_uris = ?,
             allowed_scopes = ?, is_public = ?, post_logout_redirect_uris = ?,
-            token_endpoint_auth_method = ?, jwks = ?, jwks_uri = ?, updated_at = ?
+            token_endpoint_auth_method = ?, jwks = ?, jwks_uri = ?,
+            backchannel_logout_uri = ?, updated_at = ?
       WHERE id = ?`,
   )
     .bind(
@@ -3537,6 +3560,7 @@ app.put("/register/:client_id", async (c) => {
       norm.authMethod,
       norm.jwks,
       norm.jwksUri,
+      norm.backchannelLogoutUri,
       now,
       app.id,
     )
@@ -3834,6 +3858,16 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
 
   // End the current session (if the browser presented one) and clear the cookie.
   const sessionId = c.get("sessionId");
+  const endingUser = c.get("user");
+  // OIDC Back-Channel Logout: notify the user's clients before the session row
+  // is gone (delivery reads only ids we already hold).
+  if (endingUser)
+    await deliverBackChannelLogout(
+      c.env,
+      c.executionCtx,
+      endingUser.id,
+      sessionId ?? null,
+    );
   if (sessionId)
     await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
       .bind(sessionId)
@@ -5829,7 +5863,11 @@ async function buildIdToken(
   ttl: number,
   issuer: string,
   db: D1Database,
-  authContext?: { authTime: number | null; amr: string[] | null },
+  authContext?: {
+    authTime: number | null;
+    amr: string[] | null;
+    sid?: string | null;
+  },
 ): Promise<string> {
   const { signIdTokenRS256 } = await import("../lib/jwt");
   const claims = await buildClaims(user, clientId, scopes, db, issuer);
@@ -5837,12 +5875,13 @@ async function buildIdToken(
   claims.aud = clientId;
   if (nonce) claims.nonce = nonce;
   // OIDC Core §2: auth_time / acr / amr, when the authenticating session's
-  // context was captured at consent.
+  // context was captured at consent. sid backs OIDC back-channel logout.
   if (authContext?.authTime != null) claims.auth_time = authContext.authTime;
   if (authContext?.amr && authContext.amr.length) {
     claims.amr = authContext.amr;
     claims.acr = deriveAcr(authContext.amr);
   }
+  if (authContext?.sid) claims.sid = authContext.sid;
   return signIdTokenRS256(claims, privateKey, kid, ttl);
 }
 

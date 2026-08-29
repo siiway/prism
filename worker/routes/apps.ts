@@ -416,11 +416,28 @@ app.patch("/:id", async (c) => {
     allow_self_manage_exported_permissions?: boolean;
     access_whitelist_enabled?: boolean;
     post_logout_redirect_uris?: string[];
+    backchannel_logout_uri?: string | null;
   }>();
 
   if (body.icon_url) {
     const imgErr = await validateImageUrl(body.icon_url);
     if (imgErr) return c.json({ error: `icon_url: ${imgErr}` }, 400);
+  }
+
+  // OIDC Back-Channel Logout endpoint (https, or empty/null to clear).
+  let backchannelLogoutUri =
+    (row as { backchannel_logout_uri?: string | null })
+      .backchannel_logout_uri ?? null;
+  if (body.backchannel_logout_uri !== undefined) {
+    const v = body.backchannel_logout_uri;
+    if (v) {
+      try {
+        if (new URL(v).protocol !== "https:") throw new Error("bad");
+      } catch {
+        return c.json({ error: `Invalid backchannel_logout_uri: ${v}` }, 400);
+      }
+    }
+    backchannelLogoutUri = v || null;
   }
 
   // OIDC RP-Initiated Logout: exact-match allow-list of post-logout redirect
@@ -520,10 +537,11 @@ app.patch("/:id", async (c) => {
           : 0
         : row.access_whitelist_enabled,
     post_logout_redirect_uris: postLogoutJson,
+    backchannel_logout_uri: backchannelLogoutUri,
   };
 
   await c.env.DB.prepare(
-    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, allow_self_manage_exported_permissions=?, access_whitelist_enabled=?, post_logout_redirect_uris=?, updated_at=? WHERE id=?`,
+    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, allow_self_manage_exported_permissions=?, access_whitelist_enabled=?, post_logout_redirect_uris=?, backchannel_logout_uri=?, updated_at=? WHERE id=?`,
   )
     .bind(
       updated.name,
@@ -539,6 +557,7 @@ app.patch("/:id", async (c) => {
       updated.allow_self_manage_exported_permissions,
       updated.access_whitelist_enabled,
       updated.post_logout_redirect_uris,
+      updated.backchannel_logout_uri,
       now,
       id,
     )
@@ -1596,6 +1615,7 @@ async function safeApp(
     post_logout_redirect_uris: JSON.parse(
       row.post_logout_redirect_uris ?? "[]",
     ) as string[],
+    backchannel_logout_uri: row.backchannel_logout_uri ?? null,
     team_id: row.team_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,

@@ -142,6 +142,8 @@ export interface OAuthAppRow {
   /** RFC 7523 private_key_jwt: inline JWK Set (JSON) and/or a JWKS URI. */
   jwks: string | null;
   jwks_uri: string | null;
+  /** OIDC Back-Channel Logout notification endpoint, or null. */
+  backchannel_logout_uri: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -263,6 +265,8 @@ export interface OAuthCodeRow {
   /** OIDC auth context captured at consent: the session's auth_time and amr. */
   auth_time: number | null;
   amr: string | null;
+  /** The authenticating session id, for the ID token `sid` + back-channel logout. */
+  session_id: string | null;
   expires_at: number;
   created_at: number;
 }

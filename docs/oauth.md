@@ -565,6 +565,25 @@ Ends the user's Prism session and clears the session cookie. When
 `state`; otherwise it lands on Prism's built-in signed-out page. `id_token_hint`
 identifies the client (an expired hint is still accepted) and is recommended.
 
+## Back-Channel Logout (OpenID Connect)
+
+Register a `backchannel_logout_uri` on your client (App Detail → Settings, the
+DCR metadata, or the app API). When the user signs out of Prism — via
+`end_session` or the dashboard — Prism POSTs a signed `logout_token` to that URI:
+
+```http
+POST <backchannel_logout_uri>
+Content-Type: application/x-www-form-urlencoded
+
+logout_token=<JWT>
+```
+
+The `logout_token` is an RS256 JWT (`typ: logout+jwt`) with `iss`, `aud` (your
+`client_id`), `sub`, `iat`, `jti`, a `sid` (the session that ended, also present
+as `sid` in the ID token), and the back-channel-logout `events` claim. Verify it
+against the JWKS and terminate the user's session. Discovery advertises
+`backchannel_logout_supported` and `backchannel_logout_session_supported`.
+
 ## ID token
 
 The ID token is a signed JWT. The default algorithm is **ML-DSA-65** (post-quantum, FIPS 204); **RS256** is also published at `/.well-known/jwks.json` for legacy clients. Verify it using the public key from the JWKS endpoint, or use the introspection endpoint for server-side validation without parsing JWTs.
