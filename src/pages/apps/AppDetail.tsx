@@ -1121,6 +1121,9 @@ export function AppDetail() {
     redirect_uris: RedirectUri[];
     post_logout_redirect_uris: string[];
     backchannel_logout_uri: string;
+    token_endpoint_auth_method: string;
+    jwks: string;
+    jwks_uri: string;
     allowed_scopes: string[];
     optional_scopes: string[];
     is_public: boolean;
@@ -1150,6 +1153,9 @@ export function AppDetail() {
       redirect_uris: app.redirect_uris,
       post_logout_redirect_uris: app.post_logout_redirect_uris ?? [],
       backchannel_logout_uri: app.backchannel_logout_uri ?? "",
+      token_endpoint_auth_method: app.token_endpoint_auth_method ?? "",
+      jwks: app.jwks ?? "",
+      jwks_uri: app.jwks_uri ?? "",
       allowed_scopes: app.allowed_scopes,
       optional_scopes: app.optional_scopes ?? [],
       is_public: app.is_public,
@@ -1171,6 +1177,9 @@ export function AppDetail() {
         redirect_uris: form.redirect_uris,
         post_logout_redirect_uris: form.post_logout_redirect_uris,
         backchannel_logout_uri: form.backchannel_logout_uri || null,
+        token_endpoint_auth_method: form.token_endpoint_auth_method || null,
+        jwks: form.jwks.trim() || null,
+        jwks_uri: form.jwks_uri.trim() || null,
         allowed_scopes: form.allowed_scopes,
         optional_scopes: form.optional_scopes,
         is_public: form.is_public,
@@ -1441,6 +1450,59 @@ export function AppDetail() {
                 setForm((f) => ({ ...f!, allowed_scopes: scopes }))
               }
             />
+            <Field
+              label={t("apps.tokenEndpointAuthMethod")}
+              hint={t("apps.tokenEndpointAuthMethodHint")}
+            >
+              <Dropdown
+                value={
+                  form.token_endpoint_auth_method === ""
+                    ? t("apps.authMethodDefault")
+                    : form.token_endpoint_auth_method
+                }
+                selectedOptions={[form.token_endpoint_auth_method]}
+                onOptionSelect={(_, d) =>
+                  setForm((f) => ({
+                    ...f!,
+                    token_endpoint_auth_method: (d.optionValue ?? "") as string,
+                  }))
+                }
+              >
+                <Option value="">{t("apps.authMethodDefault")}</Option>
+                <Option value="client_secret_basic">
+                  client_secret_basic
+                </Option>
+                <Option value="client_secret_post">client_secret_post</Option>
+                <Option value="private_key_jwt">private_key_jwt</Option>
+                <Option value="none">none</Option>
+              </Dropdown>
+            </Field>
+            {form.token_endpoint_auth_method === "private_key_jwt" && (
+              <>
+                <Field label={t("apps.jwks")} hint={t("apps.jwksHint")}>
+                  <Textarea
+                    value={form.jwks}
+                    onChange={(_, d) =>
+                      setForm((f) => ({ ...f!, jwks: d.value }))
+                    }
+                    placeholder='{"keys":[{"kty":"RSA","kid":"…","n":"…","e":"AQAB"}]}'
+                    rows={5}
+                    resize="vertical"
+                    style={{ fontFamily: "monospace", fontSize: 12 }}
+                  />
+                </Field>
+                <Field label={t("apps.jwksUri")} hint={t("apps.jwksUriHint")}>
+                  <Input
+                    value={form.jwks_uri}
+                    onChange={(_, d) =>
+                      setForm((f) => ({ ...f!, jwks_uri: d.value }))
+                    }
+                    placeholder="https://app.example.com/.well-known/jwks.json"
+                    style={{ fontFamily: "monospace", fontSize: 12 }}
+                  />
+                </Field>
+              </>
+            )}
             <Checkbox
               id={"is-public"}
               label={t("apps.publicClient")}

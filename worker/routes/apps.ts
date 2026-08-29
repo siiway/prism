@@ -417,6 +417,9 @@ app.patch("/:id", async (c) => {
     access_whitelist_enabled?: boolean;
     post_logout_redirect_uris?: string[];
     backchannel_logout_uri?: string | null;
+    token_endpoint_auth_method?: string | null;
+    jwks?: string | null;
+    jwks_uri?: string | null;
   }>();
 
   if (body.icon_url) {
@@ -457,6 +460,75 @@ app.patch("/:id", async (c) => {
       ...new Set(body.post_logout_redirect_uris),
     ]);
   }
+
+  // RFC 7591 token_endpoint_auth_method + RFC 7523 private_key_jwt keys. Empty
+  // string / null clears the override (the token endpoint then infers the
+  // method from is_public / the client secret).
+  let tokenEndpointAuthMethod = row.token_endpoint_auth_method ?? null;
+  if (body.token_endpoint_auth_method !== undefined) {
+    const m = body.token_endpoint_auth_method || null;
+    const validMethods = [
+      "none",
+      "client_secret_basic",
+      "client_secret_post",
+      "private_key_jwt",
+    ];
+    if (m !== null && !validMethods.includes(m))
+      return c.json(
+        { error: `Invalid token_endpoint_auth_method: ${m}` },
+        400,
+      );
+    tokenEndpointAuthMethod = m;
+  }
+
+  // Inline JWK Set (JSON string). Must parse to an object with a `keys` array,
+  // matching how a private_key_jwt assertion is verified. Empty clears it.
+  let jwks = row.jwks ?? null;
+  if (body.jwks !== undefined) {
+    const raw = body.jwks;
+    if (raw) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return c.json({ error: "Invalid jwks: not valid JSON" }, 400);
+      }
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        !Array.isArray((parsed as { keys?: unknown }).keys)
+      )
+        return c.json(
+          { error: 'Invalid jwks: expected a JWK Set with a "keys" array' },
+          400,
+        );
+      jwks = JSON.stringify(parsed);
+    } else {
+      jwks = null;
+    }
+  }
+
+  // jwks_uri: an https URL fetched to resolve the client's keys. Empty clears.
+  let jwksUri = row.jwks_uri ?? null;
+  if (body.jwks_uri !== undefined) {
+    const v = body.jwks_uri;
+    if (v) {
+      try {
+        if (new URL(v).protocol !== "https:") throw new Error("bad");
+      } catch {
+        return c.json({ error: `Invalid jwks_uri: ${v}` }, 400);
+      }
+    }
+    jwksUri = v || null;
+  }
+
+  // A client that authenticates with private_key_jwt has no other credential —
+  // it must register a key source, or the token endpoint can never verify it.
+  if (tokenEndpointAuthMethod === "private_key_jwt" && !jwks && !jwksUri)
+    return c.json(
+      { error: "private_key_jwt requires jwks or jwks_uri" },
+      400,
+    );
 
   // Redirect URIs may be an empty list (learn-first-used mode).
   const redirectUris = body.redirect_uris
@@ -538,10 +610,13 @@ app.patch("/:id", async (c) => {
         : row.access_whitelist_enabled,
     post_logout_redirect_uris: postLogoutJson,
     backchannel_logout_uri: backchannelLogoutUri,
+    token_endpoint_auth_method: tokenEndpointAuthMethod,
+    jwks,
+    jwks_uri: jwksUri,
   };
 
   await c.env.DB.prepare(
-    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, allow_self_manage_exported_permissions=?, access_whitelist_enabled=?, post_logout_redirect_uris=?, backchannel_logout_uri=?, updated_at=? WHERE id=?`,
+    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, allow_self_manage_exported_permissions=?, access_whitelist_enabled=?, post_logout_redirect_uris=?, backchannel_logout_uri=?, token_endpoint_auth_method=?, jwks=?, jwks_uri=?, updated_at=? WHERE id=?`,
   )
     .bind(
       updated.name,
@@ -558,6 +633,9 @@ app.patch("/:id", async (c) => {
       updated.access_whitelist_enabled,
       updated.post_logout_redirect_uris,
       updated.backchannel_logout_uri,
+      updated.token_endpoint_auth_method,
+      updated.jwks,
+      updated.jwks_uri,
       now,
       id,
     )
@@ -1616,6 +1694,9 @@ async function safeApp(
       row.post_logout_redirect_uris ?? "[]",
     ) as string[],
     backchannel_logout_uri: row.backchannel_logout_uri ?? null,
+    token_endpoint_auth_method: row.token_endpoint_auth_method ?? null,
+    jwks: row.jwks ?? null,
+    jwks_uri: row.jwks_uri ?? null,
     team_id: row.team_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,

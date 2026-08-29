@@ -3525,6 +3525,11 @@ export interface OAuthApp {
   access_whitelist_enabled: boolean;
   post_logout_redirect_uris: string[];
   backchannel_logout_uri: string | null;
+  /** RFC 7591 token_endpoint_auth_method, or null to infer from is_public. */
+  token_endpoint_auth_method: string | null;
+  /** RFC 7523 private_key_jwt: inline JWK Set (JSON string) and/or a JWKS URI. */
+  jwks: string | null;
+  jwks_uri: string | null;
   team_id: string | null;
   created_at: number;
   updated_at: number;
@@ -3549,6 +3554,13 @@ export interface CreateAppBody {
   post_logout_redirect_uris?: string[];
   /** OIDC Back-Channel Logout notification endpoint (https), or null to clear. */
   backchannel_logout_uri?: string | null;
+  /** RFC 7591 token_endpoint_auth_method (none | client_secret_basic |
+   *  client_secret_post | private_key_jwt), or null/"" to infer from is_public. */
+  token_endpoint_auth_method?: string | null;
+  /** RFC 7523 private_key_jwt: inline JWK Set as a JSON string, or null to clear. */
+  jwks?: string | null;
+  /** RFC 7523 private_key_jwt: an https URL serving the client's JWK Set, or null. */
+  jwks_uri?: string | null;
 }
 
 // ─── Audit logs (Transparent Control) ────────────────────────────────────────

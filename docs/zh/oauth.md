@@ -408,8 +408,10 @@ Content-Type: application/json
 
 ## private_key_jwt 客户端认证（RFC 7523）
 
-机密客户端可用签名断言代替共享密钥认证。先注册客户端公钥（`jwks` 或
-`jwks_uri`），随后在令牌 / PAR / 内省 / 撤销端点发送：
+机密客户端可用签名断言代替共享密钥认证。先注册客户端公钥并选择认证方式——可在
+仪表盘中设置（应用详情 → 设置：将 **令牌端点认证方式** 设为 `private_key_jwt`，
+并填入内联 **jwks** 或 **jwks_uri**）、通过 DCR 元数据，或通过应用 API。随后在
+令牌 / PAR / 内省 / 撤销端点发送：
 
 ```text
 client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer

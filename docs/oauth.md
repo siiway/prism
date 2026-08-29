@@ -458,8 +458,11 @@ and include `jwks` (an inline JWK Set) or `jwks_uri`.
 ## private_key_jwt client authentication (RFC 7523)
 
 A confidential client may authenticate with a signed assertion instead of a
-shared secret. Register the client's public keys (`jwks` or `jwks_uri`), then at
-the token / PAR / introspection / revocation endpoints send:
+shared secret. Register the client's public keys and select the auth method —
+either in the dashboard (App Detail → Settings: set **Token endpoint auth
+method** to `private_key_jwt` and paste an inline **jwks** or a **jwks_uri**),
+via DCR metadata, or through the app API. Then at the token / PAR / introspection
+/ revocation endpoints send:
 
 ```text
 client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
