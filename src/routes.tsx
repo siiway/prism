@@ -81,16 +81,19 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
   };
 
   // The /login (and /register) route should bounce already-logged-in users
-  // home, and bounce the platform to /init when not yet set up.
+  // home, and bounce the platform to /init when not yet set up. Two exceptions
+  // keep the login form visible for a visitor who is already signed in:
+  //   - `?reauth=1` (OIDC prompt=login / max_age): re-authenticate for a
+  //     pending authorization request.
+  //   - `?add=1` (account switcher): sign in as an additional account.
   const publicAuthLoader = async ({ request }: { request: Request }) => {
     await prefetch(ctx.qc, ["site"], api.site);
     const site = ctx.qc.getQueryData<{ initialized?: boolean }>(["site"]);
     if (site && site.initialized === false) throw redirect("/init");
-    // `?add=1` is the account switcher adding another account: the visitor is
-    // deliberately signed in already, so don't bounce them home — let the
-    // login form render so they can authenticate as a second account.
-    const addingAccount = new URL(request.url).searchParams.get("add") === "1";
-    if (!addingAccount && getAuth(ctx).token) throw redirect("/");
+    const params = new URL(request.url).searchParams;
+    const skipBounce =
+      params.get("reauth") === "1" || params.get("add") === "1";
+    if (getAuth(ctx).token && !skipBounce) throw redirect("/");
     return null;
   };
 
@@ -211,6 +214,28 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
         import("./pages/oauth/Verify2FA").then((m) => ({
           Component: m.Verify2FA,
         })),
+    },
+    {
+      // RFC 8628 device verification — requires an authenticated user (the
+      // page bounces to /login when the session is missing, like /oauth/authorize).
+      path: "/device",
+      loader: ({ request }) => {
+        requireAuthLoader(request);
+        return null;
+      },
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/oauth/DeviceVerify").then((m) => ({
+          Component: m.DeviceVerify,
+        })),
+    },
+    {
+      // OIDC RP-Initiated Logout landing page (public — the session is already
+      // ended by the time the browser lands here).
+      path: "/logged-out",
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/LoggedOut").then((m) => ({ Component: m.LoggedOut })),
     },
 
     // ── Public user/team profiles ───────────────────────────────────────────

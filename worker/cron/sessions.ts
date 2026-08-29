@@ -22,3 +22,32 @@ export async function sweepExpiredSessions(db: D1Database): Promise<void> {
     .bind(now, BATCH_SIZE)
     .run();
 }
+
+/**
+ * Sweep expired short-lived OAuth grant artifacts: authorization codes (single
+ * use, but an unredeemed one lingers past its 10-minute window) and RFC 8628
+ * device codes (a device that never finishes leaves its pending row behind).
+ * Both are already refused once expired; this just keeps the tables from
+ * accumulating dead rows.
+ */
+export async function sweepExpiredOAuthCodes(db: D1Database): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `DELETE FROM oauth_codes
+        WHERE code IN (
+          SELECT code FROM oauth_codes WHERE expires_at <= ? LIMIT ?
+        )`,
+    )
+    .bind(now, BATCH_SIZE)
+    .run();
+  await db
+    .prepare(
+      `DELETE FROM oauth_device_codes
+        WHERE device_code IN (
+          SELECT device_code FROM oauth_device_codes WHERE expires_at <= ? LIMIT ?
+        )`,
+    )
+    .bind(now, BATCH_SIZE)
+    .run();
+}

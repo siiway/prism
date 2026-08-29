@@ -7,6 +7,7 @@ import { getIp } from "../lib/clientIp";
 import { geoJson, recordSessionIp } from "../lib/geo";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { clearSessionCookie, setSessionCookie } from "../lib/cookies";
+import { deliverBackChannelLogout } from "../lib/backchannelLogout";
 import {
   hashPassword,
   randomId,
@@ -107,6 +108,7 @@ export async function issueSession(
   c: Context<AppEnv>,
   user: UserRow,
   ttlSeconds: number,
+  amr?: string[],
 ): Promise<string> {
   const db = c.env.DB;
   const secret = await getJwtSecret(c.env.KV_SESSIONS);
@@ -130,7 +132,7 @@ export async function issueSession(
   const hash = await sha256(token);
   await db
     .prepare(
-      "INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at, amr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(
       sessionId,
@@ -140,6 +142,7 @@ export async function issueSession(
       getIp(c),
       now + ttlSeconds,
       now,
+      amr && amr.length ? JSON.stringify(amr) : null,
     )
     .run();
   // Seed the session's IP history with the login IP + geolocation so the
@@ -308,7 +311,7 @@ app.post("/register", async (c) => {
   if (!user) return c.json({ error: "User not found after creation" }, 500);
 
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c, user, ttl);
+  const token = await issueSession(c, user, ttl, ["pwd"]);
   return c.json(
     { token, user: await safeUser(c.env.APP_URL, c.env.DB, user) },
     201,
@@ -532,7 +535,14 @@ app.post("/login", async (c) => {
 
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c, user, ttl);
+  // RFC 8176: password, plus OTP/MFA when a TOTP factor was verified above.
+  const usedTotp = (totpCount?.n ?? 0) > 0;
+  const token = await issueSession(
+    c,
+    user,
+    ttl,
+    usedTotp ? ["pwd", "otp", "mfa"] : ["pwd"],
+  );
   return c.json({
     token,
     user: await safeUser(c.env.APP_URL, c.env.DB, user),
@@ -543,6 +553,10 @@ app.post("/login", async (c) => {
 
 app.post("/logout", requireAuth, async (c) => {
   const sessionId = c.get("sessionId");
+  const user = c.get("user");
+  // OIDC Back-Channel Logout: notify the user's clients that this session ended.
+  if (user)
+    await deliverBackChannelLogout(c.env, c.executionCtx, user.id, sessionId);
   await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
     .bind(sessionId)
     .run();
@@ -1324,7 +1338,8 @@ app.post("/passkey/auth/finish", async (c) => {
 
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c, user, ttl);
+  // Passkey sign-in is a hardware/software cryptographic authenticator.
+  const token = await issueSession(c, user, ttl, ["webauthn"]);
   return c.json({
     token,
     user: await safeUser(c.env.APP_URL, c.env.DB, user),

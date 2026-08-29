@@ -498,16 +498,28 @@ OAuth-scoped equivalents:
 
 See the [OAuth / OIDC Guide](oauth.md) for the full walkthrough.
 
-| Method | Path                                | Notes                                                      |
-| ------ | ----------------------------------- | ---------------------------------------------------------- |
-| `GET`  | `/api/oauth/authorize`              | Returns app info + requested scopes for the consent screen |
-| `POST` | `/api/oauth/authorize`              | Approve / deny                                             |
-| `POST` | `/api/oauth/token`                  | `authorization_code` and `refresh_token` grants            |
-| `GET`  | `/api/oauth/userinfo`               | OIDC UserInfo                                              |
-| `POST` | `/api/oauth/introspect`             | RFC 7662                                                   |
-| `POST` | `/api/oauth/revoke`                 | RFC 7009                                                   |
-| `GET`  | `/.well-known/openid-configuration` | Discovery                                                  |
-| `GET`  | `/.well-known/jwks.json`            | RSA public keys for ID token + JWT access tokens           |
+| Method               | Path                                      | Notes                                                      |
+| -------------------- | ----------------------------------------- | ---------------------------------------------------------- |
+| `GET`                | `/api/oauth/authorize`                    | Returns app info + requested scopes for the consent screen |
+| `POST`               | `/api/oauth/authorize`                    | Approve / deny                                             |
+| `POST`               | `/api/oauth/par`                          | Pushed Authorization Requests (RFC 9126)                   |
+| `POST`               | `/api/oauth/register`                     | Dynamic Client Registration (RFC 7591)                     |
+| `GET`/`PUT`/`DELETE` | `/api/oauth/register/:client_id`          | Client config management (RFC 7592)                        |
+| `POST`               | `/api/oauth/token`                        | code, refresh, device, and token-exchange grants           |
+| `POST`               | `/api/oauth/device_authorization`         | Device Authorization Grant (RFC 8628)                      |
+| `GET`                | `/api/oauth/device`                       | Device verification-screen data for a `user_code`          |
+| `POST`               | `/api/oauth/device/decision`              | Approve / deny a device request (session auth)             |
+| `GET` / `POST`       | `/api/oauth/userinfo`                     | OIDC UserInfo (OIDC Core §5.3.1)                           |
+| `POST`               | `/api/oauth/introspect`                   | RFC 7662                                                   |
+| `POST`               | `/api/oauth/revoke`                       | RFC 7009                                                   |
+| `GET` / `POST`       | `/api/oauth/end_session`                  | OIDC RP-Initiated Logout                                   |
+| `GET`                | `/.well-known/openid-configuration`       | OpenID Connect Discovery 1.0                               |
+| `GET`                | `/.well-known/oauth-authorization-server` | RFC 8414 Authorization Server Metadata                     |
+| `GET`                | `/.well-known/oauth-protected-resource`   | RFC 9728 Protected Resource Metadata                       |
+| `GET`                | `/.well-known/webfinger`                  | RFC 7033 issuer discovery                                  |
+| `GET`                | `/.well-known/jwks.json`                  | RSA public keys for ID token + JWT access tokens           |
+| `GET`                | `/.well-known/security.txt`               | RFC 9116 (when a security contact is configured)           |
+| `GET`                | `/.well-known/change-password`            | Redirects to the change-password page                      |
 
 ### Step-up 2FA
 

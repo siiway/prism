@@ -1119,6 +1119,8 @@ export function AppDetail() {
     icon_url: string;
     website_url: string;
     redirect_uris: RedirectUri[];
+    post_logout_redirect_uris: string[];
+    backchannel_logout_uri: string;
     allowed_scopes: string[];
     optional_scopes: string[];
     is_public: boolean;
@@ -1146,6 +1148,8 @@ export function AppDetail() {
       icon_url: app.unproxied_icon_url ?? "",
       website_url: app.website_url ?? "",
       redirect_uris: app.redirect_uris,
+      post_logout_redirect_uris: app.post_logout_redirect_uris ?? [],
+      backchannel_logout_uri: app.backchannel_logout_uri ?? "",
       allowed_scopes: app.allowed_scopes,
       optional_scopes: app.optional_scopes ?? [],
       is_public: app.is_public,
@@ -1165,6 +1169,8 @@ export function AppDetail() {
         icon_url: form.icon_url || undefined,
         website_url: form.website_url || undefined,
         redirect_uris: form.redirect_uris,
+        post_logout_redirect_uris: form.post_logout_redirect_uris,
+        backchannel_logout_uri: form.backchannel_logout_uri || null,
         allowed_scopes: form.allowed_scopes,
         optional_scopes: form.optional_scopes,
         is_public: form.is_public,
@@ -1352,6 +1358,40 @@ export function AppDetail() {
               value={form.redirect_uris}
               onChange={(v) => setForm((f) => ({ ...f!, redirect_uris: v }))}
             />
+            <Field
+              label={t("apps.postLogoutRedirectUris")}
+              hint={t("apps.postLogoutRedirectUrisHint")}
+            >
+              <Textarea
+                value={form.post_logout_redirect_uris.join("\n")}
+                onChange={(_, d) =>
+                  setForm((f) => ({
+                    ...f!,
+                    post_logout_redirect_uris: d.value
+                      .split("\n")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  }))
+                }
+                placeholder="https://app.example.com/logged-out"
+                rows={3}
+                resize="vertical"
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              />
+            </Field>
+            <Field
+              label={t("apps.backchannelLogoutUri")}
+              hint={t("apps.backchannelLogoutUriHint")}
+            >
+              <Input
+                value={form.backchannel_logout_uri}
+                onChange={(_, d) =>
+                  setForm((f) => ({ ...f!, backchannel_logout_uri: d.value }))
+                }
+                placeholder="https://app.example.com/backchannel-logout"
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              />
+            </Field>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <ScopePickerField
                 label={t("apps.allowedScopes")}
@@ -1730,10 +1770,7 @@ export function AppDetail() {
                       onOptionSelect={(_, d) =>
                         setAccessRuleMinRole(
                           (d.optionValue ?? "member") as
-                            | "owner"
-                            | "co-owner"
-                            | "admin"
-                            | "member",
+                            "owner" | "co-owner" | "admin" | "member",
                         )
                       }
                     >

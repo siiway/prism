@@ -7,13 +7,41 @@ Prism 是一个符合标准的 OAuth 2.0 授权服务器和 OpenID Connect 提�
 
 ## Discovery
 
-OpenID Connect Discovery 文档位于：
+Prism 在这些 `.well-known` 位置发布元数据（RFC 8615）：
 
 ```text
-https://your-prism-domain/.well-known/openid-configuration
+https://your-prism-domain/.well-known/openid-configuration       # OpenID Connect Discovery 1.0
+https://your-prism-domain/.well-known/oauth-authorization-server # RFC 8414
+https://your-prism-domain/.well-known/oauth-protected-resource   # RFC 9728
+https://your-prism-domain/.well-known/jwks.json                  # 签名密钥
 ```
 
-大多数 OAuth/OIDC 库可以从此 URL 自动完成配置。
+前两份描述授权服务器（同一组端点），大多数 OAuth/OIDC 库可从任一自动配置。
+`oauth-protected-resource`（RFC 9728）把 Prism 的 API 描述为受保护资源——由哪个授权
+服务器签发其令牌、它识别的 scope、以及 DPoP 支持。受保护端点的 `401` 会通过
+`WWW-Authenticate: ... resource_metadata="…"` 指向此处。
+
+### Issuer 发现（WebFinger，RFC 7033）
+
+只有用户标识符的客户端可以借此发现 issuer：
+
+```text
+GET /.well-known/webfinger?resource=acct:alice@your-prism-domain&rel=http://openid.net/specs/connect/1.0/issuer
+```
+
+返回一个 JRD（`application/jrd+json`），链接到 issuer：
+
+```json
+{
+  "subject": "acct:alice@your-prism-domain",
+  "links": [
+    {
+      "rel": "http://openid.net/specs/connect/1.0/issuer",
+      "href": "https://your-prism-domain"
+    }
+  ]
+}
+```
 
 ## 注册应用程序
 
@@ -231,6 +259,10 @@ GET /api/oauth/userinfo
 Authorization: Bearer <ACCESS_TOKEN>
 ```
 
+该端点同时支持 `GET` 与 `POST`（OpenID Connect Core §5.3.1）。访问令牌必须携带
+`openid` 作用域；缺少该作用域的令牌会返回 `403 insufficient_scope`。被拒绝的请求
+会按 RFC 6750 返回 `WWW-Authenticate: Bearer` 质询头。
+
 #### UserInfo 响应
 
 ```json
@@ -284,8 +316,11 @@ token=<ACCESS_TOKEN>
   "sub": "user-id",
   "scope": "openid profile",
   "client_id": "...",
+  "token_type": "Bearer",
   "exp": 1234567890,
-  "iat": 1234564290
+  "iat": 1234564290,
+  "aud": "...",
+  "iss": "https://your-prism-domain"
 }
 ```
 
@@ -302,6 +337,233 @@ token=<ACCESS_OR_REFRESH_TOKEN>
 
 必须提供客户端凭据，且只会撤销该客户端自己的令牌。出示已被替换的刷新令牌会撤销
 它所属的整个授权。
+
+## 设备授权（RFC 8628）
+
+适用于无法承载浏览器的输入受限设备（CLI、电视、IoT）。
+
+```http
+POST /api/oauth/device_authorization
+Content-Type: application/x-www-form-urlencoded
+
+client_id=<CLIENT_ID>
+&scope=openid profile
+```
+
+响应：
+
+```json
+{
+  "device_code": "…",
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://your-prism-domain/device",
+  "verification_uri_complete": "https://your-prism-domain/device?user_code=WDJB-MJHT",
+  "expires_in": 600,
+  "interval": 5
+}
+```
+
+向用户展示 `verification_uri` 与 `user_code`（或便于生成二维码的
+`verification_uri_complete`）。同时轮询令牌端点：
+
+```http
+POST /api/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:device_code
+&device_code=<DEVICE_CODE>
+&client_id=<CLIENT_ID>
+```
+
+在用户操作前，端点返回 `authorization_pending`（轮询过快则返回 `slow_down`）；
+轮询间隔不得小于 `interval` 秒。批准后返回常规令牌响应（请求了 `openid` 时含
+`id_token`，请求了 `offline_access` 时含 `refresh_token`）。`access_denied`
+与 `expired_token` 为终止状态。PKCE 可选：在设备授权请求中带上 `code_challenge`，
+轮询时带上对应的 `code_verifier`。设备流不能授予站点级与团队级 scope。
+
+## 动态客户端注册（RFC 7591 / 7592）
+
+以编程方式注册客户端。请求需携带初始访问令牌——已登录用户的会话令牌，或带
+`apps:write` 的个人访问令牌：
+
+```http
+POST /api/oauth/register
+Authorization: Bearer <SESSION_OR_PAT>
+Content-Type: application/json
+
+{
+  "client_name": "My CLI",
+  "redirect_uris": ["https://app.example.com/callback"],
+  "scope": "openid profile email",
+  "token_endpoint_auth_method": "client_secret_basic"
+}
+```
+
+`201` 响应即客户端信息文档：`client_id`、`client_secret`（机密客户端）、一个
+`registration_access_token` 与 `registration_client_uri`。之后在该 URI 管理客户端
+（RFC 7592）：`GET` 读取、`PUT` 更新、`DELETE` 注销——均以
+`Authorization: Bearer <registration_access_token>` 认证。注册 `private_key_jwt`
+客户端时，将 `token_endpoint_auth_method` 设为 `private_key_jwt`，并提供 `jwks`
+（内联 JWK Set）或 `jwks_uri`。
+
+## private_key_jwt 客户端认证（RFC 7523）
+
+机密客户端可用签名断言代替共享密钥认证。先注册客户端公钥（`jwks` 或
+`jwks_uri`），随后在令牌 / PAR / 内省 / 撤销端点发送：
+
+```text
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+&client_assertion=<JWT>
+```
+
+该断言是一个 JWT，其 `iss` = `sub` = 你的 `client_id`，`aud` = issuer 或令牌端点
+URL，`exp` 较短，`jti` 唯一（一次性使用）。支持的签名算法：RS256、ES256、EdDSA。
+
+## DPoP — 发送方约束的令牌（RFC 9449）
+
+把令牌绑定到客户端持有的密钥上，这样即便令牌值被窃取，没有密钥也无法使用。在令牌
+请求上发送 `DPoP` 头——一个由客户端密钥签名、头部携带公钥并绑定到本次请求的 JWT：
+
+```http
+POST /api/oauth/token
+DPoP: <proof-jwt>   # htm=POST, htu=<令牌端点>, iat, jti
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=...&client_id=...&code_verifier=...
+```
+
+响应返回 `"token_type": "DPoP"`，且访问令牌绑定到密钥指纹（`cnf.jkt`）。在资源端，
+用 `DPoP` scheme 携带令牌，并附上同时对令牌做哈希（`ath`）的新证明：
+
+```http
+GET /api/oauth/userinfo
+Authorization: DPoP <ACCESS_TOKEN>
+DPoP: <proof-jwt>   # htm=GET, htu=<资源 url>, ath=base64url(sha256(token))
+```
+
+以普通 `Bearer` 出示 DPoP 绑定令牌、或缺少匹配证明，都会被拒绝。刷新请求必须重复来自
+同一密钥的证明。支持的证明算法：RS256、ES256、EdDSA。
+
+## 令牌交换（RFC 8693）
+
+用一个访问令牌换取另一个——用于应用间的委托：
+
+```http
+POST /api/oauth/token
+Authorization: Basic <base64(client_id:client_secret)>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+&subject_token=<ACCESS_TOKEN>
+&subject_token_type=urn:ietf:params:oauth:token-type:access_token
+&scope=openid profile
+&resource=https://api.example.com
+```
+
+请求方客户端只能交换签发给它自己的令牌，或携带指向它的跨应用 scope
+（`app:<client_id>:*`）的令牌。新令牌的 scope 是原 subject 令牌的子集，其受众受
+`resource` / `audience` 约束。响应含
+`issued_token_type: urn:ietf:params:oauth:token-type:access_token`。交换得到的令牌
+不可刷新。
+
+## 重新认证与上下文（`prompt`、`max_age`、`acr`）
+
+授权请求遵循以下 OpenID Connect 参数：
+
+- `prompt=none`——无界面；若用户未登录（或需重新认证）则向客户端返回
+  `login_required`，若缺少同意则返回 `consent_required`。
+- `prompt=login`——即使已有会话也强制重新登录。
+- `prompt=consent`——始终显示同意页。
+- `max_age=<秒>`——要求登录时间不早于此，否则重新认证。
+
+ID 令牌随后携带 `auth_time`（用户登录时间）、`amr`（认证方式，如
+`["pwd","otp","mfa"]`、`["webauthn"]`、`["ext"]`），以及派生的 `acr`（使用了第二
+因子时为 `mfa`，否则为 `pwd`）。
+
+### 提升认证（RFC 9470）
+
+在授权请求上用 `acr_values` 请求特定上下文（例如 `acr_values=mfa`）；若当前会话不满足，
+Prism 会重新认证，让更强的因子提升它。访问令牌（以及内省响应）都携带
+`acr` / `auth_time` / `amr`，因此资源服务器可以要求更强的认证，并对不满足的请求返回：
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer error="insufficient_user_authentication", acr_values="mfa"
+```
+
+客户端随后带 `acr_values=mfa` 重新发起授权。
+
+## 推送式授权请求（RFC 9126）
+
+先把授权参数推送到服务器，换取一次性的 `request_uri` 用于授权端点——请求无法在
+浏览器中被篡改，密钥也不会出现在前端信道。
+
+```http
+POST /api/oauth/par
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+response_type=code
+&redirect_uri=<REDIRECT_URI>
+&scope=openid profile
+&code_challenge=<CHALLENGE>&code_challenge_method=S256
+&state=<STATE>
+```
+
+响应（`201 Created`）：
+
+```json
+{ "request_uri": "urn:ietf:params:oauth:request_uri:…", "expires_in": 90 }
+```
+
+随后仅带客户端与 request URI 将用户导向授权端点：
+
+```text
+https://your-prism-domain/api/oauth/authorize?client_id=<CLIENT_ID>&request_uri=<REQUEST_URI>
+```
+
+`request_uri` 一次性使用且很快过期。
+
+## 授权响应 `iss`（RFC 9207）
+
+每个授权响应（成功与错误）都带有 `iss` 参数，值为你的 Prism 实例 URL。校验它的
+客户端可抵御混淆（mix-up）攻击。Discovery 会通告
+`authorization_response_iss_parameter_supported: true`。
+
+## 资源指示符（RFC 8707）
+
+在 `/par`、授权或 `/device_authorization` 请求中加入一个或多个 `resource` 参数
+（绝对 URI，不含 fragment），用于指明访问令牌面向的资源服务器。每个被接受的值都会
+加入令牌的 `aud`，并在刷新时保留。
+
+## RP 发起的登出（OpenID Connect）
+
+```text
+GET /api/oauth/end_session?id_token_hint=<ID_TOKEN>&post_logout_redirect_uri=<URI>&state=<STATE>
+```
+
+结束用户的 Prism 会话并清除会话 Cookie。当 `post_logout_redirect_uri` 与客户端
+注册的某一项（应用的 `post_logout_redirect_uris`）完全匹配时，浏览器会带 `state`
+跳转到该地址；否则落到 Prism 内置的登出页。`id_token_hint` 用于标识客户端（即使已
+过期也会被接受），建议提供。
+
+## 后端通道登出（OpenID Connect）
+
+为客户端注册 `backchannel_logout_uri`（应用详情 → 设置、DCR 元数据或应用 API）。当
+用户从 Prism 登出——通过 `end_session` 或仪表盘——Prism 会向该 URI POST 一个已签名的
+`logout_token`：
+
+```http
+POST <backchannel_logout_uri>
+Content-Type: application/x-www-form-urlencoded
+
+logout_token=<JWT>
+```
+
+`logout_token` 是一个 RS256 JWT（`typ: logout+jwt`），含 `iss`、`aud`（你的
+`client_id`）、`sub`、`iat`、`jti`、`sid`（结束的会话，也作为 `sid` 出现在 ID 令牌中）
+以及后端通道登出的 `events` 声明。请对照 JWKS 验证并终止用户会话。Discovery 会通告
+`backchannel_logout_supported` 与 `backchannel_logout_session_supported`。
 
 ## ID 令牌
 

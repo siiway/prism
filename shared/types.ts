@@ -75,6 +75,11 @@ export interface SiteConfig {
   smtp_password: string;
   custom_css: string;
   accent_color: string;
+  /** RFC 9116 security.txt contact (e.g. "mailto:security@example.com" or a
+   *  URL). Empty disables /.well-known/security.txt. */
+  security_contact: string;
+  /** Optional RFC 9116 security policy URL, surfaced in security.txt. */
+  security_policy_url: string;
   login_error_retention_days: number;
   social_verify_ttl_days: number;
   allow_alt_email_login: boolean;

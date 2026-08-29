@@ -905,6 +905,22 @@ export const api = {
   oauthApprove: (body: OAuthApproveBody) =>
     request<{ redirect: string }>("POST", "/oauth/authorize", body, getToken()),
 
+  // ─── Device Authorization Grant (RFC 8628) verification screen ───────────
+  deviceVerifyInfo: (userCode: string) =>
+    request<DeviceVerifyInfo>(
+      "GET",
+      `/oauth/device?user_code=${encodeURIComponent(userCode)}`,
+      undefined,
+      getToken(),
+    ),
+  deviceDecision: (userCode: string, action: "approve" | "deny") =>
+    request<{ status: "approved" | "denied" }>(
+      "POST",
+      "/oauth/device/decision",
+      { user_code: userCode, action },
+      getToken(),
+    ),
+
   // ─── OAuth 2FA step-up ───────────────────────────────────────────────────
   oauth2faInfo: (params: Record<string, string>) =>
     request<OAuth2FAInfo>(
@@ -3507,6 +3523,8 @@ export interface OAuthApp {
   use_jwt_tokens: boolean;
   allow_self_manage_exported_permissions: boolean;
   access_whitelist_enabled: boolean;
+  post_logout_redirect_uris: string[];
+  backchannel_logout_uri: string | null;
   team_id: string | null;
   created_at: number;
   updated_at: number;
@@ -3527,6 +3545,10 @@ export interface CreateAppBody {
   use_jwt_tokens?: boolean;
   allow_self_manage_exported_permissions?: boolean;
   access_whitelist_enabled?: boolean;
+  /** OIDC RP-Initiated Logout: exact-match allow-list of post-logout redirect URIs. */
+  post_logout_redirect_uris?: string[];
+  /** OIDC Back-Channel Logout notification endpoint (https), or null to clear. */
+  backchannel_logout_uri?: string | null;
 }
 
 // ─── Audit logs (Transparent Control) ────────────────────────────────────────
@@ -3702,6 +3724,12 @@ export interface OAuthAuthorizeInfo {
   }>;
   redirect_uri: string;
   state: string | null;
+  /** OIDC prompt / max_age evaluation (see the /app-info handler). */
+  prompt: string | null;
+  max_age: number | null;
+  reauth_required: boolean;
+  prompt_none_error: string | null;
+  prior_consent_covers: boolean;
   user: UserProfile | null;
   requires_site_grant: boolean;
   site_scope_confirm_phrase: string | null;
@@ -3806,6 +3834,21 @@ export interface OAuthApproveBody {
    *  server revokes existing tokens for this app before issuing the new
    *  authorization code — a "log back in" rather than a parallel session. */
   revoke_existing_tokens?: boolean;
+  /** RFC 9126: when the request was pushed, its request_uri. The server reads
+   *  the security-critical parameters from the pushed request, not the body. */
+  request_uri?: string;
+  /** RFC 8707 resource indicator(s) for a non-pushed request. */
+  resource?: string | string[];
+  /** OIDC prompt / max_age forwarded so the server can enforce max_age. */
+  prompt?: string;
+  max_age?: number;
+}
+
+export interface DeviceVerifyInfo {
+  app: OAuthAuthorizeInfo["app"];
+  scopes: string[];
+  user: OAuthAuthorizeInfo["user"];
+  user_code: string;
 }
 
 export interface AdminStats {

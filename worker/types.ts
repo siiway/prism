@@ -133,6 +133,17 @@ export interface OAuthAppRow {
   use_jwt_tokens: number;
   allow_self_manage_exported_permissions: number;
   access_whitelist_enabled: number;
+  /** OIDC RP-Initiated Logout allow-list, JSON string[] of exact-match URIs. */
+  post_logout_redirect_uris: string;
+  /** RFC 7592 registration access token (HMAC-keyed hash), or null. */
+  registration_access_token: string | null;
+  /** RFC 7591 token_endpoint_auth_method, or null to infer from is_public. */
+  token_endpoint_auth_method: string | null;
+  /** RFC 7523 private_key_jwt: inline JWK Set (JSON) and/or a JWKS URI. */
+  jwks: string | null;
+  jwks_uri: string | null;
+  /** OIDC Back-Channel Logout notification endpoint, or null. */
+  backchannel_logout_uri: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -249,6 +260,30 @@ export interface OAuthCodeRow {
   code_challenge: string | null;
   code_challenge_method: string | null;
   nonce: string | null;
+  /** RFC 8707 resource indicators, JSON string[] or null. */
+  resource: string | null;
+  /** OIDC auth context captured at consent: the session's auth_time and amr. */
+  auth_time: number | null;
+  amr: string | null;
+  /** The authenticating session id, for the ID token `sid` + back-channel logout. */
+  session_id: string | null;
+  expires_at: number;
+  created_at: number;
+}
+
+export interface OAuthDeviceCodeRow {
+  device_code: string; // HMAC-keyed hash
+  user_code: string; // normalized (uppercase, no hyphen)
+  client_id: string;
+  scopes: string; // JSON string[]
+  resource: string | null; // JSON string[] or null
+  code_challenge: string | null;
+  code_challenge_method: string | null;
+  nonce: string | null;
+  status: "pending" | "approved" | "denied";
+  user_id: string | null;
+  interval: number;
+  last_polled_at: number;
   expires_at: number;
   created_at: number;
 }
@@ -295,6 +330,14 @@ export interface OAuthTokenRow {
   client_id: string;
   user_id: string;
   scopes: string; // JSON string[]
+  /** RFC 8707 resource indicators the grant was issued for, JSON string[] or
+   *  null. Preserved so a refresh keeps the same audience. */
+  resource: string | null;
+  /** RFC 9449 DPoP: the JWK thumbprint this token is bound to, or null. */
+  dpop_jkt: string | null;
+  /** RFC 9470 step-up context: the authenticating session's auth_time and amr. */
+  auth_time: number | null;
+  amr: string | null;
   expires_at: number;
   refresh_expires_at: number | null;
   created_at: number;

@@ -1920,7 +1920,7 @@ async function issueJWT(
   const hash = await sha256Hex(token);
   await db
     .prepare(
-      "INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at, amr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(
       sessionId,
@@ -1932,6 +1932,8 @@ async function issueJWT(
         "unknown",
       now + ttlSeconds,
       now,
+      // RFC 8176: federated / external identity provider.
+      JSON.stringify(["ext"]),
     )
     .run();
   // Seed the session's IP history with the login IP + geolocation (same as the

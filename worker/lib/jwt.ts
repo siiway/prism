@@ -87,6 +87,53 @@ export async function signIdTokenRS256(
   return `${message}.${bufToBase64url(sig)}`;
 }
 
+/**
+ * Verify an RS256 JWT signature and return its payload. The expiry is NOT
+ * enforced here: the one caller is OIDC RP-Initiated Logout, which accepts an
+ * expired `id_token_hint` (the whole point of logout is that the session is
+ * ending). Throws when the format or signature is invalid.
+ */
+export async function verifyIdTokenRS256(
+  token: string,
+  publicKey: CryptoKey,
+): Promise<Record<string, unknown>> {
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("Invalid JWT format");
+  const [headerB64, bodyB64, sigB64] = parts;
+  const valid = await crypto.subtle.verify(
+    "RSASSA-PKCS1-v1_5",
+    publicKey,
+    base64urlToBuf(sigB64),
+    new TextEncoder().encode(`${headerB64}.${bodyB64}`),
+  );
+  if (!valid) throw new Error("Invalid JWT signature");
+  return JSON.parse(decodeBase64url(bodyB64)) as Record<string, unknown>;
+}
+
+// OIDC Back-Channel Logout token: RS256, typ "logout+jwt". Same signing path
+// as the ID token but with the logout media type so RPs can tell them apart.
+export async function signLogoutTokenRS256(
+  payload: Record<string, unknown>,
+  privateKey: CryptoKey,
+  kid: string,
+  expiresInSeconds: number,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = encodeBase64url({ alg: "RS256", typ: "logout+jwt", kid });
+  const body = encodeBase64url({
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds,
+  });
+  const message = `${header}.${body}`;
+  const sig = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    privateKey,
+    new TextEncoder().encode(message),
+  );
+  return `${message}.${bufToBase64url(sig)}`;
+}
+
 // ML-DSA-65 OIDC ID token signing (post-quantum, typ: "JWT" per OIDC spec)
 export function signIdToken(
   payload: Record<string, unknown>,
@@ -117,6 +164,12 @@ export interface AccessTokenPayload {
   /** Token ID — matches oauth_tokens.id for revocation lookup */
   jti: string;
   scope: string;
+  /** RFC 9449 DPoP confirmation: the bound key's JWK thumbprint. */
+  cnf?: { jkt: string };
+  /** RFC 9470 authentication context, for step-up decisions at the resource. */
+  acr?: string;
+  auth_time?: number;
+  amr?: string[];
   iat: number;
   exp: number;
 }
@@ -124,14 +177,21 @@ export interface AccessTokenPayload {
 /**
  * Extract the unique audience entries from a scope list.
  * Regular scopes use the issuer as audience; cross-app scopes (`app:<cid>:*`)
- * also add the target app's client_id so App A can verify the token was meant for it.
+ * also add the target app's client_id so App A can verify the token was meant
+ * for it. RFC 8707 resource indicators, when supplied, are added too so a named
+ * resource server can confirm the token was minted for it.
  */
-export function extractAud(scopes: string[], issuer: string): string[] {
+export function extractAud(
+  scopes: string[],
+  issuer: string,
+  resources: string[] = [],
+): string[] {
   const aud = new Set([issuer]);
   for (const s of scopes) {
     const m = s.match(/^app:([^:]+):/);
     if (m) aud.add(m[1]);
   }
+  for (const r of resources) aud.add(r);
   return [...aud];
 }
 

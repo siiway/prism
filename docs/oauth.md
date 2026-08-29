@@ -7,13 +7,42 @@ Prism is a standards-compliant OAuth 2.0 authorization server and OpenID Connect
 
 ## Discovery
 
-The OpenID Connect discovery document is available at:
+Prism publishes its metadata at these `.well-known` locations (RFC 8615):
 
 ```text
-https://your-prism-domain/.well-known/openid-configuration
+https://your-prism-domain/.well-known/openid-configuration       # OpenID Connect Discovery 1.0
+https://your-prism-domain/.well-known/oauth-authorization-server # RFC 8414
+https://your-prism-domain/.well-known/oauth-protected-resource   # RFC 9728
+https://your-prism-domain/.well-known/jwks.json                  # signing keys
 ```
 
-Most OAuth/OIDC libraries can auto-configure from this URL.
+The first two describe the authorization server (same endpoints); most OAuth/OIDC
+libraries auto-configure from either. `oauth-protected-resource` (RFC 9728)
+describes Prism's API as a protected resource — which authorization server issues
+its tokens, the scopes it recognises, and its DPoP support. A `401` from a
+protected endpoint points here via `WWW-Authenticate: ... resource_metadata="…"`.
+
+### Issuer discovery (WebFinger, RFC 7033)
+
+A client that starts from a user identifier can discover the issuer:
+
+```text
+GET /.well-known/webfinger?resource=acct:alice@your-prism-domain&rel=http://openid.net/specs/connect/1.0/issuer
+```
+
+returns a JRD (`application/jrd+json`) linking to the issuer:
+
+```json
+{
+  "subject": "acct:alice@your-prism-domain",
+  "links": [
+    {
+      "rel": "http://openid.net/specs/connect/1.0/issuer",
+      "href": "https://your-prism-domain"
+    }
+  ]
+}
+```
 
 ## Registering an application
 
@@ -273,6 +302,11 @@ GET /api/oauth/userinfo
 Authorization: Bearer <ACCESS_TOKEN>
 ```
 
+The endpoint accepts both `GET` and `POST` (OpenID Connect Core §5.3.1). The
+access token must carry the `openid` scope; a token without it is refused with
+`403 insufficient_scope`. A rejected request returns a `WWW-Authenticate: Bearer`
+challenge per RFC 6750.
+
 #### UserInfo response
 
 ```json
@@ -327,8 +361,11 @@ were issued to it — anything else answers `{"active": false}`.
   "sub": "user-id",
   "scope": "openid profile",
   "client_id": "...",
+  "token_type": "Bearer",
   "exp": 1234567890,
-  "iat": 1234564290
+  "iat": 1234564290,
+  "aud": "...",
+  "iss": "https://your-prism-domain"
 }
 ```
 
@@ -345,6 +382,249 @@ token=<ACCESS_OR_REFRESH_TOKEN>
 
 Client credentials are required, and only the calling client's own tokens are
 revoked. A superseded refresh token revokes the grant it belonged to.
+
+## Device Authorization Grant (RFC 8628)
+
+For input-constrained devices (CLIs, TVs, IoT) that can't host a browser.
+
+```http
+POST /api/oauth/device_authorization
+Content-Type: application/x-www-form-urlencoded
+
+client_id=<CLIENT_ID>
+&scope=openid profile
+```
+
+Response:
+
+```json
+{
+  "device_code": "…",
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://your-prism-domain/device",
+  "verification_uri_complete": "https://your-prism-domain/device?user_code=WDJB-MJHT",
+  "expires_in": 600,
+  "interval": 5
+}
+```
+
+Show the user `verification_uri` and `user_code` (or the QR-friendly
+`verification_uri_complete`). Meanwhile, poll the token endpoint:
+
+```http
+POST /api/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:device_code
+&device_code=<DEVICE_CODE>
+&client_id=<CLIENT_ID>
+```
+
+Until the user acts, the endpoint returns `authorization_pending` (or
+`slow_down` if you poll faster than `interval`); poll no faster than `interval`
+seconds. Once approved it returns the usual token response (with `id_token` when
+`openid` was requested, and a `refresh_token` when `offline_access` was). `access_denied`
+and `expired_token` are terminal. PKCE is optional: include a `code_challenge`
+in the device-authorization request and the matching `code_verifier` when
+polling. Site-level and team scopes cannot be granted through the device flow.
+
+## Dynamic Client Registration (RFC 7591 / 7592)
+
+Register a client programmatically. The request must carry an initial access
+token — a signed-in user's session token or a personal access token with
+`apps:write`:
+
+```http
+POST /api/oauth/register
+Authorization: Bearer <SESSION_OR_PAT>
+Content-Type: application/json
+
+{
+  "client_name": "My CLI",
+  "redirect_uris": ["https://app.example.com/callback"],
+  "scope": "openid profile email",
+  "token_endpoint_auth_method": "client_secret_basic"
+}
+```
+
+The `201` response is the client information document: `client_id`,
+`client_secret` (for confidential clients), a `registration_access_token`, and
+`registration_client_uri`. Manage the client afterwards at that URI (RFC 7592):
+`GET` reads it, `PUT` updates it, `DELETE` deregisters it — each authenticated
+with `Authorization: Bearer <registration_access_token>`. To register a
+`private_key_jwt` client, set `token_endpoint_auth_method` to `private_key_jwt`
+and include `jwks` (an inline JWK Set) or `jwks_uri`.
+
+## private_key_jwt client authentication (RFC 7523)
+
+A confidential client may authenticate with a signed assertion instead of a
+shared secret. Register the client's public keys (`jwks` or `jwks_uri`), then at
+the token / PAR / introspection / revocation endpoints send:
+
+```text
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+&client_assertion=<JWT>
+```
+
+The assertion is a JWT with `iss` = `sub` = your `client_id`, `aud` = the issuer
+or token endpoint URL, a short `exp`, and a unique `jti` (one-time use).
+Supported signing algorithms: RS256, ES256, EdDSA.
+
+## DPoP — sender-constrained tokens (RFC 9449)
+
+Bind a token to a key the client holds, so a stolen token value is useless
+without the key. On the token request, send a `DPoP` header — a JWT signed by
+the client's key, carrying the public key in its header and bound to the request:
+
+```http
+POST /api/oauth/token
+DPoP: <proof-jwt>   # htm=POST, htu=<token endpoint>, iat, jti
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=...&client_id=...&code_verifier=...
+```
+
+The response comes back `"token_type": "DPoP"` and the access token is bound to
+the key's thumbprint (`cnf.jkt`). At a resource, present it with the `DPoP`
+scheme and a fresh proof that also hashes the token (`ath`):
+
+```http
+GET /api/oauth/userinfo
+Authorization: DPoP <ACCESS_TOKEN>
+DPoP: <proof-jwt>   # htm=GET, htu=<resource url>, ath=base64url(sha256(token))
+```
+
+A DPoP-bound token presented as plain `Bearer`, or without a matching proof, is
+rejected. Refresh requests must repeat the proof from the same key. Supported
+proof algorithms: RS256, ES256, EdDSA.
+
+## Token Exchange (RFC 8693)
+
+Exchange one access token for another — for delegation between apps:
+
+```http
+POST /api/oauth/token
+Authorization: Basic <base64(client_id:client_secret)>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+&subject_token=<ACCESS_TOKEN>
+&subject_token_type=urn:ietf:params:oauth:token-type:access_token
+&scope=openid profile
+&resource=https://api.example.com
+```
+
+The requesting client may exchange a token that was issued to it, or one that
+carries a cross-app scope naming it (`app:<client_id>:*`). The new token's scope
+is a subset of the subject token's, and its audience is constrained by
+`resource` / `audience`. The response includes
+`issued_token_type: urn:ietf:params:oauth:token-type:access_token`. Exchanged
+tokens are not refreshable.
+
+## Re-authentication and context (`prompt`, `max_age`, `acr`)
+
+The authorization request honors the OpenID Connect parameters:
+
+- `prompt=none` — no UI; if the user isn't signed in (or must re-authenticate)
+  the client gets `login_required`, and if consent is missing, `consent_required`.
+- `prompt=login` — force a fresh sign-in even if a session exists.
+- `prompt=consent` — always show the consent screen.
+- `max_age=<seconds>` — require a sign-in no older than this, else re-authenticate.
+
+The ID token then carries `auth_time` (when the user signed in), `amr` (the
+authentication methods, e.g. `["pwd","otp","mfa"]`, `["webauthn"]`, `["ext"]`),
+and a derived `acr` (`mfa` when a second factor was used, else `pwd`).
+
+### Step-up authentication (RFC 9470)
+
+Request a specific context with `acr_values` on the authorization request (e.g.
+`acr_values=mfa`); if the current session doesn't meet it, Prism re-authenticates
+so a stronger factor can raise it. Access tokens (and the introspection response)
+carry `acr` / `auth_time` / `amr`, so a resource server can require a stronger
+authentication and answer a request that falls short with:
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer error="insufficient_user_authentication", acr_values="mfa"
+```
+
+The client then repeats authorization with `acr_values=mfa`.
+
+## Pushed Authorization Requests (RFC 9126)
+
+Push the authorization parameters to the server first and receive a one-time
+`request_uri` to use at the authorize endpoint — the request can't be tampered
+with in the browser, and secrets never ride in the front channel.
+
+```http
+POST /api/oauth/par
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+response_type=code
+&redirect_uri=<REDIRECT_URI>
+&scope=openid profile
+&code_challenge=<CHALLENGE>&code_challenge_method=S256
+&state=<STATE>
+```
+
+Response (`201 Created`):
+
+```json
+{ "request_uri": "urn:ietf:params:oauth:request_uri:…", "expires_in": 90 }
+```
+
+Then send the user to the authorize endpoint with just the client and request URI:
+
+```text
+https://your-prism-domain/api/oauth/authorize?client_id=<CLIENT_ID>&request_uri=<REQUEST_URI>
+```
+
+The `request_uri` is single-use and short-lived.
+
+## Authorization response `iss` (RFC 9207)
+
+Every authorization response (success and error) carries an `iss` parameter set
+to your Prism instance URL. Clients that validate it are protected against
+mix-up attacks. Discovery advertises `authorization_response_iss_parameter_supported: true`.
+
+## Resource Indicators (RFC 8707)
+
+Add one or more `resource` parameters (absolute URIs, no fragment) to a `/par`,
+authorization, or `/device_authorization` request to name the resource server(s)
+the access token is for. Each accepted value is added to the token's `aud`, and
+is preserved across refreshes.
+
+## RP-Initiated Logout (OpenID Connect)
+
+```text
+GET /api/oauth/end_session?id_token_hint=<ID_TOKEN>&post_logout_redirect_uri=<URI>&state=<STATE>
+```
+
+Ends the user's Prism session and clears the session cookie. When
+`post_logout_redirect_uri` exactly matches one registered on the client
+(via the app's `post_logout_redirect_uris`), the browser is sent there with
+`state`; otherwise it lands on Prism's built-in signed-out page. `id_token_hint`
+identifies the client (an expired hint is still accepted) and is recommended.
+
+## Back-Channel Logout (OpenID Connect)
+
+Register a `backchannel_logout_uri` on your client (App Detail → Settings, the
+DCR metadata, or the app API). When the user signs out of Prism — via
+`end_session` or the dashboard — Prism POSTs a signed `logout_token` to that URI:
+
+```http
+POST <backchannel_logout_uri>
+Content-Type: application/x-www-form-urlencoded
+
+logout_token=<JWT>
+```
+
+The `logout_token` is an RS256 JWT (`typ: logout+jwt`) with `iss`, `aud` (your
+`client_id`), `sub`, `iat`, `jti`, a `sid` (the session that ended, also present
+as `sid` in the ID token), and the back-channel-logout `events` claim. Verify it
+against the JWKS and terminate the user's session. Discovery advertises
+`backchannel_logout_supported` and `backchannel_logout_session_supported`.
 
 ## ID token
 

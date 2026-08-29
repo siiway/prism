@@ -444,16 +444,28 @@ OAuth scope 版本：
 
 完整流程见 [OAuth / OIDC 指南](oauth.md)。
 
-| Method | Path                                | 说明                                               |
-| ------ | ----------------------------------- | -------------------------------------------------- |
-| `GET`  | `/api/oauth/authorize`              | 返回应用信息与请求 scope，供同意页使用             |
-| `POST` | `/api/oauth/authorize`              | 同意 / 拒绝                                        |
-| `POST` | `/api/oauth/token`                  | `authorization_code` 与 `refresh_token` 两种 grant |
-| `GET`  | `/api/oauth/userinfo`               | OIDC UserInfo                                      |
-| `POST` | `/api/oauth/introspect`             | RFC 7662                                           |
-| `POST` | `/api/oauth/revoke`                 | RFC 7009                                           |
-| `GET`  | `/.well-known/openid-configuration` | Discovery                                          |
-| `GET`  | `/.well-known/jwks.json`            | ID Token 与 JWT access token 的 RSA 公钥           |
+| Method               | Path                                      | 说明                                     |
+| -------------------- | ----------------------------------------- | ---------------------------------------- |
+| `GET`                | `/api/oauth/authorize`                    | 返回应用信息与请求 scope，供同意页使用   |
+| `POST`               | `/api/oauth/authorize`                    | 同意 / 拒绝                              |
+| `POST`               | `/api/oauth/par`                          | 推送式授权请求（RFC 9126）               |
+| `POST`               | `/api/oauth/register`                     | 动态客户端注册（RFC 7591）               |
+| `GET`/`PUT`/`DELETE` | `/api/oauth/register/:client_id`          | 客户端配置管理（RFC 7592）               |
+| `POST`               | `/api/oauth/token`                        | 授权码、刷新、设备与令牌交换等 grant     |
+| `POST`               | `/api/oauth/device_authorization`         | 设备授权（RFC 8628）                     |
+| `GET`                | `/api/oauth/device`                       | 根据 `user_code` 返回设备验证页数据      |
+| `POST`               | `/api/oauth/device/decision`              | 批准 / 拒绝设备请求（会话认证）          |
+| `GET` / `POST`       | `/api/oauth/userinfo`                     | OIDC UserInfo（OIDC Core §5.3.1）        |
+| `POST`               | `/api/oauth/introspect`                   | RFC 7662                                 |
+| `POST`               | `/api/oauth/revoke`                       | RFC 7009                                 |
+| `GET` / `POST`       | `/api/oauth/end_session`                  | OIDC RP 发起的登出                       |
+| `GET`                | `/.well-known/openid-configuration`       | OpenID Connect Discovery 1.0             |
+| `GET`                | `/.well-known/oauth-authorization-server` | RFC 8414 授权服务器元数据                |
+| `GET`                | `/.well-known/oauth-protected-resource`   | RFC 9728 受保护资源元数据                |
+| `GET`                | `/.well-known/webfinger`                  | RFC 7033 issuer 发现                     |
+| `GET`                | `/.well-known/jwks.json`                  | ID Token 与 JWT access token 的 RSA 公钥 |
+| `GET`                | `/.well-known/security.txt`               | RFC 9116（配置了安全联系人时）           |
+| `GET`                | `/.well-known/change-password`            | 跳转到修改密码页面                       |
 
 ### 步骤提升 2FA
 

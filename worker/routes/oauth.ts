@@ -6,12 +6,18 @@ import { configBag, getConfig, getRsaKeyPair } from "../lib/config";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import {
   encryptSecret,
+  decryptSecret,
   hashSecret,
   hashLookupCandidate,
   timingSafeSecretEqual,
 } from "../lib/secretCrypto";
 import { getMLDSAKey } from "../lib/mldsa";
-import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
+import {
+  signAccessToken,
+  verifyAccessToken,
+  verifyIdTokenRS256,
+  extractAud,
+} from "../lib/jwt";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
 import { parseBasicAuth } from "../lib/basicAuth";
 import { getIp } from "../lib/clientIp";
@@ -19,7 +25,7 @@ import { verifyAnyTotp } from "../lib/totp";
 import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
 import { verifyCaptchaToken } from "../middleware/captcha";
-import { requireAuth, optionalAuth } from "../middleware/auth";
+import { requireAuth, optionalAuth, tryPatAuth } from "../middleware/auth";
 import {
   computeIsVerified,
   buildVerifiedDomainsMap,
@@ -76,12 +82,27 @@ import {
 import type {
   OAuthAppRow,
   OAuthCodeRow,
+  OAuthDeviceCodeRow,
   OAuthTokenRow,
   UserRow,
   AppAccessRuleRow,
   Variables,
 } from "../types";
 import { APP_REQUESTABLE_SCOPES } from "../../shared/scopes";
+import {
+  collectResourceParams,
+  validateResources,
+  serializeResources,
+  parseResources,
+} from "../lib/resource";
+import {
+  verifyClientAssertion,
+  assertionClientId,
+  CLIENT_ASSERTION_TYPE,
+} from "../lib/clientAssertion";
+import { verifyDpopProof } from "../lib/dpop";
+import { deliverBackChannelLogout } from "../lib/backchannelLogout";
+import { clearSessionCookie } from "../lib/cookies";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -115,6 +136,171 @@ function unboundTeamPermissions(scopes: string[]): string[] {
     .map((s) => parseUnboundTeamScope(s))
     .filter((p): p is string => p !== null);
 }
+
+/**
+ * RFC 6749 §5.1: token endpoint responses (success and error) carry
+ * credentials, so they MUST NOT be cached by intermediaries.
+ */
+function noStore(c: Context<AppEnv>): void {
+  c.header("Cache-Control", "no-store");
+  c.header("Pragma", "no-cache");
+}
+
+/**
+ * RFC 6749 §5.2 / RFC 7617: when a client authenticated (or attempted to)
+ * with the `Authorization` header, an `invalid_client` response MUST return
+ * 401 with a matching `WWW-Authenticate` challenge.
+ */
+function challengeBasic(c: Context<AppEnv>): void {
+  c.header(
+    "WWW-Authenticate",
+    `Basic realm="${c.env.APP_URL}", charset="UTF-8"`,
+  );
+}
+
+/**
+ * RFC 6750 §3: a failed Bearer-protected request MUST include a
+ * `WWW-Authenticate: Bearer` challenge, carrying the error code (and optional
+ * description) when a token was supplied but rejected. When no credentials
+ * were presented at all, the challenge is sent without an error code.
+ */
+function challengeBearer(
+  c: Context<AppEnv>,
+  error?: "invalid_token" | "insufficient_scope" | "invalid_request",
+  description?: string,
+): void {
+  let value = `Bearer realm="${c.env.APP_URL}"`;
+  if (error) value += `, error="${error}"`;
+  if (description) value += `, error_description="${description}"`;
+  // RFC 9728 §5.1: point the client at the protected-resource metadata.
+  value += `, resource_metadata="${c.env.APP_URL}/.well-known/oauth-protected-resource"`;
+  c.header("WWW-Authenticate", value);
+}
+
+/**
+ * RFC 9449 §7.2: a resource that expects a DPoP-bound token challenges with the
+ * `DPoP` scheme and the algorithms it accepts. Used when a bound token is
+ * presented without a valid proof.
+ */
+function challengeDpop(
+  c: Context<AppEnv>,
+  error?: "invalid_token" | "invalid_dpop_proof",
+  description?: string,
+): void {
+  let value = `DPoP algs="RS256 ES256 EdDSA"`;
+  if (error) value += `, error="${error}"`;
+  if (description) value += `, error_description="${description}"`;
+  value += `, resource_metadata="${c.env.APP_URL}/.well-known/oauth-protected-resource"`;
+  c.header("WWW-Authenticate", value);
+}
+
+/**
+ * RFC 9470 §3: a resource that needs stronger authentication answers 401 with
+ * `insufficient_user_authentication` and the `acr_values` (and/or `max_age`) it
+ * wants, which the client feeds back into a fresh authorization request.
+ */
+function challengeStepUp(
+  c: Context<AppEnv>,
+  opts: { acrValues?: string; maxAge?: number },
+): void {
+  let value = `Bearer error="insufficient_user_authentication", error_description="stronger authentication required"`;
+  if (opts.acrValues) value += `, acr_values="${opts.acrValues}"`;
+  if (opts.maxAge != null) value += `, max_age="${opts.maxAge}"`;
+  c.header("WWW-Authenticate", value);
+}
+
+// ─── Pushed Authorization Requests (RFC 9126) ────────────────────────────────
+
+/** Authorization request parameters a client pushed to /par, held server-side
+ *  under a one-time request_uri. The consent screen and the approval endpoint
+ *  read these back rather than trusting query parameters, so a pushed request
+ *  cannot be tampered with between /par and /authorize. */
+interface PushedRequest {
+  client_id: string;
+  redirect_uri: string;
+  scope: string;
+  optional_scope?: string;
+  state?: string;
+  code_challenge?: string;
+  code_challenge_method?: string;
+  nonce?: string;
+  response_type: string;
+  resource?: string[];
+  prompt?: string;
+  max_age?: number;
+  acr_values?: string;
+}
+
+const PAR_URN_PREFIX = "urn:ietf:params:oauth:request_uri:";
+// RFC 9126 §2.2: request_uri values are short-lived. 90s comfortably covers a
+// redirect + consent render without leaving a stale entry usable for long.
+const PAR_TTL_SECONDS = 90;
+
+async function storePushedRequest(
+  env: Env,
+  payload: PushedRequest,
+): Promise<{ requestUri: string; expiresIn: number }> {
+  const id = randomBase64url(32);
+  await env.KV_CACHE.put(`par:${id}`, JSON.stringify(payload), {
+    expirationTtl: PAR_TTL_SECONDS,
+  });
+  return { requestUri: `${PAR_URN_PREFIX}${id}`, expiresIn: PAR_TTL_SECONDS };
+}
+
+async function loadPushedRequest(
+  env: Env,
+  requestUri: string,
+): Promise<PushedRequest | null> {
+  if (!requestUri.startsWith(PAR_URN_PREFIX)) return null;
+  const id = requestUri.slice(PAR_URN_PREFIX.length);
+  if (!id) return null;
+  const raw = await env.KV_CACHE.get(`par:${id}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PushedRequest;
+  } catch {
+    return null;
+  }
+}
+
+/** One-time use: consume a pushed request so its request_uri can't be replayed
+ *  (RFC 9126 §2.2). Best-effort — the KV TTL is the backstop. */
+function consumePushedRequest(env: Env, requestUri: string): void {
+  if (!requestUri.startsWith(PAR_URN_PREFIX)) return;
+  const id = requestUri.slice(PAR_URN_PREFIX.length);
+  if (id) void env.KV_CACHE.delete(`par:${id}`).catch(() => {});
+}
+
+// ─── Device Authorization Grant (RFC 8628) ───────────────────────────────────
+
+// RFC 8628 §6.1 recommends a base-20, vowel-free alphabet: no accidental words,
+// no visually ambiguous characters. 8 characters gives ~40 bits of entropy.
+const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
+const DEVICE_CODE_TTL_SECONDS = 600;
+const DEVICE_POLL_INTERVAL_SECONDS = 5;
+
+function generateUserCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  let code = "";
+  for (const b of bytes)
+    code += USER_CODE_ALPHABET[b % USER_CODE_ALPHABET.length];
+  // Display form groups the halves with a hyphen (WDJB-MJHT); the hyphen is
+  // cosmetic and stripped on lookup.
+  return `${code.slice(0, 4)}-${code.slice(4)}`;
+}
+
+/** Normalize a user-entered code for lookup: uppercase, keep only alphabet
+ *  characters (so hyphens, spaces, and casing the user typed don't matter). */
+function normalizeUserCode(input: string): string {
+  return input.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+
+// RFC 8693 Token Exchange
+const TOKEN_EXCHANGE_GRANT_TYPE =
+  "urn:ietf:params:oauth:grant-type:token-exchange";
+const TOKEN_TYPE_ACCESS_TOKEN = "urn:ietf:params:oauth:token-type:access_token";
 
 /**
  * Authenticate an OAuth client against its stored secret.
@@ -633,7 +819,7 @@ app.get("/authorize", (c) => {
 
 // GET /api/oauth/app-info — consent screen data (called by the SPA)
 app.get("/app-info", optionalAuth, async (c) => {
-  const {
+  let {
     client_id,
     redirect_uri,
     scope,
@@ -644,6 +830,40 @@ app.get("/app-info", optionalAuth, async (c) => {
     code_challenge_method,
     nonce,
   } = c.req.query();
+  // OIDC Core: prompt (none|login|consent), max_age (seconds), and the RFC 9470
+  // acr_values (space-separated requested authentication context).
+  let prompt = c.req.query("prompt");
+  let maxAgeRaw = c.req.query("max_age");
+  let acrValues = c.req.query("acr_values");
+
+  // RFC 9126: when the request was pushed, resolve the stored parameters and
+  // render the consent screen from those rather than the query string. The
+  // pushed request is left in place (not consumed) so a reload still works;
+  // it is consumed only when the authorization is finally approved or denied.
+  const requestUri = c.req.query("request_uri");
+  if (requestUri) {
+    const pushed = await loadPushedRequest(c.env, requestUri);
+    if (!pushed)
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "request_uri is invalid or expired",
+        },
+        400,
+      );
+    client_id = pushed.client_id;
+    redirect_uri = pushed.redirect_uri;
+    scope = pushed.scope;
+    optional_scope = pushed.optional_scope ?? optional_scope;
+    state = pushed.state ?? state;
+    response_type = pushed.response_type;
+    code_challenge = pushed.code_challenge ?? "";
+    code_challenge_method = pushed.code_challenge_method ?? "";
+    nonce = pushed.nonce ?? "";
+    prompt = pushed.prompt ?? prompt;
+    maxAgeRaw = pushed.max_age != null ? String(pushed.max_age) : maxAgeRaw;
+    acrValues = pushed.acr_values ?? acrValues;
+  }
 
   if (!client_id || !redirect_uri || response_type !== "code") {
     return c.json({ error: "invalid_request" }, 400);
@@ -807,6 +1027,44 @@ app.get("/app-info", optionalAuth, async (c) => {
     existingTokenCount = tokenCountRow?.n ?? 0;
   }
 
+  // OIDC Core prompt / max_age evaluation. The SPA acts on these: send the
+  // user to re-authenticate, auto-approve without UI, force the consent screen,
+  // or bounce an error back to the client for prompt=none.
+  const maxAge =
+    maxAgeRaw != null && /^\d+$/.test(maxAgeRaw) ? Number(maxAgeRaw) : null;
+  let sessionAuthTime: number | null = null;
+  let sessionAcr: string | null = null;
+  if (currentUser) {
+    const s = await c.env.DB.prepare(
+      "SELECT created_at, amr FROM sessions WHERE id = ?",
+    )
+      .bind(c.get("sessionId"))
+      .first<{ created_at: number; amr: string | null }>();
+    sessionAuthTime = s?.created_at ?? null;
+    if (s?.amr) sessionAcr = deriveAcr(JSON.parse(s.amr) as string[]);
+  }
+  const nowSec = Math.floor(Date.now() / 1000);
+  const staleByMaxAge =
+    maxAge != null &&
+    sessionAuthTime != null &&
+    nowSec - sessionAuthTime > maxAge;
+  // RFC 9470: if the client asked for an acr the current session doesn't meet,
+  // re-authenticate so a stronger factor can raise it.
+  const requestedAcrs = (acrValues ?? "").split(" ").filter(Boolean);
+  const acrUnsatisfied =
+    requestedAcrs.length > 0 &&
+    (sessionAcr === null || !requestedAcrs.includes(sessionAcr));
+  const reauthRequired = prompt === "login" || staleByMaxAge || acrUnsatisfied;
+  // Does the prior consent already cover every currently-requested scope?
+  const priorCovers =
+    existingConsentScopes != null &&
+    scopes.every((s) => existingConsentScopes!.includes(s));
+  let promptNoneError: string | null = null;
+  if (prompt === "none") {
+    if (!currentUser || reauthRequired) promptNoneError = "login_required";
+    else if (!priorCovers) promptNoneError = "consent_required";
+  }
+
   return c.json({
     app: await buildConsentAppSummary(c.env, oauthApp, isVerified),
     scopes,
@@ -818,6 +1076,11 @@ app.get("/app-info", optionalAuth, async (c) => {
     code_challenge,
     code_challenge_method,
     nonce,
+    prompt: prompt ?? null,
+    max_age: maxAge,
+    reauth_required: reauthRequired,
+    prompt_none_error: promptNoneError,
+    prior_consent_covers: priorCovers,
     user: c.get("user") ?? null,
     requires_site_grant: hasSiteScopes(scopes),
     site_scope_confirm_phrase: hasSiteScopes(scopes)
@@ -851,7 +1114,54 @@ app.post("/authorize", requireAuth, async (c) => {
     confirm_text?: string;
     team_id?: string;
     revoke_existing_tokens?: boolean;
+    request_uri?: string;
+    resource?: string | string[];
+    prompt?: string;
+    max_age?: number;
   }>();
+
+  // Populated from the pushed request when one is used (RFC 9126); otherwise the
+  // corresponding body fields apply.
+  let pushedMaxAge: number | undefined;
+
+  // RFC 9126: a pushed authorization request supplies the security-critical
+  // parameters (redirect_uri, PKCE, nonce, resource) server-side. When the
+  // client used one, expand it and treat those values as authoritative — the
+  // fields the browser echoes back are ignored, so a pushed request cannot be
+  // tampered with between /par and here. RFC 8707 resource indicators are read
+  // from the pushed request, or (for a plain request) from the body.
+  let requestResources: string[];
+  if (body.request_uri) {
+    const pushed = await loadPushedRequest(c.env, body.request_uri);
+    if (!pushed)
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "request_uri is invalid or expired",
+        },
+        400,
+      );
+    body.client_id = pushed.client_id;
+    body.redirect_uri = pushed.redirect_uri;
+    body.scope = pushed.scope;
+    body.code_challenge = pushed.code_challenge;
+    body.code_challenge_method = pushed.code_challenge_method;
+    body.nonce = pushed.nonce;
+    body.state = pushed.state ?? body.state;
+    requestResources = pushed.resource ?? [];
+    pushedMaxAge = pushed.max_age;
+  } else {
+    const rv = validateResources(collectResourceParams(null, body.resource));
+    if (rv === null)
+      return c.json(
+        {
+          error: "invalid_target",
+          error_description: "invalid resource indicator",
+        },
+        400,
+      );
+    requestResources = rv;
+  }
 
   // Look up the app and validate the redirect_uri BEFORE branching on
   // action — otherwise the deny path becomes an open-redirect primitive
@@ -898,6 +1208,9 @@ app.post("/authorize", requireAuth, async (c) => {
     const url = new URL(body.redirect_uri);
     url.searchParams.set("error", "access_denied");
     if (body.state) url.searchParams.set("state", body.state);
+    // RFC 9207: identify the issuer on the (error) authorization response too.
+    url.searchParams.set("iss", c.env.APP_URL);
+    if (body.request_uri) consumePushedRequest(c.env, body.request_uri);
     return c.json({ redirect: url.toString() });
   }
 
@@ -1069,6 +1382,33 @@ app.post("/authorize", requireAuth, async (c) => {
 
   // Store consent
   const now = Math.floor(Date.now() / 1000);
+
+  // Capture the authenticating session's context so the ID token minted at the
+  // token endpoint can emit auth_time / amr / acr (OIDC Core §2). max_age, when
+  // the request asked for it, forces a re-authentication that is fresh enough.
+  const sessionRow = await c.env.DB.prepare(
+    "SELECT created_at, amr FROM sessions WHERE id = ?",
+  )
+    .bind(c.get("sessionId"))
+    .first<{ created_at: number; amr: string | null }>();
+  const authTime = sessionRow?.created_at ?? null;
+  const sessionAmr = sessionRow?.amr ?? null;
+  const maxAge = body.request_uri ? pushedMaxAge : body.max_age;
+  if (
+    typeof maxAge === "number" &&
+    maxAge >= 0 &&
+    authTime != null &&
+    now - authTime > maxAge
+  ) {
+    return c.json(
+      {
+        error: "login_required",
+        error_description: "re-authentication required (max_age exceeded)",
+      },
+      400,
+    );
+  }
+
   const siteScopes = boundScopes.filter((s) => SITE_SCOPES.has(s));
   await c.env.DB.prepare(
     `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at)
@@ -1113,8 +1453,8 @@ app.post("/authorize", requireAuth, async (c) => {
   const code = randomBase64url(32);
   const storedCode = await hashSecret(c.env, code);
   await c.env.DB.prepare(
-    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, resource, auth_time, amr, session_id, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       storedCode,
@@ -1125,6 +1465,10 @@ app.post("/authorize", requireAuth, async (c) => {
       body.code_challenge ?? null,
       body.code_challenge_method ?? null,
       body.nonce ?? null,
+      serializeResources(requestResources),
+      authTime,
+      sessionAmr,
+      c.get("sessionId") ?? null,
       now + 600,
       now,
     )
@@ -1163,6 +1507,10 @@ app.post("/authorize", requireAuth, async (c) => {
   const url = new URL(body.redirect_uri);
   url.searchParams.set("code", code);
   if (body.state) url.searchParams.set("state", body.state);
+  // RFC 9207: let the client confirm which issuer produced this response,
+  // defeating mix-up attacks where a second AS is swapped in.
+  url.searchParams.set("iss", c.env.APP_URL);
+  if (body.request_uri) consumePushedRequest(c.env, body.request_uri);
 
   // Notify the app that a user just granted access
   c.executionCtx.waitUntil(
@@ -1854,47 +2202,57 @@ app.post("/2fa/verify", async (c) => {
 // ─── Token endpoint ──────────────────────────────────────────────────────────
 
 app.post("/token", async (c) => {
-  const contentType = c.req.header("Content-Type") ?? "";
-  let params: Record<string, string>;
+  // RFC 6749 §5.1: token responses MUST NOT be cached (applies to every
+  // return path below, success or error).
+  noStore(c);
 
-  if (contentType.includes("application/json")) {
-    params = await c.req.json<Record<string, string>>();
-  } else {
-    const text = await c.req.text();
-    params = Object.fromEntries(new URLSearchParams(text));
-  }
+  const { params, form, json } = await readOAuthBody(c);
 
-  const {
-    grant_type,
-    code,
-    redirect_uri,
-    client_id,
-    client_secret,
-    code_verifier,
-    refresh_token,
-  } = params;
+  const { grant_type, code, redirect_uri, code_verifier, refresh_token } =
+    params;
 
-  // Authenticate client
-  let clientId = client_id;
-  let clientSecret = client_secret;
-  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
-  if (basicAuth) {
-    clientId = basicAuth.clientId;
-    clientSecret = basicAuth.clientSecret;
-  }
-
-  const oauthApp = await c.env.DB.prepare(
-    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
-  )
-    .bind(clientId)
-    .first<OAuthAppRow>();
-  if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
-
-  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) {
+  // Authenticate the client (private_key_jwt, client_secret_*, or public).
+  const auth = await authenticateClient(c, params);
+  if (!auth.ok) {
+    if (auth.badRequest) return c.json({ error: "invalid_request" }, 400);
+    // RFC 6749 §5.2: 401 + WWW-Authenticate when the client used the header.
+    if (auth.usedBasic) challengeBasic(c);
     return c.json({ error: "invalid_client" }, 401);
   }
+  const oauthApp = auth.app;
+  const clientId = oauthApp.client_id;
 
   const config = await getConfig(c.env.DB);
+
+  // RFC 9449: a DPoP proof on the token request binds the issued token to the
+  // proof key's thumbprint. Verified once here (htm=POST, htu=this endpoint);
+  // each grant below stamps the resulting jkt onto the token it mints.
+  let dpopJkt: string | null = null;
+  const dpopHeader = c.req.header("DPoP");
+  if (dpopHeader) {
+    const res = await verifyDpopProof(c.env, dpopHeader, {
+      htm: "POST",
+      htu: c.req.url,
+    });
+    if ("error" in res)
+      return c.json(
+        {
+          error: "invalid_dpop_proof",
+          error_description: "invalid DPoP proof",
+        },
+        400,
+      );
+    dpopJkt = res.jkt;
+  }
+
+  // RFC 6749 §5.2: grant_type is REQUIRED; its absence is invalid_request,
+  // distinct from a present-but-unknown value (unsupported_grant_type below).
+  if (!grant_type) {
+    return c.json(
+      { error: "invalid_request", error_description: "grant_type is required" },
+      400,
+    );
+  }
 
   // ── Authorization Code grant ─────────────────────────────────────────────
   if (grant_type === "authorization_code") {
@@ -1980,6 +2338,7 @@ app.post("/token", async (c) => {
       return c.json({ error: "invalid_grant" }, 400);
 
     const scopes = JSON.parse(codeRow.scopes) as string[];
+    const resources = parseResources(codeRow.resource);
     const hasOffline = scopes.includes("offline_access");
     const atTtl =
       (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
@@ -1998,10 +2357,12 @@ app.post("/token", async (c) => {
         {
           iss: c.env.APP_URL,
           sub: user.id,
-          aud: extractAud(scopes, c.env.APP_URL),
+          aud: extractAud(scopes, c.env.APP_URL, resources),
           client_id: clientId,
           jti,
           scope: scopes.join(" "),
+          ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
+          ...accessAuthClaims(codeRow.auth_time, codeRow.amr),
         },
         mldsaKey.secretKey,
         mldsaKey.kid,
@@ -2019,8 +2380,8 @@ app.post("/token", async (c) => {
     const storedAccess = await hashSecret(c.env, accessToken);
     const storedRefresh = await hashSecret(c.env, refreshToken);
     await c.env.DB.prepare(
-      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, expires_at, refresh_expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, auth_time, amr, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         jti,
@@ -2029,6 +2390,10 @@ app.post("/token", async (c) => {
         clientId,
         user.id,
         JSON.stringify(scopes),
+        codeRow.resource,
+        dpopJkt,
+        codeRow.auth_time,
+        codeRow.amr,
         now + atTtl,
         hasOffline ? now + rtTtl : null,
         now,
@@ -2037,7 +2402,7 @@ app.post("/token", async (c) => {
 
     const response: Record<string, unknown> = {
       access_token: accessToken,
-      token_type: "Bearer",
+      token_type: dpopJkt ? "DPoP" : "Bearer",
       expires_in: atTtl,
       scope: scopes.join(" "),
     };
@@ -2054,6 +2419,11 @@ app.post("/token", async (c) => {
         atTtl,
         c.env.APP_URL,
         c.env.DB,
+        {
+          authTime: codeRow.auth_time,
+          amr: codeRow.amr ? (JSON.parse(codeRow.amr) as string[]) : null,
+          sid: codeRow.session_id,
+        },
       );
     }
     return c.json(response);
@@ -2096,6 +2466,15 @@ app.post("/token", async (c) => {
       );
     }
 
+    // RFC 9449 §5: a DPoP-bound refresh token may only be refreshed with a
+    // proof from the same key. The binding is preserved across rotation.
+    if (tokenRow.dpop_jkt && dpopJkt !== tokenRow.dpop_jkt)
+      return c.json(
+        { error: "invalid_dpop_proof", error_description: "DPoP key mismatch" },
+        400,
+      );
+    const effJkt = tokenRow.dpop_jkt ?? dpopJkt;
+
     const user = await c.env.DB.prepare(
       "SELECT * FROM users WHERE id = ? AND kind = 'user'",
     )
@@ -2105,6 +2484,7 @@ app.post("/token", async (c) => {
       return c.json({ error: "invalid_grant" }, 400);
 
     const scopes = JSON.parse(tokenRow.scopes) as string[];
+    const resources = parseResources(tokenRow.resource);
     const atTtl =
       (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
 
@@ -2115,10 +2495,12 @@ app.post("/token", async (c) => {
         {
           iss: c.env.APP_URL,
           sub: tokenRow.user_id,
-          aud: extractAud(scopes, c.env.APP_URL),
+          aud: extractAud(scopes, c.env.APP_URL, resources),
           client_id: tokenRow.client_id,
           jti: tokenRow.id,
           scope: scopes.join(" "),
+          ...(effJkt ? { cnf: { jkt: effJkt } } : {}),
+          ...accessAuthClaims(tokenRow.auth_time, tokenRow.amr),
         },
         mldsaKey.secretKey,
         mldsaKey.kid,
@@ -2139,7 +2521,7 @@ app.post("/token", async (c) => {
     const rotated = await c.env.DB.prepare(
       `UPDATE oauth_tokens
           SET access_token = ?, expires_at = ?,
-              refresh_token = ?, previous_refresh_token = ?
+              refresh_token = ?, previous_refresh_token = ?, dpop_jkt = ?
         WHERE id = ? AND refresh_token = ?`,
     )
       .bind(
@@ -2147,6 +2529,7 @@ app.post("/token", async (c) => {
         now + atTtl,
         storedNewRefresh,
         tokenRow.refresh_token,
+        effJkt,
         tokenRow.id,
         tokenRow.refresh_token,
       )
@@ -2158,44 +2541,1173 @@ app.post("/token", async (c) => {
 
     return c.json({
       access_token: newAccessToken,
-      token_type: "Bearer",
+      token_type: effJkt ? "DPoP" : "Bearer",
       expires_in: atTtl,
       scope: scopes.join(" "),
       refresh_token: newRefreshToken,
     });
   }
 
+  // ── Device Authorization Grant (RFC 8628 §3.4) ───────────────────────────
+  if (grant_type === DEVICE_GRANT_TYPE) {
+    const now = Math.floor(Date.now() / 1000);
+    const deviceCode = params.device_code;
+    if (!deviceCode)
+      return c.json(
+        { error: "invalid_request", error_description: "device_code required" },
+        400,
+      );
+
+    const dcLookup = await hashLookupCandidate(c.env, deviceCode);
+    if (!dcLookup) return c.json({ error: "invalid_grant" }, 400);
+    const dc = await c.env.DB.prepare(
+      "SELECT * FROM oauth_device_codes WHERE device_code = ? OR device_code = ?",
+    )
+      .bind(deviceCode, dcLookup)
+      .first<OAuthDeviceCodeRow>();
+
+    if (!dc || dc.client_id !== clientId)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    // RFC 8628 §3.5 polling errors. Expiry is checked first so a stale code
+    // reports expired_token rather than authorization_pending.
+    if (dc.expires_at < now) {
+      await c.env.DB.prepare(
+        "DELETE FROM oauth_device_codes WHERE device_code = ?",
+      )
+        .bind(dc.device_code)
+        .run();
+      return c.json({ error: "expired_token" }, 400);
+    }
+
+    // Enforce the minimum polling interval; a device that polls too fast is
+    // told to slow_down and its interval is bumped by 5s (§3.5).
+    if (dc.last_polled_at > 0 && now - dc.last_polled_at < dc.interval) {
+      await c.env.DB.prepare(
+        "UPDATE oauth_device_codes SET interval = interval + 5, last_polled_at = ? WHERE device_code = ?",
+      )
+        .bind(now, dc.device_code)
+        .run();
+      return c.json({ error: "slow_down" }, 400);
+    }
+    await c.env.DB.prepare(
+      "UPDATE oauth_device_codes SET last_polled_at = ? WHERE device_code = ?",
+    )
+      .bind(now, dc.device_code)
+      .run();
+
+    if (dc.status === "denied") {
+      await c.env.DB.prepare(
+        "DELETE FROM oauth_device_codes WHERE device_code = ?",
+      )
+        .bind(dc.device_code)
+        .run();
+      return c.json({ error: "access_denied" }, 400);
+    }
+    if (dc.status !== "approved" || !dc.user_id)
+      return c.json({ error: "authorization_pending" }, 400);
+
+    // PKCE is optional in the device flow, but when the device bound a
+    // code_challenge at authorization time it must present the verifier now —
+    // so a leaked device_code alone can't be redeemed.
+    if (dc.code_challenge) {
+      if (!code_verifier)
+        return c.json(
+          {
+            error: "invalid_grant",
+            error_description: "code_verifier required",
+          },
+          400,
+        );
+      const pkceOk = await verifyPkce(
+        code_verifier,
+        dc.code_challenge,
+        dc.code_challenge_method ?? "S256",
+      );
+      if (!pkceOk)
+        return c.json(
+          {
+            error: "invalid_grant",
+            error_description: "PKCE verification failed",
+          },
+          400,
+        );
+    }
+
+    const user = await c.env.DB.prepare(
+      "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+    )
+      .bind(dc.user_id)
+      .first<UserRow>();
+    if (!user || !user.is_active)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    // Approved: mint tokens, then burn the device code (single use).
+    const consumed = await c.env.DB.prepare(
+      "DELETE FROM oauth_device_codes WHERE device_code = ? AND status = 'approved'",
+    )
+      .bind(dc.device_code)
+      .run();
+    if (consumed.meta.changes !== 1)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    const scopes = JSON.parse(dc.scopes) as string[];
+    const resources = parseResources(dc.resource);
+    const hasOffline = scopes.includes("offline_access");
+    const atTtl =
+      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
+    const rtTtl =
+      (user.refresh_token_ttl_days ?? config.refresh_token_ttl_days) *
+      24 *
+      60 *
+      60;
+    const refreshToken = hasOffline ? randomBase64url(48) : null;
+
+    const jti = randomId();
+    let accessToken: string;
+    if (oauthApp.use_jwt_tokens) {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      accessToken = signAccessToken(
+        {
+          iss: c.env.APP_URL,
+          sub: user.id,
+          aud: extractAud(scopes, c.env.APP_URL, resources),
+          client_id: clientId,
+          jti,
+          scope: scopes.join(" "),
+          ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
+        },
+        mldsaKey.secretKey,
+        mldsaKey.kid,
+        atTtl,
+      );
+    } else {
+      accessToken = randomBase64url(48);
+    }
+
+    const storedAccess = await hashSecret(c.env, accessToken);
+    const storedRefresh = await hashSecret(c.env, refreshToken);
+    await c.env.DB.prepare(
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        jti,
+        storedAccess,
+        storedRefresh,
+        clientId,
+        user.id,
+        JSON.stringify(scopes),
+        dc.resource,
+        dpopJkt,
+        now + atTtl,
+        hasOffline ? now + rtTtl : null,
+        now,
+      )
+      .run();
+
+    const response: Record<string, unknown> = {
+      access_token: accessToken,
+      token_type: dpopJkt ? "DPoP" : "Bearer",
+      expires_in: atTtl,
+      scope: scopes.join(" "),
+    };
+    if (refreshToken) response.refresh_token = refreshToken;
+    if (scopes.includes("openid")) {
+      const rsaKeyPair = await getRsaKeyPair(c.env.KV_SESSIONS);
+      response.id_token = await buildIdToken(
+        user,
+        clientId,
+        scopes,
+        dc.nonce,
+        rsaKeyPair.privateKey,
+        rsaKeyPair.kid,
+        atTtl,
+        c.env.APP_URL,
+        c.env.DB,
+      );
+    }
+    return c.json(response);
+  }
+
+  // ── Token Exchange (RFC 8693) ────────────────────────────────────────────
+  if (grant_type === TOKEN_EXCHANGE_GRANT_TYPE) {
+    const now = Math.floor(Date.now() / 1000);
+    const subjectToken = params.subject_token;
+    const subjectTokenType = params.subject_token_type;
+    if (!subjectToken || !subjectTokenType)
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description:
+            "subject_token and subject_token_type are required",
+        },
+        400,
+      );
+    if (subjectTokenType !== TOKEN_TYPE_ACCESS_TOKEN)
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "only access_token subject tokens are supported",
+        },
+        400,
+      );
+
+    const subject = await lookupAccessToken(c, subjectToken);
+    if (!subject)
+      return c.json(
+        {
+          error: "invalid_grant",
+          error_description: "subject_token is invalid",
+        },
+        400,
+      );
+
+    // Authorization: the requesting client may exchange a subject token that
+    // was issued to it, or one that carries a cross-app scope naming it
+    // (app:<clientId>:*). Anything else is refused — a token is not a bearer
+    // key that lets any client mint a fresh one.
+    const targetsRequester = subject.scopes.some((s) =>
+      s.startsWith(`app:${clientId}:`),
+    );
+    if (subject.clientId !== clientId && !targetsRequester)
+      return c.json(
+        {
+          error: "invalid_grant",
+          error_description: "client may not exchange this token",
+        },
+        400,
+      );
+
+    // Requested scope must be a subset of the subject token's scope.
+    const requested = (params.scope ?? "").split(" ").filter(Boolean);
+    let newScopes = subject.scopes;
+    if (requested.length) {
+      if (!requested.every((s) => subject.scopes.includes(s)))
+        return c.json({ error: "invalid_scope" }, 400);
+      newScopes = requested;
+    }
+
+    // RFC 8707 resource / RFC 8693 audience both constrain the new aud.
+    const audienceVals = form
+      ? form.getAll("audience")
+      : typeof json?.audience === "string"
+        ? [json.audience]
+        : Array.isArray(json?.audience)
+          ? json.audience.filter((v): v is string => typeof v === "string")
+          : [];
+    const resources = validateResources([
+      ...collectResourceParams(form, json?.resource),
+      ...audienceVals,
+    ]);
+    if (resources === null)
+      return c.json(
+        {
+          error: "invalid_target",
+          error_description: "invalid resource/audience",
+        },
+        400,
+      );
+
+    const user = await c.env.DB.prepare(
+      "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+    )
+      .bind(subject.userId)
+      .first<UserRow>();
+    if (!user || !user.is_active)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    const atTtl =
+      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
+    const resourceJson = serializeResources(resources);
+    const jti = randomId();
+    let accessToken: string;
+    if (oauthApp.use_jwt_tokens) {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      accessToken = signAccessToken(
+        {
+          iss: c.env.APP_URL,
+          sub: user.id,
+          aud: extractAud(newScopes, c.env.APP_URL, resources),
+          client_id: clientId,
+          jti,
+          scope: newScopes.join(" "),
+          ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
+        },
+        mldsaKey.secretKey,
+        mldsaKey.kid,
+        atTtl,
+      );
+    } else {
+      accessToken = randomBase64url(48);
+    }
+    const storedAccess = await hashSecret(c.env, accessToken);
+    // Exchanged tokens are not refreshable (no refresh_token issued).
+    await c.env.DB.prepare(
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+    )
+      .bind(
+        jti,
+        storedAccess,
+        clientId,
+        user.id,
+        JSON.stringify(newScopes),
+        resourceJson,
+        dpopJkt,
+        now + atTtl,
+        now,
+      )
+      .run();
+
+    return c.json({
+      access_token: accessToken,
+      issued_token_type: TOKEN_TYPE_ACCESS_TOKEN,
+      token_type: dpopJkt ? "DPoP" : "Bearer",
+      expires_in: atTtl,
+      scope: newScopes.join(" "),
+    });
+  }
+
   return c.json({ error: "unsupported_grant_type" }, 400);
+});
+
+// ─── Shared helpers for the /par and /device_authorization endpoints ─────────
+
+/** Read an OAuth request body as either JSON or form-encoded, exposing the raw
+ *  URLSearchParams (for repeated parameters like `resource`) and the parsed
+ *  JSON value when present. */
+async function readOAuthBody(c: Context<AppEnv>): Promise<{
+  params: Record<string, string>;
+  form: URLSearchParams | null;
+  json: Record<string, unknown> | null;
+}> {
+  const ct = c.req.header("Content-Type") ?? "";
+  if (ct.includes("application/json")) {
+    const json = await c.req
+      .json<Record<string, unknown>>()
+      .catch(() => ({}) as Record<string, unknown>);
+    const params: Record<string, string> = {};
+    for (const [k, v] of Object.entries(json))
+      if (typeof v === "string") params[k] = v;
+    return { params, form: null, json };
+  }
+  const text = await c.req.text();
+  const form = new URLSearchParams(text);
+  return { params: Object.fromEntries(form), form, json: null };
+}
+
+/** Audiences a private_key_jwt client assertion may name (RFC 7523 §3): the
+ *  issuer, the token endpoint, and the concrete endpoint being called. */
+function acceptedAssertionAudiences(c: Context<AppEnv>): string[] {
+  const base = c.env.APP_URL;
+  const url = new URL(c.req.url);
+  return [base, `${base}/api/oauth/token`, `${url.origin}${url.pathname}`];
+}
+
+/**
+ * Authenticate the calling OAuth client. Supports three methods:
+ *   - private_key_jwt (RFC 7523): a signed `client_assertion` verified against
+ *     the client's registered JWKS.
+ *   - client_secret_basic / client_secret_post: a shared secret.
+ *   - none: a public client (client_id only, PKCE binds the exchange).
+ *
+ * `usedBasic` reports whether an HTTP Basic header was presented, so the caller
+ * can add the RFC 6749 §5.2 `WWW-Authenticate` challenge to a 401.
+ */
+async function authenticateClient(
+  c: Context<AppEnv>,
+  params: Record<string, string>,
+): Promise<
+  | {
+      ok: true;
+      app: OAuthAppRow;
+      method: "none" | "client_secret" | "private_key_jwt";
+      usedBasic: boolean;
+    }
+  | { ok: false; usedBasic: boolean; badRequest?: boolean }
+> {
+  const basic = parseBasicAuth(c.req.header("Authorization"));
+  const usedBasic = !!basic;
+
+  // ── private_key_jwt (RFC 7523) ─────────────────────────────────────────────
+  const assertion = params.client_assertion;
+  const assertionType = params.client_assertion_type;
+  if (assertion || assertionType) {
+    if (assertionType !== CLIENT_ASSERTION_TYPE || !assertion)
+      return { ok: false, usedBasic, badRequest: true };
+    const clientId = params.client_id ?? assertionClientId(assertion);
+    const app = clientId
+      ? await c.env.DB.prepare(
+          "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+        )
+          .bind(clientId)
+          .first<OAuthAppRow>()
+      : null;
+    if (!app) return { ok: false, usedBasic };
+    const ok = await verifyClientAssertion(
+      c.env,
+      app,
+      assertion,
+      acceptedAssertionAudiences(c),
+    );
+    return ok
+      ? { ok: true, app, method: "private_key_jwt", usedBasic }
+      : { ok: false, usedBasic };
+  }
+
+  // ── client_secret_* / none ─────────────────────────────────────────────────
+  const clientId = basic?.clientId ?? params.client_id;
+  const clientSecret = basic?.clientSecret ?? params.client_secret;
+  const app = clientId
+    ? await c.env.DB.prepare(
+        "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+      )
+        .bind(clientId)
+        .first<OAuthAppRow>()
+    : null;
+  if (!app) return { ok: false, usedBasic };
+  // A client that registered private_key_jwt must not fall back to a secret.
+  if (app.token_endpoint_auth_method === "private_key_jwt")
+    return { ok: false, usedBasic };
+  if (!(await clientSecretValid(c.env, app, clientSecret)))
+    return { ok: false, usedBasic };
+  return {
+    ok: true,
+    app,
+    method: app.is_public ? "none" : "client_secret",
+    usedBasic,
+  };
+}
+
+// ─── Pushed Authorization Request endpoint (RFC 9126) ────────────────────────
+
+app.post("/par", async (c) => {
+  noStore(c);
+  const { params, form, json } = await readOAuthBody(c);
+
+  const auth = await authenticateClient(c, params);
+  if (!auth.ok) {
+    if (auth.badRequest) return c.json({ error: "invalid_request" }, 400);
+    if (auth.usedBasic) challengeBasic(c);
+    return c.json({ error: "invalid_client" }, 401);
+  }
+  const oauthApp = auth.app;
+
+  // RFC 9126 §2.1: a PAR request MUST NOT itself carry a request_uri.
+  if (params.request_uri)
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "request_uri is not allowed here",
+      },
+      400,
+    );
+
+  if ((params.response_type ?? "code") !== "code")
+    return c.json({ error: "unsupported_response_type" }, 400);
+
+  const redirectUri = params.redirect_uri;
+  const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
+  if (!redirectUri || !redirectUriMatchesRegistered(redirectUri, redirectUris))
+    return c.json(
+      { error: "invalid_request", error_description: "invalid redirect_uri" },
+      400,
+    );
+
+  // Public clients must use PKCE (OAuth 2.0 Security BCP); enforce it here so a
+  // pushed request can't sidestep the check the interactive flow applies.
+  if (oauthApp.is_public === 1 && !params.code_challenge)
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge is required for public clients",
+      },
+      400,
+    );
+
+  const resources = validateResources(
+    collectResourceParams(form, json?.resource),
+  );
+  if (resources === null)
+    return c.json(
+      {
+        error: "invalid_target",
+        error_description: "invalid resource indicator",
+      },
+      400,
+    );
+
+  const payload: PushedRequest = {
+    client_id: oauthApp.client_id,
+    redirect_uri: redirectUri,
+    scope: params.scope ?? "",
+    optional_scope: params.optional_scope,
+    state: params.state,
+    code_challenge: params.code_challenge,
+    code_challenge_method: params.code_challenge_method,
+    nonce: params.nonce,
+    response_type: "code",
+    resource: resources.length ? resources : undefined,
+    prompt: params.prompt,
+    max_age: params.max_age ? Number(params.max_age) : undefined,
+    acr_values: params.acr_values,
+  };
+  const { requestUri, expiresIn } = await storePushedRequest(c.env, payload);
+  // RFC 9126 §2.2: 201 Created with the request_uri and its lifetime.
+  return c.json({ request_uri: requestUri, expires_in: expiresIn }, 201);
+});
+
+// ─── Device Authorization Grant (RFC 8628) ───────────────────────────────────
+
+app.post("/device_authorization", async (c) => {
+  noStore(c);
+  const { params, form, json } = await readOAuthBody(c);
+
+  const auth = await authenticateClient(c, params);
+  if (!auth.ok) {
+    if (auth.badRequest) return c.json({ error: "invalid_request" }, 400);
+    if (auth.usedBasic) challengeBasic(c);
+    return c.json({ error: "invalid_client" }, 401);
+  }
+  const oauthApp = auth.app;
+
+  const resources = validateResources(
+    collectResourceParams(form, json?.resource),
+  );
+  if (resources === null)
+    return c.json(
+      {
+        error: "invalid_target",
+        error_description: "invalid resource indicator",
+      },
+      400,
+    );
+
+  const requestedScopes = (params.scope ?? "").split(" ").filter(Boolean);
+  const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
+  const { scopes } = await resolveRequestedScopes(
+    c.env.DB,
+    c.env.APP_URL,
+    requestedScopes,
+    allowedScopes,
+    oauthApp.client_id,
+  );
+
+  // The device verification screen is a deliberately simple approve/deny. It
+  // cannot carry the admin 2FA gate site scopes need, nor the team picker the
+  // unbound team scopes need, so those are refused here rather than granted
+  // through a weaker consent than the interactive flow demands.
+  if (hasSiteScopes(scopes) || hasUnboundTeamScopes(scopes))
+    return c.json(
+      {
+        error: "invalid_scope",
+        error_description:
+          "site-level and team scopes cannot be granted via the device flow",
+      },
+      400,
+    );
+
+  const now = Math.floor(Date.now() / 1000);
+  const deviceCode = randomBase64url(32);
+  const storedDeviceCode = await hashSecret(c.env, deviceCode);
+  const resourceJson = serializeResources(resources);
+
+  // user_code is UNIQUE; retry a few times on the (astronomically unlikely)
+  // collision before giving up.
+  let userCode = "";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = generateUserCode();
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO oauth_device_codes
+           (device_code, user_code, client_id, scopes, resource, code_challenge, code_challenge_method, nonce, status, interval, last_polled_at, expires_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?)`,
+      )
+        .bind(
+          storedDeviceCode,
+          normalizeUserCode(candidate),
+          oauthApp.client_id,
+          JSON.stringify(scopes),
+          resourceJson,
+          params.code_challenge ?? null,
+          params.code_challenge_method ?? null,
+          params.nonce ?? null,
+          DEVICE_POLL_INTERVAL_SECONDS,
+          now + DEVICE_CODE_TTL_SECONDS,
+          now,
+        )
+        .run();
+      userCode = candidate;
+      break;
+    } catch {
+      // UNIQUE violation on user_code — try another.
+    }
+  }
+  if (!userCode) return c.json({ error: "server_error" }, 500);
+
+  const verificationUri = `${c.env.APP_URL}/device`;
+  return c.json({
+    device_code: deviceCode,
+    user_code: userCode,
+    verification_uri: verificationUri,
+    verification_uri_complete: `${verificationUri}?user_code=${encodeURIComponent(userCode)}`,
+    expires_in: DEVICE_CODE_TTL_SECONDS,
+    interval: DEVICE_POLL_INTERVAL_SECONDS,
+  });
+});
+
+// GET /api/oauth/device — verification-screen data for a user_code (SPA).
+app.get("/device", optionalAuth, async (c) => {
+  const userCode = normalizeUserCode(c.req.query("user_code") ?? "");
+  if (!userCode) return c.json({ error: "invalid_request" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  const dc = await c.env.DB.prepare(
+    "SELECT * FROM oauth_device_codes WHERE user_code = ?",
+  )
+    .bind(userCode)
+    .first<OAuthDeviceCodeRow>();
+  if (!dc || dc.expires_at < now)
+    return c.json({ error: "expired_or_unknown" }, 404);
+  if (dc.status !== "pending")
+    return c.json({ error: "already_handled", status: dc.status }, 409);
+
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(dc.client_id)
+    .first<OAuthAppRow>();
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
+
+  const isVerified = await computeIsVerified(
+    c.env.DB,
+    oauthApp.owner_id,
+    oauthApp.website_url,
+    oauthApp.redirect_uris,
+    oauthApp.team_id,
+  );
+  const scopes = JSON.parse(dc.scopes) as string[];
+  return c.json({
+    app: await buildConsentAppSummary(c.env, oauthApp, isVerified),
+    scopes,
+    user: c.get("user") ?? null,
+    user_code: userCode,
+  });
+});
+
+// POST /api/oauth/device/decision — the signed-in user approves or denies.
+app.post("/device/decision", requireAuth, async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{
+    user_code: string;
+    action: "approve" | "deny";
+  }>();
+  const userCode = normalizeUserCode(body.user_code ?? "");
+  if (!userCode) return c.json({ error: "invalid_request" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  const dc = await c.env.DB.prepare(
+    "SELECT * FROM oauth_device_codes WHERE user_code = ?",
+  )
+    .bind(userCode)
+    .first<OAuthDeviceCodeRow>();
+  if (!dc || dc.expires_at < now)
+    return c.json({ error: "expired_or_unknown" }, 404);
+  if (dc.status !== "pending")
+    return c.json({ error: "already_handled", status: dc.status }, 409);
+
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(dc.client_id)
+    .first<OAuthAppRow>();
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
+
+  if (body.action === "deny") {
+    await c.env.DB.prepare(
+      "UPDATE oauth_device_codes SET status = 'denied' WHERE user_code = ? AND status = 'pending'",
+    )
+      .bind(userCode)
+      .run();
+    return c.json({ status: "denied" });
+  }
+
+  // Restricted accounts follow the same app-authorization gate as the
+  // interactive flow.
+  const restriction = await getRestrictionState(c.env.DB, user.id);
+  if (restriction) {
+    const appErr = await checkAppAuthorizationAllowed(
+      c.env.DB,
+      restriction,
+      oauthApp,
+    );
+    if (appErr) return c.json({ error: "access_denied", message: appErr }, 403);
+  }
+  const whitelistDenied = await checkAccessWhitelist(
+    c.env.DB,
+    oauthApp,
+    user.id,
+  );
+  if (whitelistDenied)
+    return c.json(
+      { error: "unauthorized_whitelist", app_name: oauthApp.name },
+      403,
+    );
+
+  const scopes = JSON.parse(dc.scopes) as string[];
+  await c.env.DB.prepare(
+    `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, client_id) DO UPDATE SET scopes = excluded.scopes, granted_at = excluded.granted_at`,
+  )
+    .bind(randomId(), user.id, dc.client_id, JSON.stringify(scopes), now)
+    .run();
+
+  const approved = await c.env.DB.prepare(
+    "UPDATE oauth_device_codes SET status = 'approved', user_id = ? WHERE user_code = ? AND status = 'pending'",
+  )
+    .bind(user.id, userCode)
+    .run();
+  if (approved.meta.changes !== 1)
+    return c.json({ error: "already_handled" }, 409);
+
+  c.executionCtx.waitUntil(
+    deliverAppEvent(c.env, oauthApp.id, "user.token_granted", {
+      user_id: user.id,
+      scopes,
+      granted_at: now,
+    }).catch(() => {}),
+  );
+  return c.json({ status: "approved" });
+});
+
+// ─── Dynamic Client Registration (RFC 7591 / 7592) ───────────────────────────
+
+// The grant/response types every registered client may use here.
+const DCR_GRANT_TYPES = [
+  "authorization_code",
+  "refresh_token",
+  DEVICE_GRANT_TYPE,
+  TOKEN_EXCHANGE_GRANT_TYPE,
+];
+
+/** Keep only scopes this server recognises (platform scopes or an `app:*`
+ *  delegation form); default to the OIDC basics when none are requested. */
+function filterDcrScopes(scope: string | undefined): string[] {
+  const requested = (scope ?? "openid profile email")
+    .split(" ")
+    .filter(Boolean);
+  return requested.filter(
+    (s) => VALID_SCOPES.has(s) || parseAppScope(s) !== null,
+  );
+}
+
+/** Build the RFC 7591 §3.2.1 client information response for `app`. Includes
+ *  the (decrypted) client_secret for confidential clients, and — when
+ *  `regToken` is supplied — the registration access token. */
+async function buildClientInfoDoc(
+  env: Env,
+  app: OAuthAppRow,
+  regToken: string | null,
+): Promise<Record<string, unknown>> {
+  const doc: Record<string, unknown> = {
+    client_id: app.client_id,
+    client_id_issued_at: app.created_at,
+    client_name: app.name,
+    redirect_uris: parseRedirectUris(app.redirect_uris).map((r) => r.value),
+    grant_types: DCR_GRANT_TYPES,
+    response_types: ["code"],
+    token_endpoint_auth_method:
+      app.token_endpoint_auth_method ??
+      (app.is_public ? "none" : "client_secret_basic"),
+    scope: (JSON.parse(app.allowed_scopes) as string[]).join(" "),
+    registration_client_uri: `${env.APP_URL}/api/oauth/register/${app.client_id}`,
+  };
+  if (app.website_url) doc.client_uri = app.website_url;
+  if (app.icon_url) doc.logo_uri = app.icon_url;
+  const postLogout = JSON.parse(
+    app.post_logout_redirect_uris ?? "[]",
+  ) as string[];
+  if (postLogout.length) doc.post_logout_redirect_uris = postLogout;
+  if (app.jwks_uri) doc.jwks_uri = app.jwks_uri;
+  if (app.jwks) {
+    try {
+      doc.jwks = JSON.parse(app.jwks);
+    } catch {
+      /* omit malformed */
+    }
+  }
+  if (app.backchannel_logout_uri)
+    doc.backchannel_logout_uri = app.backchannel_logout_uri;
+  if (!app.is_public) {
+    doc.client_secret =
+      (await decryptSecret(env, app.client_secret)) ?? app.client_secret;
+    doc.client_secret_expires_at = 0; // never expires
+  }
+  if (regToken) doc.registration_access_token = regToken;
+  return doc;
+}
+
+/** RFC 7591 client metadata accepted at registration and update. */
+interface DcrMetadata {
+  redirect_uris?: string[];
+  client_name?: string;
+  client_uri?: string;
+  logo_uri?: string;
+  scope?: string;
+  token_endpoint_auth_method?: string;
+  post_logout_redirect_uris?: string[];
+  jwks?: unknown;
+  jwks_uri?: string;
+  backchannel_logout_uri?: string;
+}
+
+/** Validate + normalise the mutable parts of a registration request. Returns an
+ *  error string (→ invalid_client_metadata / invalid_redirect_uri) or the
+ *  normalised values. */
+function normaliseDcrMetadata(body: DcrMetadata):
+  | { error: string; code: "invalid_redirect_uri" | "invalid_client_metadata" }
+  | {
+      redirectUris: { type: "equals"; value: string }[];
+      isPublic: number;
+      authMethod: string;
+      scopes: string[];
+      postLogout: string[];
+      jwks: string | null;
+      jwksUri: string | null;
+      backchannelLogoutUri: string | null;
+    } {
+  const redirectUris: { type: "equals"; value: string }[] = [];
+  for (const uri of body.redirect_uris ?? []) {
+    const reason = validateRedirectUriForRegistration(uri);
+    if (reason)
+      return {
+        error: `Invalid redirect_uri: ${uri} (${reason})`,
+        code: "invalid_redirect_uri",
+      };
+    redirectUris.push({ type: "equals", value: uri });
+  }
+
+  const authMethod = body.token_endpoint_auth_method ?? "client_secret_basic";
+  const validMethods = [
+    "none",
+    "client_secret_basic",
+    "client_secret_post",
+    "private_key_jwt",
+  ];
+  if (!validMethods.includes(authMethod))
+    return {
+      error: `Unsupported token_endpoint_auth_method: ${authMethod}`,
+      code: "invalid_client_metadata",
+    };
+
+  let jwks: string | null = null;
+  if (body.jwks !== undefined) {
+    try {
+      jwks = JSON.stringify(body.jwks);
+    } catch {
+      return { error: "Invalid jwks", code: "invalid_client_metadata" };
+    }
+  }
+  const jwksUri = typeof body.jwks_uri === "string" ? body.jwks_uri : null;
+  if (jwksUri && validateOutboundUrlDcr(jwksUri))
+    return { error: "Invalid jwks_uri", code: "invalid_client_metadata" };
+
+  if (authMethod === "private_key_jwt" && !jwks && !jwksUri)
+    return {
+      error: "private_key_jwt requires jwks or jwks_uri",
+      code: "invalid_client_metadata",
+    };
+
+  const postLogout: string[] = [];
+  for (const u of body.post_logout_redirect_uris ?? []) {
+    try {
+      const parsed = new URL(u);
+      if (!["https:", "http:"].includes(parsed.protocol) || parsed.hash)
+        throw new Error("bad");
+      postLogout.push(u);
+    } catch {
+      return {
+        error: `Invalid post_logout_redirect_uri: ${u}`,
+        code: "invalid_client_metadata",
+      };
+    }
+  }
+
+  let backchannelLogoutUri: string | null = null;
+  if (
+    typeof body.backchannel_logout_uri === "string" &&
+    body.backchannel_logout_uri
+  ) {
+    if (validateOutboundUrlDcr(body.backchannel_logout_uri))
+      return {
+        error: "Invalid backchannel_logout_uri",
+        code: "invalid_client_metadata",
+      };
+    backchannelLogoutUri = body.backchannel_logout_uri;
+  }
+
+  return {
+    redirectUris,
+    isPublic: authMethod === "none" ? 1 : 0,
+    authMethod,
+    scopes: filterDcrScopes(body.scope),
+    postLogout,
+    jwks,
+    jwksUri,
+    backchannelLogoutUri,
+  };
+}
+
+/** https-only + SSRF check for a registered jwks_uri; returns a reason or null. */
+function validateOutboundUrlDcr(uri: string): string | null {
+  try {
+    const u = new URL(uri);
+    if (u.protocol !== "https:") return "must be https";
+  } catch {
+    return "invalid";
+  }
+  return null;
+}
+
+// POST /api/oauth/register — create a client (RFC 7591). Gated: the caller must
+// be a signed-in user or a PAT with apps:write (the "initial access token").
+app.post(
+  "/register",
+  tryPatAuth({ read: "apps:read", write: "apps:write" }),
+  requireAuth,
+  async (c) => {
+    const user = c.get("user");
+    const body = await c.req
+      .json<DcrMetadata>()
+      .catch(() => ({}) as DcrMetadata);
+
+    const norm = normaliseDcrMetadata(body);
+    if ("error" in norm)
+      return c.json({ error: norm.code, error_description: norm.error }, 400);
+
+    const id = randomId();
+    const clientId = `prism_${randomBase64url(16)}`;
+    const clientSecretPlain = norm.isPublic ? "" : randomBase64url(32);
+    const regToken = `reg_${randomBase64url(24)}`;
+    const now = Math.floor(Date.now() / 1000);
+
+    await c.env.DB.prepare(
+      `INSERT INTO oauth_apps
+         (id, owner_id, name, description, website_url, icon_url, client_id, client_secret,
+          redirect_uris, allowed_scopes, optional_scopes, oidc_fields, is_public, is_active, is_verified,
+          post_logout_redirect_uris, registration_access_token, token_endpoint_auth_method, jwks, jwks_uri,
+          backchannel_logout_uri, created_at, updated_at)
+       VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        id,
+        user.id,
+        body.client_name ?? "Dynamic Client",
+        body.client_uri ?? null,
+        body.logo_uri ?? null,
+        clientId,
+        clientSecretPlain ? await encryptSecret(c.env, clientSecretPlain) : "",
+        JSON.stringify(norm.redirectUris),
+        JSON.stringify(norm.scopes),
+        norm.isPublic,
+        JSON.stringify(norm.postLogout),
+        await hashSecret(c.env, regToken),
+        norm.authMethod,
+        norm.jwks,
+        norm.jwksUri,
+        norm.backchannelLogoutUri,
+        now,
+        now,
+      )
+      .run();
+
+    const app = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
+      .bind(id)
+      .first<OAuthAppRow>();
+    const doc = await buildClientInfoDoc(c.env, app!, regToken);
+    // The generated secret is the freshly-minted plaintext, not the stored hash.
+    if (!norm.isPublic) doc.client_secret = clientSecretPlain;
+    return c.json(doc, 201);
+  },
+);
+
+/** Authenticate an RFC 7592 management request: Bearer <registration_access_token>
+ *  matching the app addressed by :client_id. */
+async function authRegistrationAccess(
+  c: Context<AppEnv>,
+  clientId: string,
+): Promise<OAuthAppRow | null> {
+  const authz = c.req.header("Authorization");
+  if (!authz?.startsWith("Bearer ")) return null;
+  const token = authz.slice(7);
+  const app = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(clientId)
+    .first<OAuthAppRow>();
+  if (!app || !app.registration_access_token) return null;
+  const lookup = await hashLookupCandidate(c.env, token);
+  const matches =
+    (await timingSafeSecretEqual(
+      c.env,
+      app.registration_access_token,
+      token,
+    )) ||
+    (lookup !== null && app.registration_access_token === lookup);
+  return matches ? app : null;
+}
+
+// GET /api/oauth/register/:client_id — read client config (RFC 7592).
+app.get("/register/:client_id", async (c) => {
+  const app = await authRegistrationAccess(c, c.req.param("client_id"));
+  if (!app) return c.json({ error: "invalid_token" }, 401);
+  return c.json(await buildClientInfoDoc(c.env, app, null));
+});
+
+// PUT /api/oauth/register/:client_id — update client config (RFC 7592).
+app.put("/register/:client_id", async (c) => {
+  const app = await authRegistrationAccess(c, c.req.param("client_id"));
+  if (!app) return c.json({ error: "invalid_token" }, 401);
+  const body = await c.req.json<DcrMetadata>().catch(() => ({}) as DcrMetadata);
+  const norm = normaliseDcrMetadata(body);
+  if ("error" in norm)
+    return c.json({ error: norm.code, error_description: norm.error }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.prepare(
+    `UPDATE oauth_apps
+        SET name = ?, website_url = ?, icon_url = ?, redirect_uris = ?,
+            allowed_scopes = ?, is_public = ?, post_logout_redirect_uris = ?,
+            token_endpoint_auth_method = ?, jwks = ?, jwks_uri = ?,
+            backchannel_logout_uri = ?, updated_at = ?
+      WHERE id = ?`,
+  )
+    .bind(
+      body.client_name ?? app.name,
+      body.client_uri !== undefined ? body.client_uri : app.website_url,
+      body.logo_uri !== undefined ? body.logo_uri : app.icon_url,
+      JSON.stringify(norm.redirectUris),
+      JSON.stringify(norm.scopes),
+      norm.isPublic,
+      JSON.stringify(norm.postLogout),
+      norm.authMethod,
+      norm.jwks,
+      norm.jwksUri,
+      norm.backchannelLogoutUri,
+      now,
+      app.id,
+    )
+    .run();
+  const updated = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE id = ?",
+  )
+    .bind(app.id)
+    .first<OAuthAppRow>();
+  return c.json(await buildClientInfoDoc(c.env, updated!, null));
+});
+
+// DELETE /api/oauth/register/:client_id — deregister the client (RFC 7592).
+app.delete("/register/:client_id", async (c) => {
+  const app = await authRegistrationAccess(c, c.req.param("client_id"));
+  if (!app) return c.json({ error: "invalid_token" }, 401);
+  await c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?")
+    .bind(app.id)
+    .run();
+  return new Response(null, { status: 204 });
 });
 
 // ─── UserInfo endpoint (OpenID Connect) ─────────────────────────────────────
 
-app.get("/userinfo", async (c) => {
+// OIDC Core §5.3.1: the UserInfo Endpoint MUST support both GET and POST.
+// The Access Token is taken from the `Authorization: Bearer` header, or — for
+// POST with a form body — the `access_token` parameter (RFC 6750 §2.2).
+async function handleUserInfo(c: Context<AppEnv>): Promise<Response> {
+  let accessToken: string | undefined;
+  // RFC 9449: the DPoP scheme carries a bound access token; Bearer carries an
+  // ordinary one (or POST form body per RFC 6750 §2.2).
+  let dpopScheme = false;
   const auth = c.req.header("Authorization");
-  if (!auth?.startsWith("Bearer "))
+  if (auth?.startsWith("Bearer ")) {
+    accessToken = auth.slice(7);
+  } else if (auth?.startsWith("DPoP ")) {
+    accessToken = auth.slice(5);
+    dpopScheme = true;
+  } else if (c.req.method === "POST") {
+    const ct = c.req.header("Content-Type") ?? "";
+    if (ct.includes("application/x-www-form-urlencoded")) {
+      const body = await c.req.parseBody();
+      if (typeof body.access_token === "string")
+        accessToken = body.access_token;
+    }
+  }
+
+  if (!accessToken) {
+    // RFC 6750 §3: no credentials → challenge without an error code.
+    challengeBearer(c);
     return c.json({ error: "invalid_token" }, 401);
-  const accessToken = auth.slice(7);
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const accessLookup = await hashLookupCandidate(c.env, accessToken);
-  if (!accessLookup) return c.json({ error: "invalid_token" }, 401);
+  if (!accessLookup) {
+    challengeBearer(c, "invalid_token", "The access token is invalid");
+    return c.json({ error: "invalid_token" }, 401);
+  }
   const tokenRow = await c.env.DB.prepare(
     "SELECT * FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
   )
     .bind(accessToken, accessLookup)
     .first<OAuthTokenRow>();
 
-  if (!tokenRow || tokenRow.expires_at < now)
+  if (!tokenRow || tokenRow.expires_at < now) {
+    challengeBearer(
+      c,
+      "invalid_token",
+      "The access token expired or is invalid",
+    );
     return c.json({ error: "invalid_token" }, 401);
+  }
+
+  // RFC 9449 §7.1: a DPoP-bound token requires the DPoP scheme and a valid
+  // proof; a bound token used as Bearer, or a mismatched proof, is rejected.
+  if (tokenRow.dpop_jkt) {
+    const proof = c.req.header("DPoP");
+    const res =
+      dpopScheme && proof
+        ? await verifyDpopProof(c.env, proof, {
+            htm: c.req.method,
+            htu: c.req.url,
+            accessToken,
+          })
+        : { error: "invalid_dpop_proof" };
+    if ("error" in res || res.jkt !== tokenRow.dpop_jkt) {
+      challengeDpop(c, "invalid_token", "a valid DPoP proof is required");
+      return c.json({ error: "invalid_token" }, 401);
+    }
+  } else if (dpopScheme) {
+    challengeBearer(c, "invalid_token", "token is not DPoP-bound");
+    return c.json({ error: "invalid_token" }, 401);
+  }
+
+  // OIDC Core §5.4: the openid scope is what authorizes access to UserInfo.
+  const scopes = JSON.parse(tokenRow.scopes) as string[];
+  if (!scopes.includes("openid")) {
+    challengeBearer(c, "insufficient_scope", "The openid scope is required");
+    return c.json({ error: "insufficient_scope" }, 403);
+  }
 
   const user = await c.env.DB.prepare(
     "SELECT * FROM users WHERE id = ? AND kind = 'user'",
   )
     .bind(tokenRow.user_id)
     .first<UserRow>();
-  if (!user) return c.json({ error: "invalid_token" }, 401);
+  if (!user) {
+    challengeBearer(c, "invalid_token", "The access token is invalid");
+    return c.json({ error: "invalid_token" }, 401);
+  }
 
-  const scopes = JSON.parse(tokenRow.scopes) as string[];
   const claims = await buildClaims(
     user,
     tokenRow.client_id,
@@ -2204,31 +3716,25 @@ app.get("/userinfo", async (c) => {
     c.env.APP_URL,
   );
   return c.json(claims);
-});
+}
+
+app.get("/userinfo", handleUserInfo);
+app.post("/userinfo", handleUserInfo);
 
 // ─── Token introspection ─────────────────────────────────────────────────────
 
 /**
- * Authenticate the calling client from HTTP Basic or form parameters, the two
- * forms the token endpoint already accepts. Returns the app row, or null when
- * the credentials do not check out.
+ * Authenticate the calling client for introspection / revocation. Delegates to
+ * authenticateClient, so all three methods (private_key_jwt, client_secret_*,
+ * none) work here too. Returns the app row, or null when the credentials do not
+ * check out.
  */
 async function authenticateCallingClient(
   c: Context<AppEnv>,
   params: Record<string, string>,
 ): Promise<OAuthAppRow | null> {
-  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
-  const clientId = basicAuth?.clientId ?? params.client_id;
-  const clientSecret = basicAuth?.clientSecret ?? params.client_secret;
-  if (!clientId) return null;
-  const oauthApp = await c.env.DB.prepare(
-    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
-  )
-    .bind(clientId)
-    .first<OAuthAppRow>();
-  if (!oauthApp) return null;
-  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) return null;
-  return oauthApp;
+  const auth = await authenticateClient(c, params);
+  return auth.ok ? auth.app : null;
 }
 
 app.post("/introspect", async (c) => {
@@ -2245,8 +3751,10 @@ app.post("/introspect", async (c) => {
   // is for confidential resource servers; a public client that wants to know
   // whether its token still works can simply use it.
   const caller = await authenticateCallingClient(c, params);
-  if (!caller || caller.is_public)
+  if (!caller || caller.is_public) {
+    if (c.req.header("Authorization")?.startsWith("Basic ")) challengeBasic(c);
     return c.json({ error: "invalid_client" }, 401);
+  }
 
   const token = params.token;
   if (!token) return c.json({ active: false });
@@ -2288,9 +3796,17 @@ app.post("/introspect", async (c) => {
     scope: scopes.join(" "),
     client_id: tokenRow.client_id,
     username: tokenRow.user_id,
+    // RFC 7662 §2.2: DPoP-bound tokens are token_type "DPoP" and carry the
+    // key thumbprint in cnf (RFC 9449 §7); everything else is Bearer.
+    token_type: tokenRow.dpop_jkt ? "DPoP" : "Bearer",
     exp: tokenRow.expires_at,
     iat: tokenRow.created_at,
     sub: tokenRow.user_id,
+    aud: tokenRow.client_id,
+    iss: c.env.APP_URL,
+    ...(tokenRow.dpop_jkt ? { cnf: { jkt: tokenRow.dpop_jkt } } : {}),
+    // RFC 9470 authentication context, for a resource server's step-up decision.
+    ...accessAuthClaims(tokenRow.auth_time, tokenRow.amr),
   });
 });
 
@@ -2309,7 +3825,10 @@ app.post("/revoke", async (c) => {
   // to present that token anyway. The client_id only narrows the delete to
   // that app's own grants.
   const caller = await authenticateCallingClient(c, params);
-  if (!caller) return c.json({ error: "invalid_client" }, 401);
+  if (!caller) {
+    if (c.req.header("Authorization")?.startsWith("Basic ")) challengeBasic(c);
+    return c.json({ error: "invalid_client" }, 401);
+  }
 
   const token = params.token;
   if (token) {
@@ -2340,6 +3859,144 @@ app.post("/revoke", async (c) => {
   return new Response(null, { status: 200 });
 });
 
+// ─── RP-Initiated Logout (OpenID Connect) ────────────────────────────────────
+
+// end_session_endpoint. Ends the caller's Prism session and, when a registered
+// post_logout_redirect_uri is supplied, sends the browser back to it with the
+// client's `state`. Accepts GET and POST (OIDC RP-Initiated Logout §2/§5).
+async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
+  const q = c.req.query();
+  let form: Record<string, string> = {};
+  if (c.req.method === "POST") {
+    const ct = c.req.header("Content-Type") ?? "";
+    if (ct.includes("application/x-www-form-urlencoded"))
+      form = Object.fromEntries(new URLSearchParams(await c.req.text()));
+  }
+  const get = (k: string) => form[k] ?? q[k];
+  const idTokenHint = get("id_token_hint");
+  const postLogoutRedirectUri = get("post_logout_redirect_uri");
+  const state = get("state");
+  let clientIdHint = get("client_id");
+
+  // Prefer the client identity from a verified id_token_hint. An expired hint
+  // is still accepted (the session is ending); an unverifiable one is ignored.
+  if (idTokenHint) {
+    try {
+      const rsa = await getRsaKeyPair(c.env.KV_SESSIONS);
+      const payload = await verifyIdTokenRS256(idTokenHint, rsa.publicKey);
+      const aud = payload.aud;
+      if (typeof aud === "string") clientIdHint = aud;
+      else if (Array.isArray(aud) && typeof aud[0] === "string")
+        clientIdHint = aud[0];
+    } catch {
+      /* ignore an unverifiable hint */
+    }
+  }
+
+  // End the current session (if the browser presented one) and clear the cookie.
+  const sessionId = c.get("sessionId");
+  const endingUser = c.get("user");
+  // OIDC Back-Channel Logout: notify the user's clients before the session row
+  // is gone (delivery reads only ids we already hold).
+  if (endingUser)
+    await deliverBackChannelLogout(
+      c.env,
+      c.executionCtx,
+      endingUser.id,
+      sessionId ?? null,
+    );
+  if (sessionId)
+    await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
+      .bind(sessionId)
+      .run();
+  clearSessionCookie(c);
+
+  // Only redirect to a post_logout_redirect_uri that the identified client has
+  // registered — otherwise the endpoint would be an open redirect.
+  if (postLogoutRedirectUri && clientIdHint) {
+    const appRow = await c.env.DB.prepare(
+      "SELECT post_logout_redirect_uris FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+    )
+      .bind(clientIdHint)
+      .first<{ post_logout_redirect_uris: string }>();
+    let allowList: string[] = [];
+    if (appRow) {
+      try {
+        const parsed = JSON.parse(appRow.post_logout_redirect_uris);
+        if (Array.isArray(parsed))
+          allowList = parsed.filter((x): x is string => typeof x === "string");
+      } catch {
+        allowList = [];
+      }
+    }
+    if (allowList.includes(postLogoutRedirectUri)) {
+      const url = new URL(postLogoutRedirectUri);
+      if (state) url.searchParams.set("state", state);
+      return c.redirect(url.toString(), 302);
+    }
+  }
+
+  // No (valid) redirect target: land on the built-in signed-out page.
+  return c.redirect(`${c.env.APP_URL}/logged-out`, 302);
+}
+
+app.get("/end_session", optionalAuth, handleEndSession);
+app.post("/end_session", optionalAuth, handleEndSession);
+
+/**
+ * Resolve an OAuth access token value (JWT or opaque) to its live grant, for
+ * RFC 8693 token exchange. Returns the owner, scopes and issuing client, or
+ * null when the token is unknown, expired, or its user is inactive.
+ */
+async function lookupAccessToken(
+  c: Context<AppEnv>,
+  token: string,
+): Promise<{ userId: string; scopes: string[]; clientId: string } | null> {
+  const now = Math.floor(Date.now() / 1000);
+  let tokenRow: {
+    user_id: string;
+    scopes: string;
+    expires_at: number;
+    client_id: string;
+  } | null;
+
+  if (token.split(".").length === 3) {
+    try {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      const payload = verifyAccessToken(token, mldsaKey.publicKey);
+      tokenRow = await c.env.DB.prepare(
+        "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE id = ?",
+      )
+        .bind(payload.jti)
+        .first();
+    } catch {
+      return null;
+    }
+  } else {
+    const lookup = await hashLookupCandidate(c.env, token);
+    if (!lookup) return null;
+    tokenRow = await c.env.DB.prepare(
+      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
+    )
+      .bind(token, lookup)
+      .first();
+  }
+
+  if (!tokenRow || tokenRow.expires_at < now) return null;
+  const userRow = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE id = ? AND is_active = 1 AND kind = 'user'",
+  )
+    .bind(tokenRow.user_id)
+    .first<{ id: string }>();
+  if (!userRow) return null;
+
+  return {
+    userId: tokenRow.user_id,
+    scopes: JSON.parse(tokenRow.scopes) as string[],
+    clientId: tokenRow.client_id,
+  };
+}
+
 // ─── Resource endpoints (OAuth-protected) ────────────────────────────────────
 
 /** Validate Bearer token (OAuth access token or PAT) and check for a required scope.
@@ -2352,16 +4009,29 @@ app.post("/revoke", async (c) => {
  *  insert can't bypass the team-user invariant.
  */
 async function resolveBearerToken(
-  c: { req: { header(name: string): string | undefined }; env: Env },
+  c: Context<AppEnv>,
   requiredScope: string,
+  // RFC 9470: when set, the token's acr must satisfy this (an "mfa" token
+  // satisfies a "pwd" requirement); otherwise a step-up challenge is issued.
+  requiredAcr?: string,
 ): Promise<{
   userId: string;
   scopes: string[];
   clientId: string | null;
 } | null> {
-  const auth = c.req.header("Authorization");
-  if (!auth?.startsWith("Bearer ")) return null;
-  const raw = auth.slice(7);
+  // Accept either the Bearer or the DPoP (RFC 9449) authentication scheme.
+  const authz = c.req.header("Authorization") ?? "";
+  let scheme: "Bearer" | "DPoP";
+  let raw: string;
+  if (authz.startsWith("Bearer ")) {
+    scheme = "Bearer";
+    raw = authz.slice(7);
+  } else if (authz.startsWith("DPoP ")) {
+    scheme = "DPoP";
+    raw = authz.slice(5);
+  } else {
+    return null;
+  }
   const now = Math.floor(Date.now() / 1000);
 
   let resolvedUserId: string;
@@ -2370,6 +4040,10 @@ async function resolveBearerToken(
   // and act directly as the user. Set to oauth_apps.client_id for JWT or
   // opaque OAuth access tokens so callers can apply per-grant policy.
   let resolvedClientId: string | null = null;
+  // The DPoP key thumbprint the token is bound to, if any.
+  let tokenJkt: string | null = null;
+  // The token's authentication context class, for RFC 9470 step-up.
+  let tokenAcr: string | null = null;
 
   // Personal Access Token (prism_pat_ prefix)
   if (raw.startsWith("prism_pat_")) {
@@ -2409,7 +4083,7 @@ async function resolveBearerToken(
     }
     // Revocation check: look up by jti (= oauth_tokens.id)
     const tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE id = ?",
+      "SELECT user_id, scopes, expires_at, client_id, dpop_jkt FROM oauth_tokens WHERE id = ?",
     )
       .bind(payload.jti)
       .first<{
@@ -2417,6 +4091,7 @@ async function resolveBearerToken(
         scopes: string;
         expires_at: number;
         client_id: string;
+        dpop_jkt: string | null;
       }>();
     if (!tokenRow || tokenRow.expires_at < now) return null;
     const scopes = JSON.parse(tokenRow.scopes) as string[];
@@ -2424,12 +4099,14 @@ async function resolveBearerToken(
     resolvedUserId = tokenRow.user_id;
     resolvedScopes = scopes;
     resolvedClientId = tokenRow.client_id;
+    tokenJkt = payload.cnf?.jkt ?? tokenRow.dpop_jkt;
+    tokenAcr = payload.acr ?? null;
   } else {
     // Legacy opaque access token (kept for backward compatibility)
     const accessLookup = await hashLookupCandidate(c.env, raw);
     if (!accessLookup) return null;
     const tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
+      "SELECT user_id, scopes, expires_at, client_id, dpop_jkt, amr FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
     )
       .bind(raw, accessLookup)
       .first<{
@@ -2437,6 +4114,8 @@ async function resolveBearerToken(
         scopes: string;
         expires_at: number;
         client_id: string;
+        dpop_jkt: string | null;
+        amr: string | null;
       }>();
     if (!tokenRow || tokenRow.expires_at < now) return null;
     const scopes = JSON.parse(tokenRow.scopes) as string[];
@@ -2444,6 +4123,36 @@ async function resolveBearerToken(
     resolvedUserId = tokenRow.user_id;
     resolvedScopes = scopes;
     resolvedClientId = tokenRow.client_id;
+    tokenJkt = tokenRow.dpop_jkt;
+    tokenAcr = tokenRow.amr ? deriveAcr(JSON.parse(tokenRow.amr)) : null;
+  }
+
+  // RFC 9449 §7.1: a DPoP-bound token is only valid with the DPoP scheme and a
+  // matching proof; a bound token presented as plain Bearer is rejected, and
+  // the DPoP scheme is refused for a token that carries no binding.
+  if (tokenJkt) {
+    if (scheme !== "DPoP") return null;
+    const proof = c.req.header("DPoP");
+    if (!proof) return null;
+    const res = await verifyDpopProof(c.env, proof, {
+      htm: c.req.method,
+      htu: c.req.url,
+      accessToken: raw,
+    });
+    if ("error" in res || res.jkt !== tokenJkt) return null;
+  } else if (scheme === "DPoP") {
+    return null;
+  }
+
+  // RFC 9470: enforce a required acr, issuing a step-up challenge when unmet.
+  // An "mfa" token satisfies a "pwd" requirement, but not vice versa.
+  if (requiredAcr) {
+    const satisfied =
+      tokenAcr === requiredAcr || (requiredAcr === "pwd" && tokenAcr === "mfa");
+    if (!satisfied) {
+      challengeStepUp(c, { acrValues: requiredAcr });
+      return null;
+    }
   }
 
   // Reject tokens whose user has been deactivated/deleted, and any
@@ -3471,7 +5180,7 @@ app.delete("/me/teams/:id/members/:userId", async (c) => {
 
 /** Ensure the token owner is a site admin. Returns the user row or null. */
 async function requireAdminToken(
-  c: { req: { header(name: string): string | undefined }; env: Env },
+  c: Context<AppEnv>,
   requiredScope: string,
 ): Promise<{ userId: string; scopes: string[] } | null> {
   const resolved = await resolveBearerToken(c, requiredScope);
@@ -3671,7 +5380,7 @@ app.get("/me/site/users/:id", getUserByScope("site:user:read"));
 // All routes below require a bound team scope: team:<teamId>:<permission>
 
 async function resolveTeamToken(
-  c: { req: { header(name: string): string | undefined }; env: Env },
+  c: Context<AppEnv>,
   teamId: string,
   permission: string,
 ): Promise<{
@@ -4194,6 +5903,30 @@ async function buildClaims(
   return claims;
 }
 
+/** Derive an `acr` value from the authentication methods: "mfa" when a second
+ *  factor was used, otherwise "pwd". */
+function deriveAcr(amr: string[]): string {
+  return amr.includes("mfa") || amr.includes("otp") ? "mfa" : "pwd";
+}
+
+/** RFC 9470 authentication-context claims for a JWT access token, from the
+ *  authorizing session's auth_time + amr (stored on the code/token). */
+function accessAuthClaims(
+  authTime: number | null,
+  amrJson: string | null,
+): { auth_time?: number; acr?: string; amr?: string[] } {
+  const out: { auth_time?: number; acr?: string; amr?: string[] } = {};
+  if (authTime != null) out.auth_time = authTime;
+  if (amrJson) {
+    const amr = JSON.parse(amrJson) as string[];
+    if (amr.length) {
+      out.amr = amr;
+      out.acr = deriveAcr(amr);
+    }
+  }
+  return out;
+}
+
 async function buildIdToken(
   user: UserRow,
   clientId: string,
@@ -4204,12 +5937,25 @@ async function buildIdToken(
   ttl: number,
   issuer: string,
   db: D1Database,
+  authContext?: {
+    authTime: number | null;
+    amr: string[] | null;
+    sid?: string | null;
+  },
 ): Promise<string> {
   const { signIdTokenRS256 } = await import("../lib/jwt");
   const claims = await buildClaims(user, clientId, scopes, db, issuer);
   claims.iss = issuer;
   claims.aud = clientId;
   if (nonce) claims.nonce = nonce;
+  // OIDC Core §2: auth_time / acr / amr, when the authenticating session's
+  // context was captured at consent. sid backs OIDC back-channel logout.
+  if (authContext?.authTime != null) claims.auth_time = authContext.authTime;
+  if (authContext?.amr && authContext.amr.length) {
+    claims.amr = authContext.amr;
+    claims.acr = deriveAcr(authContext.amr);
+  }
+  if (authContext?.sid) claims.sid = authContext.sid;
   return signIdTokenRS256(claims, privateKey, kid, ttl);
 }
 

@@ -360,7 +360,7 @@ app.post("/auth/register-with-invite", async (c) => {
 
   const { issueSession, safeUser } = await import("./auth");
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c, user, ttl);
+  const token = await issueSession(c, user, ttl, ["pwd"]);
 
   const requirements = await effectiveRequirements(c.env.DB, team);
   return c.json(
