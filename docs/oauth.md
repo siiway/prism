@@ -443,6 +443,34 @@ The assertion is a JWT with `iss` = `sub` = your `client_id`, `aud` = the issuer
 or token endpoint URL, a short `exp`, and a unique `jti` (one-time use).
 Supported signing algorithms: RS256, ES256, EdDSA.
 
+## DPoP — sender-constrained tokens (RFC 9449)
+
+Bind a token to a key the client holds, so a stolen token value is useless
+without the key. On the token request, send a `DPoP` header — a JWT signed by
+the client's key, carrying the public key in its header and bound to the request:
+
+```http
+POST /api/oauth/token
+DPoP: <proof-jwt>   # htm=POST, htu=<token endpoint>, iat, jti
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=...&client_id=...&code_verifier=...
+```
+
+The response comes back `"token_type": "DPoP"` and the access token is bound to
+the key's thumbprint (`cnf.jkt`). At a resource, present it with the `DPoP`
+scheme and a fresh proof that also hashes the token (`ath`):
+
+```http
+GET /api/oauth/userinfo
+Authorization: DPoP <ACCESS_TOKEN>
+DPoP: <proof-jwt>   # htm=GET, htu=<resource url>, ath=base64url(sha256(token))
+```
+
+A DPoP-bound token presented as plain `Bearer`, or without a matching proof, is
+rejected. Refresh requests must repeat the proof from the same key. Supported
+proof algorithms: RS256, ES256, EdDSA.
+
 ## Token Exchange (RFC 8693)
 
 Exchange one access token for another — for delegation between apps:

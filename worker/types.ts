@@ -329,6 +329,8 @@ export interface OAuthTokenRow {
   /** RFC 8707 resource indicators the grant was issued for, JSON string[] or
    *  null. Preserved so a refresh keeps the same audience. */
   resource: string | null;
+  /** RFC 9449 DPoP: the JWK thumbprint this token is bound to, or null. */
+  dpop_jkt: string | null;
   expires_at: number;
   refresh_expires_at: number | null;
   created_at: number;

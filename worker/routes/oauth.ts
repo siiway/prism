@@ -100,6 +100,7 @@ import {
   assertionClientId,
   CLIENT_ASSERTION_TYPE,
 } from "../lib/clientAssertion";
+import { verifyDpopProof } from "../lib/dpop";
 import { clearSessionCookie } from "../lib/cookies";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -168,6 +169,22 @@ function challengeBearer(
   description?: string,
 ): void {
   let value = `Bearer realm="${c.env.APP_URL}"`;
+  if (error) value += `, error="${error}"`;
+  if (description) value += `, error_description="${description}"`;
+  c.header("WWW-Authenticate", value);
+}
+
+/**
+ * RFC 9449 §7.2: a resource that expects a DPoP-bound token challenges with the
+ * `DPoP` scheme and the algorithms it accepts. Used when a bound token is
+ * presented without a valid proof.
+ */
+function challengeDpop(
+  c: Context<AppEnv>,
+  error?: "invalid_token" | "invalid_dpop_proof",
+  description?: string,
+): void {
+  let value = `DPoP algs="RS256 ES256 EdDSA"`;
   if (error) value += `, error="${error}"`;
   if (description) value += `, error_description="${description}"`;
   c.header("WWW-Authenticate", value);
@@ -2175,6 +2192,27 @@ app.post("/token", async (c) => {
 
   const config = await getConfig(c.env.DB);
 
+  // RFC 9449: a DPoP proof on the token request binds the issued token to the
+  // proof key's thumbprint. Verified once here (htm=POST, htu=this endpoint);
+  // each grant below stamps the resulting jkt onto the token it mints.
+  let dpopJkt: string | null = null;
+  const dpopHeader = c.req.header("DPoP");
+  if (dpopHeader) {
+    const res = await verifyDpopProof(c.env, dpopHeader, {
+      htm: "POST",
+      htu: c.req.url,
+    });
+    if ("error" in res)
+      return c.json(
+        {
+          error: "invalid_dpop_proof",
+          error_description: "invalid DPoP proof",
+        },
+        400,
+      );
+    dpopJkt = res.jkt;
+  }
+
   // RFC 6749 §5.2: grant_type is REQUIRED; its absence is invalid_request,
   // distinct from a present-but-unknown value (unsupported_grant_type below).
   if (!grant_type) {
@@ -2291,6 +2329,7 @@ app.post("/token", async (c) => {
           client_id: clientId,
           jti,
           scope: scopes.join(" "),
+          ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
         },
         mldsaKey.secretKey,
         mldsaKey.kid,
@@ -2308,8 +2347,8 @@ app.post("/token", async (c) => {
     const storedAccess = await hashSecret(c.env, accessToken);
     const storedRefresh = await hashSecret(c.env, refreshToken);
     await c.env.DB.prepare(
-      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, expires_at, refresh_expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         jti,
@@ -2319,6 +2358,7 @@ app.post("/token", async (c) => {
         user.id,
         JSON.stringify(scopes),
         codeRow.resource,
+        dpopJkt,
         now + atTtl,
         hasOffline ? now + rtTtl : null,
         now,
@@ -2327,7 +2367,7 @@ app.post("/token", async (c) => {
 
     const response: Record<string, unknown> = {
       access_token: accessToken,
-      token_type: "Bearer",
+      token_type: dpopJkt ? "DPoP" : "Bearer",
       expires_in: atTtl,
       scope: scopes.join(" "),
     };
@@ -2390,6 +2430,15 @@ app.post("/token", async (c) => {
       );
     }
 
+    // RFC 9449 §5: a DPoP-bound refresh token may only be refreshed with a
+    // proof from the same key. The binding is preserved across rotation.
+    if (tokenRow.dpop_jkt && dpopJkt !== tokenRow.dpop_jkt)
+      return c.json(
+        { error: "invalid_dpop_proof", error_description: "DPoP key mismatch" },
+        400,
+      );
+    const effJkt = tokenRow.dpop_jkt ?? dpopJkt;
+
     const user = await c.env.DB.prepare(
       "SELECT * FROM users WHERE id = ? AND kind = 'user'",
     )
@@ -2414,6 +2463,7 @@ app.post("/token", async (c) => {
           client_id: tokenRow.client_id,
           jti: tokenRow.id,
           scope: scopes.join(" "),
+          ...(effJkt ? { cnf: { jkt: effJkt } } : {}),
         },
         mldsaKey.secretKey,
         mldsaKey.kid,
@@ -2434,7 +2484,7 @@ app.post("/token", async (c) => {
     const rotated = await c.env.DB.prepare(
       `UPDATE oauth_tokens
           SET access_token = ?, expires_at = ?,
-              refresh_token = ?, previous_refresh_token = ?
+              refresh_token = ?, previous_refresh_token = ?, dpop_jkt = ?
         WHERE id = ? AND refresh_token = ?`,
     )
       .bind(
@@ -2442,6 +2492,7 @@ app.post("/token", async (c) => {
         now + atTtl,
         storedNewRefresh,
         tokenRow.refresh_token,
+        effJkt,
         tokenRow.id,
         tokenRow.refresh_token,
       )
@@ -2453,7 +2504,7 @@ app.post("/token", async (c) => {
 
     return c.json({
       access_token: newAccessToken,
-      token_type: "Bearer",
+      token_type: effJkt ? "DPoP" : "Bearer",
       expires_in: atTtl,
       scope: scopes.join(" "),
       refresh_token: newRefreshToken,
@@ -2587,6 +2638,7 @@ app.post("/token", async (c) => {
           client_id: clientId,
           jti,
           scope: scopes.join(" "),
+          ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
         },
         mldsaKey.secretKey,
         mldsaKey.kid,
@@ -2599,8 +2651,8 @@ app.post("/token", async (c) => {
     const storedAccess = await hashSecret(c.env, accessToken);
     const storedRefresh = await hashSecret(c.env, refreshToken);
     await c.env.DB.prepare(
-      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, expires_at, refresh_expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         jti,
@@ -2610,6 +2662,7 @@ app.post("/token", async (c) => {
         user.id,
         JSON.stringify(scopes),
         dc.resource,
+        dpopJkt,
         now + atTtl,
         hasOffline ? now + rtTtl : null,
         now,
@@ -2618,7 +2671,7 @@ app.post("/token", async (c) => {
 
     const response: Record<string, unknown> = {
       access_token: accessToken,
-      token_type: "Bearer",
+      token_type: dpopJkt ? "DPoP" : "Bearer",
       expires_in: atTtl,
       scope: scopes.join(" "),
     };
@@ -2742,6 +2795,7 @@ app.post("/token", async (c) => {
           client_id: clientId,
           jti,
           scope: newScopes.join(" "),
+          ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
         },
         mldsaKey.secretKey,
         mldsaKey.kid,
@@ -2753,8 +2807,8 @@ app.post("/token", async (c) => {
     const storedAccess = await hashSecret(c.env, accessToken);
     // Exchanged tokens are not refreshable (no refresh_token issued).
     await c.env.DB.prepare(
-      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, expires_at, refresh_expires_at, created_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?)`,
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, ?)`,
     )
       .bind(
         jti,
@@ -2763,6 +2817,7 @@ app.post("/token", async (c) => {
         user.id,
         JSON.stringify(newScopes),
         resourceJson,
+        dpopJkt,
         now + atTtl,
         now,
       )
@@ -2771,7 +2826,7 @@ app.post("/token", async (c) => {
     return c.json({
       access_token: accessToken,
       issued_token_type: TOKEN_TYPE_ACCESS_TOKEN,
-      token_type: "Bearer",
+      token_type: dpopJkt ? "DPoP" : "Bearer",
       expires_in: atTtl,
       scope: newScopes.join(" "),
     });
@@ -3511,9 +3566,15 @@ app.delete("/register/:client_id", async (c) => {
 // POST with a form body — the `access_token` parameter (RFC 6750 §2.2).
 async function handleUserInfo(c: Context<AppEnv>): Promise<Response> {
   let accessToken: string | undefined;
+  // RFC 9449: the DPoP scheme carries a bound access token; Bearer carries an
+  // ordinary one (or POST form body per RFC 6750 §2.2).
+  let dpopScheme = false;
   const auth = c.req.header("Authorization");
   if (auth?.startsWith("Bearer ")) {
     accessToken = auth.slice(7);
+  } else if (auth?.startsWith("DPoP ")) {
+    accessToken = auth.slice(5);
+    dpopScheme = true;
   } else if (c.req.method === "POST") {
     const ct = c.req.header("Content-Type") ?? "";
     if (ct.includes("application/x-www-form-urlencoded")) {
@@ -3547,6 +3608,27 @@ async function handleUserInfo(c: Context<AppEnv>): Promise<Response> {
       "invalid_token",
       "The access token expired or is invalid",
     );
+    return c.json({ error: "invalid_token" }, 401);
+  }
+
+  // RFC 9449 §7.1: a DPoP-bound token requires the DPoP scheme and a valid
+  // proof; a bound token used as Bearer, or a mismatched proof, is rejected.
+  if (tokenRow.dpop_jkt) {
+    const proof = c.req.header("DPoP");
+    const res =
+      dpopScheme && proof
+        ? await verifyDpopProof(c.env, proof, {
+            htm: c.req.method,
+            htu: c.req.url,
+            accessToken,
+          })
+        : { error: "invalid_dpop_proof" };
+    if ("error" in res || res.jkt !== tokenRow.dpop_jkt) {
+      challengeDpop(c, "invalid_token", "a valid DPoP proof is required");
+      return c.json({ error: "invalid_token" }, 401);
+    }
+  } else if (dpopScheme) {
+    challengeBearer(c, "invalid_token", "token is not DPoP-bound");
     return c.json({ error: "invalid_token" }, 401);
   }
 
@@ -3655,13 +3737,15 @@ app.post("/introspect", async (c) => {
     scope: scopes.join(" "),
     client_id: tokenRow.client_id,
     username: tokenRow.user_id,
-    // RFC 7662 §2.2 / RFC 6750: all tokens Prism issues are bearer tokens.
-    token_type: "Bearer",
+    // RFC 7662 §2.2: DPoP-bound tokens are token_type "DPoP" and carry the
+    // key thumbprint in cnf (RFC 9449 §7); everything else is Bearer.
+    token_type: tokenRow.dpop_jkt ? "DPoP" : "Bearer",
     exp: tokenRow.expires_at,
     iat: tokenRow.created_at,
     sub: tokenRow.user_id,
     aud: tokenRow.client_id,
     iss: c.env.APP_URL,
+    ...(tokenRow.dpop_jkt ? { cnf: { jkt: tokenRow.dpop_jkt } } : {}),
   });
 });
 
@@ -3854,16 +3938,26 @@ async function lookupAccessToken(
  *  insert can't bypass the team-user invariant.
  */
 async function resolveBearerToken(
-  c: { req: { header(name: string): string | undefined }; env: Env },
+  c: Context<AppEnv>,
   requiredScope: string,
 ): Promise<{
   userId: string;
   scopes: string[];
   clientId: string | null;
 } | null> {
-  const auth = c.req.header("Authorization");
-  if (!auth?.startsWith("Bearer ")) return null;
-  const raw = auth.slice(7);
+  // Accept either the Bearer or the DPoP (RFC 9449) authentication scheme.
+  const authz = c.req.header("Authorization") ?? "";
+  let scheme: "Bearer" | "DPoP";
+  let raw: string;
+  if (authz.startsWith("Bearer ")) {
+    scheme = "Bearer";
+    raw = authz.slice(7);
+  } else if (authz.startsWith("DPoP ")) {
+    scheme = "DPoP";
+    raw = authz.slice(5);
+  } else {
+    return null;
+  }
   const now = Math.floor(Date.now() / 1000);
 
   let resolvedUserId: string;
@@ -3872,6 +3966,8 @@ async function resolveBearerToken(
   // and act directly as the user. Set to oauth_apps.client_id for JWT or
   // opaque OAuth access tokens so callers can apply per-grant policy.
   let resolvedClientId: string | null = null;
+  // The DPoP key thumbprint the token is bound to, if any.
+  let tokenJkt: string | null = null;
 
   // Personal Access Token (prism_pat_ prefix)
   if (raw.startsWith("prism_pat_")) {
@@ -3911,7 +4007,7 @@ async function resolveBearerToken(
     }
     // Revocation check: look up by jti (= oauth_tokens.id)
     const tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE id = ?",
+      "SELECT user_id, scopes, expires_at, client_id, dpop_jkt FROM oauth_tokens WHERE id = ?",
     )
       .bind(payload.jti)
       .first<{
@@ -3919,6 +4015,7 @@ async function resolveBearerToken(
         scopes: string;
         expires_at: number;
         client_id: string;
+        dpop_jkt: string | null;
       }>();
     if (!tokenRow || tokenRow.expires_at < now) return null;
     const scopes = JSON.parse(tokenRow.scopes) as string[];
@@ -3926,12 +4023,13 @@ async function resolveBearerToken(
     resolvedUserId = tokenRow.user_id;
     resolvedScopes = scopes;
     resolvedClientId = tokenRow.client_id;
+    tokenJkt = payload.cnf?.jkt ?? tokenRow.dpop_jkt;
   } else {
     // Legacy opaque access token (kept for backward compatibility)
     const accessLookup = await hashLookupCandidate(c.env, raw);
     if (!accessLookup) return null;
     const tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
+      "SELECT user_id, scopes, expires_at, client_id, dpop_jkt FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
     )
       .bind(raw, accessLookup)
       .first<{
@@ -3939,6 +4037,7 @@ async function resolveBearerToken(
         scopes: string;
         expires_at: number;
         client_id: string;
+        dpop_jkt: string | null;
       }>();
     if (!tokenRow || tokenRow.expires_at < now) return null;
     const scopes = JSON.parse(tokenRow.scopes) as string[];
@@ -3946,6 +4045,24 @@ async function resolveBearerToken(
     resolvedUserId = tokenRow.user_id;
     resolvedScopes = scopes;
     resolvedClientId = tokenRow.client_id;
+    tokenJkt = tokenRow.dpop_jkt;
+  }
+
+  // RFC 9449 §7.1: a DPoP-bound token is only valid with the DPoP scheme and a
+  // matching proof; a bound token presented as plain Bearer is rejected, and
+  // the DPoP scheme is refused for a token that carries no binding.
+  if (tokenJkt) {
+    if (scheme !== "DPoP") return null;
+    const proof = c.req.header("DPoP");
+    if (!proof) return null;
+    const res = await verifyDpopProof(c.env, proof, {
+      htm: c.req.method,
+      htu: c.req.url,
+      accessToken: raw,
+    });
+    if ("error" in res || res.jkt !== tokenJkt) return null;
+  } else if (scheme === "DPoP") {
+    return null;
   }
 
   // Reject tokens whose user has been deactivated/deleted, and any
@@ -4973,7 +5090,7 @@ app.delete("/me/teams/:id/members/:userId", async (c) => {
 
 /** Ensure the token owner is a site admin. Returns the user row or null. */
 async function requireAdminToken(
-  c: { req: { header(name: string): string | undefined }; env: Env },
+  c: Context<AppEnv>,
   requiredScope: string,
 ): Promise<{ userId: string; scopes: string[] } | null> {
   const resolved = await resolveBearerToken(c, requiredScope);
@@ -5173,7 +5290,7 @@ app.get("/me/site/users/:id", getUserByScope("site:user:read"));
 // All routes below require a bound team scope: team:<teamId>:<permission>
 
 async function resolveTeamToken(
-  c: { req: { header(name: string): string | undefined }; env: Env },
+  c: Context<AppEnv>,
   teamId: string,
   permission: string,
 ): Promise<{

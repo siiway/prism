@@ -73,6 +73,8 @@ function providerMetadata(base: string) {
       "ES256",
       "EdDSA",
     ],
+    // RFC 9449 DPoP proof signing algorithms.
+    dpop_signing_alg_values_supported: ["RS256", "ES256", "EdDSA"],
     code_challenge_methods_supported: ["S256", "plain"],
     // OIDC Core prompt / acr support.
     prompt_values_supported: ["none", "login", "consent"],

@@ -140,6 +140,8 @@ export interface AccessTokenPayload {
   /** Token ID — matches oauth_tokens.id for revocation lookup */
   jti: string;
   scope: string;
+  /** RFC 9449 DPoP confirmation: the bound key's JWK thumbprint. */
+  cnf?: { jkt: string };
   iat: number;
   exp: number;
 }

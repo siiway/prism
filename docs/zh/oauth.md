@@ -392,6 +392,31 @@ client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
 该断言是一个 JWT，其 `iss` = `sub` = 你的 `client_id`，`aud` = issuer 或令牌端点
 URL，`exp` 较短，`jti` 唯一（一次性使用）。支持的签名算法：RS256、ES256、EdDSA。
 
+## DPoP — 发送方约束的令牌（RFC 9449）
+
+把令牌绑定到客户端持有的密钥上，这样即便令牌值被窃取，没有密钥也无法使用。在令牌
+请求上发送 `DPoP` 头——一个由客户端密钥签名、头部携带公钥并绑定到本次请求的 JWT：
+
+```http
+POST /api/oauth/token
+DPoP: <proof-jwt>   # htm=POST, htu=<令牌端点>, iat, jti
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=...&client_id=...&code_verifier=...
+```
+
+响应返回 `"token_type": "DPoP"`，且访问令牌绑定到密钥指纹（`cnf.jkt`）。在资源端，
+用 `DPoP` scheme 携带令牌，并附上同时对令牌做哈希（`ath`）的新证明：
+
+```http
+GET /api/oauth/userinfo
+Authorization: DPoP <ACCESS_TOKEN>
+DPoP: <proof-jwt>   # htm=GET, htu=<资源 url>, ath=base64url(sha256(token))
+```
+
+以普通 `Bearer` 出示 DPoP 绑定令牌、或缺少匹配证明，都会被拒绝。刷新请求必须重复来自
+同一密钥的证明。支持的证明算法：RS256、ES256、EdDSA。
+
 ## 令牌交换（RFC 8693）
 
 用一个访问令牌换取另一个——用于应用间的委托：
