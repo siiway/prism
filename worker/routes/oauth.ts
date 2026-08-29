@@ -11,7 +11,12 @@ import {
   timingSafeSecretEqual,
 } from "../lib/secretCrypto";
 import { getMLDSAKey } from "../lib/mldsa";
-import { signAccessToken, verifyAccessToken, extractAud } from "../lib/jwt";
+import {
+  signAccessToken,
+  verifyAccessToken,
+  verifyIdTokenRS256,
+  extractAud,
+} from "../lib/jwt";
 import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
 import { parseBasicAuth } from "../lib/basicAuth";
 import { getIp } from "../lib/clientIp";
@@ -76,12 +81,20 @@ import {
 import type {
   OAuthAppRow,
   OAuthCodeRow,
+  OAuthDeviceCodeRow,
   OAuthTokenRow,
   UserRow,
   AppAccessRuleRow,
   Variables,
 } from "../types";
 import { APP_REQUESTABLE_SCOPES } from "../../shared/scopes";
+import {
+  collectResourceParams,
+  validateResources,
+  serializeResources,
+  parseResources,
+} from "../lib/resource";
+import { clearSessionCookie } from "../lib/cookies";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -153,6 +166,91 @@ function challengeBearer(
   if (description) value += `, error_description="${description}"`;
   c.header("WWW-Authenticate", value);
 }
+
+// ─── Pushed Authorization Requests (RFC 9126) ────────────────────────────────
+
+/** Authorization request parameters a client pushed to /par, held server-side
+ *  under a one-time request_uri. The consent screen and the approval endpoint
+ *  read these back rather than trusting query parameters, so a pushed request
+ *  cannot be tampered with between /par and /authorize. */
+interface PushedRequest {
+  client_id: string;
+  redirect_uri: string;
+  scope: string;
+  optional_scope?: string;
+  state?: string;
+  code_challenge?: string;
+  code_challenge_method?: string;
+  nonce?: string;
+  response_type: string;
+  resource?: string[];
+}
+
+const PAR_URN_PREFIX = "urn:ietf:params:oauth:request_uri:";
+// RFC 9126 §2.2: request_uri values are short-lived. 90s comfortably covers a
+// redirect + consent render without leaving a stale entry usable for long.
+const PAR_TTL_SECONDS = 90;
+
+async function storePushedRequest(
+  env: Env,
+  payload: PushedRequest,
+): Promise<{ requestUri: string; expiresIn: number }> {
+  const id = randomBase64url(32);
+  await env.KV_CACHE.put(`par:${id}`, JSON.stringify(payload), {
+    expirationTtl: PAR_TTL_SECONDS,
+  });
+  return { requestUri: `${PAR_URN_PREFIX}${id}`, expiresIn: PAR_TTL_SECONDS };
+}
+
+async function loadPushedRequest(
+  env: Env,
+  requestUri: string,
+): Promise<PushedRequest | null> {
+  if (!requestUri.startsWith(PAR_URN_PREFIX)) return null;
+  const id = requestUri.slice(PAR_URN_PREFIX.length);
+  if (!id) return null;
+  const raw = await env.KV_CACHE.get(`par:${id}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PushedRequest;
+  } catch {
+    return null;
+  }
+}
+
+/** One-time use: consume a pushed request so its request_uri can't be replayed
+ *  (RFC 9126 §2.2). Best-effort — the KV TTL is the backstop. */
+function consumePushedRequest(env: Env, requestUri: string): void {
+  if (!requestUri.startsWith(PAR_URN_PREFIX)) return;
+  const id = requestUri.slice(PAR_URN_PREFIX.length);
+  if (id) void env.KV_CACHE.delete(`par:${id}`).catch(() => {});
+}
+
+// ─── Device Authorization Grant (RFC 8628) ───────────────────────────────────
+
+// RFC 8628 §6.1 recommends a base-20, vowel-free alphabet: no accidental words,
+// no visually ambiguous characters. 8 characters gives ~40 bits of entropy.
+const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
+const DEVICE_CODE_TTL_SECONDS = 600;
+const DEVICE_POLL_INTERVAL_SECONDS = 5;
+
+function generateUserCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  let code = "";
+  for (const b of bytes)
+    code += USER_CODE_ALPHABET[b % USER_CODE_ALPHABET.length];
+  // Display form groups the halves with a hyphen (WDJB-MJHT); the hyphen is
+  // cosmetic and stripped on lookup.
+  return `${code.slice(0, 4)}-${code.slice(4)}`;
+}
+
+/** Normalize a user-entered code for lookup: uppercase, keep only alphabet
+ *  characters (so hyphens, spaces, and casing the user typed don't matter). */
+function normalizeUserCode(input: string): string {
+  return input.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 
 /**
  * Authenticate an OAuth client against its stored secret.
@@ -671,7 +769,7 @@ app.get("/authorize", (c) => {
 
 // GET /api/oauth/app-info — consent screen data (called by the SPA)
 app.get("/app-info", optionalAuth, async (c) => {
-  const {
+  let {
     client_id,
     redirect_uri,
     scope,
@@ -682,6 +780,32 @@ app.get("/app-info", optionalAuth, async (c) => {
     code_challenge_method,
     nonce,
   } = c.req.query();
+
+  // RFC 9126: when the request was pushed, resolve the stored parameters and
+  // render the consent screen from those rather than the query string. The
+  // pushed request is left in place (not consumed) so a reload still works;
+  // it is consumed only when the authorization is finally approved or denied.
+  const requestUri = c.req.query("request_uri");
+  if (requestUri) {
+    const pushed = await loadPushedRequest(c.env, requestUri);
+    if (!pushed)
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "request_uri is invalid or expired",
+        },
+        400,
+      );
+    client_id = pushed.client_id;
+    redirect_uri = pushed.redirect_uri;
+    scope = pushed.scope;
+    optional_scope = pushed.optional_scope ?? optional_scope;
+    state = pushed.state ?? state;
+    response_type = pushed.response_type;
+    code_challenge = pushed.code_challenge ?? "";
+    code_challenge_method = pushed.code_challenge_method ?? "";
+    nonce = pushed.nonce ?? "";
+  }
 
   if (!client_id || !redirect_uri || response_type !== "code") {
     return c.json({ error: "invalid_request" }, 400);
@@ -889,7 +1013,47 @@ app.post("/authorize", requireAuth, async (c) => {
     confirm_text?: string;
     team_id?: string;
     revoke_existing_tokens?: boolean;
+    request_uri?: string;
+    resource?: string | string[];
   }>();
+
+  // RFC 9126: a pushed authorization request supplies the security-critical
+  // parameters (redirect_uri, PKCE, nonce, resource) server-side. When the
+  // client used one, expand it and treat those values as authoritative — the
+  // fields the browser echoes back are ignored, so a pushed request cannot be
+  // tampered with between /par and here. RFC 8707 resource indicators are read
+  // from the pushed request, or (for a plain request) from the body.
+  let requestResources: string[];
+  if (body.request_uri) {
+    const pushed = await loadPushedRequest(c.env, body.request_uri);
+    if (!pushed)
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "request_uri is invalid or expired",
+        },
+        400,
+      );
+    body.client_id = pushed.client_id;
+    body.redirect_uri = pushed.redirect_uri;
+    body.scope = pushed.scope;
+    body.code_challenge = pushed.code_challenge;
+    body.code_challenge_method = pushed.code_challenge_method;
+    body.nonce = pushed.nonce;
+    body.state = pushed.state ?? body.state;
+    requestResources = pushed.resource ?? [];
+  } else {
+    const rv = validateResources(collectResourceParams(null, body.resource));
+    if (rv === null)
+      return c.json(
+        {
+          error: "invalid_target",
+          error_description: "invalid resource indicator",
+        },
+        400,
+      );
+    requestResources = rv;
+  }
 
   // Look up the app and validate the redirect_uri BEFORE branching on
   // action — otherwise the deny path becomes an open-redirect primitive
@@ -936,6 +1100,9 @@ app.post("/authorize", requireAuth, async (c) => {
     const url = new URL(body.redirect_uri);
     url.searchParams.set("error", "access_denied");
     if (body.state) url.searchParams.set("state", body.state);
+    // RFC 9207: identify the issuer on the (error) authorization response too.
+    url.searchParams.set("iss", c.env.APP_URL);
+    if (body.request_uri) consumePushedRequest(c.env, body.request_uri);
     return c.json({ redirect: url.toString() });
   }
 
@@ -1151,8 +1318,8 @@ app.post("/authorize", requireAuth, async (c) => {
   const code = randomBase64url(32);
   const storedCode = await hashSecret(c.env, code);
   await c.env.DB.prepare(
-    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, resource, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       storedCode,
@@ -1163,6 +1330,7 @@ app.post("/authorize", requireAuth, async (c) => {
       body.code_challenge ?? null,
       body.code_challenge_method ?? null,
       body.nonce ?? null,
+      serializeResources(requestResources),
       now + 600,
       now,
     )
@@ -1201,6 +1369,10 @@ app.post("/authorize", requireAuth, async (c) => {
   const url = new URL(body.redirect_uri);
   url.searchParams.set("code", code);
   if (body.state) url.searchParams.set("state", body.state);
+  // RFC 9207: let the client confirm which issuer produced this response,
+  // defeating mix-up attacks where a second AS is swapped in.
+  url.searchParams.set("iss", c.env.APP_URL);
+  if (body.request_uri) consumePushedRequest(c.env, body.request_uri);
 
   // Notify the app that a user just granted access
   c.executionCtx.waitUntil(
@@ -2036,6 +2208,7 @@ app.post("/token", async (c) => {
       return c.json({ error: "invalid_grant" }, 400);
 
     const scopes = JSON.parse(codeRow.scopes) as string[];
+    const resources = parseResources(codeRow.resource);
     const hasOffline = scopes.includes("offline_access");
     const atTtl =
       (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
@@ -2054,7 +2227,7 @@ app.post("/token", async (c) => {
         {
           iss: c.env.APP_URL,
           sub: user.id,
-          aud: extractAud(scopes, c.env.APP_URL),
+          aud: extractAud(scopes, c.env.APP_URL, resources),
           client_id: clientId,
           jti,
           scope: scopes.join(" "),
@@ -2075,8 +2248,8 @@ app.post("/token", async (c) => {
     const storedAccess = await hashSecret(c.env, accessToken);
     const storedRefresh = await hashSecret(c.env, refreshToken);
     await c.env.DB.prepare(
-      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, expires_at, refresh_expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         jti,
@@ -2085,6 +2258,7 @@ app.post("/token", async (c) => {
         clientId,
         user.id,
         JSON.stringify(scopes),
+        codeRow.resource,
         now + atTtl,
         hasOffline ? now + rtTtl : null,
         now,
@@ -2161,6 +2335,7 @@ app.post("/token", async (c) => {
       return c.json({ error: "invalid_grant" }, 400);
 
     const scopes = JSON.parse(tokenRow.scopes) as string[];
+    const resources = parseResources(tokenRow.resource);
     const atTtl =
       (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
 
@@ -2171,7 +2346,7 @@ app.post("/token", async (c) => {
         {
           iss: c.env.APP_URL,
           sub: tokenRow.user_id,
-          aud: extractAud(scopes, c.env.APP_URL),
+          aud: extractAud(scopes, c.env.APP_URL, resources),
           client_id: tokenRow.client_id,
           jti: tokenRow.id,
           scope: scopes.join(" "),
@@ -2221,7 +2396,535 @@ app.post("/token", async (c) => {
     });
   }
 
+  // ── Device Authorization Grant (RFC 8628 §3.4) ───────────────────────────
+  if (grant_type === DEVICE_GRANT_TYPE) {
+    const now = Math.floor(Date.now() / 1000);
+    const deviceCode = params.device_code;
+    if (!deviceCode)
+      return c.json(
+        { error: "invalid_request", error_description: "device_code required" },
+        400,
+      );
+
+    const dcLookup = await hashLookupCandidate(c.env, deviceCode);
+    if (!dcLookup) return c.json({ error: "invalid_grant" }, 400);
+    const dc = await c.env.DB.prepare(
+      "SELECT * FROM oauth_device_codes WHERE device_code = ? OR device_code = ?",
+    )
+      .bind(deviceCode, dcLookup)
+      .first<OAuthDeviceCodeRow>();
+
+    if (!dc || dc.client_id !== clientId)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    // RFC 8628 §3.5 polling errors. Expiry is checked first so a stale code
+    // reports expired_token rather than authorization_pending.
+    if (dc.expires_at < now) {
+      await c.env.DB.prepare(
+        "DELETE FROM oauth_device_codes WHERE device_code = ?",
+      )
+        .bind(dc.device_code)
+        .run();
+      return c.json({ error: "expired_token" }, 400);
+    }
+
+    // Enforce the minimum polling interval; a device that polls too fast is
+    // told to slow_down and its interval is bumped by 5s (§3.5).
+    if (dc.last_polled_at > 0 && now - dc.last_polled_at < dc.interval) {
+      await c.env.DB.prepare(
+        "UPDATE oauth_device_codes SET interval = interval + 5, last_polled_at = ? WHERE device_code = ?",
+      )
+        .bind(now, dc.device_code)
+        .run();
+      return c.json({ error: "slow_down" }, 400);
+    }
+    await c.env.DB.prepare(
+      "UPDATE oauth_device_codes SET last_polled_at = ? WHERE device_code = ?",
+    )
+      .bind(now, dc.device_code)
+      .run();
+
+    if (dc.status === "denied") {
+      await c.env.DB.prepare(
+        "DELETE FROM oauth_device_codes WHERE device_code = ?",
+      )
+        .bind(dc.device_code)
+        .run();
+      return c.json({ error: "access_denied" }, 400);
+    }
+    if (dc.status !== "approved" || !dc.user_id)
+      return c.json({ error: "authorization_pending" }, 400);
+
+    // PKCE is optional in the device flow, but when the device bound a
+    // code_challenge at authorization time it must present the verifier now —
+    // so a leaked device_code alone can't be redeemed.
+    if (dc.code_challenge) {
+      if (!code_verifier)
+        return c.json(
+          {
+            error: "invalid_grant",
+            error_description: "code_verifier required",
+          },
+          400,
+        );
+      const pkceOk = await verifyPkce(
+        code_verifier,
+        dc.code_challenge,
+        dc.code_challenge_method ?? "S256",
+      );
+      if (!pkceOk)
+        return c.json(
+          {
+            error: "invalid_grant",
+            error_description: "PKCE verification failed",
+          },
+          400,
+        );
+    }
+
+    const user = await c.env.DB.prepare(
+      "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+    )
+      .bind(dc.user_id)
+      .first<UserRow>();
+    if (!user || !user.is_active)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    // Approved: mint tokens, then burn the device code (single use).
+    const consumed = await c.env.DB.prepare(
+      "DELETE FROM oauth_device_codes WHERE device_code = ? AND status = 'approved'",
+    )
+      .bind(dc.device_code)
+      .run();
+    if (consumed.meta.changes !== 1)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    const scopes = JSON.parse(dc.scopes) as string[];
+    const resources = parseResources(dc.resource);
+    const hasOffline = scopes.includes("offline_access");
+    const atTtl =
+      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
+    const rtTtl =
+      (user.refresh_token_ttl_days ?? config.refresh_token_ttl_days) *
+      24 *
+      60 *
+      60;
+    const refreshToken = hasOffline ? randomBase64url(48) : null;
+
+    const jti = randomId();
+    let accessToken: string;
+    if (oauthApp.use_jwt_tokens) {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      accessToken = signAccessToken(
+        {
+          iss: c.env.APP_URL,
+          sub: user.id,
+          aud: extractAud(scopes, c.env.APP_URL, resources),
+          client_id: clientId,
+          jti,
+          scope: scopes.join(" "),
+        },
+        mldsaKey.secretKey,
+        mldsaKey.kid,
+        atTtl,
+      );
+    } else {
+      accessToken = randomBase64url(48);
+    }
+
+    const storedAccess = await hashSecret(c.env, accessToken);
+    const storedRefresh = await hashSecret(c.env, refreshToken);
+    await c.env.DB.prepare(
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        jti,
+        storedAccess,
+        storedRefresh,
+        clientId,
+        user.id,
+        JSON.stringify(scopes),
+        dc.resource,
+        now + atTtl,
+        hasOffline ? now + rtTtl : null,
+        now,
+      )
+      .run();
+
+    const response: Record<string, unknown> = {
+      access_token: accessToken,
+      token_type: "Bearer",
+      expires_in: atTtl,
+      scope: scopes.join(" "),
+    };
+    if (refreshToken) response.refresh_token = refreshToken;
+    if (scopes.includes("openid")) {
+      const rsaKeyPair = await getRsaKeyPair(c.env.KV_SESSIONS);
+      response.id_token = await buildIdToken(
+        user,
+        clientId,
+        scopes,
+        dc.nonce,
+        rsaKeyPair.privateKey,
+        rsaKeyPair.kid,
+        atTtl,
+        c.env.APP_URL,
+        c.env.DB,
+      );
+    }
+    return c.json(response);
+  }
+
   return c.json({ error: "unsupported_grant_type" }, 400);
+});
+
+// ─── Shared helpers for the /par and /device_authorization endpoints ─────────
+
+/** Read an OAuth request body as either JSON or form-encoded, exposing the raw
+ *  URLSearchParams (for repeated parameters like `resource`) and the parsed
+ *  JSON value when present. */
+async function readOAuthBody(c: Context<AppEnv>): Promise<{
+  params: Record<string, string>;
+  form: URLSearchParams | null;
+  json: Record<string, unknown> | null;
+}> {
+  const ct = c.req.header("Content-Type") ?? "";
+  if (ct.includes("application/json")) {
+    const json = await c.req
+      .json<Record<string, unknown>>()
+      .catch(() => ({}) as Record<string, unknown>);
+    const params: Record<string, string> = {};
+    for (const [k, v] of Object.entries(json))
+      if (typeof v === "string") params[k] = v;
+    return { params, form: null, json };
+  }
+  const text = await c.req.text();
+  const form = new URLSearchParams(text);
+  return { params: Object.fromEntries(form), form, json: null };
+}
+
+/** Authenticate the calling OAuth client from HTTP Basic or body parameters,
+ *  the same rule the token endpoint applies (public clients pass on client_id
+ *  alone; confidential clients must present their secret). */
+async function authClientFromRequest(
+  c: Context<AppEnv>,
+  params: Record<string, string>,
+): Promise<
+  | { ok: true; app: OAuthAppRow; usedBasic: boolean }
+  | { ok: false; usedBasic: boolean }
+> {
+  const basic = parseBasicAuth(c.req.header("Authorization"));
+  const usedBasic = !!basic;
+  const clientId = basic?.clientId ?? params.client_id;
+  const clientSecret = basic?.clientSecret ?? params.client_secret;
+  const app = clientId
+    ? await c.env.DB.prepare(
+        "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+      )
+        .bind(clientId)
+        .first<OAuthAppRow>()
+    : null;
+  if (!app || !(await clientSecretValid(c.env, app, clientSecret)))
+    return { ok: false, usedBasic };
+  return { ok: true, app, usedBasic };
+}
+
+// ─── Pushed Authorization Request endpoint (RFC 9126) ────────────────────────
+
+app.post("/par", async (c) => {
+  noStore(c);
+  const { params, form, json } = await readOAuthBody(c);
+
+  const auth = await authClientFromRequest(c, params);
+  if (!auth.ok) {
+    if (auth.usedBasic) challengeBasic(c);
+    return c.json({ error: "invalid_client" }, 401);
+  }
+  const oauthApp = auth.app;
+
+  // RFC 9126 §2.1: a PAR request MUST NOT itself carry a request_uri.
+  if (params.request_uri)
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "request_uri is not allowed here",
+      },
+      400,
+    );
+
+  if ((params.response_type ?? "code") !== "code")
+    return c.json({ error: "unsupported_response_type" }, 400);
+
+  const redirectUri = params.redirect_uri;
+  const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
+  if (!redirectUri || !redirectUriMatchesRegistered(redirectUri, redirectUris))
+    return c.json(
+      { error: "invalid_request", error_description: "invalid redirect_uri" },
+      400,
+    );
+
+  // Public clients must use PKCE (OAuth 2.0 Security BCP); enforce it here so a
+  // pushed request can't sidestep the check the interactive flow applies.
+  if (oauthApp.is_public === 1 && !params.code_challenge)
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge is required for public clients",
+      },
+      400,
+    );
+
+  const resources = validateResources(
+    collectResourceParams(form, json?.resource),
+  );
+  if (resources === null)
+    return c.json(
+      {
+        error: "invalid_target",
+        error_description: "invalid resource indicator",
+      },
+      400,
+    );
+
+  const payload: PushedRequest = {
+    client_id: oauthApp.client_id,
+    redirect_uri: redirectUri,
+    scope: params.scope ?? "",
+    optional_scope: params.optional_scope,
+    state: params.state,
+    code_challenge: params.code_challenge,
+    code_challenge_method: params.code_challenge_method,
+    nonce: params.nonce,
+    response_type: "code",
+    resource: resources.length ? resources : undefined,
+  };
+  const { requestUri, expiresIn } = await storePushedRequest(c.env, payload);
+  // RFC 9126 §2.2: 201 Created with the request_uri and its lifetime.
+  return c.json({ request_uri: requestUri, expires_in: expiresIn }, 201);
+});
+
+// ─── Device Authorization Grant (RFC 8628) ───────────────────────────────────
+
+app.post("/device_authorization", async (c) => {
+  noStore(c);
+  const { params, form, json } = await readOAuthBody(c);
+
+  const auth = await authClientFromRequest(c, params);
+  if (!auth.ok) {
+    if (auth.usedBasic) challengeBasic(c);
+    return c.json({ error: "invalid_client" }, 401);
+  }
+  const oauthApp = auth.app;
+
+  const resources = validateResources(
+    collectResourceParams(form, json?.resource),
+  );
+  if (resources === null)
+    return c.json(
+      {
+        error: "invalid_target",
+        error_description: "invalid resource indicator",
+      },
+      400,
+    );
+
+  const requestedScopes = (params.scope ?? "").split(" ").filter(Boolean);
+  const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
+  const { scopes } = await resolveRequestedScopes(
+    c.env.DB,
+    c.env.APP_URL,
+    requestedScopes,
+    allowedScopes,
+    oauthApp.client_id,
+  );
+
+  // The device verification screen is a deliberately simple approve/deny. It
+  // cannot carry the admin 2FA gate site scopes need, nor the team picker the
+  // unbound team scopes need, so those are refused here rather than granted
+  // through a weaker consent than the interactive flow demands.
+  if (hasSiteScopes(scopes) || hasUnboundTeamScopes(scopes))
+    return c.json(
+      {
+        error: "invalid_scope",
+        error_description:
+          "site-level and team scopes cannot be granted via the device flow",
+      },
+      400,
+    );
+
+  const now = Math.floor(Date.now() / 1000);
+  const deviceCode = randomBase64url(32);
+  const storedDeviceCode = await hashSecret(c.env, deviceCode);
+  const resourceJson = serializeResources(resources);
+
+  // user_code is UNIQUE; retry a few times on the (astronomically unlikely)
+  // collision before giving up.
+  let userCode = "";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = generateUserCode();
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO oauth_device_codes
+           (device_code, user_code, client_id, scopes, resource, code_challenge, code_challenge_method, nonce, status, interval, last_polled_at, expires_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?)`,
+      )
+        .bind(
+          storedDeviceCode,
+          normalizeUserCode(candidate),
+          oauthApp.client_id,
+          JSON.stringify(scopes),
+          resourceJson,
+          params.code_challenge ?? null,
+          params.code_challenge_method ?? null,
+          params.nonce ?? null,
+          DEVICE_POLL_INTERVAL_SECONDS,
+          now + DEVICE_CODE_TTL_SECONDS,
+          now,
+        )
+        .run();
+      userCode = candidate;
+      break;
+    } catch {
+      // UNIQUE violation on user_code — try another.
+    }
+  }
+  if (!userCode) return c.json({ error: "server_error" }, 500);
+
+  const verificationUri = `${c.env.APP_URL}/device`;
+  return c.json({
+    device_code: deviceCode,
+    user_code: userCode,
+    verification_uri: verificationUri,
+    verification_uri_complete: `${verificationUri}?user_code=${encodeURIComponent(userCode)}`,
+    expires_in: DEVICE_CODE_TTL_SECONDS,
+    interval: DEVICE_POLL_INTERVAL_SECONDS,
+  });
+});
+
+// GET /api/oauth/device — verification-screen data for a user_code (SPA).
+app.get("/device", optionalAuth, async (c) => {
+  const userCode = normalizeUserCode(c.req.query("user_code") ?? "");
+  if (!userCode) return c.json({ error: "invalid_request" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  const dc = await c.env.DB.prepare(
+    "SELECT * FROM oauth_device_codes WHERE user_code = ?",
+  )
+    .bind(userCode)
+    .first<OAuthDeviceCodeRow>();
+  if (!dc || dc.expires_at < now)
+    return c.json({ error: "expired_or_unknown" }, 404);
+  if (dc.status !== "pending")
+    return c.json({ error: "already_handled", status: dc.status }, 409);
+
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(dc.client_id)
+    .first<OAuthAppRow>();
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
+
+  const isVerified = await computeIsVerified(
+    c.env.DB,
+    oauthApp.owner_id,
+    oauthApp.website_url,
+    oauthApp.redirect_uris,
+    oauthApp.team_id,
+  );
+  const scopes = JSON.parse(dc.scopes) as string[];
+  return c.json({
+    app: await buildConsentAppSummary(c.env, oauthApp, isVerified),
+    scopes,
+    user: c.get("user") ?? null,
+    user_code: userCode,
+  });
+});
+
+// POST /api/oauth/device/decision — the signed-in user approves or denies.
+app.post("/device/decision", requireAuth, async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json<{
+    user_code: string;
+    action: "approve" | "deny";
+  }>();
+  const userCode = normalizeUserCode(body.user_code ?? "");
+  if (!userCode) return c.json({ error: "invalid_request" }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  const dc = await c.env.DB.prepare(
+    "SELECT * FROM oauth_device_codes WHERE user_code = ?",
+  )
+    .bind(userCode)
+    .first<OAuthDeviceCodeRow>();
+  if (!dc || dc.expires_at < now)
+    return c.json({ error: "expired_or_unknown" }, 404);
+  if (dc.status !== "pending")
+    return c.json({ error: "already_handled", status: dc.status }, 409);
+
+  const oauthApp = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(dc.client_id)
+    .first<OAuthAppRow>();
+  if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
+
+  if (body.action === "deny") {
+    await c.env.DB.prepare(
+      "UPDATE oauth_device_codes SET status = 'denied' WHERE user_code = ? AND status = 'pending'",
+    )
+      .bind(userCode)
+      .run();
+    return c.json({ status: "denied" });
+  }
+
+  // Restricted accounts follow the same app-authorization gate as the
+  // interactive flow.
+  const restriction = await getRestrictionState(c.env.DB, user.id);
+  if (restriction) {
+    const appErr = await checkAppAuthorizationAllowed(
+      c.env.DB,
+      restriction,
+      oauthApp,
+    );
+    if (appErr) return c.json({ error: "access_denied", message: appErr }, 403);
+  }
+  const whitelistDenied = await checkAccessWhitelist(
+    c.env.DB,
+    oauthApp,
+    user.id,
+  );
+  if (whitelistDenied)
+    return c.json(
+      { error: "unauthorized_whitelist", app_name: oauthApp.name },
+      403,
+    );
+
+  const scopes = JSON.parse(dc.scopes) as string[];
+  await c.env.DB.prepare(
+    `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, client_id) DO UPDATE SET scopes = excluded.scopes, granted_at = excluded.granted_at`,
+  )
+    .bind(randomId(), user.id, dc.client_id, JSON.stringify(scopes), now)
+    .run();
+
+  const approved = await c.env.DB.prepare(
+    "UPDATE oauth_device_codes SET status = 'approved', user_id = ? WHERE user_code = ? AND status = 'pending'",
+  )
+    .bind(user.id, userCode)
+    .run();
+  if (approved.meta.changes !== 1)
+    return c.json({ error: "already_handled" }, 409);
+
+  c.executionCtx.waitUntil(
+    deliverAppEvent(c.env, oauthApp.id, "user.token_granted", {
+      user_id: user.id,
+      scopes,
+      granted_at: now,
+    }).catch(() => {}),
+  );
+  return c.json({ status: "approved" });
 });
 
 // ─── UserInfo endpoint (OpenID Connect) ─────────────────────────────────────
@@ -2442,6 +3145,80 @@ app.post("/revoke", async (c) => {
   }
   return new Response(null, { status: 200 });
 });
+
+// ─── RP-Initiated Logout (OpenID Connect) ────────────────────────────────────
+
+// end_session_endpoint. Ends the caller's Prism session and, when a registered
+// post_logout_redirect_uri is supplied, sends the browser back to it with the
+// client's `state`. Accepts GET and POST (OIDC RP-Initiated Logout §2/§5).
+async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
+  const q = c.req.query();
+  let form: Record<string, string> = {};
+  if (c.req.method === "POST") {
+    const ct = c.req.header("Content-Type") ?? "";
+    if (ct.includes("application/x-www-form-urlencoded"))
+      form = Object.fromEntries(new URLSearchParams(await c.req.text()));
+  }
+  const get = (k: string) => form[k] ?? q[k];
+  const idTokenHint = get("id_token_hint");
+  const postLogoutRedirectUri = get("post_logout_redirect_uri");
+  const state = get("state");
+  let clientIdHint = get("client_id");
+
+  // Prefer the client identity from a verified id_token_hint. An expired hint
+  // is still accepted (the session is ending); an unverifiable one is ignored.
+  if (idTokenHint) {
+    try {
+      const rsa = await getRsaKeyPair(c.env.KV_SESSIONS);
+      const payload = await verifyIdTokenRS256(idTokenHint, rsa.publicKey);
+      const aud = payload.aud;
+      if (typeof aud === "string") clientIdHint = aud;
+      else if (Array.isArray(aud) && typeof aud[0] === "string")
+        clientIdHint = aud[0];
+    } catch {
+      /* ignore an unverifiable hint */
+    }
+  }
+
+  // End the current session (if the browser presented one) and clear the cookie.
+  const sessionId = c.get("sessionId");
+  if (sessionId)
+    await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
+      .bind(sessionId)
+      .run();
+  clearSessionCookie(c);
+
+  // Only redirect to a post_logout_redirect_uri that the identified client has
+  // registered — otherwise the endpoint would be an open redirect.
+  if (postLogoutRedirectUri && clientIdHint) {
+    const appRow = await c.env.DB.prepare(
+      "SELECT post_logout_redirect_uris FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+    )
+      .bind(clientIdHint)
+      .first<{ post_logout_redirect_uris: string }>();
+    let allowList: string[] = [];
+    if (appRow) {
+      try {
+        const parsed = JSON.parse(appRow.post_logout_redirect_uris);
+        if (Array.isArray(parsed))
+          allowList = parsed.filter((x): x is string => typeof x === "string");
+      } catch {
+        allowList = [];
+      }
+    }
+    if (allowList.includes(postLogoutRedirectUri)) {
+      const url = new URL(postLogoutRedirectUri);
+      if (state) url.searchParams.set("state", state);
+      return c.redirect(url.toString(), 302);
+    }
+  }
+
+  // No (valid) redirect target: land on the built-in signed-out page.
+  return c.redirect(`${c.env.APP_URL}/logged-out`, 302);
+}
+
+app.get("/end_session", optionalAuth, handleEndSession);
+app.post("/end_session", optionalAuth, handleEndSession);
 
 // ─── Resource endpoints (OAuth-protected) ────────────────────────────────────
 

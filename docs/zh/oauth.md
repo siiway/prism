@@ -311,6 +311,103 @@ token=<ACCESS_OR_REFRESH_TOKEN>
 必须提供客户端凭据，且只会撤销该客户端自己的令牌。出示已被替换的刷新令牌会撤销
 它所属的整个授权。
 
+## 设备授权（RFC 8628）
+
+适用于无法承载浏览器的输入受限设备（CLI、电视、IoT）。
+
+```http
+POST /api/oauth/device_authorization
+Content-Type: application/x-www-form-urlencoded
+
+client_id=<CLIENT_ID>
+&scope=openid profile
+```
+
+响应：
+
+```json
+{
+  "device_code": "…",
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://your-prism-domain/device",
+  "verification_uri_complete": "https://your-prism-domain/device?user_code=WDJB-MJHT",
+  "expires_in": 600,
+  "interval": 5
+}
+```
+
+向用户展示 `verification_uri` 与 `user_code`（或便于生成二维码的
+`verification_uri_complete`）。同时轮询令牌端点：
+
+```http
+POST /api/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:device_code
+&device_code=<DEVICE_CODE>
+&client_id=<CLIENT_ID>
+```
+
+在用户操作前，端点返回 `authorization_pending`（轮询过快则返回 `slow_down`）；
+轮询间隔不得小于 `interval` 秒。批准后返回常规令牌响应（请求了 `openid` 时含
+`id_token`，请求了 `offline_access` 时含 `refresh_token`）。`access_denied`
+与 `expired_token` 为终止状态。PKCE 可选：在设备授权请求中带上 `code_challenge`，
+轮询时带上对应的 `code_verifier`。设备流不能授予站点级与团队级 scope。
+
+## 推送式授权请求（RFC 9126）
+
+先把授权参数推送到服务器，换取一次性的 `request_uri` 用于授权端点——请求无法在
+浏览器中被篡改，密钥也不会出现在前端信道。
+
+```http
+POST /api/oauth/par
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+response_type=code
+&redirect_uri=<REDIRECT_URI>
+&scope=openid profile
+&code_challenge=<CHALLENGE>&code_challenge_method=S256
+&state=<STATE>
+```
+
+响应（`201 Created`）：
+
+```json
+{ "request_uri": "urn:ietf:params:oauth:request_uri:…", "expires_in": 90 }
+```
+
+随后仅带客户端与 request URI 将用户导向授权端点：
+
+```text
+https://your-prism-domain/api/oauth/authorize?client_id=<CLIENT_ID>&request_uri=<REQUEST_URI>
+```
+
+`request_uri` 一次性使用且很快过期。
+
+## 授权响应 `iss`（RFC 9207）
+
+每个授权响应（成功与错误）都带有 `iss` 参数，值为你的 Prism 实例 URL。校验它的
+客户端可抵御混淆（mix-up）攻击。Discovery 会通告
+`authorization_response_iss_parameter_supported: true`。
+
+## 资源指示符（RFC 8707）
+
+在 `/par`、授权或 `/device_authorization` 请求中加入一个或多个 `resource` 参数
+（绝对 URI，不含 fragment），用于指明访问令牌面向的资源服务器。每个被接受的值都会
+加入令牌的 `aud`，并在刷新时保留。
+
+## RP 发起的登出（OpenID Connect）
+
+```text
+GET /api/oauth/end_session?id_token_hint=<ID_TOKEN>&post_logout_redirect_uri=<URI>&state=<STATE>
+```
+
+结束用户的 Prism 会话并清除会话 Cookie。当 `post_logout_redirect_uri` 与客户端
+注册的某一项（应用的 `post_logout_redirect_uris`）完全匹配时，浏览器会带 `state`
+跳转到该地址；否则落到 Prism 内置的登出页。`id_token_hint` 用于标识客户端（即使已
+过期也会被接受），建议提供。
+
 ## ID 令牌
 
 ID 令牌是一个签名的 JWT。默认算法为 **ML-DSA-65**（后量子，FIPS 204）；`/.well-known/jwks.json` 同时发布 **RS256** 公钥以兼容旧客户端。可通过 JWKS 端点发布的公钥进行验证，或使用内省端点进行服务端验证。

@@ -917,6 +917,27 @@
     "authorizationRequest": "授权请求",
     "authorizationError": "授权错误",
     "invalidRequest": "无效的授权请求",
+    "device": {
+      "title": "设备登录",
+      "enterCodePrompt": "输入设备上显示的代码",
+      "codeLabel": "代码",
+      "continue": "继续",
+      "requestingAccess": "{{appName}} 希望在你的设备上登录并访问：",
+      "approve": "批准 {{appName}}",
+      "deny": "拒绝",
+      "approvedTitle": "设备已批准",
+      "approvedBody": "你的设备已登录，可以返回设备继续操作。可以关闭此页面。",
+      "deniedTitle": "请求已拒绝",
+      "deniedBody": "该设备未获授权。可以关闭此页面。",
+      "invalidTitle": "未找到代码",
+      "invalidBody": "该代码不存在或已过期。请核对设备上的代码后重试。",
+      "footerNote": "仅当你刚刚在自己的设备上发起此登录时才批准。"
+    },
+    "loggedOut": {
+      "title": "已退出登录",
+      "body": "你已退出账号。",
+      "backToSignIn": "返回登录"
+    },
     "signingInAs": "当前登录账号",
     "requestingAccess": "{{appName}} 正在请求访问：",
     "appPermissionsHeading": "第三方应用访问",

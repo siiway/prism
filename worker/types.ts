@@ -133,6 +133,8 @@ export interface OAuthAppRow {
   use_jwt_tokens: number;
   allow_self_manage_exported_permissions: number;
   access_whitelist_enabled: number;
+  /** OIDC RP-Initiated Logout allow-list, JSON string[] of exact-match URIs. */
+  post_logout_redirect_uris: string;
   created_at: number;
   updated_at: number;
 }
@@ -249,6 +251,25 @@ export interface OAuthCodeRow {
   code_challenge: string | null;
   code_challenge_method: string | null;
   nonce: string | null;
+  /** RFC 8707 resource indicators, JSON string[] or null. */
+  resource: string | null;
+  expires_at: number;
+  created_at: number;
+}
+
+export interface OAuthDeviceCodeRow {
+  device_code: string; // HMAC-keyed hash
+  user_code: string; // normalized (uppercase, no hyphen)
+  client_id: string;
+  scopes: string; // JSON string[]
+  resource: string | null; // JSON string[] or null
+  code_challenge: string | null;
+  code_challenge_method: string | null;
+  nonce: string | null;
+  status: "pending" | "approved" | "denied";
+  user_id: string | null;
+  interval: number;
+  last_polled_at: number;
   expires_at: number;
   created_at: number;
 }
@@ -295,6 +316,9 @@ export interface OAuthTokenRow {
   client_id: string;
   user_id: string;
   scopes: string; // JSON string[]
+  /** RFC 8707 resource indicators the grant was issued for, JSON string[] or
+   *  null. Preserved so a refresh keeps the same audience. */
+  resource: string | null;
   expires_at: number;
   refresh_expires_at: number | null;
   created_at: number;

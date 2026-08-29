@@ -356,6 +356,108 @@ token=<ACCESS_OR_REFRESH_TOKEN>
 Client credentials are required, and only the calling client's own tokens are
 revoked. A superseded refresh token revokes the grant it belonged to.
 
+## Device Authorization Grant (RFC 8628)
+
+For input-constrained devices (CLIs, TVs, IoT) that can't host a browser.
+
+```http
+POST /api/oauth/device_authorization
+Content-Type: application/x-www-form-urlencoded
+
+client_id=<CLIENT_ID>
+&scope=openid profile
+```
+
+Response:
+
+```json
+{
+  "device_code": "…",
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://your-prism-domain/device",
+  "verification_uri_complete": "https://your-prism-domain/device?user_code=WDJB-MJHT",
+  "expires_in": 600,
+  "interval": 5
+}
+```
+
+Show the user `verification_uri` and `user_code` (or the QR-friendly
+`verification_uri_complete`). Meanwhile, poll the token endpoint:
+
+```http
+POST /api/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:device_code
+&device_code=<DEVICE_CODE>
+&client_id=<CLIENT_ID>
+```
+
+Until the user acts, the endpoint returns `authorization_pending` (or
+`slow_down` if you poll faster than `interval`); poll no faster than `interval`
+seconds. Once approved it returns the usual token response (with `id_token` when
+`openid` was requested, and a `refresh_token` when `offline_access` was). `access_denied`
+and `expired_token` are terminal. PKCE is optional: include a `code_challenge`
+in the device-authorization request and the matching `code_verifier` when
+polling. Site-level and team scopes cannot be granted through the device flow.
+
+## Pushed Authorization Requests (RFC 9126)
+
+Push the authorization parameters to the server first and receive a one-time
+`request_uri` to use at the authorize endpoint — the request can't be tampered
+with in the browser, and secrets never ride in the front channel.
+
+```http
+POST /api/oauth/par
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(client_id:client_secret)>
+
+response_type=code
+&redirect_uri=<REDIRECT_URI>
+&scope=openid profile
+&code_challenge=<CHALLENGE>&code_challenge_method=S256
+&state=<STATE>
+```
+
+Response (`201 Created`):
+
+```json
+{ "request_uri": "urn:ietf:params:oauth:request_uri:…", "expires_in": 90 }
+```
+
+Then send the user to the authorize endpoint with just the client and request URI:
+
+```text
+https://your-prism-domain/api/oauth/authorize?client_id=<CLIENT_ID>&request_uri=<REQUEST_URI>
+```
+
+The `request_uri` is single-use and short-lived.
+
+## Authorization response `iss` (RFC 9207)
+
+Every authorization response (success and error) carries an `iss` parameter set
+to your Prism instance URL. Clients that validate it are protected against
+mix-up attacks. Discovery advertises `authorization_response_iss_parameter_supported: true`.
+
+## Resource Indicators (RFC 8707)
+
+Add one or more `resource` parameters (absolute URIs, no fragment) to a `/par`,
+authorization, or `/device_authorization` request to name the resource server(s)
+the access token is for. Each accepted value is added to the token's `aud`, and
+is preserved across refreshes.
+
+## RP-Initiated Logout (OpenID Connect)
+
+```text
+GET /api/oauth/end_session?id_token_hint=<ID_TOKEN>&post_logout_redirect_uri=<URI>&state=<STATE>
+```
+
+Ends the user's Prism session and clears the session cookie. When
+`post_logout_redirect_uri` exactly matches one registered on the client
+(via the app's `post_logout_redirect_uris`), the browser is sent there with
+`state`; otherwise it lands on Prism's built-in signed-out page. `id_token_hint`
+identifies the client (an expired hint is still accepted) and is recommended.
+
 ## ID token
 
 The ID token is a signed JWT. The default algorithm is **ML-DSA-65** (post-quantum, FIPS 204); **RS256** is also published at `/.well-known/jwks.json` for legacy clients. Verify it using the public key from the JWKS endpoint, or use the introspection endpoint for server-side validation without parsing JWTs.

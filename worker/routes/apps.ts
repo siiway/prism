@@ -415,11 +415,30 @@ app.patch("/:id", async (c) => {
     use_jwt_tokens?: boolean;
     allow_self_manage_exported_permissions?: boolean;
     access_whitelist_enabled?: boolean;
+    post_logout_redirect_uris?: string[];
   }>();
 
   if (body.icon_url) {
     const imgErr = await validateImageUrl(body.icon_url);
     if (imgErr) return c.json({ error: `icon_url: ${imgErr}` }, 400);
+  }
+
+  // OIDC RP-Initiated Logout: exact-match allow-list of post-logout redirect
+  // URIs. Each must be a well-formed absolute http(s) URI with no fragment.
+  let postLogoutJson = row.post_logout_redirect_uris ?? "[]";
+  if (body.post_logout_redirect_uris !== undefined) {
+    for (const u of body.post_logout_redirect_uris) {
+      try {
+        const parsed = new URL(u);
+        if (!["https:", "http:"].includes(parsed.protocol) || parsed.hash)
+          throw new Error("bad");
+      } catch {
+        return c.json({ error: `Invalid post_logout_redirect_uri: ${u}` }, 400);
+      }
+    }
+    postLogoutJson = JSON.stringify([
+      ...new Set(body.post_logout_redirect_uris),
+    ]);
   }
 
   // Redirect URIs may be an empty list (learn-first-used mode).
@@ -500,10 +519,11 @@ app.patch("/:id", async (c) => {
           ? 1
           : 0
         : row.access_whitelist_enabled,
+    post_logout_redirect_uris: postLogoutJson,
   };
 
   await c.env.DB.prepare(
-    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, allow_self_manage_exported_permissions=?, access_whitelist_enabled=?, updated_at=? WHERE id=?`,
+    `UPDATE oauth_apps SET name=?, description=?, icon_url=?, website_url=?, redirect_uris=?, allowed_scopes=?, optional_scopes=?, oidc_fields=?, is_public=?, use_jwt_tokens=?, allow_self_manage_exported_permissions=?, access_whitelist_enabled=?, post_logout_redirect_uris=?, updated_at=? WHERE id=?`,
   )
     .bind(
       updated.name,
@@ -518,6 +538,7 @@ app.patch("/:id", async (c) => {
       updated.use_jwt_tokens,
       updated.allow_self_manage_exported_permissions,
       updated.access_whitelist_enabled,
+      updated.post_logout_redirect_uris,
       now,
       id,
     )
@@ -1572,6 +1593,9 @@ async function safeApp(
     allow_self_manage_exported_permissions:
       row.allow_self_manage_exported_permissions === 1,
     access_whitelist_enabled: row.access_whitelist_enabled === 1,
+    post_logout_redirect_uris: JSON.parse(
+      row.post_logout_redirect_uris ?? "[]",
+    ) as string[],
     team_id: row.team_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,

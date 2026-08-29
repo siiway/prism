@@ -87,6 +87,29 @@ export async function signIdTokenRS256(
   return `${message}.${bufToBase64url(sig)}`;
 }
 
+/**
+ * Verify an RS256 JWT signature and return its payload. The expiry is NOT
+ * enforced here: the one caller is OIDC RP-Initiated Logout, which accepts an
+ * expired `id_token_hint` (the whole point of logout is that the session is
+ * ending). Throws when the format or signature is invalid.
+ */
+export async function verifyIdTokenRS256(
+  token: string,
+  publicKey: CryptoKey,
+): Promise<Record<string, unknown>> {
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("Invalid JWT format");
+  const [headerB64, bodyB64, sigB64] = parts;
+  const valid = await crypto.subtle.verify(
+    "RSASSA-PKCS1-v1_5",
+    publicKey,
+    base64urlToBuf(sigB64),
+    new TextEncoder().encode(`${headerB64}.${bodyB64}`),
+  );
+  if (!valid) throw new Error("Invalid JWT signature");
+  return JSON.parse(decodeBase64url(bodyB64)) as Record<string, unknown>;
+}
+
 // ML-DSA-65 OIDC ID token signing (post-quantum, typ: "JWT" per OIDC spec)
 export function signIdToken(
   payload: Record<string, unknown>,
@@ -124,14 +147,21 @@ export interface AccessTokenPayload {
 /**
  * Extract the unique audience entries from a scope list.
  * Regular scopes use the issuer as audience; cross-app scopes (`app:<cid>:*`)
- * also add the target app's client_id so App A can verify the token was meant for it.
+ * also add the target app's client_id so App A can verify the token was meant
+ * for it. RFC 8707 resource indicators, when supplied, are added too so a named
+ * resource server can confirm the token was minted for it.
  */
-export function extractAud(scopes: string[], issuer: string): string[] {
+export function extractAud(
+  scopes: string[],
+  issuer: string,
+  resources: string[] = [],
+): string[] {
   const aud = new Set([issuer]);
   for (const s of scopes) {
     const m = s.match(/^app:([^:]+):/);
     if (m) aud.add(m[1]);
   }
+  for (const r of resources) aud.add(r);
   return [...aud];
 }
 

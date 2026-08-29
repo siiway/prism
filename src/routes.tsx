@@ -208,6 +208,28 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           Component: m.Verify2FA,
         })),
     },
+    {
+      // RFC 8628 device verification — requires an authenticated user (the
+      // page bounces to /login when the session is missing, like /oauth/authorize).
+      path: "/device",
+      loader: ({ request }) => {
+        requireAuthLoader(request);
+        return null;
+      },
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/oauth/DeviceVerify").then((m) => ({
+          Component: m.DeviceVerify,
+        })),
+    },
+    {
+      // OIDC RP-Initiated Logout landing page (public — the session is already
+      // ended by the time the browser lands here).
+      path: "/logged-out",
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/LoggedOut").then((m) => ({ Component: m.LoggedOut })),
+    },
 
     // ── Public user/team profiles ───────────────────────────────────────────
     {

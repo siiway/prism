@@ -212,6 +212,9 @@ export function Authorize() {
         code_challenge: params.code_challenge,
         code_challenge_method: params.code_challenge_method,
         nonce: params.nonce,
+        // RFC 9126: when the request was pushed, forward its request_uri; the
+        // server reads redirect_uri / PKCE / nonce / resource from it.
+        ...(params.request_uri ? { request_uri: params.request_uri } : {}),
         action,
         ...(requiresSiteGrant && action === "approve"
           ? {
@@ -265,13 +268,17 @@ export function Authorize() {
           setLoading(false);
           return;
         }
-        const url = new URL(params.redirect_uri);
+        // With a pushed request the browser URL carries no redirect_uri; use
+        // the one the server resolved and returned via app-info.
+        const redirectTarget = data?.redirect_uri ?? params.redirect_uri;
+        const url = new URL(redirectTarget);
         url.searchParams.set("error", "server_error");
         url.searchParams.set("error_description", humanMsg);
         if (params.state) url.searchParams.set("state", params.state);
         window.location.href = url.toString();
       } else {
-        const url = new URL(params.redirect_uri);
+        const redirectTarget = data?.redirect_uri ?? params.redirect_uri;
+        const url = new URL(redirectTarget);
         url.searchParams.set("error", "server_error");
         if (params.state) url.searchParams.set("state", params.state);
         window.location.href = url.toString();

@@ -871,6 +871,22 @@ export const api = {
   oauthApprove: (body: OAuthApproveBody) =>
     request<{ redirect: string }>("POST", "/oauth/authorize", body, getToken()),
 
+  // ─── Device Authorization Grant (RFC 8628) verification screen ───────────
+  deviceVerifyInfo: (userCode: string) =>
+    request<DeviceVerifyInfo>(
+      "GET",
+      `/oauth/device?user_code=${encodeURIComponent(userCode)}`,
+      undefined,
+      getToken(),
+    ),
+  deviceDecision: (userCode: string, action: "approve" | "deny") =>
+    request<{ status: "approved" | "denied" }>(
+      "POST",
+      "/oauth/device/decision",
+      { user_code: userCode, action },
+      getToken(),
+    ),
+
   // ─── OAuth 2FA step-up ───────────────────────────────────────────────────
   oauth2faInfo: (params: Record<string, string>) =>
     request<OAuth2FAInfo>(
@@ -3772,6 +3788,18 @@ export interface OAuthApproveBody {
    *  server revokes existing tokens for this app before issuing the new
    *  authorization code — a "log back in" rather than a parallel session. */
   revoke_existing_tokens?: boolean;
+  /** RFC 9126: when the request was pushed, its request_uri. The server reads
+   *  the security-critical parameters from the pushed request, not the body. */
+  request_uri?: string;
+  /** RFC 8707 resource indicator(s) for a non-pushed request. */
+  resource?: string | string[];
+}
+
+export interface DeviceVerifyInfo {
+  app: OAuthAuthorizeInfo["app"];
+  scopes: string[];
+  user: OAuthAuthorizeInfo["user"];
+  user_code: string;
 }
 
 export interface AdminStats {

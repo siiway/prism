@@ -37,11 +37,24 @@ function providerMetadata(base: string) {
       "client_secret_post",
       "client_secret_basic",
     ],
+    // RFC 8628 Device Authorization Grant
+    device_authorization_endpoint: `${base}/api/oauth/device_authorization`,
+    // RFC 9126 Pushed Authorization Requests
+    pushed_authorization_request_endpoint: `${base}/api/oauth/par`,
+    require_pushed_authorization_requests: false,
+    // OpenID Connect RP-Initiated Logout
+    end_session_endpoint: `${base}/api/oauth/end_session`,
     jwks_uri: `${base}/.well-known/jwks.json`,
     scopes_supported: SCOPES_SUPPORTED,
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
+    grant_types_supported: [
+      "authorization_code",
+      "refresh_token",
+      "urn:ietf:params:oauth:grant-type:device_code",
+    ],
+    // RFC 9207 — the authorization response carries an `iss` parameter.
+    authorization_response_iss_parameter_supported: true,
     subject_types_supported: ["public"],
     id_token_signing_alg_values_supported: ["RS256"],
     access_token_signing_alg_values_supported: ["ML-DSA-65"],

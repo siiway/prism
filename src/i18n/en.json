@@ -917,6 +917,27 @@
     "authorizationRequest": "Authorization Request",
     "authorizationError": "Authorization Error",
     "invalidRequest": "Invalid authorization request",
+    "device": {
+      "title": "Device Sign-In",
+      "enterCodePrompt": "Enter the code shown on your device",
+      "codeLabel": "Code",
+      "continue": "Continue",
+      "requestingAccess": "{{appName}} wants to sign in on your device and access:",
+      "approve": "Approve {{appName}}",
+      "deny": "Deny",
+      "approvedTitle": "Device approved",
+      "approvedBody": "Your device is now signed in — you can return to it. It is safe to close this page.",
+      "deniedTitle": "Request denied",
+      "deniedBody": "The device was not granted access. It is safe to close this page.",
+      "invalidTitle": "Code not found",
+      "invalidBody": "That code is unknown or has expired. Check the code on your device and try again.",
+      "footerNote": "Only approve if you just started this sign-in on your own device."
+    },
+    "loggedOut": {
+      "title": "Signed out",
+      "body": "You have been signed out of your account.",
+      "backToSignIn": "Back to sign in"
+    },
     "signingInAs": "Signing in as",
     "requestingAccess": "{{appName}} is requesting access to:",
     "appPermissionsHeading": "Third-party app access",
