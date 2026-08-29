@@ -81,12 +81,16 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
   };
 
   // The /login (and /register) route should bounce already-logged-in users
-  // home, and bounce the platform to /init when not yet set up.
-  const publicAuthLoader = async () => {
+  // home, and bounce the platform to /init when not yet set up. The one
+  // exception is `?reauth=1` (OIDC prompt=login / max_age): the user IS logged
+  // in but must re-authenticate for a pending authorization request, so the
+  // login form is shown instead of bouncing home.
+  const publicAuthLoader = async ({ request }: { request: Request }) => {
     await prefetch(ctx.qc, ["site"], api.site);
     const site = ctx.qc.getQueryData<{ initialized?: boolean }>(["site"]);
     if (site && site.initialized === false) throw redirect("/init");
-    if (getAuth(ctx).token) throw redirect("/");
+    const reauth = new URL(request.url).searchParams.get("reauth") === "1";
+    if (getAuth(ctx).token && !reauth) throw redirect("/");
     return null;
   };
 

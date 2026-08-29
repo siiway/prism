@@ -215,6 +215,9 @@ export function Authorize() {
         // RFC 9126: when the request was pushed, forward its request_uri; the
         // server reads redirect_uri / PKCE / nonce / resource from it.
         ...(params.request_uri ? { request_uri: params.request_uri } : {}),
+        // OIDC: forward max_age so the server can enforce re-authentication.
+        ...(params.max_age ? { max_age: Number(params.max_age) } : {}),
+        ...(params.prompt ? { prompt: params.prompt } : {}),
         action,
         ...(requiresSiteGrant && action === "approve"
           ? {
@@ -318,18 +321,58 @@ export function Authorize() {
     }
   };
 
-  // Auto-approve first-party apps — but never skip consent for site/team-level scopes
+  // A "reauth_done" marker on the URL means the user just re-authenticated for
+  // this request (we set it on the return from /login), so a prompt=login /
+  // max_age requirement is now satisfied even though the server still reports it.
+  const reauthSatisfied = params.reauth_done === "1";
+
+  // OIDC prompt=none: no UI is allowed. If the server says the request can't be
+  // satisfied silently, bounce the error straight back to the client.
+  useEffect(() => {
+    if (data?.prompt_none_error) {
+      const target = data.redirect_uri;
+      if (!target) return;
+      const url = new URL(target);
+      url.searchParams.set("error", data.prompt_none_error);
+      const st = data.state ?? params.state;
+      if (st) url.searchParams.set("state", st);
+      window.location.href = url.toString();
+    }
+  }, [data, params.state]);
+
+  // OIDC prompt=login / max_age: force a fresh authentication, then return here
+  // with a marker so the requirement is treated as satisfied (no loop). Only
+  // for interactive prompts — prompt=none errors above instead.
   useEffect(() => {
     if (
-      user &&
-      token &&
-      data?.app.is_first_party &&
-      !data.requires_site_grant &&
-      !data.requires_team_grant &&
-      !autoApproved.current
+      data &&
+      data.reauth_required &&
+      data.prompt !== "none" &&
+      !reauthSatisfied
     ) {
+      const back = new URL(window.location.href);
+      back.searchParams.set("reauth_done", "1");
+      const returnTo = back.pathname + back.search;
+      navigate(`/login?redirect=${encodeURIComponent(returnTo)}&reauth=1`, {
+        replace: true,
+      });
+    }
+  }, [data, navigate, reauthSatisfied]);
+
+  // Auto-approve first-party apps, or any app under prompt=none whose prior
+  // consent already covers the request — but never skip consent for
+  // site/team-level scopes, nor when the client explicitly asked for consent.
+  useEffect(() => {
+    if (!user || !token || !data || autoApproved.current) return;
+    if (data.requires_site_grant || data.requires_team_grant) return;
+    if (data.prompt === "consent") return;
+    if (data.reauth_required && !reauthSatisfied) return;
+    const silentPromptNone = data.prompt === "none" && !data.prompt_none_error;
+    if (data.app.is_first_party || silentPromptNone) {
       autoApproved.current = true;
-      handleDecision("approve");
+      // Defer out of the effect body so the approval's setState doesn't run
+      // synchronously during render.
+      queueMicrotask(() => handleDecision("approve"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleDecision is intentionally not a dep; the autoApproved ref guards against double-fire
   }, [data, user, token]);
@@ -385,6 +428,20 @@ export function Authorize() {
             : t("oauth.invalidRequest")}
         </Text>
       </AuthShell>
+    );
+  }
+
+  // A prompt=none error redirect or a prompt=login/max_age re-auth is being
+  // navigated by the effects above — show a spinner rather than flashing the
+  // consent screen.
+  if (
+    data.prompt_none_error ||
+    (data.reauth_required && data.prompt !== "none" && !reauthSatisfied)
+  ) {
+    return (
+      <div className={styles.page}>
+        <Spinner size="large" />
+      </div>
     );
   }
 

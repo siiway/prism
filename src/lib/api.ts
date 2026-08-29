@@ -3687,6 +3687,12 @@ export interface OAuthAuthorizeInfo {
   }>;
   redirect_uri: string;
   state: string | null;
+  /** OIDC prompt / max_age evaluation (see the /app-info handler). */
+  prompt: string | null;
+  max_age: number | null;
+  reauth_required: boolean;
+  prompt_none_error: string | null;
+  prior_consent_covers: boolean;
   user: UserProfile | null;
   requires_site_grant: boolean;
   site_scope_confirm_phrase: string | null;
@@ -3796,6 +3802,9 @@ export interface OAuthApproveBody {
   request_uri?: string;
   /** RFC 8707 resource indicator(s) for a non-pushed request. */
   resource?: string | string[];
+  /** OIDC prompt / max_age forwarded so the server can enforce max_age. */
+  prompt?: string;
+  max_age?: number;
 }
 
 export interface DeviceVerifyInfo {

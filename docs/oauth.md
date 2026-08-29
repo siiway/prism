@@ -401,6 +401,85 @@ and `expired_token` are terminal. PKCE is optional: include a `code_challenge`
 in the device-authorization request and the matching `code_verifier` when
 polling. Site-level and team scopes cannot be granted through the device flow.
 
+## Dynamic Client Registration (RFC 7591 / 7592)
+
+Register a client programmatically. The request must carry an initial access
+token — a signed-in user's session token or a personal access token with
+`apps:write`:
+
+```http
+POST /api/oauth/register
+Authorization: Bearer <SESSION_OR_PAT>
+Content-Type: application/json
+
+{
+  "client_name": "My CLI",
+  "redirect_uris": ["https://app.example.com/callback"],
+  "scope": "openid profile email",
+  "token_endpoint_auth_method": "client_secret_basic"
+}
+```
+
+The `201` response is the client information document: `client_id`,
+`client_secret` (for confidential clients), a `registration_access_token`, and
+`registration_client_uri`. Manage the client afterwards at that URI (RFC 7592):
+`GET` reads it, `PUT` updates it, `DELETE` deregisters it — each authenticated
+with `Authorization: Bearer <registration_access_token>`. To register a
+`private_key_jwt` client, set `token_endpoint_auth_method` to `private_key_jwt`
+and include `jwks` (an inline JWK Set) or `jwks_uri`.
+
+## private_key_jwt client authentication (RFC 7523)
+
+A confidential client may authenticate with a signed assertion instead of a
+shared secret. Register the client's public keys (`jwks` or `jwks_uri`), then at
+the token / PAR / introspection / revocation endpoints send:
+
+```text
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+&client_assertion=<JWT>
+```
+
+The assertion is a JWT with `iss` = `sub` = your `client_id`, `aud` = the issuer
+or token endpoint URL, a short `exp`, and a unique `jti` (one-time use).
+Supported signing algorithms: RS256, ES256, EdDSA.
+
+## Token Exchange (RFC 8693)
+
+Exchange one access token for another — for delegation between apps:
+
+```http
+POST /api/oauth/token
+Authorization: Basic <base64(client_id:client_secret)>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+&subject_token=<ACCESS_TOKEN>
+&subject_token_type=urn:ietf:params:oauth:token-type:access_token
+&scope=openid profile
+&resource=https://api.example.com
+```
+
+The requesting client may exchange a token that was issued to it, or one that
+carries a cross-app scope naming it (`app:<client_id>:*`). The new token's scope
+is a subset of the subject token's, and its audience is constrained by
+`resource` / `audience`. The response includes
+`issued_token_type: urn:ietf:params:oauth:token-type:access_token`. Exchanged
+tokens are not refreshable.
+
+## Re-authentication and context (`prompt`, `max_age`, `acr`)
+
+The authorization request honors the OpenID Connect parameters:
+
+- `prompt=none` — no UI; if the user isn't signed in (or must re-authenticate)
+  the client gets `login_required`, and if consent is missing, `consent_required`.
+- `prompt=login` — force a fresh sign-in even if a session exists.
+- `prompt=consent` — always show the consent screen.
+- `max_age=<seconds>` — require a sign-in no older than this, else re-authenticate.
+
+The ID token then carries `auth_time` (when the user signed in), `amr` (the
+authentication methods, e.g. `["pwd","otp","mfa"]`, `["webauthn"]`, `["ext"]`),
+and a derived `acr` (`mfa` when a second factor was used, else `pwd`).
+
 ## Pushed Authorization Requests (RFC 9126)
 
 Push the authorization parameters to the server first and receive a one-time

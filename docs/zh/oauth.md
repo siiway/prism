@@ -354,6 +354,80 @@ grant_type=urn:ietf:params:oauth:grant-type:device_code
 与 `expired_token` 为终止状态。PKCE 可选：在设备授权请求中带上 `code_challenge`，
 轮询时带上对应的 `code_verifier`。设备流不能授予站点级与团队级 scope。
 
+## 动态客户端注册（RFC 7591 / 7592）
+
+以编程方式注册客户端。请求需携带初始访问令牌——已登录用户的会话令牌，或带
+`apps:write` 的个人访问令牌：
+
+```http
+POST /api/oauth/register
+Authorization: Bearer <SESSION_OR_PAT>
+Content-Type: application/json
+
+{
+  "client_name": "My CLI",
+  "redirect_uris": ["https://app.example.com/callback"],
+  "scope": "openid profile email",
+  "token_endpoint_auth_method": "client_secret_basic"
+}
+```
+
+`201` 响应即客户端信息文档：`client_id`、`client_secret`（机密客户端）、一个
+`registration_access_token` 与 `registration_client_uri`。之后在该 URI 管理客户端
+（RFC 7592）：`GET` 读取、`PUT` 更新、`DELETE` 注销——均以
+`Authorization: Bearer <registration_access_token>` 认证。注册 `private_key_jwt`
+客户端时，将 `token_endpoint_auth_method` 设为 `private_key_jwt`，并提供 `jwks`
+（内联 JWK Set）或 `jwks_uri`。
+
+## private_key_jwt 客户端认证（RFC 7523）
+
+机密客户端可用签名断言代替共享密钥认证。先注册客户端公钥（`jwks` 或
+`jwks_uri`），随后在令牌 / PAR / 内省 / 撤销端点发送：
+
+```text
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+&client_assertion=<JWT>
+```
+
+该断言是一个 JWT，其 `iss` = `sub` = 你的 `client_id`，`aud` = issuer 或令牌端点
+URL，`exp` 较短，`jti` 唯一（一次性使用）。支持的签名算法：RS256、ES256、EdDSA。
+
+## 令牌交换（RFC 8693）
+
+用一个访问令牌换取另一个——用于应用间的委托：
+
+```http
+POST /api/oauth/token
+Authorization: Basic <base64(client_id:client_secret)>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+&subject_token=<ACCESS_TOKEN>
+&subject_token_type=urn:ietf:params:oauth:token-type:access_token
+&scope=openid profile
+&resource=https://api.example.com
+```
+
+请求方客户端只能交换签发给它自己的令牌，或携带指向它的跨应用 scope
+（`app:<client_id>:*`）的令牌。新令牌的 scope 是原 subject 令牌的子集，其受众受
+`resource` / `audience` 约束。响应含
+`issued_token_type: urn:ietf:params:oauth:token-type:access_token`。交换得到的令牌
+不可刷新。
+
+## 重新认证与上下文（`prompt`、`max_age`、`acr`）
+
+授权请求遵循以下 OpenID Connect 参数：
+
+- `prompt=none`——无界面；若用户未登录（或需重新认证）则向客户端返回
+  `login_required`，若缺少同意则返回 `consent_required`。
+- `prompt=login`——即使已有会话也强制重新登录。
+- `prompt=consent`——始终显示同意页。
+- `max_age=<秒>`——要求登录时间不早于此，否则重新认证。
+
+ID 令牌随后携带 `auth_time`（用户登录时间）、`amr`（认证方式，如
+`["pwd","otp","mfa"]`、`["webauthn"]`、`["ext"]`），以及派生的 `acr`（使用了第二
+因子时为 `mfa`，否则为 `pwd`）。
+
 ## 推送式授权请求（RFC 9126）
 
 先把授权参数推送到服务器，换取一次性的 `request_uri` 用于授权端点——请求无法在

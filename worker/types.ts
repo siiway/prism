@@ -135,6 +135,13 @@ export interface OAuthAppRow {
   access_whitelist_enabled: number;
   /** OIDC RP-Initiated Logout allow-list, JSON string[] of exact-match URIs. */
   post_logout_redirect_uris: string;
+  /** RFC 7592 registration access token (HMAC-keyed hash), or null. */
+  registration_access_token: string | null;
+  /** RFC 7591 token_endpoint_auth_method, or null to infer from is_public. */
+  token_endpoint_auth_method: string | null;
+  /** RFC 7523 private_key_jwt: inline JWK Set (JSON) and/or a JWKS URI. */
+  jwks: string | null;
+  jwks_uri: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -253,6 +260,9 @@ export interface OAuthCodeRow {
   nonce: string | null;
   /** RFC 8707 resource indicators, JSON string[] or null. */
   resource: string | null;
+  /** OIDC auth context captured at consent: the session's auth_time and amr. */
+  auth_time: number | null;
+  amr: string | null;
   expires_at: number;
   created_at: number;
 }

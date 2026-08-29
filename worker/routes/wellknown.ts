@@ -42,6 +42,8 @@ function providerMetadata(base: string) {
     // RFC 9126 Pushed Authorization Requests
     pushed_authorization_request_endpoint: `${base}/api/oauth/par`,
     require_pushed_authorization_requests: false,
+    // RFC 7591 Dynamic Client Registration
+    registration_endpoint: `${base}/api/oauth/register`,
     // OpenID Connect RP-Initiated Logout
     end_session_endpoint: `${base}/api/oauth/end_session`,
     jwks_uri: `${base}/.well-known/jwks.json`,
@@ -52,6 +54,7 @@ function providerMetadata(base: string) {
       "authorization_code",
       "refresh_token",
       "urn:ietf:params:oauth:grant-type:device_code",
+      "urn:ietf:params:oauth:grant-type:token-exchange",
     ],
     // RFC 9207 — the authorization response carries an `iss` parameter.
     authorization_response_iss_parameter_supported: true,
@@ -61,9 +64,19 @@ function providerMetadata(base: string) {
     token_endpoint_auth_methods_supported: [
       "client_secret_post",
       "client_secret_basic",
+      "private_key_jwt",
       "none",
     ],
+    // RFC 7523 assertion signing algorithms accepted for private_key_jwt.
+    token_endpoint_auth_signing_alg_values_supported: [
+      "RS256",
+      "ES256",
+      "EdDSA",
+    ],
     code_challenge_methods_supported: ["S256", "plain"],
+    // OIDC Core prompt / acr support.
+    prompt_values_supported: ["none", "login", "consent"],
+    acr_values_supported: ["pwd", "mfa"],
     claims_supported: [
       "sub",
       "iss",
@@ -71,6 +84,9 @@ function providerMetadata(base: string) {
       "exp",
       "iat",
       "nonce",
+      "auth_time",
+      "acr",
+      "amr",
       "name",
       "preferred_username",
       "picture",

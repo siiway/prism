@@ -6,6 +6,7 @@ import { configBag, getConfig, getRsaKeyPair } from "../lib/config";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import {
   encryptSecret,
+  decryptSecret,
   hashSecret,
   hashLookupCandidate,
   timingSafeSecretEqual,
@@ -24,7 +25,7 @@ import { verifyAnyTotp } from "../lib/totp";
 import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
 import { verifyCaptchaToken } from "../middleware/captcha";
-import { requireAuth, optionalAuth } from "../middleware/auth";
+import { requireAuth, optionalAuth, tryPatAuth } from "../middleware/auth";
 import {
   computeIsVerified,
   buildVerifiedDomainsMap,
@@ -94,6 +95,11 @@ import {
   serializeResources,
   parseResources,
 } from "../lib/resource";
+import {
+  verifyClientAssertion,
+  assertionClientId,
+  CLIENT_ASSERTION_TYPE,
+} from "../lib/clientAssertion";
 import { clearSessionCookie } from "../lib/cookies";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -184,6 +190,8 @@ interface PushedRequest {
   nonce?: string;
   response_type: string;
   resource?: string[];
+  prompt?: string;
+  max_age?: number;
 }
 
 const PAR_URN_PREFIX = "urn:ietf:params:oauth:request_uri:";
@@ -251,6 +259,11 @@ function normalizeUserCode(input: string): string {
 }
 
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
+
+// RFC 8693 Token Exchange
+const TOKEN_EXCHANGE_GRANT_TYPE =
+  "urn:ietf:params:oauth:grant-type:token-exchange";
+const TOKEN_TYPE_ACCESS_TOKEN = "urn:ietf:params:oauth:token-type:access_token";
 
 /**
  * Authenticate an OAuth client against its stored secret.
@@ -780,6 +793,9 @@ app.get("/app-info", optionalAuth, async (c) => {
     code_challenge_method,
     nonce,
   } = c.req.query();
+  // OIDC Core: prompt (none|login|consent) and max_age (seconds).
+  let prompt = c.req.query("prompt");
+  let maxAgeRaw = c.req.query("max_age");
 
   // RFC 9126: when the request was pushed, resolve the stored parameters and
   // render the consent screen from those rather than the query string. The
@@ -805,6 +821,8 @@ app.get("/app-info", optionalAuth, async (c) => {
     code_challenge = pushed.code_challenge ?? "";
     code_challenge_method = pushed.code_challenge_method ?? "";
     nonce = pushed.nonce ?? "";
+    prompt = pushed.prompt ?? prompt;
+    maxAgeRaw = pushed.max_age != null ? String(pushed.max_age) : maxAgeRaw;
   }
 
   if (!client_id || !redirect_uri || response_type !== "code") {
@@ -969,6 +987,36 @@ app.get("/app-info", optionalAuth, async (c) => {
     existingTokenCount = tokenCountRow?.n ?? 0;
   }
 
+  // OIDC Core prompt / max_age evaluation. The SPA acts on these: send the
+  // user to re-authenticate, auto-approve without UI, force the consent screen,
+  // or bounce an error back to the client for prompt=none.
+  const maxAge =
+    maxAgeRaw != null && /^\d+$/.test(maxAgeRaw) ? Number(maxAgeRaw) : null;
+  let sessionAuthTime: number | null = null;
+  if (currentUser) {
+    const s = await c.env.DB.prepare(
+      "SELECT created_at FROM sessions WHERE id = ?",
+    )
+      .bind(c.get("sessionId"))
+      .first<{ created_at: number }>();
+    sessionAuthTime = s?.created_at ?? null;
+  }
+  const nowSec = Math.floor(Date.now() / 1000);
+  const staleByMaxAge =
+    maxAge != null &&
+    sessionAuthTime != null &&
+    nowSec - sessionAuthTime > maxAge;
+  const reauthRequired = prompt === "login" || staleByMaxAge;
+  // Does the prior consent already cover every currently-requested scope?
+  const priorCovers =
+    existingConsentScopes != null &&
+    scopes.every((s) => existingConsentScopes!.includes(s));
+  let promptNoneError: string | null = null;
+  if (prompt === "none") {
+    if (!currentUser || reauthRequired) promptNoneError = "login_required";
+    else if (!priorCovers) promptNoneError = "consent_required";
+  }
+
   return c.json({
     app: await buildConsentAppSummary(c.env, oauthApp, isVerified),
     scopes,
@@ -980,6 +1028,11 @@ app.get("/app-info", optionalAuth, async (c) => {
     code_challenge,
     code_challenge_method,
     nonce,
+    prompt: prompt ?? null,
+    max_age: maxAge,
+    reauth_required: reauthRequired,
+    prompt_none_error: promptNoneError,
+    prior_consent_covers: priorCovers,
     user: c.get("user") ?? null,
     requires_site_grant: hasSiteScopes(scopes),
     site_scope_confirm_phrase: hasSiteScopes(scopes)
@@ -1015,7 +1068,13 @@ app.post("/authorize", requireAuth, async (c) => {
     revoke_existing_tokens?: boolean;
     request_uri?: string;
     resource?: string | string[];
+    prompt?: string;
+    max_age?: number;
   }>();
+
+  // Populated from the pushed request when one is used (RFC 9126); otherwise the
+  // corresponding body fields apply.
+  let pushedMaxAge: number | undefined;
 
   // RFC 9126: a pushed authorization request supplies the security-critical
   // parameters (redirect_uri, PKCE, nonce, resource) server-side. When the
@@ -1042,6 +1101,7 @@ app.post("/authorize", requireAuth, async (c) => {
     body.nonce = pushed.nonce;
     body.state = pushed.state ?? body.state;
     requestResources = pushed.resource ?? [];
+    pushedMaxAge = pushed.max_age;
   } else {
     const rv = validateResources(collectResourceParams(null, body.resource));
     if (rv === null)
@@ -1274,6 +1334,33 @@ app.post("/authorize", requireAuth, async (c) => {
 
   // Store consent
   const now = Math.floor(Date.now() / 1000);
+
+  // Capture the authenticating session's context so the ID token minted at the
+  // token endpoint can emit auth_time / amr / acr (OIDC Core §2). max_age, when
+  // the request asked for it, forces a re-authentication that is fresh enough.
+  const sessionRow = await c.env.DB.prepare(
+    "SELECT created_at, amr FROM sessions WHERE id = ?",
+  )
+    .bind(c.get("sessionId"))
+    .first<{ created_at: number; amr: string | null }>();
+  const authTime = sessionRow?.created_at ?? null;
+  const sessionAmr = sessionRow?.amr ?? null;
+  const maxAge = body.request_uri ? pushedMaxAge : body.max_age;
+  if (
+    typeof maxAge === "number" &&
+    maxAge >= 0 &&
+    authTime != null &&
+    now - authTime > maxAge
+  ) {
+    return c.json(
+      {
+        error: "login_required",
+        error_description: "re-authentication required (max_age exceeded)",
+      },
+      400,
+    );
+  }
+
   const siteScopes = boundScopes.filter((s) => SITE_SCOPES.has(s));
   await c.env.DB.prepare(
     `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at)
@@ -1318,8 +1405,8 @@ app.post("/authorize", requireAuth, async (c) => {
   const code = randomBase64url(32);
   const storedCode = await hashSecret(c.env, code);
   await c.env.DB.prepare(
-    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, resource, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO oauth_codes (code, client_id, user_id, redirect_uri, scopes, code_challenge, code_challenge_method, nonce, resource, auth_time, amr, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       storedCode,
@@ -1331,6 +1418,8 @@ app.post("/authorize", requireAuth, async (c) => {
       body.code_challenge_method ?? null,
       body.nonce ?? null,
       serializeResources(requestResources),
+      authTime,
+      sessionAmr,
       now + 600,
       now,
     )
@@ -2068,50 +2157,21 @@ app.post("/token", async (c) => {
   // return path below, success or error).
   noStore(c);
 
-  const contentType = c.req.header("Content-Type") ?? "";
-  let params: Record<string, string>;
+  const { params, form, json } = await readOAuthBody(c);
 
-  if (contentType.includes("application/json")) {
-    params = await c.req.json<Record<string, string>>();
-  } else {
-    const text = await c.req.text();
-    params = Object.fromEntries(new URLSearchParams(text));
-  }
+  const { grant_type, code, redirect_uri, code_verifier, refresh_token } =
+    params;
 
-  const {
-    grant_type,
-    code,
-    redirect_uri,
-    client_id,
-    client_secret,
-    code_verifier,
-    refresh_token,
-  } = params;
-
-  // Authenticate client
-  let clientId = client_id;
-  let clientSecret = client_secret;
-  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
-  if (basicAuth) {
-    clientId = basicAuth.clientId;
-    clientSecret = basicAuth.clientSecret;
-  }
-
-  const oauthApp = await c.env.DB.prepare(
-    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
-  )
-    .bind(clientId)
-    .first<OAuthAppRow>();
-  if (!oauthApp) {
+  // Authenticate the client (private_key_jwt, client_secret_*, or public).
+  const auth = await authenticateClient(c, params);
+  if (!auth.ok) {
+    if (auth.badRequest) return c.json({ error: "invalid_request" }, 400);
     // RFC 6749 §5.2: 401 + WWW-Authenticate when the client used the header.
-    if (basicAuth) challengeBasic(c);
+    if (auth.usedBasic) challengeBasic(c);
     return c.json({ error: "invalid_client" }, 401);
   }
-
-  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) {
-    if (basicAuth) challengeBasic(c);
-    return c.json({ error: "invalid_client" }, 401);
-  }
+  const oauthApp = auth.app;
+  const clientId = oauthApp.client_id;
 
   const config = await getConfig(c.env.DB);
 
@@ -2284,6 +2344,10 @@ app.post("/token", async (c) => {
         atTtl,
         c.env.APP_URL,
         c.env.DB,
+        {
+          authTime: codeRow.auth_time,
+          amr: codeRow.amr ? (JSON.parse(codeRow.amr) as string[]) : null,
+        },
       );
     }
     return c.json(response);
@@ -2576,6 +2640,143 @@ app.post("/token", async (c) => {
     return c.json(response);
   }
 
+  // ── Token Exchange (RFC 8693) ────────────────────────────────────────────
+  if (grant_type === TOKEN_EXCHANGE_GRANT_TYPE) {
+    const now = Math.floor(Date.now() / 1000);
+    const subjectToken = params.subject_token;
+    const subjectTokenType = params.subject_token_type;
+    if (!subjectToken || !subjectTokenType)
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description:
+            "subject_token and subject_token_type are required",
+        },
+        400,
+      );
+    if (subjectTokenType !== TOKEN_TYPE_ACCESS_TOKEN)
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "only access_token subject tokens are supported",
+        },
+        400,
+      );
+
+    const subject = await lookupAccessToken(c, subjectToken);
+    if (!subject)
+      return c.json(
+        {
+          error: "invalid_grant",
+          error_description: "subject_token is invalid",
+        },
+        400,
+      );
+
+    // Authorization: the requesting client may exchange a subject token that
+    // was issued to it, or one that carries a cross-app scope naming it
+    // (app:<clientId>:*). Anything else is refused — a token is not a bearer
+    // key that lets any client mint a fresh one.
+    const targetsRequester = subject.scopes.some((s) =>
+      s.startsWith(`app:${clientId}:`),
+    );
+    if (subject.clientId !== clientId && !targetsRequester)
+      return c.json(
+        {
+          error: "invalid_grant",
+          error_description: "client may not exchange this token",
+        },
+        400,
+      );
+
+    // Requested scope must be a subset of the subject token's scope.
+    const requested = (params.scope ?? "").split(" ").filter(Boolean);
+    let newScopes = subject.scopes;
+    if (requested.length) {
+      if (!requested.every((s) => subject.scopes.includes(s)))
+        return c.json({ error: "invalid_scope" }, 400);
+      newScopes = requested;
+    }
+
+    // RFC 8707 resource / RFC 8693 audience both constrain the new aud.
+    const audienceVals = form
+      ? form.getAll("audience")
+      : typeof json?.audience === "string"
+        ? [json.audience]
+        : Array.isArray(json?.audience)
+          ? json.audience.filter((v): v is string => typeof v === "string")
+          : [];
+    const resources = validateResources([
+      ...collectResourceParams(form, json?.resource),
+      ...audienceVals,
+    ]);
+    if (resources === null)
+      return c.json(
+        {
+          error: "invalid_target",
+          error_description: "invalid resource/audience",
+        },
+        400,
+      );
+
+    const user = await c.env.DB.prepare(
+      "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+    )
+      .bind(subject.userId)
+      .first<UserRow>();
+    if (!user || !user.is_active)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    const atTtl =
+      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
+    const resourceJson = serializeResources(resources);
+    const jti = randomId();
+    let accessToken: string;
+    if (oauthApp.use_jwt_tokens) {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      accessToken = signAccessToken(
+        {
+          iss: c.env.APP_URL,
+          sub: user.id,
+          aud: extractAud(newScopes, c.env.APP_URL, resources),
+          client_id: clientId,
+          jti,
+          scope: newScopes.join(" "),
+        },
+        mldsaKey.secretKey,
+        mldsaKey.kid,
+        atTtl,
+      );
+    } else {
+      accessToken = randomBase64url(48);
+    }
+    const storedAccess = await hashSecret(c.env, accessToken);
+    // Exchanged tokens are not refreshable (no refresh_token issued).
+    await c.env.DB.prepare(
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?)`,
+    )
+      .bind(
+        jti,
+        storedAccess,
+        clientId,
+        user.id,
+        JSON.stringify(newScopes),
+        resourceJson,
+        now + atTtl,
+        now,
+      )
+      .run();
+
+    return c.json({
+      access_token: accessToken,
+      issued_token_type: TOKEN_TYPE_ACCESS_TOKEN,
+      token_type: "Bearer",
+      expires_in: atTtl,
+      scope: newScopes.join(" "),
+    });
+  }
+
   return c.json({ error: "unsupported_grant_type" }, 400);
 });
 
@@ -2604,18 +2805,66 @@ async function readOAuthBody(c: Context<AppEnv>): Promise<{
   return { params: Object.fromEntries(form), form, json: null };
 }
 
-/** Authenticate the calling OAuth client from HTTP Basic or body parameters,
- *  the same rule the token endpoint applies (public clients pass on client_id
- *  alone; confidential clients must present their secret). */
-async function authClientFromRequest(
+/** Audiences a private_key_jwt client assertion may name (RFC 7523 §3): the
+ *  issuer, the token endpoint, and the concrete endpoint being called. */
+function acceptedAssertionAudiences(c: Context<AppEnv>): string[] {
+  const base = c.env.APP_URL;
+  const url = new URL(c.req.url);
+  return [base, `${base}/api/oauth/token`, `${url.origin}${url.pathname}`];
+}
+
+/**
+ * Authenticate the calling OAuth client. Supports three methods:
+ *   - private_key_jwt (RFC 7523): a signed `client_assertion` verified against
+ *     the client's registered JWKS.
+ *   - client_secret_basic / client_secret_post: a shared secret.
+ *   - none: a public client (client_id only, PKCE binds the exchange).
+ *
+ * `usedBasic` reports whether an HTTP Basic header was presented, so the caller
+ * can add the RFC 6749 §5.2 `WWW-Authenticate` challenge to a 401.
+ */
+async function authenticateClient(
   c: Context<AppEnv>,
   params: Record<string, string>,
 ): Promise<
-  | { ok: true; app: OAuthAppRow; usedBasic: boolean }
-  | { ok: false; usedBasic: boolean }
+  | {
+      ok: true;
+      app: OAuthAppRow;
+      method: "none" | "client_secret" | "private_key_jwt";
+      usedBasic: boolean;
+    }
+  | { ok: false; usedBasic: boolean; badRequest?: boolean }
 > {
   const basic = parseBasicAuth(c.req.header("Authorization"));
   const usedBasic = !!basic;
+
+  // ── private_key_jwt (RFC 7523) ─────────────────────────────────────────────
+  const assertion = params.client_assertion;
+  const assertionType = params.client_assertion_type;
+  if (assertion || assertionType) {
+    if (assertionType !== CLIENT_ASSERTION_TYPE || !assertion)
+      return { ok: false, usedBasic, badRequest: true };
+    const clientId = params.client_id ?? assertionClientId(assertion);
+    const app = clientId
+      ? await c.env.DB.prepare(
+          "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+        )
+          .bind(clientId)
+          .first<OAuthAppRow>()
+      : null;
+    if (!app) return { ok: false, usedBasic };
+    const ok = await verifyClientAssertion(
+      c.env,
+      app,
+      assertion,
+      acceptedAssertionAudiences(c),
+    );
+    return ok
+      ? { ok: true, app, method: "private_key_jwt", usedBasic }
+      : { ok: false, usedBasic };
+  }
+
+  // ── client_secret_* / none ─────────────────────────────────────────────────
   const clientId = basic?.clientId ?? params.client_id;
   const clientSecret = basic?.clientSecret ?? params.client_secret;
   const app = clientId
@@ -2625,9 +2874,18 @@ async function authClientFromRequest(
         .bind(clientId)
         .first<OAuthAppRow>()
     : null;
-  if (!app || !(await clientSecretValid(c.env, app, clientSecret)))
+  if (!app) return { ok: false, usedBasic };
+  // A client that registered private_key_jwt must not fall back to a secret.
+  if (app.token_endpoint_auth_method === "private_key_jwt")
     return { ok: false, usedBasic };
-  return { ok: true, app, usedBasic };
+  if (!(await clientSecretValid(c.env, app, clientSecret)))
+    return { ok: false, usedBasic };
+  return {
+    ok: true,
+    app,
+    method: app.is_public ? "none" : "client_secret",
+    usedBasic,
+  };
 }
 
 // ─── Pushed Authorization Request endpoint (RFC 9126) ────────────────────────
@@ -2636,8 +2894,9 @@ app.post("/par", async (c) => {
   noStore(c);
   const { params, form, json } = await readOAuthBody(c);
 
-  const auth = await authClientFromRequest(c, params);
+  const auth = await authenticateClient(c, params);
   if (!auth.ok) {
+    if (auth.badRequest) return c.json({ error: "invalid_request" }, 400);
     if (auth.usedBasic) challengeBasic(c);
     return c.json({ error: "invalid_client" }, 401);
   }
@@ -2698,6 +2957,8 @@ app.post("/par", async (c) => {
     nonce: params.nonce,
     response_type: "code",
     resource: resources.length ? resources : undefined,
+    prompt: params.prompt,
+    max_age: params.max_age ? Number(params.max_age) : undefined,
   };
   const { requestUri, expiresIn } = await storePushedRequest(c.env, payload);
   // RFC 9126 §2.2: 201 Created with the request_uri and its lifetime.
@@ -2710,8 +2971,9 @@ app.post("/device_authorization", async (c) => {
   noStore(c);
   const { params, form, json } = await readOAuthBody(c);
 
-  const auth = await authClientFromRequest(c, params);
+  const auth = await authenticateClient(c, params);
   if (!auth.ok) {
+    if (auth.badRequest) return c.json({ error: "invalid_request" }, 400);
     if (auth.usedBasic) challengeBasic(c);
     return c.json({ error: "invalid_client" }, 401);
   }
@@ -2927,6 +3189,321 @@ app.post("/device/decision", requireAuth, async (c) => {
   return c.json({ status: "approved" });
 });
 
+// ─── Dynamic Client Registration (RFC 7591 / 7592) ───────────────────────────
+
+// The grant/response types every registered client may use here.
+const DCR_GRANT_TYPES = [
+  "authorization_code",
+  "refresh_token",
+  DEVICE_GRANT_TYPE,
+  TOKEN_EXCHANGE_GRANT_TYPE,
+];
+
+/** Keep only scopes this server recognises (platform scopes or an `app:*`
+ *  delegation form); default to the OIDC basics when none are requested. */
+function filterDcrScopes(scope: string | undefined): string[] {
+  const requested = (scope ?? "openid profile email")
+    .split(" ")
+    .filter(Boolean);
+  return requested.filter(
+    (s) => VALID_SCOPES.has(s) || parseAppScope(s) !== null,
+  );
+}
+
+/** Build the RFC 7591 §3.2.1 client information response for `app`. Includes
+ *  the (decrypted) client_secret for confidential clients, and — when
+ *  `regToken` is supplied — the registration access token. */
+async function buildClientInfoDoc(
+  env: Env,
+  app: OAuthAppRow,
+  regToken: string | null,
+): Promise<Record<string, unknown>> {
+  const doc: Record<string, unknown> = {
+    client_id: app.client_id,
+    client_id_issued_at: app.created_at,
+    client_name: app.name,
+    redirect_uris: parseRedirectUris(app.redirect_uris).map((r) => r.value),
+    grant_types: DCR_GRANT_TYPES,
+    response_types: ["code"],
+    token_endpoint_auth_method:
+      app.token_endpoint_auth_method ??
+      (app.is_public ? "none" : "client_secret_basic"),
+    scope: (JSON.parse(app.allowed_scopes) as string[]).join(" "),
+    registration_client_uri: `${env.APP_URL}/api/oauth/register/${app.client_id}`,
+  };
+  if (app.website_url) doc.client_uri = app.website_url;
+  if (app.icon_url) doc.logo_uri = app.icon_url;
+  const postLogout = JSON.parse(
+    app.post_logout_redirect_uris ?? "[]",
+  ) as string[];
+  if (postLogout.length) doc.post_logout_redirect_uris = postLogout;
+  if (app.jwks_uri) doc.jwks_uri = app.jwks_uri;
+  if (app.jwks) {
+    try {
+      doc.jwks = JSON.parse(app.jwks);
+    } catch {
+      /* omit malformed */
+    }
+  }
+  if (!app.is_public) {
+    doc.client_secret =
+      (await decryptSecret(env, app.client_secret)) ?? app.client_secret;
+    doc.client_secret_expires_at = 0; // never expires
+  }
+  if (regToken) doc.registration_access_token = regToken;
+  return doc;
+}
+
+/** RFC 7591 client metadata accepted at registration and update. */
+interface DcrMetadata {
+  redirect_uris?: string[];
+  client_name?: string;
+  client_uri?: string;
+  logo_uri?: string;
+  scope?: string;
+  token_endpoint_auth_method?: string;
+  post_logout_redirect_uris?: string[];
+  jwks?: unknown;
+  jwks_uri?: string;
+}
+
+/** Validate + normalise the mutable parts of a registration request. Returns an
+ *  error string (→ invalid_client_metadata / invalid_redirect_uri) or the
+ *  normalised values. */
+function normaliseDcrMetadata(body: DcrMetadata):
+  | { error: string; code: "invalid_redirect_uri" | "invalid_client_metadata" }
+  | {
+      redirectUris: { type: "equals"; value: string }[];
+      isPublic: number;
+      authMethod: string;
+      scopes: string[];
+      postLogout: string[];
+      jwks: string | null;
+      jwksUri: string | null;
+    } {
+  const redirectUris: { type: "equals"; value: string }[] = [];
+  for (const uri of body.redirect_uris ?? []) {
+    const reason = validateRedirectUriForRegistration(uri);
+    if (reason)
+      return {
+        error: `Invalid redirect_uri: ${uri} (${reason})`,
+        code: "invalid_redirect_uri",
+      };
+    redirectUris.push({ type: "equals", value: uri });
+  }
+
+  const authMethod = body.token_endpoint_auth_method ?? "client_secret_basic";
+  const validMethods = [
+    "none",
+    "client_secret_basic",
+    "client_secret_post",
+    "private_key_jwt",
+  ];
+  if (!validMethods.includes(authMethod))
+    return {
+      error: `Unsupported token_endpoint_auth_method: ${authMethod}`,
+      code: "invalid_client_metadata",
+    };
+
+  let jwks: string | null = null;
+  if (body.jwks !== undefined) {
+    try {
+      jwks = JSON.stringify(body.jwks);
+    } catch {
+      return { error: "Invalid jwks", code: "invalid_client_metadata" };
+    }
+  }
+  const jwksUri = typeof body.jwks_uri === "string" ? body.jwks_uri : null;
+  if (jwksUri && validateOutboundUrlDcr(jwksUri))
+    return { error: "Invalid jwks_uri", code: "invalid_client_metadata" };
+
+  if (authMethod === "private_key_jwt" && !jwks && !jwksUri)
+    return {
+      error: "private_key_jwt requires jwks or jwks_uri",
+      code: "invalid_client_metadata",
+    };
+
+  const postLogout: string[] = [];
+  for (const u of body.post_logout_redirect_uris ?? []) {
+    try {
+      const parsed = new URL(u);
+      if (!["https:", "http:"].includes(parsed.protocol) || parsed.hash)
+        throw new Error("bad");
+      postLogout.push(u);
+    } catch {
+      return {
+        error: `Invalid post_logout_redirect_uri: ${u}`,
+        code: "invalid_client_metadata",
+      };
+    }
+  }
+
+  return {
+    redirectUris,
+    isPublic: authMethod === "none" ? 1 : 0,
+    authMethod,
+    scopes: filterDcrScopes(body.scope),
+    postLogout,
+    jwks,
+    jwksUri,
+  };
+}
+
+/** https-only + SSRF check for a registered jwks_uri; returns a reason or null. */
+function validateOutboundUrlDcr(uri: string): string | null {
+  try {
+    const u = new URL(uri);
+    if (u.protocol !== "https:") return "must be https";
+  } catch {
+    return "invalid";
+  }
+  return null;
+}
+
+// POST /api/oauth/register — create a client (RFC 7591). Gated: the caller must
+// be a signed-in user or a PAT with apps:write (the "initial access token").
+app.post(
+  "/register",
+  tryPatAuth({ read: "apps:read", write: "apps:write" }),
+  requireAuth,
+  async (c) => {
+    const user = c.get("user");
+    const body = await c.req
+      .json<DcrMetadata>()
+      .catch(() => ({}) as DcrMetadata);
+
+    const norm = normaliseDcrMetadata(body);
+    if ("error" in norm)
+      return c.json({ error: norm.code, error_description: norm.error }, 400);
+
+    const id = randomId();
+    const clientId = `prism_${randomBase64url(16)}`;
+    const clientSecretPlain = norm.isPublic ? "" : randomBase64url(32);
+    const regToken = `reg_${randomBase64url(24)}`;
+    const now = Math.floor(Date.now() / 1000);
+
+    await c.env.DB.prepare(
+      `INSERT INTO oauth_apps
+         (id, owner_id, name, description, website_url, icon_url, client_id, client_secret,
+          redirect_uris, allowed_scopes, optional_scopes, oidc_fields, is_public, is_active, is_verified,
+          post_logout_redirect_uris, registration_access_token, token_endpoint_auth_method, jwks, jwks_uri,
+          created_at, updated_at)
+       VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, '[]', '[]', ?, 1, 0, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        id,
+        user.id,
+        body.client_name ?? "Dynamic Client",
+        body.client_uri ?? null,
+        body.logo_uri ?? null,
+        clientId,
+        clientSecretPlain ? await encryptSecret(c.env, clientSecretPlain) : "",
+        JSON.stringify(norm.redirectUris),
+        JSON.stringify(norm.scopes),
+        norm.isPublic,
+        JSON.stringify(norm.postLogout),
+        await hashSecret(c.env, regToken),
+        norm.authMethod,
+        norm.jwks,
+        norm.jwksUri,
+        now,
+        now,
+      )
+      .run();
+
+    const app = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
+      .bind(id)
+      .first<OAuthAppRow>();
+    const doc = await buildClientInfoDoc(c.env, app!, regToken);
+    // The generated secret is the freshly-minted plaintext, not the stored hash.
+    if (!norm.isPublic) doc.client_secret = clientSecretPlain;
+    return c.json(doc, 201);
+  },
+);
+
+/** Authenticate an RFC 7592 management request: Bearer <registration_access_token>
+ *  matching the app addressed by :client_id. */
+async function authRegistrationAccess(
+  c: Context<AppEnv>,
+  clientId: string,
+): Promise<OAuthAppRow | null> {
+  const authz = c.req.header("Authorization");
+  if (!authz?.startsWith("Bearer ")) return null;
+  const token = authz.slice(7);
+  const app = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+  )
+    .bind(clientId)
+    .first<OAuthAppRow>();
+  if (!app || !app.registration_access_token) return null;
+  const lookup = await hashLookupCandidate(c.env, token);
+  const matches =
+    (await timingSafeSecretEqual(
+      c.env,
+      app.registration_access_token,
+      token,
+    )) ||
+    (lookup !== null && app.registration_access_token === lookup);
+  return matches ? app : null;
+}
+
+// GET /api/oauth/register/:client_id — read client config (RFC 7592).
+app.get("/register/:client_id", async (c) => {
+  const app = await authRegistrationAccess(c, c.req.param("client_id"));
+  if (!app) return c.json({ error: "invalid_token" }, 401);
+  return c.json(await buildClientInfoDoc(c.env, app, null));
+});
+
+// PUT /api/oauth/register/:client_id — update client config (RFC 7592).
+app.put("/register/:client_id", async (c) => {
+  const app = await authRegistrationAccess(c, c.req.param("client_id"));
+  if (!app) return c.json({ error: "invalid_token" }, 401);
+  const body = await c.req.json<DcrMetadata>().catch(() => ({}) as DcrMetadata);
+  const norm = normaliseDcrMetadata(body);
+  if ("error" in norm)
+    return c.json({ error: norm.code, error_description: norm.error }, 400);
+
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.prepare(
+    `UPDATE oauth_apps
+        SET name = ?, website_url = ?, icon_url = ?, redirect_uris = ?,
+            allowed_scopes = ?, is_public = ?, post_logout_redirect_uris = ?,
+            token_endpoint_auth_method = ?, jwks = ?, jwks_uri = ?, updated_at = ?
+      WHERE id = ?`,
+  )
+    .bind(
+      body.client_name ?? app.name,
+      body.client_uri !== undefined ? body.client_uri : app.website_url,
+      body.logo_uri !== undefined ? body.logo_uri : app.icon_url,
+      JSON.stringify(norm.redirectUris),
+      JSON.stringify(norm.scopes),
+      norm.isPublic,
+      JSON.stringify(norm.postLogout),
+      norm.authMethod,
+      norm.jwks,
+      norm.jwksUri,
+      now,
+      app.id,
+    )
+    .run();
+  const updated = await c.env.DB.prepare(
+    "SELECT * FROM oauth_apps WHERE id = ?",
+  )
+    .bind(app.id)
+    .first<OAuthAppRow>();
+  return c.json(await buildClientInfoDoc(c.env, updated!, null));
+});
+
+// DELETE /api/oauth/register/:client_id — deregister the client (RFC 7592).
+app.delete("/register/:client_id", async (c) => {
+  const app = await authRegistrationAccess(c, c.req.param("client_id"));
+  if (!app) return c.json({ error: "invalid_token" }, 401);
+  await c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?")
+    .bind(app.id)
+    .run();
+  return new Response(null, { status: 204 });
+});
+
 // ─── UserInfo endpoint (OpenID Connect) ─────────────────────────────────────
 
 // OIDC Core §5.3.1: the UserInfo Endpoint MUST support both GET and POST.
@@ -3006,26 +3583,17 @@ app.post("/userinfo", handleUserInfo);
 // ─── Token introspection ─────────────────────────────────────────────────────
 
 /**
- * Authenticate the calling client from HTTP Basic or form parameters, the two
- * forms the token endpoint already accepts. Returns the app row, or null when
- * the credentials do not check out.
+ * Authenticate the calling client for introspection / revocation. Delegates to
+ * authenticateClient, so all three methods (private_key_jwt, client_secret_*,
+ * none) work here too. Returns the app row, or null when the credentials do not
+ * check out.
  */
 async function authenticateCallingClient(
   c: Context<AppEnv>,
   params: Record<string, string>,
 ): Promise<OAuthAppRow | null> {
-  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
-  const clientId = basicAuth?.clientId ?? params.client_id;
-  const clientSecret = basicAuth?.clientSecret ?? params.client_secret;
-  if (!clientId) return null;
-  const oauthApp = await c.env.DB.prepare(
-    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
-  )
-    .bind(clientId)
-    .first<OAuthAppRow>();
-  if (!oauthApp) return null;
-  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) return null;
-  return oauthApp;
+  const auth = await authenticateClient(c, params);
+  return auth.ok ? auth.app : null;
 }
 
 app.post("/introspect", async (c) => {
@@ -3219,6 +3787,60 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
 
 app.get("/end_session", optionalAuth, handleEndSession);
 app.post("/end_session", optionalAuth, handleEndSession);
+
+/**
+ * Resolve an OAuth access token value (JWT or opaque) to its live grant, for
+ * RFC 8693 token exchange. Returns the owner, scopes and issuing client, or
+ * null when the token is unknown, expired, or its user is inactive.
+ */
+async function lookupAccessToken(
+  c: Context<AppEnv>,
+  token: string,
+): Promise<{ userId: string; scopes: string[]; clientId: string } | null> {
+  const now = Math.floor(Date.now() / 1000);
+  let tokenRow: {
+    user_id: string;
+    scopes: string;
+    expires_at: number;
+    client_id: string;
+  } | null;
+
+  if (token.split(".").length === 3) {
+    try {
+      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+      const payload = verifyAccessToken(token, mldsaKey.publicKey);
+      tokenRow = await c.env.DB.prepare(
+        "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE id = ?",
+      )
+        .bind(payload.jti)
+        .first();
+    } catch {
+      return null;
+    }
+  } else {
+    const lookup = await hashLookupCandidate(c.env, token);
+    if (!lookup) return null;
+    tokenRow = await c.env.DB.prepare(
+      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
+    )
+      .bind(token, lookup)
+      .first();
+  }
+
+  if (!tokenRow || tokenRow.expires_at < now) return null;
+  const userRow = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE id = ? AND is_active = 1 AND kind = 'user'",
+  )
+    .bind(tokenRow.user_id)
+    .first<{ id: string }>();
+  if (!userRow) return null;
+
+  return {
+    userId: tokenRow.user_id,
+    scopes: JSON.parse(tokenRow.scopes) as string[],
+    clientId: tokenRow.client_id,
+  };
+}
 
 // ─── Resource endpoints (OAuth-protected) ────────────────────────────────────
 
@@ -5074,6 +5696,12 @@ async function buildClaims(
   return claims;
 }
 
+/** Derive an `acr` value from the authentication methods: "mfa" when a second
+ *  factor was used, otherwise "pwd". */
+function deriveAcr(amr: string[]): string {
+  return amr.includes("mfa") || amr.includes("otp") ? "mfa" : "pwd";
+}
+
 async function buildIdToken(
   user: UserRow,
   clientId: string,
@@ -5084,12 +5712,20 @@ async function buildIdToken(
   ttl: number,
   issuer: string,
   db: D1Database,
+  authContext?: { authTime: number | null; amr: string[] | null },
 ): Promise<string> {
   const { signIdTokenRS256 } = await import("../lib/jwt");
   const claims = await buildClaims(user, clientId, scopes, db, issuer);
   claims.iss = issuer;
   claims.aud = clientId;
   if (nonce) claims.nonce = nonce;
+  // OIDC Core §2: auth_time / acr / amr, when the authenticating session's
+  // context was captured at consent.
+  if (authContext?.authTime != null) claims.auth_time = authContext.authTime;
+  if (authContext?.amr && authContext.amr.length) {
+    claims.amr = authContext.amr;
+    claims.acr = deriveAcr(authContext.amr);
+  }
   return signIdTokenRS256(claims, privateKey, kid, ttl);
 }
 

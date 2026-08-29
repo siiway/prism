@@ -106,7 +106,7 @@ app.post("/", async (c) => {
   // Store session record
   const tokenHash = await sha256(token);
   await c.env.DB.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at, amr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       sessionId,
@@ -118,6 +118,7 @@ app.post("/", async (c) => {
         "unknown",
       now + sessionTtl,
       now,
+      JSON.stringify(["pwd"]),
     )
     .run();
 
