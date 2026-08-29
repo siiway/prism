@@ -508,6 +508,21 @@ The ID token then carries `auth_time` (when the user signed in), `amr` (the
 authentication methods, e.g. `["pwd","otp","mfa"]`, `["webauthn"]`, `["ext"]`),
 and a derived `acr` (`mfa` when a second factor was used, else `pwd`).
 
+### Step-up authentication (RFC 9470)
+
+Request a specific context with `acr_values` on the authorization request (e.g.
+`acr_values=mfa`); if the current session doesn't meet it, Prism re-authenticates
+so a stronger factor can raise it. Access tokens (and the introspection response)
+carry `acr` / `auth_time` / `amr`, so a resource server can require a stronger
+authentication and answer a request that falls short with:
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer error="insufficient_user_authentication", acr_values="mfa"
+```
+
+The client then repeats authorization with `acr_values=mfa`.
+
 ## Pushed Authorization Requests (RFC 9126)
 
 Push the authorization parameters to the server first and receive a one-time

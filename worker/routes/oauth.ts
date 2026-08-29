@@ -191,6 +191,21 @@ function challengeDpop(
   c.header("WWW-Authenticate", value);
 }
 
+/**
+ * RFC 9470 §3: a resource that needs stronger authentication answers 401 with
+ * `insufficient_user_authentication` and the `acr_values` (and/or `max_age`) it
+ * wants, which the client feeds back into a fresh authorization request.
+ */
+function challengeStepUp(
+  c: Context<AppEnv>,
+  opts: { acrValues?: string; maxAge?: number },
+): void {
+  let value = `Bearer error="insufficient_user_authentication", error_description="stronger authentication required"`;
+  if (opts.acrValues) value += `, acr_values="${opts.acrValues}"`;
+  if (opts.maxAge != null) value += `, max_age="${opts.maxAge}"`;
+  c.header("WWW-Authenticate", value);
+}
+
 // ─── Pushed Authorization Requests (RFC 9126) ────────────────────────────────
 
 /** Authorization request parameters a client pushed to /par, held server-side
@@ -210,6 +225,7 @@ interface PushedRequest {
   resource?: string[];
   prompt?: string;
   max_age?: number;
+  acr_values?: string;
 }
 
 const PAR_URN_PREFIX = "urn:ietf:params:oauth:request_uri:";
@@ -811,9 +827,11 @@ app.get("/app-info", optionalAuth, async (c) => {
     code_challenge_method,
     nonce,
   } = c.req.query();
-  // OIDC Core: prompt (none|login|consent) and max_age (seconds).
+  // OIDC Core: prompt (none|login|consent), max_age (seconds), and the RFC 9470
+  // acr_values (space-separated requested authentication context).
   let prompt = c.req.query("prompt");
   let maxAgeRaw = c.req.query("max_age");
+  let acrValues = c.req.query("acr_values");
 
   // RFC 9126: when the request was pushed, resolve the stored parameters and
   // render the consent screen from those rather than the query string. The
@@ -841,6 +859,7 @@ app.get("/app-info", optionalAuth, async (c) => {
     nonce = pushed.nonce ?? "";
     prompt = pushed.prompt ?? prompt;
     maxAgeRaw = pushed.max_age != null ? String(pushed.max_age) : maxAgeRaw;
+    acrValues = pushed.acr_values ?? acrValues;
   }
 
   if (!client_id || !redirect_uri || response_type !== "code") {
@@ -1011,20 +1030,28 @@ app.get("/app-info", optionalAuth, async (c) => {
   const maxAge =
     maxAgeRaw != null && /^\d+$/.test(maxAgeRaw) ? Number(maxAgeRaw) : null;
   let sessionAuthTime: number | null = null;
+  let sessionAcr: string | null = null;
   if (currentUser) {
     const s = await c.env.DB.prepare(
-      "SELECT created_at FROM sessions WHERE id = ?",
+      "SELECT created_at, amr FROM sessions WHERE id = ?",
     )
       .bind(c.get("sessionId"))
-      .first<{ created_at: number }>();
+      .first<{ created_at: number; amr: string | null }>();
     sessionAuthTime = s?.created_at ?? null;
+    if (s?.amr) sessionAcr = deriveAcr(JSON.parse(s.amr) as string[]);
   }
   const nowSec = Math.floor(Date.now() / 1000);
   const staleByMaxAge =
     maxAge != null &&
     sessionAuthTime != null &&
     nowSec - sessionAuthTime > maxAge;
-  const reauthRequired = prompt === "login" || staleByMaxAge;
+  // RFC 9470: if the client asked for an acr the current session doesn't meet,
+  // re-authenticate so a stronger factor can raise it.
+  const requestedAcrs = (acrValues ?? "").split(" ").filter(Boolean);
+  const acrUnsatisfied =
+    requestedAcrs.length > 0 &&
+    (sessionAcr === null || !requestedAcrs.includes(sessionAcr));
+  const reauthRequired = prompt === "login" || staleByMaxAge || acrUnsatisfied;
   // Does the prior consent already cover every currently-requested scope?
   const priorCovers =
     existingConsentScopes != null &&
@@ -2332,6 +2359,7 @@ app.post("/token", async (c) => {
           jti,
           scope: scopes.join(" "),
           ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
+          ...accessAuthClaims(codeRow.auth_time, codeRow.amr),
         },
         mldsaKey.secretKey,
         mldsaKey.kid,
@@ -2349,8 +2377,8 @@ app.post("/token", async (c) => {
     const storedAccess = await hashSecret(c.env, accessToken);
     const storedRefresh = await hashSecret(c.env, refreshToken);
     await c.env.DB.prepare(
-      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, expires_at, refresh_expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, auth_time, amr, expires_at, refresh_expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         jti,
@@ -2361,6 +2389,8 @@ app.post("/token", async (c) => {
         JSON.stringify(scopes),
         codeRow.resource,
         dpopJkt,
+        codeRow.auth_time,
+        codeRow.amr,
         now + atTtl,
         hasOffline ? now + rtTtl : null,
         now,
@@ -2467,6 +2497,7 @@ app.post("/token", async (c) => {
           jti: tokenRow.id,
           scope: scopes.join(" "),
           ...(effJkt ? { cnf: { jkt: effJkt } } : {}),
+          ...accessAuthClaims(tokenRow.auth_time, tokenRow.amr),
         },
         mldsaKey.secretKey,
         mldsaKey.kid,
@@ -3017,6 +3048,7 @@ app.post("/par", async (c) => {
     resource: resources.length ? resources : undefined,
     prompt: params.prompt,
     max_age: params.max_age ? Number(params.max_age) : undefined,
+    acr_values: params.acr_values,
   };
   const { requestUri, expiresIn } = await storePushedRequest(c.env, payload);
   // RFC 9126 §2.2: 201 Created with the request_uri and its lifetime.
@@ -3770,6 +3802,8 @@ app.post("/introspect", async (c) => {
     aud: tokenRow.client_id,
     iss: c.env.APP_URL,
     ...(tokenRow.dpop_jkt ? { cnf: { jkt: tokenRow.dpop_jkt } } : {}),
+    // RFC 9470 authentication context, for a resource server's step-up decision.
+    ...accessAuthClaims(tokenRow.auth_time, tokenRow.amr),
   });
 });
 
@@ -3974,6 +4008,9 @@ async function lookupAccessToken(
 async function resolveBearerToken(
   c: Context<AppEnv>,
   requiredScope: string,
+  // RFC 9470: when set, the token's acr must satisfy this (an "mfa" token
+  // satisfies a "pwd" requirement); otherwise a step-up challenge is issued.
+  requiredAcr?: string,
 ): Promise<{
   userId: string;
   scopes: string[];
@@ -4002,6 +4039,8 @@ async function resolveBearerToken(
   let resolvedClientId: string | null = null;
   // The DPoP key thumbprint the token is bound to, if any.
   let tokenJkt: string | null = null;
+  // The token's authentication context class, for RFC 9470 step-up.
+  let tokenAcr: string | null = null;
 
   // Personal Access Token (prism_pat_ prefix)
   if (raw.startsWith("prism_pat_")) {
@@ -4058,12 +4097,13 @@ async function resolveBearerToken(
     resolvedScopes = scopes;
     resolvedClientId = tokenRow.client_id;
     tokenJkt = payload.cnf?.jkt ?? tokenRow.dpop_jkt;
+    tokenAcr = payload.acr ?? null;
   } else {
     // Legacy opaque access token (kept for backward compatibility)
     const accessLookup = await hashLookupCandidate(c.env, raw);
     if (!accessLookup) return null;
     const tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at, client_id, dpop_jkt FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
+      "SELECT user_id, scopes, expires_at, client_id, dpop_jkt, amr FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
     )
       .bind(raw, accessLookup)
       .first<{
@@ -4072,6 +4112,7 @@ async function resolveBearerToken(
         expires_at: number;
         client_id: string;
         dpop_jkt: string | null;
+        amr: string | null;
       }>();
     if (!tokenRow || tokenRow.expires_at < now) return null;
     const scopes = JSON.parse(tokenRow.scopes) as string[];
@@ -4080,6 +4121,7 @@ async function resolveBearerToken(
     resolvedScopes = scopes;
     resolvedClientId = tokenRow.client_id;
     tokenJkt = tokenRow.dpop_jkt;
+    tokenAcr = tokenRow.amr ? deriveAcr(JSON.parse(tokenRow.amr)) : null;
   }
 
   // RFC 9449 §7.1: a DPoP-bound token is only valid with the DPoP scheme and a
@@ -4097,6 +4139,17 @@ async function resolveBearerToken(
     if ("error" in res || res.jkt !== tokenJkt) return null;
   } else if (scheme === "DPoP") {
     return null;
+  }
+
+  // RFC 9470: enforce a required acr, issuing a step-up challenge when unmet.
+  // An "mfa" token satisfies a "pwd" requirement, but not vice versa.
+  if (requiredAcr) {
+    const satisfied =
+      tokenAcr === requiredAcr || (requiredAcr === "pwd" && tokenAcr === "mfa");
+    if (!satisfied) {
+      challengeStepUp(c, { acrValues: requiredAcr });
+      return null;
+    }
   }
 
   // Reject tokens whose user has been deactivated/deleted, and any
@@ -5851,6 +5904,24 @@ async function buildClaims(
  *  factor was used, otherwise "pwd". */
 function deriveAcr(amr: string[]): string {
   return amr.includes("mfa") || amr.includes("otp") ? "mfa" : "pwd";
+}
+
+/** RFC 9470 authentication-context claims for a JWT access token, from the
+ *  authorizing session's auth_time + amr (stored on the code/token). */
+function accessAuthClaims(
+  authTime: number | null,
+  amrJson: string | null,
+): { auth_time?: number; acr?: string; amr?: string[] } {
+  const out: { auth_time?: number; acr?: string; amr?: string[] } = {};
+  if (authTime != null) out.auth_time = authTime;
+  if (amrJson) {
+    const amr = JSON.parse(amrJson) as string[];
+    if (amr.length) {
+      out.amr = amr;
+      out.acr = deriveAcr(amr);
+    }
+  }
+  return out;
 }
 
 async function buildIdToken(

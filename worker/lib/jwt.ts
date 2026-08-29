@@ -166,6 +166,10 @@ export interface AccessTokenPayload {
   scope: string;
   /** RFC 9449 DPoP confirmation: the bound key's JWK thumbprint. */
   cnf?: { jkt: string };
+  /** RFC 9470 authentication context, for step-up decisions at the resource. */
+  acr?: string;
+  auth_time?: number;
+  amr?: string[];
   iat: number;
   exp: number;
 }

@@ -453,6 +453,19 @@ ID 令牌随后携带 `auth_time`（用户登录时间）、`amr`（认证方式
 `["pwd","otp","mfa"]`、`["webauthn"]`、`["ext"]`），以及派生的 `acr`（使用了第二
 因子时为 `mfa`，否则为 `pwd`）。
 
+### 提升认证（RFC 9470）
+
+在授权请求上用 `acr_values` 请求特定上下文（例如 `acr_values=mfa`）；若当前会话不满足，
+Prism 会重新认证，让更强的因子提升它。访问令牌（以及内省响应）都携带
+`acr` / `auth_time` / `amr`，因此资源服务器可以要求更强的认证，并对不满足的请求返回：
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer error="insufficient_user_authentication", acr_values="mfa"
+```
+
+客户端随后带 `acr_values=mfa` 重新发起授权。
+
 ## 推送式授权请求（RFC 9126）
 
 先把授权参数推送到服务器，换取一次性的 `request_uri` 用于授权端点——请求无法在

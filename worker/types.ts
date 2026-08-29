@@ -335,6 +335,9 @@ export interface OAuthTokenRow {
   resource: string | null;
   /** RFC 9449 DPoP: the JWK thumbprint this token is bound to, or null. */
   dpop_jkt: string | null;
+  /** RFC 9470 step-up context: the authenticating session's auth_time and amr. */
+  auth_time: number | null;
+  amr: string | null;
   expires_at: number;
   refresh_expires_at: number | null;
   created_at: number;
