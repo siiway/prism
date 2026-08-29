@@ -431,6 +431,8 @@
     "websiteUrlPlaceholder": "https://example.com",
     "redirectUris": "重定向 URI",
     "redirectUrisHint": "添加一个或多个重定向 URI，也可留空。",
+    "postLogoutRedirectUris": "登出后重定向 URI",
+    "postLogoutRedirectUrisHint": "每行一个 URI。RP 发起的登出（end_session）仅会跳转到与此处完全匹配的地址。",
     "redirectUrisEmpty": "暂无重定向 URI。如果留空，则将保存第一个成功使用的重定向 URI 并锁定。",
     "redirectUrisAdd": "添加重定向 URI",
     "redirectUrisRegexTip": "要允许任何重定向 URI，可将匹配方式设为正则表达式，值设为 .*（请谨慎使用——这存在安全风险）。",

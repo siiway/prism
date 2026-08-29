@@ -3489,6 +3489,7 @@ export interface OAuthApp {
   use_jwt_tokens: boolean;
   allow_self_manage_exported_permissions: boolean;
   access_whitelist_enabled: boolean;
+  post_logout_redirect_uris: string[];
   team_id: string | null;
   created_at: number;
   updated_at: number;
@@ -3509,6 +3510,8 @@ export interface CreateAppBody {
   use_jwt_tokens?: boolean;
   allow_self_manage_exported_permissions?: boolean;
   access_whitelist_enabled?: boolean;
+  /** OIDC RP-Initiated Logout: exact-match allow-list of post-logout redirect URIs. */
+  post_logout_redirect_uris?: string[];
 }
 
 // ─── Audit logs (Transparent Control) ────────────────────────────────────────
