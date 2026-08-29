@@ -249,7 +249,12 @@ export function TeamDetail() {
   }, [domainsQuery]);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["team", id],
+    // Keyed by view mode: `my_role`, the banner and the management controls
+    // all differ between site-admin and normal view, so the two modes must
+    // not share a cache entry — otherwise a toggle (or landing on a team
+    // cached in the other mode) flashes the wrong mode until the refetch
+    // lands. Existing `["team", id]` invalidations still match by prefix.
+    queryKey: ["team", id, normalView],
     queryFn: () => api.getTeam(id!),
     enabled: !!id,
     // In normal view a non-member admin legitimately gets a 404 — don't retry
