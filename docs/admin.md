@@ -37,6 +37,14 @@ Settings are grouped into tabs. All changes take effect immediately — no redep
 - **Registration mode** — `open` (anyone can register), `invite-only` (requires an invite token), or `closed` (no new registrations)
 - **Require email verification** — users must click the verification link before logging in
 
+Further down the General tab:
+
+- **Security contact** (`security_contact`) — a `mailto:` address or an https URL
+  where vulnerability reports should go. When set, Prism serves an RFC 9116
+  `/.well-known/security.txt`; leave it empty to disable that file.
+- **Security policy URL** (`security_policy_url`) — optional link to your
+  disclosure policy, added to `security.txt` as `Policy:`.
+
 ### Appearance
 
 - **Accent color** — hex color that drives the entire FluentUI theme. Changes are reflected immediately after saving.

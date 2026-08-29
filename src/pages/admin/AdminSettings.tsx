@@ -1121,6 +1121,37 @@ export function AdminSettings() {
         </div>
       )}
 
+      {tab === "general" && (
+        <div className={styles.card}>
+          <Title3>{t("admin.securityTxtTitle")}</Title3>
+          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+            {t("admin.securityTxtDesc")}
+          </Text>
+          <div className={styles.form}>
+            <Field
+              label={t("admin.securityContact")}
+              hint={t("admin.securityContactHint")}
+            >
+              <Input
+                value={get("security_contact") ?? ""}
+                onChange={(e) => set("security_contact", e.target.value)}
+                placeholder="mailto:security@example.com"
+              />
+            </Field>
+            <Field
+              label={t("admin.securityPolicyUrl")}
+              hint={t("admin.securityPolicyUrlHint")}
+            >
+              <Input
+                value={get("security_policy_url") ?? ""}
+                onChange={(e) => set("security_policy_url", e.target.value)}
+                placeholder="https://example.com/security-policy"
+              />
+            </Field>
+          </div>
+        </div>
+      )}
+
       {tab === "auth" && (
         <div className={styles.card}>
           <Title3>{t("admin.authTitle")}</Title3>

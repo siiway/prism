@@ -32,6 +32,14 @@ description: 在 Prism 管理面板中管理用户、应用、OAuth 来源、设
 - **注册模式** — `开放`（任何人可注册）、`仅限邀请`（需要邀请令牌）或`关闭`（禁止新注册）
 - **Require email verification** — 用户必须点击验证链接后才能登录
 
+General 标签页靠下：
+
+- **安全联系方式**（`security_contact`）— 接收漏洞报告的 `mailto:` 地址或 https
+  URL。设置后，Prism 会在 `/.well-known/security.txt` 提供符合 RFC 9116 的文件；
+  留空则禁用该文件。
+- **安全策略 URL**（`security_policy_url`）— 可选，指向您的披露策略的链接，会以
+  `Policy:` 形式加入 `security.txt`。
+
 ### 外观
 
 - **Accent color** — 驱动整个 FluentUI 主题的十六进制颜色，保存后立即生效。
