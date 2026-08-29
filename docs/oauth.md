@@ -7,15 +7,20 @@ Prism is a standards-compliant OAuth 2.0 authorization server and OpenID Connect
 
 ## Discovery
 
-Prism publishes its provider metadata at two well-known locations:
+Prism publishes its metadata at these `.well-known` locations (RFC 8615):
 
 ```text
-https://your-prism-domain/.well-known/openid-configuration      # OpenID Connect Discovery 1.0
+https://your-prism-domain/.well-known/openid-configuration       # OpenID Connect Discovery 1.0
 https://your-prism-domain/.well-known/oauth-authorization-server # RFC 8414
+https://your-prism-domain/.well-known/oauth-protected-resource   # RFC 9728
+https://your-prism-domain/.well-known/jwks.json                  # signing keys
 ```
 
-Both documents describe the same endpoints. Most OAuth/OIDC libraries can
-auto-configure from either URL.
+The first two describe the authorization server (same endpoints); most OAuth/OIDC
+libraries auto-configure from either. `oauth-protected-resource` (RFC 9728)
+describes Prism's API as a protected resource — which authorization server issues
+its tokens, the scopes it recognises, and its DPoP support. A `401` from a
+protected endpoint points here via `WWW-Authenticate: ... resource_metadata="…"`.
 
 ## Registering an application
 

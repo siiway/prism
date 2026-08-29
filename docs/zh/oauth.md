@@ -7,14 +7,19 @@ Prism 是一个符合标准的 OAuth 2.0 授权服务器和 OpenID Connect 提�
 
 ## Discovery
 
-Prism 在两个 well-known 位置发布提供方元数据：
+Prism 在这些 `.well-known` 位置发布元数据（RFC 8615）：
 
 ```text
-https://your-prism-domain/.well-known/openid-configuration      # OpenID Connect Discovery 1.0
+https://your-prism-domain/.well-known/openid-configuration       # OpenID Connect Discovery 1.0
 https://your-prism-domain/.well-known/oauth-authorization-server # RFC 8414
+https://your-prism-domain/.well-known/oauth-protected-resource   # RFC 9728
+https://your-prism-domain/.well-known/jwks.json                  # 签名密钥
 ```
 
-两份文档描述的是同一组端点。大多数 OAuth/OIDC 库可以从任一 URL 自动完成配置。
+前两份描述授权服务器（同一组端点），大多数 OAuth/OIDC 库可从任一自动配置。
+`oauth-protected-resource`（RFC 9728）把 Prism 的 API 描述为受保护资源——由哪个授权
+服务器签发其令牌、它识别的 scope、以及 DPoP 支持。受保护端点的 `401` 会通过
+`WWW-Authenticate: ... resource_metadata="…"` 指向此处。
 
 ## 注册应用程序
 

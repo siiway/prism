@@ -172,6 +172,8 @@ function challengeBearer(
   let value = `Bearer realm="${c.env.APP_URL}"`;
   if (error) value += `, error="${error}"`;
   if (description) value += `, error_description="${description}"`;
+  // RFC 9728 §5.1: point the client at the protected-resource metadata.
+  value += `, resource_metadata="${c.env.APP_URL}/.well-known/oauth-protected-resource"`;
   c.header("WWW-Authenticate", value);
 }
 
@@ -188,6 +190,7 @@ function challengeDpop(
   let value = `DPoP algs="RS256 ES256 EdDSA"`;
   if (error) value += `, error="${error}"`;
   if (description) value += `, error_description="${description}"`;
+  value += `, resource_metadata="${c.env.APP_URL}/.well-known/oauth-protected-resource"`;
   c.header("WWW-Authenticate", value);
 }
 

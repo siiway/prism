@@ -110,6 +110,24 @@ app.get("/oauth-authorization-server", (c) =>
   c.json(providerMetadata(c.env.APP_URL)),
 );
 
+// RFC 9728 §3 — OAuth 2.0 Protected Resource Metadata. Describes Prism's own
+// API surface as a protected resource: which authorization server issues its
+// tokens, the scopes it recognises, and its DPoP support.
+app.get("/oauth-protected-resource", (c) => {
+  const base = c.env.APP_URL;
+  return c.json({
+    resource: base,
+    authorization_servers: [base],
+    jwks_uri: `${base}/.well-known/jwks.json`,
+    scopes_supported: SCOPES_SUPPORTED,
+    bearer_methods_supported: ["header"],
+    resource_signing_alg_values_supported: ["ML-DSA-65"],
+    // RFC 9449 — DPoP is accepted but not mandatory.
+    dpop_signing_alg_values_supported: ["RS256", "ES256", "EdDSA"],
+    dpop_bound_access_tokens_required: false,
+  });
+});
+
 app.get("/jwks.json", async (c) => {
   const rsa = await getRsaKeyPair(c.env.KV_SESSIONS);
   return c.json({
