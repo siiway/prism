@@ -7,13 +7,14 @@ Prism 是一个符合标准的 OAuth 2.0 授权服务器和 OpenID Connect 提�
 
 ## Discovery
 
-OpenID Connect Discovery 文档位于：
+Prism 在两个 well-known 位置发布提供方元数据：
 
 ```text
-https://your-prism-domain/.well-known/openid-configuration
+https://your-prism-domain/.well-known/openid-configuration      # OpenID Connect Discovery 1.0
+https://your-prism-domain/.well-known/oauth-authorization-server # RFC 8414
 ```
 
-大多数 OAuth/OIDC 库可以从此 URL 自动完成配置。
+两份文档描述的是同一组端点。大多数 OAuth/OIDC 库可以从任一 URL 自动完成配置。
 
 ## 注册应用程序
 
@@ -231,6 +232,10 @@ GET /api/oauth/userinfo
 Authorization: Bearer <ACCESS_TOKEN>
 ```
 
+该端点同时支持 `GET` 与 `POST`（OpenID Connect Core §5.3.1）。访问令牌必须携带
+`openid` 作用域；缺少该作用域的令牌会返回 `403 insufficient_scope`。被拒绝的请求
+会按 RFC 6750 返回 `WWW-Authenticate: Bearer` 质询头。
+
 #### UserInfo 响应
 
 ```json
@@ -284,8 +289,11 @@ token=<ACCESS_TOKEN>
   "sub": "user-id",
   "scope": "openid profile",
   "client_id": "...",
+  "token_type": "Bearer",
   "exp": 1234567890,
-  "iat": 1234564290
+  "iat": 1234564290,
+  "aud": "...",
+  "iss": "https://your-prism-domain"
 }
 ```
 

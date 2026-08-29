@@ -459,16 +459,17 @@ OAuth-scoped equivalents:
 
 See the [OAuth / OIDC Guide](oauth.md) for the full walkthrough.
 
-| Method | Path                                | Notes                                                      |
-| ------ | ----------------------------------- | ---------------------------------------------------------- |
-| `GET`  | `/api/oauth/authorize`              | Returns app info + requested scopes for the consent screen |
-| `POST` | `/api/oauth/authorize`              | Approve / deny                                             |
-| `POST` | `/api/oauth/token`                  | `authorization_code` and `refresh_token` grants            |
-| `GET`  | `/api/oauth/userinfo`               | OIDC UserInfo                                              |
-| `POST` | `/api/oauth/introspect`             | RFC 7662                                                   |
-| `POST` | `/api/oauth/revoke`                 | RFC 7009                                                   |
-| `GET`  | `/.well-known/openid-configuration` | Discovery                                                  |
-| `GET`  | `/.well-known/jwks.json`            | RSA public keys for ID token + JWT access tokens           |
+| Method         | Path                                      | Notes                                                      |
+| -------------- | ----------------------------------------- | ---------------------------------------------------------- |
+| `GET`          | `/api/oauth/authorize`                    | Returns app info + requested scopes for the consent screen |
+| `POST`         | `/api/oauth/authorize`                    | Approve / deny                                             |
+| `POST`         | `/api/oauth/token`                        | `authorization_code` and `refresh_token` grants            |
+| `GET` / `POST` | `/api/oauth/userinfo`                     | OIDC UserInfo (OIDC Core §5.3.1)                           |
+| `POST`         | `/api/oauth/introspect`                   | RFC 7662                                                   |
+| `POST`         | `/api/oauth/revoke`                       | RFC 7009                                                   |
+| `GET`          | `/.well-known/openid-configuration`       | OpenID Connect Discovery 1.0                               |
+| `GET`          | `/.well-known/oauth-authorization-server` | RFC 8414 Authorization Server Metadata                     |
+| `GET`          | `/.well-known/jwks.json`                  | RSA public keys for ID token + JWT access tokens           |
 
 ### Step-up 2FA
 

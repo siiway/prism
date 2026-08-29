@@ -410,16 +410,17 @@ OAuth scope 版本：
 
 完整流程见 [OAuth / OIDC 指南](oauth.md)。
 
-| Method | Path                                | 说明                                               |
-| ------ | ----------------------------------- | -------------------------------------------------- |
-| `GET`  | `/api/oauth/authorize`              | 返回应用信息与请求 scope，供同意页使用             |
-| `POST` | `/api/oauth/authorize`              | 同意 / 拒绝                                        |
-| `POST` | `/api/oauth/token`                  | `authorization_code` 与 `refresh_token` 两种 grant |
-| `GET`  | `/api/oauth/userinfo`               | OIDC UserInfo                                      |
-| `POST` | `/api/oauth/introspect`             | RFC 7662                                           |
-| `POST` | `/api/oauth/revoke`                 | RFC 7009                                           |
-| `GET`  | `/.well-known/openid-configuration` | Discovery                                          |
-| `GET`  | `/.well-known/jwks.json`            | ID Token 与 JWT access token 的 RSA 公钥           |
+| Method         | Path                                      | 说明                                               |
+| -------------- | ----------------------------------------- | -------------------------------------------------- |
+| `GET`          | `/api/oauth/authorize`                    | 返回应用信息与请求 scope，供同意页使用             |
+| `POST`         | `/api/oauth/authorize`                    | 同意 / 拒绝                                        |
+| `POST`         | `/api/oauth/token`                        | `authorization_code` 与 `refresh_token` 两种 grant |
+| `GET` / `POST` | `/api/oauth/userinfo`                     | OIDC UserInfo（OIDC Core §5.3.1）                  |
+| `POST`         | `/api/oauth/introspect`                   | RFC 7662                                           |
+| `POST`         | `/api/oauth/revoke`                       | RFC 7009                                           |
+| `GET`          | `/.well-known/openid-configuration`       | OpenID Connect Discovery 1.0                       |
+| `GET`          | `/.well-known/oauth-authorization-server` | RFC 8414 授权服务器元数据                          |
+| `GET`          | `/.well-known/jwks.json`                  | ID Token 与 JWT access token 的 RSA 公钥           |
 
 ### 步骤提升 2FA
 

@@ -7,13 +7,15 @@ Prism is a standards-compliant OAuth 2.0 authorization server and OpenID Connect
 
 ## Discovery
 
-The OpenID Connect discovery document is available at:
+Prism publishes its provider metadata at two well-known locations:
 
 ```text
-https://your-prism-domain/.well-known/openid-configuration
+https://your-prism-domain/.well-known/openid-configuration      # OpenID Connect Discovery 1.0
+https://your-prism-domain/.well-known/oauth-authorization-server # RFC 8414
 ```
 
-Most OAuth/OIDC libraries can auto-configure from this URL.
+Both documents describe the same endpoints. Most OAuth/OIDC libraries can
+auto-configure from either URL.
 
 ## Registering an application
 
@@ -273,6 +275,11 @@ GET /api/oauth/userinfo
 Authorization: Bearer <ACCESS_TOKEN>
 ```
 
+The endpoint accepts both `GET` and `POST` (OpenID Connect Core §5.3.1). The
+access token must carry the `openid` scope; a token without it is refused with
+`403 insufficient_scope`. A rejected request returns a `WWW-Authenticate: Bearer`
+challenge per RFC 6750.
+
 #### UserInfo response
 
 ```json
@@ -327,8 +334,11 @@ were issued to it — anything else answers `{"active": false}`.
   "sub": "user-id",
   "scope": "openid profile",
   "client_id": "...",
+  "token_type": "Bearer",
   "exp": 1234567890,
-  "iat": 1234564290
+  "iat": 1234564290,
+  "aud": "...",
+  "iss": "https://your-prism-domain"
 }
 ```
 

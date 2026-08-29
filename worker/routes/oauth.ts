@@ -117,6 +117,44 @@ function unboundTeamPermissions(scopes: string[]): string[] {
 }
 
 /**
+ * RFC 6749 §5.1: token endpoint responses (success and error) carry
+ * credentials, so they MUST NOT be cached by intermediaries.
+ */
+function noStore(c: Context<AppEnv>): void {
+  c.header("Cache-Control", "no-store");
+  c.header("Pragma", "no-cache");
+}
+
+/**
+ * RFC 6749 §5.2 / RFC 7617: when a client authenticated (or attempted to)
+ * with the `Authorization` header, an `invalid_client` response MUST return
+ * 401 with a matching `WWW-Authenticate` challenge.
+ */
+function challengeBasic(c: Context<AppEnv>): void {
+  c.header(
+    "WWW-Authenticate",
+    `Basic realm="${c.env.APP_URL}", charset="UTF-8"`,
+  );
+}
+
+/**
+ * RFC 6750 §3: a failed Bearer-protected request MUST include a
+ * `WWW-Authenticate: Bearer` challenge, carrying the error code (and optional
+ * description) when a token was supplied but rejected. When no credentials
+ * were presented at all, the challenge is sent without an error code.
+ */
+function challengeBearer(
+  c: Context<AppEnv>,
+  error?: "invalid_token" | "insufficient_scope" | "invalid_request",
+  description?: string,
+): void {
+  let value = `Bearer realm="${c.env.APP_URL}"`;
+  if (error) value += `, error="${error}"`;
+  if (description) value += `, error_description="${description}"`;
+  c.header("WWW-Authenticate", value);
+}
+
+/**
  * Authenticate an OAuth client against its stored secret.
  *
  * Public clients (PKCE) carry no secret and always pass — PKCE binds the
@@ -1854,6 +1892,10 @@ app.post("/2fa/verify", async (c) => {
 // ─── Token endpoint ──────────────────────────────────────────────────────────
 
 app.post("/token", async (c) => {
+  // RFC 6749 §5.1: token responses MUST NOT be cached (applies to every
+  // return path below, success or error).
+  noStore(c);
+
   const contentType = c.req.header("Content-Type") ?? "";
   let params: Record<string, string>;
 
@@ -1888,13 +1930,27 @@ app.post("/token", async (c) => {
   )
     .bind(clientId)
     .first<OAuthAppRow>();
-  if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
+  if (!oauthApp) {
+    // RFC 6749 §5.2: 401 + WWW-Authenticate when the client used the header.
+    if (basicAuth) challengeBasic(c);
+    return c.json({ error: "invalid_client" }, 401);
+  }
 
   if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) {
+    if (basicAuth) challengeBasic(c);
     return c.json({ error: "invalid_client" }, 401);
   }
 
   const config = await getConfig(c.env.DB);
+
+  // RFC 6749 §5.2: grant_type is REQUIRED; its absence is invalid_request,
+  // distinct from a present-but-unknown value (unsupported_grant_type below).
+  if (!grant_type) {
+    return c.json(
+      { error: "invalid_request", error_description: "grant_type is required" },
+      400,
+    );
+  }
 
   // ── Authorization Code grant ─────────────────────────────────────────────
   if (grant_type === "authorization_code") {
@@ -2170,32 +2226,67 @@ app.post("/token", async (c) => {
 
 // ─── UserInfo endpoint (OpenID Connect) ─────────────────────────────────────
 
-app.get("/userinfo", async (c) => {
+// OIDC Core §5.3.1: the UserInfo Endpoint MUST support both GET and POST.
+// The Access Token is taken from the `Authorization: Bearer` header, or — for
+// POST with a form body — the `access_token` parameter (RFC 6750 §2.2).
+async function handleUserInfo(c: Context<AppEnv>): Promise<Response> {
+  let accessToken: string | undefined;
   const auth = c.req.header("Authorization");
-  if (!auth?.startsWith("Bearer "))
+  if (auth?.startsWith("Bearer ")) {
+    accessToken = auth.slice(7);
+  } else if (c.req.method === "POST") {
+    const ct = c.req.header("Content-Type") ?? "";
+    if (ct.includes("application/x-www-form-urlencoded")) {
+      const body = await c.req.parseBody();
+      if (typeof body.access_token === "string")
+        accessToken = body.access_token;
+    }
+  }
+
+  if (!accessToken) {
+    // RFC 6750 §3: no credentials → challenge without an error code.
+    challengeBearer(c);
     return c.json({ error: "invalid_token" }, 401);
-  const accessToken = auth.slice(7);
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const accessLookup = await hashLookupCandidate(c.env, accessToken);
-  if (!accessLookup) return c.json({ error: "invalid_token" }, 401);
+  if (!accessLookup) {
+    challengeBearer(c, "invalid_token", "The access token is invalid");
+    return c.json({ error: "invalid_token" }, 401);
+  }
   const tokenRow = await c.env.DB.prepare(
     "SELECT * FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
   )
     .bind(accessToken, accessLookup)
     .first<OAuthTokenRow>();
 
-  if (!tokenRow || tokenRow.expires_at < now)
+  if (!tokenRow || tokenRow.expires_at < now) {
+    challengeBearer(
+      c,
+      "invalid_token",
+      "The access token expired or is invalid",
+    );
     return c.json({ error: "invalid_token" }, 401);
+  }
+
+  // OIDC Core §5.4: the openid scope is what authorizes access to UserInfo.
+  const scopes = JSON.parse(tokenRow.scopes) as string[];
+  if (!scopes.includes("openid")) {
+    challengeBearer(c, "insufficient_scope", "The openid scope is required");
+    return c.json({ error: "insufficient_scope" }, 403);
+  }
 
   const user = await c.env.DB.prepare(
     "SELECT * FROM users WHERE id = ? AND kind = 'user'",
   )
     .bind(tokenRow.user_id)
     .first<UserRow>();
-  if (!user) return c.json({ error: "invalid_token" }, 401);
+  if (!user) {
+    challengeBearer(c, "invalid_token", "The access token is invalid");
+    return c.json({ error: "invalid_token" }, 401);
+  }
 
-  const scopes = JSON.parse(tokenRow.scopes) as string[];
   const claims = await buildClaims(
     user,
     tokenRow.client_id,
@@ -2204,7 +2295,10 @@ app.get("/userinfo", async (c) => {
     c.env.APP_URL,
   );
   return c.json(claims);
-});
+}
+
+app.get("/userinfo", handleUserInfo);
+app.post("/userinfo", handleUserInfo);
 
 // ─── Token introspection ─────────────────────────────────────────────────────
 
@@ -2245,8 +2339,10 @@ app.post("/introspect", async (c) => {
   // is for confidential resource servers; a public client that wants to know
   // whether its token still works can simply use it.
   const caller = await authenticateCallingClient(c, params);
-  if (!caller || caller.is_public)
+  if (!caller || caller.is_public) {
+    if (c.req.header("Authorization")?.startsWith("Basic ")) challengeBasic(c);
     return c.json({ error: "invalid_client" }, 401);
+  }
 
   const token = params.token;
   if (!token) return c.json({ active: false });
@@ -2288,9 +2384,13 @@ app.post("/introspect", async (c) => {
     scope: scopes.join(" "),
     client_id: tokenRow.client_id,
     username: tokenRow.user_id,
+    // RFC 7662 §2.2 / RFC 6750: all tokens Prism issues are bearer tokens.
+    token_type: "Bearer",
     exp: tokenRow.expires_at,
     iat: tokenRow.created_at,
     sub: tokenRow.user_id,
+    aud: tokenRow.client_id,
+    iss: c.env.APP_URL,
   });
 });
 
@@ -2309,7 +2409,10 @@ app.post("/revoke", async (c) => {
   // to present that token anyway. The client_id only narrows the delete to
   // that app's own grants.
   const caller = await authenticateCallingClient(c, params);
-  if (!caller) return c.json({ error: "invalid_client" }, 401);
+  if (!caller) {
+    if (c.req.header("Authorization")?.startsWith("Basic ")) challengeBasic(c);
+    return c.json({ error: "invalid_client" }, 401);
+  }
 
   const token = params.token;
   if (token) {
