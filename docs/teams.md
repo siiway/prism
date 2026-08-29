@@ -22,10 +22,12 @@ member leaving the team.
 There is exactly one owner per team. Transferring ownership is a single,
 audited operation; the previous owner is demoted to co-owner.
 
-**Site administrators** hold owner-level authority on every team without being
-members of any, and can override the team's own join requirements when adding
-people. Their actions land in the team's audit log marked `site_admin: true`.
-See [Admin → Site-admin access to every team](admin.md#site-admin-access-to-every-team).
+**Site administrators** hold owner-level authority on every team — as the site,
+even on teams they belong to or own — and can override the team's own join
+requirements when adding people. The team page says so with a banner, and their
+actions land in the team's audit log marked `site_admin: true`. An admin can
+**switch to normal view** to act as their own membership instead. See
+[Admin → Site-admin access to every team](admin.md#site-admin-access-to-every-team).
 
 ## Joining a team
 

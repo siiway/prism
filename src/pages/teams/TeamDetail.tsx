@@ -65,6 +65,7 @@ import { useToastMessage } from "../../lib/useToastMessage";
 import { EmptyState } from "../../components/EmptyState";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { useAuthStore } from "../../store/auth";
+import { useAdminViewStore } from "../../store/adminView";
 import { InviteDialog } from "./dialogs/InviteDialog";
 import { AddMemberDialog } from "./dialogs/AddMemberDialog";
 import { CreateSubTeamDialog } from "./dialogs/CreateSubTeamDialog";
@@ -102,6 +103,12 @@ const useStyles = makeStyles({
   },
   breadcrumb: {
     marginBottom: "12px",
+  },
+  viewBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    flexWrap: "wrap",
   },
   breadcrumbAvatar: {
     marginRight: "6px",
@@ -177,7 +184,18 @@ export function TeamDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user: me } = useAuthStore();
+  const { normalView, setNormalView } = useAdminViewStore();
   const { t } = useTranslation();
+  const isAdmin = me?.role === "admin";
+
+  // Flip the session-wide site-admin override on/off, then refetch everything
+  // team-scoped so roles, permissions and the banner reflect the new mode. The
+  // header the api client now sends changes what the worker returns, so stale
+  // cache entries would otherwise disagree with it.
+  const setView = (normal: boolean) => {
+    setNormalView(normal);
+    void qc.invalidateQueries();
+  };
 
   const [tab, setTab] = useState<TabType>("members");
   const { message, showMsg } = useToastMessage();
@@ -230,10 +248,19 @@ export function TeamDetail() {
     return () => clearTimeout(id);
   }, [domainsQuery]);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["team", id],
+  const { data, isLoading, isError } = useQuery({
+    // Keyed by view mode: `my_role`, the banner and the management controls
+    // all differ between site-admin and normal view, so the two modes must
+    // not share a cache entry — otherwise a toggle (or landing on a team
+    // cached in the other mode) flashes the wrong mode until the refetch
+    // lands. Existing `["team", id]` invalidations still match by prefix.
+    queryKey: ["team", id, normalView],
     queryFn: () => api.getTeam(id!),
     enabled: !!id,
+    // In normal view a non-member admin legitimately gets a 404 — don't retry
+    // it as if it were a blip, or the recovery banner is slow to appear.
+    retry: (count, err) =>
+      !(err instanceof ApiError && err.status === 404) && count < 3,
   });
 
   const {
@@ -554,7 +581,24 @@ export function TeamDetail() {
   };
 
   if (isLoading) return <SkeletonFormCard rows={5} />;
-  if (!team) return <Text>{t("teams.teamNotFound")}</Text>;
+  if (!team) {
+    // A site admin in normal view who isn't a member of this team gets a 404
+    // exactly as any non-member would. Rather than a bare "not found", offer
+    // the way back — their override would reveal it.
+    if (isAdmin && normalView && (isError || !data)) {
+      return (
+        <MessageBar intent="info">
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span>{t("teams.normalViewNotMember")}</span>
+            <Button size="small" onClick={() => setView(false)}>
+              {t("teams.normalViewSwitchBack")}
+            </Button>
+          </div>
+        </MessageBar>
+      );
+    }
+    return <Text>{t("teams.teamNotFound")}</Text>;
+  }
 
   return (
     <div>
@@ -628,11 +672,34 @@ export function TeamDetail() {
         )}
       </div>
 
-      {/* The role badge above says "owner" for a site admin who isn't a
-          member. Say where that came from rather than letting the page read
-          as though they belong to the team. */}
+      {/* The role badge above says "owner" for a site admin acting through the
+          override. Say where that came from rather than letting the page read
+          as though they belong to the team — and, when they have a real
+          membership to fall back to, offer to act as it instead. */}
       {team.site_admin_access && (
-        <MessageBar intent="warning">{t("teams.siteAdminAccess")}</MessageBar>
+        <MessageBar intent="warning">
+          <div className={styles.viewBanner}>
+            <span>{t("teams.siteAdminAccess")}</span>
+            {team.my_member_role && (
+              <Button size="small" onClick={() => setView(true)}>
+                {t("teams.siteAdminSwitchToNormal")}
+              </Button>
+            )}
+          </div>
+        </MessageBar>
+      )}
+
+      {/* The mirror image: an admin who has dropped the override is acting as
+          their own membership. Say so, and offer the way back. */}
+      {isAdmin && normalView && !team.site_admin_access && (
+        <MessageBar intent="info">
+          <div className={styles.viewBanner}>
+            <span>{t("teams.normalViewActive")}</span>
+            <Button size="small" onClick={() => setView(false)}>
+              {t("teams.normalViewSwitchBack")}
+            </Button>
+          </div>
+        </MessageBar>
       )}
 
       <TabList

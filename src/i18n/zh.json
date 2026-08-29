@@ -865,7 +865,11 @@
     "memberMatchCount": "匹配 {{count}} 人",
     "memberPageOf": "第 {{page}} / {{pages}} 页",
     "groupSlugNeeded": "请自行填写标识 —— 无法从该名称自动生成。",
-    "siteAdminAccess": "你正以站点管理员身份查看。即使不是成员，你也拥有该团队的所有者级权限，你的操作会以站点操作记录在其审计日志中。"
+    "siteAdminAccess": "你正以站点管理员身份查看。即使不是成员，你也拥有该团队的所有者级权限，你的操作会以站点操作记录在其审计日志中。",
+    "siteAdminSwitchToNormal": "切换到普通视图",
+    "normalViewActive": "你正以成员身份查看该团队 —— 此处的站点管理员权限已关闭。",
+    "normalViewSwitchBack": "切换到站点管理员视图",
+    "normalViewNotMember": "你正处于普通视图，且不是该团队的成员，因此没有可显示的内容。切换回站点管理员视图即可管理它。"
   },
   "connections": {
     "title": "关联账号",
