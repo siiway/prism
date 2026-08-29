@@ -387,10 +387,16 @@ on, only admins can create teams (existing teams keep working).
 ### Site-admin access to every team
 
 A site administrator holds **owner-level authority on every team**, whether or
-not they are a member. There is no separate admin-only copy of the team API —
-`/api/teams/*` simply treats an admin as the owner, so the ordinary team page
-at `/teams/:id` is the management screen and never drifts out of step with a
-parallel implementation.
+not they are a member — and holds it _as the site_ even on a team they belong
+to, including one they own by membership. There is no separate admin-only copy
+of the team API — `/api/teams/*` simply treats an admin as the owner, so the
+ordinary team page at `/teams/:id` is the management screen and never drifts out
+of step with a parallel implementation.
+
+Because the authority is the site's rather than a membership's, the team page
+always carries a banner saying so, and every action is stamped `site_admin:
+true` — on every team, even one the admin is the owner of. To act as their own
+membership instead, an admin uses **Switch to normal view** (below).
 
 What that unlocks, from outside the team:
 
@@ -440,6 +446,22 @@ from the site acting over their heads.
 Elevation is bound to a **session**. A Personal Access Token carries only the
 scopes stamped on it, so an admin's `apps:write` token stays an `apps:write`
 token and does not become a site-wide master key.
+
+### Normal view
+
+The override is on by default, but an admin can drop it. **Switch to normal
+view** — offered in the banner on any team the admin is actually a member of —
+makes the session act as that membership instead: their real role, their own
+audit entries (no `site_admin` stamp), and the team's own join requirements back
+in force. The banner flips to offer the way back.
+
+It is a **view of the current session, not a saved setting**: the dashboard
+sends an `X-Prism-Team-View: member` header on every request while it is on, and
+a page reload returns to the default admin view. That is deliberate — an admin
+who forgets they toggled it can never get stuck locked out of a team they don't
+belong to. In normal view, opening a team the admin isn't a member of shows a
+short "switch back" prompt rather than the team, exactly as it would for any
+non-member.
 
 ## Invite-link registration
 

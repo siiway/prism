@@ -311,6 +311,10 @@ export interface TeamAuthority {
   inherited_from: string | null;
   /** True when site-admin override granted (or raised) the role. */
   elevated: boolean;
+  /** The actor's effective role *ignoring* the override — what they would
+   *  hold in "normal view". null when they aren't a member at all. Lets the
+   *  UI decide whether dropping the override leaves them any access. */
+  member_role: "owner" | "co-owner" | "admin" | "member" | null;
 }
 
 /** The actor an authority check should run as.
@@ -323,15 +327,27 @@ export interface TeamActor {
   role: "admin" | "user";
 }
 
+/** Did the client ask to drop the site-admin override for this request?
+ *
+ *  The dashboard's "switch to normal view" toggle sends this header so an
+ *  admin can act as their own team membership instead of as the site. It is
+ *  advisory and only ever *removes* authority, so it needs no validation
+ *  beyond the value check — a non-admin sending it changes nothing. */
+export function wantsNormalView(c: import("hono").Context<AppEnv>): boolean {
+  return c.req.header("X-Prism-Team-View")?.toLowerCase() === "member";
+}
+
 /** Resolve the acting principal for a request.
  *
  *  A Personal Access Token carries only its own scopes, so an admin's
  *  `apps:write` token stays an `apps:write` token here instead of quietly
  *  becoming a site-wide master key. Session-authenticated admins get the
- *  override. */
+ *  override — unless they've asked, via the "normal view" header, to be
+ *  treated as their own membership for this request. */
 export function actorFor(c: import("hono").Context<AppEnv>): TeamActor {
   const user = c.get("user");
-  return { id: user.id, role: c.get("patAuth") ? "user" : user.role };
+  const suppress = c.get("patAuth") || wantsNormalView(c);
+  return { id: user.id, role: suppress ? "user" : user.role };
 }
 
 /** Is this request driven by a site administrator on their own session? */
@@ -345,11 +361,15 @@ export async function getTeamAuthority(
   actor: TeamActor,
 ): Promise<TeamAuthority | null> {
   const eff = await getEffectiveMember(db, teamId, actor.id);
-  if (actor.role !== "admin") return eff ? { ...eff, elevated: false } : null;
-  // Already the owner by membership — nothing to elevate, and the action is
-  // the member's own rather than the site's.
-  if (eff?.role === "owner") return { ...eff, elevated: false };
-  // The override reaches every team that exists; an unknown id is still a 404.
+  const member_role = eff?.role ?? null;
+  if (actor.role !== "admin")
+    return eff ? { ...eff, elevated: false, member_role } : null;
+  // A site admin holds owner-level authority on *every* team as the site,
+  // whether or not they are a member — and holds it even on a team they own by
+  // membership. The action is the site's, so it is elevated (and audited as
+  // `site_admin: true`) regardless. An admin who wants to act as their own
+  // membership drops the override with "normal view", which flips actor.role
+  // to "user" above and returns their real `eff` on the branch just taken.
   const exists = await db
     .prepare("SELECT 1 AS n FROM teams WHERE id = ?")
     .bind(teamId)
@@ -360,6 +380,7 @@ export async function getTeamAuthority(
     direct: eff?.direct ?? null,
     inherited_from: null,
     elevated: true,
+    member_role,
   };
 }
 
@@ -1208,6 +1229,10 @@ app.get("/:id", async (c) => {
       // The page is being viewed through the site-admin override rather than
       // a membership — the UI says so instead of impersonating an owner.
       site_admin_access: eff.elevated,
+      // The role the viewer would hold with the override dropped — drives
+      // whether the banner offers a "switch to normal view" that leads
+      // anywhere (null = not a member, so there is nothing to switch to).
+      my_member_role: eff.member_role,
       ancestors: ancestorChain,
       sub_teams: await Promise.all(
         subTeamPage.results.map(async (s) => ({

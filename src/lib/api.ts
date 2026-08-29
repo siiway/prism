@@ -22,6 +22,7 @@ export type {
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../store/auth";
+import { isNormalView } from "../store/adminView";
 
 // API client — all requests go through here
 
@@ -159,6 +160,12 @@ async function request<T>(
   }
 
   if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  // A site admin who has switched to "normal view" asks the worker to drop
+  // their site-admin override and treat team requests as their own membership.
+  // The flag is session-only and defaults off (see store/adminView), so this
+  // header is absent for everyone else and on a fresh SSR pass.
+  if (isNormalView()) headers["X-Prism-Team-View"] = "member";
 
   // During SSR (Cloudflare Workers), `fetch` requires absolute URLs. The
   // worker installs an in-process dispatcher on globalThis.__SSR_FETCH__
@@ -3009,6 +3016,10 @@ export interface Team {
    *  override rather than a membership — the page says so rather than
    *  passing the viewer off as an owner. */
   site_admin_access?: boolean;
+  /** Set on the team detail response — the role the viewer would hold with the
+   *  site-admin override dropped ("normal view"). `null` when they aren't a
+   *  member, so the banner knows a switch to normal view leads nowhere. */
+  my_member_role?: "owner" | "co-owner" | "admin" | "member" | null;
   /** Set on the team detail response — chain of ancestor teams, immediate
    *  parent first → root last. */
   ancestors?: TeamAncestor[];

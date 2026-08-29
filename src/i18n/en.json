@@ -865,7 +865,11 @@
     "memberMatchCount": "{{count}} matching",
     "memberPageOf": "Page {{page}} of {{pages}}",
     "groupSlugNeeded": "Type an identifier — it can't be derived from this name.",
-    "siteAdminAccess": "You're here as a site administrator. You have owner-level control of this team without being a member, and your changes are recorded in its audit log as site actions."
+    "siteAdminAccess": "You're here as a site administrator. You have owner-level control of this team without being a member, and your changes are recorded in its audit log as site actions.",
+    "siteAdminSwitchToNormal": "Switch to normal view",
+    "normalViewActive": "You're viewing this team as a member — your site-administrator controls are switched off here.",
+    "normalViewSwitchBack": "Switch to site admin view",
+    "normalViewNotMember": "You're in normal view and aren't a member of this team, so there's nothing to show. Switch back to site admin view to manage it."
   },
   "connections": {
     "title": "Linked Accounts",
