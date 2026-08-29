@@ -21,6 +21,28 @@ https://your-prism-domain/.well-known/jwks.json                  # 签名密钥
 服务器签发其令牌、它识别的 scope、以及 DPoP 支持。受保护端点的 `401` 会通过
 `WWW-Authenticate: ... resource_metadata="…"` 指向此处。
 
+### Issuer 发现（WebFinger，RFC 7033）
+
+只有用户标识符的客户端可以借此发现 issuer：
+
+```text
+GET /.well-known/webfinger?resource=acct:alice@your-prism-domain&rel=http://openid.net/specs/connect/1.0/issuer
+```
+
+返回一个 JRD（`application/jrd+json`），链接到 issuer：
+
+```json
+{
+  "subject": "acct:alice@your-prism-domain",
+  "links": [
+    {
+      "rel": "http://openid.net/specs/connect/1.0/issuer",
+      "href": "https://your-prism-domain"
+    }
+  ]
+}
+```
+
 ## 注册应用程序
 
 1. 登录 Prism，前往 **Apps → New Application**

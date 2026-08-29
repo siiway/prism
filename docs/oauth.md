@@ -22,6 +22,28 @@ describes Prism's API as a protected resource — which authorization server iss
 its tokens, the scopes it recognises, and its DPoP support. A `401` from a
 protected endpoint points here via `WWW-Authenticate: ... resource_metadata="…"`.
 
+### Issuer discovery (WebFinger, RFC 7033)
+
+A client that starts from a user identifier can discover the issuer:
+
+```text
+GET /.well-known/webfinger?resource=acct:alice@your-prism-domain&rel=http://openid.net/specs/connect/1.0/issuer
+```
+
+returns a JRD (`application/jrd+json`) linking to the issuer:
+
+```json
+{
+  "subject": "acct:alice@your-prism-domain",
+  "links": [
+    {
+      "rel": "http://openid.net/specs/connect/1.0/issuer",
+      "href": "https://your-prism-domain"
+    }
+  ]
+}
+```
+
 ## Registering an application
 
 1. Log in to Prism and go to **Apps → New Application**

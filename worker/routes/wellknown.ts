@@ -128,6 +128,23 @@ app.get("/oauth-protected-resource", (c) => {
   });
 });
 
+// RFC 7033 WebFinger — OpenID Connect issuer discovery. A client that only has
+// a user identifier (acct:user@host or an https URL) queries this to learn the
+// OP's issuer. Returns a JRD (application/jrd+json).
+const OIDC_ISSUER_REL = "http://openid.net/specs/connect/1.0/issuer";
+app.get("/webfinger", (c) => {
+  const resource = c.req.query("resource");
+  if (!resource)
+    return c.json({ error: "the resource parameter is required" }, 400);
+  const rel = c.req.query("rel");
+  const links =
+    !rel || rel === OIDC_ISSUER_REL
+      ? [{ rel: OIDC_ISSUER_REL, href: c.env.APP_URL }]
+      : [];
+  c.header("Content-Type", "application/jrd+json");
+  return c.body(JSON.stringify({ subject: resource, links }));
+});
+
 app.get("/jwks.json", async (c) => {
   const rsa = await getRsaKeyPair(c.env.KV_SESSIONS);
   return c.json({
