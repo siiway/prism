@@ -1036,10 +1036,10 @@ export const api = {
       undefined,
       getToken(),
     ),
-  adminListApps: (page = 1) =>
+  adminListApps: (page = 1, search = "") =>
     request<{ apps: OAuthApp[]; total: number }>(
       "GET",
-      `/admin/apps?page=${page}`,
+      `/admin/apps?page=${page}&search=${encodeURIComponent(search)}`,
       undefined,
       getToken(),
     ),
@@ -1878,10 +1878,10 @@ export const api = {
     ),
 
   // Admin teams
-  adminListTeams: (page = 1) =>
+  adminListTeams: (page = 1, search = "") =>
     request<{ teams: AdminTeam[]; total: number }>(
       "GET",
-      `/admin/teams?page=${page}`,
+      `/admin/teams?page=${page}&search=${encodeURIComponent(search)}`,
       undefined,
       getToken(),
     ),

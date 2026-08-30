@@ -1138,6 +1138,8 @@
     "verifiedDomains": "已验证域名",
     "activeTokens": "活跃令牌",
     "searchUsers": "搜索用户…",
+    "searchApps": "搜索应用…",
+    "searchTeams": "搜索团队…",
     "userHeader": "用户",
     "emailHeader": "邮箱",
     "roleHeader": "角色",

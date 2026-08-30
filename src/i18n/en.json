@@ -1138,6 +1138,8 @@
     "verifiedDomains": "Verified Domains",
     "activeTokens": "Active Tokens",
     "searchUsers": "Search users…",
+    "searchApps": "Search apps…",
+    "searchTeams": "Search teams…",
     "userHeader": "User",
     "emailHeader": "Email",
     "roleHeader": "Role",

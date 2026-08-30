@@ -34,6 +34,7 @@ import {
   MailRegular,
   PeopleTeamRegular,
   PersonAddRegular,
+  SearchRegular,
   SettingsRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
@@ -64,12 +65,19 @@ export function AdminTeams() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const { message, showMsg } = useToastMessage();
   const [viewing, setViewing] = useState<Record<string, unknown> | null>(null);
 
+  const handleSearch = () => {
+    setSearch(searchInput);
+    setPage(1);
+  };
+
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["admin-teams", page],
-    queryFn: () => api.adminListTeams(page),
+    queryKey: ["admin-teams", page, search],
+    queryFn: () => api.adminListTeams(page, search),
   });
 
   // Granting is the second of the two doors guarding account minting: the
@@ -223,7 +231,17 @@ export function AdminTeams() {
         </MessageBar>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Input
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder={t("admin.searchTeams")}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          style={{ flex: 1 }}
+        />
+        <Button icon={<SearchRegular />} onClick={handleSearch}>
+          {t("common.search")}
+        </Button>
         <Button
           appearance="primary"
           icon={<AddRegular />}

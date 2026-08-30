@@ -33,6 +33,7 @@ import {
   EditRegular,
   OpenRegular,
   PlugDisconnectedRegular,
+  SearchRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -62,7 +63,14 @@ export function AdminApps() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const { message, showMsg } = useToastMessage();
+
+  const handleSearch = () => {
+    setSearch(searchInput);
+    setPage(1);
+  };
 
   // Moving an app between owners and cutting one off entirely are both
   // incident responses rather than edits, so they live outside the edit
@@ -136,8 +144,8 @@ export function AdminApps() {
   const [saving, setSaving] = useState(false);
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["admin-apps", page],
-    queryFn: () => api.adminListApps(page),
+    queryKey: ["admin-apps", page, search],
+    queryFn: () => api.adminListApps(page, search),
   });
 
   const openEdit = (app: Record<string, unknown>) => {
@@ -183,6 +191,19 @@ export function AdminApps() {
           {message.text}
         </MessageBar>
       )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <Input
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder={t("admin.searchApps")}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          style={{ flex: 1 }}
+        />
+        <Button icon={<SearchRegular />} onClick={handleSearch}>
+          {t("common.search")}
+        </Button>
+      </div>
 
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={4} />

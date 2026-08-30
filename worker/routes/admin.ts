@@ -1214,6 +1214,20 @@ app.get("/apps", async (c) => {
     20,
     100,
   );
+  const search = c.req.query("search") ?? "";
+
+  // Match on the fields the admin table shows: app name, client id, owning
+  // user's username, and (for team-owned apps) the team name.
+  const whereClause = search
+    ? `WHERE a.name LIKE ? ESCAPE '\\'
+              OR a.client_id LIKE ? ESCAPE '\\'
+              OR u.username LIKE ? ESCAPE '\\'
+              OR t.name LIKE ? ESCAPE '\\'`
+    : "";
+  const searchParam = likePattern(search);
+  const params = search
+    ? [searchParam, searchParam, searchParam, searchParam]
+    : [];
 
   const [apps, count] = await Promise.all([
     c.env.DB.prepare(
@@ -1224,9 +1238,10 @@ app.get("/apps", async (c) => {
        FROM oauth_apps a
        LEFT JOIN users u ON u.id = a.owner_id
        LEFT JOIN teams t ON t.id = a.team_id
+       ${whereClause}
        ORDER BY a.created_at DESC LIMIT ? OFFSET ?`,
     )
-      .bind(limit, offset)
+      .bind(...params, limit, offset)
       .all<
         OAuthAppRow & {
           owner_username: string | null;
@@ -1234,9 +1249,16 @@ app.get("/apps", async (c) => {
           team_avatar_url: string | null;
         }
       >(),
-    c.env.DB.prepare("SELECT COUNT(*) as n FROM oauth_apps").first<{
-      n: number;
-    }>(),
+    c.env.DB.prepare(
+      `SELECT COUNT(*) as n FROM oauth_apps a
+         LEFT JOIN users u ON u.id = a.owner_id
+         LEFT JOIN teams t ON t.id = a.team_id
+         ${whereClause}`,
+    )
+      .bind(...params)
+      .first<{
+        n: number;
+      }>(),
   ]);
 
   const ownerIds = apps.results.map((a) => a.owner_id);
@@ -2004,6 +2026,13 @@ app.get("/teams", async (c) => {
     20,
     100,
   );
+  const search = c.req.query("search") ?? "";
+
+  const whereClause = search
+    ? `WHERE t.name LIKE ? ESCAPE '\\' OR t.description LIKE ? ESCAPE '\\'`
+    : "";
+  const searchParam = likePattern(search);
+  const params = search ? [searchParam, searchParam] : [];
 
   const [teams, count] = await Promise.all([
     c.env.DB.prepare(
@@ -2012,9 +2041,9 @@ app.get("/teams", async (c) => {
               (SELECT COUNT(*) FROM oauth_apps WHERE team_id = t.id) as app_count,
               (SELECT u.username FROM team_members tm JOIN users u ON u.id = tm.user_id
                WHERE tm.team_id = t.id AND tm.role = 'owner' LIMIT 1) as owner_username
-       FROM teams t ORDER BY t.created_at DESC LIMIT ? OFFSET ?`,
+       FROM teams t ${whereClause} ORDER BY t.created_at DESC LIMIT ? OFFSET ?`,
     )
-      .bind(limit, offset)
+      .bind(...params, limit, offset)
       .all<
         TeamRow & {
           member_count: number;
@@ -2022,7 +2051,9 @@ app.get("/teams", async (c) => {
           owner_username: string | null;
         }
       >(),
-    c.env.DB.prepare("SELECT COUNT(*) as n FROM teams").first<{ n: number }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) as n FROM teams t ${whereClause}`)
+      .bind(...params)
+      .first<{ n: number }>(),
   ]);
 
   return c.json({
