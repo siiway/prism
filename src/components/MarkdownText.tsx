@@ -14,6 +14,13 @@ const useStyles = makeStyles({
     // The rendered markdown is a block of HTML; keep it from inheriting the
     // MessageBar's single-line assumptions.
     display: "block",
+    // MessageBar's root sets white-space:nowrap and only flips to `normal`
+    // when its own reflow detection fires. That detection runs against the
+    // initial (empty) markup, so long strings would otherwise overflow the
+    // viewport instead of wrapping. Forcing normal-wrap here also lets the
+    // grid `1fr` body column shrink to fit the container.
+    whiteSpace: "normal",
+    overflowWrap: "anywhere",
     "& p": { margin: "4px 0" },
     "& p:first-child": { marginTop: 0 },
     "& p:last-child": { marginBottom: 0 },
