@@ -7,7 +7,7 @@ import { AuditLog } from "../components/AuditLog";
 export function AuditLogPage() {
   const { t } = useTranslation();
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
       <PageHeader
         title={t("audit.pageTitle")}
         subtitle={t("audit.pageSubtitle")}

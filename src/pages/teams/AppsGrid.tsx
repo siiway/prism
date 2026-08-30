@@ -70,17 +70,27 @@ export function AppsGrid({ apps, loading }: AppsGridProps) {
             ) : (
               <GlobeRegular fontSize={32} />
             )}
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
               <Text weight="semibold">{app.name}</Text>
-              <Text
-                size={200}
-                style={{
-                  color: tokens.colorNeutralForeground3,
-                  wordBreak: "break-all",
-                }}
-              >
-                {app.description || app.client_id}
-              </Text>
+              {app.description && (
+                <Text
+                  size={200}
+                  style={{
+                    color: tokens.colorNeutralForeground3,
+                    wordBreak: "break-all",
+                  }}
+                >
+                  {app.description}
+                </Text>
+              )}
             </div>
           </div>
         </div>

@@ -31,6 +31,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { MarkdownText } from "../../components/MarkdownText";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
@@ -40,6 +41,25 @@ const useStyles = makeStyles({
   // Let the table scroll sideways on narrow screens instead of
   // overflowing the page
   tableScroll: { overflowX: "auto" },
+  // Show the full id and let text-overflow truncate it only when the column
+  // is actually too narrow — a hard slice wastes space when it would fit.
+  idCell: {
+    fontFamily: "monospace",
+    fontSize: "11px",
+    color: tokens.colorNeutralForeground3,
+    display: "block",
+    maxWidth: "320px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  creatorCell: {
+    display: "block",
+    maxWidth: "220px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
 });
 
 export function AdminImageProxy() {
@@ -123,10 +143,10 @@ export function AdminImageProxy() {
   const mappings = data?.mappings ?? [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Text style={{ color: tokens.colorNeutralForeground3 }}>
-        {t("admin.imageProxySubtitle")}
-      </Text>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
+      <MessageBar intent="info">
+        <MarkdownText source={t("admin.imageProxySubtitle")} />
+      </MessageBar>
 
       <div
         style={{
@@ -233,15 +253,9 @@ export function AdminImageProxy() {
               ) : (
                 mappings.map((m) => (
                   <TableRow key={m.id}>
-                    <TableCell
-                      style={{
-                        fontFamily: "monospace",
-                        fontSize: 11,
-                        color: tokens.colorNeutralForeground3,
-                      }}
-                    >
+                    <TableCell>
                       <Tooltip content={m.id} relationship="description">
-                        <Text>{m.id.slice(0, 12)}…</Text>
+                        <Text className={styles.idCell}>{m.id}</Text>
                       </Tooltip>
                     </TableCell>
                     <TableCell
@@ -269,10 +283,10 @@ export function AdminImageProxy() {
                           content={m.created_by}
                           relationship="description"
                         >
-                          <Text font="monospace">
+                          <Text font="monospace" className={styles.creatorCell}>
                             {m.created_by_username ??
                               m.created_by_display_name ??
-                              m.created_by.slice(0, 8) + "…"}
+                              m.created_by}
                           </Text>
                         </Tooltip>
                       ) : (

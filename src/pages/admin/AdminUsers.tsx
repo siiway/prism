@@ -32,6 +32,7 @@ import {
 } from "@fluentui/react-components";
 import {
   DeleteRegular,
+  DismissRegular,
   EditRegular,
   SearchRegular,
   SettingsRegular,
@@ -190,7 +191,7 @@ export function AdminUsers() {
   const totalPages = data ? Math.ceil(data.total / 20) : 1;
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       {message && (
         <MessageBar
           intent={message.type === "success" ? "success" : "error"}
@@ -216,7 +217,26 @@ export function AdminUsers() {
       {/* The bulk bar only exists once something is selected, so the
           destructive actions are never just sitting there. */}
       {selected.size > 0 && (
-        <MessageBar intent={selected.size > BULK_LIMIT ? "warning" : "info"}>
+        <MessageBar
+          intent={selected.size > BULK_LIMIT ? "warning" : "info"}
+          // The intent icon doubles as the clear action: the bar only exists
+          // while a selection does, so the X that replaces the [i] is always
+          // the fastest way to drop it.
+          icon={
+            <span style={{ display: "flex" }}>
+              <Tooltip content={t("common.clear")} relationship="label">
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DismissRegular />}
+                  aria-label={t("common.clear")}
+                  disabled={bulkBusy}
+                  onClick={() => setSelected(new Set())}
+                />
+              </Tooltip>
+            </span>
+          }
+        >
           <MessageBarBody>
             {selected.size > BULK_LIMIT
               ? t("admin.bulkOverLimit", {
@@ -226,13 +246,6 @@ export function AdminUsers() {
               : t("admin.bulkSelected", { count: selected.size })}
           </MessageBarBody>
           <MessageBarActions>
-            <Button
-              size="small"
-              onClick={() => setSelected(new Set())}
-              disabled={bulkBusy}
-            >
-              {t("common.clear")}
-            </Button>
             <Button
               size="small"
               disabled={bulkBusy || selected.size > BULK_LIMIT}

@@ -25,7 +25,6 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-  Title3,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -43,6 +42,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthSource } from "../../lib/api";
 import { EmptyState } from "../../components/EmptyState";
+import { MarkdownText } from "../../components/MarkdownText";
 import { Pagination } from "../../components/Pagination";
 import { PasswordInput } from "../../components/PasswordInput";
 import { SkeletonTableRows } from "../../components/Skeletons";
@@ -56,6 +56,7 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "16px",
     minWidth: 0,
+    flex: 1,
   },
   form: {
     display: "grid",
@@ -372,10 +373,9 @@ export function AdminConnections() {
 
   return (
     <div className={styles.section}>
-      <Title3>{t("admin.oauthSources")}</Title3>
-      <Text style={{ color: tokens.colorNeutralForeground3 }}>
-        {t("admin.oauthSourcesHint")}
-      </Text>
+      <MessageBar intent="info">
+        <MarkdownText source={t("admin.oauthSourcesHint")} />
+      </MessageBar>
 
       {/* Legacy migration banner */}
       {data && data.legacy_providers.length > 0 && !migrateResult && (

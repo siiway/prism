@@ -21,6 +21,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api } from "../../lib/api";
+import { parseClient } from "../../lib/auditFormat";
 import { formatIpGeo } from "../../lib/geo";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
@@ -116,7 +117,7 @@ export function AdminLoginErrors() {
   const hasFilters = appliedCode || appliedIdentifier || appliedIp;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
       {/* Filter bar */}
       <div
         style={{
@@ -286,7 +287,7 @@ export function AdminLoginErrors() {
                           content={err.user_agent}
                           relationship="description"
                         >
-                          <Text>{err.user_agent}</Text>
+                          <Text>{parseClient(err.user_agent)}</Text>
                         </Tooltip>
                       ) : (
                         "—"

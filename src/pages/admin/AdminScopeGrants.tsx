@@ -41,6 +41,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import type { AdminScopeGrant } from "../../lib/api";
 import { CopyIdButton } from "../../components/CopyIdButton";
+import { MarkdownText } from "../../components/MarkdownText";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 import { useToastMessage } from "../../lib/useToastMessage";
@@ -49,7 +50,13 @@ import { formatDate } from "../../lib/datetime";
 const PAGE_SIZE = 20;
 
 const useStyles = makeStyles({
-  root: { display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 },
+  root: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    minWidth: 0,
+    flex: 1,
+  },
   tableScroll: { overflowX: "auto" },
   mono: {
     fontFamily: tokens.fontFamilyMonospace,
@@ -93,7 +100,9 @@ export function AdminScopeGrants() {
   return (
     <div className={styles.root}>
       {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
-      <MessageBar intent="info">{t("admin.scopeGrantsNotice")}</MessageBar>
+      <MessageBar intent="info">
+        <MarkdownText source={t("admin.scopeGrantsNotice")} />
+      </MessageBar>
 
       <TabList
         selectedValue={kind}

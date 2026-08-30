@@ -198,6 +198,26 @@ Sends a synthetic `ping` event immediately.
 { "success": true, "status": 200 }
 ```
 
+### Deleting a webhook
+
+**DELETE `/api/apps/:appId/webhooks/:webhookId`**
+
+Right before the webhook is removed, Prism delivers one final `webhook.deleted`
+event to its URL, so the receiving endpoint can learn that it was deleted. This
+farewell delivery is sent regardless of the webhook's event subscription and is
+skipped only when the webhook is inactive. The payload looks like:
+
+```json
+{
+  "event": "webhook.deleted",
+  "timestamp": 1741564800,
+  "data": { "id": "wh_xyz789", "app_id": "app_abc123" }
+}
+```
+
+The delivery is signed with the same `X-Prism-Signature` scheme as every other
+webhook event.
+
 ---
 
 ## Server-Sent Events (SSE)

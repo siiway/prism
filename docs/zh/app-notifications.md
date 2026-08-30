@@ -191,6 +191,24 @@ function verifySignature(secret, rawBody, signatureHeader) {
 { "success": true, "status": 200 }
 ```
 
+### 删除 Webhook
+
+**DELETE `/api/apps/:appId/webhooks/:webhookId`**
+
+在 Webhook 被移除之前，Prism 会先向它的 URL 投递最后一个 `webhook.deleted`
+事件，让接收端得知自己被删除。这一告别投递不受该 Webhook 事件订阅范围的限制；
+只有当 Webhook 处于停用状态时才会跳过。载荷形如：
+
+```json
+{
+  "event": "webhook.deleted",
+  "timestamp": 1741564800,
+  "data": { "id": "wh_xyz789", "app_id": "app_abc123" }
+}
+```
+
+该投递与其他所有 Webhook 事件一样，使用 `X-Prism-Signature` 方案签名。
+
 ---
 
 ## Server-Sent Events（SSE）

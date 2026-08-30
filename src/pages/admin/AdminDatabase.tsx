@@ -57,14 +57,29 @@ import { AdminKvBrowser } from "./AdminKvBrowser";
 const PAGE_SIZE = 50;
 
 const useStyles = makeStyles({
-  root: { display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 },
+  root: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    minWidth: 0,
+    flex: 1,
+  },
   split: {
     display: "grid",
     gridTemplateColumns: "260px 1fr",
+    // Let the single browse row fill the pane height so the result
+    // pagination can sit at the bottom like every other list page. The
+    // sidebar stays top-aligned; only the pane stretches (below).
+    gridTemplateRows: "minmax(0, 1fr)",
     gap: "16px",
     minWidth: 0,
+    minHeight: 0,
+    flex: 1,
     alignItems: "start",
-    "@media (max-width: 900px)": { gridTemplateColumns: "1fr" },
+    "@media (max-width: 900px)": {
+      gridTemplateColumns: "1fr",
+      gridTemplateRows: "none",
+    },
   },
   tableList: {
     display: "flex",
@@ -79,7 +94,15 @@ const useStyles = makeStyles({
     width: "100%",
     fontFamily: tokens.fontFamilyMonospace,
   },
-  pane: { minWidth: 0, display: "flex", flexDirection: "column", gap: "12px" },
+  pane: {
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    // Fill the (1fr) grid row even though the grid aligns items to start,
+    // so resultMeta's margin-top:auto can pin pagination to the bottom.
+    alignSelf: "stretch",
+  },
   toolbar: {
     display: "flex",
     gap: "8px",
@@ -121,6 +144,8 @@ const useStyles = makeStyles({
     gap: "12px",
     flexWrap: "wrap",
     alignItems: "center",
+    // Pin the row-count + pagination bar to the bottom of the pane.
+    marginTop: "auto",
   },
 });
 

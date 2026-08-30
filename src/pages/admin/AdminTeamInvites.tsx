@@ -46,7 +46,13 @@ import { formatDate } from "../../lib/datetime";
 const PAGE_SIZE = 20;
 
 const useStyles = makeStyles({
-  root: { display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 },
+  root: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    minWidth: 0,
+    flex: 1,
+  },
   toolbar: {
     display: "flex",
     gap: "8px",

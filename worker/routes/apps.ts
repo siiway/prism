@@ -975,11 +975,52 @@ app.delete("/:id/webhooks/:wid", async (c) => {
     return c.json({ error: "Forbidden" }, 403);
 
   const wh = await c.env.DB.prepare(
-    "SELECT id FROM app_webhooks WHERE id = ? AND app_id = ?",
+    "SELECT * FROM app_webhooks WHERE id = ? AND app_id = ?",
   )
     .bind(wid, id)
-    .first<{ id: string }>();
+    .first<AppWebhookRow>();
   if (!wh) return c.json({ error: "Webhook not found" }, 404);
+
+  // Farewell push: deliver *before* removing the row so the endpoint can
+  // learn it was deleted. Sent regardless of the hook's event subscription —
+  // it is a lifecycle event about the hook itself. Inactive hooks are
+  // already silent, so they get none.
+  if (wh.is_active) {
+    const { deliverOnce: deliver } = await import("../lib/webhooks");
+    const now = Math.floor(Date.now() / 1000);
+    const deliveryId = randomId();
+    const event = "webhook.deleted";
+    const payload = JSON.stringify({
+      event,
+      timestamp: now,
+      data: { id: wh.id, app_id: id },
+    });
+    const signingSecret = (await decryptSecret(c.env, wh.secret)) ?? wh.secret;
+    const result = await deliver(
+      c.env,
+      wh.url,
+      signingSecret,
+      deliveryId,
+      event,
+      payload,
+    );
+    await c.env.DB.prepare(
+      `INSERT INTO app_webhook_deliveries
+         (id, webhook_id, event_type, payload, response_status, response_body, success, delivered_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        deliveryId,
+        wid,
+        event,
+        payload,
+        result.status,
+        result.response,
+        result.success ? 1 : 0,
+        now,
+      )
+      .run();
+  }
 
   await c.env.DB.prepare("DELETE FROM app_webhooks WHERE id = ?")
     .bind(wid)

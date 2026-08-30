@@ -18,6 +18,11 @@ const useStyles = makeStyles({
     justifyContent: "flex-end",
     gap: "8px",
     flexWrap: "wrap",
+    // Pin the bar to the bottom of the page's flex column regardless of how
+    // few rows the list holds; paddingTop keeps the gap when there is no
+    // free space to absorb.
+    marginTop: "auto",
+    paddingTop: "16px",
   },
   pageCount: {
     color: tokens.colorNeutralForeground3,
@@ -91,7 +96,7 @@ export function Pagination({
         value={jump}
         onChange={(_, d) => setJump(d.value)}
         onKeyDown={(e) => e.key === "Enter" && goToPage()}
-        placeholder={t("common.goToPage")}
+        placeholder={t("common.pageNumber")}
         aria-label={t("common.goToPage")}
       />
       <Button size="small" appearance="subtle" onClick={goToPage}>
