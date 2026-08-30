@@ -42,7 +42,7 @@ export function MarkdownText({ source }: { source: string }) {
   }, [source]);
 
   return (
-    <span
+    <div
       className={styles.body}
       // Sanitized by renderMarkdown (DOMPurify, conservative allowlist).
       dangerouslySetInnerHTML={{ __html: html }}

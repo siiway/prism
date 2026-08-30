@@ -37,6 +37,7 @@
     "copyClientId": "Copy app client ID",
     "copyUserId": "Copy user ID",
     "copyTeamId": "Copy team ID",
+    "copyFailed": "Copy failed",
     "edit": "Edit",
     "clear": "Clear",
     "refresh": "Refresh"

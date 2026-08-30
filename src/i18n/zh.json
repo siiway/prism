@@ -37,6 +37,7 @@
     "copyClientId": "复制应用 Client ID",
     "copyUserId": "复制用户 ID",
     "copyTeamId": "复制团队 ID",
+    "copyFailed": "复制失败",
     "edit": "编辑",
     "clear": "清除",
     "refresh": "刷新"

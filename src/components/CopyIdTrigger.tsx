@@ -42,12 +42,22 @@ export function CopyIdTrigger({ id, label, children }: CopyIdTriggerProps) {
   const styles = useStyles();
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const copy = () => {
-    void navigator.clipboard.writeText(id).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+    void navigator.clipboard
+      .writeText(id)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {
+        // Clipboard access can be denied (permission, insecure context).
+        // Surface the failure in the tooltip instead of swallowing the
+        // rejection and silently leaving nothing copied.
+        setFailed(true);
+        setTimeout(() => setFailed(false), 1500);
+      });
   };
 
   const onClick = (e: MouseEvent) => {
@@ -64,7 +74,12 @@ export function CopyIdTrigger({ id, label, children }: CopyIdTriggerProps) {
   };
 
   return (
-    <Tooltip content={copied ? t("common.copied") : label} relationship="label">
+    <Tooltip
+      content={
+        copied ? t("common.copied") : failed ? t("common.copyFailed") : label
+      }
+      relationship="label"
+    >
       <div
         className={styles.trigger}
         role="button"
