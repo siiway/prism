@@ -190,6 +190,8 @@ const useStyles = makeStyles({
   },
   content: {
     flex: 1,
+    display: "flex",
+    flexDirection: "column",
     padding: "20px 24px",
     width: "100%",
     boxSizing: "border-box",

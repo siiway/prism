@@ -33,6 +33,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, type TeamMember } from "../../lib/api";
+import { CopyIdTrigger } from "../../components/CopyIdTrigger";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
@@ -58,7 +59,7 @@ const useStyles = makeStyles({
     alignItems: "center",
     justifyContent: "flex-end",
     gap: "8px",
-    marginTop: "12px",
+    marginTop: "auto",
   },
 });
 
@@ -176,7 +177,7 @@ export function MembersTable({
   }, [groupData, members, rows]);
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       {(total > 5 || isFiltering) && (
         <div className={styles.toolbar}>
           <Input
@@ -258,11 +259,18 @@ export function MembersTable({
                     <div
                       style={{ display: "flex", alignItems: "center", gap: 8 }}
                     >
-                      <Avatar
-                        name={m.display_name}
-                        image={m.avatar_url ? { src: m.avatar_url } : undefined}
-                        size={24}
-                      />
+                      <CopyIdTrigger
+                        id={m.user_id}
+                        label={t("common.copyUserId")}
+                      >
+                        <Avatar
+                          name={m.display_name}
+                          image={
+                            m.avatar_url ? { src: m.avatar_url } : undefined
+                          }
+                          size={24}
+                        />
+                      </CopyIdTrigger>
                       <div>
                         <Text weight="semibold" block>
                           {m.display_name}

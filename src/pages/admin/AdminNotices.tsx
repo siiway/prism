@@ -64,7 +64,13 @@ const LEVELS: NoticeLevel[] = ["info", "warning", "critical"];
 const AUDIENCES: NoticeAudience[] = ["public", "users", "admins", "team"];
 
 const useStyles = makeStyles({
-  root: { display: "flex", flexDirection: "column", gap: "16px", minWidth: 0 },
+  root: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    minWidth: 0,
+    flex: 1,
+  },
   tableScroll: { overflowX: "auto" },
   muted: { color: tokens.colorNeutralForeground3 },
   row: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" },

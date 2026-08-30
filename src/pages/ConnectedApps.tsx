@@ -36,6 +36,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type OAuthConsent, type OAuthToken } from "../lib/api";
+import { CopyIdTrigger } from "../components/CopyIdTrigger";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { Pagination } from "../components/Pagination";
@@ -242,21 +243,23 @@ function ConsentCard({
   return (
     <div className={styles.card}>
       <div className={styles.cardHeader}>
-        {consent.app.icon_url ? (
-          <Avatar
-            image={{ src: consent.app.icon_url }}
-            name={consent.app.name}
-            size={48}
-            shape="square"
-          />
-        ) : (
-          <div className={styles.appIcon}>
-            <GlobeRegular
-              fontSize={24}
-              style={{ color: tokens.colorNeutralForeground3 }}
+        <CopyIdTrigger id={consent.client_id} label={t("common.copyClientId")}>
+          {consent.app.icon_url ? (
+            <Avatar
+              image={{ src: consent.app.icon_url }}
+              name={consent.app.name}
+              size={48}
+              shape="square"
             />
-          </div>
-        )}
+          ) : (
+            <div className={styles.appIcon}>
+              <GlobeRegular
+                fontSize={24}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              />
+            </div>
+          )}
+        </CopyIdTrigger>
 
         <div className={styles.info}>
           <div className={styles.nameRow}>
@@ -435,7 +438,7 @@ export function ConnectedApps() {
   const consents = data?.consents ?? [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24, flex: 1 }}>
       <PageHeader
         title={t("connectedApps.title")}
         subtitle={t("connectedApps.description")}

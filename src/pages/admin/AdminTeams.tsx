@@ -216,7 +216,7 @@ export function AdminTeams() {
   const totalPages = data ? Math.ceil(data.total / 20) : 1;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
       {message && (
         <MessageBar intent={message.type === "success" ? "success" : "error"}>
           {message.text}

@@ -56,6 +56,7 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "16px",
     minWidth: 0,
+    flex: 1,
   },
   form: {
     display: "grid",

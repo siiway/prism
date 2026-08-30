@@ -33,6 +33,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type TeamGroup } from "../../lib/api";
 import { EmptyState } from "../../components/EmptyState";
+import { MarkdownText } from "../../components/MarkdownText";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
@@ -122,9 +123,9 @@ export function GroupsTab({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Text style={{ color: tokens.colorNeutralForeground3 }}>
-        {t("teams.groupsDesc")}
-      </Text>
+      <MessageBar intent="info">
+        <MarkdownText source={t("teams.groupsDesc")} />
+      </MessageBar>
 
       {!enabled && (
         <MessageBar intent="info">{t("teams.groupsDisabledNotice")}</MessageBar>

@@ -30,6 +30,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError, type RedirectUri } from "../../lib/api";
+import { CopyIdTrigger } from "../../components/CopyIdTrigger";
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
 import { Pagination } from "../../components/Pagination";
@@ -207,7 +208,7 @@ export function AppList() {
   );
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       <PageHeader title={t("apps.myApplications")} actions={createDialog} />
 
       {isFetching && !data && <SkeletonAppCards count={6} />}
@@ -268,18 +269,23 @@ export function AppList() {
                     marginBottom: 8,
                   }}
                 >
-                  {app.icon_url ? (
-                    <Image
-                      src={app.icon_url}
-                      alt={app.name}
-                      shape="rounded"
-                      fit="cover"
-                      width={32}
-                      height={32}
-                    />
-                  ) : (
-                    <GlobeRegular fontSize={32} />
-                  )}
+                  <CopyIdTrigger
+                    id={app.client_id}
+                    label={t("common.copyClientId")}
+                  >
+                    {app.icon_url ? (
+                      <Image
+                        src={app.icon_url}
+                        alt={app.name}
+                        shape="rounded"
+                        fit="cover"
+                        width={32}
+                        height={32}
+                      />
+                    ) : (
+                      <GlobeRegular fontSize={32} />
+                    )}
+                  </CopyIdTrigger>
                   <div
                     style={{
                       display: "flex",

@@ -31,6 +31,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../lib/api";
+import { CopyIdTrigger } from "../../components/CopyIdTrigger";
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
 import { Pagination } from "../../components/Pagination";
@@ -203,7 +204,7 @@ export function TeamList() {
   );
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       <PageHeader title={t("teams.title")} actions={createDialog} />
 
       {isFetching && !data && <SkeletonAppCards count={4} />}
@@ -262,15 +263,17 @@ export function TeamList() {
                 <div
                   style={{ display: "flex", alignItems: "flex-start", gap: 12 }}
                 >
-                  {team.avatar_url ? (
-                    <Avatar
-                      image={{ src: team.avatar_url }}
-                      name={team.name}
-                      size={32}
-                    />
-                  ) : (
-                    <Avatar name={team.name} size={32} />
-                  )}
+                  <CopyIdTrigger id={team.id} label={t("common.copyTeamId")}>
+                    {team.avatar_url ? (
+                      <Avatar
+                        image={{ src: team.avatar_url }}
+                        name={team.name}
+                        size={32}
+                      />
+                    ) : (
+                      <Avatar name={team.name} size={32} />
+                    )}
+                  </CopyIdTrigger>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{ display: "flex", alignItems: "center", gap: 6 }}

@@ -153,7 +153,7 @@ export function Domains() {
     !isFetching && data?.domains.length === 0 && !!debouncedQuery;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24, flex: 1 }}>
       <PageHeader
         title={t("domains.title")}
         subtitle={t("domains.description")}

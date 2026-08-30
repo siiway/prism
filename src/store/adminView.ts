@@ -15,12 +15,19 @@ import { create } from "zustand";
 interface AdminViewState {
   /** True while the admin has asked to be treated as their own membership. */
   normalView: boolean;
+  /** True once the admin has dismissed the "viewing as a member" banner.
+   *  Session-only like the toggle itself; toggling the view brings the
+   *  banner back. */
+  normalBannerDismissed: boolean;
   setNormalView: (v: boolean) => void;
+  dismissNormalBanner: () => void;
 }
 
 export const useAdminViewStore = create<AdminViewState>((set) => ({
   normalView: false,
-  setNormalView: (v) => set({ normalView: v }),
+  normalBannerDismissed: false,
+  setNormalView: (v) => set({ normalView: v, normalBannerDismissed: false }),
+  dismissNormalBanner: () => set({ normalBannerDismissed: true }),
 }));
 
 /** Non-hook read for the api client, which runs outside React. */

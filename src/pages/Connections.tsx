@@ -403,49 +403,65 @@ export function Connections() {
                         }
                       />
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <Text
-                          size={200}
-                          weight="semibold"
-                          className={styles.truncate}
-                          title={displayName ?? conn.provider_user_id}
+                        <Tooltip
+                          content={displayName ?? conn.provider_user_id}
+                          relationship="label"
                         >
-                          {displayName ?? conn.provider_user_id}
-                        </Text>
-                        {details.nickname ? (
                           <Text
-                            size={100}
+                            size={200}
+                            weight="semibold"
                             className={styles.truncate}
-                            title={details.nickname}
-                            style={{ color: tokens.colorNeutralForeground3 }}
                           >
-                            {t("connections.detailNickname", {
-                              value: details.nickname,
-                            })}
+                            {displayName ?? conn.provider_user_id}
                           </Text>
+                        </Tooltip>
+                        {details.nickname ? (
+                          <Tooltip
+                            content={details.nickname}
+                            relationship="label"
+                          >
+                            <Text
+                              size={100}
+                              className={styles.truncate}
+                              style={{ color: tokens.colorNeutralForeground3 }}
+                            >
+                              {t("connections.detailNickname", {
+                                value: details.nickname,
+                              })}
+                            </Text>
+                          </Tooltip>
                         ) : null}
                         {details.username ? (
-                          <Text
-                            size={100}
-                            className={styles.truncate}
-                            title={details.username}
-                            style={{ color: tokens.colorNeutralForeground3 }}
+                          <Tooltip
+                            content={details.username}
+                            relationship="label"
                           >
-                            {t("connections.detailUsername", {
-                              value: details.username,
-                            })}
-                          </Text>
+                            <Text
+                              size={100}
+                              className={styles.truncate}
+                              style={{ color: tokens.colorNeutralForeground3 }}
+                            >
+                              {t("connections.detailUsername", {
+                                value: details.username,
+                              })}
+                            </Text>
+                          </Tooltip>
                         ) : null}
                         {details.platformId ? (
-                          <Text
-                            size={100}
-                            className={styles.truncate}
-                            title={details.platformId}
-                            style={{ color: tokens.colorNeutralForeground3 }}
+                          <Tooltip
+                            content={details.platformId}
+                            relationship="label"
                           >
-                            {t("connections.detailId", {
-                              value: details.platformId,
-                            })}
-                          </Text>
+                            <Text
+                              size={100}
+                              className={styles.truncate}
+                              style={{ color: tokens.colorNeutralForeground3 }}
+                            >
+                              {t("connections.detailId", {
+                                value: details.platformId,
+                              })}
+                            </Text>
+                          </Tooltip>
                         ) : null}
                         <Text
                           size={100}

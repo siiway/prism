@@ -293,7 +293,7 @@ export function Tokens() {
   );
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       <PageHeader
         title={t("tokens.title")}
         subtitle={t("tokens.subtitle")}

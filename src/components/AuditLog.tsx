@@ -46,7 +46,7 @@ import { AuditWebhooks } from "./AuditWebhooks";
 import { Pagination } from "./Pagination";
 
 const useStyles = makeStyles({
-  root: { display: "flex", flexDirection: "column", gap: "16px" },
+  root: { display: "flex", flexDirection: "column", gap: "16px", flex: 1 },
   filters: {
     display: "flex",
     gap: "8px",

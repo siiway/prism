@@ -64,6 +64,7 @@ import {
 import { useToastMessage } from "../../lib/useToastMessage";
 import { EmptyState } from "../../components/EmptyState";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
+import { MarkdownText } from "../../components/MarkdownText";
 import { useAuthStore } from "../../store/auth";
 import { useAdminViewStore } from "../../store/adminView";
 import { InviteDialog } from "./dialogs/InviteDialog";
@@ -112,12 +113,6 @@ const useStyles = makeStyles({
   },
   breadcrumbAvatar: {
     marginRight: "6px",
-  },
-  subTeamsToolbar: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "12px",
   },
   subTeamsGrid: {
     display: "grid",
@@ -184,7 +179,12 @@ export function TeamDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user: me } = useAuthStore();
-  const { normalView, setNormalView } = useAdminViewStore();
+  const {
+    normalView,
+    setNormalView,
+    normalBannerDismissed,
+    dismissNormalBanner,
+  } = useAdminViewStore();
   const { t } = useTranslation();
   const isAdmin = me?.role === "admin";
 
@@ -601,7 +601,7 @@ export function TeamDetail() {
   }
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       {message && (
         <MessageBar
           intent={message.type === "success" ? "success" : "error"}
@@ -691,16 +691,27 @@ export function TeamDetail() {
 
       {/* The mirror image: an admin who has dropped the override is acting as
           their own membership. Say so, and offer the way back. */}
-      {isAdmin && normalView && !team.site_admin_access && (
-        <MessageBar intent="info">
-          <div className={styles.viewBanner}>
-            <span>{t("teams.normalViewActive")}</span>
-            <Button size="small" onClick={() => setView(false)}>
-              {t("teams.normalViewSwitchBack")}
-            </Button>
-          </div>
-        </MessageBar>
-      )}
+      {isAdmin &&
+        normalView &&
+        !team.site_admin_access &&
+        !normalBannerDismissed && (
+          <MessageBar intent="info">
+            <div className={styles.viewBanner}>
+              <span>{t("teams.normalViewActive")}</span>
+              <Button size="small" onClick={() => setView(false)}>
+                {t("teams.normalViewSwitchBack")}
+              </Button>
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<DismissRegular />}
+                aria-label={t("common.close")}
+                onClick={dismissNormalBanner}
+                style={{ marginLeft: "auto" }}
+              />
+            </div>
+          </MessageBar>
+        )}
 
       <TabList
         selectedValue={tab}
@@ -760,7 +771,7 @@ export function TeamDetail() {
 
       {/* Members tab */}
       {tab === "members" && (
-        <div>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
           {canManage && (
             <div
               style={{
@@ -813,7 +824,7 @@ export function TeamDetail() {
 
       {/* Apps tab */}
       {tab === "apps" && (
-        <div>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
           {canManage && (
             <div
               style={{
@@ -865,10 +876,12 @@ export function TeamDetail() {
 
       {/* Domains tab */}
       {tab === "domains" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("teams.domainsDesc")}
-          </Text>
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}
+        >
+          <MessageBar intent="info">
+            <MarkdownText source={t("teams.domainsDesc")} />
+          </MessageBar>
 
           <Input
             value={domainsQuery}
@@ -911,15 +924,17 @@ export function TeamDetail() {
 
       {/* Sub-teams tab */}
       {tab === "sub-teams" && (site?.enable_sub_teams ?? true) && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div className={styles.subTeamsToolbar}>
-            <Text style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("teams.subTeamsDesc")}
-            </Text>
-            {canManage && (
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}
+        >
+          <MessageBar intent="info">
+            <MarkdownText source={t("teams.subTeamsDesc")} />
+          </MessageBar>
+          {canManage && (
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
               <CreateSubTeamDialog parentTeamId={id!} showMsg={showMsg} />
-            )}
-          </div>
+            </div>
+          )}
           <Input
             value={subTeamsQuery}
             onChange={(e) => setSubTeamsQuery(e.target.value)}
@@ -1019,7 +1034,7 @@ export function TeamDetail() {
 
       {/* Invites tab */}
       {tab === "invites" && canManage && (
-        <div>
+        <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
           <div
             style={{
               display: "flex",

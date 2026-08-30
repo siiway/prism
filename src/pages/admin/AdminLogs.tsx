@@ -522,7 +522,7 @@ export function AdminLogs() {
     appliedMethod || appliedPath || appliedStatus || appliedUserId;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
       <DebugControls />
 
       {/* Filter bar */}
