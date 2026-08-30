@@ -263,7 +263,11 @@ export function TeamList() {
                 <div
                   style={{ display: "flex", alignItems: "flex-start", gap: 12 }}
                 >
-                  <CopyIdTrigger id={team.id} label={t("common.copyTeamId")}>
+                  <CopyIdTrigger
+                    id={team.id}
+                    label={t("common.copyTeamId")}
+                    copiedLabel={t("common.copiedTeamId")}
+                  >
                     {team.avatar_url ? (
                       <Avatar
                         image={{ src: team.avatar_url }}

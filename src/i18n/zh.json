@@ -29,6 +29,7 @@
     "pageOf": "{{page}} / {{total}}",
     "totalItems": "共 {{count}} 项",
     "goToPage": "跳转到页",
+    "pageNumber": "页数",
     "go": "跳转",
     "enabled": "已启用",
     "saveFailed": "保存失败",
@@ -38,6 +39,9 @@
     "copyUserId": "复制用户 ID",
     "copyTeamId": "复制团队 ID",
     "copyFailed": "复制失败",
+    "copiedClientId": "已复制应用 Client ID",
+    "copiedUserId": "已复制用户 ID",
+    "copiedTeamId": "已复制团队 ID",
     "edit": "编辑",
     "clear": "清除",
     "refresh": "刷新"

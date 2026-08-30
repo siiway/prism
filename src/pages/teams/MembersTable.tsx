@@ -262,6 +262,7 @@ export function MembersTable({
                       <CopyIdTrigger
                         id={m.user_id}
                         label={t("common.copyUserId")}
+                        copiedLabel={t("common.copiedUserId")}
                       >
                         <Avatar
                           name={m.display_name}

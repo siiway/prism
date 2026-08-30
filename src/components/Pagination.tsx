@@ -96,7 +96,7 @@ export function Pagination({
         value={jump}
         onChange={(_, d) => setJump(d.value)}
         onKeyDown={(e) => e.key === "Enter" && goToPage()}
-        placeholder={t("common.goToPage")}
+        placeholder={t("common.pageNumber")}
         aria-label={t("common.goToPage")}
       />
       <Button size="small" appearance="subtle" onClick={goToPage}>

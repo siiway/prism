@@ -29,6 +29,7 @@
     "pageOf": "{{page}} / {{total}}",
     "totalItems": "{{count}} items",
     "goToPage": "Go to page",
+    "pageNumber": "Page",
     "go": "Go",
     "enabled": "Enabled",
     "saveFailed": "Save failed",
@@ -38,6 +39,9 @@
     "copyUserId": "Copy user ID",
     "copyTeamId": "Copy team ID",
     "copyFailed": "Copy failed",
+    "copiedClientId": "Copied app client ID",
+    "copiedUserId": "Copied user ID",
+    "copiedTeamId": "Copied team ID",
     "edit": "Edit",
     "clear": "Clear",
     "refresh": "Refresh"

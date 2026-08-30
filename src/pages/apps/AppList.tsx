@@ -272,6 +272,7 @@ export function AppList() {
                   <CopyIdTrigger
                     id={app.client_id}
                     label={t("common.copyClientId")}
+                    copiedLabel={t("common.copiedClientId")}
                   >
                     {app.icon_url ? (
                       <Image

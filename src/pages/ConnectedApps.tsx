@@ -243,7 +243,11 @@ function ConsentCard({
   return (
     <div className={styles.card}>
       <div className={styles.cardHeader}>
-        <CopyIdTrigger id={consent.client_id} label={t("common.copyClientId")}>
+        <CopyIdTrigger
+          id={consent.client_id}
+          label={t("common.copyClientId")}
+          copiedLabel={t("common.copiedClientId")}
+        >
           {consent.app.icon_url ? (
             <Avatar
               image={{ src: consent.app.icon_url }}

@@ -35,10 +35,19 @@ interface CopyIdTriggerProps {
   id: string;
   /** Tooltip label describing what gets copied. */
   label: string;
+  /** Tooltip label to flash on success. Defaults to a generic "Copied!".
+   *  Callers should pass a specific label (e.g. "Copied team ID") so the
+   *  confirmation says *what* landed on the clipboard. */
+  copiedLabel?: string;
   children: ReactNode;
 }
 
-export function CopyIdTrigger({ id, label, children }: CopyIdTriggerProps) {
+export function CopyIdTrigger({
+  id,
+  label,
+  copiedLabel,
+  children,
+}: CopyIdTriggerProps) {
   const styles = useStyles();
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -76,7 +85,11 @@ export function CopyIdTrigger({ id, label, children }: CopyIdTriggerProps) {
   return (
     <Tooltip
       content={
-        copied ? t("common.copied") : failed ? t("common.copyFailed") : label
+        copied
+          ? (copiedLabel ?? t("common.copied"))
+          : failed
+            ? t("common.copyFailed")
+            : label
       }
       relationship="label"
     >
