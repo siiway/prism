@@ -110,6 +110,19 @@ app.use("*", tryPatAuth({ read: "apps:read", write: "apps:write" }));
 
 app.use("*", requireAuth);
 
+// Match the team routes' "normal view" semantics. The header can only remove
+// a site admin's override; it never grants authority to another caller.
+app.use("*", async (c, next) => {
+  const user = c.get("user");
+  if (
+    user?.role === "admin" &&
+    c.req.header("X-Prism-Team-View")?.toLowerCase() === "member"
+  ) {
+    c.set("user", { ...user, role: "user" });
+  }
+  await next();
+});
+
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 const ROLE_RANK: Record<string, number> = {
@@ -276,7 +289,7 @@ app.get("/:id", async (c) => {
     row.team_id,
   );
   return c.json({
-    app: await fullApp(c.env.APP_URL, c.env.DB, row, isVerified),
+    app: await safeApp(c.env.APP_URL, c.env.DB, row, isVerified),
   });
 });
 
@@ -385,7 +398,14 @@ app.post("/", async (c) => {
     ).catch(() => {}),
   );
   return c.json(
-    { app: await fullApp(c.env.APP_URL, c.env.DB, row!, isVerified) },
+    {
+      app: {
+        ...(await safeApp(c.env.APP_URL, c.env.DB, row!, isVerified)),
+        // Client secrets are write-only after creation. Return the freshly
+        // generated plaintext, never the encrypted value read back from D1.
+        client_secret: clientSecret,
+      },
+    },
     201,
   );
 });
@@ -474,10 +494,7 @@ app.patch("/:id", async (c) => {
       "private_key_jwt",
     ];
     if (m !== null && !validMethods.includes(m))
-      return c.json(
-        { error: `Invalid token_endpoint_auth_method: ${m}` },
-        400,
-      );
+      return c.json({ error: `Invalid token_endpoint_auth_method: ${m}` }, 400);
     tokenEndpointAuthMethod = m;
   }
 
@@ -525,10 +542,7 @@ app.patch("/:id", async (c) => {
   // A client that authenticates with private_key_jwt has no other credential —
   // it must register a key source, or the token endpoint can never verify it.
   if (tokenEndpointAuthMethod === "private_key_jwt" && !jwks && !jwksUri)
-    return c.json(
-      { error: "private_key_jwt requires jwks or jwks_uri" },
-      400,
-    );
+    return c.json({ error: "private_key_jwt requires jwks or jwks_uri" }, 400);
 
   // Redirect URIs may be an empty list (learn-first-used mode).
   const redirectUris = body.redirect_uris
@@ -674,7 +688,7 @@ app.patch("/:id", async (c) => {
     ).catch(() => {}),
   );
   return c.json({
-    app: await fullApp(c.env.APP_URL, c.env.DB, updatedRow!, isVerified),
+    app: await safeApp(c.env.APP_URL, c.env.DB, updatedRow!, isVerified),
   });
 });
 
@@ -1718,6 +1732,10 @@ async function safeApp(
     unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
+    // Expose only whether a credential exists. The stored value may be
+    // plaintext on legacy rows or ciphertext on migrated rows and must never
+    // leave the Worker through a read/update response.
+    has_client_secret: row.client_secret.length > 0,
     redirect_uris: parseRedirectUris(row.redirect_uris),
     allowed_scopes: JSON.parse(row.allowed_scopes) as string[],
     optional_scopes: JSON.parse(row.optional_scopes ?? "[]") as string[],
@@ -1741,18 +1759,6 @@ async function safeApp(
     team_id: row.team_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
-  };
-}
-
-async function fullApp(
-  baseUrl: string,
-  db: D1Database,
-  row: OAuthAppRow,
-  isVerified: boolean,
-) {
-  return {
-    ...(await safeApp(baseUrl, db, row, isVerified)),
-    client_secret: row.client_secret,
   };
 }
 

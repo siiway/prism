@@ -670,7 +670,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   getApp: (id: string) =>
     request<{ app: OAuthApp }>("GET", `/apps/${id}`, undefined, getToken()),
   createApp: (body: CreateAppBody) =>
-    request<{ app: OAuthApp }>("POST", "/apps", body, getToken()),
+    request<{ app: CreatedOAuthApp }>("POST", "/apps", body, getToken()),
   updateApp: (id: string, body: Partial<CreateAppBody>) =>
     request<{ app: OAuthApp }>("PATCH", `/apps/${id}`, body, getToken()),
   rotateSecret: (id: string) =>
@@ -1737,7 +1737,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     );
   },
   createTeamApp: (teamId: string, body: CreateAppBody) =>
-    request<{ app: OAuthApp }>(
+    request<{ app: CreatedOAuthApp }>(
       "POST",
       `/teams/${teamId}/apps`,
       body,
@@ -3573,7 +3573,8 @@ export interface OAuthApp {
   unproxied_icon_url: string | null;
   website_url: string | null;
   client_id: string;
-  client_secret?: string;
+  /** Whether a write-only client secret is configured. */
+  has_client_secret: boolean;
   redirect_uris: RedirectUri[];
   allowed_scopes: string[];
   optional_scopes: string[];
@@ -3598,6 +3599,12 @@ export interface OAuthApp {
   owner_username?: string | null;
   team_name?: string | null;
   team_avatar_url?: string | null;
+}
+
+/** App representation returned only by a create operation. */
+export interface CreatedOAuthApp extends OAuthApp {
+  /** Fresh plaintext credential; save it now because reads never return it. */
+  client_secret: string;
 }
 
 export interface CreateAppBody {

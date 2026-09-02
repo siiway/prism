@@ -1277,8 +1277,17 @@ app.get("/apps", async (c) => {
         const teamDomains =
           teamDomainsMap.get(a.team_id ?? "") ?? new Set<string>();
         const merged = new Set([...ownerDomains, ...teamDomains]);
+        // App credentials are write-only even for site administrators. Do not
+        // expose either legacy plaintext or encrypted-at-rest values.
+        const {
+          client_secret: clientSecret,
+          registration_access_token: registrationAccessToken,
+          ...appWithoutSecrets
+        } = a;
         return {
-          ...a,
+          ...appWithoutSecrets,
+          has_client_secret: clientSecret.length > 0,
+          has_registration_access_token: registrationAccessToken !== null,
           icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, a.icon_url),
           unproxied_icon_url: a.icon_url,
           team_avatar_url: await proxyImageUrl(

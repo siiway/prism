@@ -40,8 +40,8 @@ import {
   PeopleRegular,
   ShieldRegular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -1065,6 +1065,7 @@ export function AppDetail() {
   const styles = useStyles();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const { t, i18n } = useTranslation();
 
@@ -1136,8 +1137,30 @@ export function AppDetail() {
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [secretRotating, setSecretRotating] = useState(false);
-  const [newSecret, setNewSecret] = useState("");
+  const createdClientSecret = (() => {
+    const value = (location.state as { clientSecret?: unknown } | null)
+      ?.clientSecret;
+    return typeof value === "string" ? value : "";
+  })();
+  const [newSecret, setNewSecret] = useState(createdClientSecret);
   const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
+
+  // Creation responses disclose the plaintext once. After capturing it in
+  // component state, remove it from browser history so back/forward navigation
+  // cannot reveal it again.
+  useEffect(() => {
+    if (!createdClientSecret) return;
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: null,
+    });
+  }, [
+    createdClientSecret,
+    location.hash,
+    location.pathname,
+    location.search,
+    navigate,
+  ]);
   const { message, showMsg } = useToastMessage();
   const [copied, setCopied] = useState<string>("");
 
@@ -1204,7 +1227,7 @@ export function AppDetail() {
   // straight away. Once a secret already exists, rotating invalidates it and
   // breaks existing integrations — confirm first.
   const requestRotateSecret = () => {
-    if (app?.client_secret) {
+    if (app?.has_client_secret) {
       setRotateConfirmOpen(true);
     } else {
       void doRotateSecret();
@@ -1623,7 +1646,9 @@ export function AppDetail() {
                 </div>
               ) : (
                 <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                  {app.client_secret ? "••••••••••••••••" : t("apps.noSecret")}
+                  {app.has_client_secret
+                    ? "••••••••••••••••"
+                    : t("apps.noSecret")}
                 </Text>
               )}
               <Button
@@ -1634,7 +1659,7 @@ export function AppDetail() {
               >
                 {secretRotating ? (
                   <Spinner size="tiny" />
-                ) : app.client_secret ? (
+                ) : app.has_client_secret ? (
                   t("apps.rotateSecret")
                 ) : (
                   t("apps.generateSecret")

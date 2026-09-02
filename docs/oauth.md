@@ -449,9 +449,11 @@ Content-Type: application/json
 
 The `201` response is the client information document: `client_id`,
 `client_secret` (for confidential clients), a `registration_access_token`, and
-`registration_client_uri`. Manage the client afterwards at that URI (RFC 7592):
-`GET` reads it, `PUT` updates it, `DELETE` deregisters it — each authenticated
-with `Authorization: Bearer <registration_access_token>`. To register a
+`registration_client_uri`. Save the secret from this response: it is write-only
+and is not returned again. Manage the client afterwards at that URI (RFC 7592):
+`GET` reads its non-secret metadata, `PUT` updates it, and `DELETE` deregisters
+it — each authenticated with
+`Authorization: Bearer <registration_access_token>`. To register a
 `private_key_jwt` client, set `token_endpoint_auth_method` to `private_key_jwt`
 and include `jwks` (an inline JWK Set) or `jwks_uri`.
 

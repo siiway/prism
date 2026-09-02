@@ -318,6 +318,13 @@ pending 期间账号只能管理自己的安全设置，且**无法登录任何�
 
 OAuth 应用可以直接在团队下创建（**Teams → \<team\> → Apps → New**），或从成员个人应用转入（**Apps → \<app\> → Settings → Transfer**）。被转入的个人应用就地改主 — `client_id` 与 `client_secret` 保持不变，外部集成不会断。
 
+只有有效的团队管理员（或更高角色）可以创建应用或轮换其密钥。新生成的
+`client_secret` 只在创建或轮换的当次响应中显示；其他团队成员可读取的应用对象只
+暴露 `has_client_secret`。配置 `SECRETS_KEY` 后，团队应用密钥会加密存储。旧部署
+升级后，请执行 **Admin → Settings → Danger Zone → Migrate secrets to Secrets Store**，
+并轮换已有团队应用密钥；
+加密无法撤销此前可能已经泄露的副本。
+
 域名同理。已在个人账户验证过的域名可以共享给团队（`POST /api/teams/:id/domains/:domainId/share-to-team`），之后还能取消共享（`/share-to-personal`）或彻底转出（`/to-personal`，撤销团队的编辑权）。
 
 ## team-as-user 存储

@@ -2,7 +2,11 @@
 
 import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
-import { hashSecret, hashLookupCandidate } from "../lib/secretCrypto";
+import {
+  encryptSecret,
+  hashSecret,
+  hashLookupCandidate,
+} from "../lib/secretCrypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { computeIsVerified } from "../lib/domainVerify";
 import {
@@ -3330,7 +3334,9 @@ app.post("/:id/apps", async (c) => {
       body.description ?? "",
       body.website_url ?? null,
       clientId,
-      clientSecret,
+      // Keep team-owned app credentials under the same encryption-at-rest
+      // policy as personal apps. Only the local plaintext is returned below.
+      await encryptSecret(c.env, clientSecret),
       JSON.stringify(redirectUris),
       JSON.stringify(allowedScopes),
       body.is_public ? 1 : 0,
@@ -3349,7 +3355,12 @@ app.post("/:id/apps", async (c) => {
     JSON.stringify(redirectUris),
   );
   return c.json(
-    { app: await fullApp(c.env.APP_URL, c.env.DB, row!, isVerified) },
+    {
+      app: {
+        ...(await safeApp(c.env.APP_URL, c.env.DB, row!, isVerified)),
+        client_secret: clientSecret,
+      },
+    },
     201,
   );
 });
@@ -3447,6 +3458,9 @@ async function safeApp(
     unproxied_icon_url: row.icon_url,
     website_url: row.website_url,
     client_id: row.client_id,
+    // Team members may read app metadata, but the credential itself is
+    // write-only after an administrator creates or rotates it.
+    has_client_secret: row.client_secret.length > 0,
     // parseRedirectUris, not a bare JSON.parse cast: the column holds entry
     // objects since 0051, and typing it as string[] here made the team app
     // list disagree with the personal one for the same row.
@@ -3460,18 +3474,6 @@ async function safeApp(
     team_id: row.team_id,
     created_at: row.created_at,
     updated_at: row.updated_at,
-  };
-}
-
-async function fullApp(
-  baseUrl: string,
-  db: D1Database,
-  row: OAuthAppRow,
-  isVerified: boolean,
-) {
-  return {
-    ...(await safeApp(baseUrl, db, row, isVerified)),
-    client_secret: row.client_secret,
   };
 }
 

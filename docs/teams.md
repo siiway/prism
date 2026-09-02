@@ -491,6 +491,15 @@ Transfer**). Personal apps that are transferred in are reassigned in-place —
 the `client_id` and `client_secret` remain valid, so partner integrations don't
 break.
 
+Only effective team administrators (or stronger roles) can create an app or
+rotate its secret. A generated `client_secret` is shown once in that create or
+rotation response; app reads available to other team members expose only
+`has_client_secret`. With `SECRETS_KEY` configured, team app secrets are
+encrypted at rest. After upgrading a legacy deployment, use **Admin → Settings
+→ Danger Zone → Migrate secrets to Secrets Store** and rotate existing team app
+secrets, because encryption cannot revoke copies
+that may already have been disclosed.
+
 Domains work the same way. A domain verified on a personal account can be
 shared with a team (`POST /api/teams/:id/domains/:domainId/share-to-team`) and
 later moved back (`/share-to-personal`), or fully transferred (`/to-personal`)

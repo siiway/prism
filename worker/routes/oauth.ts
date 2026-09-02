@@ -6,7 +6,6 @@ import { configBag, getConfig, getRsaKeyPair } from "../lib/config";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import {
   encryptSecret,
-  decryptSecret,
   hashSecret,
   hashLookupCandidate,
   timingSafeSecretEqual,
@@ -3303,14 +3302,14 @@ function filterDcrScopes(scope: string | undefined): string[] {
   );
 }
 
-/** Build the RFC 7591 §3.2.1 client information response for `app`. Includes
- *  the (decrypted) client_secret for confidential clients, and — when
- *  `regToken` is supplied — the registration access token. */
-async function buildClientInfoDoc(
+/** Build the non-secret RFC 7591 §3.2.1 client information for `app`.
+ *  Fresh credentials are added only by the registration handler that minted
+ *  them; RFC 7592 read/update responses must not recover stored secrets. */
+function buildClientInfoDoc(
   env: Env,
   app: OAuthAppRow,
   regToken: string | null,
-): Promise<Record<string, unknown>> {
+): Record<string, unknown> {
   const doc: Record<string, unknown> = {
     client_id: app.client_id,
     client_id_issued_at: app.created_at,
@@ -3340,11 +3339,6 @@ async function buildClientInfoDoc(
   }
   if (app.backchannel_logout_uri)
     doc.backchannel_logout_uri = app.backchannel_logout_uri;
-  if (!app.is_public) {
-    doc.client_secret =
-      (await decryptSecret(env, app.client_secret)) ?? app.client_secret;
-    doc.client_secret_expires_at = 0; // never expires
-  }
   if (regToken) doc.registration_access_token = regToken;
   return doc;
 }
@@ -3526,9 +3520,13 @@ app.post(
     const app = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
       .bind(id)
       .first<OAuthAppRow>();
-    const doc = await buildClientInfoDoc(c.env, app!, regToken);
-    // The generated secret is the freshly-minted plaintext, not the stored hash.
-    if (!norm.isPublic) doc.client_secret = clientSecretPlain;
+    const doc = buildClientInfoDoc(c.env, app!, regToken);
+    // This creation response is the only time the generated client secret is
+    // disclosed. Subsequent RFC 7592 GET/PUT responses contain metadata only.
+    if (!norm.isPublic) {
+      doc.client_secret = clientSecretPlain;
+      doc.client_secret_expires_at = 0; // never expires
+    }
     return c.json(doc, 201);
   },
 );
@@ -3563,7 +3561,7 @@ async function authRegistrationAccess(
 app.get("/register/:client_id", async (c) => {
   const app = await authRegistrationAccess(c, c.req.param("client_id"));
   if (!app) return c.json({ error: "invalid_token" }, 401);
-  return c.json(await buildClientInfoDoc(c.env, app, null));
+  return c.json(buildClientInfoDoc(c.env, app, null));
 });
 
 // PUT /api/oauth/register/:client_id — update client config (RFC 7592).
@@ -3605,7 +3603,7 @@ app.put("/register/:client_id", async (c) => {
   )
     .bind(app.id)
     .first<OAuthAppRow>();
-  return c.json(await buildClientInfoDoc(c.env, updated!, null));
+  return c.json(buildClientInfoDoc(c.env, updated!, null));
 });
 
 // DELETE /api/oauth/register/:client_id — deregister the client (RFC 7592).
@@ -5012,7 +5010,18 @@ app.patch("/me/apps/:id", async (c) => {
     .bind(appId)
     .first<OAuthAppRow>();
 
-  return c.json({ app: updated });
+  const {
+    client_secret: clientSecret,
+    registration_access_token: registrationAccessToken,
+    ...appWithoutSecrets
+  } = updated!;
+  return c.json({
+    app: {
+      ...appWithoutSecrets,
+      has_client_secret: clientSecret.length > 0,
+      has_registration_access_token: registrationAccessToken !== null,
+    },
+  });
 });
 
 // DELETE /api/oauth/me/apps/:id — delete own OAuth app (requires apps:write)

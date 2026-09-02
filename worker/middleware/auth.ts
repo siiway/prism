@@ -214,12 +214,14 @@ export function tryPatAuth(scopes: {
       username: user.username,
       display_name: user.display_name,
       avatar_url: user.avatar_url,
-      role: user.role,
+      // A PAT's scopes are its entire authority. Never copy the owner's site
+      // admin role into token-authenticated route checks, or an apps:write PAT
+      // becomes a site-wide app-management credential.
+      role: "user",
       email_verified: user.email_verified === 1,
     });
-    // Mark the request as token-authenticated. Routes that hand extra
-    // authority to site admins consult this so a scoped PAT never inherits
-    // it — the token's scopes are the whole of what it may do.
+    // Keep the explicit marker for routes that distinguish PATs from sessions
+    // for policy or auditing in addition to consulting the effective role.
     c.set("patAuth", true);
 
     // Best-effort: bump last-used timestamp; never block the request on this

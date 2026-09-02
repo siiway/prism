@@ -153,7 +153,7 @@ WebAuthn 凭据。`credential_id` 用 base64url。每次成功认证后更新 `c
 
 ### `oauth_apps`
 
-用户注册的应用。`client_secret` 在数据库中用 AES-GCM（`SECRETS_KEY`）加密，比对走 `secretCrypto.ts` 中的恒定时间封装。`is_verified` 由管理员设置。`team_id` 非空表示团队应用。`oidc_fields` 控制 ID Token 中嵌入哪些 scope-gated claim。`use_jwt_tokens` 切换签发的是 JWT（RS256）还是 opaque（仅 introspect）。`allow_self_manage_exported_permissions` 允许应用以 HTTP Basic 自管 scope 定义。
+用户注册的应用。配置 `SECRETS_KEY` 后，`client_secret` 在数据库中用 AES-GCM 加密，比对走 `secretCrypto.ts` 中的恒定时间封装。API 将其视为只写字段：明文仅在创建或轮换操作生成它时返回一次，后续响应只暴露 `has_client_secret`。`is_verified` 由管理员设置。`team_id` 非空表示团队应用。`oidc_fields` 控制 ID Token 中嵌入哪些 scope-gated claim。`use_jwt_tokens` 切换签发的是 JWT（RS256）还是 opaque（仅 introspect）。`allow_self_manage_exported_permissions` 允许应用以 HTTP Basic 自管 scope 定义。
 
 ### `oauth_codes` / `oauth_2fa_challenges` / `oauth_2fa_codes`
 

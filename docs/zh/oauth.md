@@ -400,8 +400,9 @@ Content-Type: application/json
 ```
 
 `201` 响应即客户端信息文档：`client_id`、`client_secret`（机密客户端）、一个
-`registration_access_token` 与 `registration_client_uri`。之后在该 URI 管理客户端
-（RFC 7592）：`GET` 读取、`PUT` 更新、`DELETE` 注销——均以
+`registration_access_token` 与 `registration_client_uri`。请立即保存该响应中的密钥：
+它是只写字段，之后不会再次返回。随后可在该 URI 管理客户端（RFC 7592）：`GET`
+读取非敏感元数据、`PUT` 更新、`DELETE` 注销——均以
 `Authorization: Bearer <registration_access_token>` 认证。注册 `private_key_jwt`
 客户端时，将 `token_endpoint_auth_method` 设为 `private_key_jwt`，并提供 `jwks`
 （内联 JWK Set）或 `jwks_uri`。

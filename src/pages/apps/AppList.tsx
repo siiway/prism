@@ -127,7 +127,9 @@ export function AppList() {
         redirect_uris: uris,
       });
       await qc.invalidateQueries({ queryKey: ["apps"] });
-      navigate(`/apps/${res.app.id}`);
+      navigate(`/apps/${res.app.id}`, {
+        state: { clientSecret: res.app.client_secret },
+      });
     } catch (err) {
       setMessage({
         type: "error",

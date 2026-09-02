@@ -353,6 +353,11 @@ HttpOnly 会话 Cookie 重新指向其中之一，使得刷新 / 服务端渲染
 | `GET` / `POST` / `DELETE`           | `/api/apps/:id/scope-access-rules[/:ruleId]` | owner-allow / owner-deny / app-allow / app-deny 规则                                                    |
 | `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:appId/webhooks[/:id]`            | 应用通知 webhook，详见 [应用通知](app-notifications.md)                                                 |
 
+OAuth 应用密钥为只写字段。`POST /api/apps`、`POST /api/teams/:id/apps` 与
+`POST /api/apps/:id/rotate-secret` 只在当次响应中返回新生成的明文。列表、读取、
+更新和管理员列表响应绝不会返回存储值；应用对象改用 `has_client_secret` 表示是否
+已配置密钥。创建或轮换团队应用需要有效的团队 `admin` 或更高角色。
+
 `/api/apps/:appId/events/sse` 与 `…/events/ws` 是 SSE / WebSocket 流，详见 [应用通知](app-notifications.md)。
 
 ## 团队

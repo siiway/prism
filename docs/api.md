@@ -403,6 +403,13 @@ All endpoints require authentication. See [OAuth / OIDC Guide](oauth.md) and
 | `GET` / `POST` / `DELETE`           | `/api/apps/:id/scope-access-rules[/:ruleId]` | Owner-allow / owner-deny / app-allow / app-deny rules                                                                |
 | `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:appId/webhooks[/:id]`            | App notification webhooks; see [App Notifications](app-notifications.md)                                             |
 
+OAuth app secrets are write-only. `POST /api/apps`, `POST
+/api/teams/:id/apps`, and `POST /api/apps/:id/rotate-secret` return the freshly
+generated plaintext only in that response. List, read, update, and admin-list
+responses never return the stored value; app representations expose
+`has_client_secret` instead. Creating or rotating a team-owned app requires an
+effective team `admin` role or stronger.
+
 App-event streaming (SSE / WebSocket) is also under `/api/apps/:appId/events/*`
 — see [App Notifications](app-notifications.md).
 

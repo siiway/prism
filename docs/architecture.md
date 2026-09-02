@@ -192,9 +192,11 @@ payload so users can verify the challenge they're signing.
 
 ### `oauth_apps`
 
-Apps registered by users. `client_secret` is encrypted at rest (AES-GCM via
-`SECRETS_KEY`) and verified through the timing-safe helpers in
-`secretCrypto.ts`. `is_verified` is set by admins. `team_id` is non-null when
+Apps registered by users. When `SECRETS_KEY` is configured, `client_secret` is
+encrypted at rest (AES-GCM) and verified through the timing-safe helpers in
+`secretCrypto.ts`. It is write-only at the API boundary: plaintext is returned
+only when a create or rotation operation generates it, while later responses
+expose only `has_client_secret`. `is_verified` is set by admins. `team_id` is non-null when
 the app is owned by a team. `oidc_fields` controls which scope-gated claims are
 embedded in the ID token. `use_jwt_tokens` toggles whether issued access tokens
 are JWTs (RS256-signed, locally verifiable) or opaque (introspection-only).

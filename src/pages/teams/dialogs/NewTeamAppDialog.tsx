@@ -68,7 +68,9 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
         website_url: "",
         redirect_uris: [],
       });
-      navigate(`/apps/${res.app.id}`);
+      navigate(`/apps/${res.app.id}`, {
+        state: { clientSecret: res.app.client_secret },
+      });
     } catch (err) {
       showMsg(
         "error",

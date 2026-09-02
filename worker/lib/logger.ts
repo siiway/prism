@@ -22,6 +22,7 @@ const REDACTED_FIELDS = new Set([
   "refresh_token",
   "id_token",
   "client_secret",
+  "registration_access_token",
   "code",
   "code_verifier",
   "authorization",
@@ -60,57 +61,96 @@ const REDACTED_FIELDS = new Set([
 ]);
 
 const REDACTED = "[REDACTED]";
+const REDACTED_UNSTRUCTURED_BODY = "[REDACTED UNSTRUCTURED BODY]";
+const MAX_REDACTION_DEPTH = 32;
+const NORMALIZED_REDACTED_FIELDS = new Set(
+  [...REDACTED_FIELDS].map((key) => key.replace(/[^a-z0-9]/g, "")),
+);
+
+function isRedactedField(key: string): boolean {
+  const lower = key.toLowerCase();
+  return (
+    REDACTED_FIELDS.has(lower) ||
+    NORMALIZED_REDACTED_FIELDS.has(lower.replace(/[^a-z0-9]/g, ""))
+  );
+}
+
+/** Recursively redact JSON-compatible values before they enter request logs.
+ *  A depth limit makes logging fail closed for pathologically nested input
+ *  instead of returning an uninspected subtree. */
+export function redactForLogging(value: unknown, depth = 0): unknown {
+  if (Array.isArray(value)) {
+    if (depth >= MAX_REDACTION_DEPTH) return REDACTED;
+    return value.map((entry) => redactForLogging(entry, depth + 1));
+  }
+  if (value !== null && typeof value === "object") {
+    if (depth >= MAX_REDACTION_DEPTH) return REDACTED;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        isRedactedField(key) ? REDACTED : redactForLogging(entry, depth + 1),
+      ]),
+    );
+  }
+  return value;
+}
 
 function redactObject(obj: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    out[k] = REDACTED_FIELDS.has(k.toLowerCase()) ? REDACTED : v;
-  }
-  return out;
+  return redactForLogging(obj) as Record<string, unknown>;
 }
 
 function redactHeaders(headers: Headers): Record<string, string> {
   const out: Record<string, string> = {};
   headers.forEach((v, k) => {
-    out[k] = REDACTED_FIELDS.has(k.toLowerCase()) ? REDACTED : v;
+    out[k] = isRedactedField(k) ? REDACTED : v;
   });
   return out;
 }
 
-function redactUrl(url: string): string {
-  return url.replace(/\/bot[^/]+\/sendMessage/g, `/bot${REDACTED}/sendMessage`);
+export function redactUrlForLogging(url: string): string {
+  let out = url;
+  try {
+    const parsed = new URL(url);
+    for (const key of new Set(parsed.searchParams.keys())) {
+      if (isRedactedField(key)) parsed.searchParams.set(key, REDACTED);
+    }
+    out = parsed.toString();
+  } catch {
+    // Relative/malformed URLs still receive the path-specific redaction below.
+  }
+  return out.replace(/\/bot[^/]+\/sendMessage/g, `/bot${REDACTED}/sendMessage`);
 }
 
 function parseBody(text: string, contentType: string | null): unknown {
   if (!text) return undefined;
   if (contentType?.includes("application/json")) {
     try {
-      return redactObject(JSON.parse(text) as Record<string, unknown>);
+      return redactForLogging(JSON.parse(text));
     } catch {
-      return text.slice(0, 512);
+      return REDACTED_UNSTRUCTURED_BODY;
     }
   }
   if (contentType?.includes("application/x-www-form-urlencoded")) {
     const params = new URLSearchParams(text);
     const obj: Record<string, string> = {};
     params.forEach((v, k) => {
-      obj[k] = REDACTED_FIELDS.has(k.toLowerCase()) ? REDACTED : v;
+      obj[k] = isRedactedField(k) ? REDACTED : v;
     });
     return obj;
   }
-  return text.slice(0, 512);
+  return REDACTED_UNSTRUCTURED_BODY;
 }
 
 function parseResBody(text: string, contentType: string | null): unknown {
   if (!text) return undefined;
   if (contentType?.includes("application/json")) {
     try {
-      return redactObject(JSON.parse(text) as Record<string, unknown>);
+      return redactForLogging(JSON.parse(text));
     } catch {
-      return text.slice(0, 2048);
+      return REDACTED_UNSTRUCTURED_BODY;
     }
   }
-  return text.slice(0, 2048);
+  return REDACTED_UNSTRUCTURED_BODY;
 }
 
 function methodFromRequest(req: Request): string {
@@ -140,7 +180,7 @@ async function writeOutboundLog(
         .text()
         .catch(() => "")
     : "";
-  const reqUrl = redactUrl(req.url);
+  const reqUrl = redactUrlForLogging(req.url);
   const details = JSON.stringify({
     outbound: true,
     req: {
