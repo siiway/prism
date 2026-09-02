@@ -405,7 +405,9 @@ Content-Type: application/json
 读取非敏感元数据、`PUT` 更新、`DELETE` 注销——均以
 `Authorization: Bearer <registration_access_token>` 认证。注册 `private_key_jwt`
 客户端时，将 `token_endpoint_auth_method` 设为 `private_key_jwt`，并提供 `jwks`
-（内联 JWK Set）或 `jwks_uri`。
+（内联 JWK Set）或 `jwks_uri`。出站的 `jwks_uri` 与
+`backchannel_logout_uri` 必须使用 HTTPS，且不得指向本地、私有、链路本地、组播、
+文档或保留地址；每次请求和重定向前还会即时检查其 A 与 AAAA 记录。
 
 ## private_key_jwt 客户端认证（RFC 7523）
 

@@ -453,12 +453,8 @@ app.patch("/:id", async (c) => {
       .backchannel_logout_uri ?? null;
   if (body.backchannel_logout_uri !== undefined) {
     const v = body.backchannel_logout_uri;
-    if (v) {
-      try {
-        if (new URL(v).protocol !== "https:") throw new Error("bad");
-      } catch {
-        return c.json({ error: `Invalid backchannel_logout_uri: ${v}` }, 400);
-      }
+    if (v && validateOutboundUrl(v)) {
+      return c.json({ error: `Invalid backchannel_logout_uri: ${v}` }, 400);
     }
     backchannelLogoutUri = v || null;
   }
@@ -529,12 +525,8 @@ app.patch("/:id", async (c) => {
   let jwksUri = row.jwks_uri ?? null;
   if (body.jwks_uri !== undefined) {
     const v = body.jwks_uri;
-    if (v) {
-      try {
-        if (new URL(v).protocol !== "https:") throw new Error("bad");
-      } catch {
-        return c.json({ error: `Invalid jwks_uri: ${v}` }, 400);
-      }
+    if (v && validateOutboundUrl(v)) {
+      return c.json({ error: `Invalid jwks_uri: ${v}` }, 400);
     }
     jwksUri = v || null;
   }

@@ -455,7 +455,11 @@ and is not returned again. Manage the client afterwards at that URI (RFC 7592):
 it — each authenticated with
 `Authorization: Bearer <registration_access_token>`. To register a
 `private_key_jwt` client, set `token_endpoint_auth_method` to `private_key_jwt`
-and include `jwks` (an inline JWK Set) or `jwks_uri`.
+and include `jwks` (an inline JWK Set) or `jwks_uri`. Outbound
+`jwks_uri` and `backchannel_logout_uri` values must use HTTPS and cannot target
+local, private, link-local, multicast, documentation, or reserved addresses;
+their A and AAAA answers are checked again immediately before each request and
+redirect.
 
 ## private_key_jwt client authentication (RFC 7523)
 

@@ -37,6 +37,7 @@
     "hono": "^4.13.3",
     "i18next": "^25.10.10",
     "i18next-browser-languagedetector": "^8.2.1",
+    "ipaddr.js": "^2.5.0",
     "marked": "^18.0.10",
     "openpgp": "^6.3.1",
     "qrcode": "^1.5.4",

@@ -1,57 +1,133 @@
-// Shared host-blocklist for any code that fetches a user-supplied URL.
-// Used by routes/proxy.ts (image reverse proxy) and lib/imageValidation.ts
-// (icon URL validation). Cloudflare Workers' edge fetch already cannot
-// reach private IPs in practice, but blocking up front avoids using server
-// behavior (status codes, content-type, latency) as an oracle for users
-// who control the URL.
+// Shared SSRF guard for code that fetches a user-supplied URL. Literal IPs
+// are parsed into binary addresses instead of being checked with string
+// prefixes. Hostnames are also resolved immediately before every request so a
+// public-looking name cannot silently point at an internal address.
 
-const BLOCKED_HOST_RE =
-  /^(localhost|.*\.local|.*\.internal|metadata\.google\.internal|169\.254\.|127\.|10\.|192\.168\.|0\.|0\.0\.0\.0)$/i;
+import ipaddr from "ipaddr.js";
 
-function parseIPv4(host: string): number[] | null {
-  const parts = host.split(".");
-  if (parts.length !== 4) return null;
-  const out: number[] = [];
-  for (const p of parts) {
-    if (!/^\d+$/.test(p)) return null;
-    const n = parseInt(p, 10);
-    if (n < 0 || n > 255) return null;
-    out.push(n);
+const BLOCKED_NAME_RE =
+  /^(?:localhost|.*\.localhost|local|.*\.local|internal|.*\.internal|metadata\.google\.internal)$/i;
+const DNS_ENDPOINT = "https://cloudflare-dns.com/dns-query";
+const DNS_RECORD_TYPES = ["A", "AAAA"] as const;
+const DNS_TYPE_A = 1;
+const DNS_TYPE_CNAME = 5;
+const DNS_TYPE_AAAA = 28;
+const GLOBAL_IPV6_UNICAST = ipaddr.IPv6.parseCIDR("2000::/3");
+
+type DnsRecordType = (typeof DNS_RECORD_TYPES)[number];
+type DnsJsonResponse = {
+  Status?: number;
+  Answer?: Array<{ type?: number; data?: string }>;
+};
+
+/** Remove URL.hostname's IPv6 brackets and a DNS name's final root label. */
+function normalizeHost(host: string): string | null {
+  let normalized = host.trim().toLowerCase().replace(/\.+$/, "");
+  if (!normalized) return null;
+
+  const hasOpeningBracket = normalized.startsWith("[");
+  const hasClosingBracket = normalized.endsWith("]");
+  if (hasOpeningBracket || hasClosingBracket) {
+    if (!hasOpeningBracket || !hasClosingBracket) return null;
+    normalized = normalized.slice(1, -1);
+    if (!normalized || normalized.includes("[") || normalized.includes("]"))
+      return null;
   }
-  return out;
+
+  // Zone identifiers are meaningful only on the machine that interprets
+  // them. They are never safe in a server-selected outbound destination.
+  if (normalized.includes("%")) return null;
+  return normalized;
 }
 
-function isBlockedIPv4(octets: number[]): boolean {
-  const [a, b] = octets;
-  if (a === 0) return true;
-  if (a === 10) return true;
-  if (a === 127) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  if (a >= 224) return true;
-  return false;
+/** Only ordinary globally routable unicast addresses may be fetched. */
+function isBlockedIpLiteral(host: string): boolean {
+  if (!ipaddr.isValid(host)) return true;
+
+  // process() converts both dotted and hexadecimal IPv4-mapped IPv6 forms to
+  // IPv4 before range classification (for example ::ffff:7f00:1).
+  const address = ipaddr.process(host);
+  if (address.range() !== "unicast") return true;
+
+  // ipaddr's default "unicast" classification also covers currently reserved
+  // IPv6 space. Global unicast allocations are confined to 2000::/3.
+  return address.kind() === "ipv6" && !address.match(GLOBAL_IPV6_UNICAST);
 }
 
-function isBlockedIPv6(host: string): boolean {
-  const h = host.toLowerCase();
-  if (h === "::" || h === "::1") return true;
+async function queryDns(
+  hostname: string,
+  type: DnsRecordType,
+  signal?: AbortSignal | null,
+): Promise<DnsJsonResponse> {
+  const query = new URL(DNS_ENDPOINT);
+  query.searchParams.set("name", hostname);
+  query.searchParams.set("type", type);
+
+  const response = await fetch(query, {
+    headers: {
+      Accept: "application/dns-json",
+      "Cache-Control": "no-cache",
+    },
+    redirect: "manual",
+    signal,
+  });
+  if (!response.ok) throw new Error("DNS lookup failed");
+
+  const data = (await response.json()) as DnsJsonResponse;
   if (
-    h.startsWith("fe8") ||
-    h.startsWith("fe9") ||
-    h.startsWith("fea") ||
-    h.startsWith("feb")
-  )
-    return true;
-  if (h.startsWith("fc") || h.startsWith("fd")) return true;
-  if (h.startsWith("ff")) return true;
-  const mapped = h.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-  if (mapped) {
-    const v4 = parseIPv4(mapped[1]);
-    if (v4 && isBlockedIPv4(v4)) return true;
+    data.Status !== 0 ||
+    (data.Answer !== undefined && !Array.isArray(data.Answer))
+  ) {
+    throw new Error("DNS lookup failed");
   }
-  return false;
+  return data;
+}
+
+/**
+ * Resolve a non-literal hostname and reject every returned address unless it
+ * is globally routable unicast. Resolution fails closed: fetching after an
+ * incomplete/failed check would make the fetch runtime's answer the policy.
+ *
+ * Cloudflare Workers does not expose a way to pin an arbitrary HTTPS request
+ * to the address returned by DNS while retaining certificate/SNI checks. The
+ * checks are therefore made immediately before fetch. Workers' global fetch
+ * atomically filters DNS answers to public destinations, and the deployment
+ * enables `global_fetch_strictly_public` to prevent same-zone routing bypasses.
+ */
+async function validateResolvedHost(
+  host: string,
+  signal?: AbortSignal | null,
+): Promise<void> {
+  const hostname = normalizeHost(host);
+  if (!hostname) throw new Error("Blocked URL: invalid host");
+  if (ipaddr.isValid(hostname)) return;
+
+  const answers = await Promise.all(
+    DNS_RECORD_TYPES.map((type) => queryDns(hostname, type, signal)),
+  );
+  let addressCount = 0;
+
+  for (const response of answers) {
+    for (const record of response.Answer ?? []) {
+      if (
+        record.type === DNS_TYPE_CNAME &&
+        (typeof record.data !== "string" || isBlockedHost(record.data))
+      ) {
+        throw new Error("Blocked URL: DNS alias is not allowed");
+      }
+      if (record.type !== DNS_TYPE_A && record.type !== DNS_TYPE_AAAA) continue;
+      if (
+        typeof record.data !== "string" ||
+        !ipaddr.isValid(record.data) ||
+        isBlockedIpLiteral(record.data)
+      ) {
+        throw new Error("Blocked URL: DNS resolved to a non-public address");
+      }
+      addressCount++;
+    }
+  }
+
+  if (addressCount === 0) throw new Error("DNS lookup returned no addresses");
 }
 
 /**
@@ -76,16 +152,23 @@ export function validateOutboundUrl(raw: string): string | null {
   return null;
 }
 
-/** True if `host` (URL.hostname — no port, no brackets) targets an internal,
- *  loopback, link-local, RFC1918, CGNAT, multicast, or otherwise-unsafe
- *  address. Trailing dot and case are normalized. */
+/** True if `host` targets a local name or a non-public IP address.
+ *  URL.hostname retains brackets around IPv6 literals, so callers may pass
+ *  either bracketed URL hostnames or bare DNS/IP values. */
 export function isBlockedHost(host: string): boolean {
-  const h = host.replace(/\.$/, "").toLowerCase();
-  if (!h) return true;
-  if (BLOCKED_HOST_RE.test(h)) return true;
-  const v4 = parseIPv4(h);
-  if (v4) return isBlockedIPv4(v4);
-  if (h.includes(":")) return isBlockedIPv6(h);
+  const normalized = normalizeHost(host);
+  if (!normalized) return true;
+  if (BLOCKED_NAME_RE.test(normalized)) return true;
+  if (ipaddr.isValid(normalized)) return isBlockedIpLiteral(normalized);
+
+  // A colon or bracket can only be part of an IP literal here. If parsing it
+  // failed, reject it rather than accidentally treating it as a DNS name.
+  if (
+    normalized.includes(":") ||
+    normalized.includes("[") ||
+    normalized.includes("]")
+  )
+    return true;
   return false;
 }
 
@@ -126,6 +209,9 @@ export async function safeFetch(
     const err = validateOutboundUrl(current);
     if (err) throw new Error(`Blocked URL: ${err}`);
 
+    const parsedCurrent = new URL(current);
+    await validateResolvedHost(parsedCurrent.hostname, init.signal);
+
     const res = await fetch(current, {
       ...init,
       method,
@@ -137,6 +223,11 @@ export async function safeFetch(
 
     const location = res.headers.get("location");
     if (!location) return res;
+
+    // We will not consume a followed redirect's body. Cancel it before opening
+    // DNS and target subrequests for the next hop so it cannot occupy one of a
+    // Worker's limited simultaneous outbound connections.
+    await res.body?.cancel().catch(() => undefined);
 
     // Taking redirects over from fetch means taking on its rules too.
     // Following one by replaying the original request would re-POST a webhook
@@ -150,7 +241,7 @@ export async function safeFetch(
     }
 
     if (
-      res.status === 303 ||
+      (res.status === 303 && method !== "HEAD") ||
       (method !== "GET" &&
         method !== "HEAD" &&
         (res.status === 301 || res.status === 302))

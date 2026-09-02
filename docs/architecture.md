@@ -470,5 +470,11 @@ single binding addition and a migration click.
   domain's verified-ownership state before issuing a code
 - Image proxy is closed: only registered URL → opaque-id mappings are served,
   preventing the worker from being used as an open SSRF relay
+- User-controlled outbound URLs share one SSRF guard: it parses bracketed IPv6
+  and IPv4-mapped literals, permits only public-unicast address ranges, resolves
+  every A/AAAA answer immediately before fetching, and repeats the checks at
+  each redirect hop. The Worker runtime also filters the connection-time DNS
+  result to public destinations; `global_fetch_strictly_public` keeps same-zone
+  requests on that public path instead of bypassing Cloudflare's front door
 - SVGs proxied through the image endpoint are sanitized (script blocks, event
   handlers, `javascript:` pseudo-URLs, foreignObject, external `<use>`)

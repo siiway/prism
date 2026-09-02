@@ -102,6 +102,7 @@ import {
 import { verifyDpopProof } from "../lib/dpop";
 import { deliverBackChannelLogout } from "../lib/backchannelLogout";
 import { clearSessionCookie } from "../lib/cookies";
+import { validateOutboundUrl } from "../lib/safeFetch";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -3405,7 +3406,7 @@ function normaliseDcrMetadata(body: DcrMetadata):
     }
   }
   const jwksUri = typeof body.jwks_uri === "string" ? body.jwks_uri : null;
-  if (jwksUri && validateOutboundUrlDcr(jwksUri))
+  if (jwksUri && validateOutboundUrl(jwksUri))
     return { error: "Invalid jwks_uri", code: "invalid_client_metadata" };
 
   if (authMethod === "private_key_jwt" && !jwks && !jwksUri)
@@ -3434,7 +3435,7 @@ function normaliseDcrMetadata(body: DcrMetadata):
     typeof body.backchannel_logout_uri === "string" &&
     body.backchannel_logout_uri
   ) {
-    if (validateOutboundUrlDcr(body.backchannel_logout_uri))
+    if (validateOutboundUrl(body.backchannel_logout_uri))
       return {
         error: "Invalid backchannel_logout_uri",
         code: "invalid_client_metadata",
@@ -3452,17 +3453,6 @@ function normaliseDcrMetadata(body: DcrMetadata):
     jwksUri,
     backchannelLogoutUri,
   };
-}
-
-/** https-only + SSRF check for a registered jwks_uri; returns a reason or null. */
-function validateOutboundUrlDcr(uri: string): string | null {
-  try {
-    const u = new URL(uri);
-    if (u.protocol !== "https:") return "must be https";
-  } catch {
-    return "invalid";
-  }
-  return null;
 }
 
 // POST /api/oauth/register — create a client (RFC 7591). Gated: the caller must

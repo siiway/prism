@@ -321,4 +321,8 @@ PoW 是第三方验证码服务的替代方案。
 - 迁移 `0072_revoke_exposed_sessions.sql` 会一次性撤销修复前的全部会话，使此前可能留在 URL、日志或 Web Storage 中的 JWT 无法继续使用
 - 所有 redirect URI 在签发 code 前都会与应用注册列表 + 域名归属验证状态进行匹配
 - 图片代理是关闭式的：仅服务已注册映射，杜绝 SSRF 中继
+- 所有用户可控的出站 URL 共用同一套 SSRF 防护：正确解析带方括号的 IPv6 和 IPv4
+  映射字面量，仅允许公网单播地址，在获取前即时检查全部 A/AAAA 记录，并在每次
+  重定向时重复检查。Worker 运行时还会在连接时把 DNS 结果限制为公网地址；
+  `global_fetch_strictly_public` 确保同一 Cloudflare Zone 内的请求也经过公网入口，而不会绕过该入口
 - 经图片代理转出的 SVG 会被消毒（移除 `<script>`、事件处理器、`javascript:` 伪 URL、`<foreignObject>`、外链 `<use>`）

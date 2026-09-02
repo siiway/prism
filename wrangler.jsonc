@@ -10,7 +10,9 @@
   // bundle without needing custom flags in the Cloudflare dashboard.
   "main": "worker/index.ts",
   "compatibility_date": "2024-11-01",
-  "compatibility_flags": ["nodejs_compat"],
+  // Keep global fetch on public Internet routing, including for this zone, so
+  // same-zone requests cannot bypass Cloudflare's front door and its controls.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",

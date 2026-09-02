@@ -577,13 +577,17 @@ itself public, the response also includes a `parent_team` breadcrumb
 Streams an image registered in `image_proxy_mappings`. SVG bodies are
 sanitized. `:id` is the opaque ID returned by `POST /api/proxy/image/register`
 (authenticated) — there is no URL passthrough, so the proxy cannot be used as
-an open SSRF relay. Cross-origin headers are set so the response is safely
-embeddable.
+an open SSRF relay. Before every upstream request and redirect, Prism rejects
+local/reserved IPv4 and IPv6 literals and DNS names whose A or AAAA answers are
+not public unicast addresses. Cross-origin headers are set so the response is
+safely embeddable.
 
 ### `POST /api/proxy/image/register`
 
-Register a new mapping for a remote image URL the SPA needs to load (markdown
-preview, ImageUrlInput preview). Requires auth. Returns
+Register a new mapping for a remote HTTPS image URL the SPA needs to load
+(markdown preview, ImageUrlInput preview). Requires auth. Local and reserved IP
+literals are rejected during registration; DNS is checked immediately before
+the registered URL is fetched. Returns
 `{ "id": "...", "url": "/api/proxy/image/<id>" }`.
 
 ## Admin

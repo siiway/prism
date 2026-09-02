@@ -496,11 +496,11 @@ OAuth scope 版本：
 
 ### `GET /api/proxy/image/:id`
 
-按已注册映射推送图片，SVG 会被消毒。`:id` 是 `POST /api/proxy/image/register`（需认证）返回的不透明 ID — 不接受 URL 透传，杜绝被用作 SSRF 中继。响应附带跨源头便于嵌入。
+按已注册映射推送图片，SVG 会被消毒。`:id` 是 `POST /api/proxy/image/register`（需认证）返回的不透明 ID — 不接受 URL 透传，杜绝被用作 SSRF 中继。每次上游请求及重定向前，Prism 都会拒绝本地/保留的 IPv4、IPv6 字面量，以及 A 或 AAAA 记录并非公网单播地址的域名。响应附带跨源头便于嵌入。
 
 ### `POST /api/proxy/image/register`
 
-为前端需要展示的远程图片 URL（markdown 预览、`ImageUrlInput` 预览等）注册映射。需认证。返回 `{ "id": "...", "url": "/api/proxy/image/<id>" }`。
+为前端需要展示的远程 HTTPS 图片 URL（markdown 预览、`ImageUrlInput` 预览等）注册映射。需认证。注册时会拒绝本地及保留 IP 字面量；域名会在实际获取前即时检查 DNS。返回 `{ "id": "...", "url": "/api/proxy/image/<id>" }`。
 
 ## 管理员
 
