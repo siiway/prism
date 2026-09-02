@@ -26,7 +26,7 @@ import {
   decryptSecret,
   isHashedSecret,
 } from "../lib/secretCrypto";
-import { signJWT, verifyJWT } from "../lib/jwt";
+import { signJWT } from "../lib/jwt";
 import {
   claimEnrolmentCounter,
   generateBackupCodes,
@@ -48,7 +48,7 @@ import { verifyCaptchaToken } from "../middleware/captcha";
 import type { TurnstileVariant } from "../lib/turnstile";
 import { issuePowChallenge } from "../lib/pow";
 import { rateLimit, rateLimitIp } from "../middleware/rateLimit";
-import { optionalAuth, requireAuth } from "../middleware/auth";
+import { requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
   deliverUserEmailNotifications,
@@ -109,7 +109,7 @@ export async function issueSession(
   user: UserRow,
   ttlSeconds: number,
   amr?: string[],
-): Promise<string> {
+): Promise<void> {
   const db = c.env.DB;
   const secret = await getJwtSecret(c.env.KV_SESSIONS);
   const sessionId = randomId(32);
@@ -153,9 +153,8 @@ export async function issueSession(
       () => undefined,
     ),
   );
-  // Mirror the JWT into a cookie so SSR can authenticate the next request
-  // without any client JS. Bearer-header callers get the token in the JSON
-  // body as before.
+  // The browser session credential is only ever delivered in the HttpOnly
+  // cookie; API response bodies never expose it to JavaScript.
   setSessionCookie(c, token, ttlSeconds);
 
   // Transparent User Control: record every session issuance (login, social
@@ -177,7 +176,6 @@ export async function issueSession(
       metadata: {},
     }),
   );
-  return token;
 }
 
 // ─── Register ────────────────────────────────────────────────────────────────
@@ -311,11 +309,8 @@ app.post("/register", async (c) => {
   if (!user) return c.json({ error: "User not found after creation" }, 500);
 
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c, user, ttl, ["pwd"]);
-  return c.json(
-    { token, user: await safeUser(c.env.APP_URL, c.env.DB, user) },
-    201,
-  );
+  await issueSession(c, user, ttl, ["pwd"]);
+  return c.json({ user: await safeUser(c.env.APP_URL, c.env.DB, user) }, 201);
 });
 
 // ─── Login ───────────────────────────────────────────────────────────────────
@@ -537,14 +532,8 @@ app.post("/login", async (c) => {
   const ttl = config.session_ttl_days * 24 * 60 * 60;
   // RFC 8176: password, plus OTP/MFA when a TOTP factor was verified above.
   const usedTotp = (totpCount?.n ?? 0) > 0;
-  const token = await issueSession(
-    c,
-    user,
-    ttl,
-    usedTotp ? ["pwd", "otp", "mfa"] : ["pwd"],
-  );
+  await issueSession(c, user, ttl, usedTotp ? ["pwd", "otp", "mfa"] : ["pwd"]);
   return c.json({
-    token,
     user: await safeUser(c.env.APP_URL, c.env.DB, user),
   });
 });
@@ -562,106 +551,6 @@ app.post("/logout", requireAuth, async (c) => {
     .run();
   clearSessionCookie(c);
   return c.json({ message: "Logged out" });
-});
-
-// ─── Account switch (multi-account switcher) ─────────────────────────────────
-//
-// The account switcher keeps every signed-in account's session token in the
-// browser and moves the HttpOnly session cookie between them. This endpoint
-// takes a token the client already holds — one it obtained from a prior login
-// on this device — validates that it still names a live session for an active
-// user, and rewrites the session cookie to point at it. Possessing a valid
-// session token already grants full access as that user, so relocating it into
-// the cookie confers nothing new; it only keeps the cookie (and therefore the
-// SSR/reload path) in step with the account the client switched to.
-//
-// `logout_current` folds the "sign out of the current account, land on the
-// next one" flow into a single call: after the target is validated and the
-// cookie is repointed, the caller's own session is revoked. Doing both here
-// avoids an ordering trap on the client, where revoking first would clear the
-// cookie we are about to set and invalidate the token the switch call itself
-// authenticates with.
-//
-// Auth is OPTIONAL, not required: the login-page "Continue as" chooser resumes
-// a stored account while the browser has no live session at all. Authorization
-// rests entirely on the target token being a valid, live session — which this
-// handler checks — since holding that token already grants access as its user.
-// `logout_current` only does anything when a current session exists to revoke.
-app.post("/switch", optionalAuth, async (c) => {
-  const body = await c.req
-    .json<{ token?: string; logout_current?: boolean }>()
-    .catch((): { token?: string; logout_current?: boolean } => ({}));
-  const target = body.token?.trim();
-  if (!target) return c.json({ error: "token is required" }, 400);
-
-  const secret = await getJwtSecret(c.env.KV_SESSIONS);
-  let payload: Awaited<ReturnType<typeof verifyJWT>>;
-  try {
-    payload = await verifyJWT(target, secret);
-  } catch {
-    return c.json({ error: "Invalid token" }, 401);
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  // The session row is authoritative for both liveness and the cookie TTL: a
-  // token whose session was revoked (e.g. "sign out everywhere else") must not
-  // become switchable again just because the JWT hasn't lapsed yet.
-  const row = await c.env.DB.prepare(
-    `SELECT s.expires_at, u.id AS user_id
-       FROM sessions s
-       JOIN users u ON s.user_id = u.id
-      WHERE s.id = ? AND u.kind = 'user' AND u.is_active = 1 AND s.expires_at > ?`,
-  )
-    .bind(payload.sessionId, now)
-    .first<{ expires_at: number; user_id: string }>();
-  if (!row) return c.json({ error: "Session not found or expired" }, 401);
-
-  const user = await c.env.DB.prepare(
-    "SELECT * FROM users WHERE id = ? AND kind = 'user'",
-  )
-    .bind(row.user_id)
-    .first<UserRow>();
-  if (!user || !user.is_active)
-    return c.json({ error: "Account not found or disabled" }, 401);
-
-  if (body.logout_current) {
-    const currentSessionId = c.get("sessionId");
-    if (currentSessionId && currentSessionId !== payload.sessionId) {
-      await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
-        .bind(currentSessionId)
-        .run();
-    }
-  }
-
-  setSessionCookie(c, target, row.expires_at - now);
-  return c.json({ user: await safeUser(c.env.APP_URL, c.env.DB, user) });
-});
-
-// Revoke the session for a token the browser holds for ANOTHER account — the
-// switcher's per-account "sign out". Unlike /logout it never clears the session
-// cookie, so signing a background account out does not disturb the active one.
-// Holding a valid session token already authorizes acting as (and thus ending)
-// that session; requireAuth only keeps this from being an anonymous endpoint.
-app.post("/revoke", requireAuth, async (c) => {
-  const body = await c.req
-    .json<{ token?: string }>()
-    .catch((): { token?: string } => ({}));
-  const target = body.token?.trim();
-  if (!target) return c.json({ error: "token is required" }, 400);
-
-  const secret = await getJwtSecret(c.env.KV_SESSIONS);
-  let payload: Awaited<ReturnType<typeof verifyJWT>>;
-  try {
-    payload = await verifyJWT(target, secret);
-  } catch {
-    // An unparseable/expired token names no live session to revoke — the
-    // client's goal (that session gone) already holds, so report success.
-    return c.json({ message: "Revoked" });
-  }
-  await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
-    .bind(payload.sessionId)
-    .run();
-  return c.json({ message: "Revoked" });
 });
 
 // ─── Email verification ───────────────────────────────────────────────────────
@@ -1339,9 +1228,8 @@ app.post("/passkey/auth/finish", async (c) => {
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
   // Passkey sign-in is a hardware/software cryptographic authenticator.
-  const token = await issueSession(c, user, ttl, ["webauthn"]);
+  await issueSession(c, user, ttl, ["webauthn"]);
   return c.json({
-    token,
     user: await safeUser(c.env.APP_URL, c.env.DB, user),
   });
 });
@@ -1852,9 +1740,8 @@ app.post("/gpg-login", async (c) => {
   }
 
   const ttl = gpgLoginConfig.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c, user, ttl);
+  await issueSession(c, user, ttl);
   return c.json({
-    token,
     user: await safeUser(c.env.APP_URL, c.env.DB, user),
   });
 });

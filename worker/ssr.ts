@@ -16,9 +16,20 @@ import type { Context } from "hono";
 // @ts-expect-error -- JSX module bundled by Vite, not type-checked here.
 import { render as _render } from "../src/entry-server";
 
+interface SessionUser {
+  id: string;
+  email: string;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  unproxied_avatar_url: string | null;
+  role: "admin" | "user";
+  email_verified: boolean;
+}
+
 interface RenderOptions {
   template: string;
-  auth?: { token: string | null; user: unknown | null } | null;
+  auth?: { user: SessionUser | null } | null;
   locale?: string | null;
   colorScheme?: "dark" | "light";
   prefetched?: Array<{ queryKey: unknown[]; data: unknown }>;
@@ -51,19 +62,22 @@ async function loadAuth(c: Context<AppEnv>) {
     const secret = await getJwtSecret(c.env.KV_SESSIONS);
     const payload = await verifyJWT(token, secret);
     const session = await c.env.DB.prepare(
-      "SELECT s.id, u.is_active FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND u.kind = 'user'",
+      `SELECT s.id, s.user_id, u.is_active
+         FROM sessions s
+         JOIN users u ON s.user_id = u.id
+        WHERE s.id = ? AND s.expires_at > ? AND u.kind = 'user'`,
     )
-      .bind(payload.sessionId)
-      .first<{ id: string; is_active: number }>();
-    if (!session || !session.is_active) return null;
+      .bind(payload.sessionId, Math.floor(Date.now() / 1000))
+      .first<{ id: string; user_id: string; is_active: number }>();
+    if (!session || !session.is_active || session.user_id !== payload.sub)
+      return null;
 
     const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
-      .bind(payload.sub)
+      .bind(session.user_id)
       .first<UserRow>();
     if (!row) return null;
 
     return {
-      token,
       user: {
         id: row.id,
         email: row.email,
@@ -217,6 +231,7 @@ export async function ssrHandler(
         // the right theme. Vary on the inputs that affect the response.
         "Accept-CH": "Sec-CH-Prefers-Color-Scheme",
         Vary: "Cookie, Sec-CH-Prefers-Color-Scheme, Accept-Language",
+        ...(auth ? { "Cache-Control": "private, no-store" } : {}),
       },
     });
   } catch (err) {
@@ -228,7 +243,12 @@ export async function ssrHandler(
         .replace("<!--app-head-->", "")
         .replace("<!--app-html-->", "")
         .replace("<!--app-state-->", ""),
-      { headers: { "Content-Type": "text/html; charset=utf-8" } },
+      {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          ...(auth ? { "Cache-Control": "private, no-store" } : {}),
+        },
+      },
     );
   }
 }

@@ -329,7 +329,7 @@ https://your-prism-domain/api/connections/<slug>/callback
 
 ## 流程安全
 
-每次登录都会设置一个有效期 10 分钟且带有 `Secure`、`HttpOnly`、`SameSite=Lax` 属性的关联 cookie。Prism 仅在 D1 中保存其哈希，并在回调时原子消费匹配的 state。复制到其他浏览器的回调 URL 会被拒绝，因为该浏览器没有发起流程时的 cookie。关联提供商还会额外绑定到发起流程的同一个有效 Prism 会话。
+每次登录都会设置一个有效期 10 分钟且带有 `Secure`、`HttpOnly`、`SameSite=Lax` 属性的关联 cookie。Prism 仅在 D1 中保存其哈希，并在回调时原子消费匹配的 state。复制到其他浏览器的回调 URL 会被拒绝，因为该浏览器没有发起流程时的 cookie。关联提供商还会额外绑定到发起流程的同一个有效 Prism 会话。登录成功后，Prism 通过干净的 `/auth/callback` URL 跳转，并且只用 HttpOnly Cookie 安装会话；会话 JWT 不会写入 URL，也不会返回给浏览器 JavaScript。
 
 因此，完成社交登录期间必须允许 Prism 来源使用 cookie。如果回调显示 `invalid_state`，请在同一浏览器中重新开始流程，不要在不同浏览器或浏览器配置文件之间复制回调 URL。在同一浏览器中发起新的社交登录会取代仍在进行的旧流程。
 

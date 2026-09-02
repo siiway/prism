@@ -126,10 +126,9 @@ export function JoinRegister() {
         email: info.collects_email ? form.email.trim() : undefined,
         ...captcha,
       });
-      // The account exists now, so a session comes back even though the join
-      // is still outstanding — that session is what lets the user satisfy the
-      // remaining requirements at all.
-      setAuth(res.token, res.user);
+      // The account exists now, so the HttpOnly cookie authenticates the
+      // remaining requirements without exposing its session credential.
+      setAuth(res.user);
       setPhase("requirements");
       await refetchStatus();
     } catch (err) {

@@ -83,7 +83,7 @@ export function Verify2FA() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, token } = useAuthStore();
+  const { user } = useAuthStore();
   const { t } = useTranslation();
 
   const challengeId = searchParams.get("challenge_id") ?? "";
@@ -259,14 +259,14 @@ export function Verify2FA() {
   // If not logged in, redirect to login (client-side safety net; the route
   // loader handles the SSR redirect).
   useEffect(() => {
-    if (!user || !token) {
+    if (!user) {
       const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
       navigate(loginUrl, { replace: true });
     }
-  }, [user, token, navigate]);
+  }, [user, navigate]);
 
   // While waiting for the auth-redirect effect to fire, show a spinner.
-  if (!user || !token) {
+  if (!user) {
     return (
       <div className={styles.page}>
         <Spinner size="large" />

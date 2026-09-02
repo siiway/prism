@@ -399,7 +399,7 @@ sequenceDiagram
   Worker->>Worker: signJWT({ sub, role, sessionId })
   Worker->>D1: store session row (token_hash)
   Worker->>KV: cache session metadata
-  Worker-->>Client: { token, user }
+  Worker-->>Client: Set-Cookie: __Host-prism_session (HttpOnly) + { user }
 ```
 
 On each authenticated request:
@@ -411,7 +411,7 @@ sequenceDiagram
   participant KV
   participant D1
 
-  Client->>requireAuth: Bearer token
+  Client->>requireAuth: Cookie: __Host-prism_session
   requireAuth->>requireAuth: verifyJWT (signature + expiry)
   requireAuth->>KV: lookup session by hash
   alt KV hit
@@ -463,7 +463,9 @@ single binding addition and a migration click.
 - Rate limiting uses a KV-backed sliding window with IPv6 prefix bucketing
   (`ipv6_rate_limit_prefix`, default `/64`)
 - Sessions are revalidated against D1 on every authenticated request, so deleting the row immediately invalidates still-unexpired JWTs
-- The account switcher keeps each signed-in account's session token in the browser and relocates the session cookie between them via `POST /api/auth/switch`; because a valid session token already authenticates as that user, this grants no authority the browser did not already hold
+- Browser session JWTs exist only in the `Secure`, `HttpOnly`, `__Host-prism_session` cookie; login JSON, redirect URLs, SSR hydration state, Zustand, and Web Storage never receive them
+- Prism keeps one browser account active at a time; changing accounts requires reauthentication instead of retaining background-account bearer tokens in JavaScript
+- Migration `0072_revoke_exposed_sessions.sql` revokes all pre-fix sessions once so JWTs previously retained in URLs, logs, or Web Storage cannot be reused
 - All redirect URIs are checked against the app's registered list and the
   domain's verified-ownership state before issuing a code
 - Image proxy is closed: only registered URL → opaque-id mappings are served,

@@ -7,7 +7,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 基础路径：`/api`
 
-所有端点均返回 JSON。需要认证的端点接受三种凭据中的任意一种：登录时颁发的会话 JWT（`Authorization: Bearer <token>`）、标准授权码流颁发的 OAuth access token，或前缀为 `prism_pat_` 的 PAT。接受 OAuth token 的端点通常挂载在 `/api/oauth/me/*`。
+所有端点均返回 JSON。Web 界面使用带 `Secure`、`HttpOnly` 属性的 `__Host-prism_session` Cookie 认证；浏览器 JavaScript 无法读取它。API 集成应使用标准授权码流程颁发的 OAuth access token，或前缀为 `prism_pat_` 的 PAT。接受 OAuth token 的端点通常挂载在 `/api/oauth/me/*`。
 
 `/api/*` 的 CORS 锁定为 `APP_URL`。`/api/proxy/image/*`、`/.well-known/*` 与 `/api/users/:username`（公开资料）不附带 `Access-Control-Allow-Credentials`，便于安全嵌入。
 
@@ -33,7 +33,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 }
 ```
 
-**响应** — `{ "token": "...", "user": { ... } }`
+**响应** — `{ "user": { ... } }`。新会话仅通过 HttpOnly Cookie 设置。
 
 ## 站点
 
@@ -90,7 +90,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 仅根据当前启用的验证码 provider 携带相应字段；站点为「仅限邀请」模式时 `invite_token` 必填。
 
-**响应** — `{ "token": "...", "user": { ... } }`
+**响应** — 注册后同时登录时返回 `{ "user": { ... } }`；会话凭据仅通过 HttpOnly Cookie 设置。
 
 ### `POST /api/auth/login`
 
@@ -105,7 +105,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 `identifier` 接受用户名、主邮箱或任意已验证的次要邮箱（`allow_alt_email_login` 为 true 时）。仅在用户启用了 TOTP 时需要 `totp_code`；Passkey 走专用端点。
 
-**响应** — `{ "token": "...", "user": { ... } }`
+**响应** — `{ "user": { ... } }`。会话凭据仅通过 HttpOnly Cookie 设置，不会出现在 JSON 中。
 
 若启用了 TOTP 但未提供 code：
 
@@ -117,39 +117,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 撤销当前会话。需认证。
 
-### `POST /api/auth/switch`
-
-账号切换器的后端。浏览器会为设备上已登录的每个账号保存一个会话令牌；此端点将
-HttpOnly 会话 Cookie 重新指向其中之一，使得刷新 / 服务端渲染解析到的账号与界面
-所切换到的账号保持一致。
-
-```json
-{ "token": "<目标账号的会话令牌>", "logout_current": false }
-```
-
-`token` 必须对应某个处于活动状态用户的、未过期的有效会话——会话已被撤销的令牌
-（例如通过“登出其他所有设备”）将被拒绝。由于有效的会话令牌本身已授予以该用户
-身份访问的完整权限，将其写入 Cookie 不会带来任何新的权限。将 `logout_current`
-设为 `true` 可在同一次调用中撤销调用方自身的会话——这是“登出并切换到下一个
-账号”的流程。
-
-认证是可选的：已登出的访客也可以调用它，从登录页的“继续使用”选择器恢复某个已存
-储的账号。授权完全取决于所提供的 `token` 是否为有效的活动会话；`logout_current`
-仅在存在当前会话时才生效。
-
-**响应** — `{ "user": { ... } }`
-
-### `POST /api/auth/revoke`
-
-撤销浏览器为另一个账号所持令牌对应的会话——即切换器中的单账号“退出”。与 `/logout`
-不同，它绝不会清除会话 Cookie，因此登出某个后台账号不会影响当前账号。需认证。
-
-```json
-{ "token": "<要退出的账号的会话令牌>" }
-```
-
-无法解析或已过期的 `token` 视为成功（其会话本就已不存在）。**响应** —
-`{ "message": "Revoked" }`
+Prism 有意让每个浏览器同一时间只保留一个会话。切换账号需要先退出再重新认证；会话 JWT 不会为了后台账号保存在 Web Storage 中。
 
 ### `GET /api/auth/verify-email?token=<token>`
 
@@ -254,7 +222,7 @@ HttpOnly 会话 Cookie 重新指向其中之一，使得刷新 / 服务端渲染
 }
 ```
 
-**响应** — `{ "token": "...", "user": { ... } }`
+**响应** — `{ "user": { ... } }`；会话仅通过 HttpOnly Cookie 设置。
 
 ### `GET /api/user/gpg` / `POST /api/user/gpg` / `DELETE /api/user/gpg/:id`
 

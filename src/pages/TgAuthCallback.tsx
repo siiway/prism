@@ -61,10 +61,9 @@ export function TgAuthCallback() {
       .then(async (res) => {
         if (res.type === "connect") {
           navigate("/connections?success=connected", { replace: true });
-        } else if (res.type === "login" && res.token) {
-          localStorage.setItem("token", res.token);
+        } else if (res.type === "login") {
           const { user } = await api.me();
-          setAuth(res.token, user);
+          setAuth(user);
           navigate("/", { replace: true });
         } else if (res.type === "register" && res.pending_key) {
           navigate(

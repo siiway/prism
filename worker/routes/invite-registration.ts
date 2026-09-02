@@ -360,14 +360,12 @@ app.post("/auth/register-with-invite", async (c) => {
 
   const { issueSession, safeUser } = await import("./auth");
   const ttl = config.session_ttl_days * 24 * 60 * 60;
-  const token = await issueSession(c, user, ttl, ["pwd"]);
+  await issueSession(c, user, ttl, ["pwd"]);
 
   const requirements = await effectiveRequirements(c.env.DB, team);
   return c.json(
     {
-      token,
-      // Same profile shape ordinary registration returns, so the client can
-      // seed its auth store without a follow-up round trip.
+      // Same safe profile shape ordinary registration returns.
       user: await safeUser(c.env.APP_URL, c.env.DB, user),
       pending: true,
       requirements,

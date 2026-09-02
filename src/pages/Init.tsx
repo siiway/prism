@@ -19,7 +19,6 @@ import { useApi } from "../lib/api-context";
 import { AuthShell } from "../components/AuthShell";
 import { PasswordInput } from "../components/PasswordInput";
 import { useAuthStore } from "../store/auth";
-import type { UserProfile } from "../lib/api";
 
 const useStyles = makeStyles({
   header: {
@@ -85,7 +84,7 @@ export function Init() {
         username: form.username.trim(),
         display_name: form.display_name.trim(),
       });
-      setAuth(res.token, res.user as UserProfile);
+      setAuth(res.user);
       navigate("/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");

@@ -2,8 +2,8 @@
 //
 // A social provider marked trusted=0 (see admin OAuth Sources) short-circuits
 // the callback and bounces the browser here with a pending key. We look up
-// which account is being logged into for context, then submit the TOTP code
-// via POST /connections/2fa/verify to receive the session token.
+// which account is being logged into for context, then submit the TOTP code;
+// the resulting session remains exclusively in the HttpOnly cookie.
 
 import {
   Avatar,
@@ -87,7 +87,7 @@ export function Social2fa() {
         key,
         totp_code: totpCode.trim(),
       });
-      setAuth(res.token, res.user);
+      setAuth(res.user);
       navigate("/", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("auth.loginFailed"));

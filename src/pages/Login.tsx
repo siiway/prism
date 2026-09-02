@@ -1,7 +1,6 @@
 // Login page with TOTP, passkey, and social provider support
 
 import {
-  Avatar,
   Button,
   Divider,
   Field,
@@ -35,7 +34,7 @@ function loadOpenPGP(): Promise<OpenPGP> {
   if (!openpgpPromise) openpgpPromise = import("openpgp");
   return openpgpPromise;
 }
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startAuthentication } from "@simplewebauthn/browser";
@@ -47,8 +46,8 @@ import { Captcha } from "../components/Captcha";
 import { PasswordInput } from "../components/PasswordInput";
 import type { CaptchaValue } from "../components/Captcha";
 import { ProviderButton } from "../components/ProviderButton";
-import { useAuthStore, type Account } from "../store/auth";
-import type { UserProfile } from "../lib/api";
+import { useAuthStore } from "../store/auth";
+import type { SessionUser } from "../lib/api";
 
 const useStyles = makeStyles({
   form: { display: "flex", flexDirection: "column", gap: "12px" },
@@ -62,14 +61,8 @@ export function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const qc = useQueryClient();
-  const { setAuth, token, user, accounts, removeAccount } = useAuthStore();
+  const setAuth = useAuthStore((state) => state.setAuth);
   const { t } = useTranslation();
-  // Account switcher: `?add=1` means the visitor is already signed into one
-  // account and is adding another. We hold off the usual "you're logged in,
-  // go home" redirect on mount so the form can render, then send them home
-  // once a *new* login lands (a token change after mount).
-  const addMode = searchParams.get("add") === "1";
-  const mountedWithToken = useRef<boolean>(addMode && !!token);
   const { data: site } = useQuery({
     queryKey: ["site"],
     queryFn: api.site,
@@ -87,9 +80,6 @@ export function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
-  // userId currently being resumed from the "Continue as" chooser.
-  const [resuming, setResuming] = useState<string | null>(null);
-
   // GPG login state
   const [gpgStep, setGpgStep] = useState<"idle" | "challenge" | "verify">(
     "idle",
@@ -131,21 +121,13 @@ export function Login() {
       )
     : null;
 
-  // Redirect whenever a token appears (on mount if already logged in, or after login)
-  useEffect(() => {
-    if (!token) return;
-    // Adding an account: the token present on mount is the *existing* account,
-    // so stay on the form. Only redirect once the newly added account's token
-    // replaces it.
-    if (mountedWithToken.current) {
-      mountedWithToken.current = false;
-      return;
-    }
-    // A freshly added account is now active; drop the previous account's
-    // cached queries so the app doesn't paint stale data before refetching.
-    if (addMode) qc.clear();
+  const completeLogin = async (profile: SessionUser) => {
+    // Reauthentication can replace an existing cookie session. Drop cached
+    // user data before rendering the newly authenticated identity.
+    await qc.clear();
+    setAuth(profile);
     navigate(redirectTo, { replace: true });
-  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,36 +156,11 @@ export function Login() {
         return;
       }
 
-      if (res.token && res.user) {
-        setAuth(res.token, res.user as UserProfile);
-        // navigation handled by the token useEffect
-        console.debug("Login successful, token set, navigating to", redirectTo);
-      }
+      if (res.user) await completeLogin(res.user);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("auth.loginFailed"));
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Resume a stored account from the "Continue as" chooser. The account's
-  // token is a session the browser already holds; /auth/switch validates it and
-  // repoints the cookie (it accepts an unauthenticated caller for exactly this
-  // logged-out case). On success the token useEffect handles navigation.
-  const handleResume = async (account: Account) => {
-    if (resuming) return;
-    setError("");
-    setResuming(account.user.id);
-    try {
-      await api.switchAccount(account.token);
-      await qc.clear();
-      setAuth(account.token, account.user);
-      // navigation handled by the token useEffect
-    } catch {
-      // The stored session is gone — drop it and let the user sign in afresh.
-      removeAccount(account.user.id);
-      setError(t("account.resumeFailed", { name: account.user.display_name }));
-      setResuming(null);
     }
   };
 
@@ -221,9 +178,7 @@ export function Login() {
         (options as { challenge: string }).challenge,
         response,
       );
-      setAuth(res.token, res.user);
-      // navigation handled by the token useEffect
-      console.debug("Login successful, token set, navigating to", redirectTo);
+      await completeLogin(res.user);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("auth.passkeyFailed"));
     } finally {
@@ -271,7 +226,7 @@ export function Login() {
         setTotpRequired(true);
         return;
       }
-      if (res.token && res.user) setAuth(res.token, res.user);
+      if (res.user) await completeLogin(res.user);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("auth.gpgFailed"));
     } finally {
@@ -336,79 +291,8 @@ export function Login() {
     <AuthShell>
       <>
         <Title2>
-          {addMode
-            ? t("auth.addAccountTitle")
-            : t("auth.signInTo", { siteName: site?.site_name ?? "Prism" })}
+          {t("auth.signInTo", { siteName: site?.site_name ?? "Prism" })}
         </Title2>
-
-        {addMode && (
-          <MessageBar intent="info">
-            <MessageBarBody>
-              {user
-                ? t("auth.addAccountWhileSignedIn", {
-                    name: user.display_name,
-                  })
-                : t("auth.addAccountHint")}{" "}
-              <Link onClick={() => navigate("/")}>{t("common.cancel")}</Link>
-            </MessageBarBody>
-          </MessageBar>
-        )}
-
-        {/* "Continue as" chooser: accounts already signed in on this device
-            (e.g. after another account's session expired). One click resumes
-            the session without re-entering credentials. */}
-        {!addMode && accounts.length > 0 && (
-          <>
-            <Text weight="semibold">{t("account.continueAs")}</Text>
-            <div className={styles.providers}>
-              {accounts.map((a) => (
-                <Button
-                  key={a.user.id}
-                  appearance="subtle"
-                  disabled={resuming !== null}
-                  onClick={() => void handleResume(a)}
-                  style={{
-                    width: "100%",
-                    justifyContent: "flex-start",
-                    gap: 10,
-                    height: "auto",
-                    padding: "8px 12px",
-                  }}
-                  icon={
-                    resuming === a.user.id ? (
-                      <Spinner size="tiny" />
-                    ) : (
-                      <Avatar
-                        name={a.user.display_name}
-                        image={
-                          a.user.avatar_url
-                            ? { src: a.user.avatar_url }
-                            : undefined
-                        }
-                        size={28}
-                      />
-                    )
-                  }
-                >
-                  <div style={{ textAlign: "left", overflow: "hidden" }}>
-                    <Text block size={300} weight="semibold" truncate>
-                      {a.user.display_name}
-                    </Text>
-                    <Text
-                      block
-                      size={200}
-                      truncate
-                      style={{ color: tokens.colorNeutralForeground3 }}
-                    >
-                      @{a.user.username}
-                    </Text>
-                  </div>
-                </Button>
-              ))}
-            </div>
-            <Divider>{t("account.orSignIn")}</Divider>
-          </>
-        )}
 
         {errorParamMessage && (
           <MessageBar intent="error">

@@ -46,14 +46,14 @@ export function VerifyEmail() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { token } = useAuthStore();
+  const { user } = useAuthStore();
   const qc = useQueryClient();
 
   const status = params.get("status");
   const success = status === "success";
 
   // Invalidate cached user data so email_verified updates
-  if (success && token) {
+  if (success && user) {
     qc.invalidateQueries({ queryKey: ["me"] });
   }
 
@@ -86,10 +86,10 @@ export function VerifyEmail() {
 
         <Button
           appearance="primary"
-          onClick={() => navigate(token ? "/" : "/login")}
+          onClick={() => navigate(user ? "/" : "/login")}
           style={{ marginTop: 8 }}
         >
-          {token ? t("verifyEmail.goToDashboard") : t("verifyEmail.goToLogin")}
+          {user ? t("verifyEmail.goToDashboard") : t("verifyEmail.goToLogin")}
         </Button>
       </div>
     </div>

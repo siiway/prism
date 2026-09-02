@@ -34,6 +34,12 @@
       (function () {
         var mode = null;
         try {
+          // Remove credentials/profile caches written by older builds before
+          // any application or third-party code can observe them. Browser
+          // sessions now live exclusively in the HttpOnly session cookie.
+          localStorage.removeItem("token");
+          localStorage.removeItem("accounts");
+          localStorage.removeItem("user");
           mode = localStorage.getItem("prism_theme_mode");
         } catch (e) {
           /* storage may be blocked; fall through to matchMedia */

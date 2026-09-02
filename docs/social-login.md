@@ -335,7 +335,9 @@ correlation cookie. Prism stores only its hash in D1 and consumes
 the matching state atomically at callback time. A callback URL copied into a
 different browser is rejected because that browser does not have the initiating
 cookie. Linking a provider is additionally bound to the same live Prism session
-that started the flow.
+that started the flow. After successful login, Prism redirects through a clean
+`/auth/callback` URL and installs the session only as an HttpOnly cookie; the
+session JWT is never placed in the URL or returned to browser JavaScript.
 
 Cookies must therefore remain enabled for the Prism origin while completing a
 social login. If a callback reports `invalid_state`, restart the flow in the

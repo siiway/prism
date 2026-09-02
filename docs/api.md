@@ -7,11 +7,11 @@ description: REST API for Prism — auth, OAuth, apps, teams, domains, GPG, publ
 
 Base path: `/api`
 
-All endpoints return JSON. Authenticated endpoints accept either a session JWT
-(`Authorization: Bearer <token>`) issued at login, an OAuth access token from
-the standard authorization code flow, or a personal access token prefixed
-`prism_pat_`. Endpoints that take an OAuth token are usually exposed under
-`/api/oauth/me/*`.
+All endpoints return JSON. The web UI authenticates with the
+`__Host-prism_session` cookie, which is `Secure`, `HttpOnly`, and never exposed
+to browser JavaScript. API integrations should use an OAuth access token from
+the standard authorization code flow or a personal access token prefixed
+`prism_pat_`; OAuth-token endpoints are usually exposed under `/api/oauth/me/*`.
 
 CORS is locked to `APP_URL` for `/api/*`. The `/api/proxy/image/*`,
 `/.well-known/*`, and `/api/users/:username` (public profile) endpoints are
@@ -39,7 +39,8 @@ Creates the first admin account. Only works when `initialized = false`.
 }
 ```
 
-**Response** — `{ "token": "...", "user": { ... } }`
+**Response** — `{ "user": { ... } }`. The new session is set only in the
+HttpOnly cookie.
 
 ## Site
 
@@ -98,7 +99,8 @@ endpoint reads only fields safe to expose; secrets are never included.
 Include whichever bot-protection fields match the active captcha provider.
 `invite_token` is required when the site is in invite-only mode.
 
-**Response** — `{ "token": "...", "user": { ... } }`
+**Response** — `{ "user": { ... } }` when registration also signs the user
+in. The session credential is set only in the HttpOnly cookie.
 
 ### `POST /api/auth/login`
 
@@ -115,7 +117,8 @@ Include whichever bot-protection fields match the active captcha provider.
 (when `allow_alt_email_login` is true). `totp_code` is required only if TOTP
 is enrolled — for passkey authenticators, use the dedicated passkey endpoints.
 
-**Response** — `{ "token": "...", "user": { ... } }`
+**Response** — `{ "user": { ... } }`. The session credential is set only in
+the HttpOnly cookie and is not returned in JSON.
 
 If TOTP is enrolled but no code was provided:
 
@@ -127,44 +130,9 @@ If TOTP is enrolled but no code was provided:
 
 Revokes the current session. Requires auth.
 
-### `POST /api/auth/switch`
-
-Powers the account switcher. The browser keeps a session token for every
-account signed in on the device; this endpoint repoints the HttpOnly session
-cookie at one of them so a reload / server-side render resolves to the same
-account the UI switched to.
-
-```json
-{ "token": "<session token of the target account>", "logout_current": false }
-```
-
-`token` must name a live, unexpired session for an active user — a token whose
-session was revoked (e.g. via "sign out everywhere else") is rejected. Since a
-valid session token already grants full access as that user, moving it into the
-cookie confers no new authority. Set `logout_current: true` to also revoke the
-caller's own session in the same call — this is the "sign out and land on the
-next account" flow.
-
-Auth is optional: a signed-out visitor can call it to resume a stored account
-from the login page's "Continue as" chooser. Authorization rests entirely on
-the supplied `token` being a valid live session; `logout_current` only acts
-when a current session exists.
-
-**Response** — `{ "user": { ... } }`
-
-### `POST /api/auth/revoke`
-
-Revoke the session for another account the browser holds a token for — the
-switcher's per-account "sign out". Unlike `/logout` it never clears the session
-cookie, so signing out a background account does not disturb the active one.
-Requires auth.
-
-```json
-{ "token": "<session token of the account to sign out>" }
-```
-
-An unparseable or already-expired `token` is treated as success (its session is
-already gone). **Response** — `{ "message": "Revoked" }`
+Prism intentionally supports one browser session at a time. Switching accounts
+requires signing out and authenticating again; session JWTs are never retained
+in Web Storage for background accounts.
 
 ### `GET /api/auth/verify-email?token=<token>`
 
@@ -281,7 +249,8 @@ challenge is single-use and expires after 5 minutes.
 }
 ```
 
-**Response** — `{ "token": "...", "user": { ... } }`
+**Response** — `{ "user": { ... } }`; the session is set only in the HttpOnly
+cookie.
 
 ### `GET /api/user/gpg` / `POST /api/user/gpg` / `DELETE /api/user/gpg/:id`
 

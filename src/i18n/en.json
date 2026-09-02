@@ -72,32 +72,14 @@
     "closeMenu": "Close menu",
     "openMenu": "Open menu",
     "signOut": "Sign out",
-    "addAccount": "Add another account",
     "auditLog": "Audit Log"
   },
   "account": {
-    "accounts": "Accounts",
-    "current": "{{name}} (current account)",
-    "switchingTo": "Switching to {{name}}…",
-    "signingOut": "Signing out…",
-    "switchFailed": "Couldn't switch to @{{username}} — that session has expired.",
-    "manage": "Manage accounts…",
-    "manageTitle": "Manage accounts",
-    "currentBadge": "Current",
-    "lastUsed": "Last used",
-    "switch": "Switch",
-    "signOutAll": "Sign out of all accounts",
-    "signOutOne": "Sign out of @{{username}}",
-    "continueAs": "Continue as",
-    "orSignIn": "or sign in",
-    "resumeFailed": "Couldn't resume {{name}} — that session has expired. Please sign in."
+    "signingOut": "Signing out…"
   },
   "auth": {
     "signIn": "Sign in",
     "signInTo": "Sign in to {{siteName}}",
-    "addAccountTitle": "Add another account",
-    "addAccountWhileSignedIn": "Signed in as {{name}}. Sign in below to add another account.",
-    "addAccountHint": "Sign in below to add another account.",
     "signInWithPasskey": "Sign in with passkey",
     "signingIn": "Signing in…",
     "authenticating": "Authenticating…",

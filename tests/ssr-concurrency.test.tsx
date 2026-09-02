@@ -65,9 +65,9 @@ function requestHarness(sentinel: string) {
       await release.promise;
     }
 
-    expect(init?.headers).toEqual(
-      expect.objectContaining({ Authorization: `Bearer token-${sentinel}` }),
-    );
+    // SSR API calls authenticate through the request-bound cookie transport;
+    // entry-server must never reconstruct a JavaScript-visible Bearer header.
+    expect(new Headers(init?.headers).has("Authorization")).toBeFalse();
 
     let data: unknown;
     switch (url.pathname) {
@@ -149,23 +149,33 @@ describe("SSR request isolation", () => {
     const renders: Promise<unknown>[] = [];
 
     try {
-      const renderA = render(new Request("https://prism.test/apps"), {
-        template: TEMPLATE,
-        auth: { token: "token-A", user: user("A") },
-        colorScheme: "dark",
-        prefetched: [{ queryKey: ["site"], data: site }],
-        fetcher: a.fetcher,
-      });
+      const renderA = render(
+        new Request("https://prism.test/apps", {
+          headers: { Cookie: "__Host-prism_session=token-A" },
+        }),
+        {
+          template: TEMPLATE,
+          auth: { user: user("A") },
+          colorScheme: "dark",
+          prefetched: [{ queryKey: ["site"], data: site }],
+          fetcher: a.fetcher,
+        },
+      );
       renders.push(renderA);
 
       await waitUntilEntered(a.entered.promise, renderA, "render A");
-      const renderB = render(new Request("https://prism.test/apps"), {
-        template: TEMPLATE,
-        auth: { token: "token-B", user: user("B") },
-        colorScheme: "light",
-        prefetched: [{ queryKey: ["site"], data: site }],
-        fetcher: b.fetcher,
-      });
+      const renderB = render(
+        new Request("https://prism.test/apps", {
+          headers: { Cookie: "__Host-prism_session=token-B" },
+        }),
+        {
+          template: TEMPLATE,
+          auth: { user: user("B") },
+          colorScheme: "light",
+          prefetched: [{ queryKey: ["site"], data: site }],
+          fetcher: b.fetcher,
+        },
+      );
       renders.push(renderB);
 
       await waitUntilEntered(b.entered.promise, renderB, "render B");
@@ -186,14 +196,14 @@ describe("SSR request isolation", () => {
 
       expect(resultA.body).toContain("QUERY_A");
       expect(resultA.body).toContain("AUTH_A");
-      expect(resultA.body).toContain("token-A");
+      expect(resultA.body).not.toContain("token-A");
       expect(resultA.body).not.toContain("QUERY_B");
       expect(resultA.body).not.toContain("AUTH_B");
       expect(resultA.body).not.toContain("token-B");
 
       expect(resultB.body).toContain("QUERY_B");
       expect(resultB.body).toContain("AUTH_B");
-      expect(resultB.body).toContain("token-B");
+      expect(resultB.body).not.toContain("token-B");
       expect(resultB.body).not.toContain("QUERY_A");
       expect(resultB.body).not.toContain("AUTH_A");
       expect(resultB.body).not.toContain("token-A");

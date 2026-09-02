@@ -7,8 +7,6 @@ import {
   Menu,
   MenuButton,
   MenuDivider,
-  MenuGroup,
-  MenuGroupHeader,
   MenuItem,
   MenuItemRadio,
   MenuList,
@@ -16,19 +14,13 @@ import {
   MenuTrigger,
   Spinner,
   Text,
-  Toast,
-  ToastTitle,
-  Toaster,
   makeStyles,
   mergeClasses,
   tokens,
-  useId,
-  useToastController,
 } from "@fluentui/react-components";
 import {
   AlertRegular,
   AppsRegular,
-  CheckmarkRegular,
   DesktopRegular,
   DismissRegular,
   GlobeRegular,
@@ -38,7 +30,6 @@ import {
   LockClosedRegular,
   NavigationRegular,
   PeopleRegular,
-  PersonAddRegular,
   PersonRegular,
   SettingsRegular,
   ShieldPersonRegular,
@@ -53,11 +44,10 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../lib/api-context";
-import { useAuthStore, type Account } from "../store/auth";
+import { useAuthStore } from "../store/auth";
 import { useThemeStore, type ThemeMode } from "../store/theme";
 import { NoticeBoard } from "./NoticeBoard";
 import { LegalFooter } from "./LegalFooter";
-import { ManageAccountsDialog } from "./ManageAccountsDialog";
 
 const useStyles = makeStyles({
   shell: {
@@ -199,10 +189,9 @@ const useStyles = makeStyles({
       padding: "12px",
     },
   },
-  // Full-viewport scrim shown while an account switch / sign-out round trip is
-  // in flight. The Fluent Menu closes the moment an item is clicked, so an
-  // inline per-row spinner would flash and vanish; this gives durable feedback
-  // and blocks interaction until the swap and cache reset finish.
+  // Full-viewport scrim shown while sign-out is in flight. The Fluent Menu
+  // closes immediately, so this gives durable feedback and blocks interaction
+  // until the cookie revocation and cache reset finish.
   switchOverlay: {
     position: "fixed",
     inset: 0,
@@ -251,15 +240,9 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
-  const { user, accounts, switchAccount, removeAccount, clearAuth } =
-    useAuthStore();
+  const { user, clearAuth } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [manageOpen, setManageOpen] = useState(false);
-  // Non-null while an account switch / sign-out is in flight: holds the label
-  // shown in the overlay, and gates re-entrancy so two swaps can't race.
   const [busy, setBusy] = useState<string | null>(null);
-  const toasterId = useId("account-toaster");
-  const { dispatchToast } = useToastController(toasterId);
   const { t, i18n } = useTranslation();
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
@@ -293,95 +276,18 @@ export function Layout() {
     restrictedCaps["domain:create"] ||
     restrictedCaps["pat:create"];
 
-  // Switch the active account. The cookie is repointed server-side first (so a
-  // later reload/SSR sees the same account), then the local active pointer
-  // moves and the previous account's cached data is dropped.
-  const handleSwitch = async (userId: string) => {
-    if (busy || userId === user?.id) return;
-    const target = accounts.find((a) => a.user.id === userId);
-    if (!target) return;
-    setManageOpen(false);
-    setBusy(t("account.switchingTo", { name: target.user.display_name }));
-    try {
-      await api.switchAccount(target.token);
-      switchAccount(userId);
-      await qc.clear();
-      navigate("/", { replace: true });
-    } catch {
-      // The stored session is gone (revoked or expired). Drop the dead account,
-      // stay signed in as the current one, and say why it vanished.
-      removeAccount(userId);
-      dispatchToast(
-        <Toast>
-          <ToastTitle>
-            {t("account.switchFailed", { username: target.user.username })}
-          </ToastTitle>
-        </Toast>,
-        { intent: "error" },
-      );
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleAddAccount = () => {
-    setManageOpen(false);
-    navigate("/login?add=1");
-  };
-
-  // Sign out of the *active* account: revoke its session (which clears the
-  // cookie) and clear the active pointer. Any other accounts stay in the
-  // switcher, so the login page shows the "Continue as" chooser instead of
-  // silently assuming a different identity.
-  const signOutActive = async () => {
-    setManageOpen(false);
+  const handleSignOut = async () => {
+    if (busy) return;
     setBusy(t("account.signingOut"));
     try {
       await api.logout();
     } catch {
-      /* ignore */
-    }
-    if (user) removeAccount(user.id);
-    else clearAuth();
-    await qc.clear();
-    setBusy(null);
-    navigate("/login");
-  };
-
-  // Sign out of one account. The active account routes through signOutActive
-  // (cookie + navigation); a background account is revoked server-side and
-  // dropped locally without disturbing the active session or the current view.
-  const handleSignOutOne = async (account: Account) => {
-    if (busy) return;
-    if (account.user.id === user?.id) {
-      await signOutActive();
-      return;
-    }
-    try {
-      await api.revokeAccount(account.token);
-    } catch {
-      /* best-effort: the session may already be gone */
-    }
-    removeAccount(account.user.id);
-  };
-
-  const handleSignOutAll = async () => {
-    if (busy) return;
-    setManageOpen(false);
-    setBusy(t("account.signingOut"));
-    const others = accounts.filter((a) => a.user.id !== user?.id);
-    await Promise.all(
-      others.map((a) => api.revokeAccount(a.token).catch(() => {})),
-    );
-    try {
-      await api.logout();
-    } catch {
-      /* ignore */
+      /* best effort: local state must still be cleared */
     }
     clearAuth();
     await qc.clear();
     setBusy(null);
-    navigate("/login");
+    navigate("/login", { replace: true });
   };
 
   const closeSidebar = () => setSidebarOpen(false);
@@ -575,113 +481,6 @@ export function Layout() {
           </MenuTrigger>
           <MenuPopover>
             <MenuList>
-              {/* Account switcher: every account signed in on this device, the
-                  active one checked. Selecting another repoints the session;
-                  "Add another account" opens the login form without dropping
-                  the current session. */}
-              <MenuGroup>
-                <MenuGroupHeader>{t("account.accounts")}</MenuGroupHeader>
-                {accounts.map((a) => {
-                  const isActive = a.user.id === user?.id;
-                  return (
-                    <MenuItem
-                      key={a.user.id}
-                      disabled={busy !== null}
-                      aria-label={
-                        isActive
-                          ? t("account.current", { name: a.user.display_name })
-                          : undefined
-                      }
-                      onClick={() => {
-                        if (!isActive) void handleSwitch(a.user.id);
-                      }}
-                      icon={
-                        <Avatar
-                          name={a.user.display_name}
-                          image={
-                            a.user.avatar_url
-                              ? { src: a.user.avatar_url }
-                              : undefined
-                          }
-                          size={24}
-                        />
-                      }
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          width: "100%",
-                          minWidth: 180,
-                        }}
-                      >
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <Text
-                            block
-                            size={200}
-                            weight={isActive ? "semibold" : "regular"}
-                            truncate
-                            style={{ maxWidth: 160 }}
-                          >
-                            {a.user.display_name}
-                          </Text>
-                          <Text
-                            block
-                            size={100}
-                            truncate
-                            style={{
-                              maxWidth: 160,
-                              color: tokens.colorNeutralForeground3,
-                            }}
-                          >
-                            @{a.user.username}
-                          </Text>
-                        </div>
-                        {isActive ? (
-                          <CheckmarkRegular
-                            style={{
-                              flexShrink: 0,
-                              color: tokens.colorCompoundBrandForeground1,
-                            }}
-                          />
-                        ) : (
-                          <Button
-                            appearance="subtle"
-                            size="small"
-                            icon={<DismissRegular />}
-                            aria-label={t("account.signOutOne", {
-                              username: a.user.username,
-                            })}
-                            disabled={busy !== null}
-                            style={{ flexShrink: 0 }}
-                            onClick={(e) => {
-                              // Don't let the row's switch handler fire too.
-                              e.stopPropagation();
-                              void handleSignOutOne(a);
-                            }}
-                          />
-                        )}
-                      </div>
-                    </MenuItem>
-                  );
-                })}
-                <MenuItem
-                  icon={<PersonAddRegular />}
-                  onClick={handleAddAccount}
-                  disabled={busy !== null}
-                >
-                  {t("nav.addAccount")}
-                </MenuItem>
-                <MenuItem
-                  icon={<PeopleRegular />}
-                  onClick={() => setManageOpen(true)}
-                  disabled={busy !== null}
-                >
-                  {t("account.manage")}
-                </MenuItem>
-              </MenuGroup>
-              <MenuDivider />
               {/* Language toggle */}
               <MenuItem
                 icon={<LocalLanguageRegular />}
@@ -715,19 +514,11 @@ export function Layout() {
               <MenuDivider />
               <MenuItem
                 icon={<SignOutRegular />}
-                onClick={() => void signOutActive()}
+                onClick={() => void handleSignOut()}
                 disabled={busy !== null}
               >
                 {t("nav.signOut")}
               </MenuItem>
-              {accounts.length > 1 && (
-                <MenuItem
-                  onClick={() => void handleSignOutAll()}
-                  disabled={busy !== null}
-                >
-                  {t("account.signOutAll")}
-                </MenuItem>
-              )}
             </MenuList>
           </MenuPopover>
         </Menu>
@@ -786,22 +577,7 @@ export function Layout() {
         <LegalFooter />
       </main>
 
-      <ManageAccountsDialog
-        open={manageOpen}
-        onOpenChange={setManageOpen}
-        accounts={accounts}
-        activeUserId={user?.id}
-        busy={busy !== null}
-        onSwitch={(id) => void handleSwitch(id)}
-        onSignOut={(a) => void handleSignOutOne(a)}
-        onAddAccount={handleAddAccount}
-        onSignOutAll={() => void handleSignOutAll()}
-      />
-
-      {/* Transient failures from switching / signing out. */}
-      <Toaster toasterId={toasterId} />
-
-      {/* Blocking feedback while an account swap is in flight. */}
+      {/* Blocking feedback while sign-out is in flight. */}
       {busy && (
         <div className={styles.switchOverlay} role="status" aria-live="polite">
           <div className={styles.switchCard}>

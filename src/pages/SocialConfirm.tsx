@@ -111,8 +111,8 @@ export function SocialConfirm() {
       // The register path never returns a 2FA gate — a brand-new account
       // can't have TOTP enrolled — but the union type on connectionComplete
       // makes us narrow.
-      if ("token" in res) {
-        setAuth(res.token, res.user);
+      if ("user" in res) {
+        setAuth(res.user);
         navigate("/", { replace: true });
       }
     } catch (err) {

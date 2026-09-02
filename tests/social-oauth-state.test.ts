@@ -6,6 +6,7 @@ import {
   clearSocialOAuthCookie,
   readSocialOAuthCookie,
   SESSION_COOKIE,
+  setSessionCookie,
   setSocialOAuthCookie,
   SOCIAL_OAUTH_COOKIE,
 } from "../worker/lib/cookies";
@@ -187,6 +188,23 @@ beforeEach(() => {
 
 afterEach(() => sqlite.close());
 
+describe("session cookie delivery", () => {
+  test("keeps the session JWT out of the response body and disables caching", async () => {
+    const app = new Hono();
+    app.get("/login-result", (c) => {
+      setSessionCookie(c, "session-secret", 3600);
+      return c.json({ user: { id: "user-a" } });
+    });
+
+    const response = await app.request("/login-result");
+    expect(response.headers.get("set-cookie")).toBe(
+      `${SESSION_COOKIE}=session-secret; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=3600`,
+    );
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.text()).not.toContain("session-secret");
+  });
+});
+
 describe("social OAuth browser correlation", () => {
   test("sets a hardened HttpOnly correlation cookie", async () => {
     const app = new Hono();
@@ -243,6 +261,7 @@ describe("social OAuth browser correlation", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const setCookie = response.headers.get("set-cookie") ?? "";
     expect(setCookie).toContain("HttpOnly; Secure; SameSite=Lax");
     const correlation = setCookie

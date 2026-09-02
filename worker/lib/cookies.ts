@@ -25,6 +25,7 @@ export function setSessionCookie(
     `${SESSION_COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${ttlSeconds}`,
     { append: true },
   );
+  c.header("Cache-Control", "no-store");
 }
 
 export function clearSessionCookie(c: Context): void {
@@ -33,6 +34,7 @@ export function clearSessionCookie(c: Context): void {
     `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,
     { append: true },
   );
+  c.header("Cache-Control", "no-store");
 }
 
 function readCookie(c: Context, expectedName: string): string | null {

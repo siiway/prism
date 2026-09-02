@@ -30,14 +30,14 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { createRoutes } from "./routes";
 import { createServerI18n } from "./i18n/init";
 import { AuthStoreProvider, createAuthStore } from "./store/auth";
-import { createApiClient, type UserProfile } from "./lib/api";
+import { createApiClient, type SessionUser } from "./lib/api";
 import { ApiProvider } from "./lib/ApiProvider";
 
 export interface RenderOptions {
   /** The prebuilt index.html template. */
   template: string;
-  /** Initial auth state for the client to hydrate from, if known. */
-  auth?: { token: string | null; user: UserProfile | null };
+  /** Safe user profile for hydration. Session credentials stay in cookies. */
+  auth?: { user: SessionUser | null };
   /** Server-detected locale. */
   locale?: string;
   /**
@@ -141,12 +141,11 @@ export async function render(
   // Every mutable dependency below belongs to this render. Cloudflare may
   // interleave requests at any await, so none of these values may live in a
   // module singleton or on globalThis.
-  const auth = opts.auth ?? { token: null, user: null };
+  const auth = opts.auth ?? { user: null };
   const origin = new URL(request.url).origin;
-  const authStore = createAuthStore({ initialAuth: auth, storage: null });
+  const authStore = createAuthStore({ initialAuth: auth });
   const apiClient = createApiClient({
     fetcher: opts.fetcher,
-    getToken: () => auth.token ?? undefined,
     isNormalView: () => false,
   });
 

@@ -32,8 +32,7 @@ export interface RouteContext {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getAuth(ctx: RouteContext) {
-  const { token, user } = ctx.authStore.getState();
-  return { token, user };
+  return { user: ctx.authStore.getState().user };
 }
 
 function loginRedirect(request: Request): Response {
@@ -62,7 +61,7 @@ async function prefetch(
 export function createRoutes(ctx: RouteContext): RouteObject[] {
   const requireAuthLoader = (request: Request) => {
     const auth = getAuth(ctx);
-    if (!auth.token) throw loginRedirect(request);
+    if (!auth.user) throw loginRedirect(request);
     return auth;
   };
 
@@ -77,15 +76,13 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
   // keep the login form visible for a visitor who is already signed in:
   //   - `?reauth=1` (OIDC prompt=login / max_age): re-authenticate for a
   //     pending authorization request.
-  //   - `?add=1` (account switcher): sign in as an additional account.
   const publicAuthLoader = async ({ request }: { request: Request }) => {
     await prefetch(ctx.qc, ["site"], ctx.api.site);
     const site = ctx.qc.getQueryData<{ initialized?: boolean }>(["site"]);
     if (site && site.initialized === false) throw redirect("/init");
     const params = new URL(request.url).searchParams;
-    const skipBounce =
-      params.get("reauth") === "1" || params.get("add") === "1";
-    if (getAuth(ctx).token && !skipBounce) throw redirect("/");
+    const skipBounce = params.get("reauth") === "1";
+    if (getAuth(ctx).user && !skipBounce) throw redirect("/");
     return null;
   };
 

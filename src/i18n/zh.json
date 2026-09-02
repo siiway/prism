@@ -72,32 +72,14 @@
     "closeMenu": "关闭菜单",
     "openMenu": "打开菜单",
     "signOut": "退出登录",
-    "addAccount": "添加其他账号",
     "auditLog": "审计日志"
   },
   "account": {
-    "accounts": "账号",
-    "current": "{{name}}（当前账号）",
-    "switchingTo": "正在切换到 {{name}}…",
-    "signingOut": "正在退出…",
-    "switchFailed": "无法切换到 @{{username}} —— 该会话已过期。",
-    "manage": "管理账号…",
-    "manageTitle": "管理账号",
-    "currentBadge": "当前",
-    "lastUsed": "上次使用",
-    "switch": "切换",
-    "signOutAll": "退出所有账号",
-    "signOutOne": "退出 @{{username}}",
-    "continueAs": "继续使用",
-    "orSignIn": "或登录",
-    "resumeFailed": "无法恢复 {{name}} —— 该会话已过期，请重新登录。"
+    "signingOut": "正在退出…"
   },
   "auth": {
     "signIn": "登录",
     "signInTo": "登录到 {{siteName}}",
-    "addAccountTitle": "添加其他账号",
-    "addAccountWhileSignedIn": "当前登录为 {{name}}。在下方登录以添加其他账号。",
-    "addAccountHint": "在下方登录以添加其他账号。",
     "signInWithPasskey": "使用通行密钥登录",
     "signingIn": "登录中…",
     "authenticating": "验证中…",

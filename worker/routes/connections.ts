@@ -79,6 +79,13 @@ import type {
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
+// OAuth handoffs and connection lists are user- or flow-specific. Never let a
+// browser, proxy, or CDN retain pending account choices or callback responses.
+app.use("*", async (c, next) => {
+  c.header("Cache-Control", "no-store");
+  await next();
+});
+
 // ─── Provider definitions (URL/scope metadata, keyed by base provider type) ───
 
 interface ProviderDef {
@@ -760,9 +767,10 @@ app.post("/:provider/tg-verify", optionalAuth, async (c) => {
         c.env.APP_URL,
       ).catch(() => {}),
     );
+    await issueJWT(c, user);
     return c.json({
       type: "login",
-      token: await issueJWT(c, user),
+      user: await userToProfile(c.env.APP_URL, c.env.DB, user),
     });
   }
 
@@ -1165,9 +1173,8 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
         c.env.APP_URL,
       ).catch(() => {}),
     );
-    return c.redirect(
-      `${c.env.APP_URL}/auth/callback?token=${encodeURIComponent(await issueJWT(c, user))}`,
-    );
+    await issueJWT(c, user);
+    return c.redirect(`${c.env.APP_URL}/auth/callback`);
   }
 
   // Multiple accounts linked — ask user to pick one
@@ -1341,8 +1348,8 @@ app.post("/complete", async (c) => {
       ).catch(() => {}),
     );
 
+    await issueJWT(c, user);
     return c.json({
-      token: await issueJWT(c, user),
       user: await userToProfile(c.env.APP_URL, c.env.DB, user),
     });
   }
@@ -1448,8 +1455,8 @@ app.post("/complete", async (c) => {
       .first<UserRow>();
     if (!user) return c.json({ error: "Failed to create user" }, 500);
 
+    await issueJWT(c, user);
     return c.json({
-      token: await issueJWT(c, user),
       user: await userToProfile(c.env.APP_URL, c.env.DB, user),
     });
   }
@@ -1527,8 +1534,8 @@ app.post("/2fa/verify", async (c) => {
     ).catch(() => {}),
   );
 
+  await issueJWT(c, user);
   return c.json({
-    token: await issueJWT(c, user),
     user: await userToProfile(c.env.APP_URL, c.env.DB, user),
   });
 });
@@ -2042,7 +2049,7 @@ async function issueJWT(
   c: Context<AppEnv>,
   user: UserRow,
   ttlSeconds = 30 * 24 * 60 * 60,
-): Promise<string> {
+): Promise<void> {
   const db = c.env.DB;
   const sessionId = randomId(32);
   const now = Math.floor(Date.now() / 1000);
@@ -2088,11 +2095,10 @@ async function issueJWT(
       () => undefined,
     ),
   );
-  // Set the session cookie on this response. For redirect responses (social
-  // OAuth callback flow) the cookie travels with the redirect and the
-  // /auth/callback page reads it on the follow-up request.
+  // The browser session credential is only delivered in the HttpOnly cookie.
+  // On OAuth callback redirects the cookie authenticates the follow-up request
+  // without exposing the JWT in the redirect URL.
   setSessionCookie(c, token, ttlSeconds);
-  return token;
 }
 
 async function userToProfile(baseUrl: string, db: D1Database, user: UserRow) {

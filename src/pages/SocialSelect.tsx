@@ -84,8 +84,8 @@ export function SocialSelect() {
         });
         return;
       }
-      if ("token" in res) {
-        setAuth(res.token, res.user);
+      if ("user" in res) {
+        setAuth(res.user);
         navigate("/", { replace: true });
       }
     } catch (err) {

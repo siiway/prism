@@ -103,7 +103,7 @@ export function Authorize() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, token } = useAuthStore();
+  const { user } = useAuthStore();
   const { t } = useTranslation();
 
   const params = Object.fromEntries(searchParams.entries());
@@ -365,7 +365,7 @@ export function Authorize() {
   // consent already covers the request — but never skip consent for
   // site/team-level scopes, nor when the client explicitly asked for consent.
   useEffect(() => {
-    if (!user || !token || !data || autoApproved.current) return;
+    if (!user || !data || autoApproved.current) return;
     if (data.requires_site_grant || data.requires_team_grant) return;
     if (data.prompt === "consent") return;
     if (data.reauth_required && !reauthSatisfied) return;
@@ -377,23 +377,20 @@ export function Authorize() {
       queueMicrotask(() => handleDecision("approve"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleDecision is intentionally not a dep; the autoApproved ref guards against double-fire
-  }, [data, user, token]);
+  }, [data, user]);
 
   // If not logged in, redirect to login (client-side safety net; the route
   // loader handles the SSR redirect). Guarded against window-less SSR.
-  // Also catches the case where the SSR-seeded session is stale: the
-  // /app-info API returns user:null when the cookie/JWT has expired while the
-  // Zustand store still carries the old token (seeded from SSR).
+  // Also catches the case where an API session failure clears the profile.
   useEffect(() => {
-    if (!user || !token) {
+    if (!user) {
       const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
       navigate(loginUrl, { replace: true });
     }
-  }, [user, token, navigate]);
+  }, [user, navigate]);
 
-  // API-level session check: even when the Zustand store still has a token
-  // (SSR-seeded), the /app-info endpoint may return user:null if the cookie
-  // expired or was revoked while the page was sitting open. Redirect to login.
+  // API-level session check: even when the in-memory profile is still present,
+  // /app-info may return user:null if the cookie expired or was revoked.
   useEffect(() => {
     if (data && !data.user) {
       const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
@@ -404,7 +401,7 @@ export function Authorize() {
   // While waiting for the auth-redirect effect to fire, show a spinner.
   // The route loader handles the SSR redirect (302), so this only runs on
   // the client as a safety net when the store is momentarily out of sync.
-  if (!user || !token) {
+  if (!user) {
     return (
       <div className={styles.page}>
         <Spinner size="large" />

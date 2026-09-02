@@ -84,7 +84,7 @@ app.post("/", async (c) => {
     await setConfigValue(c.env.DB, "site_name", body.site_name);
   }
 
-  // Issue a session token
+  // Issue a session in the HttpOnly cookie.
   const sessionId = randomId(32);
   const sessionTtl = 30 * 24 * 60 * 60;
   const jwtSecret = await getJwtSecret(c.env.KV_SESSIONS);
@@ -133,12 +133,15 @@ app.post("/", async (c) => {
 
   return c.json(
     {
-      token,
       user: {
         id: userId,
-        email: body.email,
-        username: body.username,
+        email: body.email.toLowerCase().trim(),
+        username: body.username.toLowerCase().trim(),
+        display_name: body.display_name ?? body.username,
+        avatar_url: null,
+        unproxied_avatar_url: null,
         role: "admin",
+        email_verified: true,
       },
     },
     201,

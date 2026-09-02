@@ -88,7 +88,7 @@ export function Profile() {
   const styles = useStyles();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { user, setAuth, token } = useAuthStore();
+  const { user, setAuth } = useAuthStore();
   const { t } = useTranslation();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -177,7 +177,7 @@ export function Profile() {
       };
       if (!r2Enabled) body.avatar_url = avatarUrl.trim() || undefined;
       const res = await api.updateMe(body);
-      if (token && res.user) setAuth(token, res.user);
+      if (res.user) setAuth(res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.profileUpdated"));
     } catch (err) {
@@ -193,7 +193,7 @@ export function Profile() {
     setAvatarLoading(true);
     try {
       const res = await api.uploadAvatar(file);
-      if (token) setAuth(token, { ...user!, avatar_url: res.avatar_url });
+      if (user) setAuth({ ...user, avatar_url: res.avatar_url });
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.avatarUpdated"));
     } catch (err) {
@@ -221,7 +221,7 @@ export function Profile() {
     setSavingVisibility(field);
     try {
       const res = await api.updateMe({ [field]: value });
-      if (token && res.user) setAuth(token, res.user);
+      if (res.user) setAuth(res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : "Update failed");
@@ -242,7 +242,7 @@ export function Profile() {
     setReadmeSaving(true);
     try {
       const res = await api.updateMe({ profile_readme: readme || null });
-      if (token && res.user) setAuth(token, res.user);
+      if (res.user) setAuth(res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
@@ -292,7 +292,7 @@ export function Profile() {
           : null;
       }
       const res = await api.updateMe(body);
-      if (token && res.user) setAuth(token, res.user);
+      if (res.user) setAuth(res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
@@ -306,7 +306,7 @@ export function Profile() {
     setReadmeSaving(true);
     try {
       const res = await api.updateMe({ github_readme_token: next });
-      if (token && res.user) setAuth(token, res.user);
+      if (res.user) setAuth(res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
       setGhTokenInput("");
       showMsg("success", t("profile.readmeUpdated"));

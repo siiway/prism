@@ -68,7 +68,7 @@ export function VerifyChoose() {
   const styles = useStyles();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { token } = useAuthStore();
+  const { user } = useAuthStore();
 
   const { data: site } = useQuery({
     queryKey: ["site"],
@@ -150,7 +150,7 @@ export function VerifyChoose() {
   };
 
   // If not logged in, go to login
-  if (!token) {
+  if (!user) {
     navigate("/login", { replace: true });
     return null;
   }

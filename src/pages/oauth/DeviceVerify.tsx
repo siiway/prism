@@ -90,7 +90,7 @@ export function DeviceVerify() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, token } = useAuthStore();
+  const { user } = useAuthStore();
   const { t } = useTranslation();
 
   const userCode = (searchParams.get("user_code") ?? "").trim();
@@ -101,12 +101,12 @@ export function DeviceVerify() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["device-verify", userCode],
     queryFn: () => api.deviceVerifyInfo(userCode),
-    enabled: userCode.length > 0 && !!user && !!token,
+    enabled: userCode.length > 0 && !!user,
     retry: false,
   });
 
   // Not signed in: bounce to login and come back to this exact URL.
-  if (userCode && (!user || !token)) {
+  if (userCode && !user) {
     const loginUrl = `/login?redirect=${encodeURIComponent(
       window.location.pathname + window.location.search,
     )}`;

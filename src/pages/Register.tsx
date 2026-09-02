@@ -25,7 +25,6 @@ import { PasswordInput } from "../components/PasswordInput";
 import type { CaptchaValue } from "../components/Captcha";
 import { ProviderButton } from "../components/ProviderButton";
 import { useAuthStore } from "../store/auth";
-import type { UserProfile } from "../lib/api";
 
 const useStyles = makeStyles({
   form: { display: "flex", flexDirection: "column", gap: "12px" },
@@ -82,8 +81,8 @@ export function Register() {
         invite_token: form.invite_token.trim(),
         ...captcha,
       });
-      if ("token" in res && res.token) {
-        setAuth(res.token as string, res.user as UserProfile);
+      if ("user" in res && res.user) {
+        setAuth(res.user);
         if (site?.require_email_verification) {
           navigate("/verify-choose");
         } else {

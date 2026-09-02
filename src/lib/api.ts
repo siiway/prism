@@ -68,7 +68,6 @@ export async function proxyImageUrl(
         "POST",
         "/proxy/image/register",
         { url: trimmed },
-        getStoredToken(),
       );
       return `${BASE}/proxy/image/${id}`;
     } catch {
@@ -155,7 +154,7 @@ export type ApiFetcher = (
 export interface ApiClientOptions {
   /** Request-local transport. Required by SSR because Worker fetch rejects relative URLs. */
   fetcher?: ApiFetcher;
-  /** Returns the active credential for methods that send a Bearer token. */
+  /** Optional non-browser credential source. The web client deliberately omits it. */
   getToken?: () => string | undefined;
   /** Browser-only view override; SSR must explicitly keep this false. */
   isNormalView?: () => boolean;
@@ -193,9 +192,9 @@ async function performRequest<T>(
   const res = await doFetch(`${BASE}${path}`, {
     method,
     headers,
-    // Send the session cookie alongside the Bearer header. We set the cookie
-    // on login so the SSR pass can authenticate without JS; this keeps it in
-    // sync on subsequent client-side API calls.
+    // Browser sessions authenticate exclusively with the HttpOnly cookie.
+    // `credentials: include` also lets request-local SSR fetchers forward the
+    // incoming cookie without exposing its value to application JavaScript.
     credentials: "include",
     body:
       body instanceof FormData
@@ -220,13 +219,8 @@ async function performRequest<T>(
     // Prism session is invalid". Other 401-shaped errors (OAuth scope
     // failures, dead upstream provider tokens on a connection refresh,
     // PAT scope rejections, etc.) carry a specific error code and must
-    // NOT log the user out — that's how clicking "Refresh" on a stale
-    // social connection used to instantly nuke the dashboard session.
+    // NOT log the user out.
     if (res.status === 401 && SESSION_INVALID_ERRORS.has(message)) {
-      // Sign out only the account whose token just failed. Any other accounts
-      // the switcher holds are kept: removeAccount clears the active pointer
-      // without promoting one, so the route guard sends the user to the login
-      // page's "Continue as" chooser to pick which account to resume.
       options.onInvalidSession?.();
     }
 
@@ -234,11 +228,6 @@ async function performRequest<T>(
   }
 
   return data as T;
-}
-
-function getStoredToken(): string | undefined {
-  if (typeof localStorage === "undefined") return undefined;
-  return localStorage.getItem("token") ?? undefined;
 }
 
 type ApiRequest = <T>(
@@ -257,7 +246,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     password: string;
     display_name?: string;
     site_name?: string;
-  }) => request<{ token: string; user: unknown }>("POST", "/init", body),
+  }) => request<{ user: SessionUser }>("POST", "/init", body),
 
   // ─── Site ────────────────────────────────────────────────────────────────
   site: () => request<SitePublicConfig>("GET", "/site"),
@@ -268,7 +257,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
 
   // ─── Auth ────────────────────────────────────────────────────────────────
   register: (body: RegisterBody) =>
-    request<AuthResponse>("POST", "/auth/register", body),
+    request<AuthResponse | { message: string }>("POST", "/auth/register", body),
 
   // ── Team-invite registration ────────────────────────────────────────────
   joinPageInfo: (teamId: string) =>
@@ -287,8 +276,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     pow_nonce?: number;
   }) =>
     request<{
-      token: string;
-      user: UserProfile;
+      user: SessionUser;
       pending: true;
       requirements: JoinRequirements;
       synthetic_email: boolean;
@@ -323,36 +311,9 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
   login: (body: LoginBody) =>
     request<LoginResponse>("POST", "/auth/login", body),
-  /** Revoke a session and clear the cookie. Pass a token to revoke a specific
-   *  account (defaults to the active one). */
-  logout: (token?: string) =>
-    request<{ message: string }>(
-      "POST",
-      "/auth/logout",
-      undefined,
-      token ?? getToken(),
-    ),
-  /**
-   * Revoke the session for another account the browser holds a token for,
-   * WITHOUT clearing the active account's cookie — the switcher's per-account
-   * "sign out". `token` is the target account's session token.
-   */
-  revokeAccount: (token: string) =>
-    request<{ message: string }>("POST", "/auth/revoke", { token }, getToken()),
-  /**
-   * Repoint the HttpOnly session cookie at another account the browser is
-   * already signed into, identified by the session token the client holds
-   * for it. Keeps SSR/reload auth consistent with the switcher's active
-   * account. `logoutCurrent` also revokes the caller's own session, folding
-   * "sign out and land on the next account" into one round trip.
-   */
-  switchAccount: (token: string, opts?: { logoutCurrent?: boolean }) =>
-    request<{ user: UserProfile }>(
-      "POST",
-      "/auth/switch",
-      { token, logout_current: opts?.logoutCurrent },
-      getToken(),
-    ),
+  /** Revoke the cookie-authenticated session and clear its cookie. */
+  logout: () =>
+    request<{ message: string }>("POST", "/auth/logout", undefined, getToken()),
   verifyEmail: (token: string) =>
     request<{ message: string }>(
       "GET",
@@ -491,8 +452,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
    *  has 2FA enabled — resubmit the same signed message with `totp_code`. */
   gpgLogin: (identifier: string, signed_message: string, totp_code?: string) =>
     request<{
-      token?: string;
-      user?: UserProfile;
+      user?: SessionUser;
       totp_required?: boolean;
     }>("POST", "/auth/gpg-login", {
       identifier,
@@ -836,7 +796,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     slug: string,
     body: { nonce: string; tg_data: Record<string, string> },
   ) =>
-    request<{ type: string; token?: string; pending_key?: string }>(
+    request<{ type: string; pending_key?: string }>(
       "POST",
       `/connections/${slug}/tg-verify`,
       body,
@@ -857,21 +817,18 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
           display_name: string;
         },
   ) =>
-    request<
-      | { token: string; user: UserProfile }
-      | { type: "2fa"; pending_key: string }
-    >("POST", "/connections/complete", body),
+    request<{ user: SessionUser } | { type: "2fa"; pending_key: string }>(
+      "POST",
+      "/connections/complete",
+      body,
+    ),
   connectionSocial2faPending: (key: string) =>
     request<Social2faPendingInfo>(
       "GET",
       `/connections/2fa/pending/${encodeURIComponent(key)}`,
     ),
   connectionSocial2faVerify: (body: { key: string; totp_code: string }) =>
-    request<{ token: string; user: UserProfile }>(
-      "POST",
-      "/connections/2fa/verify",
-      body,
-    ),
+    request<{ user: SessionUser }>("POST", "/connections/2fa/verify", body),
   refreshConnection: (id: string) =>
     request<{ connection: SocialConnection }>(
       "POST",
@@ -1124,9 +1081,8 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     if (filters.path) qs.set("path", filters.path);
     if (filters.status) qs.set("status", filters.status);
     if (filters.user_id) qs.set("user_id", filters.user_id);
-    const token = getToken();
     const res = await fetch(`${BASE}/admin/request-logs/export?${qs}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "include",
     });
     if (!res.ok) throw new Error("Export failed");
     const blob = await res.blob();
@@ -2288,9 +2244,8 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     const qs = new URLSearchParams({ format });
     for (const [k, v] of Object.entries(params))
       if (v !== undefined && v !== "") qs.set(k, String(v));
-    const token = getToken();
     const res = await fetch(`${BASE}/audit/${base}/export?${qs}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "include",
     });
     if (!res.ok) throw new ApiError(res.status, "Export failed");
     const blob = await res.blob();
@@ -2660,13 +2615,8 @@ export type ApiClient = ReturnType<typeof createApiClient>;
 
 /** Browser API client. SSR must use createApiClient with request-local options. */
 export const api = createApiClient({
-  getToken: getStoredToken,
   isNormalView,
-  onInvalidSession: () => {
-    const state = authStore.getState();
-    if (state.user) state.removeAccount(state.user.id);
-    else state.clearAuth();
-  },
+  onInvalidSession: () => authStore.getState().clearAuth(),
 });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -2835,9 +2785,20 @@ export interface LoginBody {
   pow_nonce?: number;
 }
 
+export type SessionUser = Pick<
+  UserProfile,
+  | "id"
+  | "email"
+  | "username"
+  | "display_name"
+  | "avatar_url"
+  | "unproxied_avatar_url"
+  | "role"
+  | "email_verified"
+>;
+
 export interface AuthResponse {
-  token: string;
-  user: UserProfile;
+  user: SessionUser;
 }
 
 export interface LoginResponse extends Partial<AuthResponse> {

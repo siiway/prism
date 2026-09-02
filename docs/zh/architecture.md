@@ -263,7 +263,7 @@ sequenceDiagram
   Worker->>Worker: signJWT({ sub, role, sessionId })
   Worker->>D1: 写入 session 行（token_hash）
   Worker->>KV: 缓存 session 元数据
-  Worker-->>Client: { token, user }
+  Worker-->>Client: Set-Cookie: __Host-prism_session（HttpOnly）+ { user }
 ```
 
 每次需要鉴权的请求：
@@ -275,7 +275,7 @@ sequenceDiagram
   participant KV
   participant D1
 
-  Client->>requireAuth: Bearer token
+  Client->>requireAuth: Cookie: __Host-prism_session
   requireAuth->>requireAuth: verifyJWT（签名 + 过期）
   requireAuth->>KV: 按哈希查 session
   alt KV 命中
@@ -316,7 +316,9 @@ PoW 是第三方验证码服务的替代方案。
 - PKCE 使用 **S256**（向后兼容也接受 plain）
 - 限流使用基于 KV 的滑动窗口，IPv6 按 `ipv6_rate_limit_prefix`（默认 `/64`）聚合
 - 每次已认证请求都会向 D1 重新校验会话——删除会话行可立即让尚未过期的 JWT 失效
-- 账号切换器在浏览器中保存每个已登录账号的会话令牌，并通过 `POST /api/auth/switch` 在它们之间重新指向会话 Cookie；由于有效的会话令牌本身已可以该用户身份完成认证，此操作不会授予浏览器尚未持有的任何权限
+- 浏览器会话 JWT 只存在于带 `Secure`、`HttpOnly` 属性的 `__Host-prism_session` Cookie 中；登录 JSON、重定向 URL、SSR hydration 状态、Zustand 与 Web Storage 均不会接触它
+- Prism 同一时间只保留一个浏览器账号；切换账号必须重新认证，而不是在 JavaScript 中保存后台账号的 bearer token
+- 迁移 `0072_revoke_exposed_sessions.sql` 会一次性撤销修复前的全部会话，使此前可能留在 URL、日志或 Web Storage 中的 JWT 无法继续使用
 - 所有 redirect URI 在签发 code 前都会与应用注册列表 + 域名归属验证状态进行匹配
 - 图片代理是关闭式的：仅服务已注册映射，杜绝 SSRF 中继
 - 经图片代理转出的 SVG 会被消毒（移除 `<script>`、事件处理器、`javascript:` 伪 URL、`<foreignObject>`、外链 `<use>`）
