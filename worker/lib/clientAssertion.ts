@@ -8,6 +8,7 @@
 
 import { base64urlToBuf } from "./crypto";
 import { safeFetch } from "./safeFetch";
+import { claimReplayValue } from "./securityState";
 import type { OAuthAppRow } from "../types";
 
 export const CLIENT_ASSERTION_TYPE =
@@ -173,15 +174,16 @@ export async function verifyClientAssertion(
       ? [payload.aud]
       : [];
   if (!auds.some((a) => acceptedAudiences.includes(a))) return false;
-  if (typeof payload.exp !== "number" || payload.exp < now) return false;
+  if (typeof payload.exp !== "number" || payload.exp <= now) return false;
   if (typeof payload.nbf === "number" && payload.nbf > now + 60) return false;
   // Bound how far in the past/future an assertion may be dated.
   if (payload.exp > now + 3600) return false;
-  if (!payload.jti) return false;
-
-  // Replay guard: a jti may be presented once, until it would have expired.
-  const jtiKey = `cas:${app.client_id}:${payload.jti}`;
-  if (await env.KV_CACHE.get(jtiKey)) return false;
+  if (
+    typeof payload.jti !== "string" ||
+    payload.jti.length === 0 ||
+    payload.jti.length > 512
+  )
+    return false;
 
   const jwks = await resolveClientJwks(env, app);
   if (jwks.length === 0) return false;
@@ -201,11 +203,17 @@ export async function verifyClientAssertion(
       signingInput,
     );
     if (ok) {
-      // Burn the jti for the remainder of its validity window.
-      await env.KV_CACHE.put(jtiKey, "1", {
-        expirationTtl: Math.max(1, Math.min(3600, payload.exp - now)),
-      });
-      return true;
+      // Claim only after cryptographic verification, so an invalid assertion
+      // cannot burn a legitimate client's jti. The D1 upsert is atomic: of
+      // concurrent copies with the same client and jti, exactly one wins.
+      return claimReplayValue(
+        env.DB,
+        "client-assertion",
+        app.client_id,
+        payload.jti,
+        Math.ceil(payload.exp),
+        now,
+      );
     }
   }
   return false;

@@ -418,7 +418,7 @@ app.post("/intent", requireAuth, async (c) => {
 app.get("/:provider/begin", optionalAuth, async (c) => {
   const slug = c.req.param("provider") ?? "";
   const rl = await rateLimitIp(
-    c.env.KV_CACHE,
+    c.env.DB,
     getIp(c),
     "social-oauth-begin",
     20,

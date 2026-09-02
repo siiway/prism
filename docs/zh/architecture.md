@@ -55,12 +55,13 @@ worker/
 ├── types.ts                # D1 行类型、Variables；重导出 shared/types.ts
 │
 ├── db/migrations/
-│   └── 0001_init.sql … 0072_revoke_exposed_sessions.sql
+│   └── 0001_init.sql … 0073_atomic_security_state.sql
 │
 ├── lib/
 │   ├── bodyLimit.ts        # 受限读取与按字节计数的直通流
 │   ├── config.ts           # getConfig()、setConfigValues()、JWT 密钥、RSA 密钥对（KV）
 │   ├── secretCrypto.ts     # AES-GCM 信封 + keyed HMAC（SECRETS_KEY）
+│   ├── securityState.ts    # OAuth 一次性声明的原子消费 + 过期安全状态清理
 │   ├── crypto.ts           # randomId、PBKDF2 哈希
 │   ├── pow.ts              # 签名挑战签发/校验（HMAC + 过期 + 单次）
 │   ├── jwt.ts              # signJWT / verifyJWT（HS256），ID Token RS256
@@ -92,7 +93,7 @@ worker/
 │   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
 │   ├── bodyLimit.ts        # 全局 5 MiB 请求正文限制
 │   ├── captcha.ts          # verifyCaptchaToken() — 分发到对应 provider
-│   └── rateLimit.ts        # KV 滑动窗口限流（IPv6 感知）
+│   └── rateLimit.ts        # D1 滑动窗口限流（IPv6 感知、原子串行化）
 │
 ├── cron/
 │   ├── reverify.ts         # 域名重新核验
@@ -246,6 +247,15 @@ Transparent Control 审核日志。`audit_events` 是单一的追加型表，按
 
 三张相互独立的诊断表。`audit_log` 是高层「重要状态变化」记录。`request_logs` 是 Worker 每次请求的运维遥测（method、path、status、耗时、IP、UA、可选的用户/审计关联）。`login_errors` 记录失败认证尝试，保留时长由 `login_error_retention_days` 控制。
 
+### 原子安全状态（迁移 0073）
+
+限流命中记录以及 DPoP proof `jti` 和 `private_key_jwt` assertion `jti` 的重放
+声明存放在专用 D1 表中。限流器通过一条条件插入接纳命中，
+`lib/securityState.ts` 则通过条件 upsert 声明每个一次性值。D1 会串行化这两类
+写入决策，因此安全检查不依赖 KV 的最终一致性：针对同一桶的并发请求共用一个
+权威计数，而并发提交相同 proof 或 assertion 时只允许一个请求胜出。每次成功插入后
+都会执行有界清理，定时清理任务还会删除其余过期的命中记录与重放声明。
+
 ### `pow_used`
 
 单次使用的 PoW nonce。原子 `INSERT OR IGNORE` 防重放；过期行由 cron 清理。
@@ -316,11 +326,12 @@ PoW 是第三方验证码服务的替代方案。
 - OAuth 访问令牌默认是随机不透明字符串；应用可启用后量子的 **ML-DSA-65** 签名 JWT（RFC 9068 `at+JWT`）
 - TOTP 按 RFC 6238 使用 **HMAC-SHA1**，允许 ±1 步长窗口；备用码以 SHA-256 哈希存储
 - PKCE 使用 **S256**（向后兼容也接受 plain）
-- 限流使用基于 KV 的滑动窗口，IPv6 按 `ipv6_rate_limit_prefix`（默认 `/64`）聚合
+- 限流使用原子串行化的 D1 滑动窗口桶，IPv6 按 `ipv6_rate_limit_prefix`（默认 `/64`）聚合；授权关键计数器不使用 KV
 - 每次已认证请求都会向 D1 重新校验会话——删除会话行可立即让尚未过期的 JWT 失效
 - 浏览器会话 JWT 只存在于带 `Secure`、`HttpOnly` 属性的 `__Host-prism_session` Cookie 中；登录 JSON、重定向 URL、SSR hydration 状态、Zustand 与 Web Storage 均不会接触它
 - Prism 同一时间只保留一个浏览器账号；切换账号必须重新认证，而不是在 JavaScript 中保存后台账号的 bearer token
 - 迁移 `0072_revoke_exposed_sessions.sql` 会一次性撤销修复前的全部会话，使此前可能留在 URL、日志或 Web Storage 中的 JWT 无法继续使用
+- 迁移 `0073_atomic_security_state.sql` 将限流及 DPoP / `private_key_jwt` 一次性声明迁至原子 D1 状态；有界的插入时清理与定时清理任务会删除过期行
 - 所有 redirect URI 在签发 code 前都会与应用注册列表 + 域名归属验证状态进行匹配
 - 图片代理是关闭式的：仅服务已注册映射，杜绝 SSRF 中继
 - 所有用户可控的出站 URL 共用同一套 SSRF 防护：正确解析带方括号的 IPv6 和 IPv4

@@ -7,6 +7,7 @@
 // bearer value is useless without the key.
 
 import { bufToBase64url, base64urlToBuf } from "./crypto";
+import { claimReplayValue } from "./securityState";
 
 interface Jwk {
   kty: string;
@@ -163,7 +164,12 @@ export async function verifyDpopProof(
   const now = Math.floor(Date.now() / 1000);
   if (typeof payload.iat !== "number" || Math.abs(now - payload.iat) > 300)
     return { error: "invalid_dpop_proof" };
-  if (!payload.jti) return { error: "invalid_dpop_proof" };
+  if (
+    typeof payload.jti !== "string" ||
+    payload.jti.length === 0 ||
+    payload.jti.length > 512
+  )
+    return { error: "invalid_dpop_proof" };
 
   if (opts.accessToken) {
     const expected = await sha256Base64url(opts.accessToken);
@@ -173,10 +179,14 @@ export async function verifyDpopProof(
   const jkt = await jwkThumbprint(header.jwk);
   if (!jkt) return { error: "invalid_dpop_proof" };
 
-  // One-time jti (scoped to the key) for the proof's lifetime.
-  const jtiKey = `dpop:${jkt}:${payload.jti}`;
-  if (await env.KV_CACHE.get(jtiKey)) return { error: "invalid_dpop_proof" };
-  await env.KV_CACHE.put(jtiKey, "1", { expirationTtl: 300 });
+  // One-time jti (scoped to the key) for the proof's full validity window.
+  // The conditional D1 upsert is the consume decision, so concurrent copies
+  // cannot both pass even when they arrive at different Worker locations.
+  const expiresAt = Math.floor(payload.iat) + 301;
+  if (
+    !(await claimReplayValue(env.DB, "dpop", jkt, payload.jti, expiresAt, now))
+  )
+    return { error: "invalid_dpop_proof" };
 
   return { jkt };
 }

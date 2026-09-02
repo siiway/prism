@@ -207,6 +207,14 @@ current example — its board reads as empty and **Admin → Notices** returns a
 503 naming the command to run, rather than the missing table taking down every
 page that renders the board.
 
+Security-enforcement migrations are deliberately fail-closed rather than
+optional. In particular, `0073_atomic_security_state.sql` must be applied before
+deploying the code that uses it; without those tables, affected authentication
+and OAuth requests fail instead of falling back to non-atomic KV checks. The
+provided production and CI deployment scripts already enforce this order. If
+you use `bun deploy`, `--skip-migrations`, or a `deploy:*` non-production script,
+run the matching `db:migrate:*` command first.
+
 Either way the build emits a deploy-ready `dist/prism/wrangler.json` —
 production deploys must use that config so Vite's SSR pass is preserved (a
 plain `wrangler deploy` from the project root re-bundles the source and skips

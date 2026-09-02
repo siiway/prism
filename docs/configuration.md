@@ -343,10 +343,10 @@ configured cron interval.
 
 ## Diagnostics & rate limiting
 
-| Key                          | Type   | Default | Description                                                                                                |
-| ---------------------------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------- |
-| `login_error_retention_days` | number | `30`    | How long failed-login rows in the `login_errors` table are kept before the cron purges them                |
-| `ipv6_rate_limit_prefix`     | number | `64`    | Prefix length used to bucket IPv6 addresses in the rate limiter (so a `/64` doesn't get unlimited retries) |
+| Key                          | Type   | Default | Description                                                                                                          |
+| ---------------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------- |
+| `login_error_retention_days` | number | `30`    | How long failed-login rows in the `login_errors` table are kept before the cron purges them                          |
+| `ipv6_rate_limit_prefix`     | number | `64`    | Prefix length used to bucket IPv6 addresses in the D1-backed rate limiter (so a `/64` doesn't get unlimited retries) |
 
 ## Wrangler bindings & variables
 
@@ -366,13 +366,13 @@ These are configured in `wrangler.jsonc` and not editable from the admin panel.
 
 ### Bindings
 
-| Binding       | Kind                 | Required             | Notes                                                                                     |
-| ------------- | -------------------- | -------------------- | ----------------------------------------------------------------------------------------- |
-| `DB`          | D1 database          | Yes                  | All persistent state                                                                      |
-| `KV_SESSIONS` | KV namespace         | Yes                  | Session JWT secret, RSA keypair (for ID token signing), per-session metadata              |
-| `KV_CACHE`    | KV namespace         | Yes                  | Rate-limit counters, IMAP poll cursors, image-proxy cache                                 |
-| `ASSETS`      | Workers Assets       | Yes                  | Built SPA. `html_handling: "none"` so SSR can render `/` itself                           |
-| `SECRETS_KEY` | Secrets Store secret | Strongly recommended | 32-byte base64url AES-GCM master key. When bound, all sensitive D1 fields encrypt at rest |
+| Binding       | Kind                 | Required             | Notes                                                                                             |
+| ------------- | -------------------- | -------------------- | ------------------------------------------------------------------------------------------------- |
+| `DB`          | D1 database          | Yes                  | Persistent state, including atomically serialized rate-limit buckets and OAuth one-time claims    |
+| `KV_SESSIONS` | KV namespace         | Yes                  | Session JWT secret, RSA keypair (for ID token signing), per-session metadata                      |
+| `KV_CACHE`    | KV namespace         | Yes                  | Non-authoritative caches and short-lived state, including IMAP poll cursors and image-proxy cache |
+| `ASSETS`      | Workers Assets       | Yes                  | Built SPA. `html_handling: "none"` so SSR can render `/` itself                                   |
+| `SECRETS_KEY` | Secrets Store secret | Strongly recommended | 32-byte base64url AES-GCM master key. When bound, all sensitive D1 fields encrypt at rest         |
 
 ### `SECRETS_KEY` setup
 
@@ -402,11 +402,16 @@ plaintext path keeps working until you opt in.
 "triggers": { "crons": ["0 */6 * * *"] }
 ```
 
+Expired atomic security-state rows are also removed in bounded batches after
+successful inserts, so reclamation keeps pace even where cron is disabled. The
+scheduled sweep catches remaining rows after traffic stops.
+
 Every 6 hours the worker:
 
 - re-verifies domains whose `next_reverify_at` has passed,
 - polls the IMAP mailbox (when `email_receive_provider = imap`),
 - purges the `app_event_queue` and expired `pow_used` rows,
+- removes expired D1 rate-limit buckets and DPoP / `private_key_jwt` one-time claims,
 - sweeps orphaned `image_proxy_mappings` (mappings whose source row no longer exists).
 
 ### User / team deletion lockdown

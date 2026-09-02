@@ -179,7 +179,7 @@ app.post("/auth/register-with-invite", async (c) => {
   // Unexemptible defence #1: per-IP throttle, same budget as ordinary
   // registration.
   const rl = await rateLimitIp(
-    c.env.KV_SESSIONS,
+    c.env.DB,
     ip,
     "register",
     5,
@@ -251,7 +251,7 @@ app.post("/auth/register-with-invite", async (c) => {
     "team_invite_registration_rate_per_hour",
   );
   const inviteRl = await rateLimitIp(
-    c.env.KV_SESSIONS,
+    c.env.DB,
     invite.token,
     "invite-register",
     perHour,

@@ -1671,12 +1671,7 @@ app.post("/2fa/challenges", async (c) => {
   // Per-client throttle — a compromised public client (or a leaked secret)
   // shouldn't be able to mint unlimited challenges to spam users. 60/min is
   // far above any legitimate use.
-  const rl = await rateLimit(
-    c.env.KV_CACHE,
-    `2fa-challenges:${clientId}`,
-    60,
-    60,
-  );
+  const rl = await rateLimit(c.env.DB, `2fa-challenges:${clientId}`, 60, 60);
   if (!rl.allowed) {
     return c.json({ error: "rate_limited" }, 429);
   }
@@ -1975,7 +1970,7 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     }
   } else {
     // Normal path: rate-limit and verify TOTP / passkey.
-    const rl = await rateLimit(c.env.KV_CACHE, `2fa-stepup:${user.id}`, 8, 300);
+    const rl = await rateLimit(c.env.DB, `2fa-stepup:${user.id}`, 8, 300);
     if (!rl.allowed) {
       return c.json(
         {

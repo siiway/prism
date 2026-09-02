@@ -13,6 +13,7 @@ import { runReverification } from "./cron/reverify";
 import { runImapPoll } from "./cron/imap-poll";
 import { sweepExpiredSessions, sweepExpiredOAuthCodes } from "./cron/sessions";
 import { sweepExpiredPowUsed } from "./lib/pow";
+import { sweepExpiredSecurityState } from "./lib/securityState";
 import { purgeAppEventQueue } from "./lib/app-events";
 import { sweepOrphanedImageProxyMappings } from "./lib/proxyImage";
 import { handleEmailWorker } from "./handlers/email";
@@ -130,6 +131,7 @@ export default {
     ctx.waitUntil(runImapPoll(env, env.KV_CACHE));
     ctx.waitUntil(purgeAppEventQueue(env.DB).catch(() => {}));
     ctx.waitUntil(sweepExpiredPowUsed(env.DB).catch(() => {}));
+    ctx.waitUntil(sweepExpiredSecurityState(env.DB).catch(() => {}));
     ctx.waitUntil(sweepExpiredSessions(env.DB).catch(() => {}));
     ctx.waitUntil(sweepExpiredOAuthCodes(env.DB).catch(() => {}));
     ctx.waitUntil(sweepOrphanedImageProxyMappings(env.DB).catch(() => {}));

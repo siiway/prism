@@ -184,7 +184,7 @@ app.post("/register", async (c) => {
   const ip = getIp(c);
   const config = await getConfig(c.env.DB);
   const rl = await rateLimitIp(
-    c.env.KV_SESSIONS,
+    c.env.DB,
     ip,
     "register",
     5,
@@ -320,7 +320,7 @@ app.post("/login", async (c) => {
   const ua = c.req.header("User-Agent") ?? null;
   const loginConfig = await getConfig(c.env.DB);
   const rl = await rateLimitIp(
-    c.env.KV_SESSIONS,
+    c.env.DB,
     ip,
     "login",
     10,
@@ -394,7 +394,7 @@ app.post("/login", async (c) => {
   // account throttles exactly like a real one and the 429 reveals nothing
   // about who exists.
   const idRl = await rateLimit(
-    c.env.KV_SESSIONS,
+    c.env.DB,
     `login-id:${await sha256(identifier)}`,
     10,
     300,
@@ -1508,7 +1508,7 @@ app.post("/gpg-challenge", async (c) => {
   const { ipv6_rate_limit_prefix, gpg_challenge_prefix, site_name } =
     await getConfig(c.env.DB);
   const rl = await rateLimitIp(
-    c.env.KV_SESSIONS,
+    c.env.DB,
     ip,
     "gpg-challenge",
     30,
@@ -1558,7 +1558,7 @@ app.post("/gpg-login", async (c) => {
   const rlIp = getIp(c);
   const gpgLoginConfig = await getConfig(c.env.DB);
   const rl2 = await rateLimitIp(
-    c.env.KV_SESSIONS,
+    c.env.DB,
     rlIp,
     "gpg-login",
     10,

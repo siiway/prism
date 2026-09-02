@@ -82,6 +82,9 @@ class MemoryKv {
 const migration = await Bun.file(
   "worker/db/migrations/0071_social_oauth_states.sql",
 ).text();
+const atomicSecurityMigration = await Bun.file(
+  "worker/db/migrations/0073_atomic_security_state.sql",
+).text();
 const state = "s".repeat(32);
 const now = Math.floor(Date.now() / 1000);
 const jwtSecret = "test-jwt-secret";
@@ -137,6 +140,7 @@ async function createSessionToken(sessionId: string): Promise<string> {
 beforeEach(() => {
   sqlite = new Database(":memory:");
   sqlite.exec(migration);
+  sqlite.exec(atomicSecurityMigration);
   sqlite.exec(`
     CREATE TABLE oauth_sources (
       id TEXT PRIMARY KEY,

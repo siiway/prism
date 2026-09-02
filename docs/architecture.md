@@ -71,12 +71,13 @@ worker/
 ├── types.ts                # D1 row types, Variables; re-exports shared/types.ts
 │
 ├── db/migrations/
-│   └── 0001_init.sql … 0072_revoke_exposed_sessions.sql
+│   └── 0001_init.sql … 0073_atomic_security_state.sql
 │
 ├── lib/
 │   ├── bodyLimit.ts        # Bounded reads and byte-counted pass-through streams
 │   ├── config.ts           # getConfig(), setConfigValues(), JWT secret, RSA keypair (KV)
 │   ├── secretCrypto.ts     # AES-GCM envelope + keyed HMAC for D1 fields (SECRETS_KEY)
+│   ├── securityState.ts    # Atomic one-time OAuth claims + expired security-state cleanup
 │   ├── crypto.ts           # randomId, hashPassword/verifyPassword (PBKDF2)
 │   ├── pow.ts              # Signed challenge issue/verify (HMAC + expiry + single-use)
 │   ├── jwt.ts              # signJWT / verifyJWT (HS256), RS256 ID-token signing
@@ -108,7 +109,7 @@ worker/
 │   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
 │   ├── bodyLimit.ts        # Global 5 MiB request-body limit
 │   ├── captcha.ts          # verifyCaptchaToken() — dispatches to provider
-│   └── rateLimit.ts        # KV sliding-window rate limiter (IPv6-aware)
+│   └── rateLimit.ts        # D1 sliding-window rate limiter (IPv6-aware, atomically serialized)
 │
 ├── cron/
 │   ├── reverify.ts         # Domain re-verification sweep
@@ -381,6 +382,18 @@ state changed" log. `request_logs` is per-Worker-request operational telemetry
 `login_errors` records failed authentication attempts with retention controlled
 by `login_error_retention_days`.
 
+### Atomic security state (migration 0073)
+
+Rate-limit hits and replay claims for DPoP proof `jti` values and
+`private_key_jwt` assertion `jti` values live in dedicated D1 tables. The
+limiter admits a hit with one conditional insert, while `lib/securityState.ts`
+claims each one-time value with a conditional upsert. D1 serializes both write
+decisions, so KV's eventual consistency is not part of either security check:
+simultaneous requests using the same bucket share one authoritative count,
+while simultaneous identical proofs or assertions allow exactly one winner.
+Bounded cleanup runs after successful inserts and the scheduled sweep removes
+any remaining expired hits and replay claims.
+
 ### `pow_used`
 
 Single-use PoW nonces. Atomic `INSERT OR IGNORE` claim prevents replay; the
@@ -462,12 +475,14 @@ single binding addition and a migration click.
 - OAuth access tokens are opaque random strings by default; apps can opt into **ML-DSA-65** signed JWTs (RFC 9068 `at+JWT`)
 - TOTP uses **HMAC-SHA1** per RFC 6238, with a ±1 step window; backup codes are stored SHA-256 hashed
 - PKCE uses **S256** (plain is also accepted for backward compatibility)
-- Rate limiting uses a KV-backed sliding window with IPv6 prefix bucketing
-  (`ipv6_rate_limit_prefix`, default `/64`)
+- Rate limiting uses atomically serialized D1 sliding-window buckets with IPv6
+  prefix bucketing (`ipv6_rate_limit_prefix`, default `/64`); KV is not used for
+  authorization-critical counters
 - Sessions are revalidated against D1 on every authenticated request, so deleting the row immediately invalidates still-unexpired JWTs
 - Browser session JWTs exist only in the `Secure`, `HttpOnly`, `__Host-prism_session` cookie; login JSON, redirect URLs, SSR hydration state, Zustand, and Web Storage never receive them
 - Prism keeps one browser account active at a time; changing accounts requires reauthentication instead of retaining background-account bearer tokens in JavaScript
 - Migration `0072_revoke_exposed_sessions.sql` revokes all pre-fix sessions once so JWTs previously retained in URLs, logs, or Web Storage cannot be reused
+- Migration `0073_atomic_security_state.sql` moves rate limits and DPoP / `private_key_jwt` one-time claims to atomic D1 state; bounded insert-time and scheduled cleanup remove expired rows
 - All redirect URIs are checked against the app's registered list and the
   domain's verified-ownership state before issuing a code
 - Image proxy is closed: only registered URL → opaque-id mappings are served,

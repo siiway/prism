@@ -274,10 +274,10 @@ https://your-domain/api/connections/<slug>/callback
 
 ## 诊断与限流
 
-| 键                           | 类型   | 默认值 | 说明                                                                  |
-| ---------------------------- | ------ | ------ | --------------------------------------------------------------------- |
-| `login_error_retention_days` | number | `30`   | `login_errors` 表中失败登录记录的保留天数，超过后由 cron 清理         |
-| `ipv6_rate_limit_prefix`     | number | `64`   | 限流时按多少位前缀对 IPv6 地址聚合（避免一个 `/64` 拥有无限重试次数） |
+| 键                           | 类型   | 默认值 | 说明                                                                     |
+| ---------------------------- | ------ | ------ | ------------------------------------------------------------------------ |
+| `login_error_retention_days` | number | `30`   | `login_errors` 表中失败登录记录的保留天数，超过后由 cron 清理            |
+| `ipv6_rate_limit_prefix`     | number | `64`   | D1 限流时按多少位前缀对 IPv6 地址聚合（避免一个 `/64` 拥有无限重试次数） |
 
 ## Wrangler 绑定与变量
 
@@ -299,9 +299,9 @@ https://your-domain/api/connections/<slug>/callback
 
 | 绑定          | 类型                 | 必填     | 说明                                                                        |
 | ------------- | -------------------- | -------- | --------------------------------------------------------------------------- |
-| `DB`          | D1 数据库            | 是       | 所有持久化状态                                                              |
+| `DB`          | D1 数据库            | 是       | 持久化状态，包括原子串行化的限流桶与 OAuth 一次性声明                       |
 | `KV_SESSIONS` | KV namespace         | 是       | JWT 密钥、ID Token RSA 密钥对、按会话存储的元数据                           |
-| `KV_CACHE`    | KV namespace         | 是       | 限流计数器、IMAP 拉取游标、图片代理缓存                                     |
+| `KV_CACHE`    | KV namespace         | 是       | 非权威缓存与短期状态，包括 IMAP 拉取游标和图片代理缓存                      |
 | `ASSETS`      | Workers Assets       | 是       | 已构建的 SPA。`html_handling: "none"` 让 SSR 自行处理 `/`                   |
 | `SECRETS_KEY` | Secrets Store secret | 强烈推荐 | 32 字节 base64url 编码的 AES-GCM 主密钥。绑定后所有敏感字段在 D1 中加密存储 |
 
@@ -325,11 +325,15 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 "triggers": { "crons": ["0 */6 * * *"] }
 ```
 
+每次成功插入后也会分批删除过期的原子安全状态行，因此即使关闭 cron，回收速度仍能
+跟上写入；定时清理任务负责在流量停止后回收其余行。
+
 每 6 小时 worker 会：
 
 - 重新核验 `next_reverify_at` 已到期的域名；
 - 拉取 IMAP 邮箱（`email_receive_provider = imap` 时）；
 - 清理 `app_event_queue` 与 `pow_used` 中的过期记录；
+- 删除过期的 D1 限流桶以及 DPoP / `private_key_jwt` 一次性声明；
 - 回收 `image_proxy_mappings` 中已无源行的孤儿映射。
 
 ### 用户 / 团队删除锁定

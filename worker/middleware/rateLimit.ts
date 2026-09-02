@@ -1,4 +1,6 @@
-// KV-based sliding window rate limiter
+// D1-backed atomic sliding-window rate limiter
+
+import { randomId, sha256Hex } from "../lib/crypto";
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -48,37 +50,71 @@ export function normalizeIp(ip: string, ipv6PrefixLength = 64): string {
 }
 
 export async function rateLimit(
-  kv: KVNamespace,
+  db: D1Database,
   key: string,
   limit: number,
   windowSeconds: number,
 ): Promise<RateLimitResult> {
   const now = Math.floor(Date.now() / 1000);
-  const kvKey = `rl:${key}`;
+  const windowStart = now - windowSeconds;
+  const bucketHash = await sha256Hex(key);
 
-  const stored = await kv.get(kvKey);
-  let hits: number[] = stored ? (JSON.parse(stored) as number[]) : [];
+  // Enforcement depends only on this conditional write. D1 serializes write
+  // statements on its primary, so concurrent requests cannot all observe the
+  // same count and race past the limit. Each admitted request gets its own row
+  // to preserve exact sliding-window semantics.
+  const claim = await db
+    .prepare(
+      `INSERT INTO rate_limit_hits (id, bucket_hash, created_at, expires_at)
+       SELECT ?, ?, ?, ?
+        WHERE ? > 0
+          AND ? > 0
+          AND (
+            SELECT COUNT(*) FROM rate_limit_hits
+             WHERE bucket_hash = ? AND created_at > ?
+          ) < ?`,
+    )
+    .bind(
+      randomId(),
+      bucketHash,
+      now,
+      now + windowSeconds,
+      limit,
+      windowSeconds,
+      bucketHash,
+      windowStart,
+      limit,
+    )
+    .run();
+  const allowed = (claim.meta?.changes ?? 0) === 1;
 
-  // Remove timestamps outside the window
-  hits = hits.filter((t) => t > now - windowSeconds);
+  // These values are advisory response metadata. A concurrent request may
+  // make `remaining` more conservative after our atomic admission decision,
+  // which is safe; it cannot change whether this request was admitted.
+  const stats = await db
+    .prepare(
+      `SELECT COUNT(*) AS hit_count, MIN(created_at) AS oldest
+         FROM rate_limit_hits
+        WHERE bucket_hash = ? AND created_at > ?`,
+    )
+    .bind(bucketHash, windowStart)
+    .first<{ hit_count: number; oldest: number | null }>();
+  const hitCount = Number(stats?.hit_count ?? 0);
+  const oldest =
+    stats?.oldest === null || stats?.oldest === undefined
+      ? now
+      : Number(stats.oldest);
 
-  const remaining = Math.max(0, limit - hits.length);
-  const oldest = hits[0] ?? now;
-  const resetIn = Math.max(0, oldest + windowSeconds - now);
-
-  if (hits.length >= limit) {
-    return { allowed: false, remaining: 0, resetIn };
-  }
-
-  hits.push(now);
-  await kv.put(kvKey, JSON.stringify(hits), { expirationTtl: windowSeconds });
-
-  return { allowed: true, remaining: remaining - 1, resetIn };
+  return {
+    allowed,
+    remaining: Math.max(0, limit - hitCount),
+    resetIn: hitCount === 0 ? 0 : Math.max(0, oldest + windowSeconds - now),
+  };
 }
 
 // Convenience: rate limit by IP address (normalises IPv6 to prefix bucket)
 export async function rateLimitIp(
-  kv: KVNamespace,
+  db: D1Database,
   ip: string,
   route: string,
   limit = 10,
@@ -86,5 +122,5 @@ export async function rateLimitIp(
   ipv6PrefixLength = 64,
 ): Promise<RateLimitResult> {
   const key = normalizeIp(ip, ipv6PrefixLength);
-  return rateLimit(kv, `${route}:${key}`, limit, windowSeconds);
+  return rateLimit(db, `${route}:${key}`, limit, windowSeconds);
 }

@@ -477,7 +477,10 @@ client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
 
 The assertion is a JWT with `iss` = `sub` = your `client_id`, `aud` = the issuer
 or token endpoint URL, a short `exp`, and a unique `jti` (one-time use).
-Supported signing algorithms: RS256, ES256, EdDSA.
+Supported signing algorithms: RS256, ES256, EdDSA. The `jti` is claimed
+atomically in D1: if identical assertions arrive concurrently, exactly one
+request wins and every other request is rejected as a replay. Expired claims
+are removed by bounded insert-time and scheduled cleanup.
 
 ## DPoP — sender-constrained tokens (RFC 9449)
 
@@ -505,7 +508,10 @@ DPoP: <proof-jwt>   # htm=GET, htu=<resource url>, ath=base64url(sha256(token))
 
 A DPoP-bound token presented as plain `Bearer`, or without a matching proof, is
 rejected. Refresh requests must repeat the proof from the same key. Supported
-proof algorithms: RS256, ES256, EdDSA.
+proof algorithms: RS256, ES256, EdDSA. Each proof `jti` is claimed atomically in
+D1: if identical proofs arrive concurrently, exactly one request wins and every
+other request is rejected as a replay. Expired claims are removed by bounded
+insert-time and scheduled cleanup.
 
 ## Token Exchange (RFC 8693)
 

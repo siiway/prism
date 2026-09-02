@@ -423,6 +423,8 @@ client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
 
 该断言是一个 JWT，其 `iss` = `sub` = 你的 `client_id`，`aud` = issuer 或令牌端点
 URL，`exp` 较短，`jti` 唯一（一次性使用）。支持的签名算法：RS256、ES256、EdDSA。
+`jti` 会在 D1 中原子声明：并发到达的相同 assertion 只允许一个请求胜出，其余请求
+均作为重放被拒绝。过期声明由有界的插入时清理与定时清理任务删除。
 
 ## DPoP — 发送方约束的令牌（RFC 9449）
 
@@ -447,7 +449,9 @@ DPoP: <proof-jwt>   # htm=GET, htu=<资源 url>, ath=base64url(sha256(token))
 ```
 
 以普通 `Bearer` 出示 DPoP 绑定令牌、或缺少匹配证明，都会被拒绝。刷新请求必须重复来自
-同一密钥的证明。支持的证明算法：RS256、ES256、EdDSA。
+同一密钥的证明。支持的证明算法：RS256、ES256、EdDSA。每个 proof 的 `jti` 都会在 D1
+中原子声明：并发到达的相同 proof 只允许一个请求胜出，其余请求均作为重放被拒绝。
+过期声明由有界的插入时清理与定时清理任务删除。
 
 ## 令牌交换（RFC 8693）
 
