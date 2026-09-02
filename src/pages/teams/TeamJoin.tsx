@@ -15,7 +15,8 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import { ApiError } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { EmptyState } from "../../components/EmptyState";
 import { useAuthStore } from "../../store/auth";
 
@@ -30,6 +31,7 @@ const ROLE_COLORS: Record<
 };
 
 export function TeamJoin() {
+  const api = useApi();
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const { user } = useAuthStore();

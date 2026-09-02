@@ -54,13 +54,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
-  api,
   ApiError,
   type Domain,
   type OAuthApp,
   type TeamInvite,
   type TeamMember,
 } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { EmptyState } from "../../components/EmptyState";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
@@ -174,6 +174,7 @@ type TabType =
   | "settings";
 
 export function TeamDetail() {
+  const api = useApi();
   const styles = useStyles();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();

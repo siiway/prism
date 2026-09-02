@@ -23,7 +23,8 @@ import {
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type RestrictedCapability } from "../lib/api";
+import { ApiError, type RestrictedCapability } from "../lib/api";
+import { useApi } from "../lib/api-context";
 
 const useStyles = makeStyles({
   card: {
@@ -53,6 +54,7 @@ const CAPABILITY_LABELS: Record<RestrictedCapability, string> = {
 };
 
 export function AccountRestrictionPanel() {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();

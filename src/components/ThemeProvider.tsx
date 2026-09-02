@@ -10,12 +10,14 @@ import {
 import type { BrandVariants } from "@fluentui/react-components";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { useThemeStore } from "../store/theme";
 import { patchTheme } from "../theme";
 
 interface ThemeProviderProps {
   children: ReactNode;
+  /** Scheme resolved for this SSR request; null/undefined uses browser hints. */
+  initialColorScheme?: "dark" | "light" | null;
 }
 
 function hexToHsl(hex: string): [number, number, number] {
@@ -89,7 +91,11 @@ function buildBrandVariants(accentHex: string): BrandVariants {
   return variants as BrandVariants;
 }
 
-export function ThemeProvider({ children }: ThemeProviderProps) {
+export function ThemeProvider({
+  children,
+  initialColorScheme,
+}: ThemeProviderProps) {
+  const api = useApi();
   const { data: siteConfig } = useQuery({
     queryKey: ["site"],
     queryFn: api.site,
@@ -98,21 +104,12 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const styleRef = useRef<HTMLStyleElement | null>(null);
   const mode = useThemeStore((s) => s.mode);
 
-  // Seed from the same source the server used so the SSR'd FluentProvider
-  // classnames match the client's first paint (no light→dark flash).
-  //   • Server: globalThis.__SSR_COLOR_SCHEME__ (set by entry-server from
-  //     the cookie / Sec-CH-Prefers-Color-Scheme header).
-  //   • Client: window.__INITIAL__.colorScheme — what the server actually
-  //     rendered with. Falls back to the cookie or matchMedia if absent
-  //     (e.g. when SSR is disabled).
+  // Seed from the same request-local value the server used so the SSR'd
+  // FluentProvider classnames match the client's first paint. The browser
+  // falls back to the serialized payload, cookie, or matchMedia when absent.
   const [prefersDark, setPrefersDark] = useState(() => {
-    if (typeof window === "undefined") {
-      return (
-        (globalThis as { __SSR_COLOR_SCHEME__?: "dark" | "light" })
-          .__SSR_COLOR_SCHEME__ === "dark"
-      );
-    }
-    const ssr = window.__INITIAL__?.colorScheme;
+    if (typeof window === "undefined") return initialColorScheme === "dark";
+    const ssr = initialColorScheme ?? window.__INITIAL__?.colorScheme;
     if (ssr === "dark" || ssr === "light") return ssr === "dark";
     const cookieMatch = document.cookie.match(
       /(?:^|; )prism_color_scheme=(dark|light)/,

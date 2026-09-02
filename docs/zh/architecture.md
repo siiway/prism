@@ -42,6 +42,8 @@ flowchart LR
 
 Worker 在渲染前会读取 session cookie，若已登录则预拉用户信息，再连同 locale 与预取数据一并交给 React 渲染 — 已登录用户不会再看到「未登录闪烁」。
 
+每次渲染都会创建独立的 API 客户端、认证 store、查询缓存、i18n 实例与主题输入。请求绑定的 API 传输层只接受同源 `/api/*` URL，确认后才转发 session cookie。请求数据不会写入进程级全局变量或共享 Zustand store，因此同一 Worker isolate 中的并发请求无法交换身份或已获取的数据。
+
 [Cloudflare Vite 插件](https://developers.cloudflare.com/workers/vite-plugin/) 在 `bun dev` 时把 Worker 与 Vite 进程内部一起跑，无需另起 `wrangler dev`，且 `entry-server.tsx` 享有热更新。
 
 ## Worker 结构

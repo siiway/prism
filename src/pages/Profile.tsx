@@ -31,7 +31,8 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { useToastMessage } from "../lib/useToastMessage";
 import { useAuthStore } from "../store/auth";
 import { ImageUrlInput } from "../components/ImageUrlInput";
@@ -83,6 +84,7 @@ const useStyles = makeStyles({
 });
 
 export function Profile() {
+  const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const qc = useQueryClient();

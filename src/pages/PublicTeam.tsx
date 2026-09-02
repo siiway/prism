@@ -22,7 +22,8 @@ import {
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 
 const useStyles = makeStyles({
   page: {
@@ -141,6 +142,7 @@ const useStyles = makeStyles({
 });
 
 export function PublicTeam() {
+  const api = useApi();
   const styles = useStyles();
   const { id = "" } = useParams<{ id: string }>();
   const { t, i18n } = useTranslation();

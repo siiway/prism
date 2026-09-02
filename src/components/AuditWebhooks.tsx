@@ -36,12 +36,12 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
-  api,
   ApiError,
   type AuditWebhook,
   type AuditWebhookInput,
   type AuditWebhookKind,
 } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { useToastMessage } from "../lib/useToastMessage";
 import {
   AUDIT_EVENT_CATALOG,
@@ -215,6 +215,7 @@ export function AuditWebhooks({
   base: string;
   onBack: () => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();

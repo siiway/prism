@@ -20,7 +20,7 @@ import {
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { parseClient } from "../../lib/auditFormat";
 import { formatIpGeo } from "../../lib/geo";
 import { Pagination } from "../../components/Pagination";
@@ -66,6 +66,7 @@ function errorBadgeColor(
 }
 
 export function AdminLoginErrors() {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);

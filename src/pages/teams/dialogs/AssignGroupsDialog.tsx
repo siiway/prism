@@ -20,7 +20,8 @@ import {
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type TeamMember } from "../../../lib/api";
+import { ApiError, type TeamMember } from "../../../lib/api";
+import { useApi } from "../../../lib/api-context";
 
 interface AssignGroupsDialogProps {
   teamId: string;
@@ -35,6 +36,7 @@ export function AssignGroupsDialog({
   onClose,
   showMsg,
 }: AssignGroupsDialogProps) {
+  const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
 

@@ -18,7 +18,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../../lib/api";
+import { ApiError } from "../../../lib/api";
+import { useApi } from "../../../lib/api-context";
 import { ImageUrlInput } from "../../../components/ImageUrlInput";
 
 const useStyles = makeStyles({
@@ -40,6 +41,7 @@ export function CreateSubTeamDialog({
   parentTeamId,
   showMsg,
 }: CreateSubTeamDialogProps) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();

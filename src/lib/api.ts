@@ -21,7 +21,7 @@ export type {
 };
 
 import { useEffect, useState } from "react";
-import { useAuthStore } from "../store/auth";
+import { authStore } from "../store/auth";
 import { isNormalView } from "../store/adminView";
 
 // API client — all requests go through here
@@ -63,11 +63,12 @@ export async function proxyImageUrl(
   if (cached) return cached;
   const pending = (async () => {
     try {
-      const { id } = await request<{ id: string }>(
+      const { id } = await performRequest<{ id: string }>(
+        {},
         "POST",
         "/proxy/image/register",
         { url: trimmed },
-        getToken(),
+        getStoredToken(),
       );
       return `${BASE}/proxy/image/${id}`;
     } catch {
@@ -146,7 +147,24 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
+export type ApiFetcher = (
+  input: string,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export interface ApiClientOptions {
+  /** Request-local transport. Required by SSR because Worker fetch rejects relative URLs. */
+  fetcher?: ApiFetcher;
+  /** Returns the active credential for methods that send a Bearer token. */
+  getToken?: () => string | undefined;
+  /** Browser-only view override; SSR must explicitly keep this false. */
+  isNormalView?: () => boolean;
+  /** Browser-only callback for an invalid Prism session. */
+  onInvalidSession?: () => void;
+}
+
+async function performRequest<T>(
+  options: ApiClientOptions,
   method: string,
   path: string,
   body?: unknown,
@@ -165,18 +183,12 @@ async function request<T>(
   // their site-admin override and treat team requests as their own membership.
   // The flag is session-only and defaults off (see store/adminView), so this
   // header is absent for everyone else and on a fresh SSR pass.
-  if (isNormalView()) headers["X-Prism-Team-View"] = "member";
+  if (options.isNormalView?.()) headers["X-Prism-Team-View"] = "member";
 
-  // During SSR (Cloudflare Workers), `fetch` requires absolute URLs. The
-  // worker installs an in-process dispatcher on globalThis.__SSR_FETCH__
-  // so route loaders can call `/api/...` and have it dispatched through
-  // the same Hono app, carrying the request's cookie for auth.
-  const ssrFetch =
-    typeof window === "undefined"
-      ? ((globalThis as { __SSR_FETCH__?: typeof fetch }).__SSR_FETCH__ as
-          typeof fetch | undefined)
-      : undefined;
-  const doFetch = ssrFetch ?? fetch;
+  // The browser client uses global fetch. SSR injects a request-bound
+  // in-process dispatcher instead; never publish that dispatcher globally,
+  // because Worker isolates may interleave multiple renders.
+  const doFetch = options.fetcher ?? fetch;
 
   const res = await doFetch(`${BASE}${path}`, {
     method,
@@ -215,9 +227,7 @@ async function request<T>(
       // the switcher holds are kept: removeAccount clears the active pointer
       // without promoting one, so the route guard sends the user to the login
       // page's "Continue as" chooser to pick which account to resume.
-      const s = useAuthStore.getState();
-      if (s.user) s.removeAccount(s.user.id);
-      else s.clearAuth();
+      options.onInvalidSession?.();
     }
 
     throw new ApiError(res.status, message, data);
@@ -226,12 +236,19 @@ async function request<T>(
   return data as T;
 }
 
-function getToken(): string | undefined {
+function getStoredToken(): string | undefined {
   if (typeof localStorage === "undefined") return undefined;
   return localStorage.getItem("token") ?? undefined;
 }
 
-export const api = {
+type ApiRequest = <T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  token?: string,
+) => Promise<T>;
+
+const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   // ─── Init ────────────────────────────────────────────────────────────────
   initStatus: () => request<{ initialized: boolean }>("GET", "/init/status"),
   init: (body: {
@@ -1223,7 +1240,10 @@ export const api = {
     ),
   adminSetInviteRegistration: (
     teamId: string,
-    body: { granted?: boolean; exemptions?: { email_verification?: boolean } },
+    body: {
+      granted?: boolean;
+      exemptions?: { email_verification?: boolean };
+    },
   ) =>
     request<{
       invite_registration_granted: boolean;
@@ -1639,7 +1659,12 @@ export const api = {
     ),
   listTeamMembers: (
     teamId: string,
-    params: { page?: number; limit?: number; q?: string; group?: string } = {},
+    params: {
+      page?: number;
+      limit?: number;
+      q?: string;
+      group?: string;
+    } = {},
   ) => {
     const search = new URLSearchParams();
     if (params.page) search.set("page", String(params.page));
@@ -2616,7 +2641,33 @@ export const api = {
       undefined,
       getToken(),
     ),
-};
+});
+
+/**
+ * Build an API client whose transport and credential access belong to one
+ * runtime. The browser exports one long-lived client below; every SSR render
+ * creates its own instance so concurrent requests can never exchange cookies,
+ * tokens, or response data.
+ */
+export function createApiClient(options: ApiClientOptions = {}) {
+  const request: ApiRequest = (method, path, body, token) =>
+    performRequest(options, method, path, body, token);
+  const getToken = options.getToken ?? (() => undefined);
+  return buildApi(request, getToken);
+}
+
+export type ApiClient = ReturnType<typeof createApiClient>;
+
+/** Browser API client. SSR must use createApiClient with request-local options. */
+export const api = createApiClient({
+  getToken: getStoredToken,
+  isNormalView,
+  onInvalidSession: () => {
+    const state = authStore.getState();
+    if (state.user) state.removeAccount(state.user.id);
+    else state.clearAuth();
+  },
+});
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

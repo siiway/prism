@@ -16,7 +16,8 @@ import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../../lib/api";
+import { ApiError } from "../../../lib/api";
+import { useApi } from "../../../lib/api-context";
 
 interface AddMemberDialogProps {
   teamId: string;
@@ -24,6 +25,7 @@ interface AddMemberDialogProps {
 }
 
 export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
+  const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);

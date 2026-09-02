@@ -28,7 +28,8 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { renderMarkdown } from "../lib/markdown";
 import { CopyIdButton } from "../components/CopyIdButton";
 
@@ -159,6 +160,7 @@ const useStyles = makeStyles({
 });
 
 export function PublicProfile() {
+  const api = useApi();
   const styles = useStyles();
   const { username = "" } = useParams<{ username: string }>();
   const { t, i18n } = useTranslation();

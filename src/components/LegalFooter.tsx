@@ -15,7 +15,7 @@ import { makeStyles, tokens } from "@fluentui/react-components";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { useApi } from "../lib/api-context";
 
 const useStyles = makeStyles({
   footer: {
@@ -38,6 +38,7 @@ const useStyles = makeStyles({
 });
 
 export function LegalFooter() {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const { data: site } = useQuery({

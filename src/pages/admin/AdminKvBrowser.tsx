@@ -45,7 +45,8 @@ import {
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import { ApiError } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import type { KvEntry } from "../../lib/api";
 import { formatDateTime } from "../../lib/datetime";
 
@@ -78,6 +79,7 @@ export function AdminKvBrowser({
 }: {
   showMsg: (type: "success" | "error", text: string) => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();

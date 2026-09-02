@@ -52,7 +52,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { useAuthStore, type Account } from "../store/auth";
 import { useThemeStore, type ThemeMode } from "../store/theme";
 import { NoticeBoard } from "./NoticeBoard";
@@ -246,6 +246,7 @@ function NavItem({ to, icon, label, end, onNavigate }: NavItemProps) {
 }
 
 export function Layout() {
+  const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const location = useLocation();

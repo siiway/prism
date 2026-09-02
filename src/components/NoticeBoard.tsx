@@ -24,7 +24,8 @@ import { DismissRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, type Notice, type NoticeLevel } from "../lib/api";
+import { type Notice, type NoticeLevel } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { renderMarkdown } from "../lib/markdown";
 
 const useStyles = makeStyles({
@@ -80,6 +81,7 @@ function NoticeBody({ markdown }: { markdown: string }) {
 }
 
 export function NoticeBoard() {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();

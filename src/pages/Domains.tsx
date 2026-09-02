@@ -16,7 +16,8 @@ import {
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import type { Domain, DomainAddResponse, VerificationMethod } from "../lib/api";
 import { DomainDetailDialog } from "./domains/dialogs/DomainDetailDialog";
 import { DomainTeamSelectDialog } from "./domains/dialogs/DomainTeamSelectDialog";
@@ -28,6 +29,7 @@ import { Pagination } from "../components/Pagination";
 import { useToastMessage } from "../lib/useToastMessage";
 
 export function Domains() {
+  const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [query, setQuery] = useState("");

@@ -15,7 +15,8 @@ import {
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type Domain } from "../../../lib/api";
+import { ApiError, type Domain } from "../../../lib/api";
+import { useApi } from "../../../lib/api-context";
 
 interface TransferFromPersonalDialogProps {
   teamId: string;
@@ -32,6 +33,7 @@ export function TransferFromPersonalDialog({
   onClose,
   showMsg,
 }: TransferFromPersonalDialogProps) {
+  const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [selectedDomainId, setSelectedDomainId] = useState("");

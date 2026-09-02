@@ -121,24 +121,25 @@ export async function ssrHandler(
     );
   }
 
-  // In-process fetcher passed into the SSR pass so route loaders' api.X()
-  // calls (which target relative `/api/...` URLs) dispatch through the
-  // same Hono app instead of a network round trip. We forward the original
-  // request's cookie header so the auth middleware sees prism_session.
+  // Request-local in-process fetcher passed into the SSR API client. Relative
+  // `/api/...` calls dispatch through the same Hono app instead of a network
+  // round trip. Only same-origin API URLs are accepted before forwarding the
+  // original cookie, so this transport cannot leak credentials off-origin.
   const origin = new URL(c.req.url).origin;
   const cookieHeader = c.req.header("Cookie") ?? "";
   const fetcher = async (
     input: string,
     init?: RequestInit,
   ): Promise<Response> => {
-    const url = /^https?:/i.test(input)
-      ? input
-      : new URL(input, origin).toString();
+    const url = new URL(input, origin);
+    if (url.origin !== origin || !url.pathname.startsWith("/api/")) {
+      throw new Error("SSR fetcher only accepts same-origin API URLs");
+    }
     const headers = new Headers(init?.headers ?? {});
     if (cookieHeader && !headers.has("Cookie"))
       headers.set("Cookie", cookieHeader);
     return appFetch(
-      new Request(url, { ...init, headers }),
+      new Request(url.toString(), { ...init, headers }),
       c.env,
       c.executionCtx,
     );

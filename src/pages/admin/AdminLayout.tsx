@@ -4,7 +4,7 @@ import { Tab, TabList, makeStyles } from "@fluentui/react-components";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { PageHeader } from "../../components/PageHeader";
 
 const useStyles = makeStyles({
@@ -27,6 +27,7 @@ const useStyles = makeStyles({
 });
 
 export function AdminLayout() {
+  const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const { pathname } = useLocation();

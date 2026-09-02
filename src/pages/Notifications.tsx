@@ -29,7 +29,8 @@ import {
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { PageHeader } from "../components/PageHeader";
 import type {
   NotificationRules,
@@ -1408,6 +1409,7 @@ function RuleChannelRow(props: {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function Notifications() {
+  const api = useApi();
   const { t } = useTranslation();
   const styles = useStyles();
   const qc = useQueryClient();

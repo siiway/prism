@@ -29,14 +29,15 @@ import { I18nextProvider } from "react-i18next";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { createRoutes } from "./routes";
 import { createServerI18n } from "./i18n/init";
-import { useAuthStore } from "./store/auth";
-import type { UserProfile } from "./lib/api";
+import { AuthStoreProvider, createAuthStore } from "./store/auth";
+import { createApiClient, type UserProfile } from "./lib/api";
+import { ApiProvider } from "./lib/ApiProvider";
 
 export interface RenderOptions {
   /** The prebuilt index.html template. */
   template: string;
   /** Initial auth state for the client to hydrate from, if known. */
-  auth?: { token: string | null; user: unknown | null };
+  auth?: { token: string | null; user: UserProfile | null };
   /** Server-detected locale. */
   locale?: string;
   /**
@@ -62,11 +63,6 @@ export interface RenderOptions {
    * client doesn't flash light → dark after hydration.
    */
   colorScheme?: "dark" | "light";
-}
-
-interface SsrGlobals {
-  __SSR_FETCH__?: (input: string, init?: RequestInit) => Promise<Response>;
-  __SSR_COLOR_SCHEME__?: "dark" | "light";
 }
 
 export interface RenderResult {
@@ -99,14 +95,6 @@ export async function render(
   for (const { queryKey, data } of opts.prefetched ?? []) {
     queryClient.setQueryData(queryKey, data);
   }
-
-  // Install the in-process fetcher on globalThis so the api client picks
-  // it up during this render. Cleared in the finally below; the static
-  // handler runs loaders synchronously within this turn so no concurrent
-  // request can observe the global between set and clear.
-  const ssrGlobals = globalThis as unknown as SsrGlobals;
-  if (opts.fetcher) ssrGlobals.__SSR_FETCH__ = opts.fetcher;
-  if (opts.colorScheme) ssrGlobals.__SSR_COLOR_SCHEME__ = opts.colorScheme;
 
   // ─── useQuery auto-prefetch ───────────────────────────────────────────
   // React Query only fires queryFn from QueryObserver.onSubscribe (i.e.
@@ -150,32 +138,25 @@ export async function render(
     return out;
   }) as typeof queryClient.defaultQueryOptions;
 
-  // Build a per-request route tree whose loaders close over this request's
-  // QueryClient and auth payload. No global state — concurrent requests on
-  // the same isolate get isolated routers.
-  const routes = createRoutes({
-    qc: queryClient,
-    auth:
-      (opts.auth as
-        | { token: string | null; user: UserProfile | null }
-        | undefined) ?? null,
-    isClient: false,
+  // Every mutable dependency below belongs to this render. Cloudflare may
+  // interleave requests at any await, so none of these values may live in a
+  // module singleton or on globalThis.
+  const auth = opts.auth ?? { token: null, user: null };
+  const origin = new URL(request.url).origin;
+  const authStore = createAuthStore({ initialAuth: auth, storage: null });
+  const apiClient = createApiClient({
+    fetcher: opts.fetcher,
+    getToken: () => auth.token ?? undefined,
+    isNormalView: () => false,
   });
+
+  const routes = createRoutes({ qc: queryClient, api: apiClient, authStore });
   const handler = createStaticHandler(routes);
-  let context;
-  try {
-    context = await handler.query(request);
-  } catch (err) {
-    ssrGlobals.__SSR_FETCH__ = undefined;
-    ssrGlobals.__SSR_COLOR_SCHEME__ = undefined;
-    throw err;
-  }
+  const context = await handler.query(request);
 
   // Loaders throwing redirect() bubble out as a Response; pass through as a
   // real 30x so the browser navigates without rendering an empty shell.
   if (context instanceof Response) {
-    ssrGlobals.__SSR_FETCH__ = undefined;
-    ssrGlobals.__SSR_COLOR_SCHEME__ = undefined;
     const location = context.headers.get("Location") ?? "/";
     return {
       status: context.status,
@@ -195,65 +176,45 @@ export async function render(
     (m) => m.route.id === "not-found",
   );
 
-  // Seed the global Zustand auth store from the cookie-derived auth payload
-  // so RequireAuth and RequireAdmin guards see the right state during SSR.
-  // The store is a module-level singleton, so we MUST reset it after the
-  // synchronous renderToString call to keep concurrent requests isolated.
-  // (renderToString runs to completion within a single JS turn, so no other
-  // request can observe the store between setState and reset.)
-  if (opts.auth?.token && opts.auth.user) {
-    useAuthStore.setState({
-      token: opts.auth.token,
-      user: opts.auth.user as UserProfile,
-      isLoading: false,
-    });
-  }
-
   const renderOnce = () =>
     renderToString(
       <RendererProvider renderer={renderer}>
         <I18nextProvider i18n={i18n}>
           <QueryClientProvider client={queryClient}>
-            <ThemeProvider>
-              <StaticRouterProvider router={router} context={context} />
-            </ThemeProvider>
+            <ApiProvider client={apiClient} origin={origin}>
+              <AuthStoreProvider store={authStore}>
+                <ThemeProvider initialColorScheme={opts.colorScheme}>
+                  <StaticRouterProvider router={router} context={context} />
+                </ThemeProvider>
+              </AuthStoreProvider>
+            </ApiProvider>
           </QueryClientProvider>
         </I18nextProvider>
       </RendererProvider>,
     );
 
-  let appHtml: string;
-  try {
-    // First render registers queries that the initial tree calls. Then
-    // drain + re-render until no new queries appear, or we hit the cap.
-    // Cap protects against pathological cases where a fetch failure leaves
-    // a child component in a state that fires yet another query each pass.
-    const MAX_ITERATIONS = 5;
+  // First render registers queries that the initial tree calls. Then drain +
+  // re-render until no new queries appear, or we hit the cap. Every collected
+  // query closes over the request-local API client supplied by ApiProvider.
+  const MAX_ITERATIONS = 5;
+  let appHtml = renderOnce();
+  for (let i = 0; i < MAX_ITERATIONS; i++) {
+    if (collected.length === 0) break;
+    const batch = collected;
+    collected = [];
+    await Promise.all(
+      batch.map(({ queryKey, queryFn }) =>
+        queryClient
+          .prefetchQuery({
+            queryKey: queryKey as readonly unknown[] & { length: 1 },
+            queryFn: queryFn as () => Promise<unknown>,
+          })
+          .catch(() => {
+            /* fall back to client-side fetch */
+          }),
+      ),
+    );
     appHtml = renderOnce();
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
-      if (collected.length === 0) break;
-      const batch = collected;
-      collected = [];
-      await Promise.all(
-        batch.map(({ queryKey, queryFn }) =>
-          queryClient
-            .prefetchQuery({
-              queryKey: queryKey as readonly unknown[] & { length: 1 },
-              queryFn: queryFn as () => Promise<unknown>,
-            })
-            .catch(() => {
-              /* fall back to client-side fetch */
-            }),
-        ),
-      );
-      appHtml = renderOnce();
-    }
-  } finally {
-    // Always clear, even on render error — otherwise the next request in the
-    // same isolate inherits this user's session or fetcher.
-    useAuthStore.setState({ token: null, user: null, isLoading: false });
-    ssrGlobals.__SSR_FETCH__ = undefined;
-    ssrGlobals.__SSR_COLOR_SCHEME__ = undefined;
   }
 
   // Griffel emits an array of <style> elements; we serialise them to a

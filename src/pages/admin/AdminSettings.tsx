@@ -28,7 +28,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import { ApiError } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { useAuthStore } from "../../store/auth";
 import type { SiteConfig } from "../../types";
@@ -95,6 +96,7 @@ const TURNSTILE_ENDPOINT_MODES: SiteConfig["turnstile_endpoint_mode"][] = [
 ];
 
 export function AdminSettings() {
+  const api = useApi();
   const styles = useStyles();
   const qc = useQueryClient();
   const navigate = useNavigate();

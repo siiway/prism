@@ -45,12 +45,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
-  api,
   ApiError,
   type AppScopeDefinition,
   type AppScopeAccessRule,
   type RedirectUri,
 } from "../../lib/api";
+import { useApi, useAppOrigin } from "../../lib/api-context";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { RedirectUriEditor } from "../../components/RedirectUriEditor";
@@ -455,6 +455,7 @@ function ScopeDefinitionsPanel({
   appId: string;
   clientId: string;
 }) {
+  const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [newScope, setNewScope] = useState("");
@@ -892,6 +893,7 @@ const RULE_TYPE_LABELS: Record<string, string> = {
 };
 
 function ScopeAccessRulesPanel({ appId }: { appId: string }) {
+  const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [ruleType, setRuleType] =
@@ -1058,6 +1060,8 @@ function ScopeAccessRulesPanel({ appId }: { appId: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function AppDetail() {
+  const api = useApi();
+  const appOrigin = useAppOrigin();
   const styles = useStyles();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -1469,9 +1473,7 @@ export function AppDetail() {
                 }
               >
                 <Option value="">{t("apps.authMethodDefault")}</Option>
-                <Option value="client_secret_basic">
-                  client_secret_basic
-                </Option>
+                <Option value="client_secret_basic">client_secret_basic</Option>
                 <Option value="client_secret_post">client_secret_post</Option>
                 <Option value="private_key_jwt">private_key_jwt</Option>
                 <Option value="none">none</Option>
@@ -1667,7 +1669,7 @@ export function AppDetail() {
                   {label}
                 </Text>
                 <Text size={200} style={{ fontFamily: "monospace", flex: 1 }}>
-                  {window.location.origin}
+                  {appOrigin}
                   {path}
                 </Text>
               </div>
@@ -1681,7 +1683,7 @@ export function AppDetail() {
               }}
             >
               <Link
-                href={`${window.location.origin}/.well-known/openid-configuration`}
+                href={`${appOrigin}/.well-known/openid-configuration`}
                 target="_blank"
                 rel="noreferrer"
               >

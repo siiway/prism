@@ -28,7 +28,8 @@ import {
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { PageHeader } from "../components/PageHeader";
 import { SkeletonAppCards } from "../components/Skeletons";
 import { useToastMessage } from "../lib/useToastMessage";
@@ -231,6 +232,7 @@ function getConnectionDetails(conn: {
 }
 
 export function Connections() {
+  const api = useApi();
   const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();

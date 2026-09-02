@@ -52,7 +52,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, ApiError } from "../../lib/api";
+import { ApiError } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { AuditLog } from "../../components/AuditLog";
 import { CopyIdButton } from "../../components/CopyIdButton";
 import { PasswordInput } from "../../components/PasswordInput";
@@ -126,6 +127,7 @@ function IdentityCard({
   userId: string;
   showMsg: (type: "success" | "error", text: string) => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -238,6 +240,7 @@ function SecurityCard({
   userId: string;
   showMsg: (type: "success" | "error", text: string) => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -477,6 +480,7 @@ function EmailsCard({
   userId: string;
   showMsg: (type: "success" | "error", text: string) => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -619,6 +623,7 @@ function SessionsCard({
   userId: string;
   showMsg: (type: "success" | "error", text: string) => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -828,6 +833,7 @@ function RemovableList({
 type TabValue = "overview" | "access" | "resources" | "audit";
 
 export function AdminUserDetail() {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const navigate = useNavigate();

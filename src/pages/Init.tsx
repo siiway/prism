@@ -14,7 +14,8 @@ import {
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { AuthShell } from "../components/AuthShell";
 import { PasswordInput } from "../components/PasswordInput";
 import { useAuthStore } from "../store/auth";
@@ -53,6 +54,7 @@ const useStyles = makeStyles({
 });
 
 export function Init() {
+  const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();

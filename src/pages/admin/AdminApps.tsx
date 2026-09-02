@@ -39,7 +39,8 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError } from "../../lib/api";
+import { ApiError } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { CopyIdButton } from "../../components/CopyIdButton";
 import { Pagination } from "../../components/Pagination";
@@ -58,6 +59,7 @@ const useStyles = makeStyles({
 });
 
 export function AdminApps() {
+  const api = useApi();
   const styles = useStyles();
   const qc = useQueryClient();
   const navigate = useNavigate();

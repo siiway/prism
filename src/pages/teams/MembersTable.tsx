@@ -32,7 +32,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, type TeamMember } from "../../lib/api";
+import { type TeamMember } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { CopyIdTrigger } from "../../components/CopyIdTrigger";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
@@ -111,6 +112,7 @@ export function MembersTable({
   onTransferOwnership,
   onAssignGroups,
 }: MembersTableProps) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
 

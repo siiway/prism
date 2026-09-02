@@ -5,7 +5,7 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect } from "react";
 import { useAuthStore } from "../store/auth";
-import { api } from "../lib/api";
+import { useApi } from "../lib/api-context";
 
 // Social auth callback handler: /auth/callback?token=...
 //
@@ -13,6 +13,7 @@ import { api } from "../lib/api";
 // session cookie on the redirect, so api.me() authenticates without the
 // URL token. We still accept ?token= for back-compat with older flows.
 export function AuthCallback() {
+  const api = useApi();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();

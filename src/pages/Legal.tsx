@@ -25,7 +25,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, type LegalDocType } from "../lib/api";
+import { type LegalDocType } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { renderMarkdown } from "../lib/markdown";
 
 const useStyles = makeStyles({
@@ -134,6 +135,7 @@ const useStyles = makeStyles({
 });
 
 function LegalPage({ doc }: { doc: LegalDocType }) {
+  const api = useApi();
   const styles = useStyles();
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();

@@ -11,7 +11,7 @@
 import { Image, makeStyles, tokens } from "@fluentui/react-components";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { NoticeBoard } from "./NoticeBoard";
 import { LegalFooter } from "./LegalFooter";
 
@@ -73,6 +73,7 @@ export function AuthShell({
   cardGap = 20,
   hideBrand,
 }: AuthShellProps) {
+  const api = useApi();
   const styles = useStyles();
   const { data: site } = useQuery({
     queryKey: ["site"],

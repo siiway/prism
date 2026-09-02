@@ -39,7 +39,8 @@ import {
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type AuditEvent } from "../lib/api";
+import { ApiError, type AuditEvent } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { maskIp, parseClient } from "../lib/auditFormat";
 import { formatIpGeo } from "../lib/geo";
 import { AuditWebhooks } from "./AuditWebhooks";
@@ -105,6 +106,7 @@ interface Filters {
 }
 
 export function AuditLog({ base }: { base: string }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);

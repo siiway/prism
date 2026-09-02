@@ -28,7 +28,7 @@ import {
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { formatIpGeo } from "../../lib/geo";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
@@ -79,6 +79,7 @@ function methodBadgeColor(
 }
 
 function DetailsDialog({ id }: { id: string }) {
+  const api = useApi();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const { data, isLoading } = useQuery({
@@ -129,6 +130,7 @@ function DetailsDialog({ id }: { id: string }) {
 }
 
 function DebugControls() {
+  const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
 
@@ -462,6 +464,7 @@ function DebugControls() {
 }
 
 export function AdminLogs() {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);

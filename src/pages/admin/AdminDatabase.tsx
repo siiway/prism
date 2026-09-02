@@ -47,7 +47,8 @@ import {
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import { ApiError } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import type { DbColumn, DbQueryResult, DbRowPage } from "../../lib/api";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
@@ -199,6 +200,7 @@ function RowEditor({
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const isInsert = row === null;
@@ -310,6 +312,7 @@ function TableBrowser({
   writable: boolean;
   showMsg: (intent: "success" | "error", text: string) => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -551,6 +554,7 @@ function SqlConsole({
   writable: boolean;
   showMsg: (intent: "success" | "error", text: string) => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -703,6 +707,7 @@ function SqlConsole({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function AdminDatabase() {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const { message, showMsg } = useToastMessage();

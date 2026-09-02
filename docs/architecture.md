@@ -50,6 +50,13 @@ The Worker reads the session cookie up front, prefetches the authenticated user
 when present, and hands both the locale and prefetched data to the React render
 pass — so logged-in pages don't flash an unauthenticated state before hydration.
 
+Every render owns a separate API client, authentication store, query cache,
+i18n instance, and theme input. The request-bound API transport accepts only
+same-origin `/api/*` URLs before forwarding the session cookie. Request data is
+never published through process globals or a shared Zustand store, so
+concurrent requests in one Worker isolate cannot exchange identity or fetched
+data.
+
 The [Cloudflare Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/)
 runs the Worker in-process alongside Vite during development (`bun dev`), so API
 requests hit the real Worker runtime without a separate `wrangler dev` process,

@@ -19,7 +19,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { useAuthStore } from "../store/auth";
 import { PageHeader } from "../components/PageHeader";
 import { SkeletonStatCards } from "../components/Skeletons";
@@ -68,6 +68,7 @@ const useStyles = makeStyles({
 });
 
 export function Dashboard() {
+  const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const { user } = useAuthStore();

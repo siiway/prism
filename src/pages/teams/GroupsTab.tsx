@@ -31,7 +31,8 @@ import { AddRegular, DeleteRegular, EditRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type TeamGroup } from "../../lib/api";
+import { ApiError, type TeamGroup } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { EmptyState } from "../../components/EmptyState";
 import { MarkdownText } from "../../components/MarkdownText";
 import { SkeletonTableRows } from "../../components/Skeletons";
@@ -78,6 +79,7 @@ export function GroupsTab({
   isOwner,
   showMsg,
 }: GroupsTabProps) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -300,6 +302,7 @@ function AdminCapabilitiesPanel({
   teamId: string;
   showMsg: (type: "success" | "error", text: string) => void;
 }) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -415,6 +418,7 @@ function GroupFormDialog({
   onSaved: () => Promise<void>;
   showMsg: (type: "success" | "error", text: string) => void;
 }) {
+  const api = useApi();
   const { t } = useTranslation();
   const isEdit = !!group;
   const [form, setForm] = useState({

@@ -1,17 +1,17 @@
-// Zustand auth store
+// Request-aware Zustand auth store.
 //
-// On the server (SSR), localStorage doesn't exist, so the store initializes
-// empty. The client-side entry-client.tsx reads window.__INITIAL__.auth and
-// calls setAuth() to seed the store before hydration starts, which keeps
-// the server-rendered HTML consistent with what the client sees.
-//
-// The store tracks a single *active* account (token + user, the shape the
-// rest of the app already reads) plus a list of every account the user has
-// signed into on this device. The account switcher moves the active pointer
-// between them; see components/Layout.tsx for the UI and the cookie-sync
-// round trip that keeps SSR in step.
+// The browser uses one long-lived store backed by localStorage. Every SSR
+// render creates a separate vanilla store and supplies it through
+// AuthStoreProvider, so concurrent requests never share identity state.
 
-import { create } from "zustand";
+import {
+  createContext,
+  createElement,
+  useContext,
+  type ReactNode,
+} from "react";
+import { useStore } from "zustand";
+import { createStore, type StoreApi } from "zustand/vanilla";
 import type { UserProfile } from "../lib/api";
 
 /** One signed-in account: the session JWT plus its cached profile. */
@@ -22,7 +22,7 @@ export interface Account {
   lastUsedAt?: number;
 }
 
-interface AuthState {
+export interface AuthState {
   token: string | null;
   user: UserProfile | null;
   /** Every account signed in on this device, active one included. */
@@ -32,23 +32,28 @@ interface AuthState {
   setAuth: (token: string, user: UserProfile) => void;
   /** Make an already-stored account active. Returns it, or null if unknown. */
   switchAccount: (userId: string) => Account | null;
-  /**
-   * Drop one account. If it was the active one, the active pointer is cleared
-   * (token/user become null) but the remaining accounts stay — so the app
-   * lands on the login page's account chooser rather than silently assuming a
-   * different identity. Removing a non-active account leaves the active one be.
-   */
+  /** Drop one account without implicitly promoting another account. */
   removeAccount: (userId: string) => void;
-  /** Sign out of *every* account and wipe stored state. */
+  /** Sign out of every account and wipe stored state. */
   clearAuth: () => void;
-  setLoading: (v: boolean) => void;
+  setLoading: (value: boolean) => void;
 }
 
-const isBrowser = typeof localStorage !== "undefined";
+export type AuthStore = StoreApi<AuthState>;
 
-function readInitialUser(): UserProfile | null {
-  if (!isBrowser) return null;
-  const raw = localStorage.getItem("user");
+export interface CreateAuthStoreOptions {
+  /** Immutable identity derived from the current SSR request. */
+  initialAuth?: { token: string | null; user: UserProfile | null } | null;
+  /** Pass null for SSR. Omit to use browser localStorage when available. */
+  storage?: Storage | null;
+}
+
+function browserStorage(): Storage | null {
+  return typeof localStorage === "undefined" ? null : localStorage;
+}
+
+function readInitialUser(storage: Storage | null): UserProfile | null {
+  const raw = storage?.getItem("user");
   if (!raw) return null;
   try {
     return JSON.parse(raw) as UserProfile;
@@ -57,103 +62,135 @@ function readInitialUser(): UserProfile | null {
   }
 }
 
-function readInitialAccounts(): Account[] {
-  if (!isBrowser) return [];
-  const raw = localStorage.getItem("accounts");
+function readInitialAccounts(storage: Storage | null): Account[] {
+  const raw = storage?.getItem("accounts");
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as Account[];
       if (Array.isArray(parsed))
-        return parsed.filter((a) => a?.token && a?.user?.id);
+        return parsed.filter((account) => account?.token && account?.user?.id);
     } catch {
       /* fall through to the single-account migration below */
     }
   }
-  // Migration: a session created before the switcher shipped has token + user
-  // but no accounts array. Seed the list from it so the current account shows
-  // up in the switcher without forcing a re-login.
-  const token = localStorage.getItem("token");
-  const user = readInitialUser();
+
+  // Migration: older builds stored only one token/user pair.
+  const token = storage?.getItem("token");
+  const user = readInitialUser(storage);
   return token && user ? [{ token, user }] : [];
 }
 
-function persistActive(token: string | null, user: UserProfile | null): void {
-  if (!isBrowser) return;
-  if (token) localStorage.setItem("token", token);
-  else localStorage.removeItem("token");
-  if (user) localStorage.setItem("user", JSON.stringify(user));
-  else localStorage.removeItem("user");
+function persistActive(
+  storage: Storage | null,
+  token: string | null,
+  user: UserProfile | null,
+): void {
+  if (!storage) return;
+  if (token) storage.setItem("token", token);
+  else storage.removeItem("token");
+  if (user) storage.setItem("user", JSON.stringify(user));
+  else storage.removeItem("user");
 }
 
-function persistAccounts(accounts: Account[]): void {
-  if (!isBrowser) return;
-  if (accounts.length)
-    localStorage.setItem("accounts", JSON.stringify(accounts));
-  else localStorage.removeItem("accounts");
+function persistAccounts(storage: Storage | null, accounts: Account[]): void {
+  if (!storage) return;
+  if (accounts.length) storage.setItem("accounts", JSON.stringify(accounts));
+  else storage.removeItem("accounts");
 }
 
-/** Insert or replace the account for this user, keeping list order stable and
- *  stamping it as most recently used. */
+/** Insert or replace an account while preserving list order. */
 function upsertAccount(
   accounts: Account[],
   token: string,
   user: UserProfile,
 ): Account[] {
   const entry: Account = { token, user, lastUsedAt: Date.now() };
-  const idx = accounts.findIndex((a) => a.user.id === user.id);
-  if (idx === -1) return [...accounts, entry];
+  const index = accounts.findIndex((account) => account.user.id === user.id);
+  if (index === -1) return [...accounts, entry];
   const next = accounts.slice();
-  next[idx] = entry;
+  next[index] = entry;
   return next;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  token: isBrowser ? localStorage.getItem("token") : null,
-  user: readInitialUser(),
-  accounts: readInitialAccounts(),
-  isLoading: false,
+export function createAuthStore(
+  options: CreateAuthStoreOptions = {},
+): AuthStore {
+  const storage =
+    options.storage === undefined ? browserStorage() : options.storage;
+  const storedToken = storage?.getItem("token") ?? null;
+  const storedUser = readInitialUser(storage);
+  const token = options.initialAuth ? options.initialAuth.token : storedToken;
+  const user = options.initialAuth ? options.initialAuth.user : storedUser;
 
-  setAuth: (token, user) => {
-    const accounts = upsertAccount(get().accounts, token, user);
-    persistActive(token, user);
-    persistAccounts(accounts);
-    set({ token, user, accounts });
-  },
+  return createStore<AuthState>((set, get) => ({
+    token,
+    user,
+    accounts: readInitialAccounts(storage),
+    isLoading: false,
 
-  switchAccount: (userId) => {
-    const acc = get().accounts.find((a) => a.user.id === userId);
-    if (!acc) return null;
-    // Re-stamp last-used so the manage view and any MRU ordering stay honest.
-    const stamped: Account = { ...acc, lastUsedAt: Date.now() };
-    const accounts = get().accounts.map((a) =>
-      a.user.id === userId ? stamped : a,
-    );
-    persistActive(stamped.token, stamped.user);
-    persistAccounts(accounts);
-    set({ token: stamped.token, user: stamped.user, accounts });
-    return stamped;
-  },
+    setAuth: (nextToken, nextUser) => {
+      const accounts = upsertAccount(get().accounts, nextToken, nextUser);
+      persistActive(storage, nextToken, nextUser);
+      persistAccounts(storage, accounts);
+      set({ token: nextToken, user: nextUser, accounts });
+    },
 
-  removeAccount: (userId) => {
-    const { user, accounts } = get();
-    const remaining = accounts.filter((a) => a.user.id !== userId);
-    persistAccounts(remaining);
-    // Removing a non-active account leaves the active pointer untouched.
-    if (user?.id !== userId) {
-      set({ accounts: remaining });
-      return;
-    }
-    // The active account is going away. Clear the pointer without promoting a
-    // successor — the UI sends the user to the login-page chooser to pick.
-    persistActive(null, null);
-    set({ token: null, user: null, accounts: remaining });
-  },
+    switchAccount: (userId) => {
+      const account = get().accounts.find((item) => item.user.id === userId);
+      if (!account) return null;
+      const stamped: Account = { ...account, lastUsedAt: Date.now() };
+      const accounts = get().accounts.map((item) =>
+        item.user.id === userId ? stamped : item,
+      );
+      persistActive(storage, stamped.token, stamped.user);
+      persistAccounts(storage, accounts);
+      set({ token: stamped.token, user: stamped.user, accounts });
+      return stamped;
+    },
 
-  clearAuth: () => {
-    persistActive(null, null);
-    persistAccounts([]);
-    set({ token: null, user: null, accounts: [] });
-  },
+    removeAccount: (userId) => {
+      const { user: activeUser, accounts } = get();
+      const remaining = accounts.filter((item) => item.user.id !== userId);
+      persistAccounts(storage, remaining);
+      if (activeUser?.id !== userId) {
+        set({ accounts: remaining });
+        return;
+      }
+      persistActive(storage, null, null);
+      set({ token: null, user: null, accounts: remaining });
+    },
 
-  setLoading: (v) => set({ isLoading: v }),
-}));
+    clearAuth: () => {
+      persistActive(storage, null, null);
+      persistAccounts(storage, []);
+      set({ token: null, user: null, accounts: [] });
+    },
+
+    setLoading: (value) => set({ isLoading: value }),
+  }));
+}
+
+/** The browser's long-lived store; server renders never read or mutate it. */
+export const authStore = createAuthStore();
+
+const AuthStoreContext = createContext<AuthStore | null>(null);
+
+export function AuthStoreProvider({
+  store,
+  children,
+}: {
+  store: AuthStore;
+  children: ReactNode;
+}) {
+  return createElement(AuthStoreContext.Provider, { value: store }, children);
+}
+
+export function useAuthStore(): AuthState;
+export function useAuthStore<T>(selector: (state: AuthState) => T): T;
+export function useAuthStore<T>(
+  selector?: (state: AuthState) => T,
+): AuthState | T {
+  const store = useContext(AuthStoreContext) ?? authStore;
+  const select = selector ?? ((state: AuthState): AuthState => state);
+  return useStore(store, select as (state: AuthState) => AuthState | T);
+}

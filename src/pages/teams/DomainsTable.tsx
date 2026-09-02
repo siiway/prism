@@ -26,12 +26,12 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
-  api,
   ApiError,
   type Domain,
   type DomainAddResponse,
   type VerificationMethod,
 } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { TransferFromPersonalDialog } from "./dialogs/TransferFromPersonalDialog";
 import { TeamDomainDetailDialog } from "./dialogs/TeamDomainDetailDialog";
 import { DeleteDomainDialog } from "../domains/dialogs/DeleteDomainDialog";
@@ -64,6 +64,7 @@ export function DomainsTable({
   transferableDomains,
   showMsg,
 }: DomainsTableProps) {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();

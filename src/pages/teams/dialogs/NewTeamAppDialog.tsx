@@ -16,7 +16,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type RedirectUri } from "../../../lib/api";
+import { ApiError, type RedirectUri } from "../../../lib/api";
+import { useApi } from "../../../lib/api-context";
 import { RedirectUriEditor } from "../../../components/RedirectUriEditor";
 
 interface NewTeamAppDialogProps {
@@ -25,6 +26,7 @@ interface NewTeamAppDialogProps {
 }
 
 export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
+  const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
   const navigate = useNavigate();

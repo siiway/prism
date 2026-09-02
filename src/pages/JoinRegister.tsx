@@ -27,7 +27,8 @@ import { useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { AuthShell } from "../components/AuthShell";
 import { Captcha, type CaptchaValue } from "../components/Captcha";
 import { PasswordInput } from "../components/PasswordInput";
@@ -52,6 +53,7 @@ const useStyles = makeStyles({
 type Phase = "form" | "requirements";
 
 export function JoinRegister() {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const { teamId } = useParams<{ teamId: string }>();

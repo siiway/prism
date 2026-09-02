@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Button, Spinner, Text, ProgressBar } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import type { TurnstileEndpointDirective, TurnstileVariant } from "../lib/api";
 import { solvePoW } from "../lib/pow";
 
@@ -163,6 +163,7 @@ export function Captcha({
   onVerified,
   onError,
 }: CaptchaProps) {
+  const api = useApi();
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
@@ -269,7 +270,7 @@ export function Captcha({
       setPowState("error");
       onError?.(t("captcha.powFailed"));
     }
-  }, [onVerified, onError, t]);
+  }, [api, onVerified, onError, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- triggering an async task on provider change; setState happens inside the async flow, not synchronously

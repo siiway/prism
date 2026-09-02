@@ -24,7 +24,8 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import { ApiError } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { AuthShell } from "../../components/AuthShell";
 import { OAuthConsentHeader } from "../../components/OAuthConsentHeader";
 import { useAuthStore } from "../../store/auth";
@@ -85,6 +86,7 @@ const SCOPE_LABEL_KEYS: Record<string, string> = {
 };
 
 export function DeviceVerify() {
+  const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();

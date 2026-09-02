@@ -3,7 +3,8 @@
 import { Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
@@ -19,6 +20,7 @@ const useStyles = makeStyles({
 });
 
 export function TgAuthCallback() {
+  const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const [params] = useSearchParams();

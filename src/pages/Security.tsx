@@ -44,7 +44,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startRegistration } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
-import { api, ApiError } from "../lib/api";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/api-context";
 import type {
   GpgKeyInfo,
   PasskeyInfo,
@@ -186,6 +187,7 @@ const useStyles = makeStyles({
 });
 
 export function Security() {
+  const api = useApi();
   const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();

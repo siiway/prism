@@ -9,10 +9,11 @@ import {
 } from "@fluentui/react-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { SkeletonStatCards } from "../../components/Skeletons";
 
 export function AdminDashboard() {
+  const api = useApi();
   const { t } = useTranslation();
 
   const STAT_CARDS = [

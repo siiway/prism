@@ -25,7 +25,8 @@ import {
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../../lib/api";
+import { ApiError } from "../../../lib/api";
+import { useApi } from "../../../lib/api-context";
 
 interface InviteDialogProps {
   teamId: string;
@@ -41,6 +42,7 @@ export function InviteDialog({
   canRegister,
   showMsg,
 }: InviteDialogProps) {
+  const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);

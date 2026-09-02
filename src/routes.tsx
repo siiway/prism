@@ -11,8 +11,8 @@
 import { redirect, type RouteObject } from "react-router-dom";
 import type { QueryClient } from "@tanstack/react-query";
 import { Layout } from "./components/Layout";
-import { useAuthStore } from "./store/auth";
-import { api, type UserProfile } from "./lib/api";
+import type { AuthStore } from "./store/auth";
+import type { ApiClient } from "./lib/api";
 
 // Eager imports for the auth-callback handler (tiny, used post-login redirect)
 // and NotFound (needed to know its route id at static-handler time).
@@ -23,25 +23,17 @@ import { ErrorElement } from "./components/ErrorElement";
 
 export interface RouteContext {
   qc: QueryClient;
-  /** Server: cookie-derived auth payload. Client: null (read from store). */
-  auth: { token: string | null; user: UserProfile | null } | null;
-  /** Distinguishes the server build of these routes from the client one. */
-  isClient: boolean;
+  /** API transport bound to this browser runtime or SSR request. */
+  api: ApiClient;
+  /** Auth state bound to the same runtime/request as the API client. */
+  authStore: AuthStore;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getAuth(ctx: RouteContext): {
-  token: string | null;
-  user: UserProfile | null;
-} {
-  // On the client, always read live state — login/logout/refresh updates it.
-  // On the server, the closure holds this request's auth (no shared state).
-  if (ctx.isClient) {
-    const s = useAuthStore.getState();
-    return { token: s.token, user: s.user };
-  }
-  return ctx.auth ?? { token: null, user: null };
+function getAuth(ctx: RouteContext) {
+  const { token, user } = ctx.authStore.getState();
+  return { token, user };
 }
 
 function loginRedirect(request: Request): Response {
@@ -87,7 +79,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
   //     pending authorization request.
   //   - `?add=1` (account switcher): sign in as an additional account.
   const publicAuthLoader = async ({ request }: { request: Request }) => {
-    await prefetch(ctx.qc, ["site"], api.site);
+    await prefetch(ctx.qc, ["site"], ctx.api.site);
     const site = ctx.qc.getQueryData<{ initialized?: boolean }>(["site"]);
     if (site && site.initialized === false) throw redirect("/init");
     const params = new URL(request.url).searchParams;
@@ -261,8 +253,10 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
       path: "/privacy",
       loader: async () => {
         await Promise.all([
-          prefetch(ctx.qc, ["site"], api.site),
-          prefetch(ctx.qc, ["legal", "privacy"], () => api.legal("privacy")),
+          prefetch(ctx.qc, ["site"], ctx.api.site),
+          prefetch(ctx.qc, ["legal", "privacy"], () =>
+            ctx.api.legal("privacy"),
+          ),
         ]);
         return null;
       },
@@ -274,8 +268,8 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
       path: "/terms",
       loader: async () => {
         await Promise.all([
-          prefetch(ctx.qc, ["site"], api.site),
-          prefetch(ctx.qc, ["legal", "terms"], () => api.legal("terms")),
+          prefetch(ctx.qc, ["site"], ctx.api.site),
+          prefetch(ctx.qc, ["legal", "terms"], () => ctx.api.legal("terms")),
         ]);
         return null;
       },
@@ -292,7 +286,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
       loader: async ({ request }) => {
         requireAuthLoader(request);
         // Prefetch global state used by Layout's nav.
-        await prefetch(ctx.qc, ["site"], api.site);
+        await prefetch(ctx.qc, ["site"], ctx.api.site);
         return null;
       },
       children: [
@@ -302,8 +296,8 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
             requireAuthLoader(request);
             // Dashboard pulls the user's apps + site overview.
             await Promise.all([
-              prefetch(ctx.qc, ["apps"], api.listApps),
-              prefetch(ctx.qc, ["domains"], api.listDomains),
+              prefetch(ctx.qc, ["apps"], ctx.api.listApps),
+              prefetch(ctx.qc, ["domains"], ctx.api.listDomains),
             ]);
             return null;
           },
@@ -316,7 +310,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           path: "profile",
           loader: async ({ request }) => {
             requireAuthLoader(request);
-            await prefetch(ctx.qc, ["me"], api.me);
+            await prefetch(ctx.qc, ["me"], ctx.api.me);
             return null;
           },
           lazy: () =>
@@ -337,7 +331,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           path: "apps",
           loader: async ({ request }) => {
             requireAuthLoader(request);
-            await prefetch(ctx.qc, ["apps"], api.listApps);
+            await prefetch(ctx.qc, ["apps"], ctx.api.listApps);
             return null;
           },
           lazy: () =>
@@ -360,7 +354,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           path: "teams",
           loader: async ({ request }) => {
             requireAuthLoader(request);
-            await prefetch(ctx.qc, ["teams"], api.listTeams);
+            await prefetch(ctx.qc, ["teams"], ctx.api.listTeams);
             return null;
           },
           lazy: () =>
@@ -383,7 +377,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           path: "domains",
           loader: async ({ request }) => {
             requireAuthLoader(request);
-            await prefetch(ctx.qc, ["domains"], api.listDomains);
+            await prefetch(ctx.qc, ["domains"], ctx.api.listDomains);
             return null;
           },
           lazy: () =>

@@ -40,7 +40,8 @@ import {
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type OAuthSource } from "../../lib/api";
+import { ApiError, type OAuthSource } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { EmptyState } from "../../components/EmptyState";
 import { MarkdownText } from "../../components/MarkdownText";
 import { Pagination } from "../../components/Pagination";
@@ -163,6 +164,7 @@ type DiscoveredUrls = {
 };
 
 export function AdminConnections() {
+  const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();

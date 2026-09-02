@@ -18,8 +18,9 @@ import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import "./index.css";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { createRoutes } from "./routes";
-import { useAuthStore } from "./store/auth";
-import type { UserProfile } from "./lib/api";
+import { AuthStoreProvider, authStore } from "./store/auth";
+import { api, type UserProfile } from "./lib/api";
+import { ApiProvider } from "./lib/ApiProvider";
 
 interface InitialPayload {
   queryState: DehydratedState;
@@ -44,7 +45,7 @@ const initial: InitialPayload = window.__INITIAL__ ?? {
 // Seed the auth store from the server-injected payload, falling back to the
 // localStorage value the previous (pre-cookie) build would have written.
 if (initial.auth?.token && initial.auth.user) {
-  useAuthStore.getState().setAuth(initial.auth.token, initial.auth.user);
+  authStore.getState().setAuth(initial.auth.token, initial.auth.user);
 }
 
 // Make sure the client picks the language the server rendered with, so the
@@ -59,18 +60,20 @@ const qc = new QueryClient({
   },
 });
 
-const router = createBrowserRouter(
-  createRoutes({ qc, auth: null, isClient: true }),
-);
+const router = createBrowserRouter(createRoutes({ qc, api, authStore }));
 
 hydrateRoot(
   document.getElementById("root")!,
   <StrictMode>
     <QueryClientProvider client={qc}>
       <HydrationBoundary state={initial.queryState}>
-        <ThemeProvider>
-          <RouterProvider router={router} />
-        </ThemeProvider>
+        <ApiProvider client={api} origin={window.location.origin}>
+          <AuthStoreProvider store={authStore}>
+            <ThemeProvider initialColorScheme={initial.colorScheme}>
+              <RouterProvider router={router} />
+            </ThemeProvider>
+          </AuthStoreProvider>
+        </ApiProvider>
       </HydrationBoundary>
     </QueryClientProvider>
   </StrictMode>,

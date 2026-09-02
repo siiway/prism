@@ -29,7 +29,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError, type RedirectUri } from "../../lib/api";
+import { ApiError, type RedirectUri } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { CopyIdTrigger } from "../../components/CopyIdTrigger";
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
@@ -65,6 +66,7 @@ const useStyles = makeStyles({
 });
 
 export function AppList() {
+  const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const qc = useQueryClient();

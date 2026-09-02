@@ -22,7 +22,8 @@ import { useState, useCallback, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api, ApiError } from "../../lib/api";
+import { ApiError } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
 import { AuthShell } from "../../components/AuthShell";
 import { useAuthStore } from "../../store/auth";
 import { Captcha, type CaptchaValue } from "../../components/Captcha";
@@ -78,6 +79,7 @@ const useStyles = makeStyles({
 });
 
 export function Verify2FA() {
+  const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
