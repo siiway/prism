@@ -6,7 +6,9 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { Variables } from "./types";
 
+import { BodySizeLimitError } from "./lib/bodyLimit";
 import { requestLogger } from "./lib/logger";
+import { requestBodyLimit } from "./middleware/bodyLimit";
 import { runReverification } from "./cron/reverify";
 import { runImapPoll } from "./cron/imap-poll";
 import { sweepExpiredSessions, sweepExpiredOAuthCodes } from "./cron/sessions";
@@ -55,7 +57,6 @@ app.use("/api/proxy/image/*", async (c, next) => {
 });
 
 app.use("*", secureHeaders());
-app.use("*", requestLogger);
 app.use(
   "/api/*",
   cors({
@@ -69,6 +70,8 @@ app.use(
     allowHeaders: ["Content-Type", "Authorization", "X-Session-Token"],
   }),
 );
+app.use("*", requestLogger);
+app.use("*", requestBodyLimit);
 
 app.route("/api", siteRoutes);
 // Mounted at /api because it spans two prefixes: the unauthenticated
@@ -112,6 +115,9 @@ app.notFound(async (c) => {
 });
 
 app.onError((err, c) => {
+  if (err instanceof BodySizeLimitError) {
+    return c.json({ error: "Request body too large" }, 413);
+  }
   console.error(err);
   return c.json({ error: "Internal server error" }, 500);
 });

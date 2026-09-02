@@ -11,6 +11,8 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 `/api/*` 的 CORS 锁定为 `APP_URL`。`/api/proxy/image/*`、`/.well-known/*` 与 `/api/users/:username`（公开资料）不附带 `Access-Control-Allow-Credentials`，便于安全嵌入。
 
+请求正文全局上限为 5 MiB。Prism 会在进入路由前拒绝声明过大的 `Content-Length`，并在读取未声明长度或长度不准确的流式正文时执行相同限制。超限请求返回 `413`。
+
 ## 初始化
 
 ### `GET /api/init/status`
@@ -496,7 +498,7 @@ OAuth scope 版本：
 
 ### `GET /api/proxy/image/:id`
 
-按已注册映射推送图片，SVG 会被消毒。`:id` 是 `POST /api/proxy/image/register`（需认证）返回的不透明 ID — 不接受 URL 透传，杜绝被用作 SSRF 中继。每次上游请求及重定向前，Prism 都会拒绝本地/保留的 IPv4、IPv6 字面量，以及 A 或 AAAA 记录并非公网单播地址的域名。响应附带跨源头便于嵌入。
+按已注册映射推送图片，SVG 会被消毒。`:id` 是 `POST /api/proxy/image/register`（需认证）返回的不透明 ID — 不接受 URL 透传，杜绝被用作 SSRF 中继。每次上游请求及重定向前，Prism 都会拒绝本地/保留的 IPv4、IPv6 字面量，以及 A 或 AAAA 记录并非公网单播地址的域名。图片上限为 5 MiB：声明长度超限时会在读取前拒绝；对于分块传输或长度标注不实的位图响应，会通过计数字节的受限流转发，并在越界时立即取消上游。由于此时响应头已经发出，客户端会看到图片响应中断，而不是 JSON 格式的大小错误。SVG 为执行消毒会读入受限缓冲区。响应附带跨源头便于嵌入。
 
 ### `POST /api/proxy/image/register`
 

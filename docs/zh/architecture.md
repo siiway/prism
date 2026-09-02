@@ -55,9 +55,10 @@ worker/
 ├── types.ts                # D1 行类型、Variables；重导出 shared/types.ts
 │
 ├── db/migrations/
-│   └── 0001_init.sql … 0071_social_oauth_states.sql
+│   └── 0001_init.sql … 0072_revoke_exposed_sessions.sql
 │
 ├── lib/
+│   ├── bodyLimit.ts        # 受限读取与按字节计数的直通流
 │   ├── config.ts           # getConfig()、setConfigValues()、JWT 密钥、RSA 密钥对（KV）
 │   ├── secretCrypto.ts     # AES-GCM 信封 + keyed HMAC（SECRETS_KEY）
 │   ├── crypto.ts           # randomId、PBKDF2 哈希
@@ -89,6 +90,7 @@ worker/
 │
 ├── middleware/
 │   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
+│   ├── bodyLimit.ts        # 全局 5 MiB 请求正文限制
 │   ├── captcha.ts          # verifyCaptchaToken() — 分发到对应 provider
 │   └── rateLimit.ts        # KV 滑动窗口限流（IPv6 感知）
 │

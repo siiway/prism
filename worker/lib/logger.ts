@@ -7,6 +7,7 @@
 
 import type { MiddlewareHandler } from "hono";
 import type { Variables } from "../types";
+import { readStreamWithLimit } from "./bodyLimit";
 import { geoJson } from "./geo";
 import { safeFetch } from "./safeFetch";
 
@@ -63,6 +64,10 @@ const REDACTED_FIELDS = new Set([
 
 const REDACTED = "[REDACTED]";
 const REDACTED_UNSTRUCTURED_BODY = "[REDACTED UNSTRUCTURED BODY]";
+const OMITTED_OVERSIZED_BODY = "[OMITTED: BODY EXCEEDS 64 KiB LOG LIMIT]";
+const OMITTED_INCOMPLETE_BODY = "[OMITTED: BODY DID NOT COMPLETE PROMPTLY]";
+const MAX_LOG_BODY_BYTES = 64 * 1024;
+const LOG_BODY_CAPTURE_TIMEOUT_MS = 100;
 const MAX_REDACTION_DEPTH = 32;
 const NORMALIZED_REDACTED_FIELDS = new Set(
   [...REDACTED_FIELDS].map((key) => key.replace(/[^a-z0-9]/g, "")),
@@ -154,6 +159,62 @@ function parseResBody(text: string, contentType: string | null): unknown {
   return REDACTED_UNSTRUCTURED_BODY;
 }
 
+type CapturedLogBody = {
+  text: string;
+  exceeded: boolean;
+  incomplete: boolean;
+};
+
+async function captureBodyForLogging(
+  message: Request | Response,
+): Promise<CapturedLogBody> {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    LOG_BODY_CAPTURE_TIMEOUT_MS,
+  );
+  try {
+    const captured = await readStreamWithLimit(
+      message.clone().body,
+      MAX_LOG_BODY_BYTES,
+      controller.signal,
+    );
+    if (captured.exceeded) {
+      return { text: "", exceeded: true, incomplete: false };
+    }
+    return {
+      text: new TextDecoder("utf-8", {
+        fatal: false,
+        ignoreBOM: true,
+      }).decode(captured.bytes),
+      exceeded: false,
+      incomplete: false,
+    };
+  } catch {
+    return { text: "", exceeded: false, incomplete: true };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function capturedRequestBody(
+  captured: CapturedLogBody,
+  contentType: string | null,
+): unknown {
+  if (captured.exceeded) return OMITTED_OVERSIZED_BODY;
+  if (captured.incomplete) return OMITTED_INCOMPLETE_BODY;
+  return parseBody(captured.text, contentType);
+}
+
+function capturedResponseBody(
+  captured: CapturedLogBody,
+  contentType: string | null,
+): unknown {
+  if (captured.exceeded) return OMITTED_OVERSIZED_BODY;
+  if (captured.incomplete) return OMITTED_INCOMPLETE_BODY;
+  return parseResBody(captured.text, contentType);
+}
+
 function methodFromRequest(req: Request): string {
   return req.method.toUpperCase();
 }
@@ -165,22 +226,17 @@ async function isOutboundLoggingEnabled(kv: KVNamespace): Promise<boolean> {
 async function writeOutboundLog(
   env: Env,
   req: Request,
+  reqBodyPromise: Promise<CapturedLogBody>,
   res: Response | null,
   durationMs: number,
   error: unknown,
 ): Promise<void> {
-  if (!(await isOutboundLoggingEnabled(env.KV_SESSIONS))) return;
-
-  const reqBodyText = await req
-    .clone()
-    .text()
-    .catch(() => "");
-  const resBodyText = res
-    ? await res
-        .clone()
-        .text()
-        .catch(() => "")
-    : "";
+  const [reqBody, resBody] = await Promise.all([
+    reqBodyPromise,
+    res
+      ? captureBodyForLogging(res)
+      : Promise.resolve({ text: "", exceeded: false, incomplete: false }),
+  ]);
   const reqUrl = redactUrlForLogging(req.url);
   const details = JSON.stringify({
     outbound: true,
@@ -188,14 +244,14 @@ async function writeOutboundLog(
       url: reqUrl,
       method: methodFromRequest(req),
       headers: redactHeaders(req.headers),
-      body: parseBody(reqBodyText, req.headers.get("content-type")),
+      body: capturedRequestBody(reqBody, req.headers.get("content-type")),
     },
     res: res
       ? {
           status: res.status,
           status_text: res.statusText,
           headers: redactHeaders(res.headers),
-          body: parseResBody(resBodyText, res.headers.get("content-type")),
+          body: capturedResponseBody(resBody, res.headers.get("content-type")),
         }
       : null,
     error:
@@ -225,21 +281,35 @@ async function withOutboundLog(
   req: Request,
   run: () => Promise<Response>,
 ): Promise<Response> {
+  const loggingEnabled = await isOutboundLoggingEnabled(env.KV_SESSIONS).catch(
+    () => false,
+  );
+  const reqBodyPromise = loggingEnabled ? captureBodyForLogging(req) : null;
   const start = Date.now();
   try {
     const res = await run();
-    await writeOutboundLog(
-      env,
-      req,
-      res.clone(),
-      Date.now() - start,
-      null,
-    ).catch(() => {});
+    if (reqBodyPromise) {
+      await writeOutboundLog(
+        env,
+        req,
+        reqBodyPromise,
+        res,
+        Date.now() - start,
+        null,
+      ).catch(() => {});
+    }
     return res;
   } catch (err) {
-    await writeOutboundLog(env, req, null, Date.now() - start, err).catch(
-      () => {},
-    );
+    if (reqBodyPromise) {
+      await writeOutboundLog(
+        env,
+        req,
+        reqBodyPromise,
+        null,
+        Date.now() - start,
+        err,
+      ).catch(() => {});
+    }
     throw err;
   }
 }
@@ -250,7 +320,7 @@ export async function loggedFetch(
   init?: RequestInit,
 ): Promise<Response> {
   const req = new Request(input, init);
-  return withOutboundLog(env, req, () => fetch(req.clone()));
+  return withOutboundLog(env, req, () => fetch(req));
 }
 
 /**
@@ -272,85 +342,102 @@ export async function loggedSafeFetch(
 
 const FLAG_TTL_MS = 10_000; // re-check KV every 10 seconds
 
-let cachedLoggingEnabled: boolean = false;
-let cachedForceLogAll: boolean = false;
-let cachedSpectateUserId: string | null = null;
-let cachedSpectatePathPattern: string | null = null;
-let cachedExceptPattern: string | null = null;
-let cachedLogIp: string | null = null;
-let cacheExpiry: number = 0;
-
-async function getFlags(kv: KVNamespace): Promise<{
+type RequestLoggingFlags = {
   loggingEnabled: boolean;
   forceLogAll: boolean;
   spectateUserId: string | null;
   spectatePathPattern: string | null;
   exceptPattern: string | null;
   logIp: string | null;
-}> {
+};
+
+const DISABLED_LOGGING_FLAGS: RequestLoggingFlags = {
+  loggingEnabled: false,
+  forceLogAll: false,
+  spectateUserId: null,
+  spectatePathPattern: null,
+  exceptPattern: null,
+  logIp: null,
+};
+
+let cachedFlags: RequestLoggingFlags = DISABLED_LOGGING_FLAGS;
+let cachedKv: KVNamespace | null = null;
+let cacheExpiry: number = 0;
+
+async function getFlags(kv: KVNamespace): Promise<RequestLoggingFlags> {
   const now = Date.now();
-  if (now < cacheExpiry) {
-    return {
-      loggingEnabled: cachedLoggingEnabled,
-      forceLogAll: cachedForceLogAll,
-      spectateUserId: cachedSpectateUserId,
-      spectatePathPattern: cachedSpectatePathPattern,
-      exceptPattern: cachedExceptPattern,
-      logIp: cachedLogIp,
-    };
+  if (kv === cachedKv && now < cacheExpiry) return cachedFlags;
+  cachedKv = kv;
+
+  const enabled = (await kv.get("system:request_logging_enabled")) === "true";
+  if (!enabled) {
+    cachedFlags = DISABLED_LOGGING_FLAGS;
+    cacheExpiry = now + FLAG_TTL_MS;
+    return cachedFlags;
   }
-  const [enabled, forceAll, spectate, spectatePath, except_, logIp] =
-    await Promise.all([
-      kv.get("system:request_logging_enabled"),
-      kv.get("system:force_log_all"),
-      kv.get("system:spectate_user_id"),
-      kv.get("system:spectate_path"),
-      kv.get("system:log_except_pattern"),
-      kv.get("system:log_ip"),
-    ]);
-  cachedLoggingEnabled = enabled === "true";
-  cachedForceLogAll = forceAll === "true";
-  cachedSpectateUserId = spectate ?? null;
-  cachedSpectatePathPattern = spectatePath ?? null;
-  cachedExceptPattern = except_ ?? null;
-  cachedLogIp = logIp ?? null;
-  cacheExpiry = now + FLAG_TTL_MS;
-  return {
-    loggingEnabled: cachedLoggingEnabled,
-    forceLogAll: cachedForceLogAll,
-    spectateUserId: cachedSpectateUserId,
-    spectatePathPattern: cachedSpectatePathPattern,
-    exceptPattern: cachedExceptPattern,
-    logIp: cachedLogIp,
+
+  const [forceAll, spectate, spectatePath, except_, logIp] = await Promise.all([
+    kv.get("system:force_log_all"),
+    kv.get("system:spectate_user_id"),
+    kv.get("system:spectate_path"),
+    kv.get("system:log_except_pattern"),
+    kv.get("system:log_ip"),
+  ]);
+  cachedFlags = {
+    loggingEnabled: true,
+    forceLogAll: forceAll === "true",
+    spectateUserId: spectate ?? null,
+    spectatePathPattern: spectatePath ?? null,
+    exceptPattern: except_ ?? null,
+    logIp: logIp ?? null,
   };
+  cacheExpiry = now + FLAG_TTL_MS;
+  return cachedFlags;
 }
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
   const start = Date.now();
-
-  const reqContentType = c.req.raw.headers.get("content-type");
-  const reqBodyText = await c.req.raw
-    .clone()
-    .text()
-    .catch(() => "");
-
-  await next();
-
-  const durationMs = Date.now() - start;
   const { method, url } = c.req.raw;
   const parsedUrl = new URL(url);
   const path = parsedUrl.pathname;
-  const status = c.res.status;
   const ip =
     c.req.raw.headers.get("cf-connecting-ip") ??
     c.req.raw.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     null;
+
+  // Flags must be known before cloning the request. Disabled logging (the
+  // default), exclusions, and IP mismatches never touch the request body.
+  const flags = await getFlags(c.env.KV_SESSIONS).catch(
+    () => DISABLED_LOGGING_FLAGS,
+  );
+  const logRequest =
+    flags.loggingEnabled &&
+    !(flags.exceptPattern && path.includes(flags.exceptPattern)) &&
+    !(flags.logIp && ip !== flags.logIp);
+  const isSpectatingPath =
+    flags.spectatePathPattern !== null &&
+    path.includes(flags.spectatePathPattern);
+  const mightCaptureDetails =
+    logRequest &&
+    (flags.forceLogAll || isSpectatingPath || flags.spectateUserId !== null);
+  const reqContentType = c.req.raw.headers.get("content-type");
+  // User identity is populated by downstream auth middleware, so an explicitly
+  // configured user spectate may need to prepare a body before the match is
+  // known. Even then, the read is capped and cancelled after 64 KiB.
+  const reqBodyPromise = mightCaptureDetails
+    ? captureBodyForLogging(c.req.raw)
+    : null;
+
+  await next();
+
+  const durationMs = Date.now() - start;
+  const status = c.res.status;
   const userAgent = c.req.raw.headers.get("user-agent") ?? null;
   const userId = (c.get("user") as { id?: string } | undefined)?.id ?? null;
 
-  // Always log to console
+  // Always log minimal metadata to console.
   console.log(
     JSON.stringify({
       type: "request",
@@ -363,49 +450,12 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
     }),
   );
 
-  const {
-    loggingEnabled,
-    forceLogAll,
-    spectateUserId,
-    spectatePathPattern,
-    exceptPattern,
-    logIp,
-  } = await getFlags(c.env.KV_SESSIONS);
+  if (!logRequest) return;
 
-  if (!loggingEnabled) return;
-
-  // Skip logging for excluded paths
-  if (exceptPattern && path.includes(exceptPattern)) return;
-
-  // IP filter: when set, only log requests from that IP
-  if (logIp && ip !== logIp) return;
-
-  const isSpectatingUser = spectateUserId !== null && userId === spectateUserId;
-  const isSpectatingPath =
-    spectatePathPattern !== null && path.includes(spectatePathPattern);
-  const isSpectating = isSpectatingUser || isSpectatingPath;
-
-  const captureDetails = forceLogAll || isSpectating;
-
-  let details: string | null = null;
-  if (captureDetails) {
-    const resContentType = c.res.headers.get("content-type");
-    const resBodyText = await c.res
-      .clone()
-      .text()
-      .catch(() => "");
-    details = JSON.stringify({
-      req: {
-        headers: redactHeaders(c.req.raw.headers),
-        query: redactObject(Object.fromEntries(parsedUrl.searchParams)),
-        body: parseBody(reqBodyText, reqContentType),
-      },
-      res: {
-        headers: redactHeaders(c.res.headers),
-        body: parseResBody(resBodyText, resContentType),
-      },
-    });
-  }
+  const isSpectatingUser =
+    flags.spectateUserId !== null && userId === flags.spectateUserId;
+  const captureDetails =
+    flags.forceLogAll || isSpectatingUser || isSpectatingPath;
 
   const id = crypto.randomUUID();
   const createdAt = Math.floor(Date.now() / 1000);
@@ -413,8 +463,32 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
   // viewer can show where each request came from, not just the raw IP.
   const geo = geoJson(c);
 
-  c.executionCtx.waitUntil(
-    c.env.DB.prepare(
+  // Body capture and the D1 write stay off the response path. The response is
+  // cloned synchronously, then the capped read finishes under waitUntil.
+  const writeLog = async () => {
+    let details: string | null = null;
+    if (captureDetails && reqBodyPromise) {
+      const [reqBody, resBody] = await Promise.all([
+        reqBodyPromise,
+        captureBodyForLogging(c.res),
+      ]);
+      details = JSON.stringify({
+        req: {
+          headers: redactHeaders(c.req.raw.headers),
+          query: redactObject(Object.fromEntries(parsedUrl.searchParams)),
+          body: capturedRequestBody(reqBody, reqContentType),
+        },
+        res: {
+          headers: redactHeaders(c.res.headers),
+          body: capturedResponseBody(
+            resBody,
+            c.res.headers.get("content-type"),
+          ),
+        },
+      });
+    }
+
+    await c.env.DB.prepare(
       "INSERT INTO request_logs (id, method, path, status, duration_ms, ip_address, user_agent, user_id, ip_geo, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
       .bind(
@@ -430,7 +504,7 @@ export const requestLogger: MiddlewareHandler<AppEnv> = async (c, next) => {
         details,
         createdAt,
       )
-      .run()
-      .catch(() => {}),
-  );
+      .run();
+  };
+  c.executionCtx.waitUntil(writeLog().catch(() => {}));
 };

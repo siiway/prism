@@ -508,14 +508,20 @@ request — method, path, status, duration, IP, user agent, optional user ID
 
 Request logs are independent of audit logs: a request hit may or may not result
 in an audit-worthy state change, and audit log entries for cron-driven actions
-have no associated request row.
+have no associated request row. Prism checks the request-logging flags before it
+clones or reads a body. Body details are captured only for Force log all or a
+matching Spectate selection, and each request or response body recorded in
+Details is capped at 64 KiB. Larger bodies, and slow or long-lived streams that
+do not complete within the short capture window, are represented by an omission
+marker.
 
 **Log outbound requests** is a separate debug switch for external API calls made
 by the Worker, such as Telegram and Discord notification delivery. When enabled,
 Prism writes those calls into `request_logs` with the external URL as `path` and
-the redacted request/response bodies in Details. Keep it off unless actively
-debugging third-party delivery failures because it records message payloads and
-performs an extra KV read per outbound call.
+the redacted request/response bodies in Details. The same 64 KiB per-body log
+cap applies. Keep it off unless actively debugging third-party delivery failures
+because it records message payloads and performs an extra KV read per outbound
+call.
 
 ## Login Errors
 

@@ -71,9 +71,10 @@ worker/
 ├── types.ts                # D1 row types, Variables; re-exports shared/types.ts
 │
 ├── db/migrations/
-│   └── 0001_init.sql … 0071_social_oauth_states.sql
+│   └── 0001_init.sql … 0072_revoke_exposed_sessions.sql
 │
 ├── lib/
+│   ├── bodyLimit.ts        # Bounded reads and byte-counted pass-through streams
 │   ├── config.ts           # getConfig(), setConfigValues(), JWT secret, RSA keypair (KV)
 │   ├── secretCrypto.ts     # AES-GCM envelope + keyed HMAC for D1 fields (SECRETS_KEY)
 │   ├── crypto.ts           # randomId, hashPassword/verifyPassword (PBKDF2)
@@ -105,6 +106,7 @@ worker/
 │
 ├── middleware/
 │   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
+│   ├── bodyLimit.ts        # Global 5 MiB request-body limit
 │   ├── captcha.ts          # verifyCaptchaToken() — dispatches to provider
 │   └── rateLimit.ts        # KV sliding-window rate limiter (IPv6-aware)
 │

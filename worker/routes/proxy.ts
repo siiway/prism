@@ -10,6 +10,13 @@
 
 import { Hono } from "hono";
 import type { Variables } from "../types";
+import {
+  BodySizeLimitError,
+  cancelStream,
+  declaredLengthExceedsLimit,
+  limitStreamBytes,
+  readStreamWithLimit,
+} from "../lib/bodyLimit";
 import { isBlockedHost, safeFetch } from "../lib/safeFetch";
 import { registerImageProxyMapping } from "../lib/proxyImage";
 import { requireAuth } from "../middleware/auth";
@@ -148,6 +155,7 @@ app.get("/:id", async (c) => {
   }
 
   if (!upstream.ok) {
+    cancelStream(upstream.body);
     return c.json({ error: `Upstream returned HTTP ${upstream.status}` }, 502);
   }
 
@@ -155,11 +163,17 @@ app.get("/:id", async (c) => {
   const ct = rawCt.toLowerCase().split(";")[0].trim();
 
   if (!ALLOWED_TYPES.has(ct)) {
+    cancelStream(upstream.body);
     return c.json({ error: "Upstream URL is not an image" }, 400);
   }
 
-  const buf = await upstream.arrayBuffer();
-  if (buf.byteLength > MAX_BYTES) {
+  if (
+    declaredLengthExceedsLimit(
+      upstream.headers.get("content-length"),
+      MAX_BYTES,
+    )
+  ) {
+    cancelStream(upstream.body, new BodySizeLimitError(MAX_BYTES));
     return c.json({ error: "Image exceeds the 5 MB size limit" }, 400);
   }
 
@@ -175,11 +189,26 @@ app.get("/:id", async (c) => {
   });
 
   if (ct === "image/svg+xml") {
-    const sanitized = sanitizeSvg(new TextDecoder().decode(buf));
+    let captured;
+    try {
+      captured = await readStreamWithLimit(upstream.body, MAX_BYTES);
+    } catch {
+      return c.json({ error: "Could not read upstream image" }, 502);
+    }
+    if (captured.exceeded) {
+      return c.json({ error: "Image exceeds the 5 MB size limit" }, 400);
+    }
+    const sanitized = sanitizeSvg(new TextDecoder().decode(captured.bytes));
     return new Response(sanitized, { headers });
   }
 
-  return new Response(buf, { headers });
+  // Raster formats need no rewriting. Forward them a chunk at a time; if a
+  // missing or dishonest Content-Length crosses the cap, the stream errors and
+  // its upstream source is cancelled instead of being buffered without bound.
+  return new Response(
+    upstream.body ? limitStreamBytes(upstream.body, MAX_BYTES) : null,
+    { headers },
+  );
 });
 
 export default app;

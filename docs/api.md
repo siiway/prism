@@ -17,6 +17,11 @@ CORS is locked to `APP_URL` for `/api/*`. The `/api/proxy/image/*`,
 `/.well-known/*`, and `/api/users/:username` (public profile) endpoints are
 served without `Access-Control-Allow-Credentials` so they're safely embeddable.
 
+Request bodies are capped at 5 MiB globally. Prism rejects an excessive declared
+`Content-Length` before route handling and enforces the same limit while a body
+with a missing or inaccurate length is consumed. Oversized requests return
+`413`.
+
 ## Init
 
 ### `GET /api/init/status`
@@ -579,8 +584,13 @@ sanitized. `:id` is the opaque ID returned by `POST /api/proxy/image/register`
 (authenticated) — there is no URL passthrough, so the proxy cannot be used as
 an open SSRF relay. Before every upstream request and redirect, Prism rejects
 local/reserved IPv4 and IPv6 literals and DNS names whose A or AAAA answers are
-not public unicast addresses. Cross-origin headers are set so the response is
-safely embeddable.
+not public unicast addresses. Images are capped at 5 MiB: an excessive declared
+length is rejected before reading, and chunked or inaccurately labelled raster
+responses are streamed through a byte-counting limit that cancels the upstream
+as soon as it crosses the cap. Because headers have already been sent in that
+case, clients see an aborted image response rather than a JSON size error. SVG
+input is read into a bounded buffer for sanitization. Cross-origin headers are
+set so the response is safely embeddable.
 
 ### `POST /api/proxy/image/register`
 
