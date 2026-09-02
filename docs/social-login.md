@@ -328,6 +328,21 @@ Each source has an independent slug, client ID, and secret. You can add as many 
 
 All enabled sources appear as separate buttons on the login and registration pages.
 
+## Flow Security
+
+Each login attempt sets a 10-minute `Secure`, `HttpOnly`, `SameSite=Lax`
+correlation cookie. Prism stores only its hash in D1 and consumes
+the matching state atomically at callback time. A callback URL copied into a
+different browser is rejected because that browser does not have the initiating
+cookie. Linking a provider is additionally bound to the same live Prism session
+that started the flow.
+
+Cookies must therefore remain enabled for the Prism origin while completing a
+social login. If a callback reports `invalid_state`, restart the flow in the
+same browser rather than copying the callback URL between browsers or profiles.
+Starting another social-login attempt in the same browser supersedes any older
+attempt that is still in flight.
+
 ## Local Development
 
 For local testing, register OAuth apps using `http://localhost:5173` as the domain. Use the slug you plan to use in production:

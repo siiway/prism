@@ -840,9 +840,9 @@ All of them sit behind `requireAdmin` and are session-only.
 ### Key–value browser
 
 The third tab in **Admin → Database**. KV holds most of what makes an instance
-behave the way it does on a given day — the debug switches, in-flight OAuth
-states, sudo grants, the pending site reset — and nothing else renders any of
-it.
+behave the way it does on a given day — the debug switches, pending social
+confirmation and 2FA handoffs, sudo grants, the pending site reset — and
+nothing else renders any of it.
 
 KV has no schema, so navigation is a namespace picker and a prefix box rather
 than a table list. Two namespaces are exposed: `sessions` (sessions, system

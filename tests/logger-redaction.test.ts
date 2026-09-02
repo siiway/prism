@@ -38,12 +38,14 @@ describe("request logger redaction", () => {
   test("redacts sensitive URL query parameters", () => {
     const redacted = new URL(
       redactUrlForLogging(
-        "https://example.test/hook?client_secret=query-secret&event=created",
+        "https://example.test/hook?client_secret=query-secret&invite=invite-secret&event=created",
       ),
     );
 
     expect(redacted.searchParams.get("client_secret")).toBe("[REDACTED]");
+    expect(redacted.searchParams.get("invite")).toBe("[REDACTED]");
     expect(redacted.searchParams.get("event")).toBe("created");
     expect(redacted.toString()).not.toContain("query-secret");
+    expect(redacted.toString()).not.toContain("invite-secret");
   });
 });

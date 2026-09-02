@@ -44,6 +44,7 @@ const REDACTED_FIELDS = new Set([
   "email_verify_code",
   "email_verify_token",
   "invite_token",
+  "invite",
   // otpauth:// URI — carries the TOTP seed in its query string, so it is as
   // sensitive as `secret` itself.
   "uri",

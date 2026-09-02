@@ -2,8 +2,9 @@
 //
 // The companion to the D1 console. Most of what makes an instance behave the
 // way it does on a given day is not in the database at all — the debug
-// switches, the in-flight OAuth states, the sudo grants, the pending site
-// reset — it is in KV, where nothing renders it and no endpoint lists it.
+// switches, pending social-confirmation and 2FA handoffs, the sudo grants, the
+// pending site reset — it is in KV, where nothing renders it and no endpoint
+// lists it.
 //
 // Two things differ from the D1 side.
 //

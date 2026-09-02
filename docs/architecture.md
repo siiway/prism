@@ -71,7 +71,7 @@ worker/
 ├── types.ts                # D1 row types, Variables; re-exports shared/types.ts
 │
 ├── db/migrations/
-│   └── 0001_init.sql … 0053_audit_webhook_delivery.sql
+│   └── 0001_init.sql … 0071_social_oauth_states.sql
 │
 ├── lib/
 │   ├── config.ts           # getConfig(), setConfigValues(), JWT secret, RSA keypair (KV)
@@ -98,7 +98,8 @@ worker/
 │   ├── sudo.ts             # Step-up grace window storage in KV
 │   ├── scopes.ts           # Scope ↔ claim mapping + cross-app scope parsing
 │   ├── redirectUri.ts      # OAuth redirect URI validation, registered-domain check
-│   ├── cookies.ts          # Session cookie helpers
+│   ├── socialOAuthState.ts # Atomic, browser-bound social OAuth state
+│   ├── cookies.ts          # Session + social OAuth correlation cookie helpers
 │   ├── lockdown.ts         # User / team deletion lockdown (env-var driven)
 │   └── logger.ts           # Request logger middleware
 │
@@ -240,6 +241,18 @@ Each source has its own slug, enabled flag, and (for OIDC/OAuth2) issuer / auth
 source whose email is accepted as verified without an explicit email-verification
 step; untrusted sources (`trusted = 0`) always require email verification after
 sign-up.
+
+### `social_oauth_states`
+
+Short-lived social-login round trips live in D1 so each state value can be
+validated and consumed atomically with `DELETE … RETURNING`. Each row stores
+only a SHA-256 hash of an HttpOnly browser correlation cookie; the raw browser
+secret never enters the database. Invite-token handoffs are AES-GCM encrypted
+with that browser-only secret. Connection flows also pin the initiating user
+and session IDs, and the callback must present that same live
+session before the row can be consumed. The table is capped at 10,000 rows;
+expired rows are removed opportunistically at begin time and by the scheduled
+OAuth-artifact sweep.
 
 ### `domains`
 

@@ -18,8 +18,24 @@ import {
   releaseSiteInvite,
 } from "../lib/siteInvite";
 import { requireAuth, optionalAuth } from "../middleware/auth";
+import { rateLimitIp } from "../middleware/rateLimit";
 import { signJWT } from "../lib/jwt";
-import { setSessionCookie } from "../lib/cookies";
+import {
+  clearSocialOAuthCookie,
+  readSocialOAuthCookie,
+  setSessionCookie,
+  setSocialOAuthCookie,
+} from "../lib/cookies";
+import {
+  consumeSocialOAuthState,
+  isValidSocialOAuthCorrelation,
+  isValidSocialOAuthState,
+  openSocialOAuthInviteToken,
+  sealSocialOAuthInviteToken,
+  SOCIAL_OAUTH_STATE_TTL_SECONDS,
+  storeSocialOAuthState,
+  type SocialOAuthMode,
+} from "../lib/socialOAuthState";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -55,6 +71,7 @@ import type {
   OAuthSourceRow,
   SiteInviteRow,
   SocialConnectionRow,
+  SocialOAuthStateRow,
   UserRow,
   Variables,
 } from "../types";
@@ -270,6 +287,69 @@ async function issue2faPending(
   return pendingKey;
 }
 
+interface ConsumedBrowserBoundState {
+  stateData: SocialOAuthStateRow;
+  inviteToken: string | null;
+}
+
+async function consumeBrowserBoundState(
+  c: Context<AppEnv>,
+  state: string,
+  slug: string,
+  provider: string,
+): Promise<ConsumedBrowserBoundState | null> {
+  if (!isValidSocialOAuthState(state)) return null;
+  const correlation = readSocialOAuthCookie(c);
+  if (!correlation || !isValidSocialOAuthCorrelation(correlation)) return null;
+
+  const user = c.get("user");
+  const consumed = await consumeSocialOAuthState(c.env.DB, {
+    state,
+    slug,
+    provider,
+    correlationHash: await sha256Hex(correlation),
+    sessionId: c.get("sessionId") ?? null,
+    userId: user?.id ?? null,
+    now: Math.floor(Date.now() / 1000),
+  });
+  // Do not clear a non-matching cookie: an old callback must not cancel a
+  // newer in-flight flow in this browser.
+  if (!consumed) return null;
+  clearSocialOAuthCookie(c);
+  try {
+    return {
+      stateData: consumed,
+      inviteToken: await openSocialOAuthInviteToken(
+        consumed.invite_token_ciphertext,
+        correlation,
+        state,
+      ),
+    };
+  } catch {
+    // A malformed/tampered encrypted handoff invalidates the consumed flow.
+    return null;
+  }
+}
+
+async function mirrorBearerSessionCookie(c: Context<AppEnv>): Promise<void> {
+  const authorization = c.req.header("Authorization");
+  if (!authorization?.startsWith("Bearer ")) return;
+  const token = authorization.slice(7);
+  if (!token || token.startsWith("prism_pat_")) return;
+
+  const user = c.get("user");
+  const sessionId = c.get("sessionId");
+  if (!user || !sessionId) return;
+  const row = await c.env.DB.prepare(
+    "SELECT user_id, expires_at FROM sessions WHERE id = ?",
+  )
+    .bind(sessionId)
+    .first<{ user_id: string; expires_at: number }>();
+  const now = Math.floor(Date.now() / 1000);
+  if (row?.user_id === user.id && row.expires_at > now)
+    setSessionCookie(c, token, row.expires_at - now);
+}
+
 // ─── List connections ─────────────────────────────────────────────────────────
 
 app.get("/", requireAuth, async (c) => {
@@ -311,8 +391,18 @@ app.get("/", requireAuth, async (c) => {
 
 app.post("/intent", requireAuth, async (c) => {
   const user = c.get("user");
+  const sessionId = c.get("sessionId");
+  if (!user || !sessionId) return c.json({ error: "Unauthorized" }, 401);
+  // The provider's top-level callback cannot carry an Authorization header.
+  // Mirror a validated bearer session into the HttpOnly cookie so standard
+  // OAuth and Telegram both return with the exact session recorded below.
+  await mirrorBearerSessionCookie(c);
   const key = `connect:intent:${randomBase64url(24)}`;
-  await c.env.KV_CACHE.put(key, user.id, { expirationTtl: 300 });
+  await c.env.KV_CACHE.put(
+    key,
+    JSON.stringify({ userId: user.id, sessionId }),
+    { expirationTtl: 300 },
+  );
   return c.json({ token: key });
 });
 
@@ -320,29 +410,67 @@ app.post("/intent", requireAuth, async (c) => {
 
 app.get("/:provider/begin", optionalAuth, async (c) => {
   const slug = c.req.param("provider") ?? "";
+  const rl = await rateLimitIp(
+    c.env.KV_CACHE,
+    getIp(c),
+    "social-oauth-begin",
+    20,
+    300,
+  );
+  if (!rl.allowed) {
+    c.header("Retry-After", String(rl.resetIn));
+    return c.json({ error: "Too many social login attempts" }, 429);
+  }
+
   const source = await resolveSource(c.env, slug);
   if (!source)
     return c.json({ error: "Unknown or unconfigured provider" }, 400);
 
   const nonce = randomBase64url(24);
-  const mode = c.req.query("mode") ?? "login"; // 'login' | 'connect'
+  const requestedMode = c.req.query("mode") ?? "login";
+  if (requestedMode !== "login" && requestedMode !== "connect")
+    return c.json({ error: "Invalid OAuth mode" }, 400);
+  const mode: SocialOAuthMode = requestedMode;
+
   // Optional invite token, carried through the whole OAuth round-trip so that
   // invite-only mode can be enforced when a social login results in a new
   // account. Ignored for connect mode and when invite-only mode is off.
-  const inviteToken = c.req.query("invite") ?? null;
+  const inviteToken = mode === "login" ? (c.req.query("invite") ?? null) : null;
+  if (inviteToken && inviteToken.length > 512)
+    return c.json({ error: "Invalid invite token" }, 400);
 
-  // For connect mode, userId comes from a pre-issued intent token stored in KV
-  let userId = c.get("user")?.id ?? null;
-  if (!userId && mode === "connect") {
-    const intentKey = c.req.query("intent");
-    if (intentKey) {
-      const stored = await c.env.KV_CACHE.get(intentKey);
-      if (stored) {
-        userId = stored;
-        await c.env.KV_CACHE.delete(intentKey); // one-time use
+  // Connect mode is pinned to the exact live session authenticated on this
+  // request. When the frontend supplies its pre-flight intent, it must name
+  // that same session; a stale cookie or account switch fails closed instead
+  // of silently linking the provider to a different account.
+  const userId = mode === "connect" ? (c.get("user")?.id ?? null) : null;
+  const sessionId = mode === "connect" ? (c.get("sessionId") ?? null) : null;
+  if (mode === "connect" && (!userId || !sessionId))
+    return c.json({ error: "Authentication required for connect mode" }, 401);
+
+  const intentKey = mode === "connect" ? c.req.query("intent") : null;
+  if (intentKey) {
+    if (!/^connect:intent:[A-Za-z0-9_-]{32}$/.test(intentKey))
+      return c.json({ error: "Invalid connect intent" }, 401);
+    const stored = await c.env.KV_CACHE.get(intentKey);
+    await c.env.KV_CACHE.delete(intentKey); // one-time use, valid or not
+    let matchesSession = false;
+    if (stored) {
+      try {
+        const intent = JSON.parse(stored) as {
+          userId?: unknown;
+          sessionId?: unknown;
+        };
+        matchesSession =
+          intent.userId === userId && intent.sessionId === sessionId;
+      } catch {
+        // Malformed and legacy intents cannot provide session binding.
       }
     }
+    if (!matchesSession)
+      return c.json({ error: "Invalid connect intent" }, 401);
   }
+  if (mode === "connect") await mirrorBearerSessionCookie(c);
 
   // X (Twitter) requires PKCE on every authorization request — generate a
   // verifier here, send the SHA-256 challenge to the auth endpoint, and
@@ -353,18 +481,27 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
     codeVerifier = randomBase64url(32); // 43 base64url chars — PKCE minimum
   }
 
-  await c.env.KV_CACHE.put(
-    `social:state:${nonce}`,
-    JSON.stringify({
-      slug,
-      provider: source.provider,
-      mode,
-      userId,
-      codeVerifier,
+  const correlation = randomBase64url(32);
+  const now = Math.floor(Date.now() / 1000);
+  const stored = await storeSocialOAuthState(c.env.DB, {
+    state: nonce,
+    slug,
+    provider: source.provider,
+    mode,
+    userId,
+    sessionId,
+    correlationHash: await sha256Hex(correlation),
+    codeVerifier,
+    inviteTokenCiphertext: await sealSocialOAuthInviteToken(
       inviteToken,
-    }),
-    { expirationTtl: 600 },
-  );
+      correlation,
+      nonce,
+    ),
+    now,
+  });
+  if (!stored)
+    return c.json({ error: "Too many active social login attempts" }, 503);
+  setSocialOAuthCookie(c, correlation, SOCIAL_OAUTH_STATE_TTL_SECONDS);
 
   // ── Telegram: redirect to oauth.telegram.org ───────────────────────────────
   // Telegram sends auth results as a URL fragment (#tgAuthResult=BASE64_JSON),
@@ -432,7 +569,7 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
 // The frontend reads #tgAuthResult=BASE64_JSON from the URL fragment (which
 // the server never sees) and POSTs the decoded data here for HMAC verification.
 
-app.post("/:provider/tg-verify", async (c) => {
+app.post("/:provider/tg-verify", optionalAuth, async (c) => {
   const slug = c.req.param("provider") ?? "";
 
   const body = await c.req
@@ -446,15 +583,16 @@ app.post("/:provider/tg-verify", async (c) => {
   if (!source || source.provider !== "telegram")
     return c.json({ error: "provider_not_configured" }, 400);
 
-  const stateData = await c.env.KV_CACHE.get(`social:state:${body.nonce}`);
-  if (!stateData) return c.json({ error: "invalid_state" }, 400);
-  await c.env.KV_CACHE.delete(`social:state:${body.nonce}`);
+  const consumedState = await consumeBrowserBoundState(
+    c,
+    body.nonce,
+    slug,
+    source.provider,
+  );
+  if (!consumedState) return c.json({ error: "invalid_state" }, 400);
 
-  const { mode, userId, inviteToken } = JSON.parse(stateData) as {
-    mode: string;
-    userId: string | null;
-    inviteToken?: string | null;
-  };
+  const { stateData, inviteToken } = consumedState;
+  const { mode, user_id: userId } = stateData;
 
   // Verify HMAC-SHA256(data_check_string, SHA256(bot_token))
   const tgData = body.tg_data;
@@ -654,42 +792,48 @@ app.post("/:provider/tg-verify", async (c) => {
 
 // ─── Standard OAuth2 callback (:provider/callback) ───────────────────────────
 
-app.get("/:provider/callback", async (c) => {
+app.get("/:provider/callback", optionalAuth, async (c) => {
   const slug = c.req.param("provider") ?? "";
-  const error = c.req.query("error");
-  if (error)
-    return c.redirect(
-      `${c.env.APP_URL}/connections?error=${encodeURIComponent(error)}`,
-    );
-
-  const config = await getConfig(c.env.DB);
   const source = await resolveSource(c.env, slug);
   if (!source)
     return c.redirect(
       `${c.env.APP_URL}/connections?error=provider_not_configured`,
     );
 
+  // Validate and atomically consume browser-bound state before accepting either
+  // a provider success or error response. A callback copied to another browser
+  // has no matching HttpOnly correlation cookie and leaves the real flow usable.
+  const state = c.req.query("state");
+  if (!state)
+    return c.redirect(`${c.env.APP_URL}/connections?error=missing_params`);
+  const consumedState = await consumeBrowserBoundState(
+    c,
+    state,
+    slug,
+    source.provider,
+  );
+  if (!consumedState)
+    return c.redirect(`${c.env.APP_URL}/connections?error=invalid_state`);
+  const { stateData, inviteToken } = consumedState;
+
+  const error = c.req.query("error");
+  if (error)
+    return c.redirect(
+      `${c.env.APP_URL}/connections?error=${encodeURIComponent(error)}`,
+    );
+
   // ── Standard OAuth2 callback ─────────────────────────────────────────────────
   const code = c.req.query("code");
-  const state = c.req.query("state");
-  if (!code || !state)
+  if (!code)
     return c.redirect(`${c.env.APP_URL}/connections?error=missing_params`);
 
-  const stateData = await c.env.KV_CACHE.get(`social:state:${state}`);
-  if (!stateData)
-    return c.redirect(`${c.env.APP_URL}/connections?error=invalid_state`);
-  await c.env.KV_CACHE.delete(`social:state:${state}`);
-
-  const { provider, mode, userId, codeVerifier, inviteToken } = JSON.parse(
-    stateData,
-  ) as {
-    slug: string;
-    provider: string;
-    mode: string;
-    userId: string | null;
-    codeVerifier?: string | null;
-    inviteToken?: string | null;
-  };
+  const config = await getConfig(c.env.DB);
+  const {
+    provider,
+    mode,
+    user_id: userId,
+    code_verifier: codeVerifier,
+  } = stateData;
 
   const redirectUri = `${c.env.APP_URL}/api/connections/${slug}/callback`;
 

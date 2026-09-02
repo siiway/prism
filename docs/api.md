@@ -485,14 +485,22 @@ only once granted) and `allow_normal_user_join`.
 
 ## Social Connections
 
-| Method   | Path                                 | Notes                                                                                  |
-| -------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
-| `GET`    | `/api/connections`                   | List the user's linked accounts                                                        |
-| `GET`    | `/api/connections/:slug/begin`       | Redirect to the source's authorization URL. `?mode=login` (default) or `?mode=connect` |
-| `GET`    | `/api/connections/:slug/callback`    | OAuth callback (auto-handled by the provider redirect)                                 |
-| `GET`    | `/api/connections/telegram/callback` | Telegram widget callback (no `:slug` because Telegram uses a different flow)           |
-| `POST`   | `/api/connections/:id/refresh`       | Refresh display name / avatar from the provider                                        |
-| `DELETE` | `/api/connections/:id`               | Disconnect                                                                             |
+| Method   | Path                               | Notes                                                                                                                        |
+| -------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/connections`                 | List the user's linked accounts                                                                                              |
+| `POST`   | `/api/connections/intent`          | Create a five-minute, session-bound pre-flight token for `mode=connect`                                                      |
+| `GET`    | `/api/connections/:slug/begin`     | Begin login (`?mode=login`, default) or linking (`?mode=connect`); sets the browser correlation cookie                       |
+| `GET`    | `/api/connections/:slug/callback`  | Browser-bound OAuth callback (auto-handled by the provider redirect); connect mode requires the same live initiating session |
+| `POST`   | `/api/connections/:slug/tg-verify` | Verify Telegram callback data with the same browser and session binding                                                      |
+| `POST`   | `/api/connections/:id/refresh`     | Refresh display name / avatar from the provider                                                                              |
+| `DELETE` | `/api/connections/:id`             | Disconnect                                                                                                                   |
+
+Social-login state expires after 10 minutes. The begin endpoint allows 20
+attempts per client IP in a five-minute window and returns `429` with
+`Retry-After` when exceeded; the bounded global in-flight-state pool returns
+`503` if full. For linking, pass the token returned by `/intent` as
+`?mode=connect&intent=<token>`; it must match the live session on the begin
+request and callback.
 
 OAuth-scoped equivalents:
 

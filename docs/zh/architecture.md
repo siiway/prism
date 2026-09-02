@@ -55,7 +55,7 @@ worker/
 ├── types.ts                # D1 行类型、Variables；重导出 shared/types.ts
 │
 ├── db/migrations/
-│   └── 0001_init.sql … 0053_audit_webhook_delivery.sql
+│   └── 0001_init.sql … 0071_social_oauth_states.sql
 │
 ├── lib/
 │   ├── config.ts           # getConfig()、setConfigValues()、JWT 密钥、RSA 密钥对（KV）
@@ -82,7 +82,8 @@ worker/
 │   ├── sudo.ts             # 步骤提升宽限期存储于 KV
 │   ├── scopes.ts           # scope ↔ claim 映射 + 跨应用 scope 解析
 │   ├── redirectUri.ts      # OAuth redirect URI 校验，已注册域名检查
-│   ├── cookies.ts          # Session cookie 工具
+│   ├── socialOAuthState.ts # 原子消费且绑定浏览器的社交 OAuth state
+│   ├── cookies.ts          # Session 与社交 OAuth 关联 cookie 工具
 │   ├── lockdown.ts         # 用户/团队删除锁定（基于环境变量）
 │   └── logger.ts           # 请求日志中间件
 │
@@ -174,6 +175,10 @@ WebAuthn 凭据。`credential_id` 用 base64url。每次成功认证后更新 `c
 ### `oauth_sources`
 
 **Admin → OAuth Sources** 中配置的 OAuth 提供方：内置（GitHub、Google、Microsoft、Discord、Telegram、X）以及 Generic OIDC、Generic OAuth 2。每个源拥有自己的 slug、启用状态，OIDC/OAuth2 还含 issuer / auth / token / userinfo URL。同一类型可以有多个源。`client_secret` 加密存储。`trusted` 标志（默认 `1`）标记一个来源的邮箱在注册时是否自动视为已验证；不受信任的来源（`trusted = 0`）在注册后始终要求邮箱验证。
+
+### `social_oauth_states`
+
+社交登录的短期往返状态存放在 D1 中，并通过 `DELETE … RETURNING` 在同一条语句中校验和原子消费。每行只保存 HttpOnly 浏览器关联 cookie 的 SHA-256 哈希；原始浏览器密钥不会写入数据库。邀请 token 的交接数据使用该浏览器专属密钥进行 AES-GCM 加密。关联账号流程还会固定发起方的用户 ID 与会话 ID，回调必须携带同一个仍有效的会话才能消费该行。该表最多保留 10,000 行；过期行会在 begin 时择机清理，并由定时 OAuth 临时数据清理任务再次回收。
 
 ### `domains`
 

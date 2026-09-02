@@ -429,14 +429,17 @@ OAuth 应用密钥为只写字段。`POST /api/apps`、`POST /api/teams/:id/apps
 
 ## 社交连接
 
-| Method   | Path                                 | 说明                                                           |
-| -------- | ------------------------------------ | -------------------------------------------------------------- |
-| `GET`    | `/api/connections`                   | 列出当前用户已绑定的社交账号                                   |
-| `GET`    | `/api/connections/:slug/begin`       | 跳转到源的授权 URL。`?mode=login`（默认）或 `?mode=connect`    |
-| `GET`    | `/api/connections/:slug/callback`    | OAuth 回调（由 provider 跳转触发）                             |
-| `GET`    | `/api/connections/telegram/callback` | Telegram widget 回调（无 `:slug`，因为 Telegram 用另一种流程） |
-| `POST`   | `/api/connections/:id/refresh`       | 从 provider 刷新显示名/头像                                    |
-| `DELETE` | `/api/connections/:id`               | 解绑                                                           |
+| Method   | Path                               | 说明                                                                                |
+| -------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
+| `GET`    | `/api/connections`                 | 列出当前用户已绑定的社交账号                                                        |
+| `POST`   | `/api/connections/intent`          | 为 `mode=connect` 创建有效期五分钟且绑定会话的预检 token                            |
+| `GET`    | `/api/connections/:slug/begin`     | 开始登录（默认 `?mode=login`）或关联（`?mode=connect`），并设置浏览器关联 cookie    |
+| `GET`    | `/api/connections/:slug/callback`  | 绑定浏览器的 OAuth 回调（由 provider 跳转触发）；关联模式要求与发起时相同的有效会话 |
+| `POST`   | `/api/connections/:slug/tg-verify` | 使用相同的浏览器与会话绑定校验 Telegram 回调数据                                    |
+| `POST`   | `/api/connections/:id/refresh`     | 从 provider 刷新显示名/头像                                                         |
+| `DELETE` | `/api/connections/:id`             | 解绑                                                                                |
+
+社交登录 state 在 10 分钟后过期。begin 端点对每个客户端 IP 每五分钟最多允许 20 次尝试，超过后返回带 `Retry-After` 的 `429`；全局进行中状态池达到上限时返回 `503`。关联账号时，将 `/intent` 返回的 token 作为 `?mode=connect&intent=<token>` 传入；它必须与 begin 请求及回调中的有效会话一致。
 
 OAuth scope 版本：
 

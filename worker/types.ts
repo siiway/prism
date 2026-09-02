@@ -370,6 +370,21 @@ export interface SocialConnectionRow {
   connected_at: number;
 }
 
+/** Short-lived, browser-bound state for a social OAuth round trip. */
+export interface SocialOAuthStateRow {
+  state: string;
+  slug: string;
+  provider: string;
+  mode: "login" | "connect";
+  user_id: string | null;
+  session_id: string | null;
+  correlation_hash: string;
+  code_verifier: string | null;
+  invite_token_ciphertext: string | null;
+  expires_at: number;
+  created_at: number;
+}
+
 /** A notice-board entry. See worker/db/migrations/0060_notices.sql. */
 export interface NoticeRow {
   id: string;
