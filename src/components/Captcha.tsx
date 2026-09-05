@@ -295,9 +295,15 @@ function ProviderWidget({
           return;
         }
         initGeetest4(
-          { captchaId: captcha.geetest_captcha_id, product: "bind" },
+          { captchaId: captcha.geetest_captcha_id, product: "popup" },
           (captchaObj) => {
             geetestObjRef.current = captchaObj;
+            // "popup" renders its own trigger button into the container; it must
+            // be mounted with appendTo or the widget never appears and onReady
+            // never fires.
+            if (containerRef.current) {
+              captchaObj.appendTo(containerRef.current);
+            }
             captchaObj.onReady(() => setGeetestReady(true));
             captchaObj.onSuccess(() => {
               const result = captchaObj.getValidate();
@@ -403,6 +409,8 @@ function ProviderWidget({
   if (provider === "recaptcha") return null;
 
   if (provider === "geetest") {
+    // The "popup" widget renders its own trigger button into the container once
+    // ready; show a loading hint until then.
     return (
       <div>
         <div ref={containerRef} />
@@ -412,13 +420,6 @@ function ProviderWidget({
             <Text>{t("captcha.loading")}</Text>
           </div>
         )}
-        <Button
-          appearance="secondary"
-          disabled={!geetestReady}
-          onClick={() => geetestObjRef.current?.showCaptcha?.()}
-        >
-          {t("captcha.geetestVerify")}
-        </Button>
       </div>
     );
   }

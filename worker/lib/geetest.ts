@@ -67,15 +67,20 @@ export async function verifyGeetest(
 ): Promise<boolean> {
   const { lot_number, captcha_output, pass_token, gen_time } = output;
   if (!lot_number || !captcha_output || !pass_token || !gen_time) {
-    // No usable output at all — nothing to validate. Governed by policy.
-    return failOpen;
+    // Structurally invalid or missing output is ALWAYS rejected — fail-open
+    // covers a GeeTest outage, not a client that simply sent nothing. Accepting
+    // an empty `geetest` object here would let anyone bypass the captcha
+    // whenever the operator enabled fail-open.
+    return false;
   }
 
   let signToken: string;
   try {
     signToken = await signLotNumber(lot_number, captchaKey);
   } catch {
-    return failOpen;
+    // A signing failure is a server-side error (e.g. a bad key), not a GeeTest
+    // outage. Reject rather than fail open.
+    return false;
   }
 
   const body = new URLSearchParams({

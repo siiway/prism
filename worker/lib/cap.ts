@@ -22,11 +22,11 @@ import {
   type ValidateChallengeBody,
 } from "capjs-core";
 import { getJwtSecret } from "./config";
+import { claimReplayValue } from "./securityState";
 
 /** Scope bound into the challenge JWT, so a token minted for captcha cannot be
  *  replayed against some other capjs-core surface. */
 const CAP_SCOPE = "prism-captcha";
-const NONCE_PREFIX = "cap:nonce:";
 const TOKEN_PREFIX = "cap:token:";
 /** Redeem-token TTL. Matches capjs-core's default; the user must submit the
  *  form within this window after solving. */
@@ -83,20 +83,25 @@ export async function redeemCapChallenge(
   const result = await validateChallenge(secret, body, {
     scope: CAP_SCOPE,
     tokenTtlMs: TOKEN_TTL_MS,
-    consumeNonce: async (sigHex, ttlMs) => {
-      const key = `${NONCE_PREFIX}${sigHex}`;
-      if (await env.KV_CACHE.get(key)) return false;
-      await env.KV_CACHE.put(key, "1", {
-        expirationTtl: Math.ceil(ttlMs / 1000),
-      });
-      return true;
-    },
+    // Challenge single-use guard. Backed by the atomic D1 replay-claim table
+    // (conditional upsert) rather than a KV get-then-put, which is racy under
+    // concurrency and eventually consistent — two requests could both see the
+    // nonce absent and both redeem the same challenge.
+    consumeNonce: async (sigHex, ttlMs) =>
+      claimReplayValue(
+        env.DB,
+        "cap-nonce",
+        "",
+        sigHex,
+        Math.floor(Date.now() / 1000) + Math.ceil(ttlMs / 1000),
+      ),
   });
   if (!result.success) return { success: false };
 
-  // Persist the redeem token so the eventual form submission can be checked.
-  // capjs-core hands back a `token` (given to the user) and a `tokenKey`
-  // (stored server-side); store expiry keyed by tokenKey.
+  // Persist the redeem token so the eventual form submission can be proven to
+  // have been issued by us (authenticity). Single-use of the token is enforced
+  // atomically at verify time via the replay-claim table, so this KV record
+  // only needs to answer "did we issue this, and is it still valid?".
   const tokenKey = result.tokenKey ?? result.token;
   await env.KV_CACHE.put(`${TOKEN_PREFIX}${tokenKey}`, String(result.expires), {
     expirationTtl: Math.ceil(TOKEN_TTL_MS / 1000),
@@ -121,17 +126,28 @@ async function deriveTokenKey(token: string): Promise<string | null> {
   return `${id}:${hex}`;
 }
 
-/** Verify a submitted embedded Cap token: look it up, check expiry, single-use. */
+/** Verify a submitted embedded Cap token: prove we issued it, that it hasn't
+ *  expired, and that it hasn't already been used. */
 async function verifyCapEmbedded(env: Env, token: string): Promise<boolean> {
   const tokenKey = await deriveTokenKey(token);
   if (!tokenKey) return false;
-  const key = `${TOKEN_PREFIX}${tokenKey}`;
-  const stored = await env.KV_CACHE.get(key);
+
+  // Authenticity + expiry: the KV record was written at redeem time.
+  const stored = await env.KV_CACHE.get(`${TOKEN_PREFIX}${tokenKey}`);
   if (!stored) return false;
-  // Single-use: delete on read so a captured token cannot be replayed.
-  await env.KV_CACHE.delete(key);
   const expires = Number(stored);
-  return Number.isFinite(expires) && expires > Date.now();
+  if (!Number.isFinite(expires) || expires <= Date.now()) return false;
+
+  // Single-use, atomically. The KV read above is not the gate — this claim is:
+  // concurrent submissions of the same token all reach here, and only the first
+  // claim succeeds, so a captured token cannot be redeemed twice.
+  return claimReplayValue(
+    env.DB,
+    "cap-token",
+    "",
+    tokenKey,
+    Math.ceil(expires / 1000),
+  );
 }
 
 /** Verify a submitted token against an external Cap Standalone server. */
