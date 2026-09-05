@@ -1696,12 +1696,17 @@ app.post("/gpg-login", async (c) => {
   // could still be entered with the key alone, which is not what enabling it
   // promises. Checked before the challenge is consumed so the client can
   // resubmit the signed message with a code instead of signing again.
+  //
+  // The account holder can opt out via `gpg_require_2fa = 0` on the user row
+  // (Security > GPG keys > "Require 2FA after GPG verification"). That flag
+  // asserts explicit trust in the signing key as a standalone factor; when
+  // clear, we skip the TOTP prompt even if authenticators are enrolled.
   const gpgTotpCount = await c.env.DB.prepare(
     "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
   )
     .bind(user.id)
     .first<{ n: number }>();
-  if ((gpgTotpCount?.n ?? 0) > 0) {
+  if ((gpgTotpCount?.n ?? 0) > 0 && user.gpg_require_2fa !== 0) {
     if (!body.totp_code)
       return c.json({ error: "TOTP code required", totp_required: true }, 200);
     if (!(await verifyAnyTotp(c.env, user.id, body.totp_code))) {

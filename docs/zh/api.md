@@ -226,6 +226,8 @@ Prism 有意让每个浏览器同一时间只保留一个会话。切换账号�
 
 **响应** — `{ "user": { ... } }`；会话仅通过 HttpOnly Cookie 设置。
 
+若账号启用了 TOTP 且未在偏好中关闭 `gpg_require_2fa`（Security > GPG 密钥 > _GPG 验证后仍要求 2FA_），首次请求会以状态 `200` 返回 `{ "totp_required": true }`。此时再次提交同一段签名消息并附上 `totp_code` 字段完成登录。已关闭该偏好的账号即使启用了身份验证器，也会在第一次请求就登录成功——关闭该开关等同于显式声明信任 GPG 签名密钥作为独立因素。
+
 ### `GET /api/user/gpg` / `POST /api/user/gpg` / `DELETE /api/user/gpg/:id`
 
 会话认证下的 GPG 公钥管理。`POST` 接受 ASCII armor 或二进制 `public_key` 加可选 `name`；同时支持 RSA/EdDSA 等经典算法和 ML-DSA 后量子算法。

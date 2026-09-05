@@ -19,6 +19,10 @@ export interface UserRow {
   alt_email_login: number | null;
   access_token_ttl_minutes: number | null;
   refresh_token_ttl_days: number | null;
+  /** 1 (default) = a successful GPG signature still walks the TOTP gate when
+   *  the account has an enrolled authenticator; 0 = trust the signature on
+   *  its own and skip the TOTP prompt. Only affects gpg-login. */
+  gpg_require_2fa: number;
   /** 0 = private (default), 1 = public — explicit opt-in only. */
   profile_is_public: number;
   /** NULL = follow site default; 0/1 = user-set preference. */

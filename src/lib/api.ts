@@ -504,6 +504,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       alt_email_login: boolean | null;
       access_token_ttl_minutes: number | null;
       refresh_token_ttl_days: number | null;
+      gpg_require_2fa: boolean;
       profile_is_public: boolean;
       profile_show_display_name: boolean | null;
       profile_show_avatar: boolean | null;
@@ -2626,7 +2627,10 @@ export const api = createApiClient({
  *  concrete "global"/"china"; the client-side modes are resolved in the browser
  *  by the Captcha component. Absent on older servers → treated as "global". */
 export type TurnstileEndpointDirective =
-  "global" | "china" | "client_language" | "client_region";
+  | "global"
+  | "china"
+  | "client_language"
+  | "client_region";
 
 /** Which of the two configured Turnstile widgets minted a token. Sent back
  *  with the token so the server verifies it against the matching secret — the
@@ -2818,6 +2822,10 @@ export interface UserProfile {
   alt_email_login: number | null;
   access_token_ttl_minutes: number | null;
   refresh_token_ttl_days: number | null;
+  /** true (default) = gpg-login still asks for a TOTP code when the account
+   *  has an enrolled authenticator; false = trust the GPG signature alone.
+   *  See Security > GPG keys > "Require 2FA after GPG verification". */
+  gpg_require_2fa: boolean;
   profile_is_public: boolean;
   /** Per-field overrides — null means "follow the site default". */
   profile_show_display_name: boolean | null;
@@ -4050,7 +4058,8 @@ export type NotificationRuleSendChannel =
   | { kind: "discord"; connection_id: string; level: NotificationLevel };
 
 export type NotificationRuleAction =
-  { type: "drop" } | { type: "send"; channels: NotificationRuleSendChannel[] };
+  | { type: "drop" }
+  | { type: "send"; channels: NotificationRuleSendChannel[] };
 
 export interface NotificationRulesetRule {
   id: string;

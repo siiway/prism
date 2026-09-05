@@ -257,6 +257,15 @@ challenge is single-use and expires after 5 minutes.
 **Response** — `{ "user": { ... } }`; the session is set only in the HttpOnly
 cookie.
 
+If the account has TOTP enrolled and has not opted out via the
+`gpg_require_2fa` preference (Security > GPG keys > _Require 2FA after GPG
+verification_), the first call instead returns
+`{ "totp_required": true }` with status `200`. Resubmit the same signed
+message with a `totp_code` field to complete the login. Accounts that clear
+the preference are signed in on the first call even when authenticators are
+enrolled — clearing the flag asserts explicit trust in the GPG signing key as
+a standalone factor.
+
 ### `GET /api/user/gpg` / `POST /api/user/gpg` / `DELETE /api/user/gpg/:id`
 
 Session-auth GPG key management. `POST` accepts ASCII-armored or binary
