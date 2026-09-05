@@ -1,48 +1,85 @@
-// Captcha widget supporting Turnstile, hCaptcha, reCAPTCHA v3, and PoW
+// Captcha widget supporting an *enabled set* of providers the visitor can
+// switch between — Turnstile, hCaptcha, reCAPTCHA v3, PoW, GeeTest v4 and Cap.
+//
+// The site exposes an ordered `captcha_providers` list (see PublicCaptchaConfig):
+// element 0 is the default rendered first; the rest are alternates. When more
+// than one is enabled a "try a different method" control lets the visitor swap
+// the active provider — surfaced immediately on a failure and after a
+// configurable timeout, and their choice is remembered in localStorage so it
+// survives failed attempts and re-renders on the same page.
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { Button, Spinner, Text, ProgressBar } from "@fluentui/react-components";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
+import {
+  Button,
+  Spinner,
+  Text,
+  ProgressBar,
+  Link,
+} from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../lib/api-context";
-import type { TurnstileEndpointDirective, TurnstileVariant } from "../lib/api";
+import type {
+  CaptchaProvider,
+  GeetestOutput,
+  PublicCaptchaConfig,
+  TurnstileEndpointDirective,
+  TurnstileVariant,
+} from "../lib/api";
 import { solvePoW } from "../lib/pow";
 
 export interface CaptchaValue {
+  /** Which provider produced this proof. The server verifies against this and
+   *  rejects a provider that isn't in the enabled set. */
+  provider?: CaptchaProvider;
   captcha_token?: string;
-  /** Which Turnstile widget minted `captcha_token`. Sent back with it so the
-   *  server verifies against that widget's secret — the global and China
-   *  widgets are separate sitekey/secret pairs. Absent for the other
-   *  providers, which have only one pair. */
   captcha_variant?: TurnstileVariant;
   pow_challenge?: string;
   pow_nonce?: number;
+  /** GeeTest v4 validate output. */
+  geetest?: GeetestOutput;
+  /** Cap redeem token. */
+  cap_token?: string;
 }
 
 interface CaptchaProps {
-  provider: string;
-  /** Site key for the provider. For Turnstile this is the global
-   *  (region:"world") widget. */
-  siteKey: string;
-  /** Server-resolved Turnstile host directive (see the site config's
-   *  turnstile_endpoint_mode). Chooses the global vs. China widget host. Only
-   *  used when provider === "turnstile"; defaults to the global host when
-   *  absent.
-   *
-   *  A directive that can put the browser on the China host only ever arrives
-   *  once the server has confirmed a China widget is configured and that the
-   *  host will serve it — see worker/lib/turnstile.ts for why that check has
-   *  to happen there and cannot be retried here. */
-  turnstileEndpoint?: TurnstileEndpointDirective;
-  /** Site key of the region:"china" Turnstile widget. Required to use the
-   *  China host at all: a region:"world" key is rejected there. */
-  turnstileChinaSiteKey?: string;
+  /** The site's public captcha descriptor. When `captcha_providers` is empty
+   *  the component renders nothing. */
+  captcha: PublicCaptchaConfig;
   onVerified: (value: CaptchaValue) => void;
   onError?: (err: string) => void;
 }
 
-// IANA timezones served by the Mainland-China Turnstile mirror. Hong Kong and
-// Macau are intentionally excluded — the cloudflare-cn.com endpoint targets
-// Mainland China.
+// Remembers the visitor's chosen alternate so it persists across failed
+// attempts and re-renders within the page/session (Q12). Keyed globally — the
+// same person hitting login then 2FA keeps their preference.
+const SWITCH_STORAGE_KEY = "prism.captcha.provider";
+
+function loadStoredProvider(): CaptchaProvider | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    return (localStorage.getItem(SWITCH_STORAGE_KEY) as CaptchaProvider) || null;
+  } catch {
+    return null;
+  }
+}
+
+function storeProvider(p: CaptchaProvider): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(SWITCH_STORAGE_KEY, p);
+  } catch {
+    // Private mode / storage disabled — the choice just won't persist.
+  }
+}
+
+// ─── Turnstile China host selection (unchanged from the single-provider era) ──
+
 const CHINA_TIMEZONES = new Set([
   "Asia/Shanghai",
   "Asia/Urumqi",
@@ -74,16 +111,6 @@ function browserInChinaTimezone(): boolean {
 const TURNSTILE_HOST_GLOBAL = "https://challenges.cloudflare.com";
 const TURNSTILE_HOST_CHINA = "https://challenges.cloudflare-cn.com";
 
-// Resolve the server directive into the host/sitekey pair to render. The
-// client-side modes ("client_language", "client_region") are decided here in
-// the browser; the rest arrive already resolved from the server.
-//
-// Host and sitekey move together and cannot be mixed: a Turnstile widget's
-// `region` is fixed at creation, and the China host rejects a region:"world"
-// sitekey (and vice versa). The pair is also final for the life of the page —
-// the Turnstile bundle reads its challenge origin off its own <script> tag
-// once, at load — which is why the server will not name the China host unless
-// it has confirmed the China widget works.
 function turnstileTarget(
   directive: TurnstileEndpointDirective | undefined,
   siteKey: string,
@@ -100,13 +127,9 @@ function turnstileTarget(
     case "client_region":
       wantsChina = browserInChinaTimezone();
       break;
-    // "global", and an unknown directive from a newer server.
     default:
       wantsChina = false;
   }
-  // No China widget configured means there is nothing to load there, whatever
-  // the directive says. The server already enforces this; repeating it keeps a
-  // stale or hand-edited payload from producing a guaranteed-broken widget.
   const useChina = wantsChina && !!chinaSiteKey;
   return useChina
     ? {
@@ -121,16 +144,11 @@ function turnstileTarget(
       };
 }
 
-// Append a provider's script tag and hand back the effect teardown. `remove()`
-// tolerates an already-detached node, unlike document.body.removeChild.
 function injectScript(src: string, onLoad: () => void): () => void {
   const script = document.createElement("script");
   let torndown = false;
   script.src = src;
   script.async = true;
-  // Detaching the tag does not abort a load already in flight, so the flag is
-  // what keeps a late onLoad from rendering into a container the next effect
-  // run already owns.
   script.onload = () => {
     if (!torndown) onLoad();
   };
@@ -141,11 +159,6 @@ function injectScript(src: string, onLoad: () => void): () => void {
   };
 }
 
-// Detach a rendered widget. The container element outlives the effect, and
-// both providers refuse to render twice into the same element — so a re-run
-// (language switch, changed endpoint directive) must clear the old widget or
-// the new one never appears. Throws once the provider global is gone, which is
-// exactly the case where there is nothing left to remove.
 function removeWidget(name: "turnstile" | "hcaptcha", id: string | null): void {
   if (id === null) return;
   try {
@@ -155,14 +168,23 @@ function removeWidget(name: "turnstile" | "hcaptcha", id: string | null): void {
   }
 }
 
-export function Captcha({
+// ─── Single-provider widget ───────────────────────────────────────────────────
+//
+// Renders exactly one provider. Mounted with a React key that includes the
+// provider, so switching providers unmounts the old widget and mounts the new
+// one cleanly — each provider's SDK refuses to render twice into one element.
+
+function ProviderWidget({
   provider,
-  siteKey,
-  turnstileEndpoint,
-  turnstileChinaSiteKey,
+  captcha,
   onVerified,
   onError,
-}: CaptchaProps) {
+}: {
+  provider: CaptchaProvider;
+  captcha: PublicCaptchaConfig;
+  onVerified: (value: CaptchaValue) => void;
+  onError?: (err: string) => void;
+}) {
   const api = useApi();
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -170,62 +192,49 @@ export function Captcha({
   const [powState, setPowState] = useState<
     "idle" | "solving" | "done" | "error"
   >("idle");
+  const [geetestReady, setGeetestReady] = useState(false);
+  const geetestObjRef = useRef<GeetestCaptchaObj | null>(null);
 
   // ─── Turnstile ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (provider !== "turnstile") return;
-
     const target = turnstileTarget(
-      turnstileEndpoint,
-      siteKey,
-      turnstileChinaSiteKey,
+      captcha.turnstile_endpoint,
+      captcha.turnstile_site_key,
+      captcha.turnstile_china_site_key,
     );
-
     const removeScript = injectScript(target.src, () => {
       if (!containerRef.current) return;
-      widgetIdRef.current = widgetApi("turnstile").render(
-        containerRef.current,
-        {
-          sitekey: target.sitekey,
-          callback: (token: string) =>
-            onVerified({
-              captcha_token: token,
-              captcha_variant: target.variant,
-            }),
-          "error-callback": () => onError?.(t("captcha.turnstileFailed")),
-        },
-      );
+      widgetIdRef.current = widgetApi("turnstile").render(containerRef.current, {
+        sitekey: target.sitekey,
+        callback: (token: string) =>
+          onVerified({
+            provider: "turnstile",
+            captcha_token: token,
+            captcha_variant: target.variant,
+          }),
+        "error-callback": () => onError?.(t("captcha.turnstileFailed")),
+      });
     });
     return () => {
       removeWidget("turnstile", widgetIdRef.current);
       widgetIdRef.current = null;
       removeScript();
     };
-  }, [
-    provider,
-    siteKey,
-    turnstileEndpoint,
-    turnstileChinaSiteKey,
-    onVerified,
-    onError,
-    t,
-  ]);
+  }, [provider, captcha, onVerified, onError, t]);
 
   // ─── hCaptcha ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (provider !== "hcaptcha") return;
-
     const removeScript = injectScript(
       "https://js.hcaptcha.com/1/api.js?render=explicit",
       () => {
         if (!containerRef.current) return;
-        widgetIdRef.current = widgetApi("hcaptcha").render(
-          containerRef.current,
-          {
-            sitekey: siteKey,
-            callback: (token: string) => onVerified({ captcha_token: token }),
-          },
-        );
+        widgetIdRef.current = widgetApi("hcaptcha").render(containerRef.current, {
+          sitekey: captcha.hcaptcha_site_key,
+          callback: (token: string) =>
+            onVerified({ provider: "hcaptcha", captcha_token: token }),
+        });
       },
     );
     return () => {
@@ -233,30 +242,27 @@ export function Captcha({
       widgetIdRef.current = null;
       removeScript();
     };
-  }, [provider, siteKey, onVerified, onError]);
+  }, [provider, captcha, onVerified, onError]);
 
   // ─── reCAPTCHA v3 ───────────────────────────────────────────────────────
   useEffect(() => {
     if (provider !== "recaptcha") return;
-
-    // No widget to tear down — v3 runs invisibly and returns a token.
+    const siteKey = captcha.recaptcha_site_key;
     return injectScript(
       `https://www.google.com/recaptcha/api.js?render=${siteKey}`,
       () => {
         const grecaptcha = (window as unknown as RecaptchaWindow).grecaptcha;
         grecaptcha.ready(async () => {
           try {
-            const token = await grecaptcha.execute(siteKey, {
-              action: "login",
-            });
-            onVerified({ captcha_token: token });
+            const token = await grecaptcha.execute(siteKey, { action: "login" });
+            onVerified({ provider: "recaptcha", captcha_token: token });
           } catch {
             onError?.(t("captcha.recaptchaFailed"));
           }
         });
       },
     );
-  }, [provider, siteKey, onVerified, onError, t]);
+  }, [provider, captcha, onVerified, onError, t]);
 
   // ─── Proof of Work ──────────────────────────────────────────────────────
   const solveChallenge = useCallback(async () => {
@@ -264,7 +270,7 @@ export function Captcha({
     try {
       const { challenge, difficulty } = await api.powChallenge();
       const nonce = await solvePoW(challenge, difficulty);
-      onVerified({ pow_challenge: challenge, pow_nonce: nonce });
+      onVerified({ provider: "pow", pow_challenge: challenge, pow_nonce: nonce });
       setPowState("done");
     } catch {
       setPowState("error");
@@ -273,11 +279,87 @@ export function Captcha({
   }, [api, onVerified, onError, t]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- triggering an async task on provider change; setState happens inside the async flow, not synchronously
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async task on provider change; setState happens inside the async flow
     if (provider === "pow") solveChallenge();
   }, [provider, solveChallenge]);
 
-  if (provider === "none") return null;
+  // ─── GeeTest v4 ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (provider !== "geetest") return;
+    const removeScript = injectScript(
+      "https://static.geetest.com/v4/gt4.js",
+      () => {
+        const initGeetest4 = (window as unknown as GeetestWindow).initGeetest4;
+        if (!initGeetest4) {
+          onError?.(t("captcha.geetestFailed"));
+          return;
+        }
+        initGeetest4(
+          { captchaId: captcha.geetest_captcha_id, product: "bind" },
+          (captchaObj) => {
+            geetestObjRef.current = captchaObj;
+            captchaObj.onReady(() => setGeetestReady(true));
+            captchaObj.onSuccess(() => {
+              const result = captchaObj.getValidate();
+              if (result) {
+                onVerified({ provider: "geetest", geetest: result });
+              }
+            });
+            captchaObj.onError(() => onError?.(t("captcha.geetestFailed")));
+          },
+        );
+      },
+    );
+    return () => {
+      try {
+        geetestObjRef.current?.destroy?.();
+      } catch {
+        // Already gone.
+      }
+      geetestObjRef.current = null;
+      removeScript();
+    };
+  }, [provider, captcha, onVerified, onError, t]);
+
+  // ─── Cap ────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (provider !== "cap") return;
+    const container = containerRef.current;
+    if (!container) return;
+    let el: HTMLElement | null = null;
+    let cancelled = false;
+
+    // The endpoint the widget POSTs {endpoint}challenge / {endpoint}redeem to.
+    // Embedded mode is served by this Worker; external mode targets a
+    // self-hosted Cap Standalone server keyed by the site key.
+    const endpoint =
+      captcha.cap_mode === "external"
+        ? `${captcha.cap_api_endpoint.replace(/\/+$/, "")}/${captcha.cap_site_key}/`
+        : "/api/auth/cap/";
+
+    // @cap.js/widget registers the <cap-widget> custom element as a side effect;
+    // import it client-side only (this file is SSR'd).
+    void import("@cap.js/widget").then(() => {
+      if (cancelled || !containerRef.current) return;
+      el = document.createElement("cap-widget");
+      el.setAttribute("data-cap-api-endpoint", endpoint);
+      el.addEventListener("solve", (e: Event) => {
+        const detail = (e as CustomEvent<{ token: string }>).detail;
+        if (detail?.token) {
+          onVerified({ provider: "cap", cap_token: detail.token });
+        }
+      });
+      el.addEventListener("error", () => onError?.(t("captcha.capFailed")));
+      containerRef.current.appendChild(el);
+    });
+
+    return () => {
+      cancelled = true;
+      el?.remove();
+    };
+  }, [provider, captcha, onVerified, onError, t]);
+
+  // ─── Render per provider ──────────────────────────────────────────────────
 
   if (provider === "pow") {
     return (
@@ -311,22 +393,133 @@ export function Captcha({
           </div>
         )}
         <ProgressBar
-          value={
-            powState === "done" ? 1 : powState === "solving" ? undefined : 0
-          }
+          value={powState === "done" ? 1 : powState === "solving" ? undefined : 0}
         />
       </div>
     );
   }
 
-  // For reCAPTCHA v3 there's no visible widget
+  // reCAPTCHA v3 is invisible.
   if (provider === "recaptcha") return null;
 
+  if (provider === "geetest") {
+    return (
+      <div>
+        <div ref={containerRef} />
+        {!geetestReady && (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Spinner size="tiny" />
+            <Text>{t("captcha.loading")}</Text>
+          </div>
+        )}
+        <Button
+          appearance="secondary"
+          disabled={!geetestReady}
+          onClick={() => geetestObjRef.current?.showCaptcha?.()}
+        >
+          {t("captcha.geetestVerify")}
+        </Button>
+      </div>
+    );
+  }
+
+  // Turnstile, hCaptcha, Cap all render into the container element.
   return <div ref={containerRef} />;
 }
 
-// Type stubs for injected globals. Turnstile and hCaptcha share the same
-// explicit-render surface, so one accessor covers both.
+// ─── Public component: enabled set + switching ────────────────────────────────
+
+export function Captcha({ captcha, onVerified, onError }: CaptchaProps) {
+  const { t } = useTranslation();
+
+  // Enabled providers with "none" filtered out.
+  const providers = useMemo<CaptchaProvider[]>(
+    () => captcha.captcha_providers.filter((p) => p !== "none"),
+    [captcha.captcha_providers],
+  );
+
+  // Initial active provider: the stored preference if it's still enabled,
+  // otherwise the default (element 0).
+  const [active, setActive] = useState<CaptchaProvider | null>(null);
+  useEffect(() => {
+    // Syncing the active provider to the enabled set + the stored preference is
+    // exactly the "read from an external system on change" case; the stored
+    // preference also has to be read after mount to avoid an SSR/CSR mismatch.
+    const next =
+      providers.length === 0
+        ? null
+        : (() => {
+            const stored = loadStoredProvider();
+            return stored && providers.includes(stored) ? stored : providers[0];
+          })();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing active provider to enabled set / localStorage preference
+    setActive(next);
+  }, [providers]);
+
+  const [showSwitch, setShowSwitch] = useState(false);
+
+  // Timeout nudge: reveal the switcher after the configured delay if the
+  // visitor hasn't finished yet. 0 disables it. Only relevant with alternates.
+  // setState happens inside the timer callback, not synchronously in the effect.
+  useEffect(() => {
+    const secs = captcha.captcha_switch_timeout_seconds;
+    if (providers.length < 2 || !secs || secs <= 0) return;
+    const id = setTimeout(() => setShowSwitch(true), secs * 1000);
+    return () => clearTimeout(id);
+  }, [active, providers, captcha.captcha_switch_timeout_seconds]);
+
+  const handleError = useCallback(
+    (err: string) => {
+      // A failure is exactly when the alternates become useful.
+      setShowSwitch(true);
+      onError?.(err);
+    },
+    [onError],
+  );
+
+  const switchTo = useCallback((p: CaptchaProvider) => {
+    setActive(p);
+    storeProvider(p);
+  }, []);
+
+  if (active === null || providers.length === 0) return null;
+
+  const alternates = providers.filter((p) => p !== active);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      {/* key on active provider so switching remounts the widget cleanly */}
+      <ProviderWidget
+        key={active}
+        provider={active}
+        captcha={captcha}
+        onVerified={onVerified}
+        onError={handleError}
+      />
+
+      {alternates.length > 0 && showSwitch && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          <Text size={200}>{t("captcha.switchPrompt")}</Text>
+          {alternates.map((p) => (
+            <Link key={p} as="button" onClick={() => switchTo(p)}>
+              {t(`captcha.provider_${p}`)}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Injected-global type stubs ───────────────────────────────────────────────
+
 interface WidgetApi {
   render: (el: HTMLElement, opts: object) => string;
   remove: (id: string) => void;
@@ -336,6 +529,28 @@ interface RecaptchaWindow extends Window {
     ready: (fn: () => void) => void;
     execute: (key: string, opts: object) => Promise<string>;
   };
+}
+
+interface GeetestValidate {
+  lot_number: string;
+  captcha_output: string;
+  pass_token: string;
+  gen_time: string;
+}
+interface GeetestCaptchaObj {
+  appendTo: (selector: string | HTMLElement) => void;
+  onReady: (fn: () => void) => void;
+  onSuccess: (fn: () => void) => void;
+  onError: (fn: () => void) => void;
+  getValidate: () => GeetestValidate | undefined;
+  showCaptcha?: () => void;
+  destroy?: () => void;
+}
+interface GeetestWindow extends Window {
+  initGeetest4?: (
+    config: { captchaId: string; product?: string },
+    callback: (obj: GeetestCaptchaObj) => void,
+  ) => void;
 }
 
 function widgetApi(name: "turnstile" | "hcaptcha"): WidgetApi {

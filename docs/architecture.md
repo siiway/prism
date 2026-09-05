@@ -80,6 +80,9 @@ worker/
 │   ├── securityState.ts    # Atomic one-time OAuth claims + expired security-state cleanup
 │   ├── crypto.ts           # randomId, hashPassword/verifyPassword (PBKDF2)
 │   ├── pow.ts              # Signed challenge issue/verify (HMAC + expiry + single-use)
+│   ├── geetest.ts          # GeeTest v4 server-side verification (HMAC sign + validate)
+│   ├── cap.ts              # Cap captcha — embedded (capjs-core + KV) and external verify
+│   ├── captchaPublic.ts    # buildPublicCaptcha() — public captcha descriptor for payloads
 │   ├── jwt.ts              # signJWT / verifyJWT (HS256), RS256 ID-token signing
 │   ├── totp.ts             # TOTP / HOTP (RFC 6238), backup codes
 │   ├── webauthn.ts         # Passkey registration/authentication via @simplewebauthn/server
@@ -108,7 +111,7 @@ worker/
 ├── middleware/
 │   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
 │   ├── bodyLimit.ts        # Global 5 MiB request-body limit
-│   ├── captcha.ts          # verifyCaptchaToken() — dispatches to provider
+│   ├── captcha.ts          # verifyCaptchaToken() — validates the submitted provider is in the enabled set, dispatches to it
 │   └── rateLimit.ts        # D1 sliding-window rate limiter (IPv6-aware, atomically serialized)
 │
 ├── cron/
@@ -446,6 +449,30 @@ The PoW system is an alternative to third-party captcha services.
 2. Client calls `solvePoW(challenge, difficulty)`. The solver spawns one Web Worker per logical core (`navigator.hardwareConcurrency`, capped at 8); worker `k` of `N` searches nonces `k, k+N, k+2N, …`. Each worker prefers WASM (`pow/src/lib.rs`, sha2 crate, `Sha256::clone()` for midstate caching) and falls back to a synchronous JS SHA-256 with the same midstate trick. First worker to find a hit wins; the rest are terminated.
 3. Client submits `{ pow_challenge, pow_nonce }` with the registration/login request.
 4. Server calls `verifyPowChallenge()`: decode → recompute HMAC and constant-time compare → check expiry → atomically claim the 16-byte payload nonce in `pow_used` via `INSERT OR IGNORE` (replay protection) → finally check `SHA-256(challenge_string || nonce_be32)` has `difficulty` leading zero bits. The cron sweep prunes expired `pow_used` rows.
+
+## Captcha provider set
+
+`captcha_providers` is an ordered set: element 0 is the default rendered first,
+the rest are alternates a visitor may switch to (revealed on failure or after
+`captcha_switch_timeout_seconds`; the choice is remembered in `localStorage`).
+Each provider has its own credentials, so a submission names its `provider` and
+`verifyCaptchaToken()` rejects any provider not in the enabled set before
+dispatching. `buildPublicCaptcha()` (`lib/captchaPublic.ts`) emits the public
+descriptor carried by the site-info, OAuth-2FA and team-join payloads.
+
+Beyond Turnstile/hCaptcha/reCAPTCHA and the built-in PoW above, two providers
+are self-contained on the edge:
+
+- **GeeTest v4** (`lib/geetest.ts`) — server signs the `lot_number` with
+  HMAC-SHA256 and POSTs to GeeTest's validate endpoint. `geetest_fail_open`
+  governs the outcome on a GeeTest outage (default: fail closed).
+- **Cap** (`lib/cap.ts`) — embedded mode runs `capjs-core` in the Worker
+  (stateless signed-JWT challenges; single-use nonce + redeem token in
+  `KV_CACHE`; HMAC secret derived from the JWT secret) via
+  `POST /api/auth/cap/{challenge,redeem}`; external mode validates against a
+  self-hosted Cap Standalone server. `capjs-core` lazily imports `esbuild` /
+  `javascript-obfuscator` for high instrumentation obfuscation levels — both are
+  aliased to a stub in `wrangler.jsonc` since the embedded path pins level ≤ 3.
 
 ## Secrets at rest
 

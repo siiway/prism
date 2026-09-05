@@ -46,6 +46,11 @@ const HASH_SUBKEY_INFO = "prism:hash-subkey:v1";
 export const SENSITIVE_CONFIG_KEYS: ReadonlySet<string> = new Set([
   "captcha_secret_key",
   "turnstile_china_secret_key",
+  "turnstile_secret_key",
+  "hcaptcha_secret_key",
+  "recaptcha_secret_key",
+  "geetest_captcha_key",
+  "cap_secret_key",
   "github_client_secret",
   "google_client_secret",
   "microsoft_client_secret",

@@ -57,17 +57,51 @@ description: 所有存储在 D1 中的运行时配置项，以及 Wrangler 绑�
 
 ## 机器人防护（验证码）
 
-同一时刻只能启用一个 provider。注册、登录、改密、重发邮箱验证、以及管理员显式启用的流程都会触发验证码。
+Prism 使用一个**有序的 provider 集合**。第一个是访客默认看到的，其余是**备用**方式——当默认方式失败或耗时过长时，访客可以“换一种验证方式”切换过去。集合的成员及顺序均由站点管理员决定。注册、登录、改密、重发邮箱验证、加入团队、邀请注册、步骤提升二次验证，以及管理员显式启用的流程都会触发验证码。
 
-| 键                           | 类型   | 默认值     | 说明                                                        |
-| ---------------------------- | ------ | ---------- | ----------------------------------------------------------- |
-| `captcha_provider`           | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow` |
-| `captcha_site_key`           | string | `""`       | 公开 site key。Turnstile 时为全球（`region: "world"`）组件  |
-| `captcha_secret_key`         | string | `""`       | 该密钥对应的服务端密钥（加密存储）                          |
-| `turnstile_endpoint_mode`    | string | `"global"` | 仅 Turnstile。选择分发组件的主机（见下）                    |
-| `turnstile_china_site_key`   | string | `""`       | 仅 Turnstile。`region: "china"` 组件的 site key（见下）     |
-| `turnstile_china_secret_key` | string | `""`       | 仅 Turnstile。该密钥对应的服务端密钥（加密存储）            |
-| `pow_difficulty`             | number | `20`       | 工作量证明所需的前导零比特数（越高越难）                    |
+每个 provider 各自拥有**独立凭据**（可同时配置），因此提交的令牌会标明产生它的 provider，服务端据此对应校验，并拒绝任何不在启用集合中的 provider。
+
+| 键                               | 类型     | 默认值       | 说明                                                                  |
+| -------------------------------- | -------- | ------------ | --------------------------------------------------------------------- |
+| `captcha_providers`              | string[] | `[]`         | 有序启用集合。`[0]` 为默认，其余为可切换备用。`[]` 表示关闭           |
+| `captcha_switch_timeout_seconds` | number   | `15`         | “换一种验证方式”出现前的等待秒数。`0` 表示仅在失败时出现              |
+| `turnstile_site_key`             | string   | `""`         | Turnstile 全球（`region: "world"`）site key                          |
+| `turnstile_secret_key`           | string   | `""`         | Turnstile 全球服务端密钥（加密存储）                                  |
+| `turnstile_endpoint_mode`        | string   | `"global"`   | 仅 Turnstile。选择分发组件的主机（见下）                              |
+| `turnstile_china_site_key`       | string   | `""`         | 仅 Turnstile。`region: "china"` 组件的 site key（见下）              |
+| `turnstile_china_secret_key`     | string   | `""`         | 仅 Turnstile。该密钥对应的服务端密钥（加密存储）                      |
+| `hcaptcha_site_key`              | string   | `""`         | hCaptcha site key                                                    |
+| `hcaptcha_secret_key`            | string   | `""`         | hCaptcha 服务端密钥（加密存储）                                       |
+| `recaptcha_site_key`             | string   | `""`         | reCAPTCHA v3 site key                                                |
+| `recaptcha_secret_key`           | string   | `""`         | reCAPTCHA v3 服务端密钥（加密存储）                                   |
+| `geetest_captcha_id`             | string   | `""`         | 极验 v4 公开 CAPTCHA ID                                              |
+| `geetest_captcha_key`            | string   | `""`         | 极验 v4 私钥（加密存储）                                              |
+| `geetest_fail_open`              | boolean  | `false`      | 极验不可用时是否放行。`false` 为 fail closed（拒绝）                 |
+| `cap_mode`                       | string   | `"embedded"` | `embedded`（worker 内嵌，KV 支撑）或 `external`（自建 Cap Standalone）|
+| `cap_api_endpoint`               | string   | `""`         | Cap Standalone 基础 URL（外部模式）                                  |
+| `cap_site_key`                   | string   | `""`         | Cap Standalone site key（外部模式）                                  |
+| `cap_secret_key`                 | string   | `""`         | Cap Standalone 密钥（外部模式，加密存储）                            |
+| `cap_challenge_count`            | number   | `50`         | 每个 Cap 挑战的 PoW 数量（内嵌模式）                                 |
+| `cap_challenge_difficulty`       | number   | `4`          | Cap PoW 目标前缀长度（十六进制字符数，内嵌模式）                     |
+| `cap_instrumentation`            | boolean  | `true`       | 输出 Cap 的反自动化探测脚本（内嵌模式）                              |
+| `pow_difficulty`                 | number   | `20`         | 内置工作量证明所需的前导零比特数（越高越难）                          |
+
+Provider：`turnstile`、`hcaptcha`、`recaptcha`、`pow`（内置 Rust→WASM 工作量证明）、`geetest`（极验 v4 / SenseBot 行为验证）、`cap`（[Cap](https://trycap.dev) 自建工作量证明）。
+
+> **迁移。** 在“可切换集合”之前配置的站点仍可正常工作：旧的 `captcha_provider` 与共享的 `captcha_site_key`/`captcha_secret_key` 会被读取一次，并填充到 `captcha_providers[0]` 及该 provider 的独立凭据字段。保存一次验证码设置即写入新结构。
+
+### 极验 v4
+
+极验是一种通常比勾选式挑战更友好的行为验证码。Prism 集成 **v4 / SenseBot**（`initGeetest4`）。在极验控制台创建 CAPTCHA，将其 **ID**（公开）与 **key**（私密）填入 `geetest_captcha_id` / `geetest_captcha_key`。当极验自身服务不可用时组件可能发出降级令牌；`geetest_fail_open` 决定 Prism 是否接受——默认 **fail closed**，避免第三方故障时静默放弃机器人防护。
+
+### Cap
+
+[Cap](https://trycap.dev) 是一个自建、注重隐私的工作量证明验证码。两种模式：
+
+- **内嵌**（默认）——通过 `capjs-core` 在 Worker 内运行 Cap。挑战是无状态的签名 JWT；单次使用的重放防护与兑换令牌查找由 `KV_CACHE` 支撑；HMAC 密钥从服务端 JWT 密钥派生，因此**无需额外绑定或服务器**。由 `cap_challenge_count` / `cap_challenge_difficulty` 与 `cap_instrumentation` 调节。
+- **外部**——将 `cap_api_endpoint`（以及 `cap_site_key` / `cap_secret_key`）指向自建的 [Cap Standalone](https://trycap.dev/guide/standalone/) 服务器。
+
+Cap 是内置 `pow` provider 的现代替代方案，`pow` 仍然可用（见下）。
 
 ### Turnstile：两个主机，两个组件
 
@@ -78,7 +112,7 @@ Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆主
 - `region` **不可修改**：API 会以 `you cannot change region` 拒绝更改。已有的全球密钥永远无法升级。
 - 创建 `region: "china"` 组件需要与 [China Network](https://developers.cloudflare.com/china-network/) 合同绑定的权限；没有该权限时 API 返回 `not entitled to create widgets with this region`。Cloudflare 的 China Network 文档也直接写明：_“Turnstile is not available within Mainland China.”_
 
-因此使用中国大陆主机意味着同时更换 **site key**。这正是 `turnstile_china_site_key` / `turnstile_china_secret_key` 的用途：一个以 `region: "china"` 创建的第二组件，与 `captcha_site_key` / `captcha_secret_key` 中的全球密钥对并列。
+因此使用中国大陆主机意味着同时更换 **site key**。这正是 `turnstile_china_site_key` / `turnstile_china_secret_key` 的用途：一个以 `region: "china"` 创建的第二组件，与 `turnstile_site_key` / `turnstile_secret_key` 中的全球密钥对并列。
 
 **若 `turnstile_china_site_key` 为空，下面所有模式的行为都等同于 `global`。** 即使在没有权限的情况下选择了偏向中国大陆的模式也不会出问题——访客只会看到全球组件。
 
@@ -105,7 +139,7 @@ Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆主
 | 键                        | 类型    | 默认值  | 说明                                                                                                                                       |
 | ------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `sudo_mode_ttl_minutes`   | number  | `5`     | 用户成功完成一次步骤提升后，同一 `(用户, 会话, 应用)` 三元组下的后续挑战在该时长内可跳过 TOTP/Passkey 重新提示。`0` 表示完全禁用 sudo 模式 |
-| `require_captcha_for_2fa` | boolean | `false` | 站点全局：每次步骤提升确认都必须通过当前启用的验证码。应用也可针对单个挑战开启。`captcha_provider = none` 时此项无效                       |
+| `require_captcha_for_2fa` | boolean | `false` | 站点全局：每次步骤提升确认都必须通过当前启用的验证码。应用也可针对单个挑战开启。`captcha_providers` 为空时此项无效                       |
 
 ## 公开资料
 

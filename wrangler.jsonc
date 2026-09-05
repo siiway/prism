@@ -13,6 +13,16 @@
   // Keep global fetch on public Internet routing, including for this zone, so
   // same-zone requests cannot bypass Cloudflare's front door and its controls.
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  // capjs-core (embedded Cap captcha) lazily `import()`s esbuild and
+  // javascript-obfuscator for instrumentation obfuscation level >= 4. Those are
+  // Node-native and cannot be bundled for the Worker runtime. We pin the
+  // embedded Cap instrumentation to level <= 3, which never touches them, so
+  // aliasing both to an empty stub keeps them out of the bundle without losing
+  // any reachable functionality.
+  "alias": {
+    "esbuild": "./worker/lib/stubs/empty.js",
+    "javascript-obfuscator": "./worker/lib/stubs/empty.js",
+  },
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",

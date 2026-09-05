@@ -175,12 +175,9 @@ export function Register() {
               </Field>
             )}
 
-            {site.captcha_provider !== "none" && (
+            {site.captcha.captcha_providers.length > 0 && (
               <Captcha
-                provider={site.captcha_provider}
-                siteKey={site.captcha_site_key}
-                turnstileEndpoint={site.turnstile_endpoint}
-                turnstileChinaSiteKey={site.turnstile_china_site_key}
+                captcha={site.captcha}
                 onVerified={setCaptcha}
                 onError={setError}
               />

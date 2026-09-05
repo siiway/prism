@@ -169,12 +169,9 @@ export function VerifyChoose() {
           </MessageBar>
         )}
 
-        {site && site.captcha_provider !== "none" && (
+        {site && site.captcha.captcha_providers.length > 0 && (
           <Captcha
-            provider={site.captcha_provider}
-            siteKey={site.captcha_site_key}
-            turnstileEndpoint={site.turnstile_endpoint}
-            turnstileChinaSiteKey={site.turnstile_china_site_key}
+            captcha={site.captcha}
             onVerified={setCaptcha}
             onError={setCaptchaError}
           />

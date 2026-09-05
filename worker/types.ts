@@ -587,6 +587,7 @@ export type SocialProvider = "github" | "google" | "microsoft" | "discord";
 
 export type {
   CaptchaProvider,
+  CapMode,
   TurnstileEndpointMode,
   SiteConfig,
   RestrictedCapabilities,

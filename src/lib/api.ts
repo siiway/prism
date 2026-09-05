@@ -270,10 +270,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     display_name?: string;
     /** Omitted when the team's invite path skips email collection. */
     email?: string;
+    provider?: CaptchaProvider;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
+    geetest?: GeetestOutput;
+    cap_token?: string;
   }) =>
     request<{
       user: SessionUser;
@@ -320,10 +323,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       `/auth/verify-email?token=${encodeURIComponent(token)}`,
     ),
   resendVerifyEmail: (captcha?: {
+    provider?: CaptchaProvider;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
+    geetest?: GeetestOutput;
+    cap_token?: string;
   }) =>
     request<{ message: string }>(
       "POST",
@@ -333,10 +339,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
 
   emailVerifyCode: (captcha?: {
+    provider?: CaptchaProvider;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
     pow_challenge?: string;
     pow_nonce?: number;
+    geetest?: GeetestOutput;
+    cap_token?: string;
   }) =>
     request<{ address: string; code: string; method: "imap" | "email" }>(
       "POST",
@@ -2637,20 +2646,55 @@ export type TurnstileEndpointDirective =
  *  global and China widgets have separate sitekey/secret pairs. */
 export type TurnstileVariant = "global" | "china";
 
+export type CaptchaProvider =
+  | "none"
+  | "turnstile"
+  | "hcaptcha"
+  | "recaptcha"
+  | "pow"
+  | "geetest"
+  | "cap";
+
+export type CapMode = "embedded" | "external";
+
+/** GeeTest v4 widget validate output, submitted for server-side verification. */
+export interface GeetestOutput {
+  lot_number: string;
+  captcha_output: string;
+  pass_token: string;
+  gen_time: string;
+}
+
+/** Public captcha descriptor shared by every surface that renders a captcha
+ *  (site config, team-join info, OAuth 2FA info). Mirrors the server's
+ *  buildPublicCaptcha() output. Contains only public material — no secrets. */
+export interface PublicCaptchaConfig {
+  /** Ordered enabled set: element 0 is the default provider, the rest are
+   *  switchable alternates. Empty means no captcha is required here. */
+  captcha_providers: CaptchaProvider[];
+  /** Seconds before the "try a different method" control is revealed. 0 = off. */
+  captcha_switch_timeout_seconds: number;
+  turnstile_site_key: string;
+  turnstile_endpoint?: TurnstileEndpointDirective;
+  /** Sitekey of the region:"china" widget, present only when the directive can
+   *  actually route this visitor to the China host. */
+  turnstile_china_site_key?: string;
+  hcaptcha_site_key: string;
+  recaptcha_site_key: string;
+  geetest_captcha_id: string;
+  cap_mode: CapMode;
+  cap_site_key: string;
+  cap_api_endpoint: string;
+  pow_difficulty: number;
+}
+
 export interface SitePublicConfig {
   site_name: string;
   site_description: string;
   site_icon_url: string | null;
   allow_registration: boolean;
   invite_only: boolean;
-  captcha_provider: string;
-  captcha_site_key: string;
-  turnstile_endpoint?: TurnstileEndpointDirective;
-  /** Sitekey of the region:"china" widget, present only when the directive can
-   *  actually route this visitor to the China host. Empty/absent → the global
-   *  widget is the only one available. */
-  turnstile_china_site_key?: string;
-  pow_difficulty: number;
+  captcha: PublicCaptchaConfig;
   require_email_verification: boolean;
   email_verify_methods: "link" | "send" | "both";
   accent_color: string;
@@ -2773,20 +2817,26 @@ export interface RegisterBody {
   password: string;
   display_name?: string;
   invite_token?: string;
+  provider?: CaptchaProvider;
   captcha_token?: string;
   captcha_variant?: TurnstileVariant;
   pow_challenge?: string;
   pow_nonce?: number;
+  geetest?: GeetestOutput;
+  cap_token?: string;
 }
 
 export interface LoginBody {
   identifier: string;
   password: string;
   totp_code?: string;
+  provider?: CaptchaProvider;
   captcha_token?: string;
   captcha_variant?: TurnstileVariant;
   pow_challenge?: string;
   pow_nonce?: number;
+  geetest?: GeetestOutput;
+  cap_token?: string;
 }
 
 export type SessionUser = Pick<
@@ -2982,14 +3032,7 @@ export interface JoinPageInfo {
   /** False when the team's invite path skips email collection entirely — the
    *  account gets a synthesised placeholder it can replace later. */
   collects_email: boolean;
-  captcha_provider: string;
-  captcha_site_key: string;
-  turnstile_endpoint?: TurnstileEndpointDirective;
-  /** Sitekey of the region:"china" widget, present only when the directive can
-   *  actually route this visitor to the China host. Empty/absent → the global
-   *  widget is the only one available. */
-  turnstile_china_site_key?: string;
-  pow_difficulty: number;
+  captcha: PublicCaptchaConfig;
   /** Always true: the page must state that dissolving the team deletes the
    *  accounts it created, before anyone signs up. */
   deletion_notice: boolean;
@@ -3832,16 +3875,9 @@ export interface OAuth2FAInfo {
   /** True if this challenge requires a captcha solve (site default OR app
    *  opt-in AND a provider is configured AND sudo bypass is not active). */
   captcha_required: boolean;
-  /** Captcha provider to use. "none" if no captcha is required. */
-  captcha_provider: string;
-  /** Site key for the configured provider (empty string when not required). */
-  captcha_site_key: string;
-  /** Resolved Turnstile script-host directive (see TurnstileEndpointDirective). */
-  turnstile_endpoint?: TurnstileEndpointDirective;
-  /** Sitekey of the region:"china" widget, present only when the directive can
-   *  actually route this visitor to the China host. Empty/absent → the global
-   *  widget is the only one available. */
-  turnstile_china_site_key?: string;
+  /** Captcha descriptor. `captcha_providers` is empty when no captcha is
+   *  required for this challenge. */
+  captcha: PublicCaptchaConfig;
 }
 
 export interface OAuth2FAAuthorizeBody {
@@ -3856,6 +3892,9 @@ export interface OAuth2FAAuthorizeBody {
   /** Bypass TOTP/passkey using an already-active sudo grant. Server rejects
    *  if no grant is active or sudo mode is disabled. */
   use_sudo?: boolean;
+  /** Which captcha provider produced the proof below. The server verifies
+   *  against this provider and rejects one not in the enabled set. */
+  provider?: CaptchaProvider;
   /** Captcha verification token. Required when info.captcha_required is true
    *  and provider is turnstile/hcaptcha/recaptcha. */
   captcha_token?: string;
@@ -3865,6 +3904,10 @@ export interface OAuth2FAAuthorizeBody {
   pow_challenge?: string;
   /** PoW solution nonce. Required alongside pow_challenge. */
   pow_nonce?: number;
+  /** GeeTest v4 validate output. Required when provider is "geetest". */
+  geetest?: GeetestOutput;
+  /** Cap redeem token. Required when provider is "cap". */
+  cap_token?: string;
 }
 
 export interface OAuthApproveBody {

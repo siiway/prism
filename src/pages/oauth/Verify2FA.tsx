@@ -126,7 +126,9 @@ export function Verify2FA() {
   const captchaSatisfied =
     !captchaRequired ||
     !!captchaValue?.captcha_token ||
-    (!!captchaValue?.pow_challenge && captchaValue?.pow_nonce !== undefined);
+    (!!captchaValue?.pow_challenge && captchaValue?.pow_nonce !== undefined) ||
+    !!captchaValue?.geetest ||
+    !!captchaValue?.cap_token;
 
   // When sudo is already active for this user/app/session, the user only has
   // to acknowledge the action — no TOTP or passkey is required.
@@ -141,26 +143,12 @@ export function Verify2FA() {
     setErrorMsg(null);
     setLoading(true);
     try {
+      // Forward the whole captcha solution — `provider` names the widget that
+      // produced it so the server verifies against the matching provider, and
+      // the provider-specific fields ride along.
       const captchaPayload =
         captchaRequired && decision === "approve" && captchaValue
-          ? {
-              ...(captchaValue.captcha_token
-                ? {
-                    captcha_token: captchaValue.captcha_token,
-                    // Names the widget that minted it, so the server picks the
-                    // matching secret.
-                    ...(captchaValue.captcha_variant
-                      ? { captcha_variant: captchaValue.captcha_variant }
-                      : {}),
-                  }
-                : {}),
-              ...(captchaValue.pow_challenge
-                ? { pow_challenge: captchaValue.pow_challenge }
-                : {}),
-              ...(captchaValue.pow_nonce !== undefined
-                ? { pow_nonce: captchaValue.pow_nonce }
-                : {}),
-            }
+          ? { ...captchaValue }
           : {};
 
       const res = await api.oauth2faAuthorize({
@@ -506,10 +494,7 @@ export function Verify2FA() {
               {t("oauth.twoFa.captchaHint")}
             </Text>
             <Captcha
-              provider={data.captcha_provider}
-              siteKey={data.captcha_site_key}
-              turnstileEndpoint={data.turnstile_endpoint}
-              turnstileChinaSiteKey={data.turnstile_china_site_key}
+              captcha={data.captcha}
               onVerified={handleCaptchaVerified}
             />
           </div>

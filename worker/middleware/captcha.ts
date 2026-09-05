@@ -1,13 +1,52 @@
-// Captcha verification middleware (Turnstile, hCaptcha, reCAPTCHA, PoW)
+// Captcha verification middleware.
+//
+// The site enables an *ordered set* of providers (config.captcha_providers).
+// Element 0 is the default the browser renders first; the rest are alternates a
+// visitor may switch to. A submission therefore names which provider produced
+// it (`provider`); this middleware confirms that provider is a member of the
+// enabled set and dispatches to its verifier. A token for a provider that is
+// not enabled is rejected — the client cannot smuggle in a provider the mod
+// never turned on.
 
+import type { CaptchaProvider } from "../../shared/types";
 import { getConfig } from "../lib/config";
 import { verifyPowChallenge } from "../lib/pow";
+import { verifyGeetest, type GeetestOutput } from "../lib/geetest";
+import { verifyCapToken } from "../lib/cap";
 import { decryptSecret } from "../lib/secretCrypto";
 import type { TurnstileVariant } from "../lib/turnstile";
 
 interface CaptchaResult {
   success: boolean;
   error?: string;
+}
+
+/** Everything a gated route may carry to prove a captcha was solved. The
+ *  `provider` discriminator says which widget minted the proof; the remaining
+ *  fields are provider-specific and only the ones for `provider` are read. */
+export interface CaptchaSubmission {
+  provider?: CaptchaProvider;
+  captcha_token?: string;
+  captcha_variant?: TurnstileVariant;
+  pow_challenge?: string;
+  pow_nonce?: number;
+  geetest?: GeetestOutput;
+  cap_token?: string;
+}
+
+/** Pull the captcha fields out of a parsed request body. Keeps the route
+ *  handlers from re-listing the field set at every callsite. */
+export function extractCaptchaSubmission(body: unknown): CaptchaSubmission {
+  const b = (body ?? {}) as Record<string, unknown>;
+  return {
+    provider: b.provider as CaptchaProvider | undefined,
+    captcha_token: b.captcha_token as string | undefined,
+    captcha_variant: b.captcha_variant as TurnstileVariant | undefined,
+    pow_challenge: b.pow_challenge as string | undefined,
+    pow_nonce: b.pow_nonce as number | undefined,
+    geetest: b.geetest as GeetestOutput | undefined,
+    cap_token: b.cap_token as string | undefined,
+  };
 }
 
 const POW_ERROR_MESSAGES: Record<string, string> = {
@@ -79,84 +118,135 @@ async function verifyRecaptcha(
   return { success: ok };
 }
 
+/**
+ * Verify a captcha submission against the site's enabled provider set.
+ *
+ * The provider is chosen as follows: the client's declared `provider` if it is
+ * a member of the enabled set, otherwise the default (element 0) — which keeps
+ * older clients that don't send the field working as long as they used the
+ * default provider. A declared provider that is *not* enabled is rejected
+ * outright rather than silently downgraded, so a stale/forged field cannot pick
+ * a provider the site turned off.
+ */
 export async function verifyCaptchaToken(
   db: D1Database,
-  token: string | undefined,
-  powChallenge: string | undefined,
-  powNonce: number | undefined,
+  submission: CaptchaSubmission,
   ip: string,
   env?: Env,
-  /** Which Turnstile widget the browser says minted `token` — see the secret
-   *  selection below. Ignored for every other provider. */
-  variant?: TurnstileVariant,
 ): Promise<CaptchaResult> {
   const config = await getConfig(db);
 
-  if (config.captcha_provider === "none") {
+  // Enabled set with "none" filtered out. Empty means captcha is off.
+  const enabled: CaptchaProvider[] = config.captcha_providers.filter(
+    (p) => p !== "none",
+  );
+  if (enabled.length === 0) {
     return { success: true };
   }
 
-  if (config.captcha_provider === "pow") {
-    if (!env) {
-      // Should never happen — every callsite passes env. Defensive check.
-      return { success: false, error: "PoW verification unavailable" };
-    }
-    if (!powChallenge || powNonce === undefined) {
-      return { success: false, error: "PoW solution required" };
-    }
-    const result = await verifyPowChallenge(
-      env,
-      powChallenge,
-      powNonce,
-      config.pow_difficulty,
-    );
-    return result.ok
-      ? { success: true }
-      : {
-          success: false,
-          error: POW_ERROR_MESSAGES[result.reason] ?? "Invalid PoW solution",
-        };
+  const declared = submission.provider;
+  const provider: CaptchaProvider =
+    declared && enabled.includes(declared) ? declared : enabled[0];
+
+  // A declared provider outside the enabled set is a hard failure.
+  if (declared && !enabled.includes(declared)) {
+    return { success: false, error: "Captcha provider not enabled" };
   }
 
-  if (!token) {
-    return { success: false, error: "Captcha token required" };
-  }
+  // Decrypt an at-rest secret; no-op when SECRETS_KEY isn't bound or the value
+  // is already plaintext.
+  const decrypt = async (v: string): Promise<string> =>
+    env ? ((await decryptSecret(env, v)) ?? "") : v;
 
-  // Turnstile can be configured with two widgets — the global one and a
-  // region:"china" one for visitors routed to challenges.cloudflare-cn.com —
-  // and a token only verifies against the secret of the widget that minted it.
-  // The browser reports which one it rendered; anything else (an old client, a
-  // forged value, a China widget that was never configured) falls back to the
-  // global secret, where a mismatched token simply fails to verify. Trusting
-  // the field costs nothing: it selects a secret, never a verdict.
-  // An empty China *site* key is how the config says "the China widget is not
-  // in use" — lib/turnstile.ts refuses to name the China host on that basis
-  // alone, so no honest client can be reporting "china" here. Requiring it
-  // keeps verification consistent with that decision, so a secret left behind
-  // after the site key was cleared cannot still admit tokens from a widget the
-  // site has stopped using.
-  const useChinaSecret =
-    config.captcha_provider === "turnstile" &&
-    variant === "china" &&
-    config.turnstile_china_site_key.trim() !== "" &&
-    config.turnstile_china_secret_key !== "";
-  const storedSecret = useChinaSecret
-    ? config.turnstile_china_secret_key
-    : config.captcha_secret_key;
+  switch (provider) {
+    case "pow": {
+      if (!env) return { success: false, error: "PoW verification unavailable" };
+      if (!submission.pow_challenge || submission.pow_nonce === undefined) {
+        return { success: false, error: "PoW solution required" };
+      }
+      const result = await verifyPowChallenge(
+        env,
+        submission.pow_challenge,
+        submission.pow_nonce,
+        config.pow_difficulty,
+      );
+      return result.ok
+        ? { success: true }
+        : {
+            success: false,
+            error: POW_ERROR_MESSAGES[result.reason] ?? "Invalid PoW solution",
+          };
+    }
 
-  // Decrypt the captcha provider secret if it was encrypted at rest. No-op
-  // when SECRETS_KEY isn't bound or the value is plain.
-  const captchaSecret = env
-    ? ((await decryptSecret(env, storedSecret)) ?? "")
-    : storedSecret;
+    case "cap": {
+      if (!env) return { success: false, error: "Cap verification unavailable" };
+      if (!submission.cap_token) {
+        return { success: false, error: "Cap token required" };
+      }
+      const ok = await verifyCapToken(env, submission.cap_token, config.cap_mode, {
+        apiEndpoint: config.cap_api_endpoint,
+        siteKey: config.cap_site_key,
+        secretKey: await decrypt(config.cap_secret_key),
+      });
+      return ok ? { success: true } : { success: false, error: "Captcha failed" };
+    }
 
-  switch (config.captcha_provider) {
-    case "turnstile":
-      return verifyTurnstile(token, captchaSecret, ip);
-    case "hcaptcha":
-      return verifyHCaptcha(token, captchaSecret, ip);
-    case "recaptcha":
-      return verifyRecaptcha(token, captchaSecret, ip);
+    case "geetest": {
+      if (!submission.geetest) {
+        return { success: false, error: "Captcha token required" };
+      }
+      const ok = await verifyGeetest(
+        submission.geetest,
+        config.geetest_captcha_id,
+        await decrypt(config.geetest_captcha_key),
+        config.geetest_fail_open,
+      );
+      return ok ? { success: true } : { success: false, error: "Captcha failed" };
+    }
+
+    case "turnstile": {
+      if (!submission.captcha_token) {
+        return { success: false, error: "Captcha token required" };
+      }
+      // Two Turnstile widgets can be configured — the global one and a
+      // region:"china" one for visitors on challenges.cloudflare-cn.com — and a
+      // token only verifies against the secret of the widget that minted it.
+      // The browser reports which one via captcha_variant; anything else falls
+      // back to the global secret, where a mismatched token simply fails.
+      const useChinaSecret =
+        submission.captcha_variant === "china" &&
+        config.turnstile_china_site_key.trim() !== "" &&
+        config.turnstile_china_secret_key !== "";
+      const secret = await decrypt(
+        useChinaSecret
+          ? config.turnstile_china_secret_key
+          : config.turnstile_secret_key,
+      );
+      return verifyTurnstile(submission.captcha_token, secret, ip);
+    }
+
+    case "hcaptcha": {
+      if (!submission.captcha_token) {
+        return { success: false, error: "Captcha token required" };
+      }
+      return verifyHCaptcha(
+        submission.captcha_token,
+        await decrypt(config.hcaptcha_secret_key),
+        ip,
+      );
+    }
+
+    case "recaptcha": {
+      if (!submission.captcha_token) {
+        return { success: false, error: "Captcha token required" };
+      }
+      return verifyRecaptcha(
+        submission.captcha_token,
+        await decrypt(config.recaptcha_secret_key),
+        ip,
+      );
+    }
+
     default:
       return { success: true };
   }

@@ -25,9 +25,13 @@ import { hashLookupCandidate } from "../lib/secretCrypto";
 import { requireAuth } from "../middleware/auth";
 import { getConfig, getConfigValue } from "../lib/config";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
+import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { getIp } from "../lib/clientIp";
 import { rateLimitIp } from "../middleware/rateLimit";
-import { verifyCaptchaToken } from "../middleware/captcha";
+import {
+  verifyCaptchaToken,
+  extractCaptchaSubmission,
+} from "../middleware/captcha";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import {
@@ -159,11 +163,12 @@ app.get("/join/:teamId", async (c) => {
     // would let a typo permanently lock its true owner out of the instance,
     // since users.email is UNIQUE.
     collects_email: !exemptions.email_verification,
-    captcha_provider: config.captcha_provider,
-    captcha_site_key: config.captcha_site_key,
-    turnstile_endpoint: turnstile.directive,
-    turnstile_china_site_key: turnstile.chinaSiteKey,
-    pow_difficulty: config.pow_difficulty,
+    captcha: buildPublicCaptcha(
+      config,
+      turnstile.directive,
+      turnstile.chinaSiteKey,
+      config.captcha_providers,
+    ),
     // Surfaced so the page can state it plainly before anyone signs up:
     // dissolving this team deletes the accounts it created.
     deletion_notice: true,
@@ -211,12 +216,9 @@ app.post("/auth/register-with-invite", async (c) => {
   // outbound email, not to weaken bot resistance.
   const captchaOk = await verifyCaptchaToken(
     c.env.DB,
-    body.captcha_token,
-    body.pow_challenge,
-    body.pow_nonce,
+    extractCaptchaSubmission(body),
     ip,
     c.env,
-    body.captcha_variant,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
