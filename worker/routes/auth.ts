@@ -191,7 +191,7 @@ app.post("/register", async (c) => {
     c.env.DB,
     ip,
     "register",
-    5,
+    15,
     300,
     config.ipv6_rate_limit_prefix,
   );
@@ -320,11 +320,16 @@ app.post("/login", async (c) => {
   const ip = getIp(c);
   const ua = c.req.header("User-Agent") ?? null;
   const loginConfig = await getConfig(c.env.DB);
+  // Login is captcha-gated (when a provider is configured), so the IP limit is
+  // a coarse backstop rather than the primary bot defence — kept generous so a
+  // legitimate user retrying, or several people behind one NAT/IPv6 prefix,
+  // aren't locked out. The captcha challenge/redeem endpoints are intentionally
+  // unthrottled since a single solve legitimately hits redeem more than once.
   const rl = await rateLimitIp(
     c.env.DB,
     ip,
     "login",
-    10,
+    30,
     60,
     loginConfig.ipv6_rate_limit_prefix,
   );
@@ -1450,7 +1455,12 @@ app.post("/cap/redeem", async (c) => {
     body as Parameters<typeof redeemCapChallenge>[1],
   );
   if (!result.success) return c.json({ success: false }, 200);
-  return c.json({ success: true, token: result.token });
+  // `expires` (ms) is required by @cap.js/widget — it validates it client-side.
+  return c.json({
+    success: true,
+    token: result.token,
+    expires: result.expires,
+  });
 });
 
 // ─── Sessions list ───────────────────────────────────────────────────────────

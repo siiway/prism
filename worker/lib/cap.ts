@@ -106,7 +106,7 @@ function b64urlToString(seg: string): string | null {
 async function deriveCapToken(
   secret: string,
   challengeJwt: string,
-): Promise<string | null> {
+): Promise<{ token: string; expires: number } | null> {
   const parts = challengeJwt.split(".");
   if (parts.length !== 3) return null;
   const sig = parts[2];
@@ -120,7 +120,7 @@ async function deriveCapToken(
   }
   if (!sig || !Number.isFinite(exp)) return null;
   const mac = await capMac(secret, `${sig}.${exp}`);
-  return `${sig}.${exp}.${mac}`;
+  return { token: `${sig}.${exp}.${mac}`, expires: exp };
 }
 
 /** Mint a fresh embedded Cap challenge for the widget to solve. */
@@ -151,7 +151,9 @@ export async function issueCapChallenge(
 export async function redeemCapChallenge(
   env: Env,
   body: ValidateChallengeBody,
-): Promise<{ success: true; token: string } | { success: false }> {
+): Promise<
+  { success: true; token: string; expires: number } | { success: false }
+> {
   const secret = await getCapSecret(env);
   // No consumeNonce: the widget legitimately redeems one challenge twice
   // (speculative then final). capjs-core still checks the JWT signature, expiry
@@ -159,9 +161,11 @@ export async function redeemCapChallenge(
   const result = await validateChallenge(secret, body, { scope: CAP_SCOPE });
   if (!result.success) return { success: false };
 
-  const token = await deriveCapToken(secret, body.token);
-  if (!token) return { success: false };
-  return { success: true, token };
+  const derived = await deriveCapToken(secret, body.token);
+  if (!derived) return { success: false };
+  // `expires` is required by @cap.js/widget: it does `new Date(expires)` on the
+  // redeem response and rejects the token ("invalid_expires") if it's missing.
+  return { success: true, token: derived.token, expires: derived.expires };
 }
 
 /** Verify a submitted embedded Cap token: prove we issued it (HMAC), that it
