@@ -320,33 +320,6 @@ app.post("/login", async (c) => {
   const ip = getIp(c);
   const ua = c.req.header("User-Agent") ?? null;
   const loginConfig = await getConfig(c.env.DB);
-  // Login is captcha-gated (when a provider is configured), so the IP limit is
-  // a coarse backstop rather than the primary bot defence — kept generous so a
-  // legitimate user retrying, or several people behind one NAT/IPv6 prefix,
-  // aren't locked out. The captcha challenge/redeem endpoints are intentionally
-  // unthrottled since a single solve legitimately hits redeem more than once.
-  const rl = await rateLimitIp(
-    c.env.DB,
-    ip,
-    "login",
-    30,
-    60,
-    loginConfig.ipv6_rate_limit_prefix,
-  );
-  if (!rl.allowed) {
-    c.executionCtx.waitUntil(
-      logLoginError(
-        c.env.DB,
-        "rate_limited",
-        null,
-        ip,
-        ua,
-        geoJson(c),
-        {},
-      ).catch(() => {}),
-    );
-    return c.json({ error: "Too many requests" }, 429);
-  }
 
   const body = await c.req.json<{
     identifier: string; // email or username
@@ -358,14 +331,33 @@ app.post("/login", async (c) => {
     pow_nonce?: number;
   }>();
 
-  // Login is a two-step flow when 2FA is enrolled: the first call (no
-  // totp_code) validates password+captcha and returns totp_required; the
-  // second call replays password and adds totp_code. Captcha tokens are
-  // single-use (provider replay protection / PoW nonce), but we verify on
-  // every call — including the TOTP follow-up — because skipping captcha on
-  // step 2 would let an attacker probe passwords without solving captcha and
-  // would leak whether the password was correct via the TOTP error message.
-  // The client must submit a fresh captcha token on each step.
+  // Generous per-IP backstop on *all* login POSTs. Its only job is to bound the
+  // cost of captcha verification (a subrequest for the external providers) so it
+  // can't be flooded; it is deliberately looser than the brute-force limit
+  // below and is checked before captcha so a flood of junk can't run up work.
+  const dosRl = await rateLimitIp(
+    c.env.DB,
+    ip,
+    "login-dos",
+    60,
+    60,
+    loginConfig.ipv6_rate_limit_prefix,
+  );
+  if (!dosRl.allowed) {
+    c.executionCtx.waitUntil(
+      logLoginError(c.env.DB, "rate_limited", null, ip, ua, geoJson(c), {}).catch(
+        () => {},
+      ),
+    );
+    return c.json({ error: "Too many requests" }, 429);
+  }
+
+  // Captcha is verified before the brute-force limit is *consumed*, so a
+  // wrong / expired / already-used captcha (e.g. a retried form still holding a
+  // spent single-use token) returns "Captcha failed" without burning the
+  // credential-attempt budget and pushing a legitimate user into "Too many
+  // requests". Captcha tokens are single-use, so the client must submit a fresh
+  // one on each attempt — including the TOTP follow-up step below.
   const captchaOk = await verifyCaptchaToken(
     c.env.DB,
     extractCaptchaSubmission(body),
@@ -385,6 +377,25 @@ app.post("/login", async (c) => {
       ).catch(() => {}),
     );
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
+  }
+
+  // Brute-force guard: only credential attempts that cleared captcha count
+  // toward it, so it measures real password tries rather than captcha misfires.
+  const rl = await rateLimitIp(
+    c.env.DB,
+    ip,
+    "login",
+    30,
+    60,
+    loginConfig.ipv6_rate_limit_prefix,
+  );
+  if (!rl.allowed) {
+    c.executionCtx.waitUntil(
+      logLoginError(c.env.DB, "rate_limited", null, ip, ua, geoJson(c), {}).catch(
+        () => {},
+      ),
+    );
+    return c.json({ error: "Too many requests" }, 429);
   }
 
   const isEmail = body.identifier.includes("@");

@@ -81,7 +81,15 @@ export function VerifyChoose() {
   const showSend = methods === "send" || methods === "both";
 
   const [captcha, setCaptcha] = useState<CaptchaValue>({});
+  const [captchaKey, setCaptchaKey] = useState(0);
   const [captchaError, setCaptchaError] = useState("");
+
+  // Captcha tokens are single-use: every gated call here spends the token, so
+  // clear it and remount the widget afterwards to force a fresh solve.
+  const resetCaptcha = () => {
+    setCaptcha({});
+    setCaptchaKey((v) => v + 1);
+  };
 
   const [resendLoading, setResendLoading] = useState(false);
   const [codeLoading, setCodeLoading] = useState(false);
@@ -109,6 +117,7 @@ export function VerifyChoose() {
       });
     } finally {
       setResendLoading(false);
+      resetCaptcha();
     }
   };
 
@@ -125,6 +134,7 @@ export function VerifyChoose() {
       });
     } finally {
       setCodeLoading(false);
+      resetCaptcha();
     }
   };
 
@@ -171,6 +181,7 @@ export function VerifyChoose() {
 
         {site && site.captcha.captcha_providers.length > 0 && (
           <Captcha
+            key={captchaKey}
             captcha={site.captcha}
             onVerified={setCaptcha}
             onError={setCaptchaError}

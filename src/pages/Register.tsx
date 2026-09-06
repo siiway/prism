@@ -60,6 +60,7 @@ export function Register() {
     invite_token: searchParams.get("invite") ?? "",
   });
   const [captcha, setCaptcha] = useState<CaptchaValue>({});
+  const [captchaKey, setCaptchaKey] = useState(0);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -69,6 +70,7 @@ export function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setError("");
     setSuccess("");
     setLoading(true);
@@ -95,6 +97,9 @@ export function Register() {
       setError(
         err instanceof ApiError ? err.message : t("auth.registrationFailed"),
       );
+      // Single-use captcha token was spent by this attempt — force a fresh solve.
+      setCaptcha({});
+      setCaptchaKey((v) => v + 1);
     } finally {
       setLoading(false);
     }
@@ -177,6 +182,7 @@ export function Register() {
 
             {site.captcha.captcha_providers.length > 0 && (
               <Captcha
+                key={captchaKey}
                 captcha={site.captcha}
                 onVerified={setCaptcha}
                 onError={setError}

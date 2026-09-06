@@ -81,6 +81,7 @@ export function JoinRegister() {
     email: "",
   });
   const [captcha, setCaptcha] = useState<CaptchaValue>({});
+  const [captchaKey, setCaptchaKey] = useState(0);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -113,7 +114,7 @@ export function JoinRegister() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!info || !teamId) return;
+    if (!info || !teamId || busy) return;
     setError("");
     setBusy(true);
     try {
@@ -135,6 +136,9 @@ export function JoinRegister() {
       setError(
         err instanceof ApiError ? err.message : t("join.registerFailed"),
       );
+      // Single-use captcha token was spent by this attempt — force a fresh solve.
+      setCaptcha({});
+      setCaptchaKey((v) => v + 1);
     } finally {
       setBusy(false);
     }
@@ -244,6 +248,7 @@ export function JoinRegister() {
 
           {info.captcha.captcha_providers.length > 0 && (
             <Captcha
+              key={captchaKey}
               captcha={info.captcha}
               onVerified={setCaptcha}
               onError={setError}

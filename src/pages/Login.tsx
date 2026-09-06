@@ -131,6 +131,10 @@ export function Login() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Guard against a double submit racing two requests with the same single-use
+    // captcha token — the second would fail "Captcha failed" and both would eat
+    // rate-limit budget.
+    if (loading) return;
     // The 2FA prompt is shared by both sign-in methods — hand the code back
     // to whichever one asked for it.
     if (totpRequired && totpFlow === "gpg") {
@@ -159,6 +163,12 @@ export function Login() {
       if (res.user) await completeLogin(res.user);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("auth.loginFailed"));
+      // Captcha tokens are single-use server-side: this attempt spent it (the
+      // server verifies captcha before checking the password), so clear it and
+      // remount the widget to force a fresh solve. Without this the stale token
+      // is reused on the next click → "Captcha failed" → eventually 429.
+      setCaptcha({});
+      setCaptchaKey((v) => v + 1);
     } finally {
       setLoading(false);
     }

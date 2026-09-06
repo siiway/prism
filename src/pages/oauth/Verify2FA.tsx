@@ -116,8 +116,18 @@ export function Verify2FA() {
   // Captcha solution. We persist by reference because the Captcha component
   // calls `onVerified` exactly once per solve.
   const [captchaValue, setCaptchaValue] = useState<CaptchaValue | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
   const handleCaptchaVerified = useCallback((v: CaptchaValue) => {
     setCaptchaValue(v);
+  }, []);
+  // Captcha tokens are single-use and the server verifies captcha before the
+  // 2FA factor, so ANY recoverable failure (wrong code included) has already
+  // spent the token. Clear it and remount the widget to force a fresh solve —
+  // nulling the value alone leaves the widget showing "solved" with no way to
+  // re-emit a token.
+  const resetCaptcha = useCallback(() => {
+    setCaptchaValue(null);
+    setCaptchaKey((v) => v + 1);
   }, []);
 
   const sudoEnabledOnSite = (data?.sudo_ttl_minutes ?? 0) > 0;
@@ -179,8 +189,9 @@ export function Verify2FA() {
             : err.message;
         if (errorCode === "invalid_2fa" || errorCode === "captcha_failed") {
           setErrorMsg(humanMsg);
-          // Captcha tokens are single-use server-side; force a re-solve.
-          if (errorCode === "captcha_failed") setCaptchaValue(null);
+          // Both cases have spent the single-use captcha token (captcha is
+          // verified before the factor), so re-solve is required either way.
+          if (captchaRequired) resetCaptcha();
           setLoading(false);
           return;
         }
@@ -494,6 +505,7 @@ export function Verify2FA() {
               {t("oauth.twoFa.captchaHint")}
             </Text>
             <Captcha
+              key={captchaKey}
               captcha={data.captcha}
               onVerified={handleCaptchaVerified}
             />
