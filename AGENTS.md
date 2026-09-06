@@ -12,6 +12,16 @@
 - Run docs dev server: bun run docs:dev
 - Lint: bun run lint
 
+## Domain model
+
+- `CONTEXT.md` (repo root) is the project glossary — the canonical meaning of
+  Prism-specific terms (User, Team-as-user, OAuth source vs OAuth app, step-up
+  2FA, captcha enabled set, etc.). Read it before writing code so you use the
+  project's vocabulary, and use it to disambiguate overloaded words.
+- When you introduce, rename, or sharpen a domain term, update `CONTEXT.md` in
+  the same change. It is a glossary only: definitions, not implementation
+  details or specs. An out-of-date glossary is a bug.
+
 ## Documentation
 
 - After making functional changes (new features, changed behavior, deprecated
