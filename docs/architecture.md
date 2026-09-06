@@ -472,10 +472,14 @@ are self-contained on the edge:
   self-hosted Cap Standalone server. `redeem` mints a **deterministic** token
   from the challenge (`sig.exp.HMAC`) so the widget's speculative + final redeem
   of one challenge agree and one solved challenge yields exactly one token;
-  single use is enforced at the gate via the atomic D1 replay-claim table.
-  `capjs-core` lazily imports `esbuild` / `javascript-obfuscator` for high
-  instrumentation obfuscation levels — both are aliased to a stub in
-  `wrangler.jsonc` since the embedded path pins level ≤ 3.
+  single use is enforced at the gate via the atomic D1 replay-claim table. The
+  widget's WASM solver (and the pako inflate fallback) are served **same-origin**
+  — the WASM via a Vite `?url` import, pako from `public/vendor/` — instead of
+  `@cap.js/widget`'s default `cdn.jsdelivr.net`, so Cap has no third-party
+  dependency and works under a strict CSP (`window.CAP_CUSTOM_WASM_URL` /
+  `window.CAP_PAKO_URL`). `capjs-core` lazily imports `esbuild` /
+  `javascript-obfuscator` for high instrumentation obfuscation levels — both are
+  aliased to a stub in `wrangler.jsonc` since the embedded path pins level ≤ 3.
 
 ## Secrets at rest
 

@@ -10,5 +10,6 @@ worker-configuration.d.ts
 pow/target
 public/pow-wasm
 public/pow.wasm
+public/vendor
 docs/.vitepress/dist
 docs/.vitepress/cache

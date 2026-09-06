@@ -25,6 +25,7 @@
     "format:fix": "prettier -w worker src shared docs tests"
   },
   "dependencies": {
+    "@cap.js/wasm": "^0.0.7",
     "@cap.js/widget": "^0.1.57",
     "@fluentui/react-components": "^9.74.6",
     "@fluentui/react-icons": "^2.0.338",
@@ -41,6 +42,7 @@
     "ipaddr.js": "^2.5.0",
     "marked": "^18.0.10",
     "openpgp": "^6.3.1",
+    "pako": "^3.0.1",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

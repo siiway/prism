@@ -32,6 +32,16 @@ import type {
   TurnstileVariant,
 } from "../lib/api";
 import { solvePoW } from "../lib/pow";
+// Self-hosted Cap solver assets. @cap.js/widget otherwise fetches these from
+// cdn.jsdelivr.net at solve time — an external CDN dependency that a strict CSP
+// (`connect-src`/`script-src`) blocks and that a self-hosted identity platform
+// should not have. The WASM (the common path) is emitted same-origin and
+// content-hashed by Vite. pako is only a fallback for browsers without
+// `DecompressionStream`; its UMD build can't be resolved through pako's exports
+// map, so it's vendored as a static asset in public/vendor (see the Cap effect).
+import capWasmUrl from "@cap.js/wasm/browser/cap_wasm_bg.wasm?url";
+
+const CAP_PAKO_FALLBACK_URL = "/vendor/pako_inflate.min.js";
 
 export interface CaptchaValue {
   /** Which provider produced this proof. The server verifies against this and
@@ -370,6 +380,17 @@ function ProviderWidget({
       captcha.cap_mode === "external"
         ? `${captcha.cap_api_endpoint.replace(/\/+$/, "")}/${captcha.cap_site_key}/`
         : "/api/auth/cap/";
+
+    // Point the widget at our same-origin solver assets instead of jsdelivr.
+    // Read lazily by the widget at solve time, so setting them here (before the
+    // dynamic import resolves) is in time. `CAP_PAKO_URL` is only used as a
+    // fallback on browsers without `DecompressionStream`.
+    const w = window as unknown as {
+      CAP_CUSTOM_WASM_URL?: string;
+      CAP_PAKO_URL?: string;
+    };
+    w.CAP_CUSTOM_WASM_URL = capWasmUrl;
+    w.CAP_PAKO_URL = CAP_PAKO_FALLBACK_URL;
 
     // @cap.js/widget registers the <cap-widget> custom element as a side effect;
     // import it client-side only (this file is SSR'd).
