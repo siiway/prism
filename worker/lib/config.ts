@@ -16,8 +16,26 @@ const DEFAULT_CONFIG: SiteConfig = {
   invite_only: false,
   require_email_verification: false,
   captcha_provider: "none",
+  captcha_providers: [],
   captcha_site_key: "",
   captcha_secret_key: "",
+  turnstile_site_key: "",
+  turnstile_secret_key: "",
+  hcaptcha_site_key: "",
+  hcaptcha_secret_key: "",
+  recaptcha_site_key: "",
+  recaptcha_secret_key: "",
+  geetest_captcha_id: "",
+  geetest_captcha_key: "",
+  geetest_fail_open: false,
+  cap_mode: "embedded",
+  cap_api_endpoint: "",
+  cap_site_key: "",
+  cap_secret_key: "",
+  cap_challenge_count: 50,
+  cap_challenge_difficulty: 4,
+  cap_instrumentation: true,
+  captcha_switch_timeout_seconds: 15,
   turnstile_endpoint_mode: "global",
   turnstile_china_site_key: "",
   turnstile_china_secret_key: "",
@@ -136,7 +154,41 @@ export async function getConfig(db: D1Database): Promise<SiteConfig> {
       // ignore malformed entries
     }
   }
+  migrateLegacyCaptcha(config);
   return config;
+}
+
+/**
+ * Bridge the pre-switchable-set captcha config into the new model, in memory,
+ * on every read. A site configured before `captcha_providers` existed has only
+ * the legacy `captcha_provider` + shared `captcha_site_key`/`captcha_secret_key`
+ * stored; derive the ordered set from it and copy the shared credentials into
+ * the matching provider's per-provider slot so verification finds them.
+ *
+ * Runs only when `captcha_providers` was never written (still the empty
+ * default) — once an admin saves the new config, the stored list wins and this
+ * is a no-op. Secrets are copied as-is (still ciphertext at this stage); the
+ * per-provider secret keys are in SENSITIVE_CONFIG_KEYS, so decryptConfigSecrets
+ * handles them downstream exactly like the legacy field.
+ */
+function migrateLegacyCaptcha(config: SiteConfig): void {
+  if (config.captcha_providers.length > 0) return;
+  const legacy = config.captcha_provider;
+  if (!legacy || legacy === "none") return;
+
+  config.captcha_providers = [legacy];
+
+  const bag = configBag(config);
+  const siteKeyField = `${legacy}_site_key`;
+  const secretKeyField = `${legacy}_secret_key`;
+  // Only turnstile/hcaptcha/recaptcha shared the legacy pair. pow has no keys;
+  // geetest/cap did not exist before the migration, so nothing to copy.
+  if (siteKeyField in config && !bag[siteKeyField]) {
+    bag[siteKeyField] = config.captcha_site_key;
+  }
+  if (secretKeyField in config && !bag[secretKeyField]) {
+    bag[secretKeyField] = config.captcha_secret_key;
+  }
 }
 
 export async function getConfigValue<K extends keyof SiteConfig>(

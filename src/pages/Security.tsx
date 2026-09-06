@@ -17,6 +17,7 @@ import {
   Link as FluentLink,
   MessageBar,
   Spinner,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -450,6 +451,30 @@ export function Security() {
   const [gpgKeyName, setGpgKeyName] = useState("");
   const [gpgLoading, setGpgLoading] = useState(false);
   const [selectedGpg, setSelectedGpg] = useState<GpgKeyInfo | null>(null);
+  const [gpgRequire2faSaving, setGpgRequire2faSaving] = useState(false);
+
+  const handleToggleGpgRequire2fa = async (checked: boolean) => {
+    setGpgRequire2faSaving(true);
+    try {
+      await api.updateMe({ gpg_require_2fa: checked });
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      showMsg(
+        "success",
+        checked
+          ? t("security.gpgRequire2faEnabled")
+          : t("security.gpgRequire2faDisabled"),
+      );
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError
+          ? err.message
+          : t("security.gpgRequire2faSaveFailed"),
+      );
+    } finally {
+      setGpgRequire2faSaving(false);
+    }
+  };
 
   const handleAddGpgKey = async () => {
     setGpgLoading(true);
@@ -1210,6 +1235,26 @@ export function Security() {
             </DialogBody>
           </DialogSurface>
         </Dialog>
+
+        {/* Per-account: whether gpg-login should still walk the TOTP gate.
+            Only meaningful when the account has an enrolled authenticator,
+            but the switch is always visible so users can pre-configure it
+            before enabling TOTP. */}
+        <Field
+          label={t("security.gpgRequire2faLabel")}
+          hint={t("security.gpgRequire2faHint")}
+        >
+          <Switch
+            checked={me?.user.gpg_require_2fa ?? true}
+            disabled={gpgRequire2faSaving || !me?.user}
+            onChange={(_, d) => handleToggleGpgRequire2fa(d.checked)}
+            label={
+              (me?.user.gpg_require_2fa ?? true)
+                ? t("security.gpgRequire2faOn")
+                : t("security.gpgRequire2faOff")
+            }
+          />
+        </Field>
 
         {/* Add new GPG key */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

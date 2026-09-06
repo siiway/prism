@@ -44,9 +44,13 @@ import {
   rowToPasskey,
 } from "../lib/webauthn";
 import { verifyClearsign } from "../lib/gpg";
-import { verifyCaptchaToken } from "../middleware/captcha";
+import {
+  verifyCaptchaToken,
+  extractCaptchaSubmission,
+} from "../middleware/captcha";
 import type { TurnstileVariant } from "../lib/turnstile";
 import { issuePowChallenge } from "../lib/pow";
+import { issueCapChallenge, redeemCapChallenge } from "../lib/cap";
 import { rateLimit, rateLimitIp } from "../middleware/rateLimit";
 import { requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
@@ -223,12 +227,9 @@ app.post("/register", async (c) => {
 
   const captchaOk = await verifyCaptchaToken(
     c.env.DB,
-    body.captcha_token,
-    body.pow_challenge,
-    body.pow_nonce,
+    extractCaptchaSubmission(body),
     ip,
     c.env,
-    body.captcha_variant,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
@@ -362,12 +363,9 @@ app.post("/login", async (c) => {
   // The client must submit a fresh captcha token on each step.
   const captchaOk = await verifyCaptchaToken(
     c.env.DB,
-    body.captcha_token,
-    body.pow_challenge,
-    body.pow_nonce,
+    extractCaptchaSubmission(body),
     ip,
     c.env,
-    body.captcha_variant,
   );
   if (!captchaOk.success) {
     c.executionCtx.waitUntil(
@@ -623,12 +621,9 @@ app.post("/email-verify-code", requireAuth, async (c) => {
   const ip = getIp(c);
   const captchaOk = await verifyCaptchaToken(
     c.env.DB,
-    body.captcha_token,
-    body.pow_challenge,
-    body.pow_nonce,
+    extractCaptchaSubmission(body),
     ip,
     c.env,
-    body.captcha_variant,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);
@@ -748,12 +743,9 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
   const ip = getIp(c);
   const captchaOk = await verifyCaptchaToken(
     c.env.DB,
-    body.captcha_token,
-    body.pow_challenge,
-    body.pow_nonce,
+    extractCaptchaSubmission(body),
     ip,
     c.env,
-    body.captcha_variant,
   );
   if (!captchaOk.success)
     return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);
@@ -1418,6 +1410,49 @@ app.get("/pow-challenge", async (c) => {
   });
 });
 
+// ─── Cap challenge (embedded mode) ───────────────────────────────────────────
+//
+// The @cap.js/widget POSTs to <endpoint>challenge then <endpoint>redeem; these
+// two routes are that endpoint for embedded mode. External mode points the
+// widget at a self-hosted Cap Standalone server instead, so these are unused
+// there. Both are unauthenticated by design — a captcha gates anonymous flows.
+
+app.post("/cap/challenge", async (c) => {
+  const config = await getConfig(c.env.DB);
+  if (!config.captcha_providers.includes("cap") || config.cap_mode !== "embedded") {
+    return c.json({ error: "Cap not enabled" }, 404);
+  }
+  const challenge = await issueCapChallenge(c.env, {
+    challengeCount: config.cap_challenge_count,
+    challengeDifficulty: config.cap_challenge_difficulty,
+    instrumentation: config.cap_instrumentation,
+  });
+  return c.json(challenge);
+});
+
+app.post("/cap/redeem", async (c) => {
+  const config = await getConfig(c.env.DB);
+  if (!config.captcha_providers.includes("cap") || config.cap_mode !== "embedded") {
+    return c.json({ error: "Cap not enabled" }, 404);
+  }
+  const body = await c.req.json<{
+    token?: string;
+    solutions?: unknown;
+    instr?: unknown;
+    instr_blocked?: boolean;
+    instr_timeout?: boolean;
+  }>();
+  if (!body.token || !Array.isArray(body.solutions)) {
+    return c.json({ success: false }, 400);
+  }
+  const result = await redeemCapChallenge(
+    c.env,
+    body as Parameters<typeof redeemCapChallenge>[1],
+  );
+  if (!result.success) return c.json({ success: false }, 200);
+  return c.json({ success: true, token: result.token });
+});
+
 // ─── Sessions list ───────────────────────────────────────────────────────────
 
 app.get("/sessions", requireAuth, async (c) => {
@@ -1696,12 +1731,17 @@ app.post("/gpg-login", async (c) => {
   // could still be entered with the key alone, which is not what enabling it
   // promises. Checked before the challenge is consumed so the client can
   // resubmit the signed message with a code instead of signing again.
+  //
+  // The account holder can opt out via `gpg_require_2fa = 0` on the user row
+  // (Security > GPG keys > "Require 2FA after GPG verification"). That flag
+  // asserts explicit trust in the signing key as a standalone factor; when
+  // clear, we skip the TOTP prompt even if authenticators are enrolled.
   const gpgTotpCount = await c.env.DB.prepare(
     "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
   )
     .bind(user.id)
     .first<{ n: number }>();
-  if ((gpgTotpCount?.n ?? 0) > 0) {
+  if ((gpgTotpCount?.n ?? 0) > 0 && user.gpg_require_2fa !== 0) {
     if (!body.totp_code)
       return c.json({ error: "TOTP code required", totp_required: true }, 200);
     if (!(await verifyAnyTotp(c.env, user.id, body.totp_code))) {

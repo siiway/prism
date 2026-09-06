@@ -5,6 +5,7 @@ import { getConfig } from "../lib/config";
 import { listPublishedLegalSlugs } from "../lib/legal";
 import { readWithFallback } from "../lib/schema";
 import { turnstileEndpointFor } from "../lib/turnstile";
+import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
   resolveProviderIconUrl,
@@ -91,11 +92,12 @@ app.get("/site", async (c) => {
     unproxied_site_icon_url: config.site_icon_url,
     allow_registration: config.allow_registration,
     invite_only: config.invite_only,
-    captcha_provider: config.captcha_provider,
-    captcha_site_key: config.captcha_site_key,
-    turnstile_endpoint: turnstile.directive,
-    turnstile_china_site_key: turnstile.chinaSiteKey,
-    pow_difficulty: config.pow_difficulty,
+    captcha: buildPublicCaptcha(
+      config,
+      turnstile.directive,
+      turnstile.chinaSiteKey,
+      config.captcha_providers,
+    ),
     require_email_verification: config.require_email_verification,
     email_verify_methods: config.email_verify_methods,
     accent_color: config.accent_color,

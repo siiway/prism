@@ -1,0 +1,12 @@
+-- Per-user opt-out from the TOTP challenge that gpg-login otherwise applies
+-- when the account has an enrolled authenticator.
+--
+-- By default the GPG login flow treats a signature as identity assertion only
+-- and still walks the same 2FA gate the password flow does (see the comment
+-- in worker/routes/auth.ts around gpg-login). A user who considers their GPG
+-- key a strong enough factor on its own can flip this to 0 to skip the extra
+-- TOTP prompt after a successful signature verification.
+--
+-- Existing rows default to 1 (require 2FA) so behaviour is unchanged after
+-- migrate.
+ALTER TABLE users ADD COLUMN gpg_require_2fa INTEGER NOT NULL DEFAULT 1;

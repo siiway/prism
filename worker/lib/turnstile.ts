@@ -220,7 +220,7 @@ function execWaitUntil(
 
 type TurnstileConfig = Pick<
   SiteConfig,
-  "turnstile_endpoint_mode" | "captcha_provider" | "turnstile_china_site_key"
+  "turnstile_endpoint_mode" | "captcha_providers" | "turnstile_china_site_key"
 >;
 
 /**
@@ -238,9 +238,10 @@ export async function turnstileEndpointFor(
   c: TurnstileContext,
   config: TurnstileConfig,
 ): Promise<TurnstileEndpointInfo> {
-  // The directive is meaningless for the other providers, and probing with a
-  // key that was never a Turnstile key would just burn a subrequest.
-  if (config.captcha_provider !== "turnstile") return GLOBAL_ONLY;
+  // The directive is meaningless when Turnstile is not among the enabled
+  // providers, and probing with a key that was never a Turnstile key would just
+  // burn a subrequest.
+  if (!config.captcha_providers.includes("turnstile")) return GLOBAL_ONLY;
 
   const directive = resolveTurnstileEndpoint(
     config.turnstile_endpoint_mode,

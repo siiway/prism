@@ -242,12 +242,9 @@ export function JoinRegister() {
             <Text className={styles.notice}>{t("join.noEmailNotice")}</Text>
           )}
 
-          {info.captcha_provider !== "none" && (
+          {info.captcha.captcha_providers.length > 0 && (
             <Captcha
-              provider={info.captcha_provider}
-              siteKey={info.captcha_site_key}
-              turnstileEndpoint={info.turnstile_endpoint}
-              turnstileChinaSiteKey={info.turnstile_china_site_key}
+              captcha={info.captcha}
               onVerified={setCaptcha}
               onError={setError}
             />

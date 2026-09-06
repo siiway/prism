@@ -8,7 +8,18 @@
 // missing on the other the way it did while each tier kept its own copy.
 
 export type CaptchaProvider =
-  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow";
+  | "none"
+  | "turnstile"
+  | "hcaptcha"
+  | "recaptcha"
+  | "pow"
+  | "geetest"
+  | "cap";
+
+/** How the embedded Cap challenge store is backed / where verification runs.
+ *  "embedded" runs capjs-core inside the Worker (KV-backed replay guard);
+ *  "external" delegates to a self-hosted Cap Standalone server. */
+export type CapMode = "embedded" | "external";
 
 /** How the Turnstile challenge host is chosen. Cloudflare serves the widget
  *  from a Mainland-China host (challenges.cloudflare-cn.com) alongside the
@@ -35,12 +46,55 @@ export interface SiteConfig {
   allow_registration: boolean;
   invite_only: boolean;
   require_email_verification: boolean;
+  /** Legacy single-provider selector. Retained for read-time migration into
+   *  `captcha_providers` (see lib/config.ts) and never written by new code.
+   *  The active configuration is `captcha_providers`. */
   captcha_provider: CaptchaProvider;
-  /** Site key for the chosen provider. For Turnstile this is the global
-   *  (region:"world") widget — the pair used everywhere except visitors routed
-   *  to the China host. */
+  /** Ordered set of enabled captcha providers. Element 0 is the default
+   *  (rendered first); the rest are alternates a visitor may switch to. The
+   *  set membership and order are chosen by the site moderator. An empty list
+   *  (or `["none"]`) disables captcha entirely.
+   *
+   *  Each provider carries its own credential pair (see the per-provider
+   *  fields below) because several providers are now active at once and can no
+   *  longer share a single key. */
+  captcha_providers: CaptchaProvider[];
+  /** Legacy shared site/secret key pair. Used only by the read-time migration
+   *  to seed the per-provider fields; not written by new code. */
   captcha_site_key: string;
   captcha_secret_key: string;
+  /** Per-provider credentials. Turnstile keeps its separate China pair below. */
+  turnstile_site_key: string;
+  turnstile_secret_key: string;
+  hcaptcha_site_key: string;
+  hcaptcha_secret_key: string;
+  recaptcha_site_key: string;
+  recaptcha_secret_key: string;
+  /** GeeTest v4 (SenseBot behavioural v4). `captcha_id` is public (goes to the
+   *  browser); `captcha_key` is the server-side HMAC secret. Encrypted at rest. */
+  geetest_captcha_id: string;
+  geetest_captcha_key: string;
+  /** When GeeTest's own service is unreachable the widget emits a bypass
+   *  token. false (default) = fail closed (reject); true = fail open (accept). */
+  geetest_fail_open: boolean;
+  /** Cap (trycap.dev) self-hosted PoW captcha. */
+  cap_mode: CapMode;
+  /** External Cap Standalone base URL, used only when cap_mode="external". */
+  cap_api_endpoint: string;
+  /** Cap Standalone site key / secret (external mode). Embedded mode derives
+   *  its HMAC secret from the server JWT secret and needs neither. */
+  cap_site_key: string;
+  cap_secret_key: string;
+  /** Number of PoW puzzles per Cap challenge (embedded mode). */
+  cap_challenge_count: number;
+  /** Cap PoW target prefix length in hex chars (embedded mode). */
+  cap_challenge_difficulty: number;
+  /** Emit Cap's anti-automation instrumentation script (embedded mode). */
+  cap_instrumentation: boolean;
+  /** Seconds a visitor may wait on the current provider before the "try a
+   *  different method" control is revealed. 0 disables the timeout nudge. Only
+   *  meaningful when `captcha_providers` has ≥2 members. */
+  captcha_switch_timeout_seconds: number;
   /** Turnstile challenge-host selection strategy. Only meaningful when
    *  captcha_provider is "turnstile". */
   turnstile_endpoint_mode: TurnstileEndpointMode;

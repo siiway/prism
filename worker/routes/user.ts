@@ -120,6 +120,7 @@ app.patch("/me", async (c) => {
     alt_email_login?: boolean | null;
     access_token_ttl_minutes?: number | null;
     refresh_token_ttl_days?: number | null;
+    gpg_require_2fa?: boolean;
     profile_is_public?: boolean;
     profile_show_display_name?: boolean | null;
     profile_show_avatar?: boolean | null;
@@ -191,6 +192,13 @@ app.patch("/me", async (c) => {
     }
     updates.push("refresh_token_ttl_days = ?");
     values.push(body.refresh_token_ttl_days);
+  }
+  if (body.gpg_require_2fa !== undefined) {
+    // Non-nullable — the site has no configurable default here, so the
+    // preference is stored as a plain 0/1 with the migration's default of 1
+    // preserving pre-existing behaviour.
+    updates.push("gpg_require_2fa = ?");
+    values.push(body.gpg_require_2fa ? 1 : 0);
   }
   if (body.profile_is_public !== undefined) {
     // Turning a profile public adds a rendered, crawlable page plus image
@@ -664,6 +672,7 @@ async function safeUser(baseUrl: string, db: D1Database, row: UserRow) {
     alt_email_login: row.alt_email_login,
     access_token_ttl_minutes: row.access_token_ttl_minutes,
     refresh_token_ttl_days: row.refresh_token_ttl_days,
+    gpg_require_2fa: row.gpg_require_2fa !== 0,
     profile_is_public: row.profile_is_public === 1,
     profile_show_display_name: nullableBool(row.profile_show_display_name),
     profile_show_avatar: nullableBool(row.profile_show_avatar),

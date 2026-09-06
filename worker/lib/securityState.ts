@@ -2,7 +2,11 @@ import { sha256Hex } from "./crypto";
 
 const SWEEP_BATCH_SIZE = 5_000;
 
-export type ReplayClaimType = "dpop" | "client-assertion";
+export type ReplayClaimType =
+  | "dpop"
+  | "client-assertion"
+  | "cap-nonce"
+  | "cap-token";
 
 /**
  * Claim a replay-sensitive value exactly once for its validity window.

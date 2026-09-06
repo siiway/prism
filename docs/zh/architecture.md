@@ -64,6 +64,9 @@ worker/
 │   ├── securityState.ts    # OAuth 一次性声明的原子消费 + 过期安全状态清理
 │   ├── crypto.ts           # randomId、PBKDF2 哈希
 │   ├── pow.ts              # 签名挑战签发/校验（HMAC + 过期 + 单次）
+│   ├── geetest.ts          # 极验 v4 服务端校验（HMAC 签名 + validate）
+│   ├── cap.ts              # Cap 验证码 — 内嵌（capjs-core + KV）与外部校验
+│   ├── captchaPublic.ts    # buildPublicCaptcha() — 下发给各 payload 的公开验证码描述
 │   ├── jwt.ts              # signJWT / verifyJWT（HS256），ID Token RS256
 │   ├── totp.ts             # TOTP / HOTP（RFC 6238），备用码
 │   ├── webauthn.ts         # 通过 @simplewebauthn/server 处理 Passkey
@@ -92,7 +95,7 @@ worker/
 ├── middleware/
 │   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
 │   ├── bodyLimit.ts        # 全局 5 MiB 请求正文限制
-│   ├── captcha.ts          # verifyCaptchaToken() — 分发到对应 provider
+│   ├── captcha.ts          # verifyCaptchaToken() — 校验提交的 provider 属于启用集合并分发
 │   └── rateLimit.ts        # D1 滑动窗口限流（IPv6 感知、原子串行化）
 │
 ├── cron/

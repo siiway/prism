@@ -68,19 +68,78 @@ line.
 
 ## Bot protection (captcha)
 
-Exactly one provider can be active at a time. The captcha is challenged on
-register, login, password change, email-verification resend, and any flow the
-admin enables.
+Prism runs an **ordered set of providers**. The first is the default the visitor
+sees; the rest are **alternates** they can switch to when the default fails or
+takes too long — the "try a different method" affordance. The site moderator
+chooses both which providers are in the set and their order. The captcha is
+challenged on register, login, password change, email-verification resend,
+team-join, invite registration, step-up 2FA, and any flow the admin enables.
 
-| Key                          | Type   | Default    | Description                                                           |
-| ---------------------------- | ------ | ---------- | --------------------------------------------------------------------- |
-| `captcha_provider`           | string | `"none"`   | `none` \| `turnstile` \| `hcaptcha` \| `recaptcha` \| `pow`           |
-| `captcha_site_key`           | string | `""`       | Public site key. For Turnstile, the global (`region: "world"`) widget |
-| `captcha_secret_key`         | string | `""`       | Server-side secret for that key (encrypted at rest)                   |
-| `turnstile_endpoint_mode`    | string | `"global"` | Turnstile-only. Which host serves the widget (see below)              |
-| `turnstile_china_site_key`   | string | `""`       | Turnstile-only. Site key of a `region: "china"` widget (see below)    |
-| `turnstile_china_secret_key` | string | `""`       | Turnstile-only. Secret for that key (encrypted at rest)               |
-| `pow_difficulty`             | number | `20`       | Leading zero bits required for proof-of-work (higher = harder)        |
+Each provider carries **its own credentials** (they can all be configured at
+once), so a submitted token names the provider that produced it and the server
+verifies it against that provider — rejecting any provider not in the enabled
+set.
+
+| Key                              | Type     | Default      | Description                                                                          |
+| -------------------------------- | -------- | ------------ | ----------------------------------------------------------------------------------- |
+| `captcha_providers`              | string[] | `[]`         | Ordered enabled set. `[0]` = default, rest = switchable alternates. `[]` = off       |
+| `captcha_switch_timeout_seconds` | number   | `15`         | Delay before the "try a different method" control appears. `0` = only on failure    |
+| `turnstile_site_key`             | string   | `""`         | Turnstile global (`region: "world"`) site key                                       |
+| `turnstile_secret_key`           | string   | `""`         | Turnstile global secret (encrypted at rest)                                          |
+| `turnstile_endpoint_mode`        | string   | `"global"`   | Turnstile-only. Which host serves the widget (see below)                             |
+| `turnstile_china_site_key`       | string   | `""`         | Turnstile-only. Site key of a `region: "china"` widget (see below)                   |
+| `turnstile_china_secret_key`     | string   | `""`         | Turnstile-only. Secret for that key (encrypted at rest)                             |
+| `hcaptcha_site_key`              | string   | `""`         | hCaptcha site key                                                                   |
+| `hcaptcha_secret_key`            | string   | `""`         | hCaptcha secret (encrypted at rest)                                                  |
+| `recaptcha_site_key`             | string   | `""`         | reCAPTCHA v3 site key                                                               |
+| `recaptcha_secret_key`           | string   | `""`         | reCAPTCHA v3 secret (encrypted at rest)                                              |
+| `geetest_captcha_id`             | string   | `""`         | GeeTest v4 public CAPTCHA ID                                                        |
+| `geetest_captcha_key`            | string   | `""`         | GeeTest v4 private key (encrypted at rest)                                           |
+| `geetest_fail_open`              | boolean  | `false`      | Accept when GeeTest is unreachable. `false` = fail closed (reject)                  |
+| `cap_mode`                       | string   | `"embedded"` | `embedded` (in-worker, KV-backed) or `external` (self-hosted Cap Standalone)         |
+| `cap_api_endpoint`               | string   | `""`         | Cap Standalone base URL (external mode)                                             |
+| `cap_site_key`                   | string   | `""`         | Cap Standalone site key (external mode)                                             |
+| `cap_secret_key`                 | string   | `""`         | Cap Standalone secret (external mode, encrypted at rest)                             |
+| `cap_challenge_count`            | number   | `50`         | PoW puzzles per Cap challenge (embedded mode)                                        |
+| `cap_challenge_difficulty`       | number   | `4`          | Cap PoW target prefix length in hex chars (embedded mode)                            |
+| `cap_instrumentation`            | boolean  | `true`       | Emit Cap's anti-automation instrumentation script (embedded mode)                   |
+| `pow_difficulty`                 | number   | `20`         | Leading zero bits required for the built-in proof-of-work (higher = harder)          |
+
+Providers: `turnstile`, `hcaptcha`, `recaptcha`, `pow` (built-in Rust→WASM
+proof-of-work), `geetest` (GeeTest v4 / SenseBot behavioural), `cap`
+([Cap](https://trycap.dev) self-hosted proof-of-work).
+
+> **Migration.** Sites configured before switchable sets keep working: the legacy
+> `captcha_provider` + shared `captcha_site_key`/`captcha_secret_key` are read
+> once and seeded into `captcha_providers[0]` and that provider's per-provider
+> credential fields. Saving the captcha settings once writes the new shape.
+
+### GeeTest v4
+
+GeeTest ("极验") is a behavioural captcha that is often friendlier than a
+checkbox challenge. Prism integrates **v4 / SenseBot** (`initGeetest4`). Create a
+CAPTCHA in the GeeTest console and copy its **ID** (public) and **key** (secret)
+into `geetest_captcha_id` / `geetest_captcha_key`. When GeeTest's own service is
+unreachable the widget can emit a bypass token; `geetest_fail_open` decides
+whether Prism accepts it — the default is **fail closed** so an outage does not
+silently drop bot protection.
+
+### Cap
+
+[Cap](https://trycap.dev) is a self-hosted, privacy-friendly proof-of-work
+captcha. Two modes:
+
+- **Embedded** (default) — Cap runs inside the Worker via `capjs-core`. Challenges
+  are stateless signed JWTs; the single-use replay guard and redeem-token lookup
+  are backed by `KV_CACHE`; the HMAC secret is derived from the server JWT secret,
+  so there is **no extra binding or server to run**. Tuned by
+  `cap_challenge_count` / `cap_challenge_difficulty` and
+  `cap_instrumentation`.
+- **External** — point `cap_api_endpoint` (+ `cap_site_key` / `cap_secret_key`) at
+  a self-hosted [Cap Standalone](https://trycap.dev/guide/standalone/) server.
+
+Cap is a modern alternative to the built-in `pow` provider, which remains
+available (see below).
 
 ### Turnstile: two hosts, two widgets
 
@@ -104,7 +163,7 @@ interchangeable, which shapes the whole setting:
 So using the China host means switching the **site key** as well as the host.
 That is what `turnstile_china_site_key` / `turnstile_china_secret_key` are for:
 a second widget, created with `region: "china"`, sitting beside the global pair
-in `captcha_site_key` / `captcha_secret_key`.
+in `turnstile_site_key` / `turnstile_secret_key`.
 
 **If `turnstile_china_site_key` is empty, every mode below behaves as `global`.**
 Nothing breaks if you pick a China-leaning mode without holding the entitlement —
@@ -139,17 +198,19 @@ parameter that would override it is disabled in the production bundle. A widget
 that has already loaded from the wrong host cannot be redirected without
 reloading the page, so the choice has to be right before the browser commits.
 
-**Proof-of-work** requires no third-party service. The Rust→WASM solver in
-`pow/` runs ~10× faster than the JS fallback. Difficulty 20 takes ~0.1–2 s
+**Proof-of-work** (`pow`) requires no third-party service. The Rust→WASM solver
+in `pow/` runs ~10× faster than the JS fallback. Difficulty 20 takes ~0.1–2 s
 depending on device. Values above 24 may time out on low-end mobile devices.
-PoW is single-use and replay-protected via the `pow_used` table.
+PoW is single-use and replay-protected via the `pow_used` table. For a
+self-hosted proof-of-work option with a polished widget, consider the `cap`
+provider above.
 
 ## Two-factor / step-up
 
 | Key                       | Type    | Default | Description                                                                                                                                                                |
 | ------------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sudo_mode_ttl_minutes`   | number  | `5`     | After a successful step-up, subsequent challenges from the same `(user, session, app)` skip the TOTP/passkey prompt for this many minutes. `0` disables sudo mode entirely |
-| `require_captcha_for_2fa` | boolean | `false` | Site-wide: every step-up confirmation must solve the active captcha. Apps can also opt in per challenge. No-op when `captcha_provider = none`                              |
+| `require_captcha_for_2fa` | boolean | `false` | Site-wide: every step-up confirmation must solve the active captcha. Apps can also opt in per challenge. No-op when `captcha_providers` is empty                          |
 
 ## Public profiles
 

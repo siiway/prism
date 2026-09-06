@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { configBag, getConfig, getRsaKeyPair } from "../lib/config";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
+import { buildPublicCaptcha } from "../lib/captchaPublic";
 import {
   encryptSecret,
   hashSecret,
@@ -23,7 +24,10 @@ import { getIp } from "../lib/clientIp";
 import { verifyAnyTotp } from "../lib/totp";
 import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
-import { verifyCaptchaToken } from "../middleware/captcha";
+import {
+  verifyCaptchaToken,
+  extractCaptchaSubmission,
+} from "../middleware/captcha";
 import { requireAuth, optionalAuth, tryPatAuth } from "../middleware/auth";
 import {
   computeIsVerified,
@@ -1798,7 +1802,7 @@ app.get("/2fa/info", optionalAuth, async (c) => {
   // captcha — there's no factor being checked, so no brute-force surface.
   const captchaRequired =
     (config.require_captcha_for_2fa || challenge.require_captcha === 1) &&
-    config.captcha_provider !== "none" &&
+    config.captcha_providers.some((p) => p !== "none") &&
     !sudoActive;
 
   // The widget is only rendered when a captcha is actually required, so skip
@@ -1822,10 +1826,12 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     sudo_active: sudoActive,
     sudo_ttl_minutes: config.sudo_mode_ttl_minutes,
     captcha_required: captchaRequired,
-    captcha_provider: captchaRequired ? config.captcha_provider : "none",
-    captcha_site_key: captchaRequired ? config.captcha_site_key : "",
-    turnstile_endpoint: turnstile.directive,
-    turnstile_china_site_key: turnstile.chinaSiteKey,
+    captcha: buildPublicCaptcha(
+      config,
+      turnstile.directive,
+      turnstile.chinaSiteKey,
+      captchaRequired ? config.captcha_providers : [],
+    ),
   });
 });
 
@@ -1886,17 +1892,14 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
   const captchaRequired =
     !body.use_sudo &&
     (config.require_captcha_for_2fa || challenge.require_captcha === 1) &&
-    config.captcha_provider !== "none";
+    config.captcha_providers.some((p) => p !== "none");
   if (captchaRequired && body.decision === "approve") {
     const ip = getIp(c);
     const captchaResult = await verifyCaptchaToken(
       c.env.DB,
-      body.captcha_token,
-      body.pow_challenge,
-      body.pow_nonce,
+      extractCaptchaSubmission(body),
       ip,
       c.env,
-      body.captcha_variant,
     );
     if (!captchaResult.success) {
       return c.json(
@@ -5675,6 +5678,12 @@ app.get("/me/admin/config", async (c) => {
     "microsoft_client_secret",
     "discord_client_secret",
     "captcha_secret_key",
+    "turnstile_secret_key",
+    "turnstile_china_secret_key",
+    "hcaptcha_secret_key",
+    "recaptcha_secret_key",
+    "geetest_captcha_key",
+    "cap_secret_key",
     "smtp_password",
     "email_api_key",
   ];
@@ -5705,6 +5714,12 @@ app.patch("/me/admin/config", async (c) => {
     "discord_client_id",
     "discord_client_secret",
     "captcha_secret_key",
+    "turnstile_secret_key",
+    "turnstile_china_secret_key",
+    "hcaptcha_secret_key",
+    "recaptcha_secret_key",
+    "geetest_captcha_key",
+    "cap_secret_key",
     "smtp_password",
     "email_api_key",
     "initialized",

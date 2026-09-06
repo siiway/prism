@@ -71,26 +71,46 @@ and its footer link. Each document is capped at 256 KiB. See
   for this many minutes. `0` disables sudo mode entirely. The action
   acknowledgement checkbox is still required on every confirmation. See
   [OAuth → Step-up 2FA](oauth.md#step-up-2fa).
-- **Require captcha for 2FA** — site-wide: every step-up confirmation must
-  solve the active captcha. Apps can also opt in per challenge. No-op when the
-  captcha provider is "None".
+ - **Require captcha for 2FA** — site-wide: every step-up confirmation must
+   solve a captcha. Apps can also opt in per challenge. No-op when no captcha
+   providers are enabled.
 - **IPv6 rate-limit prefix** — how many bits of an IPv6 address are bucketed
   together for rate limiting (default `/64`). Prevents a single `/64` allocation
   from getting unlimited login attempts.
 
 ### Bot Protection
 
-Choose one captcha provider:
+Prism runs an **ordered set of providers**. Pick a **default provider** (shown
+first) and, optionally, one or more **alternate providers** the visitor can
+switch to when the default fails or takes too long. Reorder the alternates with
+the ↑/↓ controls — the order is the order visitors are offered them. Set the
+default to **None** to turn captcha off entirely. Each enabled provider gets its
+own credential panel below the list.
 
-| Provider             | Notes                                                                |
-| -------------------- | -------------------------------------------------------------------- |
-| None                 | No bot protection                                                    |
-| Cloudflare Turnstile | Requires a Turnstile site key + secret. Free tier available.         |
-| hCaptcha             | Requires an hCaptcha site key + secret.                              |
-| reCAPTCHA v3         | Requires a Google reCAPTCHA v3 site key + secret. Invisible.         |
-| Proof-of-Work        | No third-party service. Difficulty 20 = ~0.1–2 s on modern hardware. |
+| Provider             | Notes                                                                        |
+| -------------------- | ---------------------------------------------------------------------------- |
+| None                 | No bot protection                                                            |
+| Cloudflare Turnstile | Requires a Turnstile site key + secret. Free tier available.                 |
+| hCaptcha             | Requires an hCaptcha site key + secret.                                      |
+| reCAPTCHA v3         | Requires a Google reCAPTCHA v3 site key + secret. Invisible.                 |
+| GeeTest v4           | Behavioural captcha (极验). Requires a CAPTCHA ID + key. Often friendlier.   |
+| Cap                  | Self-hosted proof-of-work ([Cap](https://trycap.dev)). Embedded or external. |
+| Proof-of-Work        | Built-in. No third-party service. Difficulty 20 = ~0.1–2 s on modern hardware. |
 
-When **Cloudflare Turnstile** is selected, a **Challenge Endpoint** setting
+**Switch prompt delay** (shown once ≥2 providers are enabled) sets how long
+before the "try a different method" control appears; `0` shows it only after a
+failure. A visitor's choice is remembered in their browser.
+
+**GeeTest v4** needs a CAPTCHA ID (public) and key (secret) from the GeeTest
+console. **Fail open** decides whether a GeeTest outage lets visitors through —
+off (fail closed) by default.
+
+**Cap** runs **embedded** in the worker by default (no extra servers; backed by
+KV), tuned by challenge count/difficulty and an anti-automation instrumentation
+toggle. Switch to **external** mode to target a self-hosted Cap Standalone
+server via its endpoint + site/secret key.
+
+When **Cloudflare Turnstile** is enabled, a **Challenge Endpoint** setting
 chooses which host serves the widget: the global `challenges.cloudflare.com` or
 the Mainland-China `challenges.cloudflare-cn.com`. Options: always global,
 always China, or pick automatically by browser language (client-side), by

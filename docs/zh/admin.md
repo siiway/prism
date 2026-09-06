@@ -61,22 +61,30 @@ General 标签页靠下：
 - **Access token TTL（分钟）** — OAuth 访问令牌有效期
 - **Refresh token TTL（天）** — OAuth 刷新令牌有效期
 - **Sudo 模式 TTL（分钟）** — 用户成功完成一次 2FA 步骤提升后，同一 `(用户, 会话, 应用)` 在该时长内的后续挑战可跳过 TOTP/Passkey 重新提示。`0` 表示完全禁用 sudo 模式。每次确认时仍要求用户勾选行动确认复选框。详见 [OAuth → 步骤提升 2FA](oauth.md#step-up-2fa)。
-- **Require captcha for 2FA** — 站点全局：每次步骤提升确认都必须通过当前启用的验证码。应用也可针对单个挑战开启。`captcha_provider = none` 时无效。
+- **Require captcha for 2FA** — 站点全局：每次步骤提升确认都必须通过验证码。应用也可针对单个挑战开启。未启用任何验证码 provider 时无效。
 - **IPv6 限流前缀长度** — 限流时 IPv6 地址按多少位前缀聚合（默认 `/64`）。避免一个 `/64` 拥有无限重试次数。
 
 ### 机器人防护
 
-选择一个验证码提供商：
+Prism 使用一个**有序的 provider 集合**。选择一个**默认 provider**（优先展示），并可选地启用一个或多个**备用 provider**，当默认方式失败或耗时过长时访客可切换过去。用 ↑/↓ 控件调整备用项顺序——顺序即为向访客提供的顺序。将默认设为**无**即完全关闭验证码。列表下方为每个已启用 provider 单独的凭据面板。
 
-| 提供商               | 说明                                               |
-| -------------------- | -------------------------------------------------- |
-| 无                   | 不启用机器人防护                                   |
-| Cloudflare Turnstile | 需要 Turnstile 站点密钥 + 密钥，提供免费套餐       |
-| hCaptcha             | 需要 hCaptcha 站点密钥 + 密钥                      |
-| reCAPTCHA v3         | 需要 Google reCAPTCHA v3 站点密钥 + 密钥，无感验证 |
-| 工作量证明           | 无需第三方服务，难度 20 在现代硬件上约需 0.1–2 秒  |
+| 提供商               | 说明                                                          |
+| -------------------- | ------------------------------------------------------------- |
+| 无                   | 不启用机器人防护                                             |
+| Cloudflare Turnstile | 需要 Turnstile 站点密钥 + 密钥，提供免费套餐                 |
+| hCaptcha             | 需要 hCaptcha 站点密钥 + 密钥                                |
+| reCAPTCHA v3         | 需要 Google reCAPTCHA v3 站点密钥 + 密钥，无感验证           |
+| 极验 v4              | 行为验证码。需要 CAPTCHA ID + key，通常更友好                |
+| Cap                  | 自建工作量证明（[Cap](https://trycap.dev)）。内嵌或外部模式  |
+| 工作量证明           | 内置，无需第三方服务，难度 20 在现代硬件上约需 0.1–2 秒      |
 
-选择 **Cloudflare Turnstile** 后，会出现**验证端点**设置，用于选择分发组件的主机：全球 `challenges.cloudflare.com` 或中国大陆 `challenges.cloudflare-cn.com`。可选：始终全球、始终中国大陆，或按浏览器语言（客户端）、按请求地区（服务端）、按浏览器地区（客户端）自动选择。
+**切换提示延迟**（启用 ≥2 个 provider 时出现）设置“换一种验证方式”出现前的等待时长；`0` 表示仅在失败后出现。访客的选择会记忆在其浏览器中。
+
+**极验 v4** 需要从极验控制台获取 CAPTCHA ID（公开）与 key（私密）。**Fail open** 决定极验故障时是否放行访客——默认关闭（fail closed）。
+
+**Cap** 默认在 worker 内**内嵌**运行（无需额外服务器，由 KV 支撑），可调节挑战数量/难度及反自动化探测开关。切换到**外部**模式可通过端点 + site/secret key 指向自建的 Cap Standalone 服务器。
+
+启用 **Cloudflare Turnstile** 后，会出现**验证端点**设置，用于选择分发组件的主机：全球 `challenges.cloudflare.com` 或中国大陆 `challenges.cloudflare-cn.com`。可选：始终全球、始终中国大陆，或按浏览器语言（客户端）、按请求地区（服务端）、按浏览器地区（客户端）自动选择。
 
 只要选择「始终全球」以外的任何模式，就会额外出现**中国大陆 site key** 和**中国大陆密钥**两个字段。它们是必需项而非可选项：Turnstile 组件的 region 在创建时即固定，且每个主机只接受属于自己 region 的密钥——因此中国大陆主机需要一个以 `region: "china"` 创建的第二组件，而这又需要 Cloudflare China Network 权限。
 

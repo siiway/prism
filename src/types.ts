@@ -5,4 +5,4 @@
 // persists exactly this shape, and keeping a second hand-maintained copy is
 // how the two tiers drifted apart before.
 
-export type { SiteConfig } from "../shared/types";
+export type { SiteConfig, CaptchaProvider, CapMode } from "../shared/types";

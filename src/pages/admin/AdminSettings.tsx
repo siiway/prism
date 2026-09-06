@@ -32,7 +32,7 @@ import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { useAuthStore } from "../../store/auth";
-import type { SiteConfig } from "../../types";
+import type { SiteConfig, CaptchaProvider } from "../../types";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { PasswordInput } from "../../components/PasswordInput";
 import { SkeletonFormCard } from "../../components/Skeletons";
@@ -93,6 +93,17 @@ const TURNSTILE_ENDPOINT_MODES: SiteConfig["turnstile_endpoint_mode"][] = [
   "client_language",
   "server_region",
   "client_region",
+];
+
+// Selectable captcha providers (excludes "none", which is handled separately as
+// "captcha off"). Each is labelled from `admin.captcha_<provider>`.
+const CAPTCHA_PROVIDERS: CaptchaProvider[] = [
+  "turnstile",
+  "hcaptcha",
+  "recaptcha",
+  "pow",
+  "geetest",
+  "cap",
 ];
 
 export function AdminSettings() {
@@ -279,6 +290,41 @@ export function AdminSettings() {
   // Read once — both the dropdown label and its selection need it, and a
   // config row written before the setting existed has no value at all.
   const turnstileMode = get("turnstile_endpoint_mode") ?? "global";
+
+  // ─── Captcha provider set ──────────────────────────────────────────────────
+  // The enabled set is an ordered list: element 0 is the default rendered
+  // first, the rest are switchable alternates. "none" is never stored in the
+  // list — an empty list means captcha is off.
+  const providerList: CaptchaProvider[] = (
+    (get("captcha_providers") ?? []) as CaptchaProvider[]
+  ).filter((p) => p !== "none");
+  const defaultProvider: CaptchaProvider = providerList[0] ?? "none";
+  const alternateProviders: CaptchaProvider[] = providerList.slice(1);
+  const setProviderList = (list: CaptchaProvider[]) =>
+    set("captcha_providers", list);
+  // Change the default (element 0). "none" clears the whole set. Otherwise the
+  // new default moves to the front and the previous ordering is preserved.
+  const setDefaultProvider = (p: CaptchaProvider) => {
+    if (p === "none") {
+      setProviderList([]);
+      return;
+    }
+    setProviderList([p, ...providerList.filter((x) => x !== p)]);
+  };
+  const toggleAlternate = (p: CaptchaProvider, on: boolean) => {
+    if (on) setProviderList([...providerList, p]);
+    else setProviderList(providerList.filter((x) => x !== p));
+  };
+  // Reorder an alternate. Index 0 (the default) is fixed, so alternates only
+  // move within positions 1..n.
+  const moveAlternate = (p: CaptchaProvider, dir: -1 | 1) => {
+    const idx = providerList.indexOf(p);
+    const target = idx + dir;
+    if (idx < 1 || target < 1 || target >= providerList.length) return;
+    const copy = [...providerList];
+    [copy[idx], copy[target]] = [copy[target], copy[idx]];
+    setProviderList(copy);
+  };
 
   /** Numeric config setter that refuses to store a non-number.
    *
@@ -1251,99 +1297,342 @@ export function AdminSettings() {
         <div className={styles.card}>
           <Title3>{t("admin.captchaTitle")}</Title3>
           <div className={styles.form}>
-            <Field label={t("admin.captchaProvider")}>
+            {/* Default provider — element 0 of the enabled set. "none" turns
+                captcha off entirely. */}
+            <Field
+              label={t("admin.captchaDefaultProvider")}
+              hint={t("admin.captchaDefaultProviderHint")}
+            >
               <Dropdown
-                value={get("captcha_provider") ?? "none"}
-                selectedOptions={[get("captcha_provider") ?? "none"]}
+                value={t(`admin.captcha_${defaultProvider}`)}
+                selectedOptions={[defaultProvider]}
                 onOptionSelect={(_, d) =>
-                  set("captcha_provider", d.optionValue)
+                  setDefaultProvider(d.optionValue as CaptchaProvider)
                 }
               >
-                <Option value="none">{t("admin.captchaNone")}</Option>
-                <Option value="turnstile">{t("admin.captchaTurnstile")}</Option>
-                <Option value="hcaptcha">{t("admin.captchaHcaptcha")}</Option>
-                <Option value="recaptcha">{t("admin.captchaRecaptcha")}</Option>
-                <Option value="pow">{t("admin.captchaPow")}</Option>
+                <Option value="none">{t("admin.captcha_none")}</Option>
+                {CAPTCHA_PROVIDERS.map((p) => (
+                  <Option key={p} value={p}>
+                    {t(`admin.captcha_${p}`)}
+                  </Option>
+                ))}
               </Dropdown>
             </Field>
-            {get("captcha_provider") !== "none" &&
-              get("captcha_provider") !== "pow" && (
-                <>
-                  <Field label={t("admin.captchaSiteKey")}>
-                    <Input
-                      value={get("captcha_site_key") ?? ""}
-                      onChange={(e) => set("captcha_site_key", e.target.value)}
-                    />
-                  </Field>
-                  <Field label={t("admin.captchaSecretKey")}>
-                    <PasswordInput
-                      value={get("captcha_secret_key") ?? ""}
-                      onChange={(e) =>
-                        set("captcha_secret_key", e.target.value)
-                      }
-                    />
-                  </Field>
-                </>
-              )}
-            {get("captcha_provider") === "turnstile" && (
+
+            {/* Alternates — the switchable set. Order is the order visitors are
+                offered them. */}
+            {defaultProvider !== "none" && (
               <Field
-                label={t("admin.turnstileEndpoint")}
-                hint={t("admin.turnstileEndpointHint")}
+                label={t("admin.captchaAlternates")}
+                hint={t("admin.captchaAlternatesHint")}
               >
-                <Dropdown
-                  value={t(`admin.turnstileEndpoint_${turnstileMode}`)}
-                  selectedOptions={[turnstileMode]}
-                  onOptionSelect={(_, d) =>
-                    set("turnstile_endpoint_mode", d.optionValue)
-                  }
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 6 }}
                 >
-                  {TURNSTILE_ENDPOINT_MODES.map((mode) => (
-                    <Option key={mode} value={mode}>
-                      {t(`admin.turnstileEndpoint_${mode}`)}
-                    </Option>
-                  ))}
-                </Dropdown>
+                  {CAPTCHA_PROVIDERS.filter((p) => p !== defaultProvider).map(
+                    (p) => {
+                      const enabled = alternateProviders.includes(p);
+                      const pos = alternateProviders.indexOf(p);
+                      return (
+                        <div
+                          key={p}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <Switch
+                            checked={enabled}
+                            label={t(`admin.captcha_${p}`)}
+                            onChange={(_, d) => toggleAlternate(p, d.checked)}
+                          />
+                          {enabled && (
+                            <>
+                              <Button
+                                size="small"
+                                appearance="subtle"
+                                disabled={pos <= 0}
+                                onClick={() => moveAlternate(p, -1)}
+                                aria-label={t("admin.captchaMoveUp")}
+                              >
+                                ↑
+                              </Button>
+                              <Button
+                                size="small"
+                                appearance="subtle"
+                                disabled={pos >= alternateProviders.length - 1}
+                                onClick={() => moveAlternate(p, 1)}
+                                aria-label={t("admin.captchaMoveDown")}
+                              >
+                                ↓
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      );
+                    },
+                  )}
+                </div>
               </Field>
             )}
-            {/* The China host needs its own widget: a Turnstile sitekey's
-                region is fixed at creation, and each host only serves keys of
-                its own region. Without this pair every mode above falls back
-                to the global host. */}
-            {get("captcha_provider") === "turnstile" &&
-              turnstileMode !== "global" && (
-                <>
-                  <Field
-                    label={t("admin.turnstileChinaSiteKey")}
-                    hint={t("admin.turnstileChinaSiteKeyHint")}
-                  >
-                    <Input
-                      value={get("turnstile_china_site_key") ?? ""}
-                      onChange={(e) =>
-                        set("turnstile_china_site_key", e.target.value)
-                      }
-                    />
-                  </Field>
-                  <Field label={t("admin.turnstileChinaSecretKey")}>
-                    <PasswordInput
-                      value={get("turnstile_china_secret_key") ?? ""}
-                      onChange={(e) =>
-                        set("turnstile_china_secret_key", e.target.value)
-                      }
-                    />
-                  </Field>
-                </>
-              )}
-            {get("captcha_provider") === "pow" && (
-              <Field label={t("admin.powDifficulty")}>
+
+            {/* Switch-reveal timeout applies once ≥2 providers are enabled. */}
+            {providerList.length >= 2 && (
+              <Field
+                label={t("admin.captchaSwitchTimeout")}
+                hint={t("admin.captchaSwitchTimeoutHint")}
+              >
                 <Input
                   type="number"
-                  value={String(get("pow_difficulty") ?? 20)}
+                  value={String(get("captcha_switch_timeout_seconds") ?? 15)}
                   onChange={(e) =>
-                    set("pow_difficulty", parseInt(e.target.value))
+                    setNumber("captcha_switch_timeout_seconds", e.target.value)
                   }
                 />
               </Field>
             )}
+
+            {/* Per-provider credential panels for every enabled provider. */}
+            {providerList.map((p) => (
+              <div
+                key={p}
+                style={{
+                  border: "1px solid var(--colorNeutralStroke2)",
+                  borderRadius: 6,
+                  padding: 12,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                <Text weight="semibold">{t(`admin.captcha_${p}`)}</Text>
+
+                {p === "turnstile" && (
+                  <>
+                    <Field label={t("admin.captchaSiteKey")}>
+                      <Input
+                        value={get("turnstile_site_key") ?? ""}
+                        onChange={(e) =>
+                          set("turnstile_site_key", e.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label={t("admin.captchaSecretKey")}>
+                      <PasswordInput
+                        value={get("turnstile_secret_key") ?? ""}
+                        onChange={(e) =>
+                          set("turnstile_secret_key", e.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={t("admin.turnstileEndpoint")}
+                      hint={t("admin.turnstileEndpointHint")}
+                    >
+                      <Dropdown
+                        value={t(`admin.turnstileEndpoint_${turnstileMode}`)}
+                        selectedOptions={[turnstileMode]}
+                        onOptionSelect={(_, d) =>
+                          set("turnstile_endpoint_mode", d.optionValue)
+                        }
+                      >
+                        {TURNSTILE_ENDPOINT_MODES.map((mode) => (
+                          <Option key={mode} value={mode}>
+                            {t(`admin.turnstileEndpoint_${mode}`)}
+                          </Option>
+                        ))}
+                      </Dropdown>
+                    </Field>
+                    {/* The China host needs its own region:"china" widget. */}
+                    {turnstileMode !== "global" && (
+                      <>
+                        <Field
+                          label={t("admin.turnstileChinaSiteKey")}
+                          hint={t("admin.turnstileChinaSiteKeyHint")}
+                        >
+                          <Input
+                            value={get("turnstile_china_site_key") ?? ""}
+                            onChange={(e) =>
+                              set("turnstile_china_site_key", e.target.value)
+                            }
+                          />
+                        </Field>
+                        <Field label={t("admin.turnstileChinaSecretKey")}>
+                          <PasswordInput
+                            value={get("turnstile_china_secret_key") ?? ""}
+                            onChange={(e) =>
+                              set("turnstile_china_secret_key", e.target.value)
+                            }
+                          />
+                        </Field>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {p === "hcaptcha" && (
+                  <>
+                    <Field label={t("admin.captchaSiteKey")}>
+                      <Input
+                        value={get("hcaptcha_site_key") ?? ""}
+                        onChange={(e) =>
+                          set("hcaptcha_site_key", e.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label={t("admin.captchaSecretKey")}>
+                      <PasswordInput
+                        value={get("hcaptcha_secret_key") ?? ""}
+                        onChange={(e) =>
+                          set("hcaptcha_secret_key", e.target.value)
+                        }
+                      />
+                    </Field>
+                  </>
+                )}
+
+                {p === "recaptcha" && (
+                  <>
+                    <Field label={t("admin.captchaSiteKey")}>
+                      <Input
+                        value={get("recaptcha_site_key") ?? ""}
+                        onChange={(e) =>
+                          set("recaptcha_site_key", e.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label={t("admin.captchaSecretKey")}>
+                      <PasswordInput
+                        value={get("recaptcha_secret_key") ?? ""}
+                        onChange={(e) =>
+                          set("recaptcha_secret_key", e.target.value)
+                        }
+                      />
+                    </Field>
+                  </>
+                )}
+
+                {p === "pow" && (
+                  <Field label={t("admin.powDifficulty")}>
+                    <Input
+                      type="number"
+                      value={String(get("pow_difficulty") ?? 20)}
+                      onChange={(e) =>
+                        setNumber("pow_difficulty", e.target.value)
+                      }
+                    />
+                  </Field>
+                )}
+
+                {p === "geetest" && (
+                  <>
+                    <Field label={t("admin.geetestCaptchaId")}>
+                      <Input
+                        value={get("geetest_captcha_id") ?? ""}
+                        onChange={(e) =>
+                          set("geetest_captcha_id", e.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label={t("admin.geetestCaptchaKey")}>
+                      <PasswordInput
+                        value={get("geetest_captcha_key") ?? ""}
+                        onChange={(e) =>
+                          set("geetest_captcha_key", e.target.value)
+                        }
+                      />
+                    </Field>
+                    <Switch
+                      checked={!!get("geetest_fail_open")}
+                      label={t("admin.geetestFailOpen")}
+                      onChange={(_, d) => set("geetest_fail_open", d.checked)}
+                    />
+                  </>
+                )}
+
+                {p === "cap" && (
+                  <>
+                    <Field
+                      label={t("admin.capMode")}
+                      hint={t("admin.capModeHint")}
+                    >
+                      <Dropdown
+                        value={t(`admin.capMode_${get("cap_mode") ?? "embedded"}`)}
+                        selectedOptions={[get("cap_mode") ?? "embedded"]}
+                        onOptionSelect={(_, d) => set("cap_mode", d.optionValue)}
+                      >
+                        <Option value="embedded">
+                          {t("admin.capMode_embedded")}
+                        </Option>
+                        <Option value="external">
+                          {t("admin.capMode_external")}
+                        </Option>
+                      </Dropdown>
+                    </Field>
+                    {(get("cap_mode") ?? "embedded") === "external" ? (
+                      <>
+                        <Field label={t("admin.capApiEndpoint")}>
+                          <Input
+                            value={get("cap_api_endpoint") ?? ""}
+                            onChange={(e) =>
+                              set("cap_api_endpoint", e.target.value)
+                            }
+                          />
+                        </Field>
+                        <Field label={t("admin.captchaSiteKey")}>
+                          <Input
+                            value={get("cap_site_key") ?? ""}
+                            onChange={(e) =>
+                              set("cap_site_key", e.target.value)
+                            }
+                          />
+                        </Field>
+                        <Field label={t("admin.captchaSecretKey")}>
+                          <PasswordInput
+                            value={get("cap_secret_key") ?? ""}
+                            onChange={(e) =>
+                              set("cap_secret_key", e.target.value)
+                            }
+                          />
+                        </Field>
+                      </>
+                    ) : (
+                      <>
+                        <Field label={t("admin.capChallengeCount")}>
+                          <Input
+                            type="number"
+                            value={String(get("cap_challenge_count") ?? 50)}
+                            onChange={(e) =>
+                              setNumber("cap_challenge_count", e.target.value)
+                            }
+                          />
+                        </Field>
+                        <Field label={t("admin.capChallengeDifficulty")}>
+                          <Input
+                            type="number"
+                            value={String(get("cap_challenge_difficulty") ?? 4)}
+                            onChange={(e) =>
+                              setNumber(
+                                "cap_challenge_difficulty",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </Field>
+                        <Switch
+                          checked={get("cap_instrumentation") ?? true}
+                          label={t("admin.capInstrumentation")}
+                          onChange={(_, d) =>
+                            set("cap_instrumentation", d.checked)
+                          }
+                        />
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
