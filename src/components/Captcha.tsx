@@ -195,6 +195,22 @@ function ProviderWidget({
   const [geetestReady, setGeetestReady] = useState(false);
   const geetestObjRef = useRef<GeetestCaptchaObj | null>(null);
 
+  // Read callbacks and `t` through refs so the widget effects don't list them
+  // as dependencies. `onVerified`/`onError`/`t` can change identity on any
+  // parent re-render (e.g. a keystroke in the login form); if the effects
+  // depended on them, every such render would tear down and re-create the
+  // widget — re-fetching challenges, re-initialising the GeeTest widget, and
+  // tripping "too many requests". The effects below depend only on `provider`
+  // and the primitive config values they actually read.
+  const onVerifiedRef = useRef(onVerified);
+  const onErrorRef = useRef(onError);
+  const tRef = useRef(t);
+  useEffect(() => {
+    onVerifiedRef.current = onVerified;
+    onErrorRef.current = onError;
+    tRef.current = t;
+  });
+
   // ─── Turnstile ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (provider !== "turnstile") return;
@@ -208,12 +224,13 @@ function ProviderWidget({
       widgetIdRef.current = widgetApi("turnstile").render(containerRef.current, {
         sitekey: target.sitekey,
         callback: (token: string) =>
-          onVerified({
+          onVerifiedRef.current({
             provider: "turnstile",
             captcha_token: token,
             captcha_variant: target.variant,
           }),
-        "error-callback": () => onError?.(t("captcha.turnstileFailed")),
+        "error-callback": () =>
+          onErrorRef.current?.(tRef.current("captcha.turnstileFailed")),
       });
     });
     return () => {
@@ -221,7 +238,12 @@ function ProviderWidget({
       widgetIdRef.current = null;
       removeScript();
     };
-  }, [provider, captcha, onVerified, onError, t]);
+  }, [
+    provider,
+    captcha.turnstile_endpoint,
+    captcha.turnstile_site_key,
+    captcha.turnstile_china_site_key,
+  ]);
 
   // ─── hCaptcha ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -233,7 +255,7 @@ function ProviderWidget({
         widgetIdRef.current = widgetApi("hcaptcha").render(containerRef.current, {
           sitekey: captcha.hcaptcha_site_key,
           callback: (token: string) =>
-            onVerified({ provider: "hcaptcha", captcha_token: token }),
+            onVerifiedRef.current({ provider: "hcaptcha", captcha_token: token }),
         });
       },
     );
@@ -242,7 +264,7 @@ function ProviderWidget({
       widgetIdRef.current = null;
       removeScript();
     };
-  }, [provider, captcha, onVerified, onError]);
+  }, [provider, captcha.hcaptcha_site_key]);
 
   // ─── reCAPTCHA v3 ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -255,14 +277,14 @@ function ProviderWidget({
         grecaptcha.ready(async () => {
           try {
             const token = await grecaptcha.execute(siteKey, { action: "login" });
-            onVerified({ provider: "recaptcha", captcha_token: token });
+            onVerifiedRef.current({ provider: "recaptcha", captcha_token: token });
           } catch {
-            onError?.(t("captcha.recaptchaFailed"));
+            onErrorRef.current?.(tRef.current("captcha.recaptchaFailed"));
           }
         });
       },
     );
-  }, [provider, captcha, onVerified, onError, t]);
+  }, [provider, captcha.recaptcha_site_key]);
 
   // ─── Proof of Work ──────────────────────────────────────────────────────
   const solveChallenge = useCallback(async () => {
@@ -270,13 +292,17 @@ function ProviderWidget({
     try {
       const { challenge, difficulty } = await api.powChallenge();
       const nonce = await solvePoW(challenge, difficulty);
-      onVerified({ provider: "pow", pow_challenge: challenge, pow_nonce: nonce });
+      onVerifiedRef.current({
+        provider: "pow",
+        pow_challenge: challenge,
+        pow_nonce: nonce,
+      });
       setPowState("done");
     } catch {
       setPowState("error");
-      onError?.(t("captcha.powFailed"));
+      onErrorRef.current?.(tRef.current("captcha.powFailed"));
     }
-  }, [api, onVerified, onError, t]);
+  }, [api]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async task on provider change; setState happens inside the async flow
@@ -291,7 +317,7 @@ function ProviderWidget({
       () => {
         const initGeetest4 = (window as unknown as GeetestWindow).initGeetest4;
         if (!initGeetest4) {
-          onError?.(t("captcha.geetestFailed"));
+          onErrorRef.current?.(tRef.current("captcha.geetestFailed"));
           return;
         }
         initGeetest4(
@@ -308,10 +334,12 @@ function ProviderWidget({
             captchaObj.onSuccess(() => {
               const result = captchaObj.getValidate();
               if (result) {
-                onVerified({ provider: "geetest", geetest: result });
+                onVerifiedRef.current({ provider: "geetest", geetest: result });
               }
             });
-            captchaObj.onError(() => onError?.(t("captcha.geetestFailed")));
+            captchaObj.onError(() =>
+              onErrorRef.current?.(tRef.current("captcha.geetestFailed")),
+            );
           },
         );
       },
@@ -325,7 +353,7 @@ function ProviderWidget({
       geetestObjRef.current = null;
       removeScript();
     };
-  }, [provider, captcha, onVerified, onError, t]);
+  }, [provider, captcha.geetest_captcha_id]);
 
   // ─── Cap ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -352,10 +380,12 @@ function ProviderWidget({
       el.addEventListener("solve", (e: Event) => {
         const detail = (e as CustomEvent<{ token: string }>).detail;
         if (detail?.token) {
-          onVerified({ provider: "cap", cap_token: detail.token });
+          onVerifiedRef.current({ provider: "cap", cap_token: detail.token });
         }
       });
-      el.addEventListener("error", () => onError?.(t("captcha.capFailed")));
+      el.addEventListener("error", () =>
+        onErrorRef.current?.(tRef.current("captcha.capFailed")),
+      );
       containerRef.current.appendChild(el);
     });
 
@@ -363,7 +393,12 @@ function ProviderWidget({
       cancelled = true;
       el?.remove();
     };
-  }, [provider, captcha, onVerified, onError, t]);
+  }, [
+    provider,
+    captcha.cap_mode,
+    captcha.cap_api_endpoint,
+    captcha.cap_site_key,
+  ]);
 
   // ─── Render per provider ──────────────────────────────────────────────────
 

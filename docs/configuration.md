@@ -130,11 +130,11 @@ silently drop bot protection.
 captcha. Two modes:
 
 - **Embedded** (default) — Cap runs inside the Worker via `capjs-core`. Challenges
-  are stateless signed JWTs; the single-use replay guard and redeem-token lookup
-  are backed by `KV_CACHE`; the HMAC secret is derived from the server JWT secret,
-  so there is **no extra binding or server to run**. Tuned by
-  `cap_challenge_count` / `cap_challenge_difficulty` and
-  `cap_instrumentation`.
+  are stateless signed JWTs and the redeem token is derived deterministically
+  from the challenge, so redeeming is idempotent; single use is enforced once at
+  the gate via the atomic D1 replay-claim table. The HMAC secret is derived from
+  the server JWT secret, so there is **no extra binding or server to run**. Tuned
+  by `cap_challenge_count` / `cap_challenge_difficulty` and `cap_instrumentation`.
 - **External** — point `cap_api_endpoint` (+ `cap_site_key` / `cap_secret_key`) at
   a self-hosted [Cap Standalone](https://trycap.dev/guide/standalone/) server.
 

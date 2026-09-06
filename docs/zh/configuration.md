@@ -98,7 +98,7 @@ Provider：`turnstile`、`hcaptcha`、`recaptcha`、`pow`（内置 Rust→WASM �
 
 [Cap](https://trycap.dev) 是一个自建、注重隐私的工作量证明验证码。两种模式：
 
-- **内嵌**（默认）——通过 `capjs-core` 在 Worker 内运行 Cap。挑战是无状态的签名 JWT；单次使用的重放防护与兑换令牌查找由 `KV_CACHE` 支撑；HMAC 密钥从服务端 JWT 密钥派生，因此**无需额外绑定或服务器**。由 `cap_challenge_count` / `cap_challenge_difficulty` 与 `cap_instrumentation` 调节。
+- **内嵌**（默认）——通过 `capjs-core` 在 Worker 内运行 Cap。挑战是无状态的签名 JWT，兑换令牌由挑战确定性派生，因此兑换是幂等的；单次使用在网关处通过原子的 D1 重放声明表强制一次。HMAC 密钥从服务端 JWT 密钥派生，因此**无需额外绑定或服务器**。由 `cap_challenge_count` / `cap_challenge_difficulty` 与 `cap_instrumentation` 调节。
 - **外部**——将 `cap_api_endpoint`（以及 `cap_site_key` / `cap_secret_key`）指向自建的 [Cap Standalone](https://trycap.dev/guide/standalone/) 服务器。
 
 Cap 是内置 `pow` provider 的现代替代方案，`pow` 仍然可用（见下）。

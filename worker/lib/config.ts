@@ -162,31 +162,48 @@ export async function getConfig(db: D1Database): Promise<SiteConfig> {
  * Bridge the pre-switchable-set captcha config into the new model, in memory,
  * on every read. A site configured before `captcha_providers` existed has only
  * the legacy `captcha_provider` + shared `captcha_site_key`/`captcha_secret_key`
- * stored; derive the ordered set from it and copy the shared credentials into
- * the matching provider's per-provider slot so verification finds them.
+ * stored.
  *
- * Runs only when `captcha_providers` was never written (still the empty
- * default) — once an admin saves the new config, the stored list wins and this
- * is a no-op. Secrets are copied as-is (still ciphertext at this stage); the
- * per-provider secret keys are in SENSITIVE_CONFIG_KEYS, so decryptConfigSecrets
- * handles them downstream exactly like the legacy field.
+ * Two independent concerns, because the credential copy must keep working after
+ * the ordered set is persisted:
+ *
+ *   1. Seed `captcha_providers` from the legacy single provider — only while the
+ *      list is still unset. Once an admin saves a set, the stored list wins.
+ *   2. Backfill a provider's per-provider credential slot from the legacy
+ *      shared pair whenever that slot is still empty. This is NOT gated on (1):
+ *      an admin who saves `captcha_providers` (adding alternates) never
+ *      re-enters the default provider's key, and the legacy shared value was
+ *      never persisted into `<provider>_site_key`. Gating both on the same
+ *      condition is exactly what left Turnstile rendering with an empty sitekey.
+ *
+ * Secrets are copied as-is (still ciphertext at this stage); the per-provider
+ * secret keys are in SENSITIVE_CONFIG_KEYS, so decryptConfigSecrets handles them
+ * downstream exactly like the legacy field.
  */
 function migrateLegacyCaptcha(config: SiteConfig): void {
-  if (config.captcha_providers.length > 0) return;
   const legacy = config.captcha_provider;
   if (!legacy || legacy === "none") return;
 
-  config.captcha_providers = [legacy];
+  // (1) Seed the ordered set from the legacy single provider.
+  if (config.captcha_providers.length === 0) {
+    config.captcha_providers = [legacy];
+  }
 
+  // (2) Backfill the legacy provider's credentials whenever its new slot is
+  // empty — independent of whether the set above was just seeded or was
+  // already persisted. Only turnstile/hcaptcha/recaptcha shared the legacy
+  // pair; pow has no keys and geetest/cap post-date the legacy field.
   const bag = configBag(config);
   const siteKeyField = `${legacy}_site_key`;
   const secretKeyField = `${legacy}_secret_key`;
-  // Only turnstile/hcaptcha/recaptcha shared the legacy pair. pow has no keys;
-  // geetest/cap did not exist before the migration, so nothing to copy.
-  if (siteKeyField in config && !bag[siteKeyField]) {
+  if (siteKeyField in config && !bag[siteKeyField] && config.captcha_site_key) {
     bag[siteKeyField] = config.captcha_site_key;
   }
-  if (secretKeyField in config && !bag[secretKeyField]) {
+  if (
+    secretKeyField in config &&
+    !bag[secretKeyField] &&
+    config.captcha_secret_key
+  ) {
     bag[secretKeyField] = config.captcha_secret_key;
   }
 }

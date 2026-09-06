@@ -81,7 +81,7 @@ worker/
 │   ├── crypto.ts           # randomId, hashPassword/verifyPassword (PBKDF2)
 │   ├── pow.ts              # Signed challenge issue/verify (HMAC + expiry + single-use)
 │   ├── geetest.ts          # GeeTest v4 server-side verification (HMAC sign + validate)
-│   ├── cap.ts              # Cap captcha — embedded (capjs-core + KV) and external verify
+│   ├── cap.ts              # Cap captcha — embedded (capjs-core, deterministic token) and external verify
 │   ├── captchaPublic.ts    # buildPublicCaptcha() — public captcha descriptor for payloads
 │   ├── jwt.ts              # signJWT / verifyJWT (HS256), RS256 ID-token signing
 │   ├── totp.ts             # TOTP / HOTP (RFC 6238), backup codes
@@ -467,12 +467,15 @@ are self-contained on the edge:
   HMAC-SHA256 and POSTs to GeeTest's validate endpoint. `geetest_fail_open`
   governs the outcome on a GeeTest outage (default: fail closed).
 - **Cap** (`lib/cap.ts`) — embedded mode runs `capjs-core` in the Worker
-  (stateless signed-JWT challenges; single-use nonce + redeem token in
-  `KV_CACHE`; HMAC secret derived from the JWT secret) via
+  (stateless signed-JWT challenges; HMAC secret derived from the JWT secret) via
   `POST /api/auth/cap/{challenge,redeem}`; external mode validates against a
-  self-hosted Cap Standalone server. `capjs-core` lazily imports `esbuild` /
-  `javascript-obfuscator` for high instrumentation obfuscation levels — both are
-  aliased to a stub in `wrangler.jsonc` since the embedded path pins level ≤ 3.
+  self-hosted Cap Standalone server. `redeem` mints a **deterministic** token
+  from the challenge (`sig.exp.HMAC`) so the widget's speculative + final redeem
+  of one challenge agree and one solved challenge yields exactly one token;
+  single use is enforced at the gate via the atomic D1 replay-claim table.
+  `capjs-core` lazily imports `esbuild` / `javascript-obfuscator` for high
+  instrumentation obfuscation levels — both are aliased to a stub in
+  `wrangler.jsonc` since the embedded path pins level ≤ 3.
 
 ## Secrets at rest
 
