@@ -300,6 +300,15 @@ export function AdminSettings() {
   ).filter((p) => p !== "none");
   const defaultProvider: CaptchaProvider = providerList[0] ?? "none";
   const alternateProviders: CaptchaProvider[] = providerList.slice(1);
+  // Display order for the alternates editor: enabled alternates first, in their
+  // actual configured order (so the ↑/↓ controls visibly move a row), then the
+  // not-yet-enabled providers pinned at the bottom in the canonical order.
+  const alternateOptions: CaptchaProvider[] = [
+    ...alternateProviders,
+    ...CAPTCHA_PROVIDERS.filter(
+      (p) => p !== defaultProvider && !alternateProviders.includes(p),
+    ),
+  ];
   const setProviderList = (list: CaptchaProvider[]) =>
     set("captcha_providers", list);
   // Change the default (element 0). "none" clears the whole set. Otherwise the
@@ -1329,8 +1338,7 @@ export function AdminSettings() {
                 <div
                   style={{ display: "flex", flexDirection: "column", gap: 6 }}
                 >
-                  {CAPTCHA_PROVIDERS.filter((p) => p !== defaultProvider).map(
-                    (p) => {
+                  {alternateOptions.map((p) => {
                       const enabled = alternateProviders.includes(p);
                       const pos = alternateProviders.indexOf(p);
                       return (
@@ -1371,8 +1379,7 @@ export function AdminSettings() {
                           )}
                         </div>
                       );
-                    },
-                  )}
+                    })}
                 </div>
               </Field>
             )}

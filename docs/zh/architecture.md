@@ -65,7 +65,7 @@ worker/
 │   ├── crypto.ts           # randomId、PBKDF2 哈希
 │   ├── pow.ts              # 签名挑战签发/校验（HMAC + 过期 + 单次）
 │   ├── geetest.ts          # 极验 v4 服务端校验（HMAC 签名 + validate）
-│   ├── cap.ts              # Cap 验证码 — 内嵌（capjs-core + KV）与外部校验
+│   ├── cap.ts              # Cap 验证码 — 内嵌（capjs-core，确定性令牌）与外部校验
 │   ├── captchaPublic.ts    # buildPublicCaptcha() — 下发给各 payload 的公开验证码描述
 │   ├── jwt.ts              # signJWT / verifyJWT（HS256），ID Token RS256
 │   ├── totp.ts             # TOTP / HOTP（RFC 6238），备用码
