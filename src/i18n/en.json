@@ -1231,6 +1231,13 @@
     "domainReverify": "Domain Re-verify (days)",
     "loginErrorRetentionDays": "Login error log retention (days)",
     "loginErrorRetentionDaysHint": "How long to keep failed login records. Set to 0 to retain indefinitely.",
+    "loginRateLimitsHint": "Login limits are sliding windows. A password submission that asks for TOTP and the TOTP follow-up are separate login requests, so both count toward the shared limits. TOTP also has a per-user limit across all login aliases. Fields are attempts, then window in seconds.",
+    "loginDosRateLimit": "All login requests per IP",
+    "loginIpRateLimit": "Captcha-cleared login attempts per IP",
+    "loginIdentifierRateLimit": "Login attempts per email or username",
+    "loginTotpRateLimit": "TOTP attempts per user",
+    "loginRateLimitAttempts": "Attempts",
+    "loginRateLimitWindow": "Window (seconds)",
     "loginErrors": {
       "filterErrorCode": "Error type",
       "filterIdentifier": "Identifier",

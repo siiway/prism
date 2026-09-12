@@ -7,6 +7,7 @@ import {
   getConfig,
   setConfigValues,
 } from "../lib/config";
+import { invalidLoginRateLimitConfig } from "../lib/loginRateLimit";
 import { getIp } from "../lib/clientIp";
 import { formatGeoLabel } from "../lib/geo";
 import {
@@ -203,6 +204,14 @@ app.patch("/config", async (c) => {
     "login_error_retention_days",
     "social_verify_ttl_days",
     "allow_alt_email_login",
+    "login_dos_rate_limit",
+    "login_dos_rate_window_seconds",
+    "login_ip_rate_limit",
+    "login_ip_rate_window_seconds",
+    "login_identifier_rate_limit",
+    "login_identifier_rate_window_seconds",
+    "login_totp_rate_limit",
+    "login_totp_rate_window_seconds",
     "ipv6_rate_limit_prefix",
     "gpg_challenge_prefix",
     "disable_user_create_team",
@@ -294,6 +303,9 @@ app.patch("/config", async (c) => {
       );
     }
   }
+
+  const loginRateLimitError = invalidLoginRateLimitConfig(updates);
+  if (loginRateLimitError) return c.json({ error: loginRateLimitError }, 400);
 
   // Rotating the site GitHub token always resets its failure counter so a
   // fresh paste isn't immediately auto-cleared by leftover bad-credential

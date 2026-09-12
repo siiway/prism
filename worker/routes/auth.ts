@@ -51,7 +51,12 @@ import {
 import type { TurnstileVariant } from "../lib/turnstile";
 import { issuePowChallenge } from "../lib/pow";
 import { issueCapChallenge, redeemCapChallenge } from "../lib/cap";
-import { rateLimit, rateLimitIp } from "../middleware/rateLimit";
+import { rateLimitIp } from "../middleware/rateLimit";
+import {
+  checkLoginCredentialLimits,
+  checkLoginRequestLimit,
+  checkLoginTotpLimit,
+} from "../lib/loginRateLimit";
 import { requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
@@ -335,19 +340,18 @@ app.post("/login", async (c) => {
   // cost of captcha verification (a subrequest for the external providers) so it
   // can't be flooded; it is deliberately looser than the brute-force limit
   // below and is checked before captcha so a flood of junk can't run up work.
-  const dosRl = await rateLimitIp(
-    c.env.DB,
-    ip,
-    "login-dos",
-    60,
-    60,
-    loginConfig.ipv6_rate_limit_prefix,
-  );
+  const dosRl = await checkLoginRequestLimit(c.env.DB, ip, loginConfig);
   if (!dosRl.allowed) {
     c.executionCtx.waitUntil(
-      logLoginError(c.env.DB, "rate_limited", null, ip, ua, geoJson(c), {}).catch(
-        () => {},
-      ),
+      logLoginError(
+        c.env.DB,
+        "rate_limited",
+        null,
+        ip,
+        ua,
+        geoJson(c),
+        {},
+      ).catch(() => {}),
     );
     return c.json({ error: "Too many requests" }, 429);
   }
@@ -381,19 +385,23 @@ app.post("/login", async (c) => {
 
   // Brute-force guard: only credential attempts that cleared captcha count
   // toward it, so it measures real password tries rather than captcha misfires.
-  const rl = await rateLimitIp(
+  const rl = await checkLoginCredentialLimits(
     c.env.DB,
     ip,
-    "login",
-    30,
-    60,
-    loginConfig.ipv6_rate_limit_prefix,
+    body.identifier.toLowerCase().trim(),
+    loginConfig,
   );
   if (!rl.allowed) {
     c.executionCtx.waitUntil(
-      logLoginError(c.env.DB, "rate_limited", null, ip, ua, geoJson(c), {}).catch(
-        () => {},
-      ),
+      logLoginError(
+        c.env.DB,
+        "rate_limited",
+        null,
+        ip,
+        ua,
+        geoJson(c),
+        {},
+      ).catch(() => {}),
     );
     return c.json({ error: "Too many requests" }, 429);
   }
@@ -407,27 +415,6 @@ app.post("/login", async (c) => {
   // identifier as typed rather than on a resolved user id, so an unknown
   // account throttles exactly like a real one and the 429 reveals nothing
   // about who exists.
-  const idRl = await rateLimit(
-    c.env.DB,
-    `login-id:${await sha256(identifier)}`,
-    10,
-    300,
-  );
-  if (!idRl.allowed) {
-    c.executionCtx.waitUntil(
-      logLoginError(
-        c.env.DB,
-        "rate_limited",
-        body.identifier ?? null,
-        ip,
-        ua,
-        geoJson(c),
-        {},
-      ).catch(() => {}),
-    );
-    return c.json({ error: "Too many requests" }, 429);
-  }
-
   let user: UserRow | null;
   if (isEmail) {
     // Check primary email first, then alternate emails. kind='user' filter
@@ -524,6 +511,21 @@ app.post("/login", async (c) => {
   if ((totpCount?.n ?? 0) > 0) {
     if (!body.totp_code) {
       return c.json({ error: "TOTP code required", totp_required: true }, 200);
+    }
+    const totpRl = await checkLoginTotpLimit(c.env.DB, user.id, loginConfig);
+    if (!totpRl.allowed) {
+      c.executionCtx.waitUntil(
+        logLoginError(
+          c.env.DB,
+          "rate_limited",
+          body.identifier ?? null,
+          ip,
+          ua,
+          geoJson(c),
+          { user_id: user.id, factor: "totp" },
+        ).catch(() => {}),
+      );
+      return c.json({ error: "Too many requests" }, 429);
     }
     const ok = await verifyAnyTotp(c.env, user.id, body.totp_code);
     if (!ok) {
@@ -1435,7 +1437,10 @@ app.get("/pow-challenge", async (c) => {
 
 app.post("/cap/challenge", async (c) => {
   const config = await getConfig(c.env.DB);
-  if (!config.captcha_providers.includes("cap") || config.cap_mode !== "embedded") {
+  if (
+    !config.captcha_providers.includes("cap") ||
+    config.cap_mode !== "embedded"
+  ) {
     return c.json({ error: "Cap not enabled" }, 404);
   }
   const challenge = await issueCapChallenge(c.env, {
@@ -1448,7 +1453,10 @@ app.post("/cap/challenge", async (c) => {
 
 app.post("/cap/redeem", async (c) => {
   const config = await getConfig(c.env.DB);
-  if (!config.captcha_providers.includes("cap") || config.cap_mode !== "embedded") {
+  if (
+    !config.captcha_providers.includes("cap") ||
+    config.cap_mode !== "embedded"
+  ) {
     return c.json({ error: "Cap not enabled" }, 404);
   }
   const body = await c.req.json<{

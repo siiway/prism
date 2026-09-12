@@ -71,12 +71,17 @@ and its footer link. Each document is capped at 256 KiB. See
   for this many minutes. `0` disables sudo mode entirely. The action
   acknowledgement checkbox is still required on every confirmation. See
   [OAuth → Step-up 2FA](oauth.md#step-up-2fa).
- - **Require captcha for 2FA** — site-wide: every step-up confirmation must
-   solve a captcha. Apps can also opt in per challenge. No-op when no captcha
-   providers are enabled.
+- **Require captcha for 2FA** — site-wide: every step-up confirmation must
+  solve a captcha. Apps can also opt in per challenge. No-op when no captcha
+  providers are enabled.
 - **IPv6 rate-limit prefix** — how many bits of an IPv6 address are bucketed
   together for rate limiting (default `/64`). Prevents a single `/64` allocation
   from getting unlimited login attempts.
+- **Login rate limits** — configure the allowance and sliding-window seconds for
+  all login POSTs per IP (`120/60s`), captcha-cleared attempts per IP (`60/60s`),
+  attempts per email or username (`30/300s`), and TOTP submissions per canonical
+  user (`15/300s`). The password and TOTP steps are separate requests and both
+  count toward the shared login limits.
 
 ### Bot Protection
 
@@ -87,14 +92,14 @@ the ↑/↓ controls — the order is the order visitors are offered them. Set t
 default to **None** to turn captcha off entirely. Each enabled provider gets its
 own credential panel below the list.
 
-| Provider             | Notes                                                                        |
-| -------------------- | ---------------------------------------------------------------------------- |
-| None                 | No bot protection                                                            |
-| Cloudflare Turnstile | Requires a Turnstile site key + secret. Free tier available.                 |
-| hCaptcha             | Requires an hCaptcha site key + secret.                                      |
-| reCAPTCHA v3         | Requires a Google reCAPTCHA v3 site key + secret. Invisible.                 |
-| GeeTest v4           | Behavioural captcha (极验). Requires a CAPTCHA ID + key. Often friendlier.   |
-| Cap                  | Self-hosted proof-of-work ([Cap](https://trycap.dev)). Embedded or external. |
+| Provider             | Notes                                                                          |
+| -------------------- | ------------------------------------------------------------------------------ |
+| None                 | No bot protection                                                              |
+| Cloudflare Turnstile | Requires a Turnstile site key + secret. Free tier available.                   |
+| hCaptcha             | Requires an hCaptcha site key + secret.                                        |
+| reCAPTCHA v3         | Requires a Google reCAPTCHA v3 site key + secret. Invisible.                   |
+| GeeTest v4           | Behavioural captcha (极验). Requires a CAPTCHA ID + key. Often friendlier.     |
+| Cap                  | Self-hosted proof-of-work ([Cap](https://trycap.dev)). Embedded or external.   |
 | Proof-of-Work        | Built-in. No third-party service. Difficulty 20 = ~0.1–2 s on modern hardware. |
 
 **Switch prompt delay** (shown once ≥2 providers are enabled) sets how long
