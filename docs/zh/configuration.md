@@ -61,30 +61,30 @@ Prism 使用一个**有序的 provider 集合**。第一个是访客默认看到
 
 每个 provider 各自拥有**独立凭据**（可同时配置），因此提交的令牌会标明产生它的 provider，服务端据此对应校验，并拒绝任何不在启用集合中的 provider。
 
-| 键                               | 类型     | 默认值       | 说明                                                                  |
-| -------------------------------- | -------- | ------------ | --------------------------------------------------------------------- |
-| `captcha_providers`              | string[] | `[]`         | 有序启用集合。`[0]` 为默认，其余为可切换备用。`[]` 表示关闭           |
-| `captcha_switch_timeout_seconds` | number   | `15`         | “换一种验证方式”出现前的等待秒数。`0` 表示仅在失败时出现              |
-| `turnstile_site_key`             | string   | `""`         | Turnstile 全球（`region: "world"`）site key                          |
-| `turnstile_secret_key`           | string   | `""`         | Turnstile 全球服务端密钥（加密存储）                                  |
-| `turnstile_endpoint_mode`        | string   | `"global"`   | 仅 Turnstile。选择分发组件的主机（见下）                              |
-| `turnstile_china_site_key`       | string   | `""`         | 仅 Turnstile。`region: "china"` 组件的 site key（见下）              |
-| `turnstile_china_secret_key`     | string   | `""`         | 仅 Turnstile。该密钥对应的服务端密钥（加密存储）                      |
-| `hcaptcha_site_key`              | string   | `""`         | hCaptcha site key                                                    |
-| `hcaptcha_secret_key`            | string   | `""`         | hCaptcha 服务端密钥（加密存储）                                       |
-| `recaptcha_site_key`             | string   | `""`         | reCAPTCHA v3 site key                                                |
-| `recaptcha_secret_key`           | string   | `""`         | reCAPTCHA v3 服务端密钥（加密存储）                                   |
-| `geetest_captcha_id`             | string   | `""`         | 极验 v4 公开 CAPTCHA ID                                              |
-| `geetest_captcha_key`            | string   | `""`         | 极验 v4 私钥（加密存储）                                              |
-| `geetest_fail_open`              | boolean  | `false`      | 极验不可用时是否放行。`false` 为 fail closed（拒绝）                 |
-| `cap_mode`                       | string   | `"embedded"` | `embedded`（worker 内嵌，KV 支撑）或 `external`（自建 Cap Standalone）|
-| `cap_api_endpoint`               | string   | `""`         | Cap Standalone 基础 URL（外部模式）                                  |
-| `cap_site_key`                   | string   | `""`         | Cap Standalone site key（外部模式）                                  |
-| `cap_secret_key`                 | string   | `""`         | Cap Standalone 密钥（外部模式，加密存储）                            |
-| `cap_challenge_count`            | number   | `50`         | 每个 Cap 挑战的 PoW 数量（内嵌模式）                                 |
-| `cap_challenge_difficulty`       | number   | `4`          | Cap PoW 目标前缀长度（十六进制字符数，内嵌模式）                     |
-| `cap_instrumentation`            | boolean  | `true`       | 输出 Cap 的反自动化探测脚本（内嵌模式）                              |
-| `pow_difficulty`                 | number   | `20`         | 内置工作量证明所需的前导零比特数（越高越难）                          |
+| 键                               | 类型     | 默认值       | 说明                                                                   |
+| -------------------------------- | -------- | ------------ | ---------------------------------------------------------------------- |
+| `captcha_providers`              | string[] | `[]`         | 有序启用集合。`[0]` 为默认，其余为可切换备用。`[]` 表示关闭            |
+| `captcha_switch_timeout_seconds` | number   | `15`         | “换一种验证方式”出现前的等待秒数。`0` 表示仅在失败时出现               |
+| `turnstile_site_key`             | string   | `""`         | Turnstile 全球（`region: "world"`）site key                            |
+| `turnstile_secret_key`           | string   | `""`         | Turnstile 全球服务端密钥（加密存储）                                   |
+| `turnstile_endpoint_mode`        | string   | `"global"`   | 仅 Turnstile。选择分发组件的主机（见下）                               |
+| `turnstile_china_site_key`       | string   | `""`         | 仅 Turnstile。`region: "china"` 组件的 site key（见下）                |
+| `turnstile_china_secret_key`     | string   | `""`         | 仅 Turnstile。该密钥对应的服务端密钥（加密存储）                       |
+| `hcaptcha_site_key`              | string   | `""`         | hCaptcha site key                                                      |
+| `hcaptcha_secret_key`            | string   | `""`         | hCaptcha 服务端密钥（加密存储）                                        |
+| `recaptcha_site_key`             | string   | `""`         | reCAPTCHA v3 site key                                                  |
+| `recaptcha_secret_key`           | string   | `""`         | reCAPTCHA v3 服务端密钥（加密存储）                                    |
+| `geetest_captcha_id`             | string   | `""`         | 极验 v4 公开 CAPTCHA ID                                                |
+| `geetest_captcha_key`            | string   | `""`         | 极验 v4 私钥（加密存储）                                               |
+| `geetest_fail_open`              | boolean  | `false`      | 极验不可用时是否放行。`false` 为 fail closed（拒绝）                   |
+| `cap_mode`                       | string   | `"embedded"` | `embedded`（worker 内嵌，KV 支撑）或 `external`（自建 Cap Standalone） |
+| `cap_api_endpoint`               | string   | `""`         | Cap Standalone 基础 URL（外部模式）                                    |
+| `cap_site_key`                   | string   | `""`         | Cap Standalone site key（外部模式）                                    |
+| `cap_secret_key`                 | string   | `""`         | Cap Standalone 密钥（外部模式，加密存储）                              |
+| `cap_challenge_count`            | number   | `50`         | 每个 Cap 挑战的 PoW 数量（内嵌模式）                                   |
+| `cap_challenge_difficulty`       | number   | `4`          | Cap PoW 目标前缀长度（十六进制字符数，内嵌模式）                       |
+| `cap_instrumentation`            | boolean  | `true`       | 输出 Cap 的反自动化探测脚本（内嵌模式）                                |
+| `pow_difficulty`                 | number   | `20`         | 内置工作量证明所需的前导零比特数（越高越难）                           |
 
 Provider：`turnstile`、`hcaptcha`、`recaptcha`、`pow`（内置 Rust→WASM 工作量证明）、`geetest`（极验 v4 / SenseBot 行为验证）、`cap`（[Cap](https://trycap.dev) 自建工作量证明）。
 
@@ -139,7 +139,7 @@ Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆主
 | 键                        | 类型    | 默认值  | 说明                                                                                                                                       |
 | ------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `sudo_mode_ttl_minutes`   | number  | `5`     | 用户成功完成一次步骤提升后，同一 `(用户, 会话, 应用)` 三元组下的后续挑战在该时长内可跳过 TOTP/Passkey 重新提示。`0` 表示完全禁用 sudo 模式 |
-| `require_captcha_for_2fa` | boolean | `false` | 站点全局：每次步骤提升确认都必须通过当前启用的验证码。应用也可针对单个挑战开启。`captcha_providers` 为空时此项无效                       |
+| `require_captcha_for_2fa` | boolean | `false` | 站点全局：每次步骤提升确认都必须通过当前启用的验证码。应用也可针对单个挑战开启。`captcha_providers` 为空时此项无效                         |
 
 ## 公开资料
 
@@ -308,10 +308,24 @@ https://your-domain/api/connections/<slug>/callback
 
 ## 诊断与限流
 
-| 键                           | 类型   | 默认值 | 说明                                                                     |
-| ---------------------------- | ------ | ------ | ------------------------------------------------------------------------ |
-| `login_error_retention_days` | number | `30`   | `login_errors` 表中失败登录记录的保留天数，超过后由 cron 清理            |
-| `ipv6_rate_limit_prefix`     | number | `64`   | D1 限流时按多少位前缀对 IPv6 地址聚合（避免一个 `/64` 拥有无限重试次数） |
+| 键                                     | 类型   | 默认值 | 说明                                                                     |
+| -------------------------------------- | ------ | ------ | ------------------------------------------------------------------------ |
+| `login_error_retention_days`           | number | `30`   | `login_errors` 表中失败登录记录的保留天数，超过后由 cron 清理            |
+| `login_dos_rate_limit`                 | number | `120`  | DoS 兜底窗口内每个 IP 可提交的登录 POST 上限                             |
+| `login_dos_rate_window_seconds`        | number | `60`   | 每 IP 登录 POST 兜底的滑动窗口秒数                                       |
+| `login_ip_rate_limit`                  | number | `60`   | 窗口内每个 IP 通过验证码后可进行的登录尝试上限                           |
+| `login_ip_rate_window_seconds`         | number | `60`   | 每 IP 通过验证码后的登录尝试滑动窗口秒数                                 |
+| `login_identifier_rate_limit`          | number | `30`   | 窗口内每个规范化邮箱或用户名可进行的登录尝试上限                         |
+| `login_identifier_rate_window_seconds` | number | `300`  | 每个邮箱或用户名的登录尝试滑动窗口秒数                                   |
+| `login_totp_rate_limit`                | number | `15`   | 同一用户跨用户名、主邮箱和备用邮箱的 TOTP 提交上限                       |
+| `login_totp_rate_window_seconds`       | number | `300`  | 每用户 TOTP 提交的滑动窗口秒数                                           |
+| `ipv6_rate_limit_prefix`               | number | `64`   | D1 限流时按多少位前缀对 IPv6 地址聚合（避免一个 `/64` 拥有无限重试次数） |
+
+八项登录限流值均可在 **管理后台 → 设置 → 认证与令牌设置** 中修改，取值必须为
+`1` 至 `86400` 的整数。触发 TOTP 提示的密码请求与后续 TOTP 请求是两次独立的
+登录 POST，因此都会消耗这些共享额度。新默认值允许同一登录标识在五分钟内完成
+15 次由两次请求组成的 TOTP 登录；旧默认值只允许 5 次。TOTP 提交还会消耗按
+规范用户 ID 计数的额度，因此切换用户名、主邮箱和备用邮箱不会增加猜测次数。
 
 ## Wrangler 绑定与变量
 

@@ -1231,6 +1231,13 @@
     "domainReverify": "域名重新验证间隔（天）",
     "loginErrorRetentionDays": "登录错误日志保留时长（天）",
     "loginErrorRetentionDaysHint": "失败的登录记录保留多长时间，设为 0 表示永久保留。",
+    "loginRateLimitsHint": "登录限流采用滑动窗口。触发 TOTP 提示的密码提交与后续 TOTP 提交是两次登录请求，因此都会计入共享额度。TOTP 还会跨所有登录别名按用户限流。每组字段依次为尝试次数、窗口秒数。",
+    "loginDosRateLimit": "每 IP 的全部登录请求",
+    "loginIpRateLimit": "每 IP 通过验证码后的登录尝试",
+    "loginIdentifierRateLimit": "每邮箱或用户名的登录尝试",
+    "loginTotpRateLimit": "每用户的 TOTP 尝试",
+    "loginRateLimitAttempts": "尝试次数",
+    "loginRateLimitWindow": "窗口（秒）",
     "loginErrors": {
       "filterErrorCode": "错误类型",
       "filterIdentifier": "账号标识",

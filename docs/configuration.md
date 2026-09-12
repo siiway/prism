@@ -80,30 +80,30 @@ once), so a submitted token names the provider that produced it and the server
 verifies it against that provider — rejecting any provider not in the enabled
 set.
 
-| Key                              | Type     | Default      | Description                                                                          |
-| -------------------------------- | -------- | ------------ | ----------------------------------------------------------------------------------- |
-| `captcha_providers`              | string[] | `[]`         | Ordered enabled set. `[0]` = default, rest = switchable alternates. `[]` = off       |
-| `captcha_switch_timeout_seconds` | number   | `15`         | Delay before the "try a different method" control appears. `0` = only on failure    |
-| `turnstile_site_key`             | string   | `""`         | Turnstile global (`region: "world"`) site key                                       |
-| `turnstile_secret_key`           | string   | `""`         | Turnstile global secret (encrypted at rest)                                          |
-| `turnstile_endpoint_mode`        | string   | `"global"`   | Turnstile-only. Which host serves the widget (see below)                             |
-| `turnstile_china_site_key`       | string   | `""`         | Turnstile-only. Site key of a `region: "china"` widget (see below)                   |
-| `turnstile_china_secret_key`     | string   | `""`         | Turnstile-only. Secret for that key (encrypted at rest)                             |
-| `hcaptcha_site_key`              | string   | `""`         | hCaptcha site key                                                                   |
-| `hcaptcha_secret_key`            | string   | `""`         | hCaptcha secret (encrypted at rest)                                                  |
-| `recaptcha_site_key`             | string   | `""`         | reCAPTCHA v3 site key                                                               |
-| `recaptcha_secret_key`           | string   | `""`         | reCAPTCHA v3 secret (encrypted at rest)                                              |
-| `geetest_captcha_id`             | string   | `""`         | GeeTest v4 public CAPTCHA ID                                                        |
-| `geetest_captcha_key`            | string   | `""`         | GeeTest v4 private key (encrypted at rest)                                           |
-| `geetest_fail_open`              | boolean  | `false`      | Accept when GeeTest is unreachable. `false` = fail closed (reject)                  |
-| `cap_mode`                       | string   | `"embedded"` | `embedded` (in-worker, KV-backed) or `external` (self-hosted Cap Standalone)         |
-| `cap_api_endpoint`               | string   | `""`         | Cap Standalone base URL (external mode)                                             |
-| `cap_site_key`                   | string   | `""`         | Cap Standalone site key (external mode)                                             |
-| `cap_secret_key`                 | string   | `""`         | Cap Standalone secret (external mode, encrypted at rest)                             |
-| `cap_challenge_count`            | number   | `50`         | PoW puzzles per Cap challenge (embedded mode)                                        |
-| `cap_challenge_difficulty`       | number   | `4`          | Cap PoW target prefix length in hex chars (embedded mode)                            |
-| `cap_instrumentation`            | boolean  | `true`       | Emit Cap's anti-automation instrumentation script (embedded mode)                   |
-| `pow_difficulty`                 | number   | `20`         | Leading zero bits required for the built-in proof-of-work (higher = harder)          |
+| Key                              | Type     | Default      | Description                                                                      |
+| -------------------------------- | -------- | ------------ | -------------------------------------------------------------------------------- |
+| `captcha_providers`              | string[] | `[]`         | Ordered enabled set. `[0]` = default, rest = switchable alternates. `[]` = off   |
+| `captcha_switch_timeout_seconds` | number   | `15`         | Delay before the "try a different method" control appears. `0` = only on failure |
+| `turnstile_site_key`             | string   | `""`         | Turnstile global (`region: "world"`) site key                                    |
+| `turnstile_secret_key`           | string   | `""`         | Turnstile global secret (encrypted at rest)                                      |
+| `turnstile_endpoint_mode`        | string   | `"global"`   | Turnstile-only. Which host serves the widget (see below)                         |
+| `turnstile_china_site_key`       | string   | `""`         | Turnstile-only. Site key of a `region: "china"` widget (see below)               |
+| `turnstile_china_secret_key`     | string   | `""`         | Turnstile-only. Secret for that key (encrypted at rest)                          |
+| `hcaptcha_site_key`              | string   | `""`         | hCaptcha site key                                                                |
+| `hcaptcha_secret_key`            | string   | `""`         | hCaptcha secret (encrypted at rest)                                              |
+| `recaptcha_site_key`             | string   | `""`         | reCAPTCHA v3 site key                                                            |
+| `recaptcha_secret_key`           | string   | `""`         | reCAPTCHA v3 secret (encrypted at rest)                                          |
+| `geetest_captcha_id`             | string   | `""`         | GeeTest v4 public CAPTCHA ID                                                     |
+| `geetest_captcha_key`            | string   | `""`         | GeeTest v4 private key (encrypted at rest)                                       |
+| `geetest_fail_open`              | boolean  | `false`      | Accept when GeeTest is unreachable. `false` = fail closed (reject)               |
+| `cap_mode`                       | string   | `"embedded"` | `embedded` (in-worker, KV-backed) or `external` (self-hosted Cap Standalone)     |
+| `cap_api_endpoint`               | string   | `""`         | Cap Standalone base URL (external mode)                                          |
+| `cap_site_key`                   | string   | `""`         | Cap Standalone site key (external mode)                                          |
+| `cap_secret_key`                 | string   | `""`         | Cap Standalone secret (external mode, encrypted at rest)                         |
+| `cap_challenge_count`            | number   | `50`         | PoW puzzles per Cap challenge (embedded mode)                                    |
+| `cap_challenge_difficulty`       | number   | `4`          | Cap PoW target prefix length in hex chars (embedded mode)                        |
+| `cap_instrumentation`            | boolean  | `true`       | Emit Cap's anti-automation instrumentation script (embedded mode)                |
+| `pow_difficulty`                 | number   | `20`         | Leading zero bits required for the built-in proof-of-work (higher = harder)      |
 
 Providers: `turnstile`, `hcaptcha`, `recaptcha`, `pow` (built-in Rust→WASM
 proof-of-work), `geetest` (GeeTest v4 / SenseBot behavioural), `cap`
@@ -210,7 +210,7 @@ provider above.
 | Key                       | Type    | Default | Description                                                                                                                                                                |
 | ------------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sudo_mode_ttl_minutes`   | number  | `5`     | After a successful step-up, subsequent challenges from the same `(user, session, app)` skip the TOTP/passkey prompt for this many minutes. `0` disables sudo mode entirely |
-| `require_captcha_for_2fa` | boolean | `false` | Site-wide: every step-up confirmation must solve the active captcha. Apps can also opt in per challenge. No-op when `captcha_providers` is empty                          |
+| `require_captcha_for_2fa` | boolean | `false` | Site-wide: every step-up confirmation must solve the active captcha. Apps can also opt in per challenge. No-op when `captcha_providers` is empty                           |
 
 ## Public profiles
 
@@ -404,10 +404,26 @@ configured cron interval.
 
 ## Diagnostics & rate limiting
 
-| Key                          | Type   | Default | Description                                                                                                          |
-| ---------------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------- |
-| `login_error_retention_days` | number | `30`    | How long failed-login rows in the `login_errors` table are kept before the cron purges them                          |
-| `ipv6_rate_limit_prefix`     | number | `64`    | Prefix length used to bucket IPv6 addresses in the D1-backed rate limiter (so a `/64` doesn't get unlimited retries) |
+| Key                                    | Type   | Default | Description                                                                                                          |
+| -------------------------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------- |
+| `login_error_retention_days`           | number | `30`    | How long failed-login rows in the `login_errors` table are kept before the cron purges them                          |
+| `login_dos_rate_limit`                 | number | `120`   | Maximum login POSTs admitted from one IP in the DoS backstop window                                                  |
+| `login_dos_rate_window_seconds`        | number | `60`    | Sliding-window length for the per-IP login POST backstop                                                             |
+| `login_ip_rate_limit`                  | number | `60`    | Maximum captcha-cleared login attempts admitted from one IP in its window                                            |
+| `login_ip_rate_window_seconds`         | number | `60`    | Sliding-window length for captcha-cleared per-IP login attempts                                                      |
+| `login_identifier_rate_limit`          | number | `30`    | Maximum login attempts for one normalized email or username in its window                                            |
+| `login_identifier_rate_window_seconds` | number | `300`   | Sliding-window length for per-identifier login attempts                                                              |
+| `login_totp_rate_limit`                | number | `15`    | Maximum TOTP submissions for one user across all usernames and email aliases                                         |
+| `login_totp_rate_window_seconds`       | number | `300`   | Sliding-window length for per-user TOTP submissions                                                                  |
+| `ipv6_rate_limit_prefix`               | number | `64`    | Prefix length used to bucket IPv6 addresses in the D1-backed rate limiter (so a `/64` doesn't get unlimited retries) |
+
+All eight login-limit values are editable under **Admin → Settings → Auth &
+Token Settings** and must be integers from `1` to `86400`. The password request
+that opens a TOTP prompt and the TOTP follow-up are separate login POSTs, so both
+consume these shared limits. The defaults allow 15 complete two-request TOTP
+logins per identifier in five minutes, up from the previous limit of five. TOTP
+submissions also consume a canonical per-user limit, so switching between a
+username, primary email, and alternate emails cannot multiply guessing attempts.
 
 ## Wrangler bindings & variables
 

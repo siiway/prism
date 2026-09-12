@@ -1265,6 +1265,64 @@ export function AdminSettings() {
                 }
               />
             </Field>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.loginRateLimitsHint")}
+            </Text>
+            {(
+              [
+                [
+                  "login_dos_rate_limit",
+                  "login_dos_rate_window_seconds",
+                  "admin.loginDosRateLimit",
+                  120,
+                  60,
+                ],
+                [
+                  "login_ip_rate_limit",
+                  "login_ip_rate_window_seconds",
+                  "admin.loginIpRateLimit",
+                  60,
+                  60,
+                ],
+                [
+                  "login_identifier_rate_limit",
+                  "login_identifier_rate_window_seconds",
+                  "admin.loginIdentifierRateLimit",
+                  30,
+                  300,
+                ],
+                [
+                  "login_totp_rate_limit",
+                  "login_totp_rate_window_seconds",
+                  "admin.loginTotpRateLimit",
+                  15,
+                  300,
+                ],
+              ] as const
+            ).map(
+              ([limitKey, windowKey, label, defaultLimit, defaultWindow]) => (
+                <Field key={limitKey} label={t(label)}>
+                  <div className={styles.row}>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={86400}
+                      aria-label={t("admin.loginRateLimitAttempts")}
+                      value={String(get(limitKey) ?? defaultLimit)}
+                      onChange={(e) => setNumber(limitKey, e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      max={86400}
+                      aria-label={t("admin.loginRateLimitWindow")}
+                      value={String(get(windowKey) ?? defaultWindow)}
+                      onChange={(e) => setNumber(windowKey, e.target.value)}
+                    />
+                  </div>
+                </Field>
+              ),
+            )}
             <Field
               label={t("admin.gpgChallengePrefix")}
               hint={t("admin.gpgChallengePrefixHint")}
@@ -1339,47 +1397,47 @@ export function AdminSettings() {
                   style={{ display: "flex", flexDirection: "column", gap: 6 }}
                 >
                   {alternateOptions.map((p) => {
-                      const enabled = alternateProviders.includes(p);
-                      const pos = alternateProviders.indexOf(p);
-                      return (
-                        <div
-                          key={p}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
-                          <Switch
-                            checked={enabled}
-                            label={t(`admin.captcha_${p}`)}
-                            onChange={(_, d) => toggleAlternate(p, d.checked)}
-                          />
-                          {enabled && (
-                            <>
-                              <Button
-                                size="small"
-                                appearance="subtle"
-                                disabled={pos <= 0}
-                                onClick={() => moveAlternate(p, -1)}
-                                aria-label={t("admin.captchaMoveUp")}
-                              >
-                                ↑
-                              </Button>
-                              <Button
-                                size="small"
-                                appearance="subtle"
-                                disabled={pos >= alternateProviders.length - 1}
-                                onClick={() => moveAlternate(p, 1)}
-                                aria-label={t("admin.captchaMoveDown")}
-                              >
-                                ↓
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
+                    const enabled = alternateProviders.includes(p);
+                    const pos = alternateProviders.indexOf(p);
+                    return (
+                      <div
+                        key={p}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <Switch
+                          checked={enabled}
+                          label={t(`admin.captcha_${p}`)}
+                          onChange={(_, d) => toggleAlternate(p, d.checked)}
+                        />
+                        {enabled && (
+                          <>
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              disabled={pos <= 0}
+                              onClick={() => moveAlternate(p, -1)}
+                              aria-label={t("admin.captchaMoveUp")}
+                            >
+                              ↑
+                            </Button>
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              disabled={pos >= alternateProviders.length - 1}
+                              onClick={() => moveAlternate(p, 1)}
+                              aria-label={t("admin.captchaMoveDown")}
+                            >
+                              ↓
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </Field>
             )}
@@ -1565,9 +1623,13 @@ export function AdminSettings() {
                       hint={t("admin.capModeHint")}
                     >
                       <Dropdown
-                        value={t(`admin.capMode_${get("cap_mode") ?? "embedded"}`)}
+                        value={t(
+                          `admin.capMode_${get("cap_mode") ?? "embedded"}`,
+                        )}
                         selectedOptions={[get("cap_mode") ?? "embedded"]}
-                        onOptionSelect={(_, d) => set("cap_mode", d.optionValue)}
+                        onOptionSelect={(_, d) =>
+                          set("cap_mode", d.optionValue)
+                        }
                       >
                         <Option value="embedded">
                           {t("admin.capMode_embedded")}

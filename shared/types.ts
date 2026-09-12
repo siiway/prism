@@ -8,13 +8,7 @@
 // missing on the other the way it did while each tier kept its own copy.
 
 export type CaptchaProvider =
-  | "none"
-  | "turnstile"
-  | "hcaptcha"
-  | "recaptcha"
-  | "pow"
-  | "geetest"
-  | "cap";
+  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
 
 /** How the embedded Cap challenge store is backed / where verification runs.
  *  "embedded" runs capjs-core inside the Worker (KV-backed replay guard);
@@ -137,6 +131,18 @@ export interface SiteConfig {
   login_error_retention_days: number;
   social_verify_ttl_days: number;
   allow_alt_email_login: boolean;
+  /** Maximum login POSTs admitted from one IP during the DoS window. */
+  login_dos_rate_limit: number;
+  login_dos_rate_window_seconds: number;
+  /** Maximum captcha-cleared credential attempts from one IP. */
+  login_ip_rate_limit: number;
+  login_ip_rate_window_seconds: number;
+  /** Maximum credential attempts for one normalized email or username. */
+  login_identifier_rate_limit: number;
+  login_identifier_rate_window_seconds: number;
+  /** Maximum TOTP guesses for one canonical user, across all login aliases. */
+  login_totp_rate_limit: number;
+  login_totp_rate_window_seconds: number;
   ipv6_rate_limit_prefix: number; // prefix length for IPv6 rate-limit bucketing (e.g. 64)
   gpg_challenge_prefix: string; // extra lines inserted after the site header in the GPG challenge text
   disable_user_create_team: boolean;
