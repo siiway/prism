@@ -325,6 +325,17 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
             })),
         },
         {
+          path: "agekey/callback",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/AgeKeyCallback").then((m) => ({
+              Component: m.AgeKeyCallback,
+            })),
+        },
+        {
           path: "apps",
           loader: async ({ request }) => {
             requireAuthLoader(request);

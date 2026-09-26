@@ -123,6 +123,8 @@ const DEFAULT_CONFIG: SiteConfig = {
   // haven't enrolled yet, so operators should opt in deliberately.
   default_team_require_2fa: false,
   default_team_require_verified_email: false,
+  default_team_require_min_age: 0,
+  agekey_client_id: "",
   // Sub-team feature. Master switch lets operators turn the whole nested-
   // team experience off without dropping data; the parent_team_id column
   // is still preserved but ignored for inheritance and management.

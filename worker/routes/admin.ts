@@ -28,6 +28,8 @@ import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
 import { requireAdmin } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
+import { isMinAgeSetting } from "../../shared/age";
+import { normalizeAgeKeyClientId } from "../lib/agekey";
 import { readPage, likePattern } from "../lib/pagination";
 import {
   collectReferencedImageUrls,
@@ -242,6 +244,8 @@ app.patch("/config", async (c) => {
     "default_team_profile_show_members",
     "default_team_require_2fa",
     "default_team_require_verified_email",
+    "default_team_require_min_age",
+    "agekey_client_id",
     "enable_sub_teams",
     "max_team_depth",
     "inherit_team_membership",
@@ -259,6 +263,32 @@ app.patch("/config", async (c) => {
   const updates: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(body)) {
     if (allowed.has(k)) updates[k] = v;
+  }
+
+  if (updates.agekey_client_id !== undefined) {
+    if (typeof updates.agekey_client_id !== "string")
+      return c.json({ error: "agekey_client_id must be a string" }, 400);
+    const clientId = normalizeAgeKeyClientId(updates.agekey_client_id);
+    if (clientId === null)
+      return c.json(
+        {
+          error:
+            "agekey_client_id must be empty or a short id (letters, digits, . _ -)",
+        },
+        400,
+      );
+    updates.agekey_client_id = clientId;
+  }
+
+  if (updates.default_team_require_min_age !== undefined) {
+    const v = updates.default_team_require_min_age;
+    if (typeof v !== "number" || !Number.isInteger(v) || !isMinAgeSetting(v))
+      return c.json(
+        {
+          error: "default_team_require_min_age must be 0, 13, 16, 18, or 21",
+        },
+        400,
+      );
   }
 
   if (updates.site_icon_url && typeof updates.site_icon_url === "string") {

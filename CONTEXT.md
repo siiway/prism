@@ -40,7 +40,7 @@ cascade down the parent chain to it (subject to the inheritance switches).
 _Avoid_: child team, group.
 
 **Member group**:
-A team-defined label attached to members *within a single team* — a
+A team-defined label attached to members _within a single team_ — a
 many-to-many tag, not a nested team. A member can hold several.
 _Avoid_: role, team group, sub-team.
 
@@ -53,7 +53,7 @@ on that exact team.
 A member's standing within a team: `owner`, `co-owner`, `admin`, or `member`.
 
 **Site floor**:
-A site-wide *minimum* join requirement (2FA, verified email) that every team
+A site-wide _minimum_ join requirement (2FA, verified email) that every team
 must enforce. Teams may require more, never less.
 _Avoid_: default requirement.
 
@@ -64,7 +64,7 @@ A relying party registered by a user or team that obtains tokens from Prism.
 _Avoid_: client (only use "client" for the OAuth-protocol role), integration.
 
 **OAuth source**:
-An external identity provider Prism federates *from* for social/federated login
+An external identity provider Prism federates _from_ for social/federated login
 (GitHub, Google, Microsoft, Discord, Telegram, X, Generic OIDC, Generic OAuth 2).
 Multiple sources of the same kind may coexist.
 _Avoid_: provider (reserved for captcha), connection.
@@ -117,18 +117,36 @@ A WebAuthn / FIDO2 credential used as a login or step-up factor.
 **Backup code**:
 A single-use recovery code that substitutes for a 2FA factor.
 
+## Age assurance
+
+**AgeKey**:
+The external age-assurance credential a user presents to Prism. Prism learns
+only whether the user meets the thresholds it asked about.
+_Avoid_: identity provider (an AgeKey does not log the user in).
+
+**Age verification**:
+The stored result of an AgeKey check: which age thresholds the user meets
+(booleans such as 18+). It is not a date of birth and holds no other personal
+data.
+_Avoid_: birthday, exact age.
+
+**Minimum age**:
+A team join requirement, optionally raised by a site floor, that a member's
+age verification must satisfy in order to join and for as long as they remain
+a member. `0` means the team has no age requirement.
+
 ## Scopes & tokens
 
 **Platform scope**:
 A scope from the fixed vocabulary in `shared/scopes.ts` (`openid`, `profile`,
-`teams:read`, …).
+`age`, `teams:read`, …).
 
 **Bound team scope**:
 A `team:<id>:…` scope validated against the one team a token is bound to — as
 opposed to the aggregate `teams:*` family that spans every team the user is in.
 
 **Cross-app scope**:
-A named permission one app publishes for *other* apps to request through the
+A named permission one app publishes for _other_ apps to request through the
 standard consent screen.
 _Avoid_: exported permission (that's the code's internal term).
 

@@ -21,8 +21,10 @@ import {
   DialogTitle,
   DialogTrigger,
   Divider,
+  Dropdown,
   Field,
   Input,
+  Option,
   MessageBar,
   Spinner,
   Switch,
@@ -53,6 +55,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../../lib/api";
+import { AGE_THRESHOLDS, highestSatisfiedAge } from "../../../shared/age";
 import { useApi } from "../../lib/api-context";
 import { AuditLog } from "../../components/AuditLog";
 import { CopyIdButton } from "../../components/CopyIdButton";
@@ -248,6 +251,8 @@ function SecurityCard({
   const [revokeSessions, setRevokeSessions] = useState(true);
   const [settingPassword, setSettingPassword] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [editingAge, setEditingAge] = useState(false);
+  const [ageChoice, setAgeChoice] = useState("0");
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-user-security", userId],
@@ -281,6 +286,17 @@ function SecurityCard({
       showMsg("error", err instanceof ApiError ? err.message : String(err)),
   });
 
+  const setAge = useMutation({
+    mutationFn: () => api.adminSetUserAge(userId, Number(ageChoice)),
+    onSuccess: async (res) => {
+      await invalidate();
+      setEditingAge(false);
+      showMsg("success", res.message);
+    },
+    onError: (err) =>
+      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+  });
+
   const removeFactor = useMutation({
     mutationFn: (f: { kind: "totp" | "passkey"; id: string }) =>
       f.kind === "totp"
@@ -297,6 +313,9 @@ function SecurityCard({
   if (isLoading || !data) return <Spinner size="tiny" />;
 
   const factorCount = data.totp_authenticators.length + data.passkeys.length;
+  const ageLevel = data.age_verification
+    ? highestSatisfiedAge(data.age_verification.thresholds)
+    : 0;
 
   return (
     <Section
@@ -392,6 +411,92 @@ function SecurityCard({
           </Table>
         </div>
       )}
+
+      <div className={styles.row}>
+        <Text weight="semibold">{t("admin.ageVerificationTitle")}</Text>
+        {data.age_verification ? (
+          <>
+            <Badge appearance="tint" color="success">
+              {ageLevel > 0 ? `${ageLevel}+` : t("admin.ageNotVerified")}
+            </Badge>
+            <Badge appearance="tint" color="subtle">
+              {data.age_verification.source === "admin"
+                ? t("admin.ageVerificationAdmin")
+                : t("admin.ageVerificationAgekey")}
+            </Badge>
+          </>
+        ) : (
+          <Text className={styles.empty}>{t("admin.ageVerificationNone")}</Text>
+        )}
+        <Button
+          size="small"
+          onClick={() => {
+            setAgeChoice(String(ageLevel));
+            setEditingAge(true);
+          }}
+        >
+          {t("admin.changeAge")}
+        </Button>
+      </div>
+
+      <Dialog
+        open={editingAge}
+        onOpenChange={(_, d) => !d.open && setEditingAge(false)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("admin.changeAgeTitle")}</DialogTitle>
+            <DialogContent>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  paddingTop: 8,
+                }}
+              >
+                <MessageBar intent="warning">
+                  {t("admin.changeAgeWarning")}
+                </MessageBar>
+                <Field label={t("admin.changeAgeField")}>
+                  <Dropdown
+                    value={
+                      ageChoice === "0"
+                        ? t("admin.ageNotVerified")
+                        : `${ageChoice}+`
+                    }
+                    selectedOptions={[ageChoice]}
+                    onOptionSelect={(_, d) =>
+                      setAgeChoice(d.optionValue ?? "0")
+                    }
+                  >
+                    <Option value="0" text={t("admin.ageNotVerified")}>
+                      {t("admin.ageNotVerified")}
+                    </Option>
+                    {AGE_THRESHOLDS.map((age) => (
+                      <Option key={age} value={String(age)} text={`${age}+`}>
+                        {`${age}+`}
+                      </Option>
+                    ))}
+                  </Dropdown>
+                </Field>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <DialogTrigger disableButtonEnhancement>
+                <Button appearance="secondary">{t("common.cancel")}</Button>
+              </DialogTrigger>
+              <Button
+                appearance="primary"
+                disabled={setAge.isPending}
+                onClick={() => setAge.mutate()}
+              >
+                {setAge.isPending ? <Spinner size="tiny" /> : t("common.save")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       <Dialog
         open={settingPassword}

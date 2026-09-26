@@ -110,33 +110,34 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 #### 权限范围
 
-| 范围                   | 包含的声明 / 授权的访问                        |
-| ---------------------- | ---------------------------------------------- |
-| `openid`               | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
-| `profile`              | `name`、`preferred_username`、`picture`        |
-| `profile:write`        | 更新用户的个人资料（名称、头像）               |
-| `email`                | `email`、`email_verified`                      |
-| `apps:read`            | 用户拥有的应用列表                             |
-| `apps:write`           | 创建、更新和删除用户的应用                     |
-| `teams:read`           | 列出用户的团队                                 |
-| `teams:write`          | 更新团队设置和管理成员                         |
-| `teams:create`         | 创建新团队                                     |
-| `teams:delete`         | 删除团队                                       |
-| `domains:read`         | 列出用户的自定义域名                           |
-| `domains:write`        | 添加和删除自定义域名                           |
-| `gpg:read`             | 列出用户已注册的 GPG 公钥                      |
-| `gpg:write`            | 添加或删除用户的 GPG 公钥                      |
-| `social:read`          | 列出用户已关联的社交提供商账号                 |
-| `social:write`         | 断开社交提供商账号关联                         |
-| `admin:users:read`     | 读取所有用户账号（仅限管理员）                 |
-| `admin:users:write`    | 修改用户账号（仅限管理员）                     |
-| `admin:users:delete`   | 删除用户账号（仅限管理员）                     |
-| `admin:config:read`    | 读取实例配置（仅限管理员）                     |
-| `admin:config:write`   | 更新实例配置（仅限管理员）                     |
-| `admin:invites:read`   | 列出邀请（仅限管理员）                         |
-| `admin:invites:create` | 创建邀请（仅限管理员）                         |
-| `admin:invites:delete` | 删除邀请（仅限管理员）                         |
-| `offline_access`       | 启用刷新令牌颁发                               |
+| 范围                   | 包含的声明 / 授权的访问                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `openid`               | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须）                                                               |
+| `profile`              | `name`、`preferred_username`、`picture`                                                                      |
+| `profile:write`        | 更新用户的个人资料（名称、头像）                                                                             |
+| `email`                | `email`、`email_verified`                                                                                    |
+| `age`                  | `age_thresholds` — 例如 `{ "18": true }` 的布尔结果；用户尚未通过 AgeKey 验证时为 `null`。不会包含出生日期。 |
+| `apps:read`            | 用户拥有的应用列表                                                                                           |
+| `apps:write`           | 创建、更新和删除用户的应用                                                                                   |
+| `teams:read`           | 列出用户的团队                                                                                               |
+| `teams:write`          | 更新团队设置和管理成员                                                                                       |
+| `teams:create`         | 创建新团队                                                                                                   |
+| `teams:delete`         | 删除团队                                                                                                     |
+| `domains:read`         | 列出用户的自定义域名                                                                                         |
+| `domains:write`        | 添加和删除自定义域名                                                                                         |
+| `gpg:read`             | 列出用户已注册的 GPG 公钥                                                                                    |
+| `gpg:write`            | 添加或删除用户的 GPG 公钥                                                                                    |
+| `social:read`          | 列出用户已关联的社交提供商账号                                                                               |
+| `social:write`         | 断开社交提供商账号关联                                                                                       |
+| `admin:users:read`     | 读取所有用户账号（仅限管理员）                                                                               |
+| `admin:users:write`    | 修改用户账号（仅限管理员）                                                                                   |
+| `admin:users:delete`   | 删除用户账号（仅限管理员）                                                                                   |
+| `admin:config:read`    | 读取实例配置（仅限管理员）                                                                                   |
+| `admin:config:write`   | 更新实例配置（仅限管理员）                                                                                   |
+| `admin:invites:read`   | 列出邀请（仅限管理员）                                                                                       |
+| `admin:invites:create` | 创建邀请（仅限管理员）                                                                                       |
+| `admin:invites:delete` | 删除邀请（仅限管理员）                                                                                       |
+| `offline_access`       | 启用刷新令牌颁发                                                                                             |
 
 #### 团队相关 scope —— 三个层级
 
@@ -590,12 +591,13 @@ ID 令牌是一个签名的 JWT。默认算法为 **ML-DSA-65**（后量子，FI
 | `role`  | 用户角色（`user` 或 `admin`） |
 | `nonce` | 从授权请求中原样返回          |
 
-范围关联声明 — `profile` 和 `email` 声明在授予对应权限范围时自动包含。下表中其余声明还需要应用在 `oidc_fields` 配置中声明对应的字段名：
+范围关联声明 — `profile`、`email` 和 `age` 声明在授予对应权限范围时自动包含。下表中其余声明还需要应用在 `oidc_fields` 配置中声明对应的字段名：
 
 | 权限范围       | 字段名            | 添加到 ID 令牌的声明                                                         |
 | -------------- | ----------------- | ---------------------------------------------------------------------------- |
 | `profile`      | _（始终包含）_    | `name`、`preferred_username`、`picture`                                      |
 | `email`        | _（始终包含）_    | `email`、`email_verified`                                                    |
+| `age`          | _（始终包含）_    | `age_thresholds` — 年龄门槛到布尔值的映射；未验证时为 `null`                 |
 | `teams:read`   | `teams`           | `teams` — `{ id, name, role, groups }` 对象数组，表示用户的团队成员身份      |
 | `apps:read`    | `apps`            | `apps` — `{ id, name, client_id, is_verified }` 对象数组，表示用户拥有的应用 |
 | `domains:read` | `domains`         | `domains` — `{ id, domain, verified }` 对象数组                              |

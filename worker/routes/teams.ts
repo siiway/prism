@@ -37,6 +37,7 @@ import {
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
 import type { OAuthAppRow, TeamMemberRow, TeamRow, Variables } from "../types";
+import { isMinAgeSetting } from "../../shared/age";
 import {
   getEffectiveTeamRequirements,
   getSiteRequirementFloor,
@@ -643,7 +644,7 @@ app.get("/join/:token", optionalAuth, async (c) => {
     return c.json({ error: "Invite link has reached its usage limit" }, 410);
 
   const team = await c.env.DB.prepare(
-    "SELECT id, name, description, avatar_url, require_2fa, require_verified_email FROM teams WHERE id = ?",
+    "SELECT id, name, description, avatar_url, require_2fa, require_verified_email, require_min_age FROM teams WHERE id = ?",
   )
     .bind(invite.team_id)
     .first<{
@@ -653,6 +654,7 @@ app.get("/join/:token", optionalAuth, async (c) => {
       avatar_url: string | null;
       require_2fa: number;
       require_verified_email: number;
+      require_min_age: number;
     }>();
   if (!team) return c.json({ error: "Team not found" }, 404);
 
@@ -686,6 +688,7 @@ app.get("/join/:token", optionalAuth, async (c) => {
     requirements: {
       require_2fa: effective.require_2fa,
       require_verified_email: effective.require_verified_email,
+      require_min_age: effective.require_min_age,
       forced_by_site: effective.forced_by_site,
     },
     unmet_requirements: unmet,
@@ -1285,6 +1288,7 @@ app.patch("/:id", async (c) => {
     profile_show_sub_teams?: boolean | null;
     require_2fa?: boolean;
     require_verified_email?: boolean;
+    require_min_age?: number;
     enable_groups?: boolean;
     role_permissions?: unknown;
     invite_registration_enabled?: boolean;
@@ -1374,6 +1378,30 @@ app.patch("/:id", async (c) => {
       );
     updates.push("require_verified_email = ?");
     values.push(body.require_verified_email ? 1 : 0);
+  }
+  if (body.require_min_age !== undefined) {
+    if (!hasRole(member.role, "owner"))
+      return c.json(
+        { error: "Only the owner can change join requirements" },
+        403,
+      );
+    if (
+      typeof body.require_min_age !== "number" ||
+      !Number.isInteger(body.require_min_age) ||
+      !isMinAgeSetting(body.require_min_age)
+    )
+      return c.json(
+        { error: "require_min_age must be 0, 13, 16, 18, or 21" },
+        400,
+      );
+    const floor = await getSiteRequirementFloor(c.env.DB);
+    if (body.require_min_age < floor.require_min_age)
+      return c.json(
+        { error: "require_min_age cannot be set below the site floor" },
+        400,
+      );
+    updates.push("require_min_age = ?");
+    values.push(body.require_min_age);
   }
   if (body.enable_groups !== undefined) {
     if (!hasRole(member.role, "owner"))
@@ -1744,7 +1772,7 @@ app.post("/:id/members", async (c) => {
         return c.json(
           {
             error:
-              "User doesn't meet this team's join requirements (e.g. 2FA, verified email)",
+              "User doesn't meet this team's join requirements (2FA, verified email, or minimum age)",
             unmet_requirements: unmet,
           },
           403,

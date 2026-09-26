@@ -304,10 +304,16 @@ the built-in defaults, which deny everything. Account security is never gated.
 Site-wide minimums every team is forced to require, regardless of the team-level
 flag. Owners can opt their team in further but cannot opt out below the floor.
 
-| Key                                   | Type    | Default | Description                                                           |
-| ------------------------------------- | ------- | ------- | --------------------------------------------------------------------- |
-| `default_team_require_2fa`            | boolean | `false` | Floor: every team requires at least one TOTP authenticator or passkey |
-| `default_team_require_verified_email` | boolean | `false` | Floor: every team requires a verified primary email                   |
+| Key                                   | Type    | Default | Description                                                                         |
+| ------------------------------------- | ------- | ------- | ----------------------------------------------------------------------------------- |
+| `default_team_require_2fa`            | boolean | `false` | Floor: every team requires at least one TOTP authenticator or passkey               |
+| `default_team_require_verified_email` | boolean | `false` | Floor: every team requires a verified primary email                                 |
+| `default_team_require_min_age`        | integer | `0`     | Floor: every team's minimum age is at least this (0, 13, 16, 18, or 21). `0` is off |
+| `agekey_client_id`                    | string  | `""`    | AgeKey client id. Empty disables AgeKey. `ak_test_…` uses the test service          |
+
+Register `{APP_URL}/agekey/callback` as the AgeKey redirect URI. Prism
+asks AgeKey whether the user meets 13, 16, 18, and 21, then stores those
+booleans. Apps read them with the `age` scope.
 
 ::: warning
 Turning these on retroactively forces every existing member to satisfy the

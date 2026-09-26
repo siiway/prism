@@ -51,10 +51,22 @@ team-level flag.
 | ------------------------------------------ | ------------------------------ | ------------------------------------- |
 | At least one TOTP authenticator or passkey | `teams.require_2fa`            | `default_team_require_2fa`            |
 | Verified primary email                     | `teams.require_verified_email` | `default_team_require_verified_email` |
+| Minimum age (AgeKey), or off               | `teams.require_min_age`        | `default_team_require_min_age`        |
 
-Effective requirement = team flag **OR** site floor. Owners can opt their team
-in further than the floor but cannot opt out below it. The team-settings UI
-greys out the toggle for any factor forced by the site.
+Effective requirement = team flag **OR** site floor for the boolean factors.
+Minimum age is the **greater** of the team value and the site floor. `0` means
+that side is off. Allowed ages are 13, 16, 18, and 21. A passing higher
+threshold covers every lower one (someone verified 18+ also meets 13+ and 16+).
+Owners can opt their team in further than the floor but cannot opt out below
+it. The team-settings UI locks any factor forced by the site.
+
+Age is checked with [AgeKey](https://docs.agekey.org/). The user proves the
+threshold from **Security**; Prism stores only the boolean results and the
+AgeKey session id, never a date of birth. Removing a verification, or replacing
+it with a weaker one, is refused while a team the user belongs to still
+requires the old result. A site admin can set or clear the stored result
+from the account page; that override is not blocked by team membership, and
+the booleans it writes are what later join checks use.
 
 ::: warning Retroactive enforcement
 Turning a requirement on flips it for every existing member immediately. Any
@@ -75,9 +87,14 @@ endpoint payload includes:
   "requirements": {
     "require_2fa": true,
     "require_verified_email": true,
-    "forced_by_site": { "require_2fa": false, "require_verified_email": true }
+    "require_min_age": 18,
+    "forced_by_site": {
+      "require_2fa": false,
+      "require_verified_email": true,
+      "require_min_age": 0
+    }
   },
-  "unmet": ["2fa"]
+  "unmet_requirements": ["2fa", "age"]
 }
 ```
 

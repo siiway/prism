@@ -32,6 +32,7 @@ import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { useAuthStore } from "../../store/auth";
+import { AGE_THRESHOLDS } from "../../../shared/age";
 import type { SiteConfig, CaptchaProvider } from "../../types";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { PasswordInput } from "../../components/PasswordInput";
@@ -786,6 +787,52 @@ export function AdminSettings() {
               checked={!!get("default_team_require_2fa")}
               onChange={(_, d) => set("default_team_require_2fa", d.checked)}
             />
+            <Field
+              label={t("admin.agekeyClientId")}
+              hint={t("admin.agekeyClientIdHint", {
+                redirect: `${window.location.origin}/agekey/callback`,
+              })}
+            >
+              <Input
+                value={get("agekey_client_id") ?? ""}
+                onChange={(_, d) => set("agekey_client_id", d.value)}
+                placeholder="ak_live_…"
+              />
+            </Field>
+            {(() => {
+              const selected = String(get("default_team_require_min_age") ?? 0);
+              const options = [
+                { value: "0", label: t("admin.ageRequirementOff") },
+                ...AGE_THRESHOLDS.map((age) => ({
+                  value: String(age),
+                  label: `${age}+`,
+                })),
+              ];
+              const current = options.find((o) => o.value === selected);
+              return (
+                <Field
+                  label={t("admin.defaultTeamRequireMinAge")}
+                  hint={t("admin.defaultTeamRequireMinAgeHint")}
+                >
+                  <Dropdown
+                    value={current?.label ?? selected}
+                    selectedOptions={[selected]}
+                    onOptionSelect={(_, d) =>
+                      set(
+                        "default_team_require_min_age",
+                        Number(d.optionValue ?? 0),
+                      )
+                    }
+                  >
+                    {options.map((option) => (
+                      <Option key={option.value} value={option.value}>
+                        {option.label}
+                      </Option>
+                    ))}
+                  </Dropdown>
+                </Field>
+              );
+            })()}
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {t("admin.subTeamConfigHint")}
             </Text>

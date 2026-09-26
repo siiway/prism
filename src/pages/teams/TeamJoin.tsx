@@ -93,8 +93,15 @@ export function TeamJoin() {
     );
   }
 
-  const { team, role, email, expires_at, already_member, unmet_requirements } =
-    data;
+  const {
+    team,
+    role,
+    email,
+    expires_at,
+    already_member,
+    unmet_requirements,
+    requirements,
+  } = data;
   const hasUnmet = !!user && !already_member && unmet_requirements.length > 0;
 
   return (
@@ -197,6 +204,21 @@ export function TeamJoin() {
                     onClick={() => navigate("/profile")}
                   >
                     {t("teams.goToProfile")}
+                  </Button>
+                </Text>
+              )}
+              {unmet_requirements.includes("age") && (
+                <Text>
+                  •{" "}
+                  {t("teams.requirementAgeUnmet", {
+                    age: requirements.require_min_age,
+                  })}{" "}
+                  <Button
+                    appearance="transparent"
+                    size="small"
+                    onClick={() => navigate("/security")}
+                  >
+                    {t("teams.goVerifyAge")}
                   </Button>
                 </Text>
               )}

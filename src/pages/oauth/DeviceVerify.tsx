@@ -73,6 +73,7 @@ const SCOPE_LABEL_KEYS: Record<string, string> = {
   openid: "oauth.scopeIdentityLabel",
   profile: "oauth.scopeProfileLabel",
   email: "oauth.scopeEmailLabel",
+  age: "oauth.scopeAgeLabel",
   "profile:write": "oauth.scopeProfileWriteLabel",
   "apps:read": "oauth.scopeAppsLabel",
   "apps:write": "oauth.scopeAppsWriteLabel",

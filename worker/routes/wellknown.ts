@@ -96,6 +96,7 @@ function providerMetadata(base: string) {
       "picture",
       "email",
       "email_verified",
+      "age_thresholds",
     ],
   };
 }

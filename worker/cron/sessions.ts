@@ -57,4 +57,13 @@ export async function sweepExpiredOAuthCodes(db: D1Database): Promise<void> {
     )
     .bind(now, BATCH_SIZE)
     .run();
+  await db
+    .prepare(
+      `DELETE FROM agekey_flows
+        WHERE state IN (
+          SELECT state FROM agekey_flows WHERE expires_at <= ? LIMIT ?
+        )`,
+    )
+    .bind(now, BATCH_SIZE)
+    .run();
 }

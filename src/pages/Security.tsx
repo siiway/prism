@@ -40,7 +40,8 @@ import {
   KeyRegular,
   SignOutRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startRegistration } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
@@ -59,7 +60,9 @@ import {
   geoDetailRows,
   parseIpGeo,
 } from "../lib/geo";
+import { AGE_THRESHOLDS, meetsMinAge } from "../../shared/age";
 import { useAuthStore } from "../store/auth";
+import { useThemeStore } from "../store/theme";
 import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
 import { SkeletonSecurityCard } from "../components/Skeletons";
@@ -191,7 +194,7 @@ export function Security() {
   const api = useApi();
   const styles = useStyles();
   const qc = useQueryClient();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuthStore();
 
   const { data: me, isLoading: meLoading } = useQuery({
@@ -232,6 +235,35 @@ export function Security() {
   });
 
   const { message, showMsg } = useToastMessage(6000);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const agekeyResult = searchParams.get("agekey");
+  const handledAgekey = useRef<string | null>(null);
+  const [ageBusy, setAgeBusy] = useState(false);
+  const { data: site } = useQuery({
+    queryKey: ["site"],
+    queryFn: api.site,
+  });
+
+  useEffect(() => {
+    if (!agekeyResult || handledAgekey.current === agekeyResult) return;
+    handledAgekey.current = agekeyResult;
+    const reasons = [
+      "ok",
+      "denied",
+      "create_requested",
+      "invalid",
+      "downgrade",
+      "unconfigured",
+    ];
+    const reason = reasons.includes(agekeyResult) ? agekeyResult : "invalid";
+    showMsg(
+      reason === "ok" ? "success" : "error",
+      t(`security.agekeyResult_${reason}`),
+    );
+    const next = new URLSearchParams(searchParams);
+    next.delete("agekey");
+    setSearchParams(next, { replace: true });
+  }, [agekeyResult, searchParams, setSearchParams, showMsg, t]);
 
   // ─── Token TTL prefs ─────────────────────────────────────────────────────
   const [accessTtl, setAccessTtl] = useState<number | null>(null);
@@ -575,6 +607,39 @@ export function Security() {
     }
   };
 
+  const handleStartAgeKey = async () => {
+    setAgeBusy(true);
+    try {
+      const { url } = await api.startAgeKey({
+        language: i18n.language,
+        theme: useThemeStore.getState().mode,
+      });
+      window.location.assign(url);
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("security.agekeyFailed"),
+      );
+      setAgeBusy(false);
+    }
+  };
+
+  const handleClearAgeKey = async () => {
+    setAgeBusy(true);
+    try {
+      await api.clearAgeKey();
+      await qc.invalidateQueries({ queryKey: ["me"] });
+      showMsg("success", t("security.agekeyCleared"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("security.agekeyFailed"),
+      );
+    } finally {
+      setAgeBusy(false);
+    }
+  };
+
   const backupCodesRemaining = totpData?.backup_codes_remaining ?? 0;
   const isPageLoading =
     meLoading ||
@@ -600,6 +665,77 @@ export function Security() {
           <SkeletonSecurityCard rows={2} />
           <SkeletonSecurityCard rows={4} />
         </>
+      )}
+
+      {(site?.agekey_enabled || me?.age_verification) && (
+        <div
+          className={styles.card}
+          style={isPageLoading ? { display: "none" } : {}}
+        >
+          <div className={styles.cardHeader}>
+            <div>
+              <Text weight="semibold" size={400} block>
+                {t("security.agekeyTitle")}
+              </Text>
+              <Text
+                size={200}
+                style={{ color: tokens.colorNeutralForeground3 }}
+              >
+                {t("security.agekeyDesc")}
+              </Text>
+            </div>
+            <Badge
+              color={me?.age_verification ? "success" : "subtle"}
+              appearance="filled"
+            >
+              {me?.age_verification
+                ? t("security.agekeyVerified")
+                : t("security.agekeyNotVerified")}
+            </Badge>
+          </div>
+          {me?.age_verification?.source === "admin" && (
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("security.agekeySetByAdmin")}
+            </Text>
+          )}
+          {me?.age_verification && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {AGE_THRESHOLDS.map((threshold) => {
+                const ok = meetsMinAge(
+                  me.age_verification?.thresholds,
+                  threshold,
+                );
+                return (
+                  <Badge
+                    key={threshold}
+                    color={ok ? "success" : "subtle"}
+                    appearance="outline"
+                  >
+                    {ok
+                      ? `${threshold}+`
+                      : t("security.agekeyUnder", { age: threshold })}
+                  </Badge>
+                );
+              })}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {site?.agekey_enabled && (
+              <Button
+                appearance="primary"
+                onClick={handleStartAgeKey}
+                disabled={ageBusy}
+              >
+                {ageBusy ? <Spinner size="tiny" /> : t("security.agekeyVerify")}
+              </Button>
+            )}
+            {me?.age_verification && (
+              <Button onClick={handleClearAgeKey} disabled={ageBusy}>
+                {t("security.agekeyClear")}
+              </Button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* TOTP */}

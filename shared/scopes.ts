@@ -11,6 +11,7 @@ export const PLATFORM_SCOPES: string[] = [
   "profile",
   "profile:write",
   "email",
+  "age",
   "apps:read",
   "apps:write",
   "teams:read",

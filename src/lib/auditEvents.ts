@@ -14,7 +14,7 @@ export const AUDIT_EVENT_CATALOG: Record<
   Record<string, string[]>
 > = {
   user: {
-    user: ["login", "profile.update"],
+    user: ["login", "profile.update", "age.verify", "age.clear"],
     app: ["create", "update", "delete", "authorized"],
     oauth: ["authorize", "revoke"],
     domain: ["add", "verify", "delete"],
@@ -23,6 +23,7 @@ export const AUDIT_EVENT_CATALOG: Record<
     // the account — the events an account holder most wants pushed at them.
     admin: [
       "user.password_set",
+      "user.age.set",
       "user.2fa_reset",
       "user.totp_removed",
       "user.passkey_removed",

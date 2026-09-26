@@ -80,6 +80,7 @@ const ALL_SCOPES = [
   "profile",
   "profile:write",
   "email",
+  "age",
   "apps:read",
   "apps:write",
   "teams:read",

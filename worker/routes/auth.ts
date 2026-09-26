@@ -63,7 +63,10 @@ import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
-import { teamsBlockingDowngrade } from "../lib/teamRequirements";
+import {
+  getUserSecurityState,
+  teamsBlockingDowngrade,
+} from "../lib/teamRequirements";
 import {
   validateSiteInvite,
   claimSiteInvite,
@@ -950,10 +953,13 @@ app.delete("/totp/:id", requireAuth, async (c) => {
     .first<{ x: number }>();
   const has2faAfter = !!otherTotp || !!passkey;
   if (!has2faAfter) {
-    const blockers = await teamsBlockingDowngrade(c.env.DB, user.id, {
-      email_verified: user.email_verified,
-      has_2fa: false,
-    });
+    const current = await getUserSecurityState(c.env.DB, user.id);
+    const blockers = (
+      await teamsBlockingDowngrade(c.env.DB, user.id, {
+        ...current,
+        has_2fa: false,
+      })
+    ).filter((team) => team.missing.includes("2fa"));
     if (blockers.length) {
       return c.json(
         {
@@ -1382,10 +1388,13 @@ app.delete("/passkeys/:id", requireAuth, async (c) => {
     .first<{ x: number }>();
   const has2faAfter = !!otherPasskey || !!totp;
   if (!has2faAfter) {
-    const blockers = await teamsBlockingDowngrade(c.env.DB, user.id, {
-      email_verified: user.email_verified,
-      has_2fa: false,
-    });
+    const current = await getUserSecurityState(c.env.DB, user.id);
+    const blockers = (
+      await teamsBlockingDowngrade(c.env.DB, user.id, {
+        ...current,
+        has_2fa: false,
+      })
+    ).filter((team) => team.missing.includes("2fa"));
     if (blockers.length) {
       return c.json(
         {
