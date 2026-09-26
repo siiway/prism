@@ -182,6 +182,9 @@ export interface TeamRow {
   require_2fa: number;
   /** 1 = members must have a verified primary email. */
   require_verified_email: number;
+  /** 0 = no age gate. Otherwise a threshold (13, 16, 18, or 21) the member's
+   *  AgeKey result must meet. Clamped up by the site floor. */
+  require_min_age: number;
   /** 1 = this team uses member groups (owner-only opt-in, default off).
    *  While 0 every read surface omits groups; the rows themselves are kept
    *  so re-enabling restores the previous assignments. */

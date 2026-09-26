@@ -226,6 +226,11 @@ export interface SiteConfig {
    *  the same until an admin enables them. */
   default_team_require_2fa: boolean;
   default_team_require_verified_email: boolean;
+  /** Site-wide minimum age (0, 13, 16, 18, or 21). 0 means no age floor.
+   *  Every team's effective minimum is at least this value. */
+  default_team_require_min_age: number;
+  /** AgeKey client id (`ak_live_…` or `ak_test_…`). Empty disables AgeKey. */
+  agekey_client_id: string;
   /** Master switch for sub-team support. When false the server rejects
    *  every sub-team create/list/move endpoint with 403 and the existing
    *  parent_team_id column is ignored for inheritance purposes. */

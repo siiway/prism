@@ -115,6 +115,7 @@ worker/
     ├── domains.ts          # 域名验证（TXT/meta/well-known）
     ├── connections.ts      # 社交 OAuth 流（含 Telegram）
     ├── user.ts             # 资料、头像、改密、邮箱、通知、PAT、webhook
+    ├── agekey.ts           # AgeKey 发起、回调与移除
     ├── users.ts            # GET /api/users/:username（公开资料 JSON）
     ├── public-teams.ts     # GET /api/public/teams/:id（公开团队 JSON）
     ├── gpg.ts              # GPG 公钥管理（session-auth）
@@ -153,6 +154,10 @@ Schema 位于 `worker/db/migrations/`。新部署按顺序执行所有迁移；�
 ### `passkeys`
 
 WebAuthn 凭据。`credential_id` 用 base64url。每次成功认证后更新 `counter` 用于克隆检测。
+
+### `age_verifications` / `agekey_flows`
+
+`age_verifications` 每个用户一行：AgeKey 会话 ID（管理员设置时为 `admin:` 前缀）、`source`（`agekey` 或 `admin`），以及年龄门槛布尔值的 JSON。`agekey_flows` 保存跳转用的一次性 OIDC state，回调时删除。`teams.require_min_age` 是团队的最低年龄（`0` 表示关闭）。
 
 ### `gpg_keys`
 
@@ -194,7 +199,7 @@ WebAuthn 凭据。`credential_id` 用 base64url。每次成功认证后更新 `c
 
 ### `teams` / `team_members` / `team_invites`
 
-`teams` 承载团队名/描述/头像、公开资料主开关 `profile_is_public`、所有 `profile_show_*` 分区覆写（`NULL` 跟随站点默认，`0`/`1` 表示团队显式选择）、加入门槛字段（`require_2fa`、`require_verified_email`，启用站点底线后再被向上钳制）以及让嵌套生效的 **`parent_team_id`**。
+`teams` 承载团队名/描述/头像、公开资料主开关 `profile_is_public`、所有 `profile_show_*` 分区覆写（`NULL` 跟随站点默认，`0`/`1` 表示团队显式选择）、加入门槛字段（`require_2fa`、`require_verified_email`、`require_min_age`，启用站点底线后再被向上钳制）以及让嵌套生效的 **`parent_team_id`**。
 
 - `parent_team_id` 是自引用外键，`ON DELETE CASCADE`（迁移 `0047_sub_teams.sql`）。`parent_team_id` 上有索引，`WHERE parent_team_id = ?` 查询很便宜。顶层团队此字段为 `NULL`；循环和超深嵌套在 API 层拒绝（服务端上限 = `max_team_depth`，默认 5；递归 helper 外层有硬护栏 `ANCESTOR_WALK_LIMIT = 64`，即便数据被破坏也不会失控）。
 - `profile_show_sub_teams`（迁移 `0048_sub_team_config.sql` 加入）沿用与其它 `profile_show_*` 字段相同的 `NULL`/`0`/`1` 三态。

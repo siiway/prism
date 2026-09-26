@@ -457,6 +457,10 @@ export function Authorize() {
       label: t("oauth.scopeEmailLabel"),
       desc: t("oauth.scopeEmailDesc"),
     },
+    age: {
+      label: t("oauth.scopeAgeLabel"),
+      desc: t("oauth.scopeAgeDesc"),
+    },
     "profile:write": {
       label: t("oauth.scopeProfileWriteLabel"),
       desc: t("oauth.scopeProfileWriteDesc"),

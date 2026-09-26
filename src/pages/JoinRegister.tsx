@@ -294,6 +294,28 @@ export function JoinRegister() {
             </div>
           )}
 
+          {status && status.requirements.require_min_age > 0 && (
+            <div className={styles.step}>
+              {status.unmet.includes("age") ? (
+                <CircleRegular />
+              ) : (
+                <CheckmarkCircleFilled
+                  style={{ color: tokens.colorPaletteGreenForeground1 }}
+                />
+              )}
+              <Text>
+                {t("join.requireAge", {
+                  age: status.requirements.require_min_age,
+                })}
+              </Text>
+              {status.unmet.includes("age") && (
+                <Link href="/security" target="_blank">
+                  {t("join.goVerifyAge")}
+                </Link>
+              )}
+            </div>
+          )}
+
           {status?.requirements.require_2fa && (
             <div className={styles.step}>
               {status.unmet.includes("2fa") ? (

@@ -14,6 +14,8 @@ import {
   MessageBar,
   Spinner,
   Switch,
+  Dropdown,
+  Option,
   Tab,
   TabList,
   Table,
@@ -60,6 +62,7 @@ import {
   type TeamInvite,
   type TeamMember,
 } from "../../lib/api";
+import { AGE_THRESHOLDS } from "../../../shared/age";
 import { useApi } from "../../lib/api-context";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { EmptyState } from "../../components/EmptyState";
@@ -511,8 +514,8 @@ export function TeamDetail() {
     null,
   );
   const handleRequirementChange = async (
-    field: "require_2fa" | "require_verified_email",
-    value: boolean,
+    field: "require_2fa" | "require_verified_email" | "require_min_age",
+    value: boolean | number,
   ) => {
     if (!id) return;
     setSavingRequirement(field);
@@ -1371,6 +1374,51 @@ export function TeamDetail() {
                       handleRequirementChange("require_2fa", d.checked)
                     }
                   />
+                  {(() => {
+                    const floor = site?.default_team_require_min_age ?? 0;
+                    const selected = String(
+                      Math.max(team.require_min_age ?? 0, floor),
+                    );
+                    const options = [
+                      { value: "0", label: t("teams.ageRequirementOff") },
+                      ...AGE_THRESHOLDS.map((age) => ({
+                        value: String(age),
+                        label: `${age}+`,
+                      })),
+                    ];
+                    const current = options.find((o) => o.value === selected);
+                    return (
+                      <Field
+                        label={
+                          floor > 0
+                            ? `${t("teams.requireMinAge")} (${t("teams.requirementForcedBySite")}: ${floor}+)`
+                            : t("teams.requireMinAge")
+                        }
+                        hint={t("teams.requireMinAgeHint")}
+                      >
+                        <Dropdown
+                          value={current?.label ?? selected}
+                          selectedOptions={[selected]}
+                          disabled={savingRequirement === "require_min_age"}
+                          onOptionSelect={(_, d) => {
+                            const next = Number(d.optionValue);
+                            if (!Number.isInteger(next) || next < floor) return;
+                            handleRequirementChange("require_min_age", next);
+                          }}
+                        >
+                          {options.map((option) => (
+                            <Option
+                              key={option.value}
+                              value={option.value}
+                              disabled={Number(option.value) < floor}
+                            >
+                              {option.label}
+                            </Option>
+                          ))}
+                        </Dropdown>
+                      </Field>
+                    );
+                  })()}
                 </div>
               );
             })()}

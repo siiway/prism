@@ -117,33 +117,34 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 #### Scopes
 
-| Scope                  | Claims / access granted                               |
-| ---------------------- | ----------------------------------------------------- |
-| `openid`               | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC) |
-| `profile`              | `name`, `preferred_username`, `picture`               |
-| `profile:write`        | Update the user's profile (name, picture)             |
-| `email`                | `email`, `email_verified`                             |
-| `apps:read`            | List of apps the user owns                            |
-| `apps:write`           | Create, update, and delete the user's apps            |
-| `teams:read`           | List the user's teams                                 |
-| `teams:write`          | Update team settings and manage members               |
-| `teams:create`         | Create new teams                                      |
-| `teams:delete`         | Delete teams                                          |
-| `domains:read`         | List the user's custom domains                        |
-| `domains:write`        | Add and remove custom domains                         |
-| `gpg:read`             | List the user's registered GPG public keys            |
-| `gpg:write`            | Add and remove GPG public keys                        |
-| `social:read`          | List the user's linked social provider accounts       |
-| `social:write`         | Disconnect social provider accounts                   |
-| `admin:users:read`     | Read all user accounts (admin only)                   |
-| `admin:users:write`    | Modify user accounts (admin only)                     |
-| `admin:users:delete`   | Delete user accounts (admin only)                     |
-| `admin:config:read`    | Read instance configuration (admin only)              |
-| `admin:config:write`   | Update instance configuration (admin only)            |
-| `admin:invites:read`   | List invitations (admin only)                         |
-| `admin:invites:create` | Create invitations (admin only)                       |
-| `admin:invites:delete` | Delete invitations (admin only)                       |
-| `offline_access`       | Enables refresh token issuance                        |
+| Scope                  | Claims / access granted                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `openid`               | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC)                                                                            |
+| `profile`              | `name`, `preferred_username`, `picture`                                                                                          |
+| `profile:write`        | Update the user's profile (name, picture)                                                                                        |
+| `email`                | `email`, `email_verified`                                                                                                        |
+| `age`                  | `age_thresholds` — booleans such as `{ "18": true }`, or `null` if the user has not verified with AgeKey. Never a date of birth. |
+| `apps:read`            | List of apps the user owns                                                                                                       |
+| `apps:write`           | Create, update, and delete the user's apps                                                                                       |
+| `teams:read`           | List the user's teams                                                                                                            |
+| `teams:write`          | Update team settings and manage members                                                                                          |
+| `teams:create`         | Create new teams                                                                                                                 |
+| `teams:delete`         | Delete teams                                                                                                                     |
+| `domains:read`         | List the user's custom domains                                                                                                   |
+| `domains:write`        | Add and remove custom domains                                                                                                    |
+| `gpg:read`             | List the user's registered GPG public keys                                                                                       |
+| `gpg:write`            | Add and remove GPG public keys                                                                                                   |
+| `social:read`          | List the user's linked social provider accounts                                                                                  |
+| `social:write`         | Disconnect social provider accounts                                                                                              |
+| `admin:users:read`     | Read all user accounts (admin only)                                                                                              |
+| `admin:users:write`    | Modify user accounts (admin only)                                                                                                |
+| `admin:users:delete`   | Delete user accounts (admin only)                                                                                                |
+| `admin:config:read`    | Read instance configuration (admin only)                                                                                         |
+| `admin:config:write`   | Update instance configuration (admin only)                                                                                       |
+| `admin:invites:read`   | List invitations (admin only)                                                                                                    |
+| `admin:invites:create` | Create invitations (admin only)                                                                                                  |
+| `admin:invites:delete` | Delete invitations (admin only)                                                                                                  |
+| `offline_access`       | Enables refresh token issuance                                                                                                   |
 
 #### Team scopes — three tiers
 
@@ -657,12 +658,13 @@ Standard claims (always present when `openid` scope is requested):
 | `role`  | User role (`user` or `admin`)     |
 | `nonce` | Echoed from authorization request |
 
-Scope-gated claims — `profile` and `email` claims are included whenever the corresponding scope is granted. The remaining claims below also require the application to declare the field name in its `oidc_fields` configuration:
+Scope-gated claims — `profile`, `email`, and `age` claims are included whenever the corresponding scope is granted. The remaining claims below also require the application to declare the field name in its `oidc_fields` configuration:
 
 | Scope          | Field name        | Claim(s) added to ID token                                                              |
 | -------------- | ----------------- | --------------------------------------------------------------------------------------- |
 | `profile`      | _(always)_        | `name`, `preferred_username`, `picture`                                                 |
 | `email`        | _(always)_        | `email`, `email_verified`                                                               |
+| `age`          | _(always)_        | `age_thresholds` — map of age threshold to boolean, or `null` when unverified           |
 | `teams:read`   | `teams`           | `teams` — array of `{ id, name, role, groups }` objects for the user's team memberships |
 | `apps:read`    | `apps`            | `apps` — array of `{ id, name, client_id, is_verified }` objects for the user's apps    |
 | `domains:read` | `domains`         | `domains` — array of `{ id, domain, verified }` objects                                 |

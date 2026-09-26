@@ -113,6 +113,7 @@ async function effectiveRequirements(
     {
       require_2fa: team.require_2fa,
       require_verified_email: team.require_verified_email,
+      require_min_age: team.require_min_age,
     },
     floor,
   );

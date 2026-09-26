@@ -506,6 +506,17 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
 
   // ─── User ────────────────────────────────────────────────────────────────
   me: () => request<MeResponse>("GET", "/user/me", undefined, getToken()),
+  startAgeKey: (body?: { language?: string; theme?: string }) =>
+    request<{ url: string }>("POST", "/agekey/start", body ?? {}, getToken()),
+  completeAgeKey: (body: {
+    state?: string | null;
+    id_token?: string | null;
+    error?: string | null;
+    create_requested?: string | null;
+  }) =>
+    request<{ result: string }>("POST", "/agekey/complete", body, getToken()),
+  clearAgeKey: () =>
+    request<{ message: string }>("DELETE", "/agekey", undefined, getToken()),
   updateMe: (
     body: Partial<{
       display_name: string;
@@ -1527,6 +1538,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       profile_show_sub_teams?: boolean | null;
       require_2fa?: boolean;
       require_verified_email?: boolean;
+      require_min_age?: number;
       /** Owner-only. */
       enable_groups?: boolean;
       /** Owner-only, and only meaningful once a site admin has granted the
@@ -1910,6 +1922,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       "DELETE",
       `/admin/users/${id}/2fa`,
       undefined,
+      getToken(),
+    ),
+  adminSetUserAge: (id: string, minAge: number) =>
+    request<{ message: string }>(
+      "PUT",
+      `/admin/users/${id}/age`,
+      { min_age: minAge },
       getToken(),
     ),
   adminDeleteUserTotp: (id: string, totpId: string) =>
@@ -2636,10 +2655,7 @@ export const api = createApiClient({
  *  concrete "global"/"china"; the client-side modes are resolved in the browser
  *  by the Captcha component. Absent on older servers → treated as "global". */
 export type TurnstileEndpointDirective =
-  | "global"
-  | "china"
-  | "client_language"
-  | "client_region";
+  "global" | "china" | "client_language" | "client_region";
 
 /** Which of the two configured Turnstile widgets minted a token. Sent back
  *  with the token so the server verifies it against the matching secret — the
@@ -2647,13 +2663,7 @@ export type TurnstileEndpointDirective =
 export type TurnstileVariant = "global" | "china";
 
 export type CaptchaProvider =
-  | "none"
-  | "turnstile"
-  | "hcaptcha"
-  | "recaptcha"
-  | "pow"
-  | "geetest"
-  | "cap";
+  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
 
 export type CapMode = "embedded" | "external";
 
@@ -2736,6 +2746,10 @@ export interface SitePublicConfig {
    *  effectively requires the factor regardless of the per-team flag. */
   default_team_require_2fa: boolean;
   default_team_require_verified_email: boolean;
+  /** 0, 13, 16, 18, or 21. 0 means no site-wide age floor. */
+  default_team_require_min_age: number;
+  /** True when the operator has set an AgeKey client id. */
+  agekey_enabled: boolean;
   /** Master switch for team-invite registration. Off by default: turning it
    *  on is what lets a team owner mint accounts at all, and even then each
    *  team needs its own site-admin grant. */
@@ -2954,6 +2968,13 @@ export interface MeResponse {
   user: UserProfile;
   totp_enabled: boolean;
   passkey_count: number;
+  /** Present once the user has completed an AgeKey check. Booleans only. */
+  age_verification: {
+    thresholds: Record<string, boolean>;
+    verified_at: number;
+    /** `admin` is an operator override, not a signed AgeKey token. */
+    source: "agekey" | "admin";
+  } | null;
   site_access_token_ttl_minutes: number;
   site_refresh_token_ttl_days: number;
 }
@@ -3041,7 +3062,13 @@ export interface JoinPageInfo {
 export interface JoinRequirements {
   require_2fa: boolean;
   require_verified_email: boolean;
-  forced_by_site: { require_2fa: boolean; require_verified_email: boolean };
+  /** 0 = off. Otherwise the age the member must have verified. */
+  require_min_age: number;
+  forced_by_site: {
+    require_2fa: boolean;
+    require_verified_email: boolean;
+    require_min_age: number;
+  };
 }
 
 // RestrictedCapability — see shared/types.ts.
@@ -3111,6 +3138,8 @@ export interface Team {
    *  to remove their last 2FA factor or unverify their email. */
   require_2fa: boolean;
   require_verified_email: boolean;
+  /** 0 = off. Otherwise 13, 16, 18, or 21. */
+  require_min_age: number;
   /** Site-admin grant: may this team mint accounts through invite links?
    *  Read-only to the team; only an instance admin can change it. */
   invite_registration_granted: boolean;
@@ -3277,16 +3306,18 @@ export interface TeamInviteInfo {
   requirements: {
     require_2fa: boolean;
     require_verified_email: boolean;
+    require_min_age: number;
     /** Subset forced by the site floor — present so the UI can show
      *  which requirements a team owner could not have disabled. */
     forced_by_site: {
       require_2fa: boolean;
       require_verified_email: boolean;
+      require_min_age: number;
     };
   };
   /** Subset of the team's requirements the current session user does not
    *  satisfy. Empty array (or any when unauthenticated) = nothing blocking. */
-  unmet_requirements: Array<"verified_email" | "2fa">;
+  unmet_requirements: Array<"verified_email" | "2fa" | "age">;
 }
 
 export interface AdminTeam {
@@ -3330,6 +3361,12 @@ export interface AdminUserSecurity {
   }>;
   /** `count` is -1 when the stored blob could not be parsed. */
   recovery_codes: { count: number; updated_at: number | null };
+  age_verification: {
+    thresholds: Record<string, boolean>;
+    verified_at: number;
+    source: "agekey" | "admin";
+    session_id: string;
+  } | null;
 }
 
 export interface AdminUserToken {
@@ -4101,8 +4138,7 @@ export type NotificationRuleSendChannel =
   | { kind: "discord"; connection_id: string; level: NotificationLevel };
 
 export type NotificationRuleAction =
-  | { type: "drop" }
-  | { type: "send"; channels: NotificationRuleSendChannel[] };
+  { type: "drop" } | { type: "send"; channels: NotificationRuleSendChannel[] };
 
 export interface NotificationRulesetRule {
   id: string;

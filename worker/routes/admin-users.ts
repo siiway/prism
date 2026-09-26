@@ -29,6 +29,13 @@ import { hashPassword, randomId } from "../lib/crypto";
 import { readPage } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { isUserLocked } from "../lib/lockdown";
+import { isMinAgeSetting, thresholdsForMinAge } from "../../shared/age";
+import {
+  adminAgeSessionId,
+  deleteAgeVerification,
+  getAgeVerification,
+  upsertAgeVerification,
+} from "../lib/agekey";
 import type { DomainRow, UserEmailRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -169,7 +176,7 @@ app.get("/:id/security", async (c) => {
   const target = await loadTarget(c.env.DB, id);
   if (!target) return c.json({ error: "User not found" }, 404);
 
-  const [totp, passkeys, recovery, user] = await Promise.all([
+  const [totp, passkeys, recovery, user, age] = await Promise.all([
     c.env.DB.prepare(
       "SELECT id, name, enabled, created_at FROM totp_authenticators WHERE user_id = ? ORDER BY created_at",
     )
@@ -190,6 +197,7 @@ app.get("/:id/security", async (c) => {
     )
       .bind(id)
       .first<{ has_password: number }>(),
+    getAgeVerification(c.env.DB, id),
   ]);
 
   let recoveryCount = 0;
@@ -218,6 +226,62 @@ app.get("/:id/security", async (c) => {
       count: recoveryCount,
       updated_at: recovery?.updated_at ?? null,
     },
+    age_verification: age
+      ? {
+          thresholds: age.thresholds,
+          verified_at: age.verifiedAt,
+          source: age.source,
+          session_id: age.sessionId,
+        }
+      : null,
+  });
+});
+
+/** Set or clear the account's stored age result.
+ *
+ *  `min_age: 0` removes it. Any other allowed threshold writes a boolean map
+ *  (that age and every lower one pass) marked `source = admin`. This is an
+ *  operator override, not a signed AgeKey token, and team membership does
+ *  not block it — the same way resetting 2FA does not. */
+app.put("/:id/age", async (c) => {
+  const id = c.req.param("id");
+  const target = await loadTarget(c.env.DB, id);
+  if (!target) return c.json({ error: "User not found" }, 404);
+
+  const body = await c.req
+    .json<{ min_age?: number }>()
+    .catch(() => ({}) as { min_age?: number });
+  const minAge = body.min_age;
+  if (
+    typeof minAge !== "number" ||
+    !Number.isInteger(minAge) ||
+    !isMinAgeSetting(minAge)
+  )
+    return c.json({ error: "min_age must be 0, 13, 16, 18, or 21" }, 400);
+
+  const previous = await getAgeVerification(c.env.DB, id);
+  const now = Math.floor(Date.now() / 1000);
+  if (minAge === 0) {
+    await deleteAgeVerification(c.env.DB, id);
+  } else {
+    await upsertAgeVerification(
+      c.env.DB,
+      id,
+      adminAgeSessionId(id),
+      thresholdsForMinAge(minAge),
+      now,
+      "admin",
+    );
+  }
+
+  auditUser(c, id, target.username, "user.age.set", {
+    min_age: minAge,
+    previous_source: previous?.source ?? null,
+    previous_thresholds: previous?.thresholds ?? null,
+  });
+  return c.json({
+    message:
+      minAge === 0 ? "Age verification removed" : "Age verification updated",
   });
 });
 

@@ -140,6 +140,8 @@ app.get("/site", async (c) => {
     default_team_require_2fa: config.default_team_require_2fa,
     default_team_require_verified_email:
       config.default_team_require_verified_email,
+    default_team_require_min_age: config.default_team_require_min_age,
+    agekey_enabled: config.agekey_client_id.trim().length > 0,
     // Sub-team configurability — clients use these to hide UI when the
     // feature is off, to enforce the depth cap before round-tripping, etc.
     enable_sub_teams: config.enable_sub_teams,

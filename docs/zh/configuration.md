@@ -217,10 +217,14 @@ Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆主
 
 站点级硬性最低要求，任意团队都必须满足。所有者只能在此基础上加严，不能放松到底线之下。
 
-| 键                                    | 类型    | 默认值  | 说明                                                     |
-| ------------------------------------- | ------- | ------- | -------------------------------------------------------- |
-| `default_team_require_2fa`            | boolean | `false` | 底线：任何团队都要求成员至少有一个 TOTP 认证器或 Passkey |
-| `default_team_require_verified_email` | boolean | `false` | 底线：任何团队都要求成员的主邮箱已验证                   |
+| 键                                    | 类型    | 默认值  | 说明                                                                    |
+| ------------------------------------- | ------- | ------- | ----------------------------------------------------------------------- |
+| `default_team_require_2fa`            | boolean | `false` | 底线：任何团队都要求成员至少有一个 TOTP 认证器或 Passkey                |
+| `default_team_require_verified_email` | boolean | `false` | 底线：任何团队都要求成员的主邮箱已验证                                  |
+| `default_team_require_min_age`        | integer | `0`     | 底线：每个团队的最低年龄至少为此值（0、13、16、18 或 21）。`0` 表示关闭 |
+| `agekey_client_id`                    | string  | `""`    | AgeKey 客户端 ID。留空即关闭。`ak_test_…` 使用测试环境                  |
+
+把 `{APP_URL}/agekey/callback` 登记为 AgeKey 的回调地址。Prism 会询问用户是否年满 13、16、18、21 岁，并只保存这些布尔结果。应用通过 `age` 权限范围读取。
 
 ::: warning
 开启这些底线会立即对所有现有成员生效 — 没有满足条件的成员将无法继续团队操作，直至自行补齐。建议先在前端通知成员后再切换。

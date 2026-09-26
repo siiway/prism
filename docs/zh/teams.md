@@ -36,8 +36,11 @@ description: 协作管理 OAuth 应用与已验证域名 — 角色、邀请、�
 | -------------------------------- | ------------------------------ | ------------------------------------- |
 | 至少有一个 TOTP 认证器或 Passkey | `teams.require_2fa`            | `default_team_require_2fa`            |
 | 主邮箱已验证                     | `teams.require_verified_email` | `default_team_require_verified_email` |
+| 最低年龄（AgeKey），或关闭       | `teams.require_min_age`        | `default_team_require_min_age`        |
 
-有效要求 = 团队标记 **或** 站点底线。所有者可在底线之上加严，但不能在底线之下放松。被站点强制的因素在团队设置 UI 中会被锁灰。
+布尔门槛的有效要求 = 团队标记 **或** 站点底线。最低年龄取团队值与站点底线中的 **较大者**。`0` 表示该侧关闭。允许的年龄是 13、16、18、21。通过更高的门槛即同时满足更低的门槛（已验证 18+ 的人也满足 13+ 与 16+）。所有者可在底线之上加严，但不能在底线之下放松。被站点强制的因素在团队设置 UI 中会被锁灰。
+
+年龄通过 [AgeKey](https://docs.agekey.org/) 核验。用户在 **安全** 页完成证明；Prism 只保存布尔结果和 AgeKey 会话 ID，不保存出生日期。只要用户所属的团队仍要求原先的结果，就不能移除验证，也不能换成更弱的结果。站点管理员可以在账号页设置或清除已保存的结果；这次覆盖不受团队成员资格阻止，之后的加入检查使用它写下的布尔值。
 
 ::: warning 回溯生效
 启用门槛会立即对每个现有成员生效。任何未满足该因素的成员将在团队操作中被拦下，直到自行补齐。`unmetRequirements` 工具函数会在加入确认页和用户侧改动路径（例如移除最后一个 TOTP 认证器）上把错误清晰地呈现给用户。请先通知成员后再切换。
@@ -51,9 +54,14 @@ description: 协作管理 OAuth 应用与已验证域名 — 角色、邀请、�
   "requirements": {
     "require_2fa": true,
     "require_verified_email": true,
-    "forced_by_site": { "require_2fa": false, "require_verified_email": true }
+    "require_min_age": 18,
+    "forced_by_site": {
+      "require_2fa": false,
+      "require_verified_email": true,
+      "require_min_age": 0
+    }
   },
-  "unmet": ["2fa"]
+  "unmet_requirements": ["2fa", "age"]
 }
 ```
 

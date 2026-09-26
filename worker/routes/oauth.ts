@@ -37,6 +37,7 @@ import {
   normalizeDomainInput,
 } from "../lib/domainVerify";
 import { proxyImageUrl } from "../lib/proxyImage";
+import { getAgeVerification } from "../lib/agekey";
 import { readPage, likePattern } from "../lib/pagination";
 import {
   parseRedirectUris,
@@ -5783,6 +5784,12 @@ async function buildClaims(
   if (scopes.includes("email")) {
     claims.email = user.email;
     claims.email_verified = user.email_verified === 1;
+  }
+  if (scopes.includes("age")) {
+    const age = await getAgeVerification(db, user.id);
+    // null = the scope was granted but the user has not verified. The map
+    // itself is booleans only — never a date of birth.
+    claims.age_thresholds = age?.thresholds ?? null;
   }
   if (scopes.includes("teams:read")) {
     const rows = await db

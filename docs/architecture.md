@@ -131,6 +131,7 @@ worker/
     ├── domains.ts          # Domain verification (TXT/meta/well-known)
     ├── connections.ts      # Social OAuth flows (incl. Telegram)
     ├── user.ts             # Profile, avatar, password, emails, notifications, PATs, webhooks
+    ├── agekey.ts           # AgeKey start, callback, and removal
     ├── users.ts            # GET /api/users/:username (public profile JSON)
     ├── public-teams.ts     # GET /api/public/teams/:id (public team JSON)
     ├── gpg.ts              # GPG key management (session-auth)
@@ -189,6 +190,15 @@ from before hashing was introduced.
 
 WebAuthn credentials. `credential_id` is base64url-encoded. `counter` is updated
 on every successful authentication for clone detection.
+
+### `age_verifications` / `agekey_flows`
+
+`age_verifications` is one row per user: the AgeKey session id (or an
+`admin:` id when an operator set the result), `source` (`agekey` or `admin`),
+and a JSON map of age-threshold booleans. `agekey_flows` holds the single-use
+OIDC state for
+the redirect and is deleted on callback. `teams.require_min_age` is the team's
+minimum age (`0` = off).
 
 ### `gpg_keys`
 
@@ -275,8 +285,9 @@ verified and `verified_by_parent` carries the apex.
 `teams` carries the team name + description + avatar, the master
 `profile_is_public` flag, every per-section `profile_show_*` override (each
 `NULL` = follow the site default, `0`/`1` = explicit team choice), the
-join-requirement flags (`require_2fa`, `require_verified_email`, both
-clamped up by the site floor when set), and the **`parent_team_id`** that
+join-requirement flags (`require_2fa`, `require_verified_email`,
+`require_min_age`, each clamped up by the site floor when set), and the
+**`parent_team_id`** that
 makes nesting work.
 
 - `parent_team_id` is a self-FK with `ON DELETE CASCADE` (`migration

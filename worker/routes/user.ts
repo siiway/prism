@@ -52,6 +52,7 @@ import type {
   Variables,
 } from "../types";
 import { USER_GRANTABLE_SCOPES } from "../../shared/scopes";
+import { getAgeVerification } from "../lib/agekey";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -76,7 +77,10 @@ app.get("/me", async (c) => {
   )
     .bind(user.id)
     .first<{ n: number }>();
-  const config = await getConfig(c.env.DB);
+  const [config, age] = await Promise.all([
+    getConfig(c.env.DB),
+    getAgeVerification(c.env.DB, user.id),
+  ]);
 
   // Silent cookie upgrade: if this request authenticated via Bearer/X-Session-Token
   // (existing pre-cookie clients) and there's no session cookie yet, mirror the
@@ -106,6 +110,13 @@ app.get("/me", async (c) => {
     user: await safeUser(c.env.APP_URL, c.env.DB, row),
     totp_enabled: (totp?.n ?? 0) > 0,
     passkey_count: passkeyCount?.n ?? 0,
+    age_verification: age
+      ? {
+          thresholds: age.thresholds,
+          verified_at: age.verifiedAt,
+          source: age.source,
+        }
+      : null,
     site_access_token_ttl_minutes: config.access_token_ttl_minutes,
     site_refresh_token_ttl_days: config.refresh_token_ttl_days,
   });
