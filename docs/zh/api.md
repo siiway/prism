@@ -496,7 +496,7 @@ OAuth scope 版本：
 
 启用子团队且团队所有者开启该分区后（`profile_show_sub_teams`，或站点默认 `default_team_profile_show_sub_teams`），响应包含 `sub_teams[]` 数组 —— 仅包括**自身也已公开**的子团队，避免私密子团队的名字被父团队顺带泄露。若团队的父团队自身也是公开的，响应还会带 `parent_team` 面包屑 `{id, name, avatar_url}`。
 
-## 图片代理
+## 头像代理
 
 ### `GET /api/proxy/image/:id`
 
@@ -659,7 +659,7 @@ OAuth scope 版本：
 | `GET`          | `/api/admin/d1-secrets/status`                                  | bearer 类字段的同上状态                                       |
 | `POST`         | `/api/admin/d1-secrets/migrate`                                 | 哈希尚未迁移的 token / code                                   |
 | `GET / POST`   | `/api/admin/teams-as-users-status` & `/migrate-teams-as-users`  | 为每个团队补建 `kind = 'team'` 用户行                         |
-| `GET / POST`   | `/api/admin/image-proxy-status` & `/migrate-image-proxy`        | 为旧头像/图标补建图片代理映射                                 |
+| `GET / POST`   | `/api/admin/image-proxy-status` & `/migrate-image-proxy`        | 为旧头像/图标补建头像代理映射                                 |
 | `POST`         | `/api/admin/sweep-image-proxy`                                  | 立即清理孤儿映射（同时也会被 cron 调用）                      |
 | `GET / DELETE` | `/api/admin/image-proxy[/:id]`                                  | 浏览 / 删除代理映射                                           |
 | `POST`         | `/api/admin/migrate-recovery-codes`                             | 重新哈希历史明文备用码                                        |

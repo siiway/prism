@@ -365,7 +365,7 @@ top-to-bottom for each event. See [Notifications](notifications.md).
 
 ### `image_proxy_mappings`
 
-The image proxy is no longer an open relay. Outgoing image references register
+The avatar proxy is no longer an open relay. Outgoing image references register
 a server-side mapping (`registerImageProxyMapping`) that maps an opaque ID to
 the source URL. `/api/proxy/image/:id` 404s on anything not in the table. The
 cron sweeps mappings whose source row has been deleted.
@@ -519,7 +519,7 @@ single binding addition and a migration click.
 - Migration `0073_atomic_security_state.sql` moves rate limits and DPoP / `private_key_jwt` one-time claims to atomic D1 state; bounded insert-time and scheduled cleanup remove expired rows
 - All redirect URIs are checked against the app's registered list and the
   domain's verified-ownership state before issuing a code
-- Image proxy is closed: only registered URL → opaque-id mappings are served,
+- Avatar proxy is closed: only registered URL → opaque-id mappings are served,
   preventing the worker from being used as an open SSRF relay
 - User-controlled outbound URLs share one SSRF guard: it parses bracketed IPv6
   and IPv4-mapped literals, permits only public-unicast address ranges, resolves

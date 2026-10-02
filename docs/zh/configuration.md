@@ -5,6 +5,16 @@ description: 所有存储在 D1 中的运行时配置项，以及 Wrangler 绑�
 
 # 配置
 
+## 头像代理
+
+头像代理会拒绝超过配置字节上限的源响应。可选缓存默认关闭，可使用
+`KV_CACHE` 或 D1；缓存模式、TTL 和单头像缓存上限在**管理面板 → 头像代理**
+中配置。D1 缓存由定时任务清理，KV 使用原生过期 TTL。
+
+位图转 WebP 为可选功能。启用前需要配置 Cloudflare Images 的 `IMAGES`
+binding，且每个 Wrangler 命名环境都要单独配置。安全 SVG 保持 SVG 并经过净化，
+不会参与位图转换。
+
 站点配置存储在 D1 的 `site_config` 表中，可通过 **Admin → Settings** 在运行时编辑。更改任何配置项均无需重新部署。
 
 敏感字段（验证码私钥，含全球与中国大陆两个 Turnstile 密钥、社交登录的 client_secret、SMTP/IMAP 密码、GitHub README PAT、Discord bot token 等）通过 Cloudflare Secrets Store 绑定 [`SECRETS_KEY`](#wrangler-绑定与变量) 使用 AES-GCM 在数据库中加密存储。管理面板读取时透明解密，配置 API 永远不会暴露其明文。
@@ -349,7 +359,7 @@ https://your-domain/api/connections/<slug>/callback
 | ------------- | -------------------- | -------- | --------------------------------------------------------------------------- |
 | `DB`          | D1 数据库            | 是       | 持久化状态，包括原子串行化的限流桶与 OAuth 一次性声明                       |
 | `KV_SESSIONS` | KV namespace         | 是       | JWT 密钥、ID Token RSA 密钥对、按会话存储的元数据                           |
-| `KV_CACHE`    | KV namespace         | 是       | 非权威缓存与短期状态，包括 IMAP 拉取游标和图片代理缓存                      |
+| `KV_CACHE`    | KV namespace         | 是       | 非权威缓存与短期状态，包括 IMAP 拉取游标和头像代理缓存                      |
 | `ASSETS`      | Workers Assets       | 是       | 已构建的 SPA。`html_handling: "none"` 让 SSR 自行处理 `/`                   |
 | `SECRETS_KEY` | Secrets Store secret | 强烈推荐 | 32 字节 base64url 编码的 AES-GCM 主密钥。绑定后所有敏感字段在 D1 中加密存储 |
 

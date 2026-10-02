@@ -184,7 +184,7 @@ curl https://your-prism-domain/api/public/teams/team_abc123
 
 - 两个接口都接受可选的 Bearer 令牌。对用户资料，所有者本人的令牌可以查看私密资料；对团队资料，**任何团队成员**（不限所有者）的令牌都能查看私密团队页面——用于预览。
 - 所有 `404` 响应共享同一个响应体（`{"error":"Not found"}`），因此调用方无法区分"不存在"与"未公开"。
-- 图片地址会经过 Prism 的图片代理（`/api/proxy/image?...`）；如果你想直接使用原始 URL，可以读取 `unproxied_avatar_url` 字段。
+- 图片地址会经过 Prism 的头像代理（`/api/proxy/image?...`）；如果你想直接使用原始 URL，可以读取 `unproxied_avatar_url` 字段。
 
 ### GPG 公钥
 

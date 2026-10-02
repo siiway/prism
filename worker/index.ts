@@ -135,6 +135,12 @@ export default {
     ctx.waitUntil(sweepExpiredSessions(env.DB).catch(() => {}));
     ctx.waitUntil(sweepExpiredOAuthCodes(env.DB).catch(() => {}));
     ctx.waitUntil(sweepOrphanedImageProxyMappings(env.DB).catch(() => {}));
+    ctx.waitUntil(
+      env.DB.prepare("DELETE FROM avatar_proxy_cache WHERE expires_at <= ?")
+        .bind(Math.floor(Date.now() / 1000))
+        .run()
+        .catch(() => {}),
+    );
     // Both of these do a bounded slice per tick and pick up where they left
     // off — a team with thousands of invite-registered accounts is cleared
     // over several runs rather than one request that would never finish.

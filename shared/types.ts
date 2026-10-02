@@ -14,6 +14,7 @@ export type CaptchaProvider =
  *  "embedded" runs capjs-core inside the Worker (KV-backed replay guard);
  *  "external" delegates to a self-hosted Cap Standalone server. */
 export type CapMode = "embedded" | "external";
+export type AvatarProxyCacheMode = "off" | "kv" | "d1";
 
 /** How the Turnstile challenge host is chosen. Cloudflare serves the widget
  *  from a Mainland-China host (challenges.cloudflare-cn.com) alongside the
@@ -123,6 +124,11 @@ export interface SiteConfig {
   smtp_password: string;
   custom_css: string;
   accent_color: string;
+  avatar_proxy_max_source_bytes: number;
+  avatar_proxy_cache_mode: AvatarProxyCacheMode;
+  avatar_proxy_cache_ttl_seconds: number;
+  avatar_proxy_max_cache_bytes: number;
+  avatar_proxy_convert_to_webp: boolean;
   /** RFC 9116 security.txt contact (e.g. "mailto:security@example.com" or a
    *  URL). Empty disables /.well-known/security.txt. */
   security_contact: string;

@@ -14,6 +14,8 @@ import {
   DialogTitle,
   DialogTrigger,
   Input,
+  Select,
+  Switch,
   Link,
   MessageBar,
   Table,
@@ -90,6 +92,23 @@ export function AdminImageProxy() {
         limit: PAGE_SIZE,
       }),
   });
+  const { data: status } = useQuery({
+    queryKey: ["admin-avatar-proxy-status"],
+    queryFn: api.adminImageProxyStatus,
+  });
+  const { data: configData } = useQuery({
+    queryKey: ["admin-config"],
+    queryFn: api.adminConfig,
+  });
+  const config = configData?.config;
+  const updateConfig = useMutation({
+    mutationFn: (updates: Record<string, unknown>) => api.adminUpdateConfig(updates),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-config"] });
+      qc.invalidateQueries({ queryKey: ["admin-avatar-proxy-status"] });
+    },
+    onError: (err) => setError(err instanceof ApiError ? err.message : t("admin.imageProxyDeleteFailed")),
+  });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.adminDeleteImageProxy(id),
@@ -149,6 +168,41 @@ export function AdminImageProxy() {
       <MessageBar intent="info">
         <MarkdownText source={t("admin.imageProxySubtitle")} />
       </MessageBar>
+
+      {config && (
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "end" }}>
+          <div>
+            <Text block size={200}>{t("admin.avatarProxyCacheMode")}</Text>
+            <Select
+              value={config.avatar_proxy_cache_mode}
+              onChange={(_, d) => updateConfig.mutate({ avatar_proxy_cache_mode: d.value })}
+            >
+              <option value="off">Off</option>
+              <option value="kv">KV</option>
+              <option value="d1">D1</option>
+            </Select>
+          </div>
+          <div>
+            <Text block size={200}>{t("admin.avatarProxyTtl")}</Text>
+            <Input key={`ttl-${config.avatar_proxy_cache_ttl_seconds}`} type="number" defaultValue={String(config.avatar_proxy_cache_ttl_seconds)} onBlur={(e) => updateConfig.mutate({ avatar_proxy_cache_ttl_seconds: Number(e.currentTarget.value) })} />
+          </div>
+          <div>
+            <Text block size={200}>{t("admin.avatarProxySourceLimit")}</Text>
+            <Input key={`source-${config.avatar_proxy_max_source_bytes}`} type="number" defaultValue={String(config.avatar_proxy_max_source_bytes)} onBlur={(e) => updateConfig.mutate({ avatar_proxy_max_source_bytes: Number(e.currentTarget.value) })} />
+          </div>
+          <div>
+            <Text block size={200}>{t("admin.avatarProxyCacheLimit")}</Text>
+            <Input key={`cache-${config.avatar_proxy_max_cache_bytes}`} type="number" defaultValue={String(config.avatar_proxy_max_cache_bytes)} onBlur={(e) => updateConfig.mutate({ avatar_proxy_max_cache_bytes: Number(e.currentTarget.value) })} />
+          </div>
+          <Switch
+            checked={config.avatar_proxy_convert_to_webp}
+            disabled={!status?.images_binding}
+            label={t("admin.avatarProxyConvertWebp")}
+            onChange={(_, d) => updateConfig.mutate({ avatar_proxy_convert_to_webp: d.checked })}
+          />
+          {status && <Text size={200}>{t("admin.avatarProxyStats", { mapped: status.mapped, cached: status.cached, bytes: status.cached_bytes })}</Text>}
+        </div>
+      )}
 
       <div
         style={{
@@ -231,6 +285,7 @@ export function AdminImageProxy() {
                 <TableHeaderCell>
                   {t("admin.imageProxyCreatorHeader")}
                 </TableHeaderCell>
+                <TableHeaderCell>{t("admin.avatarProxyResourcesHeader")}</TableHeaderCell>
                 <TableHeaderCell>
                   {t("admin.imageProxyCreatedAtHeader")}
                 </TableHeaderCell>
@@ -243,7 +298,7 @@ export function AdminImageProxy() {
               {mappings.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     style={{
                       textAlign: "center",
                       color: tokens.colorNeutralForeground3,
@@ -302,6 +357,11 @@ export function AdminImageProxy() {
                           {t("admin.imageProxySystemRow")}
                         </Text>
                       )}
+                    </TableCell>
+                    <TableCell style={{ fontSize: 12 }}>
+                      {m.resources.length
+                        ? m.resources.map((resource) => `${resource.type}: ${resource.name}`).join(", ")
+                        : t("admin.avatarProxyNoResources")}
                     </TableCell>
                     <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
                       {new Date(m.created_at * 1000).toLocaleString()}

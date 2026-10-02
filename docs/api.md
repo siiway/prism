@@ -584,7 +584,7 @@ isn't leaked just because the parent is public). If the team's parent is
 itself public, the response also includes a `parent_team` breadcrumb
 `{id, name, avatar_url}`.
 
-## Image proxy
+## Avatar proxy
 
 ### `GET /api/proxy/image/:id`
 

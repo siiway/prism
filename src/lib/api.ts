@@ -1271,7 +1271,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminImageProxyStatus: () =>
-    request<{ discovered: number; mapped: number }>(
+    request<{
+      discovered: number;
+      mapped: number;
+      cached: number;
+      cached_bytes: number;
+      cache_mode: "off" | "kv" | "d1";
+      images_binding: boolean;
+    }>(
       "GET",
       "/admin/image-proxy-status",
       undefined,
@@ -1300,6 +1307,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
         created_at: number;
         created_by_username: string | null;
         created_by_display_name: string | null;
+        resources: Array<{ type: string; id: string; name: string }>;
       }[];
       total: number;
       page: number;

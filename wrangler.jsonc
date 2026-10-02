@@ -65,6 +65,15 @@
     },
   ],
   */
+  // Optional Cloudflare Images binding. Configure before enabling WebP
+  // conversion in Admin Panel -> Avatar Proxy. Named environments must repeat
+  // this binding because Images bindings are not inherited.
+  /*
+  "images": {
+    "binding": "IMAGES",
+    "remote": true
+  },
+  */
   // Cloudflare Secrets Store. After creating a 32-byte
   // base64url-encoded AES-GCM key in the dashboard, redeploy and use
   // Admin Panel → Settings → Danger Zone → "Migrate secrets to Secret

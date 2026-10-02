@@ -43,10 +43,14 @@ describe("image proxy body limit", () => {
 
     const env = {
       DB: {
-        prepare: () => ({
+        prepare: (sql: string) => ({
+          all: async () => ({ results: [] }),
           bind: () => ({
+            all: async () => ({ results: [] }),
             first: async () => ({
-              url: "https://images.example.test/oversized.png",
+              ...(sql.includes("image_proxy_mappings")
+                ? { url: "https://images.example.test/oversized.png" }
+                : {}),
             }),
           }),
         }),
@@ -60,7 +64,7 @@ describe("image proxy body limit", () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
-      error: "Image exceeds the 5 MB size limit",
+      error: "Avatar exceeds the configured size limit",
     });
     expect(targetFetches).toBe(1);
     expect(cancelled).toBe(true);
@@ -96,10 +100,14 @@ describe("image proxy body limit", () => {
 
     const env = {
       DB: {
-        prepare: () => ({
+        prepare: (sql: string) => ({
+          all: async () => ({ results: [] }),
           bind: () => ({
+            all: async () => ({ results: [] }),
             first: async () => ({
-              url: "https://images.example.test/chunked.png",
+              ...(sql.includes("image_proxy_mappings")
+                ? { url: "https://images.example.test/chunked.png" }
+                : {}),
             }),
           }),
         }),

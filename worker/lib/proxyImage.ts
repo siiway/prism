@@ -17,6 +17,10 @@ import { sha256Hex } from "./crypto";
 
 const memoCache = new Map<string, string>();
 
+export function forgetImageProxyMapping(url: string): void {
+  memoCache.delete(url);
+}
+
 /** Deterministic id for a given URL (sha256 prefix). Pure function, no DB. */
 export async function imageProxyId(url: string): Promise<string> {
   return (await sha256Hex(url)).slice(0, 32);
@@ -119,7 +123,7 @@ export async function collectReferencedImageUrls(
     urls.add(trimmed);
   };
 
-  const [users, teams, apps, siteIcon, readmes, ghReadmes] = await Promise.all([
+  const [users, teams, apps, sources, siteIcon, readmes, ghReadmes] = await Promise.all([
     db
       .prepare(
         "SELECT avatar_url FROM users WHERE avatar_url IS NOT NULL AND avatar_url != ''",
@@ -133,6 +137,11 @@ export async function collectReferencedImageUrls(
     db
       .prepare(
         "SELECT icon_url FROM oauth_apps WHERE icon_url IS NOT NULL AND icon_url != ''",
+      )
+      .all<{ icon_url: string }>(),
+    db
+      .prepare(
+        "SELECT icon_url FROM oauth_sources WHERE icon_url IS NOT NULL AND icon_url != ''",
       )
       .all<{ icon_url: string }>(),
     db
@@ -153,6 +162,7 @@ export async function collectReferencedImageUrls(
   for (const r of users.results) add(r.avatar_url);
   for (const r of teams.results) add(r.avatar_url);
   for (const r of apps.results) add(r.icon_url);
+  for (const r of sources.results) add(r.icon_url);
   if (siteIcon?.value) {
     try {
       const parsed = JSON.parse(siteIcon.value);

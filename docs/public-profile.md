@@ -191,7 +191,7 @@ When the team owner has opted into showing themselves but their _own_ user profi
 
 - Both endpoints accept an optional Bearer token. For user profiles, a token belonging to the profile's owner returns the profile even when private. For team profiles, **any team member's** token (not just the owner) returns the team page when private — useful for previewing.
 - All `404` responses share the same body (`{"error":"Not found"}`), so callers can't distinguish "doesn't exist" from "opted out."
-- Image URLs go through Prism's image proxy (`/api/proxy/image?...`); the original is also returned as `unproxied_avatar_url` for direct use.
+- Image URLs go through Prism's avatar proxy (`/api/proxy/image?...`); the original is also returned as `unproxied_avatar_url` for direct use.
 
 ### GPG keys
 

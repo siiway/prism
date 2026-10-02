@@ -249,7 +249,7 @@ migration and is idempotent — re-running is safe.
 - **Migrate teams to team-as-user rows** — backfills synthetic `users` rows
   (`kind = 'team'`) for every team so `oauth_apps.owner_id` joins uniformly.
 - **Migrate image-proxy mappings** — registers proxy mappings for any avatar /
-  icon URLs that pre-date the closed-mapping image proxy.
+  icon URLs that pre-date the closed-mapping avatar proxy.
 - **Migrate recovery codes** — re-hashes legacy plaintext backup codes.
 - **Site reset** — wipe and reinitialize. The destination admin signs an email
   acknowledgement first; a typo confirmation in the UI then triggers the wipe.

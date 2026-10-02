@@ -227,7 +227,7 @@ Prism 使用一个**有序的 provider 集合**。选择一个**默认 provider*
 - **Migrate secrets to Secrets Store** — 加密 site_config 中的密钥（验证码 secret、社交源 `client_secret`、SMTP/IMAP 密码、GitHub README PAT、OAuth 应用 `client_secret`）。需先绑定 [`SECRETS_KEY`](configuration.md#secrets_key-配置)。
 - **Migrate D1 secrets** — 把 bearer 类机密（PAT、OAuth token/code、邀请 token、邮箱验证码、二次验证码、单条备用码）替换为 HMAC-SHA256 哈希。明文不再存储；候选值在查询时同样哈希后用 `WHERE col = ?` 比较。
 - **迁移团队为 team-as-user 行** — 为每个团队补建一个 `kind = 'team'` 的合成 `users` 行，使 `oauth_apps.owner_id` 能统一连接。
-- **迁移图片代理映射** — 为关闭式图片代理上线之前已经存在的头像 / 图标 URL 注册映射。
+- **迁移头像代理映射** — 为关闭式头像代理上线之前已经存在的头像 / 图标 URL 注册映射。
 - **迁移恢复码** — 重新哈希历史明文备用码。
 - **站点重置** — 清空并重新初始化。目标管理员需先签署一封邮件确认；管理面板再要求输入确认词触发清空。具有破坏性，且需要已配置邮件提供商。该按钮仅在 `wrangler.jsonc` 中设置 `ENABLE_RESET = "true"` 时显示。
 
@@ -397,7 +397,7 @@ https://<your-prism-domain>/api/connections/<slug>/callback
 
 这是**当前浏览器会话的一种视图，而非持久设置**：开启期间，仪表盘会在每个请求上带上 `X-Prism-Team-View: member` 头，而全新加载页面会回到普通视图。在普通视图下打开一个自己并非成员的团队，会显示一段简短的「切回」提示，而不是团队内容 —— 与任何非成员看到的完全一致。
 
-管理概览只统计真实用户（排除 team-as-user 行），展示团队、应用、已验证域名和活跃令牌总数，并绘制最近 30 天的每日新增趋势。仅当图片代理存储可用时才展示代理映射数量。统计请求失败时会显示错误和重试入口，无需重新加载整个面板。
+管理概览只统计真实用户（排除 team-as-user 行），展示团队、应用、已验证域名和活跃令牌总数，并绘制最近 30 天的每日新增趋势。仅当头像代理存储可用时才展示代理映射数量。统计请求失败时会显示错误和重试入口，无需重新加载整个面板。
 
 ## 邀请链接注册
 

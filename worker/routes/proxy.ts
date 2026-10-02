@@ -19,12 +19,11 @@ import {
 } from "../lib/bodyLimit";
 import { isBlockedHost, safeFetch } from "../lib/safeFetch";
 import { registerImageProxyMapping } from "../lib/proxyImage";
+import { getConfig } from "../lib/config";
 import { requireAuth } from "../middleware/auth";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
-
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -43,9 +42,11 @@ const ALLOWED_TYPES = new Set([
  *  - <foreignObject> (can embed arbitrary HTML)
  *  - <use> with external (non-fragment) hrefs (prevents sprite-sheet injection)
  */
-function sanitizeSvg(raw: string): string {
+export function sanitizeSvg(raw: string): string {
   return (
     raw
+      .replace(/<!DOCTYPE[\s\S]*?>/gi, "")
+      .replace(/<!ENTITY[\s\S]*?>/gi, "")
       // Remove <script> blocks
       .replace(/<script[\s\S]*?<\/script\s*>/gi, "")
       // Remove inline event handlers  on*="..."  on*='...'
@@ -57,6 +58,8 @@ function sanitizeSvg(raw: string): string {
       )
       // Remove <foreignObject> (embeds HTML)
       .replace(/<foreignObject[\s\S]*?<\/foreignObject\s*>/gi, "")
+      .replace(/<(?:iframe|object|embed|audio|video|image)\b[\s\S]*?(?:<\/\w+\s*>|\/?>)/gi, "")
+      .replace(/<style[\s\S]*?<\/style\s*>/gi, "")
       // Remove <use> references to external resources (keep fragment-only refs)
       .replace(
         /<use([^>]+)(?:xlink:href|href)\s*=\s*["'](?!#)[^"']*["']/gi,
@@ -66,6 +69,46 @@ function sanitizeSvg(raw: string): string {
             .replace(/href\s*=\s*["'][^"']*["']/gi, "")}`,
       )
   );
+}
+
+function responseHeaders(contentType: string, ttl: number): Headers {
+  return new Headers({
+    "Content-Type": contentType,
+    "Cache-Control": `public, max-age=${ttl}`,
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+    "Access-Control-Allow-Origin": "*",
+    "Cross-Origin-Resource-Policy": "cross-origin",
+  });
+}
+
+async function readCached(c: import("hono").Context<AppEnv>, id: string, mode: "off" | "kv" | "d1") {
+  if (mode === "kv") {
+    const value = await c.env.KV_CACHE.getWithMetadata<{ contentType?: string }>(`avatar:${id}`, "arrayBuffer");
+    if (value.value && value.metadata?.contentType)
+      return { bytes: new Uint8Array(value.value), contentType: value.metadata.contentType };
+  }
+  if (mode === "d1") {
+    const row = await c.env.DB.prepare(
+      "SELECT body, content_type FROM avatar_proxy_cache WHERE mapping_id = ? AND expires_at > ?",
+    ).bind(id, Math.floor(Date.now() / 1000)).first<{ body: ArrayBuffer; content_type: string }>();
+    if (row) return { bytes: new Uint8Array(row.body), contentType: row.content_type };
+  }
+  return null;
+}
+
+async function writeCached(c: import("hono").Context<AppEnv>, id: string, bytes: Uint8Array, contentType: string, mode: "off" | "kv" | "d1", ttl: number) {
+  if (mode === "kv") {
+    await c.env.KV_CACHE.put(`avatar:${id}`, bytes, { expirationTtl: Math.max(60, ttl), metadata: { contentType } });
+  } else if (mode === "d1") {
+    const now = Math.floor(Date.now() / 1000);
+    await c.env.DB.prepare(
+      `INSERT INTO avatar_proxy_cache (mapping_id, content_type, body, size_bytes, expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(mapping_id) DO UPDATE SET content_type=excluded.content_type, body=excluded.body,
+       size_bytes=excluded.size_bytes, expires_at=excluded.expires_at, created_at=excluded.created_at`,
+    ).bind(id, contentType, bytes, bytes.byteLength, now + ttl, now).run();
+  }
 }
 
 /**
@@ -122,6 +165,13 @@ app.get("/:id", async (c) => {
     .first<{ url: string }>();
   if (!row) return c.json({ error: "Unknown image id" }, 404);
 
+  const config = await getConfig(c.env.DB);
+  const maxBytes = Math.min(Math.max(config.avatar_proxy_max_source_bytes, 64 * 1024), 25 * 1024 * 1024);
+  const cacheMaxBytes = Math.min(Math.max(config.avatar_proxy_max_cache_bytes, 64 * 1024), maxBytes);
+  const ttl = Math.min(Math.max(config.avatar_proxy_cache_ttl_seconds, 60), 31_536_000);
+  const cached = await readCached(c, id, config.avatar_proxy_cache_mode);
+  if (cached) return new Response(cached.bytes, { headers: responseHeaders(cached.contentType, ttl) });
+
   const rawUrl = row.url;
 
   let parsed: URL;
@@ -170,45 +220,54 @@ app.get("/:id", async (c) => {
   if (
     declaredLengthExceedsLimit(
       upstream.headers.get("content-length"),
-      MAX_BYTES,
+      maxBytes,
     )
   ) {
-    cancelStream(upstream.body, new BodySizeLimitError(MAX_BYTES));
-    return c.json({ error: "Image exceeds the 5 MB size limit" }, 400);
+    cancelStream(upstream.body, new BodySizeLimitError(maxBytes));
+    return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
   }
 
-  const headers = new Headers({
-    "Content-Type": ct,
-    "Cache-Control": "public, max-age=86400, immutable",
-    "X-Content-Type-Options": "nosniff",
-    // Prevent the SVG from loading external resources or running scripts
-    // even if the browser decides to render it as a document
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
-    "Access-Control-Allow-Origin": "*",
-    "Cross-Origin-Resource-Policy": "cross-origin",
-  });
+  const headers = responseHeaders(ct, ttl);
 
   if (ct === "image/svg+xml") {
     let captured;
     try {
-      captured = await readStreamWithLimit(upstream.body, MAX_BYTES);
+      captured = await readStreamWithLimit(upstream.body, maxBytes);
     } catch {
       return c.json({ error: "Could not read upstream image" }, 502);
     }
     if (captured.exceeded) {
-      return c.json({ error: "Image exceeds the 5 MB size limit" }, 400);
+      return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
     }
-    const sanitized = sanitizeSvg(new TextDecoder().decode(captured.bytes));
-    return new Response(sanitized, { headers });
+    const bytes = new TextEncoder().encode(sanitizeSvg(new TextDecoder().decode(captured.bytes)));
+    if (bytes.byteLength <= cacheMaxBytes)
+      c.executionCtx.waitUntil(writeCached(c, id, bytes, ct, config.avatar_proxy_cache_mode, ttl));
+    return new Response(bytes, { headers });
   }
 
-  // Raster formats need no rewriting. Forward them a chunk at a time; if a
-  // missing or dishonest Content-Length crosses the cap, the stream errors and
-  // its upstream source is cancelled instead of being buffered without bound.
-  return new Response(
-    upstream.body ? limitStreamBytes(upstream.body, MAX_BYTES) : null,
-    { headers },
-  );
+  if (config.avatar_proxy_cache_mode !== "off" || config.avatar_proxy_convert_to_webp) {
+    const captured = await readStreamWithLimit(upstream.body, maxBytes);
+    if (captured.exceeded) return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
+    let bytes = captured.bytes;
+    let contentType = ct;
+    if (config.avatar_proxy_convert_to_webp && c.env.IMAGES) {
+      try {
+        const result = await c.env.IMAGES.input(new Blob([bytes]).stream()).transform({ fit: "scale-down", width: 1024, height: 1024 }).output({ format: "image/webp", quality: 80 });
+        const converted = await readStreamWithLimit(result.image(), cacheMaxBytes);
+        if (converted.exceeded || !converted.bytes)
+          throw new Error("Converted avatar exceeds cache limit");
+        bytes = converted.bytes;
+        contentType = "image/webp";
+      } catch {
+        // Preserve the validated source image when optional conversion fails.
+      }
+    }
+    if (bytes.byteLength <= cacheMaxBytes)
+      c.executionCtx.waitUntil(writeCached(c, id, bytes, contentType, config.avatar_proxy_cache_mode, ttl));
+    return new Response(bytes, { headers: responseHeaders(contentType, ttl) });
+  }
+
+  return new Response(upstream.body ? limitStreamBytes(upstream.body, maxBytes) : null, { headers });
 });
 
 export default app;

@@ -31,6 +31,7 @@ import { validateImageUrl } from "../lib/imageValidation";
 import { readPage, likePattern } from "../lib/pagination";
 import {
   collectReferencedImageUrls,
+  forgetImageProxyMapping,
   proxyImageUrl,
   registerImageProxyMapping,
   sweepOrphanedImageProxyMappings,
@@ -1896,9 +1897,17 @@ app.get("/image-proxy-status", async (c) => {
   const mapped = await c.env.DB.prepare(
     "SELECT COUNT(*) AS n FROM image_proxy_mappings",
   ).first<{ n: number }>();
+  const cached = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n, COALESCE(SUM(size_bytes), 0) AS bytes FROM avatar_proxy_cache WHERE expires_at > ?",
+  ).bind(Math.floor(Date.now() / 1000)).first<{ n: number; bytes: number }>().catch(() => null);
+  const config = await getConfig(c.env.DB);
   return c.json({
     discovered: urls.size,
     mapped: mapped?.n ?? 0,
+    cached: cached?.n ?? 0,
+    cached_bytes: cached?.bytes ?? 0,
+    cache_mode: config.avatar_proxy_cache_mode,
+    images_binding: !!c.env.IMAGES,
   });
 });
 
@@ -2002,8 +2011,24 @@ app.get("/image-proxy", async (c) => {
       .first<{ n: number }>(),
   ]);
 
+  const resources = await c.env.DB.prepare(
+    `SELECT avatar_url AS url, 'user' AS type, id, display_name AS name FROM users WHERE avatar_url IS NOT NULL
+     UNION ALL SELECT avatar_url, 'team', id, name FROM teams WHERE avatar_url IS NOT NULL
+     UNION ALL SELECT icon_url, 'app', id, name FROM oauth_apps WHERE icon_url IS NOT NULL
+     UNION ALL SELECT icon_url, 'oauth_source', id, name FROM oauth_sources WHERE icon_url IS NOT NULL`,
+  ).all<{ url: string; type: string; id: string; name: string }>();
+  const byUrl = new Map<string, Array<{ type: string; id: string; name: string }>>();
+  for (const resource of resources.results) {
+    const list = byUrl.get(resource.url) ?? [];
+    list.push({ type: resource.type, id: resource.id, name: resource.name });
+    byUrl.set(resource.url, list);
+  }
+
   return c.json({
-    mappings: rows.results,
+    mappings: rows.results.map((row) => ({
+      ...row,
+      resources: byUrl.get(row.url) ?? [],
+    })),
     total: count?.n ?? 0,
     page,
     limit,
@@ -2026,6 +2051,7 @@ app.delete("/image-proxy/:id", async (c) => {
   await c.env.DB.prepare("DELETE FROM image_proxy_mappings WHERE id = ?")
     .bind(id)
     .run();
+  forgetImageProxyMapping(existing.url);
   await logAudit(
     c.env,
     admin.id,

@@ -77,7 +77,7 @@ worker/
 │   ├── notificationRules.ts# 规则集引擎 — 通配符、账号、send/drop、stop
 │   ├── audit.ts            # Transparent Control 审核日志与作用域化 webhook
 │   ├── webhooks.ts         # 底层 app-webhook 投递与签名
-│   ├── proxyImage.ts       # 关闭式图片代理映射
+│   ├── proxyImage.ts       # 关闭式头像代理映射
 │   ├── safeFetch.ts        # SSRF 防护（屏蔽 RFC1918 / link-local 等）
 │   ├── imageValidation.ts  # 拒绝可疑图片 URL / SVG 负载
 │   ├── teamRequirements.ts # 站点底线 + 团队级加入门槛合并
@@ -119,7 +119,7 @@ worker/
     ├── public-teams.ts     # GET /api/public/teams/:id（公开团队 JSON）
     ├── gpg.ts              # GPG 公钥管理（session-auth）
     ├── public.ts           # /users/:username.gpg、/favicon 等
-    ├── proxy.ts            # GET /api/proxy/image/:id（关闭式图片代理）
+    ├── proxy.ts            # GET /api/proxy/image/:id（关闭式头像代理）
     ├── site.ts             # GET /api/site（公开站点配置）
     ├── assets.ts           # /api/assets/* — 头像/应用图标
     ├── wellknown.ts        # /.well-known/openid-configuration、jwks.json
@@ -240,7 +240,7 @@ Transparent Control 审核日志。`audit_events` 是单一的追加型表，按
 
 ### `image_proxy_mappings`
 
-图片代理不再是开放中继。所有外引头像 / 图标都先在服务端注册一条映射（`registerImageProxyMapping`），把原始 URL 映射成不透明 ID。`/api/proxy/image/:id` 对未在表中的请求返回 404。Cron 会清理源行已被删除的孤儿映射。
+头像代理不再是开放中继。所有外引头像 / 图标都先在服务端注册一条映射（`registerImageProxyMapping`），把原始 URL 映射成不透明 ID。`/api/proxy/image/:id` 对未在表中的请求返回 404。Cron 会清理源行已被删除的孤儿映射。
 
 ### `site_config`
 
@@ -336,9 +336,9 @@ PoW 是第三方验证码服务的替代方案。
 - 迁移 `0072_revoke_exposed_sessions.sql` 会一次性撤销修复前的全部会话，使此前可能留在 URL、日志或 Web Storage 中的 JWT 无法继续使用
 - 迁移 `0073_atomic_security_state.sql` 将限流及 DPoP / `private_key_jwt` 一次性声明迁至原子 D1 状态；有界的插入时清理与定时清理任务会删除过期行
 - 所有 redirect URI 在签发 code 前都会与应用注册列表 + 域名归属验证状态进行匹配
-- 图片代理是关闭式的：仅服务已注册映射，杜绝 SSRF 中继
+- 头像代理是关闭式的：仅服务已注册映射，杜绝 SSRF 中继
 - 所有用户可控的出站 URL 共用同一套 SSRF 防护：正确解析带方括号的 IPv6 和 IPv4
   映射字面量，仅允许公网单播地址，在获取前即时检查全部 A/AAAA 记录，并在每次
   重定向时重复检查。Worker 运行时还会在连接时把 DNS 结果限制为公网地址；
   `global_fetch_strictly_public` 确保同一 Cloudflare Zone 内的请求也经过公网入口，而不会绕过该入口
-- 经图片代理转出的 SVG 会被消毒（移除 `<script>`、事件处理器、`javascript:` 伪 URL、`<foreignObject>`、外链 `<use>`）
+- 经头像代理转出的 SVG 会被消毒（移除 `<script>`、事件处理器、`javascript:` 伪 URL、`<foreignObject>`、外链 `<use>`）

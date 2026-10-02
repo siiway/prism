@@ -5,6 +5,18 @@ description: All runtime configuration keys stored in D1, plus Wrangler bindings
 
 # Configuration
 
+## Avatar proxy
+
+The avatar proxy rejects source responses larger than the configured byte
+limit. Its optional cache is disabled by default and can use `KV_CACHE` or D1;
+configure cache mode, TTL, and the per-avatar cache limit in **Admin Panel →
+Avatar Proxy**. D1 entries are removed by the scheduled cleanup job, while KV
+uses its native expiration TTL.
+
+Raster conversion to WebP is optional. Add an `IMAGES` Cloudflare Images
+binding, including in each named Wrangler environment, before enabling it. Safe
+SVG remains SVG and is sanitized rather than rasterized.
+
 Site configuration is stored in the `site_config` D1 table and editable at runtime
 through **Admin → Settings**. No redeployment is needed to change any of these values.
 
