@@ -44,7 +44,8 @@
     "copiedTeamId": "Copied team ID",
     "edit": "Edit",
     "clear": "Clear",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "retry": "Retry"
   },
   "colorPicker": {
     "area": "Color saturation and brightness",

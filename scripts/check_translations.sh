@@ -9,6 +9,11 @@
 
 set -euo pipefail
 
+# `sort` and `comm` must use the same collation. JSON keys include uppercase
+# characters and punctuation, so inheriting a developer machine's locale can
+# make two individually sorted files appear out of order to `comm`.
+export LC_ALL=C
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC_DIR="$ROOT/src"
 I18N_DIR="$ROOT/src/i18n"

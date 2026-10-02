@@ -44,7 +44,8 @@
     "copiedTeamId": "已复制团队 ID",
     "edit": "编辑",
     "clear": "清除",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "retry": "重试"
   },
   "colorPicker": {
     "area": "颜色饱和度和亮度",
