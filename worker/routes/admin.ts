@@ -201,6 +201,11 @@ app.patch("/config", async (c) => {
     "smtp_password",
     "custom_css",
     "accent_color",
+    "avatar_proxy_max_source_bytes",
+    "avatar_proxy_cache_mode",
+    "avatar_proxy_cache_ttl_seconds",
+    "avatar_proxy_max_cache_bytes",
+    "avatar_proxy_convert_to_webp",
     "security_contact",
     "security_policy_url",
     "login_error_retention_days",
@@ -262,6 +267,33 @@ app.patch("/config", async (c) => {
   for (const [k, v] of Object.entries(body)) {
     if (allowed.has(k)) updates[k] = v;
   }
+
+  if (
+    updates.avatar_proxy_cache_mode !== undefined &&
+    !["off", "kv", "d1"].includes(String(updates.avatar_proxy_cache_mode))
+  ) {
+    return c.json({ error: "Invalid avatar proxy cache mode" }, 400);
+  }
+  for (const key of [
+    "avatar_proxy_max_source_bytes",
+    "avatar_proxy_cache_ttl_seconds",
+    "avatar_proxy_max_cache_bytes",
+  ]) {
+    const value = updates[key];
+    if (
+      value !== undefined &&
+      (typeof value !== "number" || !Number.isInteger(value) || value <= 0)
+    )
+      return c.json({ error: `${key} must be a positive integer` }, 400);
+  }
+  if (
+    updates.avatar_proxy_convert_to_webp !== undefined &&
+    typeof updates.avatar_proxy_convert_to_webp !== "boolean"
+  )
+    return c.json(
+      { error: "avatar_proxy_convert_to_webp must be a boolean" },
+      400,
+    );
 
   if (updates.site_icon_url && typeof updates.site_icon_url === "string") {
     const imgErr = await validateImageUrl(updates.site_icon_url);
@@ -1240,10 +1272,38 @@ app.delete("/users/:id", async (c) => {
 
 // Terminate all sessions for a user
 app.delete("/users/:id/sessions", async (c) => {
+  const admin = c.get("user");
   const id = c.req.param("id");
-  await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?")
+  const target = await c.env.DB.prepare(
+    "SELECT username FROM users WHERE id = ? AND kind = 'user'",
+  )
+    .bind(id)
+    .first<{ username: string }>();
+  if (!target) return c.json({ error: "User not found" }, 404);
+  const result = await c.env.DB.prepare(
+    "DELETE FROM sessions WHERE user_id = ?",
+  )
     .bind(id)
     .run();
+  const meta = auditRequestMeta(c);
+  const event = {
+    action: "admin.user.sessions_terminate",
+    actorId: admin.id,
+    actorName: admin.username,
+    resourceType: "user",
+    resourceId: id,
+    resourceName: target.username,
+    ip: meta.ip ?? getIp(c),
+    userAgent: meta.userAgent,
+    geo: meta.geo,
+    metadata: { site_admin: true, revoked: result.meta.changes ?? 0 },
+  };
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, [
+      { ...event, scope: "platform", scopeId: null },
+      { ...event, scope: "user", scopeId: id },
+    ]),
+  );
   return c.json({ message: "Sessions terminated" });
 });
 
@@ -1899,7 +1959,10 @@ app.get("/image-proxy-status", async (c) => {
   ).first<{ n: number }>();
   const cached = await c.env.DB.prepare(
     "SELECT COUNT(*) AS n, COALESCE(SUM(size_bytes), 0) AS bytes FROM avatar_proxy_cache WHERE expires_at > ?",
-  ).bind(Math.floor(Date.now() / 1000)).first<{ n: number; bytes: number }>().catch(() => null);
+  )
+    .bind(Math.floor(Date.now() / 1000))
+    .first<{ n: number; bytes: number }>()
+    .catch(() => null);
   const config = await getConfig(c.env.DB);
   return c.json({
     discovered: urls.size,
@@ -2017,7 +2080,10 @@ app.get("/image-proxy", async (c) => {
      UNION ALL SELECT icon_url, 'app', id, name FROM oauth_apps WHERE icon_url IS NOT NULL
      UNION ALL SELECT icon_url, 'oauth_source', id, name FROM oauth_sources WHERE icon_url IS NOT NULL`,
   ).all<{ url: string; type: string; id: string; name: string }>();
-  const byUrl = new Map<string, Array<{ type: string; id: string; name: string }>>();
+  const byUrl = new Map<
+    string,
+    Array<{ type: string; id: string; name: string }>
+  >();
   for (const resource of resources.results) {
     const list = byUrl.get(resource.url) ?? [];
     list.push({ type: resource.type, id: resource.id, name: resource.name });

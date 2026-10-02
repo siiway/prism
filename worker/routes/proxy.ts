@@ -58,7 +58,10 @@ export function sanitizeSvg(raw: string): string {
       )
       // Remove <foreignObject> (embeds HTML)
       .replace(/<foreignObject[\s\S]*?<\/foreignObject\s*>/gi, "")
-      .replace(/<(?:iframe|object|embed|audio|video|image)\b[\s\S]*?(?:<\/\w+\s*>|\/?>)/gi, "")
+      .replace(
+        /<(?:iframe|object|embed|audio|video|image)\b[\s\S]*?(?:<\/\w+\s*>|\/?>)/gi,
+        "",
+      )
       .replace(/<style[\s\S]*?<\/style\s*>/gi, "")
       // Remove <use> references to external resources (keep fragment-only refs)
       .replace(
@@ -82,24 +85,46 @@ function responseHeaders(contentType: string, ttl: number): Headers {
   });
 }
 
-async function readCached(c: import("hono").Context<AppEnv>, id: string, mode: "off" | "kv" | "d1") {
+async function readCached(
+  c: import("hono").Context<AppEnv>,
+  id: string,
+  mode: "off" | "kv" | "d1",
+) {
   if (mode === "kv") {
-    const value = await c.env.KV_CACHE.getWithMetadata<{ contentType?: string }>(`avatar:${id}`, "arrayBuffer");
+    const value = await c.env.KV_CACHE.getWithMetadata<{
+      contentType?: string;
+    }>(`avatar:${id}`, "arrayBuffer");
     if (value.value && value.metadata?.contentType)
-      return { bytes: new Uint8Array(value.value), contentType: value.metadata.contentType };
+      return {
+        bytes: new Uint8Array(value.value),
+        contentType: value.metadata.contentType,
+      };
   }
   if (mode === "d1") {
     const row = await c.env.DB.prepare(
       "SELECT body, content_type FROM avatar_proxy_cache WHERE mapping_id = ? AND expires_at > ?",
-    ).bind(id, Math.floor(Date.now() / 1000)).first<{ body: ArrayBuffer; content_type: string }>();
-    if (row) return { bytes: new Uint8Array(row.body), contentType: row.content_type };
+    )
+      .bind(id, Math.floor(Date.now() / 1000))
+      .first<{ body: ArrayBuffer; content_type: string }>();
+    if (row)
+      return { bytes: new Uint8Array(row.body), contentType: row.content_type };
   }
   return null;
 }
 
-async function writeCached(c: import("hono").Context<AppEnv>, id: string, bytes: Uint8Array, contentType: string, mode: "off" | "kv" | "d1", ttl: number) {
+async function writeCached(
+  c: import("hono").Context<AppEnv>,
+  id: string,
+  bytes: Uint8Array,
+  contentType: string,
+  mode: "off" | "kv" | "d1",
+  ttl: number,
+) {
   if (mode === "kv") {
-    await c.env.KV_CACHE.put(`avatar:${id}`, bytes, { expirationTtl: Math.max(60, ttl), metadata: { contentType } });
+    await c.env.KV_CACHE.put(`avatar:${id}`, bytes, {
+      expirationTtl: Math.max(60, ttl),
+      metadata: { contentType },
+    });
   } else if (mode === "d1") {
     const now = Math.floor(Date.now() / 1000);
     await c.env.DB.prepare(
@@ -107,7 +132,9 @@ async function writeCached(c: import("hono").Context<AppEnv>, id: string, bytes:
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(mapping_id) DO UPDATE SET content_type=excluded.content_type, body=excluded.body,
        size_bytes=excluded.size_bytes, expires_at=excluded.expires_at, created_at=excluded.created_at`,
-    ).bind(id, contentType, bytes, bytes.byteLength, now + ttl, now).run();
+    )
+      .bind(id, contentType, bytes, bytes.byteLength, now + ttl, now)
+      .run();
   }
 }
 
@@ -166,11 +193,23 @@ app.get("/:id", async (c) => {
   if (!row) return c.json({ error: "Unknown image id" }, 404);
 
   const config = await getConfig(c.env.DB);
-  const maxBytes = Math.min(Math.max(config.avatar_proxy_max_source_bytes, 64 * 1024), 25 * 1024 * 1024);
-  const cacheMaxBytes = Math.min(Math.max(config.avatar_proxy_max_cache_bytes, 64 * 1024), maxBytes);
-  const ttl = Math.min(Math.max(config.avatar_proxy_cache_ttl_seconds, 60), 31_536_000);
+  const maxBytes = Math.min(
+    Math.max(config.avatar_proxy_max_source_bytes, 64 * 1024),
+    25 * 1024 * 1024,
+  );
+  const cacheMaxBytes = Math.min(
+    Math.max(config.avatar_proxy_max_cache_bytes, 64 * 1024),
+    maxBytes,
+  );
+  const ttl = Math.min(
+    Math.max(config.avatar_proxy_cache_ttl_seconds, 60),
+    31_536_000,
+  );
   const cached = await readCached(c, id, config.avatar_proxy_cache_mode);
-  if (cached) return new Response(cached.bytes, { headers: responseHeaders(cached.contentType, ttl) });
+  if (cached)
+    return new Response(cached.bytes, {
+      headers: responseHeaders(cached.contentType, ttl),
+    });
 
   const rawUrl = row.url;
 
@@ -218,10 +257,7 @@ app.get("/:id", async (c) => {
   }
 
   if (
-    declaredLengthExceedsLimit(
-      upstream.headers.get("content-length"),
-      maxBytes,
-    )
+    declaredLengthExceedsLimit(upstream.headers.get("content-length"), maxBytes)
   ) {
     cancelStream(upstream.body, new BodySizeLimitError(maxBytes));
     return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
@@ -239,21 +275,34 @@ app.get("/:id", async (c) => {
     if (captured.exceeded) {
       return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
     }
-    const bytes = new TextEncoder().encode(sanitizeSvg(new TextDecoder().decode(captured.bytes)));
+    const bytes = new TextEncoder().encode(
+      sanitizeSvg(new TextDecoder().decode(captured.bytes)),
+    );
     if (bytes.byteLength <= cacheMaxBytes)
-      c.executionCtx.waitUntil(writeCached(c, id, bytes, ct, config.avatar_proxy_cache_mode, ttl));
+      c.executionCtx.waitUntil(
+        writeCached(c, id, bytes, ct, config.avatar_proxy_cache_mode, ttl),
+      );
     return new Response(bytes, { headers });
   }
 
-  if (config.avatar_proxy_cache_mode !== "off" || config.avatar_proxy_convert_to_webp) {
+  if (
+    config.avatar_proxy_cache_mode !== "off" ||
+    config.avatar_proxy_convert_to_webp
+  ) {
     const captured = await readStreamWithLimit(upstream.body, maxBytes);
-    if (captured.exceeded) return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
+    if (captured.exceeded)
+      return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
     let bytes = captured.bytes;
     let contentType = ct;
     if (config.avatar_proxy_convert_to_webp && c.env.IMAGES) {
       try {
-        const result = await c.env.IMAGES.input(new Blob([bytes]).stream()).transform({ fit: "scale-down", width: 1024, height: 1024 }).output({ format: "image/webp", quality: 80 });
-        const converted = await readStreamWithLimit(result.image(), cacheMaxBytes);
+        const result = await c.env.IMAGES.input(new Blob([bytes]).stream())
+          .transform({ fit: "scale-down", width: 1024, height: 1024 })
+          .output({ format: "image/webp", quality: 80 });
+        const converted = await readStreamWithLimit(
+          result.image(),
+          cacheMaxBytes,
+        );
         if (converted.exceeded || !converted.bytes)
           throw new Error("Converted avatar exceeds cache limit");
         bytes = converted.bytes;
@@ -263,11 +312,23 @@ app.get("/:id", async (c) => {
       }
     }
     if (bytes.byteLength <= cacheMaxBytes)
-      c.executionCtx.waitUntil(writeCached(c, id, bytes, contentType, config.avatar_proxy_cache_mode, ttl));
+      c.executionCtx.waitUntil(
+        writeCached(
+          c,
+          id,
+          bytes,
+          contentType,
+          config.avatar_proxy_cache_mode,
+          ttl,
+        ),
+      );
     return new Response(bytes, { headers: responseHeaders(contentType, ttl) });
   }
 
-  return new Response(upstream.body ? limitStreamBytes(upstream.body, maxBytes) : null, { headers });
+  return new Response(
+    upstream.body ? limitStreamBytes(upstream.body, maxBytes) : null,
+    { headers },
+  );
 });
 
 export default app;

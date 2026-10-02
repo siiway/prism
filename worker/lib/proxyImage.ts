@@ -123,41 +123,42 @@ export async function collectReferencedImageUrls(
     urls.add(trimmed);
   };
 
-  const [users, teams, apps, sources, siteIcon, readmes, ghReadmes] = await Promise.all([
-    db
-      .prepare(
-        "SELECT avatar_url FROM users WHERE avatar_url IS NOT NULL AND avatar_url != ''",
-      )
-      .all<{ avatar_url: string }>(),
-    db
-      .prepare(
-        "SELECT avatar_url FROM teams WHERE avatar_url IS NOT NULL AND avatar_url != ''",
-      )
-      .all<{ avatar_url: string }>(),
-    db
-      .prepare(
-        "SELECT icon_url FROM oauth_apps WHERE icon_url IS NOT NULL AND icon_url != ''",
-      )
-      .all<{ icon_url: string }>(),
-    db
-      .prepare(
-        "SELECT icon_url FROM oauth_sources WHERE icon_url IS NOT NULL AND icon_url != ''",
-      )
-      .all<{ icon_url: string }>(),
-    db
-      .prepare("SELECT value FROM site_config WHERE key = 'site_icon_url'")
-      .first<{ value: string }>(),
-    db
-      .prepare(
-        "SELECT profile_readme FROM users WHERE profile_readme IS NOT NULL AND profile_readme != ''",
-      )
-      .all<{ profile_readme: string }>(),
-    db
-      .prepare(
-        "SELECT content FROM github_readme_cache WHERE content IS NOT NULL AND status = 200",
-      )
-      .all<{ content: string }>(),
-  ]);
+  const [users, teams, apps, sources, siteIcon, readmes, ghReadmes] =
+    await Promise.all([
+      db
+        .prepare(
+          "SELECT avatar_url FROM users WHERE avatar_url IS NOT NULL AND avatar_url != ''",
+        )
+        .all<{ avatar_url: string }>(),
+      db
+        .prepare(
+          "SELECT avatar_url FROM teams WHERE avatar_url IS NOT NULL AND avatar_url != ''",
+        )
+        .all<{ avatar_url: string }>(),
+      db
+        .prepare(
+          "SELECT icon_url FROM oauth_apps WHERE icon_url IS NOT NULL AND icon_url != ''",
+        )
+        .all<{ icon_url: string }>(),
+      db
+        .prepare(
+          "SELECT icon_url FROM oauth_sources WHERE icon_url IS NOT NULL AND icon_url != ''",
+        )
+        .all<{ icon_url: string }>(),
+      db
+        .prepare("SELECT value FROM site_config WHERE key = 'site_icon_url'")
+        .first<{ value: string }>(),
+      db
+        .prepare(
+          "SELECT profile_readme FROM users WHERE profile_readme IS NOT NULL AND profile_readme != ''",
+        )
+        .all<{ profile_readme: string }>(),
+      db
+        .prepare(
+          "SELECT content FROM github_readme_cache WHERE content IS NOT NULL AND status = 200",
+        )
+        .all<{ content: string }>(),
+    ]);
 
   for (const r of users.results) add(r.avatar_url);
   for (const r of teams.results) add(r.avatar_url);

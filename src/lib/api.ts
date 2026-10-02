@@ -1278,12 +1278,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       cached_bytes: number;
       cache_mode: "off" | "kv" | "d1";
       images_binding: boolean;
-    }>(
-      "GET",
-      "/admin/image-proxy-status",
-      undefined,
-      getToken(),
-    ),
+    }>("GET", "/admin/image-proxy-status", undefined, getToken()),
   adminMigrateImageProxy: () =>
     request<{ registered: number }>(
       "POST",

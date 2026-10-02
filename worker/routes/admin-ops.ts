@@ -49,7 +49,7 @@ function auditOps(
       ip: meta.ip ?? getIp(c),
       userAgent: meta.userAgent,
       geo: meta.geo,
-      metadata,
+      metadata: { ...metadata, site_admin: true },
     }),
   );
 }

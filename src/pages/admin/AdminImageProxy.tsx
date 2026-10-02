@@ -102,12 +102,18 @@ export function AdminImageProxy() {
   });
   const config = configData?.config;
   const updateConfig = useMutation({
-    mutationFn: (updates: Record<string, unknown>) => api.adminUpdateConfig(updates),
+    mutationFn: (updates: Record<string, unknown>) =>
+      api.adminUpdateConfig(updates),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-config"] });
       qc.invalidateQueries({ queryKey: ["admin-avatar-proxy-status"] });
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : t("admin.imageProxyDeleteFailed")),
+    onError: (err) =>
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : t("admin.imageProxyDeleteFailed"),
+      ),
   });
 
   const deleteMut = useMutation({
@@ -170,12 +176,23 @@ export function AdminImageProxy() {
       </MessageBar>
 
       {config && (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "end" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            flexWrap: "wrap",
+            alignItems: "end",
+          }}
+        >
           <div>
-            <Text block size={200}>{t("admin.avatarProxyCacheMode")}</Text>
+            <Text block size={200}>
+              {t("admin.avatarProxyCacheMode")}
+            </Text>
             <Select
               value={config.avatar_proxy_cache_mode}
-              onChange={(_, d) => updateConfig.mutate({ avatar_proxy_cache_mode: d.value })}
+              onChange={(_, d) =>
+                updateConfig.mutate({ avatar_proxy_cache_mode: d.value })
+              }
             >
               <option value="off">Off</option>
               <option value="kv">KV</option>
@@ -183,24 +200,67 @@ export function AdminImageProxy() {
             </Select>
           </div>
           <div>
-            <Text block size={200}>{t("admin.avatarProxyTtl")}</Text>
-            <Input key={`ttl-${config.avatar_proxy_cache_ttl_seconds}`} type="number" defaultValue={String(config.avatar_proxy_cache_ttl_seconds)} onBlur={(e) => updateConfig.mutate({ avatar_proxy_cache_ttl_seconds: Number(e.currentTarget.value) })} />
+            <Text block size={200}>
+              {t("admin.avatarProxyTtl")}
+            </Text>
+            <Input
+              key={`ttl-${config.avatar_proxy_cache_ttl_seconds}`}
+              type="number"
+              defaultValue={String(config.avatar_proxy_cache_ttl_seconds)}
+              onBlur={(e) =>
+                updateConfig.mutate({
+                  avatar_proxy_cache_ttl_seconds: Number(e.currentTarget.value),
+                })
+              }
+            />
           </div>
           <div>
-            <Text block size={200}>{t("admin.avatarProxySourceLimit")}</Text>
-            <Input key={`source-${config.avatar_proxy_max_source_bytes}`} type="number" defaultValue={String(config.avatar_proxy_max_source_bytes)} onBlur={(e) => updateConfig.mutate({ avatar_proxy_max_source_bytes: Number(e.currentTarget.value) })} />
+            <Text block size={200}>
+              {t("admin.avatarProxySourceLimit")}
+            </Text>
+            <Input
+              key={`source-${config.avatar_proxy_max_source_bytes}`}
+              type="number"
+              defaultValue={String(config.avatar_proxy_max_source_bytes)}
+              onBlur={(e) =>
+                updateConfig.mutate({
+                  avatar_proxy_max_source_bytes: Number(e.currentTarget.value),
+                })
+              }
+            />
           </div>
           <div>
-            <Text block size={200}>{t("admin.avatarProxyCacheLimit")}</Text>
-            <Input key={`cache-${config.avatar_proxy_max_cache_bytes}`} type="number" defaultValue={String(config.avatar_proxy_max_cache_bytes)} onBlur={(e) => updateConfig.mutate({ avatar_proxy_max_cache_bytes: Number(e.currentTarget.value) })} />
+            <Text block size={200}>
+              {t("admin.avatarProxyCacheLimit")}
+            </Text>
+            <Input
+              key={`cache-${config.avatar_proxy_max_cache_bytes}`}
+              type="number"
+              defaultValue={String(config.avatar_proxy_max_cache_bytes)}
+              onBlur={(e) =>
+                updateConfig.mutate({
+                  avatar_proxy_max_cache_bytes: Number(e.currentTarget.value),
+                })
+              }
+            />
           </div>
           <Switch
             checked={config.avatar_proxy_convert_to_webp}
             disabled={!status?.images_binding}
             label={t("admin.avatarProxyConvertWebp")}
-            onChange={(_, d) => updateConfig.mutate({ avatar_proxy_convert_to_webp: d.checked })}
+            onChange={(_, d) =>
+              updateConfig.mutate({ avatar_proxy_convert_to_webp: d.checked })
+            }
           />
-          {status && <Text size={200}>{t("admin.avatarProxyStats", { mapped: status.mapped, cached: status.cached, bytes: status.cached_bytes })}</Text>}
+          {status && (
+            <Text size={200}>
+              {t("admin.avatarProxyStats", {
+                mapped: status.mapped,
+                cached: status.cached,
+                bytes: status.cached_bytes,
+              })}
+            </Text>
+          )}
         </div>
       )}
 
@@ -285,7 +345,9 @@ export function AdminImageProxy() {
                 <TableHeaderCell>
                   {t("admin.imageProxyCreatorHeader")}
                 </TableHeaderCell>
-                <TableHeaderCell>{t("admin.avatarProxyResourcesHeader")}</TableHeaderCell>
+                <TableHeaderCell>
+                  {t("admin.avatarProxyResourcesHeader")}
+                </TableHeaderCell>
                 <TableHeaderCell>
                   {t("admin.imageProxyCreatedAtHeader")}
                 </TableHeaderCell>
@@ -360,7 +422,12 @@ export function AdminImageProxy() {
                     </TableCell>
                     <TableCell style={{ fontSize: 12 }}>
                       {m.resources.length
-                        ? m.resources.map((resource) => `${resource.type}: ${resource.name}`).join(", ")
+                        ? m.resources
+                            .map(
+                              (resource) =>
+                                `${resource.type}: ${resource.name}`,
+                            )
+                            .join(", ")
                         : t("admin.avatarProxyNoResources")}
                     </TableCell>
                     <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
