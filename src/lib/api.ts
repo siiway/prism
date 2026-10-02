@@ -1840,6 +1840,11 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       email?: string;
       max_uses?: number;
       ttl_hours?: number;
+      expires_in_hours?: number;
+      expires_in_value?: number;
+      expires_in_unit?: "hours" | "days" | "months" | "years";
+      group_ids?: string[];
+      allow_existing_members?: boolean;
       /** Makes the link able to create accounts. Requires a finite max_uses
        *  and forces the granted role to `member`. */
       allows_registration?: boolean;
@@ -3259,6 +3264,16 @@ export interface TeamInvite {
   expires_at: number;
   created_at: number;
   created_by_username: string;
+  allows_registration: boolean;
+  groups: InviteMemberGroup[];
+  allow_existing_members: boolean;
+}
+
+export interface InviteMemberGroup {
+  id: string;
+  slug: string;
+  name: string;
+  color: string | null;
 }
 
 export interface TeamInviteInfo {
@@ -3271,6 +3286,9 @@ export interface TeamInviteInfo {
   };
   role: string;
   email: string | null;
+  groups: InviteMemberGroup[];
+  allow_existing_members: boolean;
+  can_apply_groups: boolean;
   expires_at: number;
   user: { id: string; username: string } | null;
   already_member: boolean;
@@ -3553,6 +3571,7 @@ export interface AdminTeamInvite {
   created_by_username: string | null;
   /** True when this invite mints accounts rather than adding existing ones. */
   allows_registration: boolean;
+  groups: InviteMemberGroup[];
 }
 
 export interface AdminSession {

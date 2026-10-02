@@ -192,6 +192,15 @@ export function AdminTeamInvites() {
                   </TableCell>
                   <TableCell>
                     <Text size={200}>{row.role}</Text>
+                    {row.groups.length > 0 && (
+                      <Text size={200} block className={styles.muted}>
+                        {t("admin.memberGroupsValue", {
+                          groups: row.groups
+                            .map((group) => group.name)
+                            .join(", "),
+                        })}
+                      </Text>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Text size={200}>

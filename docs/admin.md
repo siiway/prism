@@ -575,7 +575,10 @@ come back named with a reason rather than merely counted.
 ### Team invites
 
 **Admin → Invites → Team invites** lists every outstanding team invite on the
-instance, filterable to the account-creating ones. Invites were visible only
+instance, including the member groups it will assign. Expiry is shown as an
+absolute timestamp regardless of whether the creator entered hours, days,
+months, or years, and the list is filterable to account-creating invites.
+Invites were visible only
 from inside the team that issued them, which is the wrong index when a link has
 leaked and the question is what else its creator handed out.
 

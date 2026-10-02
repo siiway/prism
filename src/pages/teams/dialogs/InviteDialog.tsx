@@ -24,6 +24,7 @@ import {
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../lib/api";
 import { useApi } from "../../../lib/api-context";
@@ -50,15 +51,31 @@ export function InviteDialog({
     role: "member",
     email: "",
     max_uses: "",
-    ttl_hours: "72",
+    expires_in_value: "3",
+    expires_in_unit: "days" as "hours" | "days" | "months" | "years",
   });
+  const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [allowExistingMembers, setAllowExistingMembers] = useState(false);
   const [allowsRegistration, setAllowsRegistration] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createdLink, setCreatedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const groupsQuery = useQuery({
+    queryKey: ["team-groups", teamId],
+    queryFn: () => api.listTeamGroups(teamId),
+    enabled: open,
+  });
 
   const resetState = () => {
-    setForm({ role: "member", email: "", max_uses: "", ttl_hours: "72" });
+    setForm({
+      role: "member",
+      email: "",
+      max_uses: "",
+      expires_in_value: "3",
+      expires_in_unit: "days",
+    });
+    setGroupIds([]);
+    setAllowExistingMembers(false);
     setAllowsRegistration(false);
     setCreatedLink(null);
     setCopied(false);
@@ -77,7 +94,13 @@ export function InviteDialog({
         role: form.role,
         email: form.email.trim() || undefined,
         max_uses: form.max_uses ? parseInt(form.max_uses) : undefined,
-        ttl_hours: form.ttl_hours ? parseInt(form.ttl_hours) : undefined,
+        expires_in_value: form.expires_in_value
+          ? parseInt(form.expires_in_value)
+          : undefined,
+        expires_in_unit: form.expires_in_unit,
+        group_ids: groupIds,
+        allow_existing_members:
+          groupIds.length > 0 ? allowExistingMembers : undefined,
         allows_registration: allowsRegistration || undefined,
       });
       await qc.invalidateQueries({ queryKey: ["team-invites", teamId] });
@@ -214,6 +237,43 @@ export function InviteDialog({
                     {t("teams.inviteAllowsRegistrationHint")}
                   </Text>
                 )}
+                {(groupsQuery.data?.enabled ?? false) &&
+                  (groupsQuery.data?.groups.length ?? 0) > 0 && (
+                    <Field
+                      label={t("teams.inviteMemberGroups")}
+                      hint={t("teams.inviteMemberGroupsHint")}
+                    >
+                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                        <Select
+                          value={groupIds[0] ?? ""}
+                          onChange={(_, d) => {
+                            setGroupIds(d.value ? [d.value] : []);
+                            if (!d.value) setAllowExistingMembers(false);
+                          }}
+                          style={{ flex: 1 }}
+                        >
+                          <option value="">{t("teams.inviteNoMemberGroup")}</option>
+                          {groupsQuery.data!.groups.map((group) => (
+                            <option
+                              key={group.id}
+                              value={group.id}
+                              disabled={!group.can_assign}
+                            >
+                              {group.name}
+                            </option>
+                          ))}
+                        </Select>
+                        <Checkbox
+                          checked={allowExistingMembers}
+                          disabled={groupIds.length === 0}
+                          label={t("teams.inviteAllowExistingMembers")}
+                          onChange={(_, d) =>
+                            setAllowExistingMembers(!!d.checked)
+                          }
+                        />
+                      </div>
+                    </Field>
+                  )}
                 <Field label={t("teams.maxUses")} hint={t("teams.maxUsesHint")}>
                   <Input
                     type="number"
@@ -225,14 +285,33 @@ export function InviteDialog({
                   />
                 </Field>
                 <Field label={t("teams.expiresAfter")}>
-                  <Input
-                    type="number"
-                    value={form.ttl_hours}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, ttl_hours: e.target.value }))
-                    }
-                    placeholder="72"
-                  />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={form.expires_in_value}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          expires_in_value: e.target.value,
+                        }))
+                      }
+                    />
+                    <Select
+                      value={form.expires_in_unit}
+                      onChange={(_, d) =>
+                        setForm((f) => ({
+                          ...f,
+                          expires_in_unit: d.value as typeof f.expires_in_unit,
+                        }))
+                      }
+                    >
+                      <option value="hours">{t("teams.expiryHours")}</option>
+                      <option value="days">{t("teams.expiryDays")}</option>
+                      <option value="months">{t("teams.expiryMonths")}</option>
+                      <option value="years">{t("teams.expiryYears")}</option>
+                    </Select>
+                  </div>
                 </Field>
               </div>
             )}

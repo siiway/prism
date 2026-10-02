@@ -93,9 +93,18 @@ export function TeamJoin() {
     );
   }
 
-  const { team, role, email, expires_at, already_member, unmet_requirements } =
-    data;
+  const {
+    team,
+    role,
+    email,
+    groups,
+    expires_at,
+    already_member,
+    can_apply_groups,
+    unmet_requirements,
+  } = data;
   const hasUnmet = !!user && !already_member && unmet_requirements.length > 0;
+  const canApplyGroups = already_member && can_apply_groups;
 
   return (
     <div
@@ -143,6 +152,15 @@ export function TeamJoin() {
         >
           {role}
         </Badge>
+        {groups.length > 0 && (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {groups.map((group) => (
+              <Badge key={group.id} appearance="outline" size="small">
+                {group.name}
+              </Badge>
+            ))}
+          </div>
+        )}
         <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
           {t("teams.inviteExpires", {
             date: new Date(expires_at * 1000).toLocaleDateString(),
@@ -205,7 +223,7 @@ export function TeamJoin() {
         </MessageBar>
       )}
 
-      {already_member ? (
+      {already_member && !canApplyGroups ? (
         <div
           style={{
             display: "flex",
@@ -231,7 +249,13 @@ export function TeamJoin() {
           onClick={handleAccept}
           disabled={accepting || hasUnmet}
         >
-          {accepting ? <Spinner size="small" /> : t("teams.acceptInvite")}
+          {accepting ? (
+            <Spinner size="small" />
+          ) : canApplyGroups ? (
+            t("teams.acceptInviteGroups")
+          ) : (
+            t("teams.acceptInvite")
+          )}
         </Button>
       ) : (
         <div

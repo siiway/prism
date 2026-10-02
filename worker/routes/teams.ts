@@ -74,6 +74,7 @@ import {
   validateGroupSlug,
 } from "../lib/teamGroups";
 import type { TeamGroupRow, TeamRolePermissions } from "../types";
+import { parseInviteExpiry, type InviteExpiryUnit } from "../lib/inviteExpiry";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -97,7 +98,7 @@ function auditTeam(
   // would show an outsider's change as if a member had made it.
   const elevated = actedAsSiteAdmin(c, teamId);
   const metadata = opts.metadata ?? {};
-  void recordAudit(c.env, c.executionCtx, {
+  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, {
     scope: "team",
     scopeId: teamId,
     action,
@@ -115,7 +116,7 @@ function auditTeam(
         : elevated
           ? { site_admin: true }
           : metadata,
-  });
+  }));
 }
 
 // ─── Serialization ────────────────────────────────────────────────────────────
@@ -622,6 +623,42 @@ interface InviteRow {
   uses: number;
   expires_at: number;
   created_at: number;
+  allows_registration: number;
+  allow_existing_members: number;
+}
+
+interface InviteGroupRow {
+  invite_token: string;
+  id: string;
+  slug: string;
+  name: string;
+  color: string | null;
+}
+
+async function loadInviteGroups(
+  db: D1Database,
+  inviteTokens: string[],
+): Promise<Map<string, InviteGroupRow[]>> {
+  const byInvite = new Map<string, InviteGroupRow[]>();
+  if (inviteTokens.length === 0) return byInvite;
+  const placeholders = inviteTokens.map(() => "?").join(", ");
+  const { results } = await db
+    .prepare(
+      `SELECT ig.invite_token, g.id, g.slug, g.name, g.color
+       FROM team_invite_groups ig
+       JOIN team_groups g ON g.id = ig.group_id
+       JOIN teams t ON t.id = ig.team_id AND t.enable_groups = 1
+        WHERE ig.invite_token IN (${placeholders})
+        ORDER BY g.name ASC`,
+    )
+    .bind(...inviteTokens)
+    .all<InviteGroupRow>();
+  for (const row of results) {
+    const list = byInvite.get(row.invite_token);
+    if (list) list.push(row);
+    else byInvite.set(row.invite_token, [row]);
+  }
+  return byInvite;
 }
 
 // GET /join/:token — public: show invite info
@@ -661,6 +698,7 @@ app.get("/join/:token", optionalAuth, async (c) => {
 
   const sessionUser = c.get("user") ?? null;
   let alreadyMember = false;
+  let canApplyGroups = false;
   let unmet: ReturnType<typeof unmetRequirements> = [];
   if (sessionUser) {
     const existing = await getMember(c.env.DB, team.id, sessionUser.id);
@@ -671,6 +709,20 @@ app.get("/join/:token", optionalAuth, async (c) => {
     }
   }
 
+  const inviteGroups = await loadInviteGroups(c.env.DB, [invite.token]);
+  const groups = inviteGroups.get(invite.token) ?? [];
+  if (sessionUser && alreadyMember && invite.allow_existing_members === 1) {
+    const assigned = groups.length
+      ? await c.env.DB.prepare(
+          `SELECT group_id FROM team_member_groups
+            WHERE team_id = ? AND user_id = ? AND group_id IN (${groups.map(() => "?").join(", ")})`,
+        )
+          .bind(team.id, sessionUser.id, ...groups.map((group) => group.id))
+          .all<{ group_id: string }>()
+      : { results: [] as Array<{ group_id: string }> };
+    const assignedIds = new Set(assigned.results.map((row) => row.group_id));
+    canApplyGroups = groups.some((group) => !assignedIds.has(group.id));
+  }
   return c.json({
     team: {
       id: team.id,
@@ -681,6 +733,9 @@ app.get("/join/:token", optionalAuth, async (c) => {
     },
     role: invite.role,
     email: invite.email,
+    groups,
+    allow_existing_members: invite.allow_existing_members === 1,
+    can_apply_groups: canApplyGroups,
     expires_at: invite.expires_at,
     already_member: alreadyMember,
     requirements: {
@@ -719,61 +774,144 @@ app.post("/join/:token", requireAuth, async (c) => {
     );
 
   const existing = await getMember(c.env.DB, invite.team_id, user.id);
-  if (existing) return c.json({ error: "Already a member of this team" }, 409);
+  const invitedGroups = await loadInviteGroups(c.env.DB, [invite.token]);
+  let groupIds = (invitedGroups.get(invite.token) ?? []).map((g) => g.id);
+  if (existing && (groupIds.length === 0 || invite.allow_existing_members !== 1))
+    return c.json({ error: "Already a member of this team" }, 409);
+  if (existing) {
+    const count = await c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM team_member_groups WHERE team_id = ? AND user_id = ?",
+    )
+      .bind(invite.team_id, user.id)
+      .first<{ n: number }>();
+    const placeholders = groupIds.map(() => "?").join(", ");
+    const assigned = await c.env.DB.prepare(
+      `SELECT group_id FROM team_member_groups
+        WHERE team_id = ? AND user_id = ? AND group_id IN (${placeholders})`,
+    )
+      .bind(invite.team_id, user.id, ...groupIds)
+      .all<{ group_id: string }>();
+    const assignedIds = new Set(assigned.results.map((row) => row.group_id));
+    groupIds = groupIds.filter((groupId) => !assignedIds.has(groupId));
+    if (groupIds.length === 0)
+      return c.json(
+        { error: "This member already has all member groups from this invite" },
+        409,
+      );
+    if ((count?.n ?? 0) + groupIds.length > MAX_GROUPS_PER_MEMBER)
+      return c.json(
+        { error: `A member can hold at most ${MAX_GROUPS_PER_MEMBER} groups` },
+        400,
+      );
+  }
 
-  const joinState = await getRestrictionState(c.env.DB, user.id);
-  if (joinState) {
-    const joinErr = await checkTeamJoinAllowed(
+  if (!existing) {
+    const joinState = await getRestrictionState(c.env.DB, user.id);
+    if (joinState) {
+      const joinErr = await checkTeamJoinAllowed(
+        c.env.DB,
+        joinState,
+        invite.team_id,
+      );
+      if (joinErr) return c.json({ error: joinErr }, 403);
+      // A team may decline unrestricted members entirely — used by teams whose
+      // population is meant to be uniformly invite-registered. Direct adds by
+      // an admin deliberately bypass this, so hiring staff still works.
+      if (!isRestricted(joinState)) {
+        const target = await c.env.DB.prepare(
+          "SELECT allow_normal_user_join FROM teams WHERE id = ?",
+        )
+          .bind(invite.team_id)
+          .first<{ allow_normal_user_join: number }>();
+        if (target && target.allow_normal_user_join !== 1)
+          return c.json(
+            {
+              error:
+                "This team does not accept invite links from existing accounts",
+            },
+            403,
+          );
+      }
+    }
+
+    const teamReq = await getEffectiveTeamRequirements(
       c.env.DB,
-      joinState,
       invite.team_id,
     );
-    if (joinErr) return c.json({ error: joinErr }, 403);
-    // A team may decline unrestricted members entirely — used by teams whose
-    // population is meant to be uniformly invite-registered. Direct adds by
-    // an admin deliberately bypass this, so hiring staff still works.
-    if (!isRestricted(joinState)) {
-      const target = await c.env.DB.prepare(
-        "SELECT allow_normal_user_join FROM teams WHERE id = ?",
-      )
-        .bind(invite.team_id)
-        .first<{ allow_normal_user_join: number }>();
-      if (target && target.allow_normal_user_join !== 1)
+    if (teamReq) {
+      const state = await getUserSecurityState(c.env.DB, user.id);
+      const unmet = unmetRequirements(teamReq, state);
+      if (unmet.length) {
         return c.json(
           {
-            error:
-              "This team does not accept invite links from existing accounts",
+            error: "You don't meet this team's join requirements",
+            unmet_requirements: unmet,
           },
           403,
         );
+      }
     }
   }
 
-  const teamReq = await getEffectiveTeamRequirements(c.env.DB, invite.team_id);
-  if (teamReq) {
-    const state = await getUserSecurityState(c.env.DB, user.id);
-    const unmet = unmetRequirements(teamReq, state);
-    if (unmet.length) {
-      return c.json(
-        {
-          error: "You don't meet this team's join requirements",
-          unmet_requirements: unmet,
-        },
-        403,
-      );
+  const claim = await c.env.DB.prepare(
+    `UPDATE team_invites SET uses = uses + 1
+      WHERE token = ? AND expires_at > ?
+        AND (max_uses = 0 OR uses < max_uses)`,
+  )
+    .bind(invite.token, now)
+    .run();
+  if (!claim.meta.changes)
+    return c.json({ error: "Invite link has reached its usage limit" }, 410);
+
+  try {
+    if (existing) {
+      for (const groupId of groupIds) {
+        await c.env.DB.prepare(
+          "INSERT INTO team_member_groups (team_id, user_id, group_id, assigned_at) VALUES (?, ?, ?, ?)",
+        )
+          .bind(invite.team_id, user.id, groupId, now)
+          .run();
+      }
+    } else {
+      await c.env.DB.batch([
+        c.env.DB.prepare(
+          "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+        ).bind(invite.team_id, user.id, invite.role, now),
+        ...groupIds.map((groupId) =>
+          c.env.DB.prepare(
+            "INSERT INTO team_member_groups (team_id, user_id, group_id, assigned_at) VALUES (?, ?, ?, ?)",
+          ).bind(invite.team_id, user.id, groupId, now),
+        ),
+      ]);
     }
+  } catch (error) {
+    await c.env.DB.prepare(
+      "UPDATE team_invites SET uses = uses - 1 WHERE token = ? AND uses > 0",
+    )
+      .bind(invite.token)
+      .run()
+      .catch(() => {});
+    throw error;
   }
 
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
-    ).bind(invite.team_id, user.id, invite.role, now),
-    c.env.DB.prepare(
-      "UPDATE team_invites SET uses = uses + 1 WHERE token = ?",
-    ).bind(invite.token),
-  ]);
+  auditTeam(
+    c,
+    invite.team_id,
+    existing ? "team.member.groups_change" : "team.member.add",
+    {
+      resourceType: "user",
+      resourceId: user.id,
+      resourceName: `@${user.username}`,
+      metadata: existing
+        ? { added: groupIds, removed: [], via: "invite" }
+        : { role: invite.role, member_groups: groupIds, via: "invite" },
+    },
+  );
 
-  return c.json({ team_id: invite.team_id, message: "Joined team" });
+  return c.json({
+    team_id: invite.team_id,
+    message: existing ? "Member groups assigned" : "Joined team",
+  });
 });
 
 // ─── All remaining routes require auth ────────────────────────────────────────
@@ -2603,8 +2741,17 @@ app.get("/:id/invites", async (c) => {
       .first<{ n: number }>(),
   ]);
 
+  const inviteGroups = await loadInviteGroups(
+    c.env.DB,
+    invites.results.map((invite) => invite.token),
+  );
   return c.json({
-    invites: invites.results,
+    invites: invites.results.map((invite) => ({
+      ...invite,
+      allows_registration: invite.allows_registration === 1,
+      allow_existing_members: invite.allow_existing_members === 1,
+      groups: inviteGroups.get(invite.token) ?? [],
+    })),
     total: countRow?.n ?? 0,
     page,
     limit,
@@ -2625,9 +2772,19 @@ app.post("/:id/invites", async (c) => {
     max_uses?: number;
     expires_in_hours?: number;
     ttl_hours?: number;
+    expires_in_value?: number;
+    expires_in_unit?: InviteExpiryUnit;
     email?: string;
     allows_registration?: boolean;
+    allow_existing_members?: boolean;
+    group_ids?: string[];
   }>();
+
+  if (
+    body.max_uses !== undefined &&
+    (!Number.isSafeInteger(body.max_uses) || body.max_uses < 0)
+  )
+    return c.json({ error: "max_uses must be a non-negative integer" }, 400);
 
   let role: string = "member";
   if (body.role === "admin") role = "admin";
@@ -2677,18 +2834,67 @@ app.post("/:id/invites", async (c) => {
     role = "member";
     allowsRegistration = 1;
   }
-  const requestedTtl = body.ttl_hours ?? body.expires_in_hours ?? 72;
-  const ttlHours = Math.min(Math.max(requestedTtl, 1), 720); // max 30 days
   const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + ttlHours * 3600;
+  const expiry = parseInviteExpiry(body, now);
+  if (!expiry.ok) return c.json({ error: expiry.error }, 400);
+  const expiresAt = expiry.expiresAt;
+
+  if (!Array.isArray(body.group_ids ?? []))
+    return c.json({ error: "group_ids must be an array" }, 400);
+  if ((body.group_ids ?? []).some((groupId) => typeof groupId !== "string"))
+    return c.json({ error: "group_ids must contain strings" }, 400);
+  const requestedGroupIds = [...new Set(body.group_ids ?? [])];
+  if (requestedGroupIds.length > 1)
+    return c.json({ error: "An invite can assign at most one member group" }, 400);
+  if (body.allow_existing_members && requestedGroupIds.length === 0)
+    return c.json(
+      { error: "allow_existing_members requires a member group" },
+      400,
+    );
+  if (requestedGroupIds.length > MAX_GROUPS_PER_MEMBER)
+    return c.json(
+      {
+        error: `An invite can assign at most ${MAX_GROUPS_PER_MEMBER} member groups`,
+      },
+      400,
+    );
+  const inviteGroups: TeamGroupRow[] = [];
+  if (requestedGroupIds.length > 0) {
+    const team = await c.env.DB.prepare(
+      "SELECT enable_groups, role_permissions FROM teams WHERE id = ?",
+    )
+      .bind(id)
+      .first<{ enable_groups: number; role_permissions: string | null }>();
+    if (!team || team.enable_groups !== 1)
+      return c.json(
+        { error: "Member groups are not enabled for this team" },
+        400,
+      );
+    const siteDefaults = await getSiteRolePermissions(c.env.DB);
+    for (const groupId of requestedGroupIds) {
+      const group = await c.env.DB.prepare(
+        "SELECT * FROM team_groups WHERE id = ? AND team_id = ?",
+      )
+        .bind(groupId, id)
+        .first<TeamGroupRow>();
+      if (!group)
+        return c.json({ error: `Unknown member group: ${groupId}` }, 400);
+      if (!canAssignGroup(eff.role, group, team.role_permissions, siteDefaults))
+        return c.json(
+          { error: `You cannot assign the member group "${group.slug}"` },
+          403,
+        );
+      inviteGroups.push(group);
+    }
+  }
   const token = randomBase64url(24);
   const storedToken = await hashSecret(c.env, token);
 
-  await c.env.DB.prepare(
-    `INSERT INTO team_invites (token, team_id, role, created_by, email, max_uses, uses, expires_at, created_at, allows_registration)
-     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
-  )
-    .bind(
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO team_invites (token, team_id, role, created_by, email, max_uses, uses, expires_at, created_at, allows_registration, allow_existing_members)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+    ).bind(
       storedToken,
       id,
       role,
@@ -2698,10 +2904,32 @@ app.post("/:id/invites", async (c) => {
       expiresAt,
       now,
       allowsRegistration,
-    )
-    .run();
+      body.allow_existing_members ? 1 : 0,
+    ),
+    ...inviteGroups.map((group) =>
+      c.env.DB.prepare(
+        "INSERT INTO team_invite_groups (invite_token, team_id, group_id) VALUES (?, ?, ?)",
+      ).bind(storedToken, id, group.id),
+    ),
+  ]);
 
-  const inviteLink = `${c.env.APP_URL}/teams/join/${token}`;
+  auditTeam(c, id, "team.invite.create", {
+    resourceType: "team_invite",
+    resourceId: storedToken,
+    metadata: {
+      role,
+      email: body.email ?? null,
+      max_uses: maxUses,
+      allows_registration: allowsRegistration === 1,
+      allow_existing_members: body.allow_existing_members === true,
+      member_groups: inviteGroups.map((group) => group.slug),
+      expires_at: expiresAt,
+    },
+  });
+
+  const inviteLink = allowsRegistration
+    ? `${c.env.APP_URL}/join/${id}?invite=${encodeURIComponent(token)}`
+    : `${c.env.APP_URL}/teams/join/${token}`;
 
   // Send email if requested
   if (body.email) {
@@ -2730,7 +2958,7 @@ app.post("/:id/invites", async (c) => {
             <h2>Team Invitation</h2>
             <p>${senderName} has invited you to join <strong>${teamName}</strong> as a <strong>${role}</strong> on ${siteName}.</p>
             <p><a href="${inviteLink}" style="background:#5b5fc7;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;display:inline-block">Accept Invitation</a></p>
-            <p style="color:#888;font-size:12px">This link expires in ${ttlHours} hours.</p>
+            <p style="color:#888;font-size:12px">This link expires in ${expiry.value} ${expiry.unit}.</p>
           </div>`,
           text: `${user.display_name} invited you to join a team. Accept: ${inviteLink}`,
         },
@@ -2753,6 +2981,14 @@ app.post("/:id/invites", async (c) => {
         expires_at: expiresAt,
         created_at: now,
         created_by_username: user.username,
+        allows_registration: allowsRegistration === 1,
+        allow_existing_members: body.allow_existing_members === true,
+        groups: inviteGroups.map((group) => ({
+          id: group.id,
+          slug: group.slug,
+          name: group.name,
+          color: group.color,
+        })),
       },
     },
     201,
@@ -2772,11 +3008,17 @@ app.delete("/:id/invites/:token", async (c) => {
   // For revoke, missing/suspicious tokens are silently treated as a no-op
   // delete — caller already gated by team admin role above, so a probe
   // here can't be used to enumerate invites.
-  await c.env.DB.prepare(
+  const result = await c.env.DB.prepare(
     "DELETE FROM team_invites WHERE (token = ? OR token = ?) AND team_id = ?",
   )
     .bind(token, tokenLookup ?? token, id)
     .run();
+
+  if (result.meta.changes)
+    auditTeam(c, id, "team.invite.revoke", {
+      resourceType: "team_invite",
+      resourceId: tokenLookup ?? token,
+    });
 
   return c.json({ message: "Invite revoked" });
 });

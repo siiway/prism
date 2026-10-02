@@ -540,9 +540,10 @@ app.get("/team-invites", async (c) => {
   );
   const query = c.req.query("q")?.trim() ?? "";
   const registrationOnly = c.req.query("registration") === "1";
+  const now = Math.floor(Date.now() / 1000);
 
-  const where: string[] = [];
-  const args: unknown[] = [];
+  const where: string[] = ["i.expires_at > ?"];
+  const args: unknown[] = [now];
   if (query) {
     where.push(
       "(LOWER(t.name) LIKE LOWER(?) ESCAPE '\\' OR LOWER(i.email) LIKE LOWER(?) ESCAPE '\\')",
@@ -556,6 +557,7 @@ app.get("/team-invites", async (c) => {
     c.env.DB.prepare(
       `SELECT i.token, i.team_id, i.role, i.email, i.max_uses, i.uses,
               i.expires_at, i.created_at, i.allows_registration,
+              i.allow_existing_members,
               t.name AS team_name, u.username AS created_by_username
          FROM team_invites i
          LEFT JOIN teams t ON t.id = i.team_id
@@ -573,6 +575,40 @@ app.get("/team-invites", async (c) => {
       .first<{ n: number }>(),
   ]);
 
+  const inviteTokens = rows.results.map((row) => String(row.token));
+  const groupsByInvite = new Map<
+    string,
+    Array<{ id: string; slug: string; name: string; color: string | null }>
+  >();
+  if (inviteTokens.length > 0) {
+    const placeholders = inviteTokens.map(() => "?").join(", ");
+    const groupRows = await c.env.DB.prepare(
+      `SELECT ig.invite_token, g.id, g.slug, g.name, g.color
+         FROM team_invite_groups ig JOIN team_groups g ON g.id = ig.group_id
+         JOIN teams t ON t.id = ig.team_id AND t.enable_groups = 1
+        WHERE ig.invite_token IN (${placeholders}) ORDER BY g.name ASC`,
+    )
+      .bind(...inviteTokens)
+      .all<{
+        invite_token: string;
+        id: string;
+        slug: string;
+        name: string;
+        color: string | null;
+      }>();
+    for (const group of groupRows.results) {
+      const list = groupsByInvite.get(group.invite_token);
+      const value = {
+        id: group.id,
+        slug: group.slug,
+        name: group.name,
+        color: group.color,
+      };
+      if (list) list.push(value);
+      else groupsByInvite.set(group.invite_token, [value]);
+    }
+  }
+
   return c.json({
     // The token is the credential. It is shown because an operator tracing a
     // leaked link needs to match what they were sent against what exists —
@@ -580,6 +616,8 @@ app.get("/team-invites", async (c) => {
     invites: rows.results.map((row) => ({
       ...row,
       allows_registration: row.allows_registration === 1,
+      allow_existing_members: row.allow_existing_members === 1,
+      groups: groupsByInvite.get(String(row.token)) ?? [],
     })),
     total: count?.n ?? 0,
     page,

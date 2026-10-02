@@ -344,6 +344,18 @@ invite:
 - **always grants `member`**. Someone arriving through a link should never
   begin able to manage the team.
 
+Every team invite can also carry one optional **member group**. The creator may
+select only groups they are allowed to assign. The groups are attached when a
+new member accepts the invite and also when invite-link registration completes.
+An existing **direct** member may accept a group-bearing invite to add those
+group when the invite explicitly allows existing members; an invite without
+that option still reports that they are already a member.
+
+Invite expiry accepts a positive value plus `hours`, `days`, `months`, or
+`years` (months are 30 days and years are 365 days), up to 10 years. API clients
+may send `expires_in_value` with `expires_in_unit`; legacy `ttl_hours` and
+`expires_in_hours` remain supported as hours.
+
 The link points at `/join/<team-id>?invite=<code>`, not the ordinary
 `/teams/join/<token>` route.
 

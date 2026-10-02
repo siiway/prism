@@ -40,7 +40,7 @@ cascade down the parent chain to it (subject to the inheritance switches).
 _Avoid_: child team, group.
 
 **Member group**:
-A team-defined label attached to members *within a single team* — a
+A team-defined label attached to members _within a single team_ — a
 many-to-many tag, not a nested team. A member can hold several.
 _Avoid_: role, team group, sub-team.
 
@@ -53,7 +53,7 @@ on that exact team.
 A member's standing within a team: `owner`, `co-owner`, `admin`, or `member`.
 
 **Site floor**:
-A site-wide *minimum* join requirement (2FA, verified email) that every team
+A site-wide _minimum_ join requirement (2FA, verified email) that every team
 must enforce. Teams may require more, never less.
 _Avoid_: default requirement.
 
@@ -64,7 +64,7 @@ A relying party registered by a user or team that obtains tokens from Prism.
 _Avoid_: client (only use "client" for the OAuth-protocol role), integration.
 
 **OAuth source**:
-An external identity provider Prism federates *from* for social/federated login
+An external identity provider Prism federates _from_ for social/federated login
 (GitHub, Google, Microsoft, Discord, Telegram, X, Generic OIDC, Generic OAuth 2).
 Multiple sources of the same kind may coexist.
 _Avoid_: provider (reserved for captcha), connection.
@@ -128,7 +128,7 @@ A `team:<id>:…` scope validated against the one team a token is bound to — a
 opposed to the aggregate `teams:*` family that spans every team the user is in.
 
 **Cross-app scope**:
-A named permission one app publishes for *other* apps to request through the
+A named permission one app publishes for _other_ apps to request through the
 standard consent screen.
 _Avoid_: exported permission (that's the code's internal term).
 
@@ -143,7 +143,9 @@ An admin-issued invite that lets someone register on an invite-only instance.
 
 **Team invite**:
 A team-issued invite to join an existing team. It may optionally also mint a new
-account (see invite-link registration).
+account (see invite-link registration), and may assign member groups when used.
+An existing direct member may use a group-bearing invite to receive those
+member groups without creating another membership.
 
 **Invite-link registration**:
 Account creation through a team invite. It is what lets a team owner mint

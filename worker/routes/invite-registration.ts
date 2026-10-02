@@ -308,16 +308,25 @@ app.post("/auth/register-with-invite", async (c) => {
   if (!claim.meta.changes)
     return c.json({ error: "This invite has reached its limit" }, 403);
 
+  const inviteGroups = await c.env.DB.prepare(
+    `SELECT ig.group_id
+       FROM team_invite_groups ig
+       JOIN team_groups g ON g.id = ig.group_id AND g.team_id = ig.team_id
+       JOIN teams t ON t.id = ig.team_id AND t.enable_groups = 1
+      WHERE ig.invite_token = ? AND ig.team_id = ?`,
+  )
+    .bind(invite.token, team.id)
+    .all<{ group_id: string }>();
   const passwordHash = await hashPassword(body.password);
   try {
-    await c.env.DB.prepare(
-      `INSERT INTO users
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `INSERT INTO users
          (id, email, username, password_hash, display_name, role, kind,
-          email_verified, is_active, origin_team_id, origin_invite_token,
-          origin_join_completed, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'user', 'user', 0, 1, ?, ?, 0, ?, ?)`,
-    )
-      .bind(
+           email_verified, is_active, origin_team_id, origin_invite_token,
+           origin_join_completed, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'user', 'user', 0, 1, ?, ?, 0, ?, ?)`,
+      ).bind(
         userId,
         email,
         body.username.toLowerCase().trim(),
@@ -327,8 +336,13 @@ app.post("/auth/register-with-invite", async (c) => {
         invite.token,
         now,
         now,
-      )
-      .run();
+      ),
+      ...inviteGroups.results.map((row) =>
+        c.env.DB.prepare(
+          "INSERT INTO pending_invite_member_groups (user_id, team_id, group_id) VALUES (?, ?, ?)",
+        ).bind(userId, team.id, row.group_id),
+      ),
+    ]);
   } catch (err) {
     // Hand the seat back — the account that would have used it never existed.
     await c.env.DB.prepare(
@@ -343,7 +357,7 @@ app.post("/auth/register-with-invite", async (c) => {
     throw err;
   }
 
-  void recordAudit(c.env, c.executionCtx, {
+  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, {
     scope: "team",
     scopeId: team.id,
     action: "team.member.invite_register",
@@ -353,7 +367,7 @@ app.post("/auth/register-with-invite", async (c) => {
     resourceId: userId,
     metadata: { pending: true },
     ...auditRequestMeta(c),
-  });
+  }));
 
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(userId)
@@ -465,16 +479,30 @@ app.post("/auth/invite-join/complete", requireAuth, async (c) => {
   const now = Math.floor(Date.now() / 1000);
   // Invites can only ever admit members here — a stranger arriving through a
   // link should never land straight into a role that can manage the team.
+  const groupRows = await c.env.DB.prepare(
+    `SELECT group_id FROM pending_invite_member_groups
+      WHERE user_id = ? AND team_id = ?`,
+  )
+    .bind(user.id, status.team.id)
+    .all<{ group_id: string }>();
   await c.env.DB.batch([
     c.env.DB.prepare(
       "INSERT OR IGNORE INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)",
     ).bind(status.team.id, user.id, now),
+    ...groupRows.results.map((row) =>
+      c.env.DB.prepare(
+        "INSERT OR IGNORE INTO team_member_groups (team_id, user_id, group_id, assigned_at) VALUES (?, ?, ?, ?)",
+      ).bind(status.team.id, user.id, row.group_id, now),
+    ),
     c.env.DB.prepare(
       "UPDATE users SET origin_join_completed = 1, updated_at = ? WHERE id = ?",
     ).bind(now, user.id),
+    c.env.DB.prepare(
+      "DELETE FROM pending_invite_member_groups WHERE user_id = ?",
+    ).bind(user.id),
   ]);
 
-  void recordAudit(c.env, c.executionCtx, {
+  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, {
     scope: "team",
     scopeId: status.team.id,
     action: "team.member.add",
@@ -483,9 +511,13 @@ app.post("/auth/invite-join/complete", requireAuth, async (c) => {
     resourceType: "user",
     resourceId: user.id,
     resourceName: `@${user.username}`,
-    metadata: { role: "member", via: "invite_registration" },
+    metadata: {
+      role: "member",
+      via: "invite_registration",
+      member_group_count: groupRows.results.length,
+    },
     ...auditRequestMeta(c),
-  });
+  }));
 
   return c.json({ message: "Joined", team_id: status.team.id });
 });

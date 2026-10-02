@@ -421,8 +421,13 @@ export function TeamDetail() {
     }
   };
 
-  const handleCopyInviteLink = async (token: string) => {
-    const link = `${window.location.origin}/teams/join/${token}`;
+  const handleCopyInviteLink = async (
+    token: string,
+    allowsRegistration = false,
+  ) => {
+    const link = allowsRegistration
+      ? `${window.location.origin}/join/${id}?invite=${token}`
+      : `${window.location.origin}/teams/join/${token}`;
     await navigator.clipboard.writeText(link);
     setCopiedToken(token);
     setTimeout(() => setCopiedToken(null), 2000);
@@ -1105,7 +1110,9 @@ export function TeamDetail() {
                 <TableBody>
                   {(invitesData?.invites ?? []).map((inv: TeamInvite) => {
                     const isHashed = inv.token.startsWith("__HASH_v1__");
-                    const inviteUrl = `${window.location.origin}/teams/join/${inv.token}`;
+                    const inviteUrl = inv.allows_registration
+                      ? `${window.location.origin}/join/${id}?invite=${inv.token}`
+                      : `${window.location.origin}/teams/join/${inv.token}`;
                     const hashPreview = isHashed
                       ? `${inv.token.slice(11, 19)}…`
                       : null;
@@ -1179,13 +1186,30 @@ export function TeamDetail() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            color={ROLE_COLORS[inv.role] ?? "subtle"}
-                            appearance="filled"
-                            size="small"
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 4,
+                              flexWrap: "wrap",
+                            }}
                           >
-                            {inv.role}
-                          </Badge>
+                            <Badge
+                              color={ROLE_COLORS[inv.role] ?? "subtle"}
+                              appearance="filled"
+                              size="small"
+                            >
+                              {inv.role}
+                            </Badge>
+                            {inv.groups.map((group) => (
+                              <Badge
+                                key={group.id}
+                                appearance="outline"
+                                size="small"
+                              >
+                                {group.name}
+                              </Badge>
+                            ))}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Text size={300}>
@@ -1219,7 +1243,10 @@ export function TeamDetail() {
                                   icon={<CopyRegular />}
                                   size="small"
                                   onClick={() =>
-                                    handleCopyInviteLink(inv.token)
+                                    handleCopyInviteLink(
+                                      inv.token,
+                                      inv.allows_registration,
+                                    )
                                   }
                                 />
                               </Tooltip>
