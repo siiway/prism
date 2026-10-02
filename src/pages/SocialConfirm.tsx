@@ -151,20 +151,12 @@ export function SocialConfirm() {
   return (
     <AuthShell maxWidth={420} cardGap={24}>
       <>
-        {data.profile_avatar ? (
-          <Avatar
-            image={{ src: data.profile_avatar }}
-            name={data.profile_name ?? undefined}
-            size={64}
-            style={{ alignSelf: "center" }}
-          />
-        ) : (
-          <Avatar
-            name={data.profile_name ?? providerLabel}
-            size={64}
-            style={{ alignSelf: "center" }}
-          />
-        )}
+        <Avatar
+          image={data.profile_avatar ? { src: data.profile_avatar } : undefined}
+          name={data.profile_name ?? providerLabel}
+          size={64}
+          style={{ alignSelf: "center" }}
+        />
 
         <div style={{ textAlign: "center" }}>
           <Title2>{t("auth.createNewAccount")}</Title2>

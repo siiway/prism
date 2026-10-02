@@ -418,10 +418,11 @@ of the team API — `/api/teams/*` simply treats an admin as the owner, so the
 ordinary team page at `/teams/:id` is the management screen and never drifts out
 of step with a parallel implementation.
 
-Because the authority is the site's rather than a membership's, the team page
-always carries a banner saying so, and every action is stamped `site_admin:
-true` — on every team, even one the admin is the owner of. To act as their own
-membership instead, an admin uses **Switch to normal view** (below).
+Because the authority is the site's rather than a membership's, an elevated
+team page carries a dismissible banner saying so, and every action is stamped
+`site_admin: true` — on every team, even one the admin is the owner of. To act
+as their own membership instead, an admin uses **Switch to normal view**
+(below).
 
 What that unlocks, from outside the team:
 
@@ -464,9 +465,10 @@ bind a team owner equally:
 - `LOCKDOWN_TEAMS` still blocks deletion. That list is set by whoever deploys
   the instance, which is a level above any administrator.
 
-Every elevated action is written to the team's own audit log with
-`site_admin: true` in its metadata, so a team can tell an owner's change apart
-from the site acting over their heads.
+Every elevated action is written both to the team's own audit log and to the
+platform log with `site_admin: true` in its metadata. Both scopes fan out to
+their own audit webhooks, so the team can tell an owner's change apart from the
+site acting over their heads while operators retain a platform-wide record.
 
 Elevation is bound to a **session**. A Personal Access Token carries only the
 scopes stamped on it, so an admin's `apps:write` token stays an `apps:write`
@@ -474,19 +476,24 @@ token and does not become a site-wide master key.
 
 ### Normal view
 
-The override is on by default, but an admin can drop it. **Switch to normal
-view** — offered in the banner on any team the admin is actually a member of —
-makes the session act as that membership instead: their real role, their own
-audit entries (no `site_admin` stamp), and the team's own join requirements back
-in force. The banner flips to offer the way back.
+Ordinary navigation starts in normal view. On a team the admin belongs to, it
+acts as that membership: their real role, their own audit entries (no
+`site_admin` stamp), and the team's own join requirements remain in force. A
+dismissible banner identifies the mode and offers the elevated view. Opening a
+team or app from the admin panel explicitly switches to elevated view; its
+banner offers **Switch to normal view** when a membership is available.
 
-It is a **view of the current session, not a saved setting**: the dashboard
-sends an `X-Prism-Team-View: member` header on every request while it is on, and
-a page reload returns to the default admin view. That is deliberate — an admin
-who forgets they toggled it can never get stuck locked out of a team they don't
-belong to. In normal view, opening a team the admin isn't a member of shows a
-short "switch back" prompt rather than the team, exactly as it would for any
-non-member.
+It is a **view of the current browser session, not a saved setting**: the
+dashboard sends an `X-Prism-Team-View: member` header on every request while it
+is on. A fresh page load returns to normal view. In normal view, opening a team
+the admin isn't a member of shows a short "switch back" prompt rather than the
+team, exactly as it would for any non-member.
+
+The overview counts human users only (team-as-user rows are excluded), shows
+team, app, verified-domain and active-token totals, and plots daily additions
+for the last 30 days. The image-proxy mapping count appears only when that
+storage is available. A failed statistics request remains visible and can be
+retried without reloading the panel.
 
 ## Invite-link registration
 

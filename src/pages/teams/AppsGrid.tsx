@@ -1,6 +1,6 @@
 // Apps card grid for TeamDetail
 
-import { Image, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { Avatar, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { EmptyState } from "../../components/EmptyState";
 import { SkeletonAppCards } from "../../components/Skeletons";
 import { GlobeRegular } from "@fluentui/react-icons";
@@ -58,18 +58,12 @@ export function AppsGrid({ apps, loading }: AppsGridProps) {
           onClick={() => navigate(`/apps/${app.id}`)}
         >
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            {app.icon_url ? (
-              <Image
-                src={app.icon_url}
-                alt={app.name}
-                shape="rounded"
-                fit="cover"
-                width={32}
-                height={32}
-              />
-            ) : (
-              <GlobeRegular fontSize={32} />
-            )}
+            <Avatar
+              image={app.icon_url ? { src: app.icon_url } : undefined}
+              name={app.name}
+              size={32}
+              shape="square"
+            />
             <div
               style={{
                 flex: 1,

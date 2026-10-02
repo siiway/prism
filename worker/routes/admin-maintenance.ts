@@ -143,20 +143,22 @@ app.post("/jobs/:key/run", async (c) => {
   // Audited whether it succeeded or not. A job an operator ran twenty minutes
   // before things went strange is exactly the kind of thing worth finding
   // afterwards, and a failed run is more interesting than a clean one.
-  void recordAudit(c.env, c.executionCtx, {
-    scope: "platform",
-    scopeId: null,
-    action: error ? "admin.maintenance.error" : "admin.maintenance.run",
-    actorId: admin.id,
-    actorName: admin.username,
-    resourceType: "job",
-    resourceId: job.key,
-    resourceName: null,
-    ip: meta.ip ?? getIp(c),
-    userAgent: meta.userAgent,
-    geo: meta.geo,
-    metadata: { job: job.key, processed, duration_ms: durationMs, error },
-  });
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, {
+      scope: "platform",
+      scopeId: null,
+      action: error ? "admin.maintenance.error" : "admin.maintenance.run",
+      actorId: admin.id,
+      actorName: admin.username,
+      resourceType: "job",
+      resourceId: job.key,
+      resourceName: null,
+      ip: meta.ip ?? getIp(c),
+      userAgent: meta.userAgent,
+      geo: meta.geo,
+      metadata: { job: job.key, processed, duration_ms: durationMs, error },
+    }),
+  );
 
   if (error)
     return c.json({ error, job: job.key, duration_ms: durationMs }, 500);

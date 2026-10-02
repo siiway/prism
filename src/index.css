@@ -64,6 +64,16 @@ body {
   flex-shrink: 0;
 }
 
+/* Portalled Fluent surfaces sit outside most page containers. Give them the
+   same neutral boundary everywhere so menus and popups remain distinct in
+   both themes even though this design intentionally removes their shadows. */
+.fui-DialogSurface,
+.fui-MenuPopover,
+.fui-PopoverSurface,
+.fui-Listbox {
+  border: 1px solid var(--colorNeutralStroke1);
+}
+
 a {
   color: inherit;
   text-decoration: none;

@@ -1,6 +1,7 @@
 // OAuth App list page
 
 import {
+  Avatar,
   Badge,
   Button,
   Dialog,
@@ -11,7 +12,6 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
-  Image,
   Input,
   MessageBar,
   Spinner,
@@ -278,18 +278,12 @@ export function AppList() {
                     label={t("common.copyClientId")}
                     copiedLabel={t("common.copiedClientId")}
                   >
-                    {app.icon_url ? (
-                      <Image
-                        src={app.icon_url}
-                        alt={app.name}
-                        shape="rounded"
-                        fit="cover"
-                        width={32}
-                        height={32}
-                      />
-                    ) : (
-                      <GlobeRegular fontSize={32} />
-                    )}
+                    <Avatar
+                      image={app.icon_url ? { src: app.icon_url } : undefined}
+                      name={app.name}
+                      size={32}
+                      shape="square"
+                    />
                   </CopyIdTrigger>
                   <div
                     style={{

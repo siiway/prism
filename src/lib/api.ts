@@ -180,8 +180,8 @@ async function performRequest<T>(
 
   // A site admin who has switched to "normal view" asks the worker to drop
   // their site-admin override and treat team requests as their own membership.
-  // The flag is session-only and defaults off (see store/adminView), so this
-  // header is absent for everyone else and on a fresh SSR pass.
+  // The flag is session-only and defaults on (see store/adminView). Admin-panel
+  // navigation turns it off before opening a team/app resource.
   if (options.isNormalView?.()) headers["X-Prism-Team-View"] = "member";
 
   // The browser client uses global fetch. SSR injects a request-bound
@@ -2641,10 +2641,7 @@ export const api = createApiClient({
  *  concrete "global"/"china"; the client-side modes are resolved in the browser
  *  by the Captcha component. Absent on older servers → treated as "global". */
 export type TurnstileEndpointDirective =
-  | "global"
-  | "china"
-  | "client_language"
-  | "client_region";
+  "global" | "china" | "client_language" | "client_region";
 
 /** Which of the two configured Turnstile widgets minted a token. Sent back
  *  with the token so the server verifies it against the matching secret — the
@@ -2652,13 +2649,7 @@ export type TurnstileEndpointDirective =
 export type TurnstileVariant = "global" | "china";
 
 export type CaptchaProvider =
-  | "none"
-  | "turnstile"
-  | "hcaptcha"
-  | "recaptcha"
-  | "pow"
-  | "geetest"
-  | "cap";
+  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
 
 export type CapMode = "embedded" | "external";
 
@@ -3965,9 +3956,17 @@ export interface DeviceVerifyInfo {
 
 export interface AdminStats {
   users: number;
+  teams: number;
   apps: number;
   verified_domains: number;
   active_tokens: number;
+  proxied_images?: number;
+  trends: {
+    users: number[];
+    teams: number[];
+    apps: number[];
+    verified_domains: number[];
+  };
 }
 
 export interface AdminSecretsStatus {
@@ -4120,8 +4119,7 @@ export type NotificationRuleSendChannel =
   | { kind: "discord"; connection_id: string; level: NotificationLevel };
 
 export type NotificationRuleAction =
-  | { type: "drop" }
-  | { type: "send"; channels: NotificationRuleSendChannel[] };
+  { type: "drop" } | { type: "send"; channels: NotificationRuleSendChannel[] };
 
 export interface NotificationRulesetRule {
   id: string;

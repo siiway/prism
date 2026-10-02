@@ -118,11 +118,11 @@ export function TeamJoin() {
         textAlign: "center",
       }}
     >
-      {team.avatar_url ? (
-        <Avatar image={{ src: team.avatar_url }} name={team.name} size={64} />
-      ) : (
-        <Avatar name={team.name} size={64} />
-      )}
+      <Avatar
+        image={team.avatar_url ? { src: team.avatar_url } : undefined}
+        name={team.name}
+        size={64}
+      />
 
       <div>
         <Title2>{team.name}</Title2>

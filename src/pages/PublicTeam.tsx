@@ -343,21 +343,12 @@ export function PublicTeam() {
             </div>
             {team.apps.map((a) => (
               <div key={a.client_id} className={styles.appRow}>
-                {a.icon_url ? (
-                  <Avatar
-                    image={{ src: a.icon_url }}
-                    name={a.name}
-                    size={32}
-                    shape="square"
-                  />
-                ) : (
-                  <Avatar
-                    name={a.name}
-                    size={32}
-                    shape="square"
-                    icon={<AppsRegular />}
-                  />
-                )}
+                <Avatar
+                  image={a.icon_url ? { src: a.icon_url } : undefined}
+                  name={a.name}
+                  size={32}
+                  shape="square"
+                />
                 <div className={styles.appInfo}>
                   <Text weight="semibold" block>
                     {a.name}

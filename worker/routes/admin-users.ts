@@ -63,36 +63,38 @@ function auditUser(
   // record; the user-scope copy is how the account holder finds out that
   // someone else changed their credentials — which is the whole point of
   // Transparent Control, and matters most for exactly these actions.
-  void recordAudit(c.env, c.executionCtx, [
-    {
-      scope: "platform",
-      scopeId: null,
-      action: `admin.${action}`,
-      actorId: admin.id,
-      actorName: admin.username,
-      resourceType: "user",
-      resourceId: targetId,
-      resourceName: targetName,
-      ip: meta.ip ?? getIp(c),
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata,
-    },
-    {
-      scope: "user",
-      scopeId: targetId,
-      action: `admin.${action}`,
-      actorId: admin.id,
-      actorName: admin.username,
-      resourceType: "user",
-      resourceId: targetId,
-      resourceName: targetName,
-      ip: meta.ip ?? getIp(c),
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata: { ...metadata, site_admin: true },
-    },
-  ]);
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, [
+      {
+        scope: "platform",
+        scopeId: null,
+        action: `admin.${action}`,
+        actorId: admin.id,
+        actorName: admin.username,
+        resourceType: "user",
+        resourceId: targetId,
+        resourceName: targetName,
+        ip: meta.ip ?? getIp(c),
+        userAgent: meta.userAgent,
+        geo: meta.geo,
+        metadata,
+      },
+      {
+        scope: "user",
+        scopeId: targetId,
+        action: `admin.${action}`,
+        actorId: admin.id,
+        actorName: admin.username,
+        resourceType: "user",
+        resourceId: targetId,
+        resourceName: targetName,
+        ip: meta.ip ?? getIp(c),
+        userAgent: meta.userAgent,
+        geo: meta.geo,
+        metadata: { ...metadata, site_admin: true },
+      },
+    ]),
+  );
 }
 
 /** Drop every session for a user. Called after anything that changes who can

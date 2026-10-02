@@ -46,6 +46,7 @@ import {
   recordAudit,
   recordAccountDeletion,
   auditRequestMeta,
+  type AuditInput,
 } from "../lib/audit";
 import {
   dissolveTeam,
@@ -979,7 +980,7 @@ app.get("/users", async (c) => {
 
   const [usersResult, countResult] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT u.id, u.email, u.username, u.display_name, u.role, u.email_verified, u.is_active, u.created_at,
+      `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.email_verified, u.is_active, u.created_at,
               (SELECT COUNT(*) FROM oauth_apps WHERE owner_id = u.id AND team_id IS NULL) as app_count
        FROM users u ${whereClause} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
     )
@@ -990,8 +991,19 @@ app.get("/users", async (c) => {
       .first<{ n: number }>(),
   ]);
 
+  const users = await Promise.all(
+    usersResult.results.map(async (user) => ({
+      ...user,
+      avatar_url: await proxyImageUrl(
+        c.env.APP_URL,
+        c.env.DB,
+        typeof user.avatar_url === "string" ? user.avatar_url : null,
+      ),
+    })),
+  );
+
   return c.json({
-    users: usersResult.results,
+    users,
     total: countResult?.n ?? 0,
     page,
     limit,
@@ -1350,10 +1362,15 @@ app.patch("/apps/:id", async (c) => {
   }>();
 
   const app = await c.env.DB.prepare(
-    "SELECT id, name FROM oauth_apps WHERE id = ?",
+    "SELECT id, name, owner_id, team_id FROM oauth_apps WHERE id = ?",
   )
     .bind(id)
-    .first<{ id: string; name: string }>();
+    .first<{
+      id: string;
+      name: string;
+      owner_id: string;
+      team_id: string | null;
+    }>();
   if (!app) return c.json({ error: "App not found" }, 404);
 
   const updates: string[] = [];
@@ -1380,16 +1397,26 @@ app.patch("/apps/:id", async (c) => {
   )
     .bind(...values)
     .run();
-  await logAudit(
-    c.env,
-    admin.id,
-    "admin.app.update",
-    "app",
-    id,
-    body,
-    getIp(c),
-    c.executionCtx,
-    { resourceName: app.name },
+  const meta = auditRequestMeta(c);
+  const auditBase = {
+    action: "admin.app.update",
+    actorId: admin.id,
+    actorName: admin.username,
+    resourceType: "app",
+    resourceId: id,
+    resourceName: app.name,
+    ip: meta.ip ?? getIp(c),
+    userAgent: meta.userAgent,
+    geo: meta.geo,
+    metadata: { ...body, site_admin: true },
+  };
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, [
+      { ...auditBase, scope: "platform", scopeId: null },
+      app.team_id
+        ? { ...auditBase, scope: "team", scopeId: app.team_id }
+        : { ...auditBase, scope: "user", scopeId: app.owner_id },
+    ]),
   );
   return c.json({ message: "App updated" });
 });
@@ -2374,9 +2401,13 @@ app.get("/restricted-users", async (c) => {
 // ─── Statistics ───────────────────────────────────────────────────────────────
 
 app.get("/stats", async (c) => {
-  const [userCount, appCount, teamCount, domainCount, tokenCount] =
+  const now = Math.floor(Date.now() / 1000);
+  const since = now - 29 * 86400;
+  const [userCount, appCount, teamCount, domainCount, tokenCount, trendRows] =
     await Promise.all([
-      c.env.DB.prepare("SELECT COUNT(*) as n FROM users").first<{
+      c.env.DB.prepare(
+        "SELECT COUNT(*) as n FROM users WHERE kind = 'user'",
+      ).first<{
         n: number;
       }>(),
       c.env.DB.prepare("SELECT COUNT(*) as n FROM oauth_apps").first<{
@@ -2391,15 +2422,56 @@ app.get("/stats", async (c) => {
       c.env.DB.prepare(
         "SELECT COUNT(*) as n FROM oauth_tokens WHERE expires_at > ?",
       )
-        .bind(Math.floor(Date.now() / 1000))
+        .bind(now)
         .first<{ n: number }>(),
+      c.env.DB.prepare(
+        `SELECT kind, day, COUNT(*) AS n FROM (
+           SELECT 'users' AS kind, (created_at / 86400) * 86400 AS day
+             FROM users WHERE kind = 'user' AND created_at >= ?
+           UNION ALL
+           SELECT 'teams', (created_at / 86400) * 86400
+             FROM teams WHERE created_at >= ?
+           UNION ALL
+           SELECT 'apps', (created_at / 86400) * 86400
+             FROM oauth_apps WHERE created_at >= ?
+           UNION ALL
+           SELECT 'verified_domains', (verified_at / 86400) * 86400
+             FROM domains WHERE verified = 1 AND verified_at >= ?
+         ) GROUP BY kind, day ORDER BY day`,
+      )
+        .bind(since, since, since, since)
+        .all<{ kind: string; day: number; n: number }>(),
     ]);
+
+  const firstDay = Math.floor(since / 86400) * 86400;
+  const trends: Record<string, number[]> = {
+    users: Array(30).fill(0),
+    teams: Array(30).fill(0),
+    apps: Array(30).fill(0),
+    verified_domains: Array(30).fill(0),
+  };
+  for (const row of trendRows.results) {
+    const index = Math.floor((row.day - firstDay) / 86400);
+    if (index >= 0 && index < 30 && trends[row.kind]) {
+      trends[row.kind][index] = row.n;
+    }
+  }
+
+  // Older installations may not have the image proxy migration yet. Omit the
+  // proxy metric rather than turning the entire overview into an error state.
+  const proxyCount = await c.env.DB.prepare(
+    "SELECT COUNT(*) as n FROM image_proxy_mappings",
+  )
+    .first<{ n: number }>()
+    .catch(() => null);
   return c.json({
     users: userCount?.n ?? 0,
     apps: appCount?.n ?? 0,
     teams: teamCount?.n ?? 0,
     verified_domains: domainCount?.n ?? 0,
     active_tokens: tokenCount?.n ?? 0,
+    ...(proxyCount ? { proxied_images: proxyCount.n } : {}),
+    trends,
   });
 });
 
@@ -2787,9 +2859,11 @@ async function logAudit(
       .first<{ username: string }>();
     actorName = u?.username ?? null;
   }
-  await recordAudit(env, ctx, {
-    scope: "platform",
-    scopeId: null,
+  const auditedMetadata =
+    metadata && typeof metadata === "object"
+      ? { ...(metadata as Record<string, unknown>), site_admin: true }
+      : { value: metadata, site_admin: true };
+  const base = {
     action,
     actorId: userId,
     actorName,
@@ -2799,8 +2873,13 @@ async function logAudit(
     ip,
     userAgent: extra?.userAgent ?? null,
     geo: extra?.geo ?? null,
-    metadata,
-  });
+    metadata: auditedMetadata,
+  };
+  const events: AuditInput[] = [{ ...base, scope: "platform", scopeId: null }];
+  if (resourceType === "team" && resourceId) {
+    events.push({ ...base, scope: "team", scopeId: resourceId });
+  }
+  await recordAudit(env, ctx, events);
 }
 
 // ─── Site Invites ─────────────────────────────────────────────────────────────

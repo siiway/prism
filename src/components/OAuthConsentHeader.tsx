@@ -11,7 +11,6 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
-  GlobeRegular,
   ShieldRegular,
   WarningRegular,
 } from "@fluentui/react-icons";
@@ -64,26 +63,12 @@ export function OAuthConsentHeader({
   return (
     <>
       <div className={styles.appRow}>
-        {app.icon_url ? (
-          <Avatar image={{ src: app.icon_url }} name={app.name} size={48} />
-        ) : (
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 8,
-              background: tokens.colorBrandBackground,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <GlobeRegular
-              fontSize={24}
-              style={{ color: tokens.colorNeutralForegroundOnBrand }}
-            />
-          </div>
-        )}
+        <Avatar
+          image={app.icon_url ? { src: app.icon_url } : undefined}
+          name={app.name}
+          size={48}
+          shape="square"
+        />
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Text weight="semibold" size={400}>

@@ -1,4 +1,4 @@
-// Session-only "normal view" toggle for site administrators.
+// Session-only team/app authority mode for site administrators.
 //
 // A site admin holds owner-level authority on every team as the site, and the
 // team pages say so with a banner. "Normal view" lets an admin drop that
@@ -6,9 +6,8 @@
 // api client attaches an `X-Prism-Team-View: member` header while it is on, and
 // the worker treats the request as coming from a plain user.
 //
-// Deliberately NOT persisted: a page reload returns to the default admin view,
-// so an admin who forgets they toggled it can never get stuck without access to
-// a team they don't belong to.
+// Deliberately NOT persisted: ordinary navigation starts in membership mode.
+// Entering a resource from the admin panel explicitly enables the site override.
 
 import { create } from "zustand";
 
@@ -19,15 +18,24 @@ interface AdminViewState {
    *  Session-only like the toggle itself; toggling the view brings the
    *  banner back. */
   normalBannerDismissed: boolean;
+  adminBannerDismissed: boolean;
   setNormalView: (v: boolean) => void;
   dismissNormalBanner: () => void;
+  dismissAdminBanner: () => void;
 }
 
 export const useAdminViewStore = create<AdminViewState>((set) => ({
-  normalView: false,
+  normalView: true,
   normalBannerDismissed: false,
-  setNormalView: (v) => set({ normalView: v, normalBannerDismissed: false }),
+  adminBannerDismissed: false,
+  setNormalView: (v) =>
+    set({
+      normalView: v,
+      normalBannerDismissed: false,
+      adminBannerDismissed: false,
+    }),
   dismissNormalBanner: () => set({ normalBannerDismissed: true }),
+  dismissAdminBanner: () => set({ adminBannerDismissed: true }),
 }));
 
 /** Non-hook read for the api client, which runs outside React. */

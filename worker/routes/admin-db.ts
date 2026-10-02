@@ -335,20 +335,22 @@ function auditDb(
 ): void {
   const admin = c.get("user");
   const meta = auditRequestMeta(c);
-  void recordAudit(c.env, c.executionCtx, {
-    scope: "platform",
-    scopeId: null,
-    action,
-    actorId: admin.id,
-    actorName: admin.username,
-    resourceType: "database",
-    resourceId: resourceId ?? null,
-    resourceName: null,
-    ip: meta.ip ?? getIp(c),
-    userAgent: meta.userAgent,
-    geo: meta.geo,
-    metadata,
-  });
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, {
+      scope: "platform",
+      scopeId: null,
+      action,
+      actorId: admin.id,
+      actorName: admin.username,
+      resourceType: "database",
+      resourceId: resourceId ?? null,
+      resourceName: null,
+      ip: meta.ip ?? getIp(c),
+      userAgent: meta.userAgent,
+      geo: meta.geo,
+      metadata,
+    }),
+  );
 }
 
 /** D1 hands back values as JS primitives, except BLOBs, which arrive as

@@ -4,8 +4,10 @@ import { Tab, TabList, makeStyles } from "@fluentui/react-components";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { useApi } from "../../lib/api-context";
 import { PageHeader } from "../../components/PageHeader";
+import { useAdminViewStore } from "../../store/adminView";
 
 const useStyles = makeStyles({
   root: {
@@ -32,6 +34,11 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { t } = useTranslation();
+  const setNormalView = useAdminViewStore((state) => state.setNormalView);
+
+  // Resources opened from the admin panel must use the site's authority. The
+  // ordinary team/app routes default to the administrator's own membership.
+  useEffect(() => setNormalView(false), [setNormalView]);
 
   // The database tab only exists when the operator left it on. Shares its
   // query key with the page itself, so this costs one request per session.

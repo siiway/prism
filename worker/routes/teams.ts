@@ -44,7 +44,7 @@ import {
   mergeWithSiteFloor,
   unmetRequirements,
 } from "../lib/teamRequirements";
-import { recordAudit, auditRequestMeta } from "../lib/audit";
+import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
 import { isTeamLocked } from "../lib/lockdown";
 import {
   checkTeamJoinAllowed,
@@ -98,9 +98,7 @@ function auditTeam(
   // would show an outsider's change as if a member had made it.
   const elevated = actedAsSiteAdmin(c, teamId);
   const metadata = opts.metadata ?? {};
-  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, {
-    scope: "team",
-    scopeId: teamId,
+  const base = {
     action,
     actorId: actor.id,
     actorName: actor.username,
@@ -116,7 +114,12 @@ function auditTeam(
         : elevated
           ? { site_admin: true }
           : metadata,
-  }));
+  };
+  const events: AuditInput[] = [{ ...base, scope: "team", scopeId: teamId }];
+  if (elevated) {
+    events.push({ ...base, scope: "platform" as const, scopeId: null });
+  }
+  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, events));
 }
 
 // ─── Serialization ────────────────────────────────────────────────────────────
@@ -776,7 +779,10 @@ app.post("/join/:token", requireAuth, async (c) => {
   const existing = await getMember(c.env.DB, invite.team_id, user.id);
   const invitedGroups = await loadInviteGroups(c.env.DB, [invite.token]);
   let groupIds = (invitedGroups.get(invite.token) ?? []).map((g) => g.id);
-  if (existing && (groupIds.length === 0 || invite.allow_existing_members !== 1))
+  if (
+    existing &&
+    (groupIds.length === 0 || invite.allow_existing_members !== 1)
+  )
     return c.json({ error: "Already a member of this team" }, 409);
   if (existing) {
     const count = await c.env.DB.prepare(
@@ -2845,7 +2851,10 @@ app.post("/:id/invites", async (c) => {
     return c.json({ error: "group_ids must contain strings" }, 400);
   const requestedGroupIds = [...new Set(body.group_ids ?? [])];
   if (requestedGroupIds.length > 1)
-    return c.json({ error: "An invite can assign at most one member group" }, 400);
+    return c.json(
+      { error: "An invite can assign at most one member group" },
+      400,
+    );
   if (body.allow_existing_members && requestedGroupIds.length === 0)
     return c.json(
       { error: "allow_existing_members requires a member group" },

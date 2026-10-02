@@ -46,6 +46,15 @@
     "clear": "Clear",
     "refresh": "Refresh"
   },
+  "colorPicker": {
+    "area": "Color saturation and brightness",
+    "saturation": "Saturation",
+    "brightness": "Brightness",
+    "hue": "Hue",
+    "hex": "Hex color",
+    "optionalHex": "Optional hex color",
+    "invalidHex": "Enter a three- or six-digit hex color."
+  },
   "error": {
     "chunkLoadTitle": "Page failed to load",
     "chunkLoadDesc": "The page could not be loaded due to a possible update or network issue. Please refresh and try again.",
@@ -434,6 +443,8 @@
     "verifyNow": "Verify now"
   },
   "apps": {
+    "siteAdminViewActive": "You're managing this app with site-administrator authority. Changes are recorded in the resource and platform audit logs.",
+    "memberViewActive": "You're managing this app with your ordinary owner or team membership permissions.",
     "myApplications": "My Applications",
     "newApp": "New app",
     "createOAuthApp": "Create OAuth App",
@@ -1136,9 +1147,14 @@
     "logsTab": "Logs",
     "imageProxyTab": "Image Proxy",
     "totalUsers": "Total Users",
+    "totalTeams": "Total Teams",
     "totalApps": "Total Apps",
     "verifiedDomains": "Verified Domains",
     "activeTokens": "Active Tokens",
+    "proxiedImages": "Proxied Images",
+    "newLast30Days": "New per day · last 30 days",
+    "thirtyDayTrend": "30-day trend for {{label}}",
+    "statsError": "The overview statistics could not be loaded.",
     "searchUsers": "Search users…",
     "searchApps": "Search apps…",
     "searchTeams": "Search teams…",

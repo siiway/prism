@@ -1657,7 +1657,10 @@ function auditAppLifecycle(
     env: Env;
     executionCtx: WaitUntilCtx;
     req: { header: (h: string) => string | undefined; raw: Request };
-    get: (k: "user") => { id: string; username: string };
+    get: {
+      (k: "user"): { id: string; username: string; role?: string };
+      (k: "patAuth"): boolean | undefined;
+    };
   },
   action: string,
   app: { id: string; name: string; owner_id: string; team_id: string | null },
@@ -1676,12 +1679,21 @@ function auditAppLifecycle(
     geo: meta.geo,
     metadata: { name: app.name },
   };
+  const elevated =
+    (c.get("user") as { role?: string }).role === "admin" &&
+    c.get("patAuth") !== true;
+  const auditedBase = elevated
+    ? { ...base, metadata: { ...base.metadata, site_admin: true } }
+    : base;
   const events: AuditInput[] = [
-    { ...base, scope: "user", scopeId: app.owner_id },
+    app.team_id
+      ? { ...auditedBase, scope: "team", scopeId: app.team_id }
+      : { ...auditedBase, scope: "user", scopeId: app.owner_id },
   ];
-  if (app.team_id)
-    events.push({ ...base, scope: "team", scopeId: app.team_id });
-  void recordAudit(c.env, c.executionCtx, events);
+  if (elevated) {
+    events.push({ ...auditedBase, scope: "platform", scopeId: null });
+  }
+  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, events));
 }
 
 // Coerce a client-supplied redirect URI list into typed entries. Bare strings

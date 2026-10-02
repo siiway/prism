@@ -17,20 +17,20 @@ config API.
 
 ## General
 
-| Key                          | Type    | Default                         | Description                                                                |
-| ---------------------------- | ------- | ------------------------------- | -------------------------------------------------------------------------- |
-| `site_name`                  | string  | `"Prism"`                       | Displayed in the browser title and emails                                  |
-| `site_description`           | string  | `"Federated identity platform"` | Shown on the login page                                                    |
-| `site_icon_url`              | string? | `null`                          | URL to a favicon / logo                                                    |
-| `allow_registration`         | boolean | `true`                          | Allow new users to self-register                                           |
-| `invite_only`                | boolean | `false`                         | Require an invite token to register, even when `allow_registration = true` |
-| `require_email_verification` | boolean | `false`                         | Block login until email is verified                                        |
-| `accent_color`               | string  | `"#0078d4"`                     | Primary brand color (hex). Drives FluentUI theme                           |
-| `custom_css`                 | string  | `""`                            | Injected as a `<style>` block on every page                                |
-| `disable_user_create_team`   | boolean | `false`                         | Hide the "New team" button — only admins can create teams                  |
-| `disable_user_create_app`    | boolean | `false`                         | Hide the "New application" button — only admins can create OAuth apps      |
-| `allow_alt_email_login`      | boolean | `true`                          | Let users sign in with any verified secondary email, not just primary      |
-| `initialized`                | boolean | `false`                         | Set to `true` after first-run setup. Do not change manually                |
+| Key                          | Type    | Default                         | Description                                                                                  |
+| ---------------------------- | ------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
+| `site_name`                  | string  | `"Prism"`                       | Displayed in the browser title and emails                                                    |
+| `site_description`           | string  | `"Federated identity platform"` | Shown on the login page                                                                      |
+| `site_icon_url`              | string? | `null`                          | URL to a favicon / logo                                                                      |
+| `allow_registration`         | boolean | `true`                          | Allow new users to self-register                                                             |
+| `invite_only`                | boolean | `false`                         | Require an invite token to register, even when `allow_registration = true`                   |
+| `require_email_verification` | boolean | `false`                         | Block login until email is verified                                                          |
+| `accent_color`               | string  | `"#0078d4"`                     | Primary brand color, selected with the color picker or entered as hex. Drives FluentUI theme |
+| `custom_css`                 | string  | `""`                            | Injected as a `<style>` block on every page                                                  |
+| `disable_user_create_team`   | boolean | `false`                         | Hide the "New team" button — only admins can create teams                                    |
+| `disable_user_create_app`    | boolean | `false`                         | Hide the "New application" button — only admins can create OAuth apps                        |
+| `allow_alt_email_login`      | boolean | `true`                          | Let users sign in with any verified secondary email, not just primary                        |
+| `initialized`                | boolean | `false`                         | Set to `true` after first-run setup. Do not change manually                                  |
 
 ## Legal pages
 

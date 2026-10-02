@@ -249,21 +249,14 @@ function ConsentCard({
           label={t("common.copyClientId")}
           copiedLabel={t("common.copiedClientId")}
         >
-          {consent.app.icon_url ? (
-            <Avatar
-              image={{ src: consent.app.icon_url }}
-              name={consent.app.name}
-              size={48}
-              shape="square"
-            />
-          ) : (
-            <div className={styles.appIcon}>
-              <GlobeRegular
-                fontSize={24}
-                style={{ color: tokens.colorNeutralForeground3 }}
-              />
-            </div>
-          )}
+          <Avatar
+            image={
+              consent.app.icon_url ? { src: consent.app.icon_url } : undefined
+            }
+            name={consent.app.name}
+            size={48}
+            shape="square"
+          />
         </CopyIdTrigger>
 
         <div className={styles.info}>

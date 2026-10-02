@@ -36,20 +36,22 @@ function auditOps(
 ): void {
   const admin = c.get("user");
   const meta = auditRequestMeta(c);
-  void recordAudit(c.env, c.executionCtx, {
-    scope: "platform",
-    scopeId: null,
-    action,
-    actorId: admin.id,
-    actorName: admin.username,
-    resourceType: resource?.type ?? null,
-    resourceId: resource?.id ?? null,
-    resourceName: resource?.name ?? null,
-    ip: meta.ip ?? getIp(c),
-    userAgent: meta.userAgent,
-    geo: meta.geo,
-    metadata,
-  });
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, {
+      scope: "platform",
+      scopeId: null,
+      action,
+      actorId: admin.id,
+      actorName: admin.username,
+      resourceType: resource?.type ?? null,
+      resourceId: resource?.id ?? null,
+      resourceName: resource?.name ?? null,
+      ip: meta.ip ?? getIp(c),
+      userAgent: meta.userAgent,
+      geo: meta.geo,
+      metadata,
+    }),
+  );
 }
 
 // ─── Mass revocation ──────────────────────────────────────────────────────────

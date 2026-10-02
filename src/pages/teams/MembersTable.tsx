@@ -49,7 +49,7 @@ const useStyles = makeStyles({
     marginBottom: "12px",
     flexWrap: "wrap",
   },
-  search: { minWidth: "220px", flex: "1 1 220px" },
+  search: { minWidth: "220px", flex: "1 1 220px", height: "32px" },
   empty: {
     padding: "32px 16px",
     textAlign: "center",

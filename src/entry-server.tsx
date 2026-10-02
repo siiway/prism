@@ -146,7 +146,10 @@ export async function render(
   const authStore = createAuthStore({ initialAuth: auth });
   const apiClient = createApiClient({
     fetcher: opts.fetcher,
-    isNormalView: () => false,
+    // A fresh navigation starts in ordinary membership mode. The admin layout
+    // explicitly enables elevated mode after hydration when it opens a
+    // team/app resource, matching the browser store's default.
+    isNormalView: () => true,
   });
 
   const routes = createRoutes({ qc: queryClient, api: apiClient, authStore });

@@ -315,21 +315,12 @@ export function PublicProfile() {
             </div>
             {p.owned_apps.map((a) => (
               <div key={a.client_id} className={styles.appRow}>
-                {a.icon_url ? (
-                  <Avatar
-                    image={{ src: a.icon_url }}
-                    name={a.name}
-                    size={32}
-                    shape="square"
-                  />
-                ) : (
-                  <Avatar
-                    name={a.name}
-                    size={32}
-                    shape="square"
-                    icon={<ShieldRegular />}
-                  />
-                )}
+                <Avatar
+                  image={a.icon_url ? { src: a.icon_url } : undefined}
+                  name={a.name}
+                  size={32}
+                  shape="square"
+                />
                 <div className={styles.appInfo}>
                   <Text weight="semibold" block>
                     {a.name}
@@ -445,21 +436,12 @@ export function PublicProfile() {
             </div>
             {p.authorized_apps.map((a) => (
               <div key={a.client_id} className={styles.appRow}>
-                {a.icon_url ? (
-                  <Avatar
-                    image={{ src: a.icon_url }}
-                    name={a.name}
-                    size={32}
-                    shape="square"
-                  />
-                ) : (
-                  <Avatar
-                    name={a.name}
-                    size={32}
-                    shape="square"
-                    icon={<PlugConnectedRegular />}
-                  />
-                )}
+                <Avatar
+                  image={a.icon_url ? { src: a.icon_url } : undefined}
+                  name={a.name}
+                  size={32}
+                  shape="square"
+                />
                 <div className={styles.appInfo}>
                   <Text weight="semibold" block>
                     {a.name}

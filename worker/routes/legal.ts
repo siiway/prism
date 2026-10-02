@@ -109,24 +109,26 @@ adminRoutes.put("/:doc", async (c) => {
   await upsertLegalDocument(c.env.DB, doc, content, admin.id);
 
   const meta = auditRequestMeta(c);
-  void recordAudit(c.env, c.executionCtx, {
-    scope: "platform",
-    scopeId: null,
-    action: !content
-      ? "admin.legal.unpublish"
-      : wasPublished
-        ? "admin.legal.update"
-        : "admin.legal.publish",
-    actorId: admin.id,
-    actorName: admin.username,
-    resourceType: "legal_document",
-    resourceId: doc,
-    resourceName: doc,
-    ip: meta.ip ?? getIp(c),
-    userAgent: meta.userAgent,
-    geo: meta.geo,
-    metadata: { bytes: new TextEncoder().encode(content).byteLength },
-  });
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, {
+      scope: "platform",
+      scopeId: null,
+      action: !content
+        ? "admin.legal.unpublish"
+        : wasPublished
+          ? "admin.legal.update"
+          : "admin.legal.publish",
+      actorId: admin.id,
+      actorName: admin.username,
+      resourceType: "legal_document",
+      resourceId: doc,
+      resourceName: doc,
+      ip: meta.ip ?? getIp(c),
+      userAgent: meta.userAgent,
+      geo: meta.geo,
+      metadata: { bytes: new TextEncoder().encode(content).byteLength },
+    }),
+  );
 
   const row = await getLegalDocument(c.env.DB, doc);
   return c.json(serialize(doc, row?.content ?? "", row?.updated_at ?? null));

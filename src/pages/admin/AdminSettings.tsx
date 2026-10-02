@@ -36,6 +36,7 @@ import type { SiteConfig, CaptchaProvider } from "../../types";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { PasswordInput } from "../../components/PasswordInput";
 import { SkeletonFormCard } from "../../components/Skeletons";
+import { ColorPickerInput } from "../../components/ColorPickerInput";
 
 const useStyles = makeStyles({
   card: {
@@ -2129,25 +2130,10 @@ export function AdminSettings() {
           <Title3>{t("admin.appearanceTitle")}</Title3>
           <div className={styles.form}>
             <Field label={t("admin.accentColor")}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="color"
-                  value={get("accent_color") ?? "#0078d4"}
-                  onChange={(e) => set("accent_color", e.target.value)}
-                  style={{
-                    width: 48,
-                    height: 36,
-                    border: "none",
-                    borderRadius: 4,
-                    cursor: "pointer",
-                  }}
-                />
-                <Input
-                  value={get("accent_color") ?? "#0078d4"}
-                  onChange={(e) => set("accent_color", e.target.value)}
-                  style={{ flex: 1 }}
-                />
-              </div>
+              <ColorPickerInput
+                value={get("accent_color") ?? "#0078d4"}
+                onChange={(color) => set("accent_color", color ?? "#0078d4")}
+              />
             </Field>
             <Field label={t("admin.customCss")} hint={t("admin.customCssHint")}>
               <Textarea

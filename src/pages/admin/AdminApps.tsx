@@ -1,6 +1,7 @@
 // Admin app moderation
 
 import {
+  Avatar,
   Badge,
   Button,
   Dialog,
@@ -11,7 +12,6 @@ import {
   DialogTitle,
   Dropdown,
   Field,
-  Image,
   Input,
   MessageBar,
   Option,
@@ -227,16 +227,12 @@ export function AdminApps() {
                     <div
                       style={{ display: "flex", alignItems: "center", gap: 8 }}
                     >
-                      {app.icon_url && (
-                        <Image
-                          src={app.icon_url}
-                          alt={app.name}
-                          shape="rounded"
-                          fit="cover"
-                          width={24}
-                          height={24}
-                        />
-                      )}
+                      <Avatar
+                        image={app.icon_url ? { src: app.icon_url } : undefined}
+                        name={app.name}
+                        size={24}
+                        shape="square"
+                      />
                       <div>
                         <div
                           style={{
@@ -279,16 +275,16 @@ export function AdminApps() {
                           gap: 6,
                         }}
                       >
-                        {app.team_avatar_url ? (
-                          <Image
-                            src={app.team_avatar_url}
-                            alt=""
-                            shape="rounded"
-                            fit="cover"
-                            width={16}
-                            height={16}
-                          />
-                        ) : null}
+                        <Avatar
+                          image={
+                            app.team_avatar_url
+                              ? { src: app.team_avatar_url }
+                              : undefined
+                          }
+                          name={app.team_name ?? t("admin.teamHeader")}
+                          size={16}
+                          shape="square"
+                        />
                         <Text size={200} weight="semibold">
                           {app.team_name ?? t("admin.teamHeader")}
                         </Text>

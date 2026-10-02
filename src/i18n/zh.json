@@ -46,6 +46,15 @@
     "clear": "清除",
     "refresh": "刷新"
   },
+  "colorPicker": {
+    "area": "颜色饱和度和亮度",
+    "saturation": "饱和度",
+    "brightness": "亮度",
+    "hue": "色相",
+    "hex": "十六进制颜色",
+    "optionalHex": "可选的十六进制颜色",
+    "invalidHex": "请输入三位或六位十六进制色值。"
+  },
   "error": {
     "chunkLoadTitle": "页面加载失败",
     "chunkLoadDesc": "页面因可能的更新或网络问题加载失败，请刷新后重试。",
@@ -434,6 +443,8 @@
     "verifyNow": "立即验证"
   },
   "apps": {
+    "siteAdminViewActive": "你正以站点管理员权限管理此应用。更改会同时记录到资源和平台审计日志。",
+    "memberViewActive": "你正以自己的普通所有者或团队成员权限管理此应用。",
     "myApplications": "我的应用",
     "newApp": "新建应用",
     "createOAuthApp": "创建 OAuth 应用",
@@ -1136,9 +1147,14 @@
     "logsTab": "请求日志",
     "imageProxyTab": "图片代理",
     "totalUsers": "总用户数",
+    "totalTeams": "团队总数",
     "totalApps": "总应用数",
     "verifiedDomains": "已验证域名",
     "activeTokens": "活跃令牌",
+    "proxiedImages": "代理图片数",
+    "newLast30Days": "每日新增 · 最近 30 天",
+    "thirtyDayTrend": "{{label}} 的 30 天趋势",
+    "statsError": "无法加载概览统计数据。",
     "searchUsers": "搜索用户…",
     "searchApps": "搜索应用…",
     "searchTeams": "搜索团队…",

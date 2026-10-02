@@ -1,6 +1,7 @@
 // Admin user management
 
 import {
+  Avatar,
   Button,
   Checkbox,
   Dialog,
@@ -381,16 +382,31 @@ export function AdminUsers() {
                       />
                     </TableCell>
                     <TableCell>
-                      <div>
-                        <Text weight="semibold" block>
-                          {u.display_name}
-                        </Text>
-                        <Text
-                          size={200}
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          @{u.username}
-                        </Text>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                        }}
+                      >
+                        <Avatar
+                          image={
+                            u.avatar_url ? { src: u.avatar_url } : undefined
+                          }
+                          name={u.display_name || u.username}
+                          size={32}
+                        />
+                        <div>
+                          <Text weight="semibold" block>
+                            {u.display_name}
+                          </Text>
+                          <Text
+                            size={200}
+                            style={{ color: tokens.colorNeutralForeground3 }}
+                          >
+                            @{u.username}
+                          </Text>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>

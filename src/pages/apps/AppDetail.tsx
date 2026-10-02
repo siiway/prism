@@ -2,6 +2,7 @@
 
 import {
   Badge,
+  Avatar,
   Button,
   Checkbox,
   Dialog,
@@ -24,7 +25,6 @@ import {
   Text,
   Textarea,
   Title2,
-  Title3,
   Tooltip,
   makeStyles,
   tokens,
@@ -59,6 +59,8 @@ import {
   SkeletonTableRows,
 } from "../../components/Skeletons";
 import { PLATFORM_SCOPES } from "../../../shared/scopes";
+import { useAuthStore } from "../../store/auth";
+import { useAdminViewStore } from "../../store/adminView";
 
 const useStyles = makeStyles({
   header: {
@@ -66,6 +68,11 @@ const useStyles = makeStyles({
     alignItems: "center",
     gap: "12px",
     marginBottom: "24px",
+  },
+  headerText: {
+    display: "flex",
+    flexDirection: "column",
+    minWidth: 0,
   },
   card: {
     border: `1px solid ${tokens.colorNeutralStroke1}`,
@@ -1068,9 +1075,23 @@ export function AppDetail() {
   const location = useLocation();
   const qc = useQueryClient();
   const { t, i18n } = useTranslation();
+  const isSiteAdmin = useAuthStore((state) => state.user?.role === "admin");
+  const {
+    normalView,
+    setNormalView,
+    normalBannerDismissed,
+    dismissNormalBanner,
+    adminBannerDismissed,
+    dismissAdminBanner,
+  } = useAdminViewStore();
+
+  const setView = (normal: boolean) => {
+    setNormalView(normal);
+    void qc.invalidateQueries();
+  };
 
   const { data, isLoading } = useQuery({
-    queryKey: ["app", id],
+    queryKey: ["app", id, normalView],
     queryFn: () => api.getApp(id!),
   });
   const app = data?.app;
@@ -1315,6 +1336,42 @@ export function AppDetail() {
 
   return (
     <div>
+      {isSiteAdmin && !normalView && !adminBannerDismissed && (
+        <MessageBar intent="warning" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span>{t("apps.siteAdminViewActive")}</span>
+            <Button size="small" onClick={() => setView(true)}>
+              {t("teams.siteAdminSwitchToNormal")}
+            </Button>
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<DismissRegular />}
+              aria-label={t("common.close")}
+              onClick={dismissAdminBanner}
+              style={{ marginLeft: "auto" }}
+            />
+          </div>
+        </MessageBar>
+      )}
+      {isSiteAdmin && normalView && !normalBannerDismissed && (
+        <MessageBar intent="info" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span>{t("apps.memberViewActive")}</span>
+            <Button size="small" onClick={() => setView(false)}>
+              {t("teams.normalViewSwitchBack")}
+            </Button>
+            <Button
+              appearance="subtle"
+              size="small"
+              icon={<DismissRegular />}
+              aria-label={t("common.close")}
+              onClick={dismissNormalBanner}
+              style={{ marginLeft: "auto" }}
+            />
+          </div>
+        </MessageBar>
+      )}
       <div className={styles.header}>
         <Button
           appearance="subtle"
@@ -1323,7 +1380,20 @@ export function AppDetail() {
             app.team_id ? navigate(`/teams/${app.team_id}`) : navigate("/apps")
           }
         />
-        <Title2>{app.name}</Title2>
+        <Avatar
+          image={app.icon_url ? { src: app.icon_url } : undefined}
+          name={app.name}
+          size={48}
+          shape="square"
+        />
+        <div className={styles.headerText}>
+          <Title2>{app.name}</Title2>
+          {app.description && (
+            <Text block style={{ color: tokens.colorNeutralForeground3 }}>
+              {app.description}
+            </Text>
+          )}
+        </div>
         {app.is_verified && (
           <Badge color="success" appearance="filled">
             <ShieldRegular /> {t("apps.verified")}
@@ -1754,10 +1824,6 @@ export function AppDetail() {
 
       {tab === "whitelist" && app && (
         <div className={styles.card}>
-          <Title3>{t("accessWhitelist.title")}</Title3>
-          <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("accessWhitelist.description")}
-          </Text>
           <Field
             label={t("accessWhitelist.enabled")}
             hint={t("accessWhitelist.description")}

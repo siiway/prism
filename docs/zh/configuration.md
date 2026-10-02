@@ -11,20 +11,20 @@ description: 所有存储在 D1 中的运行时配置项，以及 Wrangler 绑�
 
 ## 通用
 
-| 键                           | 类型    | 默认值                          | 说明                                                       |
-| ---------------------------- | ------- | ------------------------------- | ---------------------------------------------------------- |
-| `site_name`                  | string  | `"Prism"`                       | 显示在浏览器标题和邮件中                                   |
-| `site_description`           | string  | `"Federated identity platform"` | 显示在登录页面                                             |
-| `site_icon_url`              | string? | `null`                          | 网站图标 / Logo 的 URL                                     |
-| `allow_registration`         | boolean | `true`                          | 允许新用户自助注册                                         |
-| `invite_only`                | boolean | `false`                         | 即使 `allow_registration = true`，也要求注册时携带邀请令牌 |
-| `require_email_verification` | boolean | `false`                         | 要求用户完成邮箱验证后才能登录                             |
-| `accent_color`               | string  | `"#0078d4"`                     | 主题主色调（十六进制），驱动 FluentUI 主题                 |
-| `custom_css`                 | string  | `""`                            | 注入到每个页面的 `<style>` 块                              |
-| `disable_user_create_team`   | boolean | `false`                         | 隐藏「新建团队」按钮 — 仅管理员可创建团队                  |
-| `disable_user_create_app`    | boolean | `false`                         | 隐藏「新建应用」按钮 — 仅管理员可创建 OAuth 应用           |
-| `allow_alt_email_login`      | boolean | `true`                          | 允许使用任意已验证的次要邮箱登录，而不仅是主邮箱           |
-| `initialized`                | boolean | `false`                         | 首次初始化后设为 `true`，请勿手动修改                      |
+| 键                           | 类型    | 默认值                          | 说明                                                                   |
+| ---------------------------- | ------- | ------------------------------- | ---------------------------------------------------------------------- |
+| `site_name`                  | string  | `"Prism"`                       | 显示在浏览器标题和邮件中                                               |
+| `site_description`           | string  | `"Federated identity platform"` | 显示在登录页面                                                         |
+| `site_icon_url`              | string? | `null`                          | 网站图标 / Logo 的 URL                                                 |
+| `allow_registration`         | boolean | `true`                          | 允许新用户自助注册                                                     |
+| `invite_only`                | boolean | `false`                         | 即使 `allow_registration = true`，也要求注册时携带邀请令牌             |
+| `require_email_verification` | boolean | `false`                         | 要求用户完成邮箱验证后才能登录                                         |
+| `accent_color`               | string  | `"#0078d4"`                     | 主题主色调，可通过颜色选择器选择或输入十六进制色值，驱动 FluentUI 主题 |
+| `custom_css`                 | string  | `""`                            | 注入到每个页面的 `<style>` 块                                          |
+| `disable_user_create_team`   | boolean | `false`                         | 隐藏「新建团队」按钮 — 仅管理员可创建团队                              |
+| `disable_user_create_app`    | boolean | `false`                         | 隐藏「新建应用」按钮 — 仅管理员可创建 OAuth 应用                       |
+| `allow_alt_email_login`      | boolean | `true`                          | 允许使用任意已验证的次要邮箱登录，而不仅是主邮箱                       |
+| `initialized`                | boolean | `false`                         | 首次初始化后设为 `true`，请勿手动修改                                  |
 
 ## 法律页面
 

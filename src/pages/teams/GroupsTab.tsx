@@ -36,6 +36,7 @@ import { useApi } from "../../lib/api-context";
 import { EmptyState } from "../../components/EmptyState";
 import { MarkdownText } from "../../components/MarkdownText";
 import { SkeletonTableRows } from "../../components/Skeletons";
+import { ColorPickerInput } from "../../components/ColorPickerInput";
 
 const useStyles = makeStyles({
   tableScroll: { overflowX: "auto" },
@@ -536,11 +537,12 @@ function GroupFormDialog({
                 label={t("teams.groupColorField")}
                 hint={t("teams.groupColorHint")}
               >
-                <Input
-                  value={form.color}
-                  placeholder="#5865f2"
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, color: e.target.value }))
+                <ColorPickerInput
+                  value={form.color || null}
+                  nullable
+                  fallbackColor="#5865f2"
+                  onChange={(color) =>
+                    setForm((f) => ({ ...f, color: color ?? "" }))
                   }
                 />
               </Field>
