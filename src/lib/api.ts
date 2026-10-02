@@ -1842,10 +1842,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       role?: string;
       email?: string;
       max_uses?: number;
-      ttl_hours?: number;
-      expires_in_hours?: number;
-      expires_in_value?: number;
-      expires_in_unit?: "hours" | "days" | "months" | "years";
+      expires_at: number;
       group_ids?: string[];
       allow_existing_members?: boolean;
       /** Makes the link able to create accounts. Requires a finite max_uses

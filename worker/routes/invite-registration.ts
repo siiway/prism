@@ -357,17 +357,19 @@ app.post("/auth/register-with-invite", async (c) => {
     throw err;
   }
 
-  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, {
-    scope: "team",
-    scopeId: team.id,
-    action: "team.member.invite_register",
-    actorId: userId,
-    actorName: body.username,
-    resourceType: "user",
-    resourceId: userId,
-    metadata: { pending: true },
-    ...auditRequestMeta(c),
-  }));
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, {
+      scope: "team",
+      scopeId: team.id,
+      action: "team.member.invite_register",
+      actorId: userId,
+      actorName: body.username,
+      resourceType: "user",
+      resourceId: userId,
+      metadata: { pending: true },
+      ...auditRequestMeta(c),
+    }),
+  );
 
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(userId)
@@ -414,6 +416,16 @@ async function pendingStatus(
     };
   if (user.origin_join_completed === 1)
     return { ok: false, status: 409, error: "Already joined" };
+
+  if (user.origin_invite_token) {
+    const invite = await env.DB.prepare(
+      "SELECT expires_at FROM team_invites WHERE token = ?",
+    )
+      .bind(user.origin_invite_token)
+      .first<{ expires_at: number }>();
+    if (invite && invite.expires_at <= Math.floor(Date.now() / 1000))
+      return { ok: false, status: 400, error: "Invalid or expired invite" };
+  }
 
   const team = await env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(user.origin_team_id)
@@ -502,22 +514,24 @@ app.post("/auth/invite-join/complete", requireAuth, async (c) => {
     ).bind(user.id),
   ]);
 
-  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, {
-    scope: "team",
-    scopeId: status.team.id,
-    action: "team.member.add",
-    actorId: user.id,
-    actorName: user.username,
-    resourceType: "user",
-    resourceId: user.id,
-    resourceName: `@${user.username}`,
-    metadata: {
-      role: "member",
-      via: "invite_registration",
-      member_group_count: groupRows.results.length,
-    },
-    ...auditRequestMeta(c),
-  }));
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, {
+      scope: "team",
+      scopeId: status.team.id,
+      action: "team.member.add",
+      actorId: user.id,
+      actorName: user.username,
+      resourceType: "user",
+      resourceId: user.id,
+      resourceName: `@${user.username}`,
+      metadata: {
+        role: "member",
+        via: "invite_registration",
+        member_group_count: groupRows.results.length,
+      },
+      ...auditRequestMeta(c),
+    }),
+  );
 
   return c.json({ message: "Joined", team_id: status.team.id });
 });

@@ -74,7 +74,7 @@ import {
   validateGroupSlug,
 } from "../lib/teamGroups";
 import type { TeamGroupRow, TeamRolePermissions } from "../types";
-import { parseInviteExpiry, type InviteExpiryUnit } from "../lib/inviteExpiry";
+import { parseInviteExpiry } from "../lib/inviteExpiry";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -2776,10 +2776,7 @@ app.post("/:id/invites", async (c) => {
   const body = await c.req.json<{
     role?: string;
     max_uses?: number;
-    expires_in_hours?: number;
-    ttl_hours?: number;
-    expires_in_value?: number;
-    expires_in_unit?: InviteExpiryUnit;
+    expires_at?: number;
     email?: string;
     allows_registration?: boolean;
     allow_existing_members?: boolean;
@@ -2841,7 +2838,7 @@ app.post("/:id/invites", async (c) => {
     allowsRegistration = 1;
   }
   const now = Math.floor(Date.now() / 1000);
-  const expiry = parseInviteExpiry(body, now);
+  const expiry = parseInviteExpiry(body.expires_at, now);
   if (!expiry.ok) return c.json({ error: expiry.error }, 400);
   const expiresAt = expiry.expiresAt;
 
@@ -2967,7 +2964,7 @@ app.post("/:id/invites", async (c) => {
             <h2>Team Invitation</h2>
             <p>${senderName} has invited you to join <strong>${teamName}</strong> as a <strong>${role}</strong> on ${siteName}.</p>
             <p><a href="${inviteLink}" style="background:#5b5fc7;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;display:inline-block">Accept Invitation</a></p>
-            <p style="color:#888;font-size:12px">This link expires in ${expiry.value} ${expiry.unit}.</p>
+            <p style="color:#888;font-size:12px">This link expires at ${new Date(expiresAt * 1000).toISOString()}.</p>
           </div>`,
           text: `${user.display_name} invited you to join a team. Accept: ${inviteLink}`,
         },
