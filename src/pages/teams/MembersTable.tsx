@@ -88,6 +88,7 @@ interface MembersTableProps {
   isCoOwnerOrAbove: boolean;
   myRole: string;
   meId: string | undefined;
+  normalView?: boolean;
   /** Team-level groups switch. Drives both the extra column and the
    *  "manage groups" action. */
   groupsEnabled: boolean;
@@ -108,6 +109,7 @@ export function MembersTable({
   isCoOwnerOrAbove,
   myRole,
   meId,
+  normalView,
   groupsEnabled,
   toolbarActions,
   onChangeRole,
@@ -139,7 +141,14 @@ export function MembersTable({
   const isFirstUnfilteredPage = !isFiltering && page === 1;
 
   const { data, isFetching } = useQuery({
-    queryKey: ["team-members", teamId, debouncedQuery, groupFilter, page],
+    queryKey: [
+      "team-members",
+      teamId,
+      debouncedQuery,
+      groupFilter,
+      page,
+      normalView,
+    ],
     queryFn: () =>
       api.listTeamMembers(teamId, {
         page,

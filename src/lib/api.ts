@@ -1538,6 +1538,8 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       /** Team management setting: may unrestricted accounts join via invite
        *  link? Direct adds by an admin are never subject to it. */
       allow_normal_user_join?: boolean;
+      /** Owner/co-owner setting: limit member list visibility for regular members */
+      restrict_member_list_for_members?: boolean;
       /** Owner-only. Only the keys present are overridden; drop a key to let
        *  it fall back to the site default. */
       role_permissions?: TeamRolePermissions;
@@ -3118,6 +3120,8 @@ export interface Team {
   invite_registration_exemptions: { email_verification?: boolean };
   /** Whether unrestricted accounts may join through an invite link. */
   allow_normal_user_join: boolean;
+  /** Whether member list visibility is restricted for regular members. */
+  restrict_member_list_for_members: boolean;
   /** Set while a staged dissolution is in flight. */
   dissolving_at: number | null;
   /** Owner-only opt-in for member groups. Off by default; while off no read

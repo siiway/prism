@@ -5505,12 +5505,26 @@ app.get("/me/team/:teamId/members", async (c) => {
   if (!actorRole || !hasRole(actorRole, "member"))
     return c.json({ error: "actor is no longer a team member" }, 403);
 
+  const team = await c.env.DB.prepare(
+    "SELECT restrict_member_list_for_members FROM teams WHERE id = ?",
+  )
+    .bind(teamId)
+    .first<{ restrict_member_list_for_members: number }>();
+
+  let memberFilter = "";
+  const filterArgs: unknown[] = [teamId];
+  if (team?.restrict_member_list_for_members === 1 && actorRole === "member") {
+    memberFilter =
+      " AND (tm.role IN ('owner', 'co-owner', 'admin') OR tm.user_id = ?)";
+    filterArgs.push(resolved.userId);
+  }
+
   const [{ results }, groups] = await Promise.all([
     c.env.DB.prepare(
       `SELECT tm.user_id, tm.role, tm.joined_at
-     FROM team_members tm WHERE tm.team_id = ? ORDER BY tm.joined_at ASC`,
+     FROM team_members tm WHERE tm.team_id = ?${memberFilter} ORDER BY tm.joined_at ASC`,
     )
-      .bind(teamId)
+      .bind(...filterArgs)
       .all<{ user_id: string; role: string; joined_at: number }>(),
     // Empty for every member when the team has groups switched off.
     getGroupsForTeamMembers(c.env.DB, teamId),
@@ -5531,12 +5545,30 @@ app.get("/me/team/:teamId/members/:userId/profile", async (c) => {
   const resolved = await resolveTeamToken(c, teamId, "member:profile:read");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
+  const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
+  if (!actorRole || !hasRole(actorRole, "member"))
+    return c.json({ error: "actor is no longer a team member" }, 403);
+
+  const team = await c.env.DB.prepare(
+    "SELECT restrict_member_list_for_members FROM teams WHERE id = ?",
+  )
+    .bind(teamId)
+    .first<{ restrict_member_list_for_members: number }>();
+
+  let visibilityFilter = "";
+  const filterArgs: unknown[] = [teamId, userId];
+  if (team?.restrict_member_list_for_members === 1 && actorRole === "member") {
+    visibilityFilter =
+      " AND (tm.role IN ('owner', 'co-owner', 'admin') OR tm.user_id = ?)";
+    filterArgs.push(resolved.userId);
+  }
+
   const row = await c.env.DB.prepare(
     `SELECT u.id, u.username, u.display_name, u.avatar_url, tm.role, tm.joined_at
      FROM team_members tm JOIN users u ON u.id = tm.user_id
-     WHERE tm.team_id = ? AND tm.user_id = ?`,
+     WHERE tm.team_id = ? AND tm.user_id = ?${visibilityFilter}`,
   )
-    .bind(teamId, userId)
+    .bind(...filterArgs)
     .first<{
       id: string;
       username: string;

@@ -107,7 +107,9 @@ app.get("/:id", optionalAuth, async (c) => {
   //                              flag resolves to true)
   // The user master flag itself falls back to the site default
   // (default_profile_show_joined_teams) when NULL.
+  // If team member hiding is enabled, regular members are never exposed here.
   const masterDefault = config.default_profile_show_joined_teams ? 1 : 0;
+  const hideRegularMembers = team.restrict_member_list_for_members === 1;
   const membersPromise = showMembers
     ? c.env.DB.prepare(
         `SELECT u.username, u.display_name, u.avatar_url, tm.role
@@ -116,6 +118,7 @@ app.get("/:id", optionalAuth, async (c) => {
          WHERE tm.team_id = ?
            AND u.is_active = 1
            AND u.profile_is_public = 1
+           ${hideRegularMembers ? "AND tm.role IN ('owner', 'co-owner', 'admin')" : ""}
            AND (
              tm.show_on_profile = 1
              OR (

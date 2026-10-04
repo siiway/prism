@@ -103,6 +103,12 @@ description: 协作管理 OAuth 应用与已验证域名 — 角色、邀请、�
   - `members` —— 直接成员的**第一页**（50 条），另有 `member_count` 表示全团队总数。翻页与筛选走 `GET /api/teams/:id/members`；详情响应自带第一页，因此首屏只需一个请求。继承成员不在此列出（可在上级团队查看，这里展开会让每个子团队列表都重复一遍）。
 - 其他团队级列表也支持了分页与搜索：`GET /api/teams/:id/apps`、`GET /api/teams/:id/domains`、`GET /api/teams/:id/invites` 均接受 `?page=`、`?limit=` 和 `?q=`，返回 `total`。
 
+### 成员列表可见性（成员隐藏）
+
+团队所有者（owner）与共同所有者（co-owner）可在 **Teams → \<team\> → Settings → 成员列表可见性** 开启该功能（`restrict_member_list_for_members`）。
+
+开启后，有效角色为普通成员（`member`）的用户在团队成员��表及相关 API（`GET /api/teams/:id`、`GET /api/teams/:id/members`、OAuth `GET /api/oauth/me/team/:teamId/members`）中只能看到所有者、共同所有者、管理员和他们自己的直接成员记录。通过 `GET /api/oauth/me/team/:teamId/members/:userId/profile` 查看被隐藏的普通成员将返回 `404`。此外，开启此选项时，团队的公开资料页成员列表也仅展示管理员及以上角色。
+
 ## 身份组
 
 身份组是团队自建的成员标签，一个成员可以同时属于多个。它是**纯标签**：不进角色阶梯，发一个标签不会改变任何人在 Prism 内部能做什么。它唯一的用途，是随成员信息一起下发给团队接入的应用，由这些应用拿去鉴权。

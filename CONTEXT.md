@@ -52,6 +52,11 @@ on that exact team.
 **Role**:
 A member's standing within a team: `owner`, `co-owner`, `admin`, or `member`.
 
+**Restricted member list**:
+A team setting (`restrict_member_list_for_members`, owner/co-owner controlled)
+where viewers whose effective role is `member` can only see owners, co-owners,
+admins, and their own direct membership in the team's member lists and APIs.
+
 **Site floor**:
 A site-wide _minimum_ join requirement (2FA, verified email) that every team
 must enforce. Teams may require more, never less.

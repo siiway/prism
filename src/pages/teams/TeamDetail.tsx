@@ -591,6 +591,25 @@ export function TeamDetail() {
     }
   };
 
+  const handleRestrictMemberListChange = async (value: boolean) => {
+    if (!id) return;
+    setSavingRequirement("restrict_member_list_for_members");
+    try {
+      await api.updateTeam(id, { restrict_member_list_for_members: value });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["team", id] }),
+        qc.invalidateQueries({ queryKey: ["team-members", id] }),
+      ]);
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("teams.failedUpdateTeam"),
+      );
+    } finally {
+      setSavingRequirement(null);
+    }
+  };
+
   const handleDeleteTeam = async () => {
     if (!id) return;
     try {
@@ -811,6 +830,7 @@ export function TeamDetail() {
             isCoOwnerOrAbove={isCoOwnerOrAbove}
             myRole={myRole}
             meId={me?.id}
+            normalView={normalView}
             groupsEnabled={team.enable_groups}
             toolbarActions={
               canManage ? (
@@ -1415,6 +1435,45 @@ export function TeamDetail() {
                 </div>
               );
             })()}
+
+          {isCoOwnerOrAbove && (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                padding: 16,
+                border: `1px solid ${tokens.colorNeutralStroke1}`,
+                borderRadius: 8,
+              }}
+            >
+              <div>
+                <Text weight="semibold" size={400} block>
+                  {t("teams.memberListVisibilityTitle")}
+                </Text>
+                <Text
+                  size={200}
+                  block
+                  style={{
+                    color: tokens.colorNeutralForeground3,
+                    marginTop: 4,
+                  }}
+                >
+                  {t("teams.memberListVisibilityDesc")}
+                </Text>
+              </div>
+              <Switch
+                label={t("teams.restrictMemberListForMembers")}
+                checked={team.restrict_member_list_for_members}
+                disabled={
+                  savingRequirement === "restrict_member_list_for_members"
+                }
+                onChange={(_, d) =>
+                  handleRestrictMemberListChange(d.checked)
+                }
+              />
+            </div>
+          )}
 
           {isOwner && (
             <div

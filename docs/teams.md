@@ -181,6 +181,19 @@ the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
   (name/domain/email search) and return a `total` alongside the page. The
   teams and apps lists on the dashboard are paginated the same way.
 
+### Member list visibility (Restricted member list)
+
+Team owners and co-owners can enable **Member list visibility** under
+**Teams → \<team\> → Settings → Member list visibility**
+(`restrict_member_list_for_members`).
+
+When enabled, viewers whose effective role is `member` can only see owners,
+co-owners, admins, and their own direct membership in team member lists and
+roster APIs (`GET /api/teams/:id`, `GET /api/teams/:id/members`, and OAuth
+`GET /api/oauth/me/team/:teamId/members`). Looking up hidden members via
+`GET /api/oauth/me/team/:teamId/members/:userId/profile` returns `404`. The
+public team profile also omits regular members when this setting is active.
+
 ## Member groups
 
 Member groups are team-defined labels you attach to members — a member can hold
