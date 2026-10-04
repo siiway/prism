@@ -832,6 +832,7 @@
     "memberListVisibilityTitle": "Member list visibility",
     "memberListVisibilityDesc": "When enabled, members can only see owners, co-owners, admins, and themselves in member lists. The public team profile will also omit regular members.",
     "restrictMemberListForMembers": "Hide other members from regular members",
+    "memberListHiddenNotice": "Member list hiding is enabled for this team. Regular members can only see administrators and themselves in the member list.",
     "newGroup": "New group",
     "newGroupTitle": "New group",
     "editGroupTitle": "Edit group",

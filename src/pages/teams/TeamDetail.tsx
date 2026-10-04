@@ -832,6 +832,7 @@ export function TeamDetail() {
             meId={me?.id}
             normalView={normalView}
             groupsEnabled={team.enable_groups}
+            restrictMemberListForMembers={team.restrict_member_list_for_members}
             toolbarActions={
               canManage ? (
                 <AddMemberDialog teamId={id!} showMsg={showMsg} />

@@ -268,7 +268,7 @@ describe("Team member hiding with production route handlers", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json<{ members: Array<{ user_id: string; role: string }>; total: number }>();
-    expect(body.total).toBe(3);
+    expect(body.total).toBe(4);
     expect(body.members.map((m) => m.user_id)).toEqual(["u_owner", "u_admin", "u_mem1"]);
 
     // Owner requests members list via production route

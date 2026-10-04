@@ -832,6 +832,7 @@
     "memberListVisibilityTitle": "成员列表可见性",
     "memberListVisibilityDesc": "开启后，普通成员仅能在成员列表中看到所有者、共同所有者、管理员和他们自己。公开团队资料也仅公开管理员及以上成员。",
     "restrictMemberListForMembers": "对普通成员隐藏其他普通成员",
+    "memberListHiddenNotice": "团队已开启成员隐藏，普通成员在成员列表中仅能查看管理员及本人。",
     "newGroup": "新建身份组",
     "newGroupTitle": "新建身份组",
     "editGroupTitle": "编辑身份组",

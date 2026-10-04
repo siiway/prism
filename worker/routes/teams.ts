@@ -1737,24 +1737,29 @@ async function listTeamMembers(
   page: number;
   limit: number;
 }> {
-  const where: string[] = ["tm.team_id = ?"];
-  const args: unknown[] = [teamId];
+  const rowsWhere: string[] = ["tm.team_id = ?"];
+  const rowsArgs: unknown[] = [teamId];
+
+  const countWhere: string[] = ["tm.team_id = ?"];
+  const countArgs: unknown[] = [teamId];
 
   if (opts.visibleToUserId !== undefined) {
-    where.push(
+    rowsWhere.push(
       "(tm.role IN ('owner', 'co-owner', 'admin') OR tm.user_id = ?)",
     );
-    args.push(opts.visibleToUserId);
+    rowsArgs.push(opts.visibleToUserId);
   }
 
   if (opts.query) {
     // LIKE with an escaped pattern — the input is user-supplied and % or _
     // would otherwise silently widen the match.
     const pattern = likePattern(opts.query);
-    where.push(
-      "(LOWER(u.display_name) LIKE LOWER(?) ESCAPE '\\' OR LOWER(u.username) LIKE LOWER(?) ESCAPE '\\')",
-    );
-    args.push(pattern, pattern);
+    const queryCond =
+      "(LOWER(u.display_name) LIKE LOWER(?) ESCAPE '\\' OR LOWER(u.username) LIKE LOWER(?) ESCAPE '\\')";
+    rowsWhere.push(queryCond);
+    rowsArgs.push(pattern, pattern);
+    countWhere.push(queryCond);
+    countArgs.push(pattern, pattern);
   }
 
   if (opts.group) {
@@ -1767,19 +1772,21 @@ async function listTeamMembers(
       return { members: [], total: 0, page: opts.page, limit: opts.limit };
     }
     const placeholders = chain.map(() => "?").join(", ");
-    where.push(
-      `EXISTS (
+    const groupCond = `EXISTS (
          SELECT 1 FROM team_member_groups tmg
            JOIN team_groups g ON g.id = tmg.group_id
           WHERE tmg.user_id = tm.user_id
             AND tmg.team_id IN (${placeholders})
             AND g.slug = ?
-       )`,
-    );
-    args.push(...chain, opts.group);
+       )`;
+    rowsWhere.push(groupCond);
+    rowsArgs.push(...chain, opts.group);
+    countWhere.push(groupCond);
+    countArgs.push(...chain, opts.group);
   }
 
-  const clause = where.join(" AND ");
+  const rowsClause = rowsWhere.join(" AND ");
+  const countClause = countWhere.join(" AND ");
   const offset = (opts.page - 1) * opts.limit;
 
   const [rows, countRow] = await Promise.all([
@@ -1788,11 +1795,11 @@ async function listTeamMembers(
         `SELECT tm.user_id, tm.role, tm.joined_at,
                 u.username, u.display_name, u.avatar_url
            FROM team_members tm JOIN users u ON u.id = tm.user_id
-          WHERE ${clause}
+          WHERE ${rowsClause}
           ORDER BY tm.joined_at ASC
           LIMIT ? OFFSET ?`,
       )
-      .bind(...args, opts.limit, offset)
+      .bind(...rowsArgs, opts.limit, offset)
       .all<{
         user_id: string;
         role: string;
@@ -1805,9 +1812,9 @@ async function listTeamMembers(
       .prepare(
         `SELECT COUNT(*) AS n
            FROM team_members tm JOIN users u ON u.id = tm.user_id
-          WHERE ${clause}`,
+          WHERE ${countClause}`,
       )
-      .bind(...args)
+      .bind(...countArgs)
       .first<{ n: number }>(),
   ]);
 

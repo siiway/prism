@@ -10,6 +10,7 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
+  MessageBar,
   Select,
   Table,
   TableBody,
@@ -92,6 +93,7 @@ interface MembersTableProps {
   /** Team-level groups switch. Drives both the extra column and the
    *  "manage groups" action. */
   groupsEnabled: boolean;
+  restrictMemberListForMembers?: boolean;
   /** Optional actions (e.g. Add Member) rendered in the toolbar row */
   toolbarActions?: React.ReactNode;
   onChangeRole: (userId: string, role: string) => void;
@@ -111,6 +113,7 @@ export function MembersTable({
   meId,
   normalView,
   groupsEnabled,
+  restrictMemberListForMembers,
   toolbarActions,
   onChangeRole,
   onRemoveMember,
@@ -194,6 +197,11 @@ export function MembersTable({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+      {restrictMemberListForMembers && (
+        <MessageBar intent="info" style={{ marginBottom: "12px" }}>
+          {t("teams.memberListHiddenNotice")}
+        </MessageBar>
+      )}
       {(showSearchControls || toolbarActions) && (
         <div className={styles.toolbar}>
           {showSearchControls && (
