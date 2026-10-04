@@ -427,6 +427,7 @@
   },
   "dashboard": {
     "welcomeBack": "欢迎回来，{{name}}！",
+    "welcomeBackNoName": "欢迎回来！",
     "manageDesc": "管理您的身份、应用和连接。",
     "improveSecurityTitle": "提升账号安全性",
     "improveSecurityDesc": "添加两步验证或通行密钥来保护您的账号。",

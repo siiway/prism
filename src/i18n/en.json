@@ -427,6 +427,7 @@
   },
   "dashboard": {
     "welcomeBack": "Welcome back, {{name}}!",
+    "welcomeBackNoName": "Welcome back!",
     "manageDesc": "Manage your identity, applications, and connections.",
     "improveSecurityTitle": "Improve your account security",
     "improveSecurityDesc": "Add two-factor authentication or a passkey to protect your account.",

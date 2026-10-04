@@ -100,10 +100,16 @@ export function Dashboard() {
 
   const passkeyCount = me?.passkey_count ?? 0;
 
+  const displayName = user?.display_name?.trim();
+
   return (
     <div>
       <PageHeader
-        title={t("dashboard.welcomeBack", { name: user?.display_name })}
+        title={
+          displayName
+            ? t("dashboard.welcomeBack", { name: displayName })
+            : t("dashboard.welcomeBackNoName")
+        }
         subtitle={t("dashboard.manageDesc")}
       />
 
