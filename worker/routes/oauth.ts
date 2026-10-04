@@ -1157,7 +1157,6 @@ app.post("/authorize", requireAuth, async (c) => {
     nonce?: string;
     action: "approve" | "deny";
     authorization_mode?: "once" | "always";
-    is_auto_authorized?: boolean;
     totp_code?: string;
     passkey_verify_token?: string;
     confirm_text?: string;
@@ -1397,6 +1396,47 @@ app.post("/authorize", requireAuth, async (c) => {
       .run();
   }
 
+  const siteScopes = boundScopes.filter((s) => SITE_SCOPES.has(s));
+
+  // Look up prior consent before inserting/updating
+  const priorConsentRow = await c.env.DB.prepare(
+    "SELECT scopes, auto_authorize FROM oauth_consents WHERE user_id = ? AND client_id = ?",
+  )
+    .bind(user.id, body.client_id)
+    .first<{ scopes: string; auto_authorize: number }>();
+
+  let priorScopes: string[] = [];
+  if (priorConsentRow) {
+    try {
+      const parsed = JSON.parse(priorConsentRow.scopes);
+      if (Array.isArray(parsed)) {
+        priorScopes = parsed.filter(
+          (s): s is string => typeof s === "string",
+        );
+      }
+    } catch {
+      priorScopes = [];
+    }
+  }
+
+  const isExactConsentMatch =
+    priorConsentRow != null &&
+    priorScopes.length === boundScopes.length &&
+    new Set(priorScopes).size === priorScopes.length &&
+    priorScopes.every((s) => boundScopes.includes(s));
+
+  // Determine whether this approval is server-side auto-authorized:
+  // - First-party apps skip consent UI automatically
+  // - Remembered auto-authorization: prior consent had auto_authorize = 1,
+  //   exact scope match, no site scopes, no unbound team grant, and prompt != consent
+  const isAutoAuthorized =
+    oauthApp.is_first_party ||
+    (priorConsentRow?.auto_authorize === 1 &&
+      isExactConsentMatch &&
+      siteScopes.length === 0 &&
+      !body.team_id &&
+      body.prompt !== "consent");
+
   // "Log back in" — when the user explicitly opts in and the scopes being
   // granted match an existing consent exactly, drop the old tokens so a single
   // fresh token replaces them. The actual DELETE runs after the new auth code
@@ -1405,28 +1445,7 @@ app.post("/authorize", requireAuth, async (c) => {
   // silently fall through to the normal flow without touching old tokens.
   let shouldRevokeOldTokens = false;
   if (body.revoke_existing_tokens && body.action === "approve") {
-    const priorConsent = await c.env.DB.prepare(
-      "SELECT scopes FROM oauth_consents WHERE user_id = ? AND client_id = ?",
-    )
-      .bind(user.id, body.client_id)
-      .first<{ scopes: string }>();
-    if (priorConsent) {
-      let priorScopes: string[] = [];
-      try {
-        const parsed = JSON.parse(priorConsent.scopes);
-        if (Array.isArray(parsed)) {
-          priorScopes = parsed.filter(
-            (s): s is string => typeof s === "string",
-          );
-        }
-      } catch {
-        priorScopes = [];
-      }
-      shouldRevokeOldTokens =
-        priorScopes.length === boundScopes.length &&
-        new Set(priorScopes).size === priorScopes.length &&
-        priorScopes.every((s) => boundScopes.includes(s));
-    }
+    shouldRevokeOldTokens = isExactConsentMatch;
   }
 
   // Store consent
@@ -1458,7 +1477,6 @@ app.post("/authorize", requireAuth, async (c) => {
     );
   }
 
-  const siteScopes = boundScopes.filter((s) => SITE_SCOPES.has(s));
   const autoAuthorizeFlag =
     body.authorization_mode === "always" &&
     !oauthApp.is_first_party &&
@@ -1519,8 +1537,10 @@ app.post("/authorize", requireAuth, async (c) => {
   // Send notification:
   // - Always for manual authorization
   // - For auto-authorization (skipping consent UI), only if the user opted in via notify_on_auto_authorization
-  let shouldNotify = !body.is_auto_authorized;
-  if (body.is_auto_authorized) {
+  // Note: isAutoAuthorized is derived on the server from DB consent records and request state,
+  // preventing client-side spoofing.
+  let shouldNotify = !isAutoAuthorized;
+  if (isAutoAuthorized && !oauthApp.is_first_party) {
     const u = await c.env.DB.prepare(
       "SELECT notify_on_auto_authorization FROM users WHERE id = ?",
     )

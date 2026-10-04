@@ -3945,7 +3945,6 @@ export interface OAuthApproveBody {
   nonce?: string;
   action: "approve" | "deny";
   authorization_mode?: "once" | "always";
-  is_auto_authorized?: boolean;
   totp_code?: string;
   passkey_verify_token?: string;
   confirm_text?: string;

@@ -207,7 +207,6 @@ export function Authorize() {
   const handleDecision = async (
     action: "approve" | "deny",
     mode: "once" | "always" = "once",
-    isAuto: boolean = false,
   ) => {
     if (!data) return;
     setSiteError(null);
@@ -233,7 +232,6 @@ export function Authorize() {
         ...(action === "approve"
           ? {
               authorization_mode: mode,
-              ...(isAuto ? { is_auto_authorized: true } : {}),
             }
           : {}),
         ...(requiresSiteGrant && action === "approve"
@@ -393,8 +391,7 @@ export function Authorize() {
       autoApproved.current = true;
       // Defer out of the effect body so the approval's setState doesn't run
       // synchronously during render.
-      const isAuto = !data.app.is_first_party;
-      queueMicrotask(() => handleDecision("approve", "once", isAuto));
+      queueMicrotask(() => handleDecision("approve", "once"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleDecision is intentionally not a dep; the autoApproved ref guards against double-fire
   }, [data, user]);
