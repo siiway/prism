@@ -91,6 +91,8 @@ interface MembersTableProps {
   /** Team-level groups switch. Drives both the extra column and the
    *  "manage groups" action. */
   groupsEnabled: boolean;
+  /** Optional actions (e.g. Add Member) rendered in the toolbar row */
+  toolbarActions?: React.ReactNode;
   onChangeRole: (userId: string, role: string) => void;
   onRemoveMember: (userId: string) => void;
   onTransferOwnership: (userId: string) => void;
@@ -107,6 +109,7 @@ export function MembersTable({
   myRole,
   meId,
   groupsEnabled,
+  toolbarActions,
   onChangeRole,
   onRemoveMember,
   onTransferOwnership,
@@ -178,29 +181,33 @@ export function MembersTable({
     return [...bySlug.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [groupData, members, rows]);
 
+  const showSearchControls = total > 5 || isFiltering;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-      {(total > 5 || isFiltering) && (
+      {(showSearchControls || toolbarActions) && (
         <div className={styles.toolbar}>
-          <Input
-            className={styles.search}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("teams.searchMembersPlaceholder")}
-            contentBefore={<SearchRegular />}
-            contentAfter={
-              query ? (
-                <Button
-                  appearance="transparent"
-                  size="small"
-                  icon={<DismissRegular />}
-                  aria-label={t("common.clear")}
-                  onClick={() => setQuery("")}
-                />
-              ) : undefined
-            }
-          />
-          {groupsEnabled && groupOptions.length > 0 && (
+          {showSearchControls && (
+            <Input
+              className={styles.search}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("teams.searchMembersPlaceholder")}
+              contentBefore={<SearchRegular />}
+              contentAfter={
+                query ? (
+                  <Button
+                    appearance="transparent"
+                    size="small"
+                    icon={<DismissRegular />}
+                    aria-label={t("common.clear")}
+                    onClick={() => setQuery("")}
+                  />
+                ) : undefined
+              }
+            />
+          )}
+          {showSearchControls && groupsEnabled && groupOptions.length > 0 && (
             <Select
               value={groupFilter}
               onChange={(_, d) => {
@@ -217,10 +224,22 @@ export function MembersTable({
               ))}
             </Select>
           )}
-          {isFiltering && (
+          {showSearchControls && isFiltering && (
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
               {t("teams.memberMatchCount", { count: total })}
             </Text>
+          )}
+          {toolbarActions && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginLeft: showSearchControls ? "auto" : undefined,
+              }}
+            >
+              {toolbarActions}
+            </div>
           )}
         </div>
       )}
