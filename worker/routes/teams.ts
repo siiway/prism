@@ -1587,8 +1587,7 @@ app.patch("/:id", async (c) => {
     if (!hasRole(member.role, "co-owner"))
       return c.json(
         {
-          error:
-            "Only owners and co-owners can change member list visibility",
+          error: "Only owners and co-owners can change member list visibility",
         },
         403,
       );

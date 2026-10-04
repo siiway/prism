@@ -10,10 +10,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  ShieldRegular,
-  WarningRegular,
-} from "@fluentui/react-icons";
+import { ShieldRegular, WarningRegular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 
 const useStyles = makeStyles({

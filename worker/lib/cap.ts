@@ -187,13 +187,7 @@ async function verifyCapEmbedded(env: Env, token: string): Promise<boolean> {
   // submissions of the same token all reach here; only the first claim wins, so
   // a captured token cannot be redeemed twice — and since the token is
   // deterministic per challenge, one solved challenge admits exactly one gate.
-  return claimReplayValue(
-    env.DB,
-    "cap-token",
-    "",
-    sig,
-    Math.ceil(exp / 1000),
-  );
+  return claimReplayValue(env.DB, "cap-token", "", sig, Math.ceil(exp / 1000));
 }
 
 /** Verify a submitted token against an external Cap Standalone server. */

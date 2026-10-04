@@ -1669,9 +1669,7 @@ export function Security() {
             })}
           />
         </Field>
-        <Field
-          hint={t("security.notifyOnAutoAuthDesc")}
-        >
+        <Field hint={t("security.notifyOnAutoAuthDesc")}>
           <Switch
             label={t("security.notifyOnAutoAuthLabel")}
             checked={notifyOnAutoAuth}

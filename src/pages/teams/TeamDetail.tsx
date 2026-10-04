@@ -1469,9 +1469,7 @@ export function TeamDetail() {
                 disabled={
                   savingRequirement === "restrict_member_list_for_members"
                 }
-                onChange={(_, d) =>
-                  handleRestrictMemberListChange(d.checked)
-                }
+                onChange={(_, d) => handleRestrictMemberListChange(d.checked)}
               />
             </div>
           )}

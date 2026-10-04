@@ -8,13 +8,7 @@
 // configurable timeout, and their choice is remembered in localStorage so it
 // survives failed attempts and re-renders on the same page.
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   Button,
   Spinner,
@@ -73,7 +67,9 @@ const SWITCH_STORAGE_KEY = "prism.captcha.provider";
 function loadStoredProvider(): CaptchaProvider | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    return (localStorage.getItem(SWITCH_STORAGE_KEY) as CaptchaProvider) || null;
+    return (
+      (localStorage.getItem(SWITCH_STORAGE_KEY) as CaptchaProvider) || null
+    );
   } catch {
     return null;
   }
@@ -231,17 +227,20 @@ function ProviderWidget({
     );
     const removeScript = injectScript(target.src, () => {
       if (!containerRef.current) return;
-      widgetIdRef.current = widgetApi("turnstile").render(containerRef.current, {
-        sitekey: target.sitekey,
-        callback: (token: string) =>
-          onVerifiedRef.current({
-            provider: "turnstile",
-            captcha_token: token,
-            captcha_variant: target.variant,
-          }),
-        "error-callback": () =>
-          onErrorRef.current?.(tRef.current("captcha.turnstileFailed")),
-      });
+      widgetIdRef.current = widgetApi("turnstile").render(
+        containerRef.current,
+        {
+          sitekey: target.sitekey,
+          callback: (token: string) =>
+            onVerifiedRef.current({
+              provider: "turnstile",
+              captcha_token: token,
+              captcha_variant: target.variant,
+            }),
+          "error-callback": () =>
+            onErrorRef.current?.(tRef.current("captcha.turnstileFailed")),
+        },
+      );
     });
     return () => {
       removeWidget("turnstile", widgetIdRef.current);
@@ -262,11 +261,17 @@ function ProviderWidget({
       "https://js.hcaptcha.com/1/api.js?render=explicit",
       () => {
         if (!containerRef.current) return;
-        widgetIdRef.current = widgetApi("hcaptcha").render(containerRef.current, {
-          sitekey: captcha.hcaptcha_site_key,
-          callback: (token: string) =>
-            onVerifiedRef.current({ provider: "hcaptcha", captcha_token: token }),
-        });
+        widgetIdRef.current = widgetApi("hcaptcha").render(
+          containerRef.current,
+          {
+            sitekey: captcha.hcaptcha_site_key,
+            callback: (token: string) =>
+              onVerifiedRef.current({
+                provider: "hcaptcha",
+                captcha_token: token,
+              }),
+          },
+        );
       },
     );
     return () => {
@@ -286,8 +291,13 @@ function ProviderWidget({
         const grecaptcha = (window as unknown as RecaptchaWindow).grecaptcha;
         grecaptcha.ready(async () => {
           try {
-            const token = await grecaptcha.execute(siteKey, { action: "login" });
-            onVerifiedRef.current({ provider: "recaptcha", captcha_token: token });
+            const token = await grecaptcha.execute(siteKey, {
+              action: "login",
+            });
+            onVerifiedRef.current({
+              provider: "recaptcha",
+              captcha_token: token,
+            });
           } catch {
             onErrorRef.current?.(tRef.current("captcha.recaptchaFailed"));
           }
@@ -455,7 +465,9 @@ function ProviderWidget({
           </div>
         )}
         <ProgressBar
-          value={powState === "done" ? 1 : powState === "solving" ? undefined : 0}
+          value={
+            powState === "done" ? 1 : powState === "solving" ? undefined : 0
+          }
         />
       </div>
     );

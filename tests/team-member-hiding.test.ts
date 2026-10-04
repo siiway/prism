@@ -25,7 +25,8 @@ class SqliteD1Statement {
   }
 
   async first<T>(columnName?: string) {
-    const row = (this.db.query(this.sql).get(...this.values) as T | null) ?? null;
+    const row =
+      (this.db.query(this.sql).get(...this.values) as T | null) ?? null;
     if (row === null || columnName === undefined) return row;
     return Object(row)[columnName] ?? null;
   }
@@ -216,7 +217,11 @@ beforeEach(() => {
 
 afterEach(() => sqlite.close());
 
-async function makeSessionCookie(userId: string, username: string, role: "admin" | "user" = "user"): Promise<string> {
+async function makeSessionCookie(
+  userId: string,
+  username: string,
+  role: "admin" | "user" = "user",
+): Promise<string> {
   const sessionId = `s_${userId}`;
   const now = Math.floor(Date.now() / 1000);
   sqlite.run(
@@ -246,15 +251,39 @@ describe("Team member hiding with production route handlers", () => {
       "INSERT INTO teams (id, name, restrict_member_list_for_members, created_at, updated_at) VALUES ('t1', 'Team 1', 1, ?, ?)",
       [now, now],
     );
-    sqlite.run("INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_owner', 'alice', ?, ?)", [now, now]);
-    sqlite.run("INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_admin', 'bob', ?, ?)", [now, now]);
-    sqlite.run("INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_mem1', 'charlie', ?, ?)", [now, now]);
-    sqlite.run("INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_mem2', 'david', ?, ?)", [now, now]);
+    sqlite.run(
+      "INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_owner', 'alice', ?, ?)",
+      [now, now],
+    );
+    sqlite.run(
+      "INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_admin', 'bob', ?, ?)",
+      [now, now],
+    );
+    sqlite.run(
+      "INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_mem1', 'charlie', ?, ?)",
+      [now, now],
+    );
+    sqlite.run(
+      "INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_mem2', 'david', ?, ?)",
+      [now, now],
+    );
 
-    sqlite.run("INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_owner', 'owner', ?)", [10]);
-    sqlite.run("INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_admin', 'admin', ?)", [20]);
-    sqlite.run("INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_mem1', 'member', ?)", [30]);
-    sqlite.run("INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_mem2', 'member', ?)", [40]);
+    sqlite.run(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_owner', 'owner', ?)",
+      [10],
+    );
+    sqlite.run(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_admin', 'admin', ?)",
+      [20],
+    );
+    sqlite.run(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_mem1', 'member', ?)",
+      [30],
+    );
+    sqlite.run(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_mem2', 'member', ?)",
+      [40],
+    );
 
     // Member 1 requests members list via production route
     const cookie = await makeSessionCookie("u_mem1", "charlie");
@@ -267,9 +296,16 @@ describe("Team member hiding with production route handlers", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json<{ members: Array<{ user_id: string; role: string }>; total: number }>();
+    const body = await res.json<{
+      members: Array<{ user_id: string; role: string }>;
+      total: number;
+    }>();
     expect(body.total).toBe(4);
-    expect(body.members.map((m) => m.user_id)).toEqual(["u_owner", "u_admin", "u_mem1"]);
+    expect(body.members.map((m) => m.user_id)).toEqual([
+      "u_owner",
+      "u_admin",
+      "u_mem1",
+    ]);
 
     // Owner requests members list via production route
     const ownerCookie = await makeSessionCookie("u_owner", "alice");
@@ -282,9 +318,17 @@ describe("Team member hiding with production route handlers", () => {
     );
 
     expect(ownerRes.status).toBe(200);
-    const ownerBody = await ownerRes.json<{ members: Array<{ user_id: string; role: string }>; total: number }>();
+    const ownerBody = await ownerRes.json<{
+      members: Array<{ user_id: string; role: string }>;
+      total: number;
+    }>();
     expect(ownerBody.total).toBe(4);
-    expect(ownerBody.members.map((m) => m.user_id)).toEqual(["u_owner", "u_admin", "u_mem1", "u_mem2"]);
+    expect(ownerBody.members.map((m) => m.user_id)).toEqual([
+      "u_owner",
+      "u_admin",
+      "u_mem1",
+      "u_mem2",
+    ]);
   });
 
   test("PATCH /teams/:id enforces owner or co-owner permission to change restrict_member_list_for_members", async () => {
@@ -293,11 +337,23 @@ describe("Team member hiding with production route handlers", () => {
       "INSERT INTO teams (id, name, restrict_member_list_for_members, created_at, updated_at) VALUES ('t1', 'Team 1', 0, ?, ?)",
       [now, now],
     );
-    sqlite.run("INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_admin', 'bob', ?, ?)", [now, now]);
-    sqlite.run("INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_owner', 'alice', ?, ?)", [now, now]);
+    sqlite.run(
+      "INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_admin', 'bob', ?, ?)",
+      [now, now],
+    );
+    sqlite.run(
+      "INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_owner', 'alice', ?, ?)",
+      [now, now],
+    );
 
-    sqlite.run("INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_admin', 'admin', ?)", [10]);
-    sqlite.run("INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_owner', 'owner', ?)", [20]);
+    sqlite.run(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_admin', 'admin', ?)",
+      [10],
+    );
+    sqlite.run(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t1', 'u_owner', 'owner', ?)",
+      [20],
+    );
 
     // Admin attempts to change setting -> 403
     const adminCookie = await makeSessionCookie("u_admin", "bob");
@@ -331,7 +387,11 @@ describe("Team member hiding with production route handlers", () => {
     );
     expect(ownerRes.status).toBe(200);
 
-    const team = sqlite.query("SELECT restrict_member_list_for_members FROM teams WHERE id = 't1'").get() as {
+    const team = sqlite
+      .query(
+        "SELECT restrict_member_list_for_members FROM teams WHERE id = 't1'",
+      )
+      .get() as {
       restrict_member_list_for_members: number;
     };
     expect(team.restrict_member_list_for_members).toBe(1);
@@ -343,11 +403,23 @@ describe("Team member hiding with production route handlers", () => {
       "INSERT INTO teams (id, name, profile_is_public, profile_show_members, restrict_member_list_for_members, created_at, updated_at) VALUES ('t1', 'Team 1', 1, 1, 1, ?, ?)",
       [now, now],
     );
-    sqlite.run("INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_admin', 'bob', ?, ?)", [now, now]);
-    sqlite.run("INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_mem', 'charlie', ?, ?)", [now, now]);
+    sqlite.run(
+      "INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_admin', 'bob', ?, ?)",
+      [now, now],
+    );
+    sqlite.run(
+      "INSERT INTO users (id, username, created_at, updated_at) VALUES ('u_mem', 'charlie', ?, ?)",
+      [now, now],
+    );
 
-    sqlite.run("INSERT INTO team_members (team_id, user_id, role, joined_at, show_on_profile) VALUES ('t1', 'u_admin', 'admin', ?, 1)", [10]);
-    sqlite.run("INSERT INTO team_members (team_id, user_id, role, joined_at, show_on_profile) VALUES ('t1', 'u_mem', 'member', ?, 1)", [20]);
+    sqlite.run(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at, show_on_profile) VALUES ('t1', 'u_admin', 'admin', ?, 1)",
+      [10],
+    );
+    sqlite.run(
+      "INSERT INTO team_members (team_id, user_id, role, joined_at, show_on_profile) VALUES ('t1', 'u_mem', 'member', ?, 1)",
+      [20],
+    );
 
     const res = await app.fetch(
       new Request("https://prism.example/public/teams/t1"),
@@ -356,7 +428,9 @@ describe("Team member hiding with production route handlers", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json<{ team: { members: Array<{ username: string; role: string }> } }>();
+    const body = await res.json<{
+      team: { members: Array<{ username: string; role: string }> };
+    }>();
     expect(body.team.members.map((m) => m.username)).toEqual(["bob"]);
   });
 });

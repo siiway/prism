@@ -287,11 +287,7 @@ function ConsentCard({
               {t("connectedApps.tokenCount", { count: consent.tokens.length })}
             </Badge>
             {consent.auto_authorize && (
-              <Badge
-                color="brand"
-                appearance="tint"
-                size="small"
-              >
+              <Badge color="brand" appearance="tint" size="small">
                 {t("connectedApps.autoAuthorizeEnabled")}
               </Badge>
             )}
@@ -321,7 +317,14 @@ function ConsentCard({
           </Text>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            flexShrink: 0,
+            alignItems: "center",
+          }}
+        >
           {consent.auto_authorize && (
             <Button
               appearance="outline"
@@ -410,7 +413,9 @@ export function ConnectedApps() {
   const { t } = useTranslation();
   const [revokingConsent, setRevokingConsent] = useState<string | null>(null);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
-  const [disablingAutoAuthorize, setDisablingAutoAuthorize] = useState<string | null>(null);
+  const [disablingAutoAuthorize, setDisablingAutoAuthorize] = useState<
+    string | null
+  >(null);
   const [error, setError] = useState("");
 
   const [query, setQuery] = useState("");

@@ -160,7 +160,8 @@ export async function verifyCaptchaToken(
 
   switch (provider) {
     case "pow": {
-      if (!env) return { success: false, error: "PoW verification unavailable" };
+      if (!env)
+        return { success: false, error: "PoW verification unavailable" };
       if (!submission.pow_challenge || submission.pow_nonce === undefined) {
         return { success: false, error: "PoW solution required" };
       }
@@ -179,16 +180,24 @@ export async function verifyCaptchaToken(
     }
 
     case "cap": {
-      if (!env) return { success: false, error: "Cap verification unavailable" };
+      if (!env)
+        return { success: false, error: "Cap verification unavailable" };
       if (!submission.cap_token) {
         return { success: false, error: "Cap token required" };
       }
-      const ok = await verifyCapToken(env, submission.cap_token, config.cap_mode, {
-        apiEndpoint: config.cap_api_endpoint,
-        siteKey: config.cap_site_key,
-        secretKey: await decrypt(config.cap_secret_key),
-      });
-      return ok ? { success: true } : { success: false, error: "Captcha failed" };
+      const ok = await verifyCapToken(
+        env,
+        submission.cap_token,
+        config.cap_mode,
+        {
+          apiEndpoint: config.cap_api_endpoint,
+          siteKey: config.cap_site_key,
+          secretKey: await decrypt(config.cap_secret_key),
+        },
+      );
+      return ok
+        ? { success: true }
+        : { success: false, error: "Captcha failed" };
     }
 
     case "geetest": {
@@ -201,7 +210,9 @@ export async function verifyCaptchaToken(
         await decrypt(config.geetest_captcha_key),
         config.geetest_fail_open,
       );
-      return ok ? { success: true } : { success: false, error: "Captcha failed" };
+      return ok
+        ? { success: true }
+        : { success: false, error: "Captcha failed" };
     }
 
     case "turnstile": {

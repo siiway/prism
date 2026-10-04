@@ -107,7 +107,7 @@ description: 协作管理 OAuth 应用与已验证域名 — 角色、邀请、�
 
 团队所有者（owner）与共同所有者（co-owner）可在 **Teams → \<team\> → Settings → 成员列表可见性** 开启该功能（`restrict_member_list_for_members`）。
 
-开启后，有效角色为普通成员（`member`）的用户在团队成员��表及相关 API（`GET /api/teams/:id`、`GET /api/teams/:id/members`、OAuth `GET /api/oauth/me/team/:teamId/members`）中只能看到所有者、共同所有者、管理员和他们自己的直接成员记录。通过 `GET /api/oauth/me/team/:teamId/members/:userId/profile` 查看被隐藏的普通成员将返回 `404`。此外，开启此选项时，团队的公开资料页成员列表也仅展示管理员及以上角色。
+开启后，有效角色为普通成员（`member`）的用户在团队成员表及相关 API（`GET /api/teams/:id`、`GET /api/teams/:id/members`、OAuth `GET /api/oauth/me/team/:teamId/members`）中只能看到所有者、共同所有者、管理员和他们自己的直接成员记录。通过 `GET /api/oauth/me/team/:teamId/members/:userId/profile` 查看被隐藏的普通成员将返回 `404`。此外，开启此选项时，团队的公开资料页成员列表也仅展示管理员及以上角色。
 
 ## 身份组
 

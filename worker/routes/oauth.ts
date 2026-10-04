@@ -787,7 +787,9 @@ app.patch("/consents/:clientId", requireAuth, async (c) => {
   if (body.auto_authorize !== undefined) {
     if (body.auto_authorize) {
       return c.json(
-        { error: "Auto-authorization can only be enabled during authorization" },
+        {
+          error: "Auto-authorization can only be enabled during authorization",
+        },
         400,
       );
     }
@@ -1107,7 +1109,10 @@ app.get("/app-info", optionalAuth, async (c) => {
   let promptNoneError: string | null = null;
   if (prompt === "none") {
     if (!currentUser || reauthRequired) promptNoneError = "login_required";
-    else if (!oauthApp.is_first_party && (!existingConsentAutoAuthorize || !exactConsentMatch))
+    else if (
+      !oauthApp.is_first_party &&
+      (!existingConsentAutoAuthorize || !exactConsentMatch)
+    )
       promptNoneError = "consent_required";
   }
 
@@ -1410,9 +1415,7 @@ app.post("/authorize", requireAuth, async (c) => {
     try {
       const parsed = JSON.parse(priorConsentRow.scopes);
       if (Array.isArray(parsed)) {
-        priorScopes = parsed.filter(
-          (s): s is string => typeof s === "string",
-        );
+        priorScopes = parsed.filter((s): s is string => typeof s === "string");
       }
     } catch {
       priorScopes = [];

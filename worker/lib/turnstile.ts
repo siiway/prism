@@ -51,7 +51,10 @@ import { getGeo } from "./geo";
  *  "server_region" into a concrete "global"/"china"; the client-side modes
  *  pass through for the browser to resolve against its own environment. */
 export type TurnstileEndpointDirective =
-  "global" | "china" | "client_language" | "client_region";
+  | "global"
+  | "china"
+  | "client_language"
+  | "client_region";
 
 /** Which of the two configured widgets minted a token. Travels with the token
  *  from the browser so the server verifies against the matching secret. */

@@ -24,7 +24,8 @@ class SqliteD1Statement {
   }
 
   async first<T>(columnName?: string) {
-    const row = (this.db.query(this.sql).get(...this.values) as T | null) ?? null;
+    const row =
+      (this.db.query(this.sql).get(...this.values) as T | null) ?? null;
     if (row === null || columnName === undefined) return row;
     return Object(row)[columnName] ?? null;
   }
@@ -224,7 +225,10 @@ beforeEach(() => {
 
 afterEach(() => sqlite.close());
 
-async function makeSessionCookie(userId: string, username: string): Promise<string> {
+async function makeSessionCookie(
+  userId: string,
+  username: string,
+): Promise<string> {
   const sessionId = `s_${userId}`;
   const now = Math.floor(Date.now() / 1000);
   sqlite.run(
@@ -357,7 +361,9 @@ describe("OAuth auto-authorization with production routes", () => {
 
     expect(approveRes.status).toBe(200);
     const consent = sqlite
-      .query("SELECT auto_authorize, scopes FROM oauth_consents WHERE user_id = 'u1' AND client_id = 'client_1'")
+      .query(
+        "SELECT auto_authorize, scopes FROM oauth_consents WHERE user_id = 'u1' AND client_id = 'client_1'",
+      )
       .get() as { auto_authorize: number; scopes: string };
     expect(consent.auto_authorize).toBe(1);
     expect(JSON.parse(consent.scopes)).toEqual(["openid", "profile"]);
@@ -384,7 +390,9 @@ describe("OAuth auto-authorization with production routes", () => {
 
     expect(approveOnceRes.status).toBe(200);
     const consentAfter = sqlite
-      .query("SELECT auto_authorize FROM oauth_consents WHERE user_id = 'u1' AND client_id = 'client_1'")
+      .query(
+        "SELECT auto_authorize FROM oauth_consents WHERE user_id = 'u1' AND client_id = 'client_1'",
+      )
       .get() as { auto_authorize: number };
     expect(consentAfter.auto_authorize).toBe(0);
   });
@@ -418,7 +426,9 @@ describe("OAuth auto-authorization with production routes", () => {
 
     expect(patchRes.status).toBe(200);
     const row = sqlite
-      .query("SELECT auto_authorize FROM oauth_consents WHERE user_id = 'u1' AND client_id = 'client_1'")
+      .query(
+        "SELECT auto_authorize FROM oauth_consents WHERE user_id = 'u1' AND client_id = 'client_1'",
+      )
       .get() as { auto_authorize: number };
     expect(row.auto_authorize).toBe(0);
   });

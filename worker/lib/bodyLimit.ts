@@ -6,7 +6,8 @@ export class BodySizeLimitError extends Error {
 }
 
 export type BoundedBody =
-  { exceeded: true; bytes: null } | { exceeded: false; bytes: Uint8Array };
+  | { exceeded: true; bytes: null }
+  | { exceeded: false; bytes: Uint8Array };
 
 /** Return true only for a syntactically valid Content-Length above the cap. */
 export function declaredLengthExceedsLimit(
