@@ -229,14 +229,18 @@ function ConsentCard({
   consent,
   onRevokeConsent,
   onRevokeToken,
+  onDisableAutoAuthorize,
   revokingConsent,
   revokingToken,
+  disablingAutoAuthorize,
 }: {
   consent: OAuthConsent;
   onRevokeConsent: (c: OAuthConsent) => void;
   onRevokeToken: (id: string) => void;
+  onDisableAutoAuthorize: (c: OAuthConsent) => void;
   revokingConsent: string | null;
   revokingToken: string | null;
+  disablingAutoAuthorize: string | null;
 }) {
   const styles = useStyles();
   const { t } = useTranslation();
@@ -282,6 +286,15 @@ function ConsentCard({
             >
               {t("connectedApps.tokenCount", { count: consent.tokens.length })}
             </Badge>
+            {consent.auto_authorize && (
+              <Badge
+                color="brand"
+                appearance="tint"
+                size="small"
+              >
+                {t("connectedApps.autoAuthorizeEnabled")}
+              </Badge>
+            )}
           </div>
 
           {consent.app.website_url && (
@@ -308,43 +321,54 @@ function ConsentCard({
           </Text>
         </div>
 
-        <Dialog>
-          <DialogTrigger disableButtonEnhancement>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0, alignItems: "center" }}>
+          {consent.auto_authorize && (
             <Button
               appearance="outline"
               size="small"
-              style={{
-                color: tokens.colorPaletteRedForeground1,
-                flexShrink: 0,
-              }}
-              disabled={revokingConsent === consent.client_id}
+              disabled={disablingAutoAuthorize === consent.client_id}
+              onClick={() => onDisableAutoAuthorize(consent)}
             >
-              {t("connectedApps.revokeAll")}
+              {t("connectedApps.disableAutoAuthorize")}
             </Button>
-          </DialogTrigger>
-          <DialogSurface>
-            <DialogBody>
-              <DialogTitle>
-                {t("connectedApps.revokeTitle", { name: consent.app.name })}
-              </DialogTitle>
-              <DialogContent>
-                {t("connectedApps.revokeDesc", { name: consent.app.name })}
-              </DialogContent>
-              <DialogActions>
-                <DialogTrigger>
-                  <Button>{t("common.cancel")}</Button>
-                </DialogTrigger>
-                <Button
-                  appearance="primary"
-                  style={{ background: tokens.colorPaletteRedBackground3 }}
-                  onClick={() => onRevokeConsent(consent)}
-                >
-                  {t("connectedApps.revokeAccess")}
-                </Button>
-              </DialogActions>
-            </DialogBody>
-          </DialogSurface>
-        </Dialog>
+          )}
+          <Dialog>
+            <DialogTrigger disableButtonEnhancement>
+              <Button
+                appearance="outline"
+                size="small"
+                style={{
+                  color: tokens.colorPaletteRedForeground1,
+                }}
+                disabled={revokingConsent === consent.client_id}
+              >
+                {t("connectedApps.revokeAll")}
+              </Button>
+            </DialogTrigger>
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>
+                  {t("connectedApps.revokeTitle", { name: consent.app.name })}
+                </DialogTitle>
+                <DialogContent>
+                  {t("connectedApps.revokeDesc", { name: consent.app.name })}
+                </DialogContent>
+                <DialogActions>
+                  <DialogTrigger>
+                    <Button>{t("common.cancel")}</Button>
+                  </DialogTrigger>
+                  <Button
+                    appearance="primary"
+                    style={{ background: tokens.colorPaletteRedBackground3 }}
+                    onClick={() => onRevokeConsent(consent)}
+                  >
+                    {t("connectedApps.revokeAccess")}
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
+        </div>
       </div>
 
       {consent.tokens.length > 0 && (
@@ -386,6 +410,7 @@ export function ConnectedApps() {
   const { t } = useTranslation();
   const [revokingConsent, setRevokingConsent] = useState<string | null>(null);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
+  const [disablingAutoAuthorize, setDisablingAutoAuthorize] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const [query, setQuery] = useState("");
@@ -431,6 +456,22 @@ export function ConnectedApps() {
       );
     } finally {
       setRevokingToken(null);
+    }
+  };
+
+  const handleDisableAutoAuthorize = async (consent: OAuthConsent) => {
+    setDisablingAutoAuthorize(consent.client_id);
+    try {
+      await api.updateConsent(consent.client_id, { auto_authorize: false });
+      await qc.invalidateQueries({ queryKey: ["consents"] });
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : t("connectedApps.disableAutoAuthorizeFailed"),
+      );
+    } finally {
+      setDisablingAutoAuthorize(null);
     }
   };
 
@@ -488,8 +529,10 @@ export function ConnectedApps() {
                 consent={consent}
                 onRevokeConsent={handleRevokeConsent}
                 onRevokeToken={handleRevokeToken}
+                onDisableAutoAuthorize={handleDisableAutoAuthorize}
                 revokingConsent={revokingConsent}
                 revokingToken={revokingToken}
+                disablingAutoAuthorize={disablingAutoAuthorize}
               />
             ))}
           </div>

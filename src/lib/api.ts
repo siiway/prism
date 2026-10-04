@@ -513,6 +513,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       alt_email_login: boolean | null;
       access_token_ttl_minutes: number | null;
       refresh_token_ttl_days: number | null;
+      notify_on_auto_authorization: boolean;
       gpg_require_2fa: boolean;
       profile_is_public: boolean;
       profile_show_display_name: boolean | null;
@@ -875,6 +876,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       "DELETE",
       `/oauth/consents/${encodeURIComponent(clientId)}`,
       undefined,
+      getToken(),
+    ),
+  updateConsent: (clientId: string, body: { auto_authorize?: boolean }) =>
+    request<{ message: string }>(
+      "PATCH",
+      `/oauth/consents/${encodeURIComponent(clientId)}`,
+      body,
       getToken(),
     ),
   revokeToken: (tokenId: string) =>
@@ -2870,6 +2878,7 @@ export interface UserProfile {
   alt_email_login: number | null;
   access_token_ttl_minutes: number | null;
   refresh_token_ttl_days: number | null;
+  notify_on_auto_authorization: boolean;
   /** true (default) = gpg-login still asks for a TOTP code when the account
    *  has an enrolled authenticator; false = trust the GPG signature alone.
    *  See Security > GPG keys > "Require 2FA after GPG verification". */
@@ -3008,6 +3017,7 @@ export interface OAuthConsent {
   client_id: string;
   scopes: string[];
   granted_at: number;
+  auto_authorize: boolean;
   app: {
     name: string;
     description: string;
@@ -3837,6 +3847,7 @@ export interface OAuthAuthorizeInfo {
   reauth_required: boolean;
   prompt_none_error: string | null;
   prior_consent_covers: boolean;
+  auto_authorize_eligible: boolean;
   user: UserProfile | null;
   requires_site_grant: boolean;
   site_scope_confirm_phrase: string | null;
@@ -3933,6 +3944,8 @@ export interface OAuthApproveBody {
   code_challenge_method?: string;
   nonce?: string;
   action: "approve" | "deny";
+  authorization_mode?: "once" | "always";
+  is_auto_authorized?: boolean;
   totp_code?: string;
   passkey_verify_token?: string;
   confirm_text?: string;

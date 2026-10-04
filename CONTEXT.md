@@ -81,6 +81,12 @@ A user's link to one specific OAuth source account.
 An OAuth app flagged as run by the instance operator; it skips the consent
 screen.
 
+**Remembered auto-authorization**:
+An explicit user choice ("Always authorize {app}") that allows subsequent OAuth
+authorization requests for the app to silently skip the consent screen, provided
+the effective requested scopes match the remembered grant exactly. Any scope
+change requires manual user confirmation again.
+
 **Official app**:
 An OAuth app the operator marks as officially endorsed (a trust badge). Distinct
 from first-party: an app can be endorsed without being operator-run.

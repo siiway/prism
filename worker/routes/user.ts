@@ -120,6 +120,7 @@ app.patch("/me", async (c) => {
     alt_email_login?: boolean | null;
     access_token_ttl_minutes?: number | null;
     refresh_token_ttl_days?: number | null;
+    notify_on_auto_authorization?: boolean;
     gpg_require_2fa?: boolean;
     profile_is_public?: boolean;
     profile_show_display_name?: boolean | null;
@@ -191,7 +192,11 @@ app.patch("/me", async (c) => {
         );
     }
     updates.push("refresh_token_ttl_days = ?");
-    values.push(body.refresh_token_ttl_days);
+    values.push(body.refresh_token_ttl_days ?? null);
+  }
+  if (body.notify_on_auto_authorization !== undefined) {
+    updates.push("notify_on_auto_authorization = ?");
+    values.push(body.notify_on_auto_authorization ? 1 : 0);
   }
   if (body.gpg_require_2fa !== undefined) {
     // Non-nullable — the site has no configurable default here, so the
@@ -672,6 +677,7 @@ async function safeUser(baseUrl: string, db: D1Database, row: UserRow) {
     alt_email_login: row.alt_email_login,
     access_token_ttl_minutes: row.access_token_ttl_minutes,
     refresh_token_ttl_days: row.refresh_token_ttl_days,
+    notify_on_auto_authorization: row.notify_on_auto_authorization === 1,
     gpg_require_2fa: row.gpg_require_2fa !== 0,
     profile_is_public: row.profile_is_public === 1,
     profile_show_display_name: nullableBool(row.profile_show_display_name),

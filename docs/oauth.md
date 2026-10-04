@@ -253,8 +253,12 @@ phrase gate as `site:team:*`:
 ### Step 2 — User consents
 
 Prism shows a consent screen listing your app name and the requested scopes.
-If the user has already consented to the same scopes, the consent screen is
-skipped automatically.
+Users may choose to **Authorize {app}** for the current authorization, or
+choose **Always authorize {app}** to remember their consent. When remembered,
+subsequent authorization requests for the exact same scope set will skip the
+consent screen automatically. If requested scopes change in any way, the consent
+screen is shown again. Users can manage or disable remembered authorization under
+**Connected Apps**.
 
 ### Step 3 — Receive the code
 

@@ -198,8 +198,17 @@ export function Authorize() {
     !hasPendingSiteScopes ||
     (twoFaDone && confirmText.trim().toLowerCase() === confirmPhrase);
   const teamGrantReady = !requiresTeamGrant || selectedTeamId.length > 0;
+  const canAlwaysAuthorize =
+    data &&
+    !data.app.is_first_party &&
+    !requiresSiteGrant &&
+    !requiresTeamGrant;
 
-  const handleDecision = async (action: "approve" | "deny") => {
+  const handleDecision = async (
+    action: "approve" | "deny",
+    mode: "once" | "always" = "once",
+    isAuto: boolean = false,
+  ) => {
     if (!data) return;
     setSiteError(null);
     setTeamScopeError(null);
@@ -221,6 +230,12 @@ export function Authorize() {
         ...(params.max_age ? { max_age: Number(params.max_age) } : {}),
         ...(params.prompt ? { prompt: params.prompt } : {}),
         action,
+        ...(action === "approve"
+          ? {
+              authorization_mode: mode,
+              ...(isAuto ? { is_auto_authorized: true } : {}),
+            }
+          : {}),
         ...(requiresSiteGrant && action === "approve"
           ? {
               ...(twoFaMode === "passkey"
@@ -361,20 +376,25 @@ export function Authorize() {
     }
   }, [data, navigate, reauthSatisfied]);
 
-  // Auto-approve first-party apps, or any app under prompt=none whose prior
-  // consent already covers the request — but never skip consent for
-  // site/team-level scopes, nor when the client explicitly asked for consent.
+  // Auto-approve first-party apps, remembered auto-authorization apps,
+  // or any app under prompt=none whose prior consent covers the request —
+  // but never skip consent for site/team-level scopes, nor when the client explicitly asked for consent.
   useEffect(() => {
     if (!user || !data || autoApproved.current) return;
     if (data.requires_site_grant || data.requires_team_grant) return;
     if (data.prompt === "consent") return;
     if (data.reauth_required && !reauthSatisfied) return;
     const silentPromptNone = data.prompt === "none" && !data.prompt_none_error;
-    if (data.app.is_first_party || silentPromptNone) {
+    if (
+      data.app.is_first_party ||
+      data.auto_authorize_eligible ||
+      silentPromptNone
+    ) {
       autoApproved.current = true;
       // Defer out of the effect body so the approval's setState doesn't run
       // synchronously during render.
-      queueMicrotask(() => handleDecision("approve"));
+      const isAuto = !data.app.is_first_party;
+      queueMicrotask(() => handleDecision("approve", "once", isAuto));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleDecision is intentionally not a dep; the autoApproved ref guards against double-fire
   }, [data, user]);
@@ -1151,12 +1171,21 @@ export function Authorize() {
             appearance="primary"
             icon={loading ? <Spinner size="tiny" /> : <CheckmarkRegular />}
             disabled={loading || !siteGrantReady || !teamGrantReady}
-            onClick={() => handleDecision("approve")}
+            onClick={() => handleDecision("approve", "once")}
           >
             {canLogBackIn
               ? t("oauth.logBackIn", { appName: data.app.name })
               : t("oauth.authorize", { appName: data.app.name })}
           </Button>
+          {canAlwaysAuthorize && (
+            <Button
+              appearance="secondary"
+              disabled={loading || !siteGrantReady || !teamGrantReady}
+              onClick={() => handleDecision("approve", "always")}
+            >
+              {t("oauth.alwaysAuthorize", { appName: data.app.name })}
+            </Button>
+          )}
           {canLogBackIn && (
             <Text
               size={100}

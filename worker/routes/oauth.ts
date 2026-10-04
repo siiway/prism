@@ -597,7 +597,7 @@ app.get("/consents", requireAuth, async (c) => {
 
   const [consentRows, countRow, tokenRows] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT oc.client_id, oc.scopes, oc.granted_at,
+      `SELECT oc.client_id, oc.scopes, oc.granted_at, oc.auto_authorize,
               oa.name, oa.description, oa.icon_url, oa.website_url,
               oa.owner_id, oa.team_id, oa.redirect_uris
        FROM oauth_consents oc
@@ -610,6 +610,7 @@ app.get("/consents", requireAuth, async (c) => {
         client_id: string;
         scopes: string;
         granted_at: number;
+        auto_authorize: number;
         name: string;
         description: string;
         icon_url: string | null;
@@ -671,6 +672,7 @@ app.get("/consents", requireAuth, async (c) => {
         client_id: r.client_id,
         scopes: JSON.parse(r.scopes) as string[],
         granted_at: r.granted_at,
+        auto_authorize: r.auto_authorize === 1,
         app: {
           name: r.name,
           description: r.description,
@@ -774,6 +776,29 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
   }
 
   return c.json({ message: "Access revoked" });
+});
+
+// PATCH /api/oauth/consents/:clientId — update consent settings, e.g. disable auto_authorize
+app.patch("/consents/:clientId", requireAuth, async (c) => {
+  const user = c.get("user");
+  const clientId = c.req.param("clientId");
+  const body = await c.req.json<{ auto_authorize?: boolean }>();
+
+  if (body.auto_authorize !== undefined) {
+    if (body.auto_authorize) {
+      return c.json(
+        { error: "Auto-authorization can only be enabled during authorization" },
+        400,
+      );
+    }
+    await c.env.DB.prepare(
+      "UPDATE oauth_consents SET auto_authorize = 0 WHERE user_id = ? AND client_id = ?",
+    )
+      .bind(user.id, clientId)
+      .run();
+  }
+
+  return c.json({ message: "Consent updated" });
 });
 
 /** Check if the given user is allowed by the app's access whitelist rules.
@@ -1001,15 +1026,16 @@ app.get("/app-info", optionalAuth, async (c) => {
   // a "Log back in" affordance — replacing prior tokens with a fresh one —
   // when the requested permissions exactly match the previous grant.
   let existingConsentScopes: string[] | null = null;
+  let existingConsentAutoAuthorize = false;
   let existingTokenCount = 0;
   if (currentUser) {
     const nowSec = Math.floor(Date.now() / 1000);
     const [consentRow, tokenCountRow] = await Promise.all([
       c.env.DB.prepare(
-        "SELECT scopes FROM oauth_consents WHERE user_id = ? AND client_id = ?",
+        "SELECT scopes, auto_authorize FROM oauth_consents WHERE user_id = ? AND client_id = ?",
       )
         .bind(currentUser.id, oauthApp.client_id)
-        .first<{ scopes: string }>(),
+        .first<{ scopes: string; auto_authorize: number }>(),
       c.env.DB.prepare(
         "SELECT COUNT(*) AS n FROM oauth_tokens WHERE user_id = ? AND client_id = ? AND expires_at > ?",
       )
@@ -1017,6 +1043,7 @@ app.get("/app-info", optionalAuth, async (c) => {
         .first<{ n: number }>(),
     ]);
     if (consentRow) {
+      existingConsentAutoAuthorize = consentRow.auto_authorize === 1;
       try {
         const parsed = JSON.parse(consentRow.scopes);
         if (Array.isArray(parsed)) {
@@ -1059,14 +1086,29 @@ app.get("/app-info", optionalAuth, async (c) => {
     requestedAcrs.length > 0 &&
     (sessionAcr === null || !requestedAcrs.includes(sessionAcr));
   const reauthRequired = prompt === "login" || staleByMaxAge || acrUnsatisfied;
-  // Does the prior consent already cover every currently-requested scope?
-  const priorCovers =
+  // Exact match between requested effective scopes and existing remembered consent
+  const exactConsentMatch =
     existingConsentScopes != null &&
-    scopes.every((s) => existingConsentScopes!.includes(s));
+    existingConsentScopes.length === scopes.length &&
+    new Set(existingConsentScopes).size === scopes.length &&
+    existingConsentScopes.every((s) => scopes.includes(s));
+
+  // Remembered auto-authorization eligibility (requires auto_authorize flag and exact scope match)
+  const autoAuthorizeEligible =
+    !oauthApp.is_first_party &&
+    !hasSiteScopes(scopes) &&
+    !needsTeamGrant &&
+    rejected.length === 0 &&
+    prompt !== "consent" &&
+    !reauthRequired &&
+    existingConsentAutoAuthorize &&
+    exactConsentMatch;
+
   let promptNoneError: string | null = null;
   if (prompt === "none") {
     if (!currentUser || reauthRequired) promptNoneError = "login_required";
-    else if (!priorCovers) promptNoneError = "consent_required";
+    else if (!oauthApp.is_first_party && (!existingConsentAutoAuthorize || !exactConsentMatch))
+      promptNoneError = "consent_required";
   }
 
   return c.json({
@@ -1084,7 +1126,8 @@ app.get("/app-info", optionalAuth, async (c) => {
     max_age: maxAge,
     reauth_required: reauthRequired,
     prompt_none_error: promptNoneError,
-    prior_consent_covers: priorCovers,
+    prior_consent_covers: existingConsentAutoAuthorize && exactConsentMatch,
+    auto_authorize_eligible: autoAuthorizeEligible,
     user: c.get("user") ?? null,
     requires_site_grant: hasSiteScopes(scopes),
     site_scope_confirm_phrase: hasSiteScopes(scopes)
@@ -1113,6 +1156,8 @@ app.post("/authorize", requireAuth, async (c) => {
     code_challenge_method?: string;
     nonce?: string;
     action: "approve" | "deny";
+    authorization_mode?: "once" | "always";
+    is_auto_authorized?: boolean;
     totp_code?: string;
     passkey_verify_token?: string;
     confirm_text?: string;
@@ -1414,13 +1459,46 @@ app.post("/authorize", requireAuth, async (c) => {
   }
 
   const siteScopes = boundScopes.filter((s) => SITE_SCOPES.has(s));
-  await c.env.DB.prepare(
-    `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at)
-     VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(user_id, client_id) DO UPDATE SET scopes = excluded.scopes, granted_at = excluded.granted_at`,
-  )
-    .bind(randomId(), user.id, body.client_id, JSON.stringify(boundScopes), now)
-    .run();
+  const autoAuthorizeFlag =
+    body.authorization_mode === "always" &&
+    !oauthApp.is_first_party &&
+    siteScopes.length === 0 &&
+    !body.team_id
+      ? 1
+      : body.authorization_mode === "once"
+        ? 0
+        : undefined;
+
+  if (autoAuthorizeFlag !== undefined) {
+    await c.env.DB.prepare(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, client_id) DO UPDATE SET scopes = excluded.scopes, granted_at = excluded.granted_at, auto_authorize = excluded.auto_authorize`,
+    )
+      .bind(
+        randomId(),
+        user.id,
+        body.client_id,
+        JSON.stringify(boundScopes),
+        now,
+        autoAuthorizeFlag,
+      )
+      .run();
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, client_id) DO UPDATE SET scopes = excluded.scopes, granted_at = excluded.granted_at`,
+    )
+      .bind(
+        randomId(),
+        user.id,
+        body.client_id,
+        JSON.stringify(boundScopes),
+        now,
+      )
+      .run();
+  }
 
   if (siteScopes.length > 0) {
     await c.env.DB.prepare(
@@ -1438,19 +1516,36 @@ app.post("/authorize", requireAuth, async (c) => {
       .run();
   }
 
-  c.executionCtx.waitUntil(
-    deliverUserEmailNotifications(
-      c.env,
-      user.id,
-      "oauth.consent_granted",
-      {
-        app_name: oauthApp.name,
-        scopes: boundScopes,
-        ...notificationActorMetaFromHeaders(c.req.raw.headers),
-      },
-      c.env.APP_URL,
-    ).catch(() => {}),
-  );
+  // Send notification:
+  // - Always for manual authorization
+  // - For auto-authorization (skipping consent UI), only if the user opted in via notify_on_auto_authorization
+  let shouldNotify = !body.is_auto_authorized;
+  if (body.is_auto_authorized) {
+    const u = await c.env.DB.prepare(
+      "SELECT notify_on_auto_authorization FROM users WHERE id = ?",
+    )
+      .bind(user.id)
+      .first<{ notify_on_auto_authorization: number }>();
+    if (u?.notify_on_auto_authorization === 1) {
+      shouldNotify = true;
+    }
+  }
+
+  if (shouldNotify) {
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env,
+        user.id,
+        "oauth.consent_granted",
+        {
+          app_name: oauthApp.name,
+          scopes: boundScopes,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
+        },
+        c.env.APP_URL,
+      ).catch(() => {}),
+    );
+  }
 
   // Issue authorization code (10 minute TTL). Stored as keyed-HMAC hash
   // so a D1 leak doesn't surrender redeemable codes.

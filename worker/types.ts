@@ -19,6 +19,9 @@ export interface UserRow {
   alt_email_login: number | null;
   access_token_ttl_minutes: number | null;
   refresh_token_ttl_days: number | null;
+  /** 1 = send notification when OAuth app is automatically authorized via
+   *  remembered auto-authorization (skipping consent UI); 0 (default) = suppress. */
+  notify_on_auto_authorization: number;
   /** 1 (default) = a successful GPG signature still walks the TOTP gate when
    *  the account has an enrolled authenticator; 0 = trust the signature on
    *  its own and skip the TOTP prompt. Only affects gpg-login. */

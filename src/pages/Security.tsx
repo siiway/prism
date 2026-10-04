@@ -233,56 +233,62 @@ export function Security() {
 
   const { message, showMsg } = useToastMessage(6000);
 
-  // ─── Token TTL prefs ─────────────────────────────────────────────────────
+  // ─── OAuth settings (Token TTL prefs & auto authorization notify) ───────
   const [accessTtl, setAccessTtl] = useState<number | null>(null);
   const [refreshTtl, setRefreshTtl] = useState<number | null>(null);
-  const [savingTtl, setSavingTtl] = useState(false);
+  const [notifyOnAutoAuth, setNotifyOnAutoAuth] = useState(false);
+  const [savingOAuthSettings, setSavingOAuthSettings] = useState(false);
 
   // Sync server prefs into local draft. Expressed as a render-time set
   // (guarded by an identity ref) per React 19's set-state-in-effect rule.
-  const [syncedTtlSource, setSyncedTtlSource] = useState<{
+  const [syncedOAuthSettingsSource, setSyncedOAuthSettingsSource] = useState<{
     a: number | null;
     r: number | null;
+    n: boolean;
   } | null>(null);
   if (
     me?.user &&
-    (syncedTtlSource === null ||
-      syncedTtlSource.a !== me.user.access_token_ttl_minutes ||
-      syncedTtlSource.r !== me.user.refresh_token_ttl_days)
+    (syncedOAuthSettingsSource === null ||
+      syncedOAuthSettingsSource.a !== me.user.access_token_ttl_minutes ||
+      syncedOAuthSettingsSource.r !== me.user.refresh_token_ttl_days ||
+      syncedOAuthSettingsSource.n !== me.user.notify_on_auto_authorization)
   ) {
     setAccessTtl(me.user.access_token_ttl_minutes);
     setRefreshTtl(me.user.refresh_token_ttl_days);
-    setSyncedTtlSource({
+    setNotifyOnAutoAuth(me.user.notify_on_auto_authorization);
+    setSyncedOAuthSettingsSource({
       a: me.user.access_token_ttl_minutes,
       r: me.user.refresh_token_ttl_days,
+      n: me.user.notify_on_auto_authorization,
     });
   }
 
   const isValidTtl = (v: number | null): boolean =>
     v === null || (Number.isInteger(v) && v >= 1);
 
-  const handleSaveTokenTtl = async () => {
+  const handleSaveOAuthSettings = async () => {
     if (!isValidTtl(accessTtl) || !isValidTtl(refreshTtl)) {
       showMsg("error", t("security.tokenTtlInvalid"));
       return;
     }
-    setSavingTtl(true);
+    setSavingOAuthSettings(true);
     try {
       await api.updateMe({
         access_token_ttl_minutes: accessTtl,
         refresh_token_ttl_days: refreshTtl,
+        notify_on_auto_authorization: notifyOnAutoAuth,
       });
       await qc.invalidateQueries({ queryKey: ["me"] });
-      showMsg("success", t("security.tokenTtlSaved"));
+      showMsg("success", t("security.oauthSettingsSaved"));
     } catch (err) {
       showMsg(
         "error",
         err instanceof ApiError
           ? err.message
-          : t("security.tokenTtlSaveFailed"),
+          : t("security.oauthSettingsSaveFailed"),
       );
     } finally {
-      setSavingTtl(false);
+      setSavingOAuthSettings(false);
     }
   };
 
@@ -1618,7 +1624,7 @@ export function Security() {
         </>
       </div>
 
-      {/* Token TTL prefs */}
+      {/* OAuth settings */}
       <div
         className={styles.card}
         style={isPageLoading ? { display: "none" } : {}}
@@ -1626,10 +1632,10 @@ export function Security() {
         <div className={styles.cardHeader}>
           <div>
             <Text weight="semibold" size={400} block>
-              {t("security.tokenTtlTitle")}
+              {t("security.oauthSettingsTitle")}
             </Text>
             <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("security.tokenTtlDesc")}
+              {t("security.oauthSettingsDesc")}
             </Text>
           </div>
         </div>
@@ -1663,17 +1669,26 @@ export function Security() {
             })}
           />
         </Field>
+        <Field
+          hint={t("security.notifyOnAutoAuthDesc")}
+        >
+          <Switch
+            label={t("security.notifyOnAutoAuthLabel")}
+            checked={notifyOnAutoAuth}
+            onChange={(_, d) => setNotifyOnAutoAuth(d.checked)}
+          />
+        </Field>
         <div className={styles.actions}>
           <Button
             appearance="primary"
-            disabled={savingTtl}
-            onClick={handleSaveTokenTtl}
+            disabled={savingOAuthSettings}
+            onClick={handleSaveOAuthSettings}
           >
-            {savingTtl ? <Spinner size="tiny" /> : t("common.save")}
+            {savingOAuthSettings ? <Spinner size="tiny" /> : t("common.save")}
           </Button>
           <Button
             appearance="subtle"
-            disabled={savingTtl}
+            disabled={savingOAuthSettings}
             onClick={() => {
               setAccessTtl(null);
               setRefreshTtl(null);
