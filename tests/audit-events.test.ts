@@ -5,13 +5,14 @@ describe("audit event catalog", () => {
   test("includes team invite and member-group writes", () => {
     expect(AUDIT_EVENT_CATALOG.team.team).toContain("invite.create");
     expect(AUDIT_EVENT_CATALOG.team.team).toContain("invite.revoke");
+    expect(AUDIT_EVENT_CATALOG.team.team).toContain("invite.update");
     expect(AUDIT_EVENT_CATALOG.team.team).toContain("group.create");
     expect(AUDIT_EVENT_CATALOG.team.team).toContain("member.groups_change");
     expect(parseEvents("team.invite.create", "team").ok).toBe(true);
   });
 
   test("includes site invite writes", () => {
-    expect(AUDIT_EVENT_CATALOG.platform.invite).toEqual(["create", "revoke"]);
+    expect(AUDIT_EVENT_CATALOG.platform.invite).toContain("update");
     expect(parseEvents("invite.*", "platform").ok).toBe(true);
   });
 

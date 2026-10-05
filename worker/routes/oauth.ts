@@ -4702,14 +4702,14 @@ app.post("/me/invites", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
   const token = randomBase64url(24);
-  const storedToken = await hashSecret(c.env, token);
+  const storedToken = token;
   const expiresAt = body.expires_in_days
     ? now + body.expires_in_days * 86400
     : null;
 
   await c.env.DB.prepare(
-    `INSERT INTO site_invites (id, token, email, note, max_uses, use_count, created_by, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+    `INSERT INTO site_invites (id, token, email, note, max_uses, use_count, created_by, expires_at, created_at, enabled)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 1)`,
   )
     .bind(
       id,
@@ -4744,7 +4744,7 @@ app.get("/me/invites", async (c) => {
 
   const { results } = await c.env.DB.prepare(
     `SELECT i.id, i.token, i.email, i.note, i.max_uses, i.use_count,
-            i.created_by, i.expires_at, i.created_at,
+             i.created_by, i.expires_at, i.created_at, i.enabled,
             u.username AS created_by_username
      FROM site_invites i
      LEFT JOIN users u ON u.id = i.created_by

@@ -45,7 +45,7 @@ export async function validateSiteInvite(
     return { ok: false, error: "Invalid invite token", status: 403 };
 
   const invite = await env.DB.prepare(
-    "SELECT * FROM site_invites WHERE token = ? OR token = ?",
+    "SELECT * FROM site_invites WHERE (token = ? OR token = ?) AND enabled = 1",
   )
     .bind(token, inviteLookup)
     .first<SiteInviteRow>();
@@ -91,7 +91,8 @@ export async function claimSiteInvite(
 ): Promise<boolean> {
   const res = await env.DB.prepare(
     `UPDATE site_invites SET use_count = use_count + 1
-        WHERE id = ? AND (max_uses IS NULL OR use_count < max_uses)`,
+        WHERE id = ? AND enabled = 1
+          AND (max_uses IS NULL OR use_count < max_uses)`,
   )
     .bind(invite.id)
     .run();

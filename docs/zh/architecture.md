@@ -316,7 +316,7 @@ PoW 是第三方验证码服务的替代方案。
 敏感字段分为两类，根都在 `SECRETS_KEY` 这一 Cloudflare Secrets Store 绑定：
 
 - **可还原（AES-GCM 信封）** — Worker 需要*读出明文*：OAuth/源 `client_secret`、验证码私钥、SMTP/IMAP 密码、GitHub README PAT。密文以 `__ENC_v1__` 开头。
-- **仅校验（keyed HMAC-SHA256）** — Worker 只需对一个候选值做*比较*：PAT、OAuth 访问/刷新 token、OAuth code、邀请 token、邮箱验证 token、二次验证码、单条备用码。哈希以 `__HASH_v1__` 开头。HMAC 子密钥通过 HKDF 从 `SECRETS_KEY` 派生（info 串 `prism:hash-subkey:v1`）以做域分隔。
+- **仅校验（keyed HMAC-SHA256）** — Worker 只需对一个候选值做*比较*：PAT、OAuth 访问/刷新 token、OAuth code、邮箱验证 token、二次验证码、单条备用码，以及历史邀请 token。哈希以 `__HASH_v1__` 开头。新创建的邀请 token 保留明文，供有权限的管理者持续复制；历史哈希邀请仍可校验但无法恢复。HMAC 子密钥通过 HKDF 从 `SECRETS_KEY` 派生（info 串 `prism:hash-subkey:v1`）以做域分隔。
 
 未绑定 `SECRETS_KEY` 时这些工具退化为 no-op，历史明文行依然可比对 — 已存在的部署只需新增绑定 + 在管理面板点一次迁移即可启用加密。
 

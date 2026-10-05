@@ -139,16 +139,11 @@ export function InviteDialog({
       });
       await qc.invalidateQueries({ queryKey: ["team-invites", teamId] });
 
-      if (res.invite.email) {
-        setOpen(false);
-        resetState();
-        showMsg("success", t("teams.inviteEmailSent"));
-      } else {
-        const link = allowsRegistration
-          ? `${window.location.origin}/join/${teamId}?invite=${res.invite.token}`
-          : `${window.location.origin}/teams/join/${res.invite.token}`;
-        setCreatedLink(link);
-      }
+      const link = allowsRegistration
+        ? `${window.location.origin}/join/${teamId}?invite=${res.invite.token}`
+        : `${window.location.origin}/teams/join/${res.invite.token}`;
+      setCreatedLink(link);
+      if (res.invite.email) showMsg("success", t("teams.inviteEmailSent"));
     } catch (err) {
       showMsg(
         "error",

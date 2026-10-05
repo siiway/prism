@@ -302,9 +302,10 @@ descendant subtree to surface "teams I can see via inheritance." Both
 helpers honor the `inherit_team_membership` site config and degrade to
 direct-only when the toggle is off.
 
-`team_invites` is the standard random-token + expiry + max-uses table; the
-token is keyed-HMAC-hashed at rest (`__HASH_v1__…`) so a stolen DB row alone
-cannot mint joins. Issuing an invite for `role = co-owner` requires the
+`team_invites` is the standard random-token + expiry + max-uses table. Newly
+created tokens remain plaintext so authorized team managers can copy an invite
+after creating it. Legacy keyed-HMAC rows (`__HASH_v1__…`) continue to validate
+but cannot be recovered or copied. Issuing an invite for `role = co-owner` requires the
 issuer to be an `owner`; admin/member tiers are open to admins+.
 
 A team's apps and verified domains follow ownership the obvious way

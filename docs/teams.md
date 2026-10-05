@@ -375,6 +375,19 @@ away.
 The link points at `/join/<team-id>?invite=<code>`, not the ordinary
 `/teams/join/<token>` route.
 
+### Managing invitations
+
+Team admins can edit, enable, disable, or revoke invitations they created.
+Co-owners and owners can manage every invitation in the team. Editing can change
+the email lock, usage limit, and expiry, but never the link, creator, or recorded
+uses; a usage limit cannot be lowered below its current uses. Disabling an invite
+blocks both joining and invite-link registration until it is enabled again.
+
+New invitations retain their plaintext link so authorized managers can copy it
+after the creation dialog closes. Older HMAC-hashed invitations are shown as
+`(hashed)` and cannot be copied because their original credential cannot be
+recovered.
+
 ### What a registrant goes through
 
 ```

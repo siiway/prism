@@ -301,13 +301,17 @@ For detailed per-provider setup instructions see [Social Login Setup](social-log
 
 ## Invites
 
-When registration mode is **invite-only**, the Invites tab lets you create and revoke invite tokens.
+When registration mode is **invite-only**, the Invites tab lets you create, edit,
+enable, disable, and revoke invite tokens.
 
 - **Email (optional)** — restrict the invite to a specific email address
 - **Max uses** — leave empty for unlimited
 - **Expires after (days)** — optional expiry
 
-Invite links are copyable and can be shared directly. Email delivery requires a configured email provider.
+Invite links are copyable and can be shared directly. Disabled invitations cannot
+register accounts until they are enabled again. The revoke confirmation shows the
+available email, note, use count, creator, expiry, and a shortened link preview.
+Email delivery requires a configured email provider.
 
 ## Users
 

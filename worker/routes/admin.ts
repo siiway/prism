@@ -72,6 +72,10 @@ import {
   sanitizeRestrictedCapabilities,
 } from "../lib/userCapabilities";
 import { hashLookupCandidate } from "../lib/secretCrypto";
+import {
+  isInviteEnabled,
+  validateInviteMaxUses,
+} from "../lib/inviteManagement";
 
 import adminDbRoutes from "./admin-db";
 import adminKvRoutes from "./admin-kv";
@@ -860,20 +864,11 @@ app.post("/d1-secrets/migrate", async (c) => {
     "rowid",
     "code",
   );
-  const siteInvitesCount = await migrateColumnHash(
-    c.env,
-    "site_invites",
-    "id",
-    "token",
-  );
-  // team_invites uses token as PK; rewrite via rowid to avoid the
-  // self-collision once token = hash(token).
-  const teamInvitesCount = await migrateColumnHash(
-    c.env,
-    "team_invites",
-    "rowid",
-    "token",
-  );
+  // Invite tokens remain plaintext so authorized managers can copy a link
+  // after creation. Existing hashed invite rows remain valid but cannot be
+  // recovered or copied.
+  const siteInvitesCount = 0;
+  const teamInvitesCount = 0;
   const usersTokenCount = await migrateColumnHash(
     c.env,
     "users",
@@ -3005,7 +3000,11 @@ app.get("/invites", async (c) => {
       .first<{ n: number }>(),
   ]);
   return c.json({
-    invites: invites.results,
+    invites: invites.results.map((invite) => ({
+      ...invite,
+      enabled: isInviteEnabled(invite.enabled),
+      token_available: !isHashedSecret(invite.token),
+    })),
     total: countRow?.n ?? 0,
     page,
     limit,
@@ -3027,14 +3026,14 @@ app.post("/invites", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
   const token = randomBase64url(24);
-  const storedToken = await hashSecret(c.env, token);
+  const storedToken = token;
   const expiresAt = body.expires_in_days
     ? now + body.expires_in_days * 86400
     : null;
 
   await c.env.DB.prepare(
-    `INSERT INTO site_invites (id, token, email, note, max_uses, use_count, created_by, expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+    `INSERT INTO site_invites (id, token, email, note, max_uses, use_count, created_by, expires_at, created_at, enabled)
+     VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 1)`,
   )
     .bind(
       id,
@@ -3075,7 +3074,106 @@ app.post("/invites", async (c) => {
     { resourceName: body.email ?? null },
   );
 
-  return c.json({ invite: { id, token, invite_url: inviteUrl } }, 201);
+  return c.json(
+    { invite: { id, token, invite_url: inviteUrl, enabled: true } },
+    201,
+  );
+});
+
+app.patch("/invites/:id", async (c) => {
+  const admin = c.get("user");
+  const id = c.req.param("id");
+  const invite = await c.env.DB.prepare(
+    "SELECT * FROM site_invites WHERE id = ?",
+  )
+    .bind(id)
+    .first<SiteInviteRow>();
+  if (!invite) return c.json({ error: "Invite not found" }, 404);
+  const body = await c.req.json<{
+    email?: string | null;
+    note?: string | null;
+    max_uses?: number | null;
+    expires_in_days?: number | null;
+    enabled?: boolean;
+  }>();
+  const changes: Record<string, unknown> = {};
+  let email = invite.email;
+  let note = invite.note;
+  let maxUses = invite.max_uses;
+  let expiresAt = invite.expires_at;
+  let enabled = isInviteEnabled(invite.enabled);
+  if (body.email !== undefined) {
+    email = body.email?.toLowerCase().trim() || null;
+    changes.email = email;
+  }
+  if (body.note !== undefined) {
+    note = body.note?.trim() || null;
+    changes.note = note;
+  }
+  if (body.max_uses !== undefined) {
+    if (body.max_uses === null) maxUses = null;
+    else {
+      const valid = validateInviteMaxUses(body.max_uses, invite.use_count);
+      if (!valid.ok)
+        return c.json(
+          { error: "max_uses must be a safe integer no lower than use_count" },
+          400,
+        );
+      maxUses = valid.value;
+    }
+    changes.max_uses = maxUses;
+  }
+  if (body.expires_in_days !== undefined) {
+    if (body.expires_in_days === null) expiresAt = null;
+    else if (
+      !Number.isSafeInteger(body.expires_in_days) ||
+      body.expires_in_days < 1
+    )
+      return c.json(
+        { error: "expires_in_days must be a positive integer" },
+        400,
+      );
+    else
+      expiresAt = Math.floor(Date.now() / 1000) + body.expires_in_days * 86400;
+    changes.expires_at = expiresAt;
+  }
+  if (body.enabled !== undefined) {
+    if (typeof body.enabled !== "boolean")
+      return c.json({ error: "enabled must be a boolean" }, 400);
+    enabled = body.enabled;
+    changes.enabled = enabled;
+  }
+  if (!Object.keys(changes).length)
+    return c.json({ error: "No editable fields provided" }, 400);
+  await c.env.DB.prepare(
+    "UPDATE site_invites SET email = ?, note = ?, max_uses = ?, expires_at = ?, enabled = ? WHERE id = ?",
+  )
+    .bind(email, note, maxUses, expiresAt, enabled ? 1 : 0, id)
+    .run();
+  await logAudit(
+    c.env,
+    admin.id,
+    enabled === isInviteEnabled(invite.enabled)
+      ? "invite.update"
+      : enabled
+        ? "invite.enable"
+        : "invite.disable",
+    "site_invite",
+    id,
+    { changes },
+    getIp(c),
+    c.executionCtx,
+  );
+  return c.json({
+    invite: {
+      ...invite,
+      email,
+      note,
+      max_uses: maxUses,
+      expires_at: expiresAt,
+      enabled,
+    },
+  });
 });
 
 // Revoke (delete) invite

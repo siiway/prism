@@ -90,7 +90,7 @@ interface InviteRow {
 async function findInvite(env: Env, token: string): Promise<InviteRow | null> {
   const lookup = await hashLookupCandidate(env, token);
   return env.DB.prepare(
-    "SELECT * FROM team_invites WHERE token = ? OR token = ?",
+    "SELECT * FROM team_invites WHERE (token = ? OR token = ?) AND enabled = 1",
   )
     .bind(token, lookup ?? token)
     .first<InviteRow>();
@@ -297,8 +297,9 @@ app.post("/auth/register-with-invite", async (c) => {
   const claim = await c.env.DB.prepare(
     `UPDATE team_invites
         SET uses = uses + 1
-      WHERE token = ?
-        AND allows_registration = 1
+       WHERE token = ?
+         AND enabled = 1
+         AND allows_registration = 1
         AND expires_at > ?
         AND max_uses > 0
         AND uses < max_uses`,

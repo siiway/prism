@@ -197,6 +197,35 @@ export function AdminInvites() {
     }
   };
 
+  const handleInviteEnabled = async (invite: SiteInvite, enabled: boolean) => {
+    await api.adminUpdateInvite(invite.id, { enabled });
+    qc.invalidateQueries({ queryKey: ["admin", "invites"] });
+  };
+
+  const handleEditInvite = async (invite: SiteInvite) => {
+    const email = window.prompt(t("admin.inviteEmail"), invite.email ?? "");
+    if (email === null) return;
+    const note = window.prompt(t("admin.inviteNote"), invite.note ?? "");
+    if (note === null) return;
+    const maxUses = window.prompt(
+      t("admin.inviteMaxUses"),
+      invite.max_uses?.toString() ?? "",
+    );
+    if (maxUses === null) return;
+    try {
+      await api.adminUpdateInvite(invite.id, {
+        email: email.trim() || null,
+        note: note.trim() || null,
+        max_uses: maxUses.trim() ? Number(maxUses) : null,
+      });
+      await qc.invalidateQueries({ queryKey: ["admin", "invites"] });
+    } catch (err) {
+      setCreateError(
+        err instanceof ApiError ? err.message : "Failed to update invite",
+      );
+    }
+  };
+
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
     const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
@@ -417,14 +446,37 @@ export function AdminInvites() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          icon={<CopyRegular />}
-                          appearance="subtle"
-                          size="small"
-                          onClick={() => handleCopy(inviteUrl)}
-                        />
+                        {inv.token_available !== false && (
+                          <Button
+                            icon={<CopyRegular />}
+                            appearance="subtle"
+                            size="small"
+                            onClick={() => handleCopy(inviteUrl)}
+                          />
+                        )}
+                        {!inv.enabled && (
+                          <Badge color="danger" appearance="tint">
+                            {t("admin.inviteDisabled")}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          onClick={() => handleEditInvite(inv)}
+                        >
+                          {t("common.edit")}
+                        </Button>
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          onClick={() => handleInviteEnabled(inv, !inv.enabled)}
+                        >
+                          {inv.enabled
+                            ? t("admin.disableInvite")
+                            : t("admin.enableInvite")}
+                        </Button>
                         <Button
                           icon={<DeleteRegular />}
                           appearance="subtle"
@@ -457,10 +509,22 @@ export function AdminInvites() {
           <DialogBody>
             <DialogTitle>{t("admin.inviteRevokeConfirm")}</DialogTitle>
             <DialogContent>
-              {revokeTarget?.email && (
-                <Text>
-                  {revokeTarget.email}
-                  {revokeTarget.note && ` — ${revokeTarget.note}`}
+              {revokeTarget && (
+                <Text block>
+                  {[
+                    revokeTarget.email,
+                    revokeTarget.note,
+                    `${revokeTarget.use_count}${revokeTarget.max_uses !== null ? ` / ${revokeTarget.max_uses}` : ""}`,
+                    revokeTarget.created_by_username ?? revokeTarget.created_by,
+                    revokeTarget.expires_at
+                      ? formatDate(revokeTarget.expires_at)
+                      : t("admin.inviteNoExpiry"),
+                    revokeTarget.token_available === false
+                      ? "(hashed)"
+                      : `${revokeTarget.token.slice(0, 4)}...${revokeTarget.token.slice(-4)}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </Text>
               )}
             </DialogContent>

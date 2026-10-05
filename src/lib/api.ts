@@ -1873,6 +1873,22 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       undefined,
       getToken(),
     ),
+  updateTeamInvite: (
+    teamId: string,
+    token: string,
+    body: {
+      email?: string | null;
+      max_uses?: number;
+      expires_at?: number;
+      enabled?: boolean;
+    },
+  ) =>
+    request<{ invite: TeamInvite }>(
+      "PATCH",
+      `/teams/${teamId}/invites/${encodeURIComponent(token)}`,
+      body,
+      getToken(),
+    ),
   getTeamInvite: (token: string) =>
     request<TeamInviteInfo>("GET", `/teams/join/${token}`),
   acceptTeamInvite: (token: string) =>
@@ -2482,6 +2498,22 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       body,
       getToken(),
     ),
+  adminUpdateInvite: (
+    id: string,
+    body: {
+      email?: string | null;
+      note?: string | null;
+      max_uses?: number | null;
+      expires_in_days?: number | null;
+      enabled?: boolean;
+    },
+  ) =>
+    request<{ invite: SiteInvite }>(
+      "PATCH",
+      `/admin/invites/${id}`,
+      body,
+      getToken(),
+    ),
   adminRevokeInvite: (id: string) =>
     request<{ message: string }>(
       "DELETE",
@@ -2651,10 +2683,7 @@ export const api = createApiClient({
  *  concrete "global"/"china"; the client-side modes are resolved in the browser
  *  by the Captcha component. Absent on older servers → treated as "global". */
 export type TurnstileEndpointDirective =
-  | "global"
-  | "china"
-  | "client_language"
-  | "client_region";
+  "global" | "china" | "client_language" | "client_region";
 
 /** Which of the two configured Turnstile widgets minted a token. Sent back
  *  with the token so the server verifies it against the matching secret — the
@@ -2662,13 +2691,7 @@ export type TurnstileEndpointDirective =
 export type TurnstileVariant = "global" | "china";
 
 export type CaptchaProvider =
-  | "none"
-  | "turnstile"
-  | "hcaptcha"
-  | "recaptcha"
-  | "pow"
-  | "geetest"
-  | "cap";
+  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
 
 export type CapMode = "embedded" | "external";
 
@@ -3281,6 +3304,8 @@ export interface TeamInvite {
   allows_registration: boolean;
   groups: InviteMemberGroup[];
   allow_existing_members: boolean;
+  enabled: boolean;
+  can_manage: boolean;
 }
 
 export interface InviteMemberGroup {
@@ -3586,6 +3611,7 @@ export interface AdminTeamInvite {
   /** True when this invite mints accounts rather than adding existing ones. */
   allows_registration: boolean;
   groups: InviteMemberGroup[];
+  enabled: boolean;
 }
 
 export interface AdminSession {
@@ -4144,8 +4170,7 @@ export type NotificationRuleSendChannel =
   | { kind: "discord"; connection_id: string; level: NotificationLevel };
 
 export type NotificationRuleAction =
-  | { type: "drop" }
-  | { type: "send"; channels: NotificationRuleSendChannel[] };
+  { type: "drop" } | { type: "send"; channels: NotificationRuleSendChannel[] };
 
 export interface NotificationRulesetRule {
   id: string;
@@ -4196,6 +4221,8 @@ export interface SiteInvite {
   created_by_username: string | null;
   expires_at: number | null;
   created_at: number;
+  enabled: boolean;
+  token_available?: boolean;
 }
 
 export interface AppScopeDefinition {

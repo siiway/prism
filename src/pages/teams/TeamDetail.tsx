@@ -440,6 +440,48 @@ export function TeamDetail() {
     }
   };
 
+  const handleInviteEnabled = async (token: string, enabled: boolean) => {
+    if (!id) return;
+    try {
+      await api.updateTeamInvite(id, token, { enabled });
+      await qc.invalidateQueries({ queryKey: ["team-invites", id] });
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("teams.failedUpdateInvite"),
+      );
+    }
+  };
+
+  const handleEditInvite = async (inv: TeamInvite) => {
+    if (!id) return;
+    const email = window.prompt(
+      t("teams.inviteEmailOptional"),
+      inv.email ?? "",
+    );
+    if (email === null) return;
+    const maxUses = window.prompt(t("teams.maxUses"), String(inv.max_uses));
+    if (maxUses === null) return;
+    const expiry = window.prompt(
+      t("teams.inviteExpiry"),
+      String(inv.expires_at),
+    );
+    if (expiry === null) return;
+    try {
+      await api.updateTeamInvite(id, inv.token, {
+        email: email.trim() || null,
+        max_uses: Number(maxUses),
+        expires_at: Number(expiry),
+      });
+      await qc.invalidateQueries({ queryKey: ["team-invites", id] });
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("teams.failedUpdateInvite"),
+      );
+    }
+  };
+
   const handleCopyInviteLink = async (
     token: string,
     allowsRegistration = false,
@@ -1148,13 +1190,34 @@ export function TeamDetail() {
                     const inviteUrl = inv.allows_registration
                       ? `${window.location.origin}/join/${id}?invite=${inv.token}`
                       : `${window.location.origin}/teams/join/${inv.token}`;
-                    const hashPreview = isHashed
-                      ? `${inv.token.slice(11, 19)}…`
-                      : null;
                     return (
                       <TableRow key={inv.token}>
                         <TableCell>
-                          {inv.email ? (
+                          {isHashed ? (
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <LinkRegular
+                                style={{
+                                  color: tokens.colorNeutralForeground3,
+                                }}
+                              />
+                              <Text
+                                size={200}
+                                style={{
+                                  color: tokens.colorNeutralForeground3,
+                                }}
+                              >
+                                {inv.email
+                                  ? `${inv.email} ${t("teams.hashedInvite")}`
+                                  : t("teams.hashedInvite")}
+                              </Text>
+                            </div>
+                          ) : inv.email ? (
                             <div
                               style={{
                                 display: "flex",
@@ -1169,31 +1232,6 @@ export function TeamDetail() {
                               />
                               <Text size={300}>{inv.email}</Text>
                             </div>
-                          ) : isHashed ? (
-                            <Tooltip content={inv.token} relationship="label">
-                              <div
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 6,
-                                }}
-                              >
-                                <LinkRegular
-                                  style={{
-                                    color: tokens.colorNeutralForeground3,
-                                  }}
-                                />
-                                <Text
-                                  size={200}
-                                  style={{
-                                    color: tokens.colorNeutralForeground3,
-                                    fontFamily: "monospace",
-                                  }}
-                                >
-                                  {hashPreview}
-                                </Text>
-                              </div>
-                            </Tooltip>
                           ) : (
                             <div
                               style={{
@@ -1251,6 +1289,15 @@ export function TeamDetail() {
                             {inv.uses} /{" "}
                             {inv.max_uses === 0 ? "∞" : inv.max_uses}
                           </Text>
+                          {!inv.enabled && (
+                            <Badge
+                              color="danger"
+                              appearance="tint"
+                              size="small"
+                            >
+                              {t("teams.inviteDisabled")}
+                            </Badge>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Text size={300}>
@@ -1264,7 +1311,7 @@ export function TeamDetail() {
                         </TableCell>
                         <TableCell>
                           <div style={{ display: "flex", gap: 4 }}>
-                            {!inv.email && !isHashed && (
+                            {!isHashed && (
                               <Tooltip
                                 content={
                                   copiedToken === inv.token
@@ -1286,20 +1333,53 @@ export function TeamDetail() {
                                 />
                               </Tooltip>
                             )}
-                            <Tooltip
-                              content={t("teams.revokeInvite")}
-                              relationship="label"
-                            >
+                            {inv.can_manage && (
                               <Button
                                 appearance="subtle"
-                                icon={<DeleteRegular />}
                                 size="small"
-                                style={{
-                                  color: tokens.colorPaletteRedForeground1,
-                                }}
-                                onClick={() => handleRevokeInvite(inv.token)}
-                              />
-                            </Tooltip>
+                                onClick={() => handleEditInvite(inv)}
+                              >
+                                {t("common.edit")}
+                              </Button>
+                            )}
+                            {inv.can_manage && (
+                              <Tooltip
+                                content={
+                                  inv.enabled
+                                    ? t("teams.disableInvite")
+                                    : t("teams.enableInvite")
+                                }
+                                relationship="label"
+                              >
+                                <Button
+                                  appearance="subtle"
+                                  size="small"
+                                  onClick={() =>
+                                    handleInviteEnabled(inv.token, !inv.enabled)
+                                  }
+                                >
+                                  {inv.enabled
+                                    ? t("teams.disableInvite")
+                                    : t("teams.enableInvite")}
+                                </Button>
+                              </Tooltip>
+                            )}
+                            {inv.can_manage && (
+                              <Tooltip
+                                content={t("teams.revokeInvite")}
+                                relationship="label"
+                              >
+                                <Button
+                                  appearance="subtle"
+                                  icon={<DeleteRegular />}
+                                  size="small"
+                                  style={{
+                                    color: tokens.colorPaletteRedForeground1,
+                                  }}
+                                  onClick={() => handleRevokeInvite(inv.token)}
+                                />
+                              </Tooltip>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

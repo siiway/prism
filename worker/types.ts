@@ -482,6 +482,7 @@ export interface SiteInviteRow {
   created_by: string;
   expires_at: number | null;
   created_at: number;
+  enabled: number;
 }
 
 export interface SiteConfigRow {
