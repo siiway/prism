@@ -3003,7 +3003,6 @@ export interface PasskeyInfo {
   device_type: string;
   backed_up: number;
   created_at: number;
-  created_by: string;
   last_used_at: number | null;
 }
 
