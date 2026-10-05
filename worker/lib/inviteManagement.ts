@@ -13,8 +13,12 @@ export function canManageTeamInvite(
 export function validateInviteMaxUses(
   value: unknown,
   uses: number,
+  unlimitedValue: number | null = null,
 ): { ok: true; value: number } | { ok: false } {
-  if (!Number.isSafeInteger(value) || (value as number) < uses)
+  if (
+    !Number.isSafeInteger(value) ||
+    ((value as number) !== unlimitedValue && (value as number) < uses)
+  )
     return { ok: false };
   return { ok: true, value: value as number };
 }

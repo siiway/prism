@@ -3145,11 +3145,43 @@ app.patch("/invites/:id", async (c) => {
   }
   if (!Object.keys(changes).length)
     return c.json({ error: "No editable fields provided" }, 400);
-  await c.env.DB.prepare(
-    "UPDATE site_invites SET email = ?, note = ?, max_uses = ?, expires_at = ?, enabled = ? WHERE id = ?",
+  const assignments: string[] = [];
+  const values: unknown[] = [];
+  if (body.email !== undefined) {
+    assignments.push("email = ?");
+    values.push(email);
+  }
+  if (body.note !== undefined) {
+    assignments.push("note = ?");
+    values.push(note);
+  }
+  if (body.max_uses !== undefined) {
+    assignments.push("max_uses = ?");
+    values.push(maxUses);
+  }
+  if (body.expires_in_days !== undefined) {
+    assignments.push("expires_at = ?");
+    values.push(expiresAt);
+  }
+  if (body.enabled !== undefined) {
+    assignments.push("enabled = ?");
+    values.push(enabled ? 1 : 0);
+  }
+  const useGuard =
+    body.max_uses !== undefined && maxUses !== null
+      ? " AND use_count <= ?"
+      : "";
+  if (useGuard) values.push(maxUses);
+  const updated = await c.env.DB.prepare(
+    `UPDATE site_invites SET ${assignments.join(", ")} WHERE id = ?${useGuard}`,
   )
-    .bind(email, note, maxUses, expiresAt, enabled ? 1 : 0, id)
+    .bind(...values, id)
     .run();
+  if (!updated.meta.changes)
+    return c.json(
+      { error: "Invite usage changed; refresh and try again" },
+      409,
+    );
   await logAudit(
     c.env,
     admin.id,

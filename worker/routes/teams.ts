@@ -2765,7 +2765,7 @@ app.put("/:id/members/:userId/groups", async (c) => {
 
 // ─── Invites ──────────────────────────────────────────────────────────────────
 
-// List active invites for a team
+// List invites for a team, including expired rows so managers can extend them.
 app.get("/:id/invites", async (c) => {
   const id = c.req.param("id");
 
@@ -2773,7 +2773,6 @@ app.get("/:id/invites", async (c) => {
   if (!eff) return c.json({ error: "Not found" }, 404);
   if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
 
-  const now = Math.floor(Date.now() / 1000);
   const { page, limit, offset } = readPage(
     c.req.query("page"),
     c.req.query("limit"),
@@ -2782,9 +2781,9 @@ app.get("/:id/invites", async (c) => {
   const query = c.req.query("q")?.trim() ?? "";
 
   const where = query
-    ? "i.team_id = ? AND i.expires_at > ? AND LOWER(COALESCE(i.email, '')) LIKE LOWER(?) ESCAPE '\\'"
-    : "i.team_id = ? AND i.expires_at > ?";
-  const args: unknown[] = query ? [id, now, likePattern(query)] : [id, now];
+    ? "i.team_id = ? AND LOWER(COALESCE(i.email, '')) LIKE LOWER(?) ESCAPE '\\'"
+    : "i.team_id = ?";
+  const args: unknown[] = query ? [id, likePattern(query)] : [id];
 
   const [invites, countRow] = await Promise.all([
     c.env.DB.prepare(
@@ -2809,18 +2808,22 @@ app.get("/:id/invites", async (c) => {
     invites.results.map((invite) => invite.token),
   );
   return c.json({
-    invites: invites.results.map((invite) => ({
-      ...invite,
-      enabled: isInviteEnabled(invite.enabled),
-      can_manage: canManageTeamInvite(
+    invites: invites.results.map((invite) => {
+      const canManage = canManageTeamInvite(
         eff.role,
         c.get("user").id,
         invite.created_by,
-      ),
-      allows_registration: invite.allows_registration === 1,
-      allow_existing_members: invite.allow_existing_members === 1,
-      groups: inviteGroups.get(invite.token) ?? [],
-    })),
+      );
+      return {
+        ...invite,
+        token: canManage ? invite.token : null,
+        enabled: isInviteEnabled(invite.enabled),
+        can_manage: canManage,
+        allows_registration: invite.allows_registration === 1,
+        allow_existing_members: invite.allow_existing_members === 1,
+        groups: inviteGroups.get(invite.token) ?? [],
+      };
+    }),
     total: countRow?.n ?? 0,
     page,
     limit,
@@ -3100,13 +3103,24 @@ app.patch("/:id/invites/:token", async (c) => {
     changes.email = email;
   }
   if (body.max_uses !== undefined) {
-    const valid = validateInviteMaxUses(body.max_uses, invite.uses);
+    const valid = validateInviteMaxUses(body.max_uses, invite.uses, 0);
     if (!valid.ok)
       return c.json(
         { error: "max_uses must be a safe integer no lower than uses" },
         400,
       );
     maxUses = valid.value;
+    if (invite.allows_registration === 1) {
+      const cap = await getConfigValue(
+        c.env.DB,
+        "team_invite_registration_max_uses_cap",
+      );
+      if (maxUses < 1 || maxUses > cap)
+        return c.json(
+          { error: `Usage limit must be between 1 and ${cap}` },
+          400,
+        );
+    }
     changes.max_uses = maxUses;
   }
   if (body.expires_at !== undefined) {
@@ -3126,11 +3140,37 @@ app.patch("/:id/invites/:token", async (c) => {
   }
   if (!Object.keys(changes).length)
     return c.json({ error: "No editable fields provided" }, 400);
-  await c.env.DB.prepare(
-    "UPDATE team_invites SET email = ?, max_uses = ?, expires_at = ?, enabled = ? WHERE token = ? AND team_id = ?",
+  const assignments: string[] = [];
+  const values: unknown[] = [];
+  if (body.email !== undefined) {
+    assignments.push("email = ?");
+    values.push(email);
+  }
+  if (body.max_uses !== undefined) {
+    assignments.push("max_uses = ?");
+    values.push(maxUses);
+  }
+  if (body.expires_at !== undefined) {
+    assignments.push("expires_at = ?");
+    values.push(expiresAt);
+  }
+  if (body.enabled !== undefined) {
+    assignments.push("enabled = ?");
+    values.push(enabled ? 1 : 0);
+  }
+  const useGuard =
+    body.max_uses !== undefined && maxUses !== 0 ? " AND uses <= ?" : "";
+  if (useGuard) values.push(maxUses);
+  const updated = await c.env.DB.prepare(
+    `UPDATE team_invites SET ${assignments.join(", ")} WHERE token = ? AND team_id = ?${useGuard}`,
   )
-    .bind(email, maxUses, expiresAt, enabled ? 1 : 0, token, id)
+    .bind(...values, token, id)
     .run();
+  if (!updated.meta.changes)
+    return c.json(
+      { error: "Invite usage changed; refresh and try again" },
+      409,
+    );
   auditTeam(
     c,
     id,

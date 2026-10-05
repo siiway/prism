@@ -420,11 +420,15 @@ async function pendingStatus(
 
   if (user.origin_invite_token) {
     const invite = await env.DB.prepare(
-      "SELECT expires_at FROM team_invites WHERE token = ?",
+      "SELECT expires_at, enabled FROM team_invites WHERE token = ?",
     )
       .bind(user.origin_invite_token)
-      .first<{ expires_at: number }>();
-    if (invite && invite.expires_at <= Math.floor(Date.now() / 1000))
+      .first<{ expires_at: number; enabled: number }>();
+    if (
+      !invite ||
+      invite.enabled !== 1 ||
+      invite.expires_at <= Math.floor(Date.now() / 1000)
+    )
       return { ok: false, status: 400, error: "Invalid or expired invite" };
   }
 

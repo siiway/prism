@@ -22,6 +22,7 @@ describe("invite management", () => {
     expect(validateInviteMaxUses(-1, 0)).toEqual({ ok: false });
     expect(validateInviteMaxUses(1.5, 0)).toEqual({ ok: false });
     expect(validateInviteMaxUses(4, 4)).toEqual({ ok: true, value: 4 });
+    expect(validateInviteMaxUses(0, 4, 0)).toEqual({ ok: true, value: 0 });
   });
 
   test("keeps legacy invitations enabled until explicitly disabled", () => {

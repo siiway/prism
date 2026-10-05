@@ -4743,7 +4743,7 @@ app.get("/me/invites", async (c) => {
     return c.json({ error: "Admin role required" }, 403);
 
   const { results } = await c.env.DB.prepare(
-    `SELECT i.id, i.token, i.email, i.note, i.max_uses, i.use_count,
+    `SELECT i.id, i.email, i.note, i.max_uses, i.use_count,
              i.created_by, i.expires_at, i.created_at, i.enabled,
             u.username AS created_by_username
      FROM site_invites i

@@ -198,8 +198,14 @@ export function AdminInvites() {
   };
 
   const handleInviteEnabled = async (invite: SiteInvite, enabled: boolean) => {
-    await api.adminUpdateInvite(invite.id, { enabled });
-    qc.invalidateQueries({ queryKey: ["admin", "invites"] });
+    try {
+      await api.adminUpdateInvite(invite.id, { enabled });
+      qc.invalidateQueries({ queryKey: ["admin", "invites"] });
+    } catch (err) {
+      setCreateError(
+        err instanceof ApiError ? err.message : "Failed to update invite",
+      );
+    }
   };
 
   const handleEditInvite = async (invite: SiteInvite) => {
@@ -212,11 +218,14 @@ export function AdminInvites() {
       invite.max_uses?.toString() ?? "",
     );
     if (maxUses === null) return;
+    const expiry = window.prompt(t("admin.inviteExpiresIn"), "");
+    if (expiry === null) return;
     try {
       await api.adminUpdateInvite(invite.id, {
         email: email.trim() || null,
         note: note.trim() || null,
         max_uses: maxUses.trim() ? Number(maxUses) : null,
+        expires_in_days: expiry.trim() ? Number(expiry) : null,
       });
       await qc.invalidateQueries({ queryKey: ["admin", "invites"] });
     } catch (err) {

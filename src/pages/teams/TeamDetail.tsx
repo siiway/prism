@@ -468,7 +468,7 @@ export function TeamDetail() {
     );
     if (expiry === null) return;
     try {
-      await api.updateTeamInvite(id, inv.token, {
+      await api.updateTeamInvite(id, inv.token!, {
         email: email.trim() || null,
         max_uses: Number(maxUses),
         expires_at: Number(expiry),
@@ -1186,12 +1186,13 @@ export function TeamDetail() {
                 </TableHeader>
                 <TableBody>
                   {(invitesData?.invites ?? []).map((inv: TeamInvite) => {
-                    const isHashed = inv.token.startsWith("__HASH_v1__");
+                    const isHashed =
+                      inv.token?.startsWith("__HASH_v1__") ?? false;
                     const inviteUrl = inv.allows_registration
                       ? `${window.location.origin}/join/${id}?invite=${inv.token}`
                       : `${window.location.origin}/teams/join/${inv.token}`;
                     return (
-                      <TableRow key={inv.token}>
+                      <TableRow key={`${inv.created_at}-${inv.created_by}`}>
                         <TableCell>
                           {isHashed ? (
                             <div
@@ -1311,7 +1312,7 @@ export function TeamDetail() {
                         </TableCell>
                         <TableCell>
                           <div style={{ display: "flex", gap: 4 }}>
-                            {!isHashed && (
+                            {inv.token && !isHashed && (
                               <Tooltip
                                 content={
                                   copiedToken === inv.token
@@ -1326,14 +1327,14 @@ export function TeamDetail() {
                                   size="small"
                                   onClick={() =>
                                     handleCopyInviteLink(
-                                      inv.token,
+                                      inv.token!,
                                       inv.allows_registration,
                                     )
                                   }
                                 />
                               </Tooltip>
                             )}
-                            {inv.can_manage && (
+                            {inv.can_manage && inv.token && (
                               <Button
                                 appearance="subtle"
                                 size="small"
@@ -1342,7 +1343,7 @@ export function TeamDetail() {
                                 {t("common.edit")}
                               </Button>
                             )}
-                            {inv.can_manage && (
+                            {inv.can_manage && inv.token && (
                               <Tooltip
                                 content={
                                   inv.enabled
@@ -1355,7 +1356,10 @@ export function TeamDetail() {
                                   appearance="subtle"
                                   size="small"
                                   onClick={() =>
-                                    handleInviteEnabled(inv.token, !inv.enabled)
+                                    handleInviteEnabled(
+                                      inv.token!,
+                                      !inv.enabled,
+                                    )
                                   }
                                 >
                                   {inv.enabled
@@ -1364,7 +1368,7 @@ export function TeamDetail() {
                                 </Button>
                               </Tooltip>
                             )}
-                            {inv.can_manage && (
+                            {inv.can_manage && inv.token && (
                               <Tooltip
                                 content={t("teams.revokeInvite")}
                                 relationship="label"
@@ -1376,7 +1380,7 @@ export function TeamDetail() {
                                   style={{
                                     color: tokens.colorPaletteRedForeground1,
                                   }}
-                                  onClick={() => handleRevokeInvite(inv.token)}
+                                  onClick={() => handleRevokeInvite(inv.token!)}
                                 />
                               </Tooltip>
                             )}

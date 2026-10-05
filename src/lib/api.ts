@@ -3003,6 +3003,7 @@ export interface PasskeyInfo {
   device_type: string;
   backed_up: number;
   created_at: number;
+  created_by: string;
   last_used_at: number | null;
 }
 
@@ -3292,7 +3293,7 @@ export interface TeamMember {
 }
 
 export interface TeamInvite {
-  token: string;
+  token: string | null;
   team_id: string;
   role: string;
   email: string | null;
@@ -3300,6 +3301,7 @@ export interface TeamInvite {
   uses: number;
   expires_at: number;
   created_at: number;
+  created_by: string;
   created_by_username: string;
   allows_registration: boolean;
   groups: InviteMemberGroup[];
