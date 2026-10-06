@@ -1,10 +1,10 @@
 // Resolve the originating client IP for audit logs, rate limiting, and
 // captcha verification.
 //
-// Cloudflare always sets CF-Connecting-IP at the edge in production; the
-// X-Forwarded-For fallback covers local dev and any path where the edge
-// header is absent. "unknown" is the last resort so callers always get a
-// non-empty string to store.
+// Cloudflare sets CF-Connecting-IP for direct edge traffic unless visitor-IP
+// headers are removed by zone configuration. The X-Forwarded-For fallback
+// covers local dev and explicitly trusted proxy paths where the edge header is
+// absent. "unknown" is the last resort so callers always get a non-empty value.
 export function getIp(c: {
   req: { header: (h: string) => string | undefined };
 }): string {

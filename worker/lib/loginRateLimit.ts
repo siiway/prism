@@ -1,6 +1,11 @@
 import type { SiteConfig } from "../../shared/types";
 import { sha256Hex } from "./crypto";
-import { rateLimit, rateLimitIp } from "../middleware/rateLimit";
+import {
+  normalizeIp,
+  rateLimit,
+  rateLimitAll,
+  rateLimitIp,
+} from "../middleware/rateLimit";
 
 export type LoginRateLimitConfig = Pick<
   SiteConfig,
@@ -65,26 +70,20 @@ export async function checkLoginCredentialLimits(
   identifier: string,
   config: LoginRateLimitConfig,
 ) {
-  const ipResult = await rateLimitIp(
-    db,
-    ip,
-    "login",
-    config.login_ip_rate_limit,
-    config.login_ip_rate_window_seconds,
-    config.ipv6_rate_limit_prefix,
-  );
-  if (!ipResult.allowed) return { allowed: false, scope: "ip" as const };
-
-  const identifierResult = await rateLimit(
-    db,
-    `login-id:${await sha256Hex(identifier)}`,
-    config.login_identifier_rate_limit,
-    config.login_identifier_rate_window_seconds,
-  );
-  return {
-    allowed: identifierResult.allowed,
-    scope: identifierResult.allowed ? null : ("identifier" as const),
-  };
+  const identifierKey = `login-id:${await sha256Hex(identifier)}`;
+  const allowed = await rateLimitAll(db, [
+    {
+      key: `login:${normalizeIp(ip, config.ipv6_rate_limit_prefix)}`,
+      limit: config.login_ip_rate_limit,
+      windowSeconds: config.login_ip_rate_window_seconds,
+    },
+    {
+      key: identifierKey,
+      limit: config.login_identifier_rate_limit,
+      windowSeconds: config.login_identifier_rate_window_seconds,
+    },
+  ]);
+  return { allowed, scope: allowed ? null : ("combined" as const) };
 }
 
 export async function checkLoginTotpLimit(

@@ -436,6 +436,8 @@ consume these shared limits. The defaults allow 15 complete two-request TOTP
 logins per identifier in five minutes, up from the previous limit of five. TOTP
 submissions also consume a canonical per-user limit, so switching between a
 username, primary email, and alternate emails cannot multiply guessing attempts.
+The captcha-cleared IP and identifier limits are claimed atomically: a request
+rejected by either limit does not consume the other limit's allowance.
 
 ## Wrangler bindings & variables
 

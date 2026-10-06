@@ -23,11 +23,14 @@ class SqliteD1Statement {
   }
 
   async run() {
-    const results = this.db.query(this.sql).all(...this.values);
-    const { changes } = this.db.query("SELECT changes() AS changes").get() as {
-      changes: number;
+    const before = this.db.query("SELECT total_changes() AS n").get() as {
+      n: number;
     };
-    return { success: true, results, meta: { changes } };
+    const results = this.db.query(this.sql).all(...this.values);
+    const after = this.db.query("SELECT total_changes() AS n").get() as {
+      n: number;
+    };
+    return { success: true, results, meta: { changes: after.n - before.n } };
   }
 
   async first<T>() {
@@ -106,6 +109,27 @@ describe("login rate limits", () => {
     expect(config.login_totp_rate_window_seconds).toBe(300);
   });
 
+  test("admits a request while the insert trigger cleans expired hits", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const insert = sqlite.prepare(
+      "INSERT INTO rate_limit_hits (id, bucket_hash, created_at, expires_at) VALUES (?, 'expired', ?, ?)",
+    );
+    for (let index = 0; index < 3; index++) {
+      insert.run(`expired-${index}`, now - 120, now - 60);
+    }
+
+    expect(
+      (await checkLoginRequestLimit(db, "192.0.2.1", defaults)).allowed,
+    ).toBe(true);
+    expect(
+      sqlite
+        .query(
+          "SELECT COUNT(*) AS count FROM rate_limit_hits WHERE bucket_hash = 'expired'",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+  });
+
   test("default allowance supports 15 complete password plus TOTP logins", async () => {
     for (let login = 0; login < 15; login++) {
       expect(await submitLogin()).toBe(true);
@@ -145,7 +169,41 @@ describe("login rate limits", () => {
       "three@example.com",
       config,
     );
-    expect(result).toEqual({ allowed: false, scope: "ip" });
+    expect(result).toEqual({ allowed: false, scope: "combined" });
+  });
+
+  test("does not consume the IP allowance when the identifier limit rejects", async () => {
+    const config = {
+      ...defaults,
+      login_ip_rate_limit: 2,
+      login_identifier_rate_limit: 1,
+    };
+
+    expect(
+      await checkLoginCredentialLimits(
+        db,
+        "192.0.2.1",
+        "blocked@example.com",
+        config,
+      ),
+    ).toEqual({ allowed: true, scope: null });
+    expect(
+      await checkLoginCredentialLimits(
+        db,
+        "192.0.2.1",
+        "blocked@example.com",
+        config,
+      ),
+    ).toEqual({ allowed: false, scope: "combined" });
+
+    expect(
+      await checkLoginCredentialLimits(
+        db,
+        "192.0.2.1",
+        "fresh@example.com",
+        config,
+      ),
+    ).toEqual({ allowed: true, scope: null });
   });
 
   test("applies the configured DoS allowance before credential checks", async () => {
