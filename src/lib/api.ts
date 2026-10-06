@@ -2683,7 +2683,10 @@ export const api = createApiClient({
  *  concrete "global"/"china"; the client-side modes are resolved in the browser
  *  by the Captcha component. Absent on older servers → treated as "global". */
 export type TurnstileEndpointDirective =
-  "global" | "china" | "client_language" | "client_region";
+  | "global"
+  | "china"
+  | "client_language"
+  | "client_region";
 
 /** Which of the two configured Turnstile widgets minted a token. Sent back
  *  with the token so the server verifies it against the matching secret — the
@@ -2691,7 +2694,13 @@ export type TurnstileEndpointDirective =
 export type TurnstileVariant = "global" | "china";
 
 export type CaptchaProvider =
-  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
+  | "none"
+  | "turnstile"
+  | "hcaptcha"
+  | "recaptcha"
+  | "pow"
+  | "geetest"
+  | "cap";
 
 export type CapMode = "embedded" | "external";
 
@@ -4171,7 +4180,8 @@ export type NotificationRuleSendChannel =
   | { kind: "discord"; connection_id: string; level: NotificationLevel };
 
 export type NotificationRuleAction =
-  { type: "drop" } | { type: "send"; channels: NotificationRuleSendChannel[] };
+  | { type: "drop" }
+  | { type: "send"; channels: NotificationRuleSendChannel[] };
 
 export interface NotificationRulesetRule {
   id: string;

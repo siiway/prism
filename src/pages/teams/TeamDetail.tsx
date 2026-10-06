@@ -8,6 +8,12 @@ import {
   BreadcrumbDivider,
   BreadcrumbItem,
   Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
   Field,
   Input,
   Link,
@@ -32,6 +38,9 @@ import {
 import {
   CopyRegular,
   DismissRegular,
+  EditRegular,
+  PauseRegular,
+  PlayRegular,
   SearchRegular,
 } from "@fluentui/react-icons";
 import {
@@ -68,6 +77,7 @@ import { MarkdownText } from "../../components/MarkdownText";
 import { useAuthStore } from "../../store/auth";
 import { useAdminViewStore } from "../../store/adminView";
 import { InviteDialog } from "./dialogs/InviteDialog";
+import { toLocalDateTimeInput } from "../../lib/inviteExpiry";
 import { AddMemberDialog } from "./dialogs/AddMemberDialog";
 import { CreateSubTeamDialog } from "./dialogs/CreateSubTeamDialog";
 import { MigrateAppDialog } from "./dialogs/MigrateAppDialog";
@@ -111,6 +121,13 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "12px",
   },
+  rowActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "2px",
+    whiteSpace: "nowrap",
+  },
+  actionHeader: { width: "1px" },
   danger: {
     border: `1px solid ${tokens.colorPaletteRedBorder2}`,
     borderRadius: "8px",
@@ -425,6 +442,13 @@ export function TeamDetail() {
 
   // ── Invites ─────────────────────────────────────────────────────────────────
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [editInvite, setEditInvite] = useState<TeamInvite | null>(null);
+  const [editInviteForm, setEditInviteForm] = useState({
+    email: "",
+    max_uses: "",
+    expires_at: "",
+  });
+  const [savingInvite, setSavingInvite] = useState(false);
 
   const handleRevokeInvite = async (token: string) => {
     if (!id) return;
@@ -453,32 +477,40 @@ export function TeamDetail() {
     }
   };
 
-  const handleEditInvite = async (inv: TeamInvite) => {
-    if (!id) return;
-    const email = window.prompt(
-      t("teams.inviteEmailOptional"),
-      inv.email ?? "",
+  const openEditInvite = (invite: TeamInvite) => {
+    setEditInvite(invite);
+    setEditInviteForm({
+      email: invite.email ?? "",
+      max_uses: String(invite.max_uses),
+      expires_at: toLocalDateTimeInput(new Date(invite.expires_at * 1000)),
+    });
+  };
+
+  const handleEditInvite = async () => {
+    if (!id || !editInvite?.token) return;
+    const expiresAt = Math.floor(
+      new Date(editInviteForm.expires_at).getTime() / 1000,
     );
-    if (email === null) return;
-    const maxUses = window.prompt(t("teams.maxUses"), String(inv.max_uses));
-    if (maxUses === null) return;
-    const expiry = window.prompt(
-      t("teams.inviteExpiry"),
-      String(inv.expires_at),
-    );
-    if (expiry === null) return;
+    if (!Number.isFinite(expiresAt)) {
+      showMsg("error", t("teams.inviteExpiryInvalid"));
+      return;
+    }
+    setSavingInvite(true);
     try {
-      await api.updateTeamInvite(id, inv.token!, {
-        email: email.trim() || null,
-        max_uses: Number(maxUses),
-        expires_at: Number(expiry),
+      await api.updateTeamInvite(id, editInvite.token, {
+        email: editInviteForm.email.trim() || null,
+        max_uses: Number(editInviteForm.max_uses),
+        expires_at: expiresAt,
       });
       await qc.invalidateQueries({ queryKey: ["team-invites", id] });
+      setEditInvite(null);
     } catch (err) {
       showMsg(
         "error",
         err instanceof ApiError ? err.message : t("teams.failedUpdateInvite"),
       );
+    } finally {
+      setSavingInvite(false);
     }
   };
 
@@ -1181,16 +1213,13 @@ export function TeamDetail() {
                     <TableHeaderCell>
                       {t("teams.inviteCreatedByHeader")}
                     </TableHeaderCell>
-                    <TableHeaderCell />
+                    <TableHeaderCell className={styles.actionHeader} />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(invitesData?.invites ?? []).map((inv: TeamInvite) => {
                     const isHashed =
                       inv.token?.startsWith("__HASH_v1__") ?? false;
-                    const inviteUrl = inv.allows_registration
-                      ? `${window.location.origin}/join/${id}?invite=${inv.token}`
-                      : `${window.location.origin}/teams/join/${inv.token}`;
                     return (
                       <TableRow key={`${inv.created_at}-${inv.created_by}`}>
                         <TableCell>
@@ -1246,16 +1275,7 @@ export function TeamDetail() {
                                   color: tokens.colorNeutralForeground3,
                                 }}
                               />
-                              <Text
-                                size={200}
-                                style={{
-                                  color: tokens.colorNeutralForeground3,
-                                  fontFamily: "monospace",
-                                  wordBreak: "break-all",
-                                }}
-                              >
-                                {inviteUrl}
-                              </Text>
+                              <Text size={300}>{t("teams.shareableLink")}</Text>
                             </div>
                           )}
                         </TableCell>
@@ -1311,37 +1331,47 @@ export function TeamDetail() {
                           <Text size={300}>@{inv.created_by_username}</Text>
                         </TableCell>
                         <TableCell>
-                          <div style={{ display: "flex", gap: 4 }}>
-                            {inv.token && !isHashed && (
-                              <Tooltip
-                                content={
-                                  copiedToken === inv.token
+                          <div className={styles.rowActions}>
+                            <Tooltip
+                              content={
+                                isHashed
+                                  ? t("teams.hashedInviteCopyHint")
+                                  : copiedToken === inv.token
                                     ? t("teams.copiedExclamation")
                                     : t("teams.copyLink")
-                                }
-                                relationship="label"
-                              >
+                              }
+                              relationship="label"
+                            >
+                              <span>
                                 <Button
                                   appearance="subtle"
                                   icon={<CopyRegular />}
                                   size="small"
+                                  disabled={!inv.token || isHashed}
+                                  aria-label={t("teams.copyLink")}
                                   onClick={() =>
+                                    inv.token &&
                                     handleCopyInviteLink(
-                                      inv.token!,
+                                      inv.token,
                                       inv.allows_registration,
                                     )
                                   }
                                 />
-                              </Tooltip>
-                            )}
+                              </span>
+                            </Tooltip>
                             {inv.can_manage && inv.token && (
-                              <Button
-                                appearance="subtle"
-                                size="small"
-                                onClick={() => handleEditInvite(inv)}
+                              <Tooltip
+                                content={t("common.edit")}
+                                relationship="label"
                               >
-                                {t("common.edit")}
-                              </Button>
+                                <Button
+                                  appearance="subtle"
+                                  icon={<EditRegular />}
+                                  size="small"
+                                  aria-label={t("common.edit")}
+                                  onClick={() => openEditInvite(inv)}
+                                />
+                              </Tooltip>
                             )}
                             {inv.can_manage && inv.token && (
                               <Tooltip
@@ -1354,18 +1384,26 @@ export function TeamDetail() {
                               >
                                 <Button
                                   appearance="subtle"
+                                  icon={
+                                    inv.enabled ? (
+                                      <PauseRegular />
+                                    ) : (
+                                      <PlayRegular />
+                                    )
+                                  }
                                   size="small"
+                                  aria-label={
+                                    inv.enabled
+                                      ? t("teams.disableInvite")
+                                      : t("teams.enableInvite")
+                                  }
                                   onClick={() =>
                                     handleInviteEnabled(
                                       inv.token!,
                                       !inv.enabled,
                                     )
                                   }
-                                >
-                                  {inv.enabled
-                                    ? t("teams.disableInvite")
-                                    : t("teams.enableInvite")}
-                                </Button>
+                                />
                               </Tooltip>
                             )}
                             {inv.can_manage && inv.token && (
@@ -1401,6 +1439,74 @@ export function TeamDetail() {
             onChange={setInvitesPage}
             disabled={invitesFetching}
           />
+
+          <Dialog
+            open={editInvite !== null}
+            onOpenChange={(_, data) => !data.open && setEditInvite(null)}
+          >
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>{t("teams.editInviteTitle")}</DialogTitle>
+                <DialogContent>
+                  <div className={styles.form}>
+                    <Field label={t("teams.inviteEmailOptional")}>
+                      <Input
+                        type="email"
+                        value={editInviteForm.email}
+                        onChange={(_, data) =>
+                          setEditInviteForm((form) => ({
+                            ...form,
+                            email: data.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={t("teams.maxUses")}
+                      hint={t("teams.maxUsesHint")}
+                    >
+                      <Input
+                        type="number"
+                        min={0}
+                        value={editInviteForm.max_uses}
+                        onChange={(_, data) =>
+                          setEditInviteForm((form) => ({
+                            ...form,
+                            max_uses: data.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                    <Field label={t("teams.inviteExpiry")}>
+                      <Input
+                        type="datetime-local"
+                        value={editInviteForm.expires_at}
+                        onChange={(_, data) =>
+                          setEditInviteForm((form) => ({
+                            ...form,
+                            expires_at: data.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                  </div>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setEditInvite(null)}>
+                    {t("common.cancel")}
+                  </Button>
+                  <Button
+                    appearance="primary"
+                    disabled={savingInvite}
+                    icon={savingInvite ? <Spinner size="tiny" /> : undefined}
+                    onClick={handleEditInvite}
+                  >
+                    {t("common.saveChanges")}
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
         </div>
       )}
 

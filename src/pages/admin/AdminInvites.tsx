@@ -23,6 +23,7 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
+  Tooltip,
   Title3,
   makeStyles,
   tokens,
@@ -31,7 +32,10 @@ import {
   CopyRegular,
   DeleteRegular,
   DismissRegular,
+  EditRegular,
   MailRegular,
+  PauseRegular,
+  PlayRegular,
   SearchRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
@@ -106,6 +110,18 @@ const useStyles = makeStyles({
     alignItems: "center",
     gap: "8px",
   },
+  rowActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "2px",
+    whiteSpace: "nowrap",
+  },
+  actionHeader: { width: "1px" },
+  editForm: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  },
 });
 
 export function AdminInvites() {
@@ -140,6 +156,15 @@ export function AdminInvites() {
   const [copied, setCopied] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<SiteInvite | null>(null);
   const [revoking, setRevoking] = useState(false);
+  const [editInvite, setEditInvite] = useState<SiteInvite | null>(null);
+  const [editForm, setEditForm] = useState({
+    email: "",
+    note: "",
+    max_uses: "",
+    expires_in_days: "",
+  });
+  const [savingInvite, setSavingInvite] = useState(false);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "invites", page, debouncedQuery],
@@ -208,30 +233,38 @@ export function AdminInvites() {
     }
   };
 
-  const handleEditInvite = async (invite: SiteInvite) => {
-    const email = window.prompt(t("admin.inviteEmail"), invite.email ?? "");
-    if (email === null) return;
-    const note = window.prompt(t("admin.inviteNote"), invite.note ?? "");
-    if (note === null) return;
-    const maxUses = window.prompt(
-      t("admin.inviteMaxUses"),
-      invite.max_uses?.toString() ?? "",
-    );
-    if (maxUses === null) return;
-    const expiry = window.prompt(t("admin.inviteExpiresIn"), "");
-    if (expiry === null) return;
+  const openEditInvite = (invite: SiteInvite) => {
+    setEditInvite(invite);
+    setEditForm({
+      email: invite.email ?? "",
+      note: invite.note ?? "",
+      max_uses: invite.max_uses?.toString() ?? "",
+      expires_in_days: invite.expires_at
+        ? String(Math.max(1, Math.ceil((invite.expires_at - now) / 86400)))
+        : "",
+    });
+  };
+
+  const handleEditInvite = async () => {
+    if (!editInvite) return;
+    setSavingInvite(true);
     try {
-      await api.adminUpdateInvite(invite.id, {
-        email: email.trim() || null,
-        note: note.trim() || null,
-        max_uses: maxUses.trim() ? Number(maxUses) : null,
-        expires_in_days: expiry.trim() ? Number(expiry) : null,
+      await api.adminUpdateInvite(editInvite.id, {
+        email: editForm.email.trim() || null,
+        note: editForm.note.trim() || null,
+        max_uses: editForm.max_uses.trim() ? Number(editForm.max_uses) : null,
+        expires_in_days: editForm.expires_in_days.trim()
+          ? Number(editForm.expires_in_days)
+          : null,
       });
       await qc.invalidateQueries({ queryKey: ["admin", "invites"] });
+      setEditInvite(null);
     } catch (err) {
       setCreateError(
         err instanceof ApiError ? err.message : "Failed to update invite",
       );
+    } finally {
+      setSavingInvite(false);
     }
   };
 
@@ -411,8 +444,7 @@ export function AdminInvites() {
                   <TableHeaderCell>
                     {t("admin.inviteExpiresIn")}
                   </TableHeaderCell>
-                  <TableHeaderCell>{t("admin.inviteLink")}</TableHeaderCell>
-                  <TableHeaderCell />
+                  <TableHeaderCell className={styles.actionHeader} />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -455,14 +487,6 @@ export function AdminInvites() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {inv.token_available !== false && (
-                          <Button
-                            icon={<CopyRegular />}
-                            appearance="subtle"
-                            size="small"
-                            onClick={() => handleCopy(inviteUrl)}
-                          />
-                        )}
                         {!inv.enabled && (
                           <Badge color="danger" appearance="tint">
                             {t("admin.inviteDisabled")}
@@ -470,28 +494,84 @@ export function AdminInvites() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          onClick={() => handleEditInvite(inv)}
-                        >
-                          {t("common.edit")}
-                        </Button>
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          onClick={() => handleInviteEnabled(inv, !inv.enabled)}
-                        >
-                          {inv.enabled
-                            ? t("admin.disableInvite")
-                            : t("admin.enableInvite")}
-                        </Button>
-                        <Button
-                          icon={<DeleteRegular />}
-                          appearance="subtle"
-                          size="small"
-                          onClick={() => setRevokeTarget(inv)}
-                        />
+                        <div className={styles.rowActions}>
+                          <Tooltip
+                            content={
+                              inv.token_available === false
+                                ? t("admin.hashedInviteCopyHint")
+                                : copiedInviteId === inv.id
+                                  ? t("admin.inviteCopied")
+                                  : t("admin.copyInviteLink")
+                            }
+                            relationship="label"
+                          >
+                            <span>
+                              <Button
+                                icon={<CopyRegular />}
+                                appearance="subtle"
+                                size="small"
+                                disabled={inv.token_available === false}
+                                aria-label={t("admin.copyInviteLink")}
+                                onClick={async () => {
+                                  await handleCopy(inviteUrl);
+                                  setCopiedInviteId(inv.id);
+                                  setTimeout(
+                                    () => setCopiedInviteId(null),
+                                    2000,
+                                  );
+                                }}
+                              />
+                            </span>
+                          </Tooltip>
+                          <Tooltip
+                            content={t("common.edit")}
+                            relationship="label"
+                          >
+                            <Button
+                              icon={<EditRegular />}
+                              appearance="subtle"
+                              size="small"
+                              aria-label={t("common.edit")}
+                              onClick={() => openEditInvite(inv)}
+                            />
+                          </Tooltip>
+                          <Tooltip
+                            content={
+                              inv.enabled
+                                ? t("admin.disableInvite")
+                                : t("admin.enableInvite")
+                            }
+                            relationship="label"
+                          >
+                            <Button
+                              icon={
+                                inv.enabled ? <PauseRegular /> : <PlayRegular />
+                              }
+                              appearance="subtle"
+                              size="small"
+                              aria-label={
+                                inv.enabled
+                                  ? t("admin.disableInvite")
+                                  : t("admin.enableInvite")
+                              }
+                              onClick={() =>
+                                handleInviteEnabled(inv, !inv.enabled)
+                              }
+                            />
+                          </Tooltip>
+                          <Tooltip
+                            content={t("admin.inviteRevoke")}
+                            relationship="label"
+                          >
+                            <Button
+                              icon={<DeleteRegular />}
+                              appearance="subtle"
+                              size="small"
+                              aria-label={t("admin.inviteRevoke")}
+                              onClick={() => setRevokeTarget(inv)}
+                            />
+                          </Tooltip>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -509,6 +589,77 @@ export function AdminInvites() {
           )}
         </>
       )}
+
+      <Dialog
+        open={editInvite !== null}
+        onOpenChange={(_, data) => !data.open && setEditInvite(null)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("admin.editInviteTitle")}</DialogTitle>
+            <DialogContent>
+              <div className={styles.editForm}>
+                <Field label={t("admin.inviteEmail")}>
+                  <Input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(_, data) =>
+                      setEditForm((form) => ({ ...form, email: data.value }))
+                    }
+                  />
+                </Field>
+                <Field label={t("admin.inviteNote")}>
+                  <Input
+                    value={editForm.note}
+                    onChange={(_, data) =>
+                      setEditForm((form) => ({ ...form, note: data.value }))
+                    }
+                  />
+                </Field>
+                <Field
+                  label={t("admin.inviteMaxUses")}
+                  hint={t("admin.inviteMaxUsesHint")}
+                >
+                  <Input
+                    type="number"
+                    min={1}
+                    value={editForm.max_uses}
+                    onChange={(_, data) =>
+                      setEditForm((form) => ({ ...form, max_uses: data.value }))
+                    }
+                  />
+                </Field>
+                <Field label={t("admin.inviteExpiresIn")}>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={editForm.expires_in_days}
+                    onChange={(_, data) =>
+                      setEditForm((form) => ({
+                        ...form,
+                        expires_in_days: data.value,
+                      }))
+                    }
+                  />
+                </Field>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setEditInvite(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                disabled={savingInvite}
+                icon={savingInvite ? <Spinner size="tiny" /> : undefined}
+                onClick={handleEditInvite}
+              >
+                {t("common.saveChanges")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       <Dialog
         open={!!revokeTarget}
