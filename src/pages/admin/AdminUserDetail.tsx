@@ -21,9 +21,11 @@ import {
   DialogTitle,
   DialogTrigger,
   Divider,
+  Dropdown,
   Field,
   Input,
   MessageBar,
+  Option,
   Spinner,
   Switch,
   Tab,
@@ -131,7 +133,7 @@ function IdentityCard({
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const [draft, setDraft] = useState<Record<string, string> | null>(null);
+  const [draft, setDraft] = useState<Record<string, unknown> | null>(null);
 
   const { data } = useQuery({
     queryKey: ["admin-user", userId],
@@ -140,7 +142,7 @@ function IdentityCard({
   const user = data?.user;
 
   const save = useMutation({
-    mutationFn: (values: Record<string, string>) =>
+    mutationFn: (values: Record<string, unknown>) =>
       api.adminUpdateUser(userId, values),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["admin-user", userId] });
@@ -156,7 +158,7 @@ function IdentityCard({
 
   const editing = draft !== null;
   const value = (key: keyof typeof user) =>
-    editing ? (draft?.[key] ?? "") : String(user[key] ?? "");
+    editing ? String(draft?.[key] ?? "") : String(user[key] ?? "");
 
   return (
     <Section
@@ -184,6 +186,9 @@ function IdentityCard({
                 username: user.username,
                 email: user.email,
                 display_name: user.display_name,
+                role: user.role,
+                is_active: user.is_active,
+                email_verified: user.email_verified,
               })
             }
           >
@@ -193,39 +198,72 @@ function IdentityCard({
       }
     >
       <div className={styles.grid}>
-        <Field label={t("admin.usernameLabel")}>
+        <Field label={t("admin.usernameLabel")} style={{ alignItems: "stretch" }}>
           <Input
             readOnly={!editing}
             value={value("username")}
+            style={{ width: "100%" }}
             onChange={(_, d) =>
               setDraft((prev) => prev && { ...prev, username: d.value })
             }
           />
         </Field>
-        <Field
-          label={t("admin.emailHeader")}
-          hint={editing ? t("admin.emailChangeHint") : undefined}
-        >
+        <Field label={t("admin.emailHeader")} style={{ alignItems: "stretch" }}>
           <Input
             readOnly={!editing}
             value={value("email")}
+            style={{ width: "100%" }}
             onChange={(_, d) =>
               setDraft((prev) => prev && { ...prev, email: d.value })
             }
           />
         </Field>
-        <Field label={t("admin.displayNameLabel")}>
+        <Field label={t("admin.displayNameLabel")} style={{ alignItems: "stretch" }}>
           <Input
             readOnly={!editing}
             value={value("display_name")}
+            style={{ width: "100%" }}
             onChange={(_, d) =>
               setDraft((prev) => prev && { ...prev, display_name: d.value })
             }
           />
         </Field>
-        <Field label={t("admin.roleHeader")}>
-          <Input readOnly value={user.role} />
+        <Field label={t("admin.roleHeader")} style={{ alignItems: "stretch" }}>
+          {editing ? (
+            <Dropdown
+              value={String(draft?.role ?? user.role)}
+              selectedOptions={[String(draft?.role ?? user.role)]}
+              style={{ width: "100%" }}
+              onOptionSelect={(_, d) =>
+                setDraft((prev) => prev && { ...prev, role: d.optionValue })
+              }
+            >
+              <Option value="user">User</Option>
+              <Option value="admin">Admin</Option>
+            </Dropdown>
+          ) : (
+            <Input readOnly value={user.role} style={{ width: "100%" }} />
+          )}
         </Field>
+      </div>
+
+      <div style={{ display: "flex", gap: 24, marginTop: 12, flexWrap: "wrap" }}>
+        <Switch
+          checked={editing ? !!draft?.is_active : user.is_active}
+          disabled={!editing}
+          onChange={(_, d) =>
+            setDraft((prev) => prev && { ...prev, is_active: d.checked })
+          }
+          label={t("admin.accountActive")}
+        />
+        <Switch
+          checked={editing ? !!draft?.email_verified : user.email_verified}
+          disabled={!editing}
+          onChange={(_, d) =>
+            setDraft((prev) => prev && { ...prev, email_verified: d.checked })
+          }
+          label={t("admin.emailVerifiedToggle")}
+        />
       </div>
     </Section>
   );
@@ -1181,6 +1219,61 @@ export function AdminUserDetail() {
 
       {tab === "resources" && (
         <>
+          <Section title={t("admin.applicationsTab")}>
+            {isLoading ? (
+              <Spinner size="tiny" />
+            ) : (data?.apps ?? []).length === 0 ? (
+              <Text className={styles.empty}>{t("admin.noApps")}</Text>
+            ) : (
+              <div className={styles.tableScroll}>
+                <Table size="small">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHeaderCell>{t("admin.appHeader")}</TableHeaderCell>
+                      <TableHeaderCell>{t("admin.clientIdHeader")}</TableHeaderCell>
+                      <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
+                      <TableHeaderCell>{t("admin.createdHeader")}</TableHeaderCell>
+                      <TableHeaderCell />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(data?.apps as Array<{ id: string; name: string; client_id: string; is_active: boolean; created_at: number }>)?.map((app) => (
+                      <TableRow key={app.id}>
+                        <TableCell>
+                          <Text weight="semibold">{app.name}</Text>
+                        </TableCell>
+                        <TableCell>
+                          <Text size={200} className={styles.mono}>{app.client_id}</Text>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            appearance="tint"
+                            color={app.is_active ? "success" : "subtle"}
+                            size="small"
+                          >
+                            {app.is_active ? t("admin.activeStatus") : t("admin.disabledStatus")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Text size={200}>{ts(app.created_at)}</Text>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            onClick={() => navigate(`/apps/${app.id}`)}
+                          >
+                            {t("admin.openApp")}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </Section>
+
           <RemovableList
             title={t("admin.domainsSection")}
             rows={domains.data?.domains.map((row) => ({

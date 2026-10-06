@@ -1071,6 +1071,21 @@ export function AdminSettings() {
               />
             </Field>
             <Field
+              label={t("admin.maxDescriptionLength")}
+              hint={t("admin.maxDescriptionLengthHint")}
+            >
+              <Input
+                type="number"
+                min={50}
+                max={5000}
+                value={String(get("max_description_length") ?? 500)}
+                onChange={(_, d) => {
+                  const n = parseInt(d.value, 10);
+                  if (Number.isFinite(n)) set("max_description_length", n);
+                }}
+              />
+            </Field>
+            <Field
               label={t("admin.githubReadmeToken")}
               hint={t("admin.githubReadmeTokenHint")}
             >
@@ -1179,7 +1194,7 @@ export function AdminSettings() {
         </div>
       )}
 
-      {tab === "general" && (
+      {tab === "auth" && (
         <div className={styles.card}>
           <Title3>{t("admin.securityTxtTitle")}</Title3>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>

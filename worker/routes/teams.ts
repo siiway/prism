@@ -1126,6 +1126,13 @@ app.post("/", async (c) => {
     if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
   }
 
+  if (body.description) {
+    const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 500;
+    if (body.description.length > maxDesc) {
+      return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+    }
+  }
+
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
   const teamUserUsername = teamUserSyntheticUsername(id);
@@ -1452,6 +1459,13 @@ app.patch("/:id", async (c) => {
   if (body.avatar_url) {
     const imgErr = await validateImageUrl(body.avatar_url);
     if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+  }
+
+  if (body.description !== undefined) {
+    const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 500;
+    if (body.description.length > maxDesc) {
+      return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+    }
   }
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
@@ -1907,6 +1921,8 @@ app.post("/:id/members", async (c) => {
   let role: string = "member";
   if (body.role === "admin") role = "admin";
   if (body.role === "co-owner" && eff.role === "owner") role = "co-owner";
+  if (body.role === "co-owner" && eff.role !== "owner")
+    return c.json({ error: "Only the owner can add co-owners" }, 403);
 
   const target = await c.env.DB.prepare(
     "SELECT id, username FROM users WHERE kind = 'user' AND (id = ? OR username = ?)",
@@ -2857,7 +2873,9 @@ app.post("/:id/invites", async (c) => {
 
   let role: string = "member";
   if (body.role === "admin") role = "admin";
-  if (body.role === "co-owner" && hasRole(eff.role, "owner")) role = "co-owner";
+  if (body.role === "co-owner" && eff.role === "owner") role = "co-owner";
+  if (body.role === "co-owner" && eff.role !== "owner")
+    return c.json({ error: "Only the owner can create co-owner invites" }, 403);
   const maxUses = body.max_uses ?? 0;
 
   let allowsRegistration = 0;

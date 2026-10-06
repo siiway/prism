@@ -4,6 +4,7 @@ import {
   Avatar,
   Badge,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogBody,
@@ -14,6 +15,8 @@ import {
   Field,
   Input,
   MessageBar,
+  MessageBarActions,
+  MessageBarBody,
   Option,
   Spinner,
   Switch,
@@ -30,6 +33,8 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowSwapRegular,
+  DeleteRegular,
+  DismissRegular,
   EditRegular,
   OpenRegular,
   PlugDisconnectedRegular,
@@ -93,16 +98,27 @@ export function AdminApps() {
     if (!transferring || !transferTarget.trim()) return;
     setBusy(true);
     try {
-      const res = await api.adminTransferApp(
-        transferring.id,
-        transferKind === "team"
-          ? { team_id: transferTarget.trim() }
-          : { owner_id: transferTarget.trim() },
-      );
+      if (selected.size > 0 && selected.has(transferring.id)) {
+        await api.adminBulkApps(
+          [...selected],
+          "transfer",
+          transferKind === "team"
+            ? { team_id: transferTarget.trim() }
+            : { owner_id: transferTarget.trim() },
+        );
+        setSelected(new Set());
+      } else {
+        await api.adminTransferApp(
+          transferring.id,
+          transferKind === "team"
+            ? { team_id: transferTarget.trim() }
+            : { owner_id: transferTarget.trim() },
+        );
+      }
       await qc.invalidateQueries({ queryKey: ["admin-apps"] });
       setTransferring(null);
       setTransferTarget("");
-      showMsg("success", res.message);
+      showMsg("success", t("common.done"));
     } catch (err) {
       showMsg(
         "error",
@@ -117,17 +133,27 @@ export function AdminApps() {
     if (!revoking) return;
     setBusy(true);
     try {
-      const res = await api.adminRevokeApp(revoking.id, revokeDeactivate);
+      if (selected.size > 0 && selected.has(revoking.id)) {
+        await api.adminBulkApps(
+          [...selected],
+          "revoke",
+          { deactivate_on_revoke: revokeDeactivate },
+        );
+        setSelected(new Set());
+      } else {
+        const res = await api.adminRevokeApp(revoking.id, revokeDeactivate);
+        showMsg(
+          "success",
+          t("admin.revokeAppDone", {
+            tokens: res.tokens_revoked,
+            consents: res.consents_revoked,
+          }),
+        );
+      }
       await qc.invalidateQueries({ queryKey: ["admin-apps"] });
       setRevoking(null);
       setRevokeDeactivate(false);
-      showMsg(
-        "success",
-        t("admin.revokeAppDone", {
-          tokens: res.tokens_revoked,
-          consents: res.consents_revoked,
-        }),
-      );
+      showMsg("success", t("common.done"));
     } catch (err) {
       showMsg(
         "error",
@@ -138,6 +164,53 @@ export function AdminApps() {
     }
   };
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirmingBulkDelete, setConfirmingBulkDelete] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState("");
+  const [bulkEditingProps, setBulkEditingProps] = useState(false);
+  const [bulkPropActive, setBulkPropActive] = useState<boolean>(false);
+  const [bulkPropVerified, setBulkPropVerified] = useState<boolean>(false);
+  const [bulkPropOfficial, setBulkPropOfficial] = useState<boolean>(false);
+  const [bulkPropFirstParty, setBulkPropFirstParty] = useState<boolean>(false);
+  const [singleDeleting, setSingleDeleting] = useState<{ id: string; name: string } | null>(null);
+
+  const BULK_LIMIT = 50;
+
+  const runBulkAction = async (
+    action: "delete" | "revoke" | "transfer" | "update_properties",
+    payload?: Record<string, unknown>,
+  ) => {
+    setBulkBusy(true);
+    try {
+      const res = await api.adminBulkApps([...selected], action, payload as never);
+      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
+      setSelected(new Set());
+      setConfirmingBulkDelete(false);
+      setBulkDeleteConfirm("");
+      setBulkEditingProps(false);
+      showMsg("success", t("common.done") + `: ${res.affected}`);
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : t("common.error"));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleSingleDelete = async () => {
+    if (!singleDeleting) return;
+    setBusy(true);
+    try {
+      await api.deleteApp(singleDeleting.id);
+      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
+      setSingleDeleting(null);
+      showMsg("success", t("common.done"));
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : t("common.error"));
+    } finally {
+      setBusy(false);
+    }
+  };
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [editOfficial, setEditOfficial] = useState<boolean | null>(null);
   const [editFirstParty, setEditFirstParty] = useState<boolean | null>(null);
@@ -207,6 +280,64 @@ export function AdminApps() {
         </Button>
       </div>
 
+      {selected.size > 0 && (
+        <MessageBar
+          intent={selected.size > BULK_LIMIT ? "warning" : "info"}
+          icon={
+            <span style={{ display: "flex" }}>
+              <Tooltip content={t("common.clear")} relationship="label">
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DismissRegular />}
+                  aria-label={t("common.clear")}
+                  disabled={bulkBusy}
+                  onClick={() => setSelected(new Set())}
+                />
+              </Tooltip>
+            </span>
+          }
+        >
+          <MessageBarBody>
+            {t("admin.bulkSelectedApps", { count: selected.size })}
+          </MessageBarBody>
+          <MessageBarActions>
+            <Button
+              size="small"
+              disabled={bulkBusy || selected.size > BULK_LIMIT}
+              onClick={() => {
+                setTransferring({ id: [...selected][0], name: `${selected.size} apps` });
+              }}
+            >
+              {t("admin.bulkTransfer")}
+            </Button>
+            <Button
+              size="small"
+              disabled={bulkBusy || selected.size > BULK_LIMIT}
+              onClick={() => setRevoking({ id: [...selected][0], name: `${selected.size} apps` })}
+            >
+              {t("admin.bulkRevoke")}
+            </Button>
+            <Button
+              size="small"
+              disabled={bulkBusy || selected.size > BULK_LIMIT}
+              onClick={() => {
+                setBulkEditingProps(true);
+              }}
+            >
+              {t("admin.bulkEditProps")}
+            </Button>
+            <Button
+              size="small"
+              disabled={bulkBusy || selected.size > BULK_LIMIT}
+              onClick={() => setConfirmingBulkDelete(true)}
+            >
+              {t("admin.bulkDelete")}
+            </Button>
+          </MessageBarActions>
+        </MessageBar>
+      )}
+
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={4} />
       ) : (
@@ -214,6 +345,27 @@ export function AdminApps() {
           <Table style={{ tableLayout: "auto" }}>
             <TableHeader>
               <TableRow>
+                <TableHeaderCell style={{ width: 1 }}>
+                  <Checkbox
+                    checked={
+                      (data?.apps ?? []).length > 0 &&
+                      (data?.apps ?? []).every((a) => selected.has(a.id))
+                        ? true
+                        : (data?.apps ?? []).some((a) => selected.has(a.id))
+                          ? "mixed"
+                          : false
+                    }
+                    onChange={(_, d) => {
+                      const next = new Set(selected);
+                      if (d.checked) {
+                        for (const a of data?.apps ?? []) next.add(a.id);
+                      } else {
+                        for (const a of data?.apps ?? []) next.delete(a.id);
+                      }
+                      setSelected(next);
+                    }}
+                  />
+                </TableHeaderCell>
                 <TableHeaderCell>{t("admin.appHeader")}</TableHeaderCell>
                 <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
                 <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
@@ -223,6 +375,17 @@ export function AdminApps() {
             <TableBody>
               {data?.apps.map((app) => (
                 <TableRow key={app.id}>
+                  <TableCell style={{ width: 1 }}>
+                    <Checkbox
+                      checked={selected.has(app.id)}
+                      onChange={(_, d) => {
+                        const next = new Set(selected);
+                        if (d.checked) next.add(app.id);
+                        else next.delete(app.id);
+                        setSelected(next);
+                      }}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div
                       style={{ display: "flex", alignItems: "center", gap: 8 }}
@@ -259,9 +422,10 @@ export function AdminApps() {
                         </div>
                         <Text
                           size={200}
-                          style={{ color: tokens.colorNeutralForeground3 }}
+                          style={{ color: tokens.colorNeutralForeground3, wordBreak: "break-all" }}
+                          truncate
                         >
-                          {app.description?.slice(0, 40)}
+                          {app.description}
                         </Text>
                       </div>
                     </div>
@@ -373,6 +537,13 @@ export function AdminApps() {
                           openEdit(app as unknown as Record<string, unknown>)
                         }
                       />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<DeleteRegular />}
+                        aria-label={t("common.delete")}
+                        onClick={() => setSingleDeleting({ id: app.id, name: app.name })}
+                      />
                     </div>
                   </TableCell>
                 </TableRow>
@@ -415,6 +586,7 @@ export function AdminApps() {
                     <Input
                       value={(editing?.client_id as string) ?? ""}
                       readOnly
+                      disabled
                       style={{ fontFamily: "monospace", fontSize: 12 }}
                     />
                   </Field>
@@ -428,6 +600,7 @@ export function AdminApps() {
                             : "—"
                       }
                       readOnly
+                      disabled
                     />
                   </Field>
                 </div>
@@ -443,6 +616,15 @@ export function AdminApps() {
                           : "—"
                       }
                       readOnly
+                      disabled
+                    />
+                  </Field>
+                  <Field label={t("admin.ownerIdHeader")}>
+                    <Input
+                      value={(editing?.owner_id as string) ?? ""}
+                      readOnly
+                      disabled
+                      style={{ fontFamily: "monospace", fontSize: 12 }}
                     />
                   </Field>
                 </div>
@@ -569,6 +751,141 @@ export function AdminApps() {
                 onClick={handleTransfer}
               >
                 {t("admin.transferApp")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Batch edit properties popup */}
+      <Dialog
+        open={bulkEditingProps}
+        onOpenChange={(_, d) => !d.open && setBulkEditingProps(false)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("admin.bulkEditPropsTitle")}</DialogTitle>
+            <DialogContent>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 8 }}>
+                <div style={{ maxHeight: 140, overflowY: "auto", border: `1px solid ${tokens.colorNeutralStroke2}`, padding: 8, borderRadius: 4 }}>
+                  {(data?.apps ?? [])
+                    .filter((a) => selected.has(a.id))
+                    .map((a) => (
+                      <Text key={a.id} size={200} block>
+                        • {a.name} ({a.team_name ? `${a.team_name} [${t("admin.teamHeader")}]` : `@${a.owner_username ?? "—"}`})
+                      </Text>
+                    ))}
+                </div>
+                <Checkbox
+                  checked={bulkPropActive}
+                  onChange={(_, d) => setBulkPropActive(!!d.checked)}
+                  label={t("admin.activeStatus")}
+                />
+                <Checkbox
+                  checked={bulkPropVerified}
+                  onChange={(_, d) => setBulkPropVerified(!!d.checked)}
+                  label={t("admin.verifiedBadge")}
+                />
+                <Checkbox
+                  checked={bulkPropOfficial}
+                  onChange={(_, d) => setBulkPropOfficial(!!d.checked)}
+                  label={t("admin.officialHeader")}
+                />
+                <Checkbox
+                  checked={bulkPropFirstParty}
+                  onChange={(_, d) => setBulkPropFirstParty(!!d.checked)}
+                  label={t("admin.firstPartyHeader")}
+                />
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setBulkEditingProps(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                disabled={bulkBusy}
+                onClick={() =>
+                  runBulkAction("update_properties", {
+                    properties: {
+                      is_active: bulkPropActive,
+                      is_verified: bulkPropVerified,
+                      is_official: bulkPropOfficial,
+                      is_first_party: bulkPropFirstParty,
+                    },
+                  })
+                }
+              >
+                {t("common.save")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Bulk delete confirmation */}
+      <Dialog
+        open={confirmingBulkDelete}
+        onOpenChange={(_, d) => {
+          if (!d.open) {
+            setConfirmingBulkDelete(false);
+            setBulkDeleteConfirm("");
+          }
+        }}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("admin.bulkDeleteAppsTitle")}</DialogTitle>
+            <DialogContent>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 8 }}>
+                <Text>{t("admin.bulkDeleteAppsBody", { count: selected.size })}</Text>
+                <Field label={t("admin.bulkDeleteConfirmLabel", { count: selected.size })}>
+                  <Input
+                    value={bulkDeleteConfirm}
+                    onChange={(_, d) => setBulkDeleteConfirm(d.value)}
+                  />
+                </Field>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmingBulkDelete(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                style={{ background: tokens.colorPaletteRedBackground3 }}
+                disabled={bulkBusy || bulkDeleteConfirm.trim() !== String(selected.size)}
+                onClick={() => runBulkAction("delete")}
+              >
+                {t("common.delete")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Single delete confirmation */}
+      <Dialog
+        open={singleDeleting !== null}
+        onOpenChange={(_, d) => !d.open && setSingleDeleting(null)}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("admin.deleteAppTitle", { name: singleDeleting?.name ?? "" })}</DialogTitle>
+            <DialogContent>
+              <Text>{t("admin.deleteAppDesc")}</Text>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setSingleDeleting(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                style={{ background: tokens.colorPaletteRedBackground3 }}
+                disabled={busy}
+                onClick={handleSingleDelete}
+              >
+                {t("common.delete")}
               </Button>
             </DialogActions>
           </DialogBody>

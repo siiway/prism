@@ -909,7 +909,11 @@ export function TeamDetail() {
             restrictMemberListForMembers={team.restrict_member_list_for_members}
             toolbarActions={
               canManage ? (
-                <AddMemberDialog teamId={id!} showMsg={showMsg} />
+                <AddMemberDialog
+                  teamId={id!}
+                  isOwner={isOwner}
+                  showMsg={showMsg}
+                />
               ) : undefined
             }
             onChangeRole={handleChangeRole}
@@ -1177,6 +1181,7 @@ export function TeamDetail() {
             <div style={{ display: "flex", marginLeft: "auto" }}>
               <InviteDialog
                 teamId={id!}
+                isOwner={isOwner}
                 canRegister={
                   team.invite_registration_granted &&
                   team.invite_registration_enabled

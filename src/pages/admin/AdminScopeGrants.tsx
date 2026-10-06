@@ -117,102 +117,104 @@ export function AdminScopeGrants() {
         <Tab value="team">{t("admin.teamGrantsTab")}</Tab>
       </TabList>
 
-      <div className={styles.tableScroll}>
-        <Table size="small">
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.applicationsTab")}</TableHeaderCell>
-              <TableHeaderCell>
-                {kind === "site"
-                  ? t("admin.scopesHeader")
-                  : t("admin.permissionsHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {kind === "site"
-                  ? t("admin.grantedByHeader")
-                  : t("admin.teamHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>{t("admin.grantedHeader")}</TableHeaderCell>
-              <TableHeaderCell style={{ width: 1 }} />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <SkeletonTableRows rows={6} cols={5} />
-            ) : data?.grants.length === 0 ? (
+      {isLoading ? (
+        <SkeletonTableRows rows={6} cols={5} />
+      ) : (
+        <div className={styles.tableScroll}>
+          <Table size="small">
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5}>
-                  <Text className={styles.muted}>
-                    {t("admin.noScopeGrants")}
-                  </Text>
-                </TableCell>
+                <TableHeaderCell>{t("admin.applicationsTab")}</TableHeaderCell>
+                <TableHeaderCell>
+                  {kind === "site"
+                    ? t("admin.scopesHeader")
+                    : t("admin.permissionsHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>
+                  {kind === "site"
+                    ? t("admin.grantedByHeader")
+                    : t("admin.teamHeader")}
+                </TableHeaderCell>
+                <TableHeaderCell>{t("admin.grantedHeader")}</TableHeaderCell>
+                <TableHeaderCell style={{ width: 1 }} />
               </TableRow>
-            ) : (
-              data?.grants.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <div>
-                      <Text weight="semibold" block>
-                        {row.app_name ?? t("admin.unknownApp")}
-                      </Text>
-                      <Text size={200} className={styles.mono}>
-                        {row.client_id}
-                      </Text>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {kind === "site" ? (
-                      <div className={styles.scopes}>
-                        {(row.scopes ?? []).map((s) => (
-                          <Badge key={s} appearance="tint" size="small">
-                            {s}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <Text size={200} className={styles.mono}>
-                        {JSON.stringify(row.permissions)}
-                      </Text>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {kind === "site" ? (
-                      <Text size={200}>
-                        {row.admin_username ? `@${row.admin_username}` : "—"}
-                      </Text>
-                    ) : row.team_id ? (
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        onClick={() => navigate(`/teams/${row.team_id}`)}
-                      >
-                        {row.team_name ?? row.team_id}
-                      </Button>
-                    ) : (
-                      <Text className={styles.muted}>—</Text>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Text size={200}>{formatDate(row.granted_at)}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <CopyIdButton id={row.id} />
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        icon={<DeleteRegular />}
-                        aria-label={t("common.revoke")}
-                        onClick={() => setPendingRevoke(row)}
-                      />
-                    </div>
+            </TableHeader>
+            <TableBody>
+              {data?.grants.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Text className={styles.muted}>
+                      {t("admin.noScopeGrants")}
+                    </Text>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ) : (
+                data?.grants.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      <div>
+                        <Text weight="semibold" block>
+                          {row.app_name ?? t("admin.unknownApp")}
+                        </Text>
+                        <Text size={200} className={styles.mono}>
+                          {row.client_id}
+                        </Text>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {kind === "site" ? (
+                        <div className={styles.scopes}>
+                          {(row.scopes ?? []).map((s) => (
+                            <Badge key={s} appearance="tint" size="small">
+                              {s}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <Text size={200} className={styles.mono}>
+                          {JSON.stringify(row.permissions)}
+                        </Text>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {kind === "site" ? (
+                        <Text size={200}>
+                          {row.admin_username ? `@${row.admin_username}` : "—"}
+                        </Text>
+                      ) : row.team_id ? (
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          onClick={() => navigate(`/teams/${row.team_id}`)}
+                        >
+                          {row.team_name ?? row.team_id}
+                        </Button>
+                      ) : (
+                        <Text className={styles.muted}>—</Text>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Text size={200}>{formatDate(row.granted_at)}</Text>
+                    </TableCell>
+                    <TableCell>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <CopyIdButton id={row.id} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<DeleteRegular />}
+                          aria-label={t("common.revoke")}
+                          onClick={() => setPendingRevoke(row)}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {totalPages > 1 && (
         <Pagination

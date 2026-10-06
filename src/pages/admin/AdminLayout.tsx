@@ -1,6 +1,6 @@
 // Admin section layout with sub-navigation
 
-import { Tab, TabList, makeStyles } from "@fluentui/react-components";
+import { Tab, TabList, makeStyles, tokens } from "@fluentui/react-components";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -22,6 +22,8 @@ const useStyles = makeStyles({
     overflowX: "auto",
     overflowY: "hidden",
     WebkitOverflowScrolling: "touch",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke1}`,
+    paddingBottom: "8px",
   },
   tabs: {
     minWidth: "max-content",

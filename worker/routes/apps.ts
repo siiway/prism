@@ -318,6 +318,13 @@ app.post("/", async (c) => {
 
   if (!body.name) return c.json({ error: "name is required" }, 400);
 
+  if (body.description) {
+    const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 500;
+    if (body.description.length > maxDesc) {
+      return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+    }
+  }
+
   // Redirect URIs may be empty (the app then learns the first one used).
   const redirectUris = normalizeRedirectUriEntries(body.redirect_uris);
   for (const entry of redirectUris) {
@@ -441,6 +448,13 @@ app.patch("/:id", async (c) => {
     jwks?: string | null;
     jwks_uri?: string | null;
   }>();
+
+  if (body.description !== undefined) {
+    const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 500;
+    if (body.description.length > maxDesc) {
+      return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+    }
+  }
 
   if (body.icon_url) {
     const imgErr = await validateImageUrl(body.icon_url);

@@ -440,33 +440,34 @@ export function AdminNotices() {
         </Button>
       </div>
 
-      <div className={styles.tableScroll}>
-        <Table size="small">
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.noticeTitle")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.noticeAudience")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.noticeWindow")}</TableHeaderCell>
-              <TableHeaderCell style={{ width: 1 }} />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <SkeletonTableRows rows={6} cols={5} />
-            ) : !data || data.notices.length === 0 ? (
+      {isLoading ? (
+        <SkeletonTableRows rows={6} cols={5} />
+      ) : (
+        <div className={styles.tableScroll}>
+          <Table size="small">
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5}>
-                  <Text className={styles.muted}>
-                    {/* Not "no notices yet" when the query failed — that
-                        would be a lie about the state of the board. */}
-                    {error ? t("admin.noticesUnknown") : t("admin.noNotices")}
-                  </Text>
-                </TableCell>
+                <TableHeaderCell>{t("admin.noticeTitle")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.noticeAudience")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.noticeWindow")}</TableHeaderCell>
+                <TableHeaderCell style={{ width: 1 }} />
               </TableRow>
-            ) : (
-              data?.notices.map((n) => (
-                <TableRow key={n.id}>
+            </TableHeader>
+            <TableBody>
+              {!data || data.notices.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Text className={styles.muted}>
+                      {/* Not "no notices yet" when the query failed — that
+                          would be a lie about the state of the board. */}
+                      {error ? t("admin.noticesUnknown") : t("admin.noNotices")}
+                    </Text>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                data?.notices.map((n) => (
+                  <TableRow key={n.id}>
                   <TableCell>
                     <div className={styles.row}>
                       {n.pinned && (
@@ -581,11 +582,12 @@ export function AdminNotices() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {totalPages > 1 && (
         <Pagination

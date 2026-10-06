@@ -2343,6 +2343,34 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       affected: number;
       skipped: Array<{ id: string; username: string; reason: string }>;
     }>("POST", "/admin/users/bulk", { user_ids: userIds, action }, getToken()),
+  adminBulkApps: (
+    appIds: string[],
+    action: "delete" | "revoke" | "transfer" | "update_properties",
+    payload?: {
+      deactivate_on_revoke?: boolean;
+      owner_id?: string;
+      team_id?: string;
+      properties?: {
+        is_active?: boolean;
+        is_verified?: boolean;
+        is_official?: boolean;
+        is_first_party?: boolean;
+      };
+    },
+  ) =>
+    request<{
+      message: string;
+      affected: number;
+    }>("POST", "/admin/apps/bulk", { app_ids: appIds, action, ...payload }, getToken()),
+  adminBulkTeams: (
+    teamIds: string[],
+    action: "delete",
+  ) =>
+    request<{
+      message: string;
+      affected: number;
+      skipped: Array<{ id: string; reason: string }>;
+    }>("POST", "/admin/teams/bulk", { team_ids: teamIds, action }, getToken()),
   adminUserNotifications: (id: string) =>
     request<{
       rulesets: Array<{

@@ -3,6 +3,7 @@
 import {
   Avatar,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogBody,
@@ -14,6 +15,8 @@ import {
   Field,
   Input,
   MessageBar,
+  MessageBarActions,
+  MessageBarBody,
   Option,
   Tooltip,
   Table,
@@ -30,7 +33,7 @@ import {
   AddRegular,
   DeleteRegular,
   DismissCircleRegular,
-  EditRegular,
+  DismissRegular,
   MailRegular,
   PeopleTeamRegular,
   PersonAddRegular,
@@ -70,7 +73,27 @@ export function AdminTeams() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const { message, showMsg } = useToastMessage();
-  const [viewing, setViewing] = useState<Record<string, unknown> | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirmingBulkDelete, setConfirmingBulkDelete] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState("");
+  const BULK_LIMIT = 50;
+
+  const runBulkDelete = async () => {
+    setBulkBusy(true);
+    try {
+      const res = await api.adminBulkTeams([...selected], "delete");
+      await qc.invalidateQueries({ queryKey: ["admin-teams"] });
+      setSelected(new Set());
+      setConfirmingBulkDelete(false);
+      setBulkDeleteConfirm("");
+      showMsg("success", t("common.done") + `: ${res.affected}`);
+    } catch (err) {
+      showMsg("error", err instanceof ApiError ? err.message : t("common.error"));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const handleSearch = () => {
     setSearch(searchInput);
@@ -214,7 +237,6 @@ export function AdminTeams() {
       await api.adminDeleteTeam(id);
       await qc.invalidateQueries({ queryKey: ["admin-teams"] });
       showMsg("success", t("admin.teamDeleted"));
-      setViewing(null);
     } catch (err) {
       showMsg(
         "error",
@@ -260,8 +282,31 @@ export function AdminTeams() {
           <Table style={{ tableLayout: "auto" }}>
             <TableHeader>
               <TableRow>
+                <TableHeaderCell style={{ width: 1 }}>
+                  <Checkbox
+                    checked={
+                      (data?.teams ?? []).length > 0 &&
+                      (data?.teams ?? []).every((t) => selected.has(t.id))
+                        ? true
+                        : (data?.teams ?? []).some((t) => selected.has(t.id))
+                          ? "mixed"
+                          : false
+                    }
+                    onChange={(_, d) => {
+                      const next = new Set(selected);
+                      if (d.checked) {
+                        for (const t of data?.teams ?? []) next.add(t.id);
+                      } else {
+                        for (const t of data?.teams ?? []) next.delete(t.id);
+                      }
+                      setSelected(next);
+                    }}
+                  />
+                </TableHeaderCell>
                 <TableHeaderCell>{t("admin.teamHeader")}</TableHeaderCell>
                 <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.createdHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.appsHeader")}</TableHeaderCell>
                 <TableHeaderCell>{t("admin.membersHeader")}</TableHeaderCell>
                 <TableHeaderCell style={{ width: 1 }} />
               </TableRow>
@@ -269,6 +314,17 @@ export function AdminTeams() {
             <TableBody>
               {data?.teams.map((team) => (
                 <TableRow key={team.id}>
+                  <TableCell style={{ width: 1 }}>
+                    <Checkbox
+                      checked={selected.has(team.id)}
+                      onChange={(_, d) => {
+                        const next = new Set(selected);
+                        if (d.checked) next.add(team.id);
+                        else next.delete(team.id);
+                        setSelected(next);
+                      }}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div
                       style={{ display: "flex", alignItems: "center", gap: 8 }}
@@ -282,25 +338,36 @@ export function AdminTeams() {
                       ) : (
                         <Avatar name={team.name} size={24} />
                       )}
-                      <div>
-                        <Text weight="semibold" block>
+                      <div style={{ minWidth: 0 }}>
+                        <Text weight="semibold" block style={{ wordBreak: "break-all" }}>
                           {team.name}
                         </Text>
                         {team.description && (
                           <Text
                             size={200}
-                            style={{ color: tokens.colorNeutralForeground3 }}
+                            style={{ color: tokens.colorNeutralForeground3, wordBreak: "break-all" }}
+                            truncate
                           >
-                            {team.description.slice(0, 40)}
+                            {team.description}
                           </Text>
                         )}
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell style={{ wordBreak: "break-all" }}>
                     <Text size={200}>
                       {team.owner_username ? `@${team.owner_username}` : "—"}
                     </Text>
+                  </TableCell>
+                  <TableCell>
+                    <Text size={200}>
+                      {team.created_at
+                        ? new Date(team.created_at * 1000).toLocaleDateString()
+                        : "—"}
+                    </Text>
+                  </TableCell>
+                  <TableCell>
+                    <Text size={200}>{team.app_count ?? 0}</Text>
                   </TableCell>
                   <TableCell>
                     <Text size={200}>{team.member_count}</Text>
@@ -418,14 +485,6 @@ export function AdminTeams() {
                           />
                         </Tooltip>
                       )}
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        icon={<EditRegular />}
-                        onClick={() =>
-                          setViewing(team as unknown as Record<string, unknown>)
-                        }
-                      />
                       <Dialog>
                         <DialogTrigger disableButtonEnhancement>
                           <Button
@@ -476,73 +535,74 @@ export function AdminTeams() {
         />
       )}
 
-      {/* Team detail dialog */}
+      {selected.size > 0 && (
+        <MessageBar
+          intent={selected.size > BULK_LIMIT ? "warning" : "info"}
+          icon={
+            <span style={{ display: "flex" }}>
+              <Tooltip content={t("common.clear")} relationship="label">
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DismissRegular />}
+                  aria-label={t("common.clear")}
+                  disabled={bulkBusy}
+                  onClick={() => setSelected(new Set())}
+                />
+              </Tooltip>
+            </span>
+          }
+        >
+          <MessageBarBody>
+            {t("admin.bulkSelectedTeams", { count: selected.size })}
+          </MessageBarBody>
+          <MessageBarActions>
+            <Button
+              size="small"
+              disabled={bulkBusy || selected.size > BULK_LIMIT}
+              onClick={() => setConfirmingBulkDelete(true)}
+            >
+              {t("admin.bulkDelete")}
+            </Button>
+          </MessageBarActions>
+        </MessageBar>
+      )}
+
+      {/* Bulk delete teams dialog */}
       <Dialog
-        open={viewing !== null}
-        onOpenChange={(_, d) => !d.open && setViewing(null)}
+        open={confirmingBulkDelete}
+        onOpenChange={(_, d) => {
+          if (!d.open) {
+            setConfirmingBulkDelete(false);
+            setBulkDeleteConfirm("");
+          }
+        }}
       >
         <DialogSurface>
           <DialogBody>
-            <DialogTitle>
-              {t("admin.editTeam")} — {viewing?.name as string}
-            </DialogTitle>
+            <DialogTitle>{t("admin.bulkDeleteTeamsTitle")}</DialogTitle>
             <DialogContent>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 16,
-                  paddingTop: 8,
-                }}
-              >
-                <div className={styles.detailGrid}>
-                  <Field label={t("admin.ownerHeader")}>
-                    <Input
-                      value={
-                        viewing?.owner_username
-                          ? `@${viewing.owner_username}`
-                          : "—"
-                      }
-                      readOnly
-                    />
-                  </Field>
-                  <Field label={t("admin.membersHeader")}>
-                    <Input
-                      value={String(viewing?.member_count ?? 0)}
-                      readOnly
-                    />
-                  </Field>
-                </div>
-
-                <div className={styles.detailGrid}>
-                  <Field label={t("admin.appsHeader")}>
-                    <Input value={String(viewing?.app_count ?? 0)} readOnly />
-                  </Field>
-                  <Field label={t("admin.createdHeader")}>
-                    <Input
-                      value={
-                        viewing?.created_at
-                          ? new Date(
-                              (viewing.created_at as number) * 1000,
-                            ).toLocaleDateString()
-                          : "—"
-                      }
-                      readOnly
-                    />
-                  </Field>
-                </div>
-
-                {typeof viewing?.description === "string" &&
-                  viewing.description && (
-                    <Field label={t("admin.teamDescHeader")}>
-                      <Input value={viewing.description} readOnly />
-                    </Field>
-                  )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 8 }}>
+                <Text>{t("admin.bulkDeleteTeamsBody", { count: selected.size })}</Text>
+                <Field label={t("admin.bulkDeleteConfirmLabel", { count: selected.size })}>
+                  <Input
+                    value={bulkDeleteConfirm}
+                    onChange={(_, d) => setBulkDeleteConfirm(d.value)}
+                  />
+                </Field>
               </div>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setViewing(null)}>
-                {t("common.close")}
+              <Button onClick={() => setConfirmingBulkDelete(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                style={{ background: tokens.colorPaletteRedBackground3 }}
+                disabled={bulkBusy || bulkDeleteConfirm.trim() !== String(selected.size)}
+                onClick={runBulkDelete}
+              >
+                {t("common.delete")}
               </Button>
             </DialogActions>
           </DialogBody>

@@ -38,6 +38,7 @@ import {
   LocalLanguageRegular,
   WeatherMoonRegular,
   WeatherSunnyRegular,
+  OpenRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -170,6 +171,27 @@ const useStyles = makeStyles({
   userArea: {
     padding: "10px",
     borderTop: `2px solid ${tokens.colorNeutralStroke1}`,
+  },
+  sidebarFooter: {
+    padding: "8px 12px 10px",
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px 12px",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    fontSize: tokens.fontSizeBase100,
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  sidebarLegalLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    color: tokens.colorNeutralForeground3,
+    textDecorationLine: "none",
+    ":hover": {
+      color: tokens.colorNeutralForeground1,
+      textDecorationLine: "underline",
+    },
   },
   main: {
     flex: 1,
@@ -523,6 +545,33 @@ export function Layout() {
           </MenuPopover>
         </Menu>
       </div>
+
+      {(site?.has_privacy_policy || site?.has_terms_of_service) && (
+        <div className={styles.sidebarFooter}>
+          {site.has_privacy_policy && (
+            <a
+              href="/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.sidebarLegalLink}
+            >
+              <span>{t("legal.privacy")}</span>
+              <OpenRegular style={{ fontSize: 12 }} />
+            </a>
+          )}
+          {site.has_terms_of_service && (
+            <a
+              href="/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.sidebarLegalLink}
+            >
+              <span>{t("legal.terms")}</span>
+              <OpenRegular style={{ fontSize: 12 }} />
+            </a>
+          )}
+        </div>
+      )}
     </>
   );
 

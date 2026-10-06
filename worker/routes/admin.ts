@@ -242,6 +242,7 @@ app.patch("/config", async (c) => {
     "default_profile_show_joined_teams",
     "default_profile_show_readme",
     "profile_readme_max_bytes",
+    "max_description_length",
     "github_readme_token",
     "github_readme_cache_ttl_seconds",
     "default_team_profile_show_description",
@@ -322,6 +323,22 @@ app.patch("/config", async (c) => {
     }
   }
 
+  if (updates.max_description_length !== undefined) {
+    const v = updates.max_description_length;
+    if (
+      typeof v !== "number" ||
+      !Number.isInteger(v) ||
+      v < 50 ||
+      v > 5000
+    ) {
+      return c.json(
+        {
+          error: "max_description_length must be an integer between 50 and 5000",
+        },
+        400,
+      );
+    }
+  }
   if (updates.github_readme_cache_ttl_seconds !== undefined) {
     const v = updates.github_readme_cache_ttl_seconds;
     // Anything under 60s would hammer the GitHub API; anything over a week
@@ -1009,7 +1026,8 @@ app.get("/users", async (c) => {
   const [usersResult, countResult] = await Promise.all([
     c.env.DB.prepare(
       `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.email_verified, u.is_active, u.created_at,
-              (SELECT COUNT(*) FROM oauth_apps WHERE owner_id = u.id AND team_id IS NULL) as app_count
+              (SELECT COUNT(*) FROM oauth_apps WHERE owner_id = u.id AND team_id IS NULL) as app_count,
+              (SELECT COUNT(*) FROM team_members WHERE user_id = u.id) as team_count
        FROM users u ${whereClause} ORDER BY u.created_at DESC LIMIT ? OFFSET ?`,
     )
       .bind(...params, limit, offset)
@@ -1398,7 +1416,9 @@ app.get("/apps", async (c) => {
             c.env.DB,
             a.team_avatar_url,
           ),
-          is_verified: computeVerified(merged, a.website_url, a.redirect_uris),
+          is_verified:
+            a.is_verified === 1 ||
+            computeVerified(merged, a.website_url, a.redirect_uris),
         };
       }),
     ),
@@ -1413,6 +1433,7 @@ app.patch("/apps/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json<{
     is_active?: boolean;
+    is_verified?: boolean;
     is_official?: boolean;
     is_first_party?: boolean;
   }>();
@@ -1434,6 +1455,10 @@ app.patch("/apps/:id", async (c) => {
   if (body.is_active !== undefined) {
     updates.push("is_active = ?");
     values.push(body.is_active ? 1 : 0);
+  }
+  if (body.is_verified !== undefined) {
+    updates.push("is_verified = ?");
+    values.push(body.is_verified ? 1 : 0);
   }
   if (body.is_official !== undefined) {
     updates.push("is_official = ?");

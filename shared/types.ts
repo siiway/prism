@@ -206,6 +206,8 @@ export interface SiteConfig {
    *  and POST /me/readme. Bumping this is fine; lowering it leaves existing
    *  oversized READMEs intact (they just can't be re-saved without trimming). */
   profile_readme_max_bytes: number;
+  /** Max description length in characters for teams and applications. */
+  max_description_length: number;
   /** Site-global GitHub PAT used as the last-resort token when fetching a
    *  user's GitHub profile README. Stored in plaintext like other provider
    *  secrets. Empty string = unauthenticated (60 req/hr per IP). */

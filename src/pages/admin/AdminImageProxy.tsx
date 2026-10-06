@@ -293,7 +293,7 @@ export function AdminImageProxy() {
             onChange={(e) => setFilterCreator(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && applyFilters()}
             placeholder={t("admin.imageProxyCreatorPlaceholder")}
-            style={{ minWidth: 240 }}
+            style={{ minWidth: 280 }}
           />
         </div>
         <Button appearance="primary" onClick={applyFilters}>

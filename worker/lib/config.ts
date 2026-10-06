@@ -107,6 +107,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   default_profile_show_joined_teams: false,
   default_profile_show_readme: true,
   profile_readme_max_bytes: 64 * 1024,
+  max_description_length: 500,
   github_readme_token: "",
   github_readme_cache_ttl_seconds: 3600,
   github_readme_token_failures: 0,
