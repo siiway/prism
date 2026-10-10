@@ -20,7 +20,7 @@ import { handleEmailWorker } from "./handlers/email";
 
 import siteRoutes from "./routes/site";
 import assetsRoutes from "./routes/assets";
-import wellknownRoutes from "./routes/wellknown";
+import wellknownRoutes, { getSecurityTxtHandler } from "./routes/wellknown";
 import publicRoutes from "./routes/public";
 import initRoutes from "./routes/init";
 import authRoutes from "./routes/auth";
@@ -100,6 +100,7 @@ app.route("/api/admin", adminRoutes);
 app.route("/api/audit", auditRoutes);
 app.route("/api/proxy/image", proxyRoutes);
 app.route("/.well-known", wellknownRoutes);
+app.get("/security.txt", getSecurityTxtHandler);
 app.route("/", publicRoutes);
 
 app.notFound(async (c) => {

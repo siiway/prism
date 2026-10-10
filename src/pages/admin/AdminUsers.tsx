@@ -11,15 +11,11 @@ import {
   DialogSurface,
   DialogTitle,
   DialogTrigger,
-  Dropdown,
   Field,
   Input,
   MessageBar,
   MessageBarActions,
   MessageBarBody,
-  Option,
-  Spinner,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -34,7 +30,6 @@ import {
 import {
   DeleteRegular,
   DismissRegular,
-  EditRegular,
   SearchRegular,
   SettingsRegular,
 } from "@fluentui/react-icons";
@@ -51,7 +46,11 @@ import { useAuthStore } from "../../store/auth";
 import type { UserProfile } from "../../lib/api";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
-type AdminUser = UserProfile & { app_count: number; is_active: boolean };
+type AdminUser = UserProfile & {
+  app_count: number;
+  team_count?: number;
+  is_active: boolean;
+};
 
 /** Mirrors the server's own per-request cap so the UI can say why the buttons
  *  are disabled instead of letting the call fail. */
@@ -123,11 +122,6 @@ export function AdminUsers() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const { message, showMsg } = useToastMessage();
-  const [editing, setEditing] = useState<AdminUser | null>(null);
-  const [editRole, setEditRole] = useState<string | null>(null);
-  const [editActive, setEditActive] = useState<boolean | null>(null);
-  const [editVerified, setEditVerified] = useState<boolean | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["admin-users", page, search],
@@ -144,38 +138,6 @@ export function AdminUsers() {
   const handleSearch = () => {
     setSearch(searchInput);
     setPage(1);
-  };
-
-  const openEdit = (u: AdminUser) => {
-    setEditing(u);
-    setEditRole(null);
-    setEditActive(null);
-    setEditVerified(null);
-  };
-
-  const handleSave = async () => {
-    if (!editing) return;
-    setSaving(true);
-    try {
-      const updates: Record<string, unknown> = {};
-      if (editRole !== null) updates.role = editRole;
-      if (editActive !== null) updates.is_active = editActive;
-      if (editVerified !== null) updates.email_verified = editVerified;
-
-      if (Object.keys(updates).length > 0) {
-        await api.adminUpdateUser(editing.id, updates);
-        await qc.invalidateQueries({ queryKey: ["admin-users"] });
-      }
-      showMsg("success", t("admin.userUpdated"));
-      setEditing(null);
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
-    } finally {
-      setSaving(false);
-    }
   };
 
   const handleDelete = async (id: string) => {
@@ -343,9 +305,6 @@ export function AdminUsers() {
                     onChange={(_, d) =>
                       setSelected((prev) => {
                         const next = new Set(prev);
-                        // Only this page's rows — a select-all that silently
-                        // reached rows you have not seen is how bulk actions
-                        // become accidents.
                         for (const id of pageIds) {
                           if (d.checked) next.add(id);
                           else next.delete(id);
@@ -358,6 +317,9 @@ export function AdminUsers() {
                 </TableHeaderCell>
                 <TableHeaderCell>{t("admin.userHeader")}</TableHeaderCell>
                 <TableHeaderCell>{t("admin.emailHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.joinedHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.appsHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.teamsJoinedHeader")}</TableHeaderCell>
                 <TableHeaderCell style={{ width: 1 }} />
               </TableRow>
             </TableHeader>
@@ -396,21 +358,34 @@ export function AdminUsers() {
                           name={u.display_name || u.username}
                           size={32}
                         />
-                        <div>
-                          <Text weight="semibold" block>
+                        <div style={{ minWidth: 0 }}>
+                          <Text weight="semibold" block style={{ wordBreak: "break-all" }}>
                             {u.display_name}
                           </Text>
                           <Text
                             size={200}
-                            style={{ color: tokens.colorNeutralForeground3 }}
+                            style={{ color: tokens.colorNeutralForeground3, wordBreak: "break-all" }}
                           >
                             @{u.username}
                           </Text>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell style={{ wordBreak: "break-all" }}>
                       <Text size={200}>{u.email}</Text>
+                    </TableCell>
+                    <TableCell>
+                      <Text size={200}>
+                        {u.created_at
+                          ? new Date(u.created_at * 1000).toLocaleDateString()
+                          : "—"}
+                      </Text>
+                    </TableCell>
+                    <TableCell>
+                      <Text size={200}>{au.app_count ?? 0}</Text>
+                    </TableCell>
+                    <TableCell>
+                      <Text size={200}>{au.team_count ?? 0}</Text>
                     </TableCell>
                     <TableCell>
                       <div
@@ -421,9 +396,6 @@ export function AdminUsers() {
                         }}
                       >
                         <CopyIdButton id={u.id} />
-                        {/* The inline dialog covers the three toggles; the
-                            detail page is where credentials, factors, tokens
-                            and the account's audit log live. */}
                         <Tooltip
                           relationship="label"
                           content={t("admin.manageUser")}
@@ -435,12 +407,6 @@ export function AdminUsers() {
                             onClick={() => navigate(`/admin/users/${u.id}`)}
                           />
                         </Tooltip>
-                        <Button
-                          size="small"
-                          appearance="subtle"
-                          icon={<EditRegular />}
-                          onClick={() => openEdit(au)}
-                        />
                         <Dialog>
                           <DialogTrigger disableButtonEnhancement>
                             <Button
@@ -496,93 +462,6 @@ export function AdminUsers() {
           disabled={isLoading || isFetching}
         />
       )}
-
-      {/* Edit user dialog */}
-      <Dialog
-        open={editing !== null}
-        onOpenChange={(_, d) => !d.open && setEditing(null)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>
-              {t("admin.editUser")} — @{editing?.username}
-            </DialogTitle>
-            <DialogContent>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 16,
-                  paddingTop: 8,
-                }}
-              >
-                <div className={styles.detailGrid}>
-                  <Field label={t("admin.emailHeader")}>
-                    <Input value={editing?.email ?? ""} readOnly />
-                  </Field>
-                  <Field label={t("admin.joinedHeader")}>
-                    <Input
-                      value={
-                        editing?.created_at
-                          ? new Date(
-                              editing.created_at * 1000,
-                            ).toLocaleDateString()
-                          : "—"
-                      }
-                      readOnly
-                    />
-                  </Field>
-                </div>
-
-                <div className={styles.detailGrid}>
-                  <Field label={t("admin.roleHeader")}>
-                    <Dropdown
-                      value={editRole ?? editing?.role ?? ""}
-                      selectedOptions={[editRole ?? editing?.role ?? ""]}
-                      disabled={editing?.id === user?.id}
-                      onOptionSelect={(_, d) =>
-                        setEditRole(d.optionValue as string)
-                      }
-                    >
-                      <Option value="user">User</Option>
-                      <Option value="admin">Admin</Option>
-                    </Dropdown>
-                  </Field>
-                  <Field label={t("admin.appsHeader")}>
-                    <Input value={String(editing?.app_count ?? 0)} readOnly />
-                  </Field>
-                </div>
-
-                <Switch
-                  checked={editActive ?? editing?.is_active ?? false}
-                  disabled={editing?.id === user?.id}
-                  onChange={(_, d) => setEditActive(d.checked)}
-                  label={t("admin.accountActive")}
-                />
-
-                <Switch
-                  checked={editVerified ?? editing?.email_verified ?? false}
-                  onChange={(_, d) => setEditVerified(d.checked)}
-                  label={t("admin.emailVerifiedToggle")}
-                />
-              </div>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setEditing(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button
-                appearance="primary"
-                onClick={handleSave}
-                disabled={saving}
-                icon={saving ? <Spinner size="tiny" /> : undefined}
-              >
-                {t("common.save")}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
     </div>
   );
 }

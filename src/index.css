@@ -64,14 +64,56 @@ body {
   flex-shrink: 0;
 }
 
+[data-theme="light"] .fui-Badge {
+  background-color: var(--colorNeutralBackground3);
+  color: var(--colorNeutralForeground1);
+  border: 1px solid var(--colorNeutralStroke2);
+}
+
+[data-theme="light"] .fui-Badge[class*="success"],
+[data-theme="light"] .fui-Badge[class*="Success"] {
+  background-color: var(--colorPaletteGreenBackground1);
+  color: var(--colorPaletteGreenForeground1);
+  border: 1px solid var(--colorPaletteGreenBorder1);
+}
+
+[data-theme="light"] .fui-Badge[class*="danger"],
+[data-theme="light"] .fui-Badge[class*="Danger"] {
+  background-color: var(--colorPaletteRedBackground1);
+  color: var(--colorPaletteRedForeground1);
+  border: 1px solid var(--colorPaletteRedBorder1);
+}
+
+[data-theme="light"] .fui-Badge[class*="warning"],
+[data-theme="light"] .fui-Badge[class*="Warning"] {
+  background-color: var(--colorPaletteMarigoldBackground1);
+  color: var(--colorPaletteMarigoldForeground1);
+  border: 1px solid var(--colorPaletteMarigoldBorder1);
+}
+
+[data-theme="light"] .fui-Badge[class*="brand"],
+[data-theme="light"] .fui-Badge[class*="Brand"] {
+  background-color: var(--colorBrandBackground2);
+  color: var(--colorBrandForeground1);
+  border: 1px solid var(--colorBrandStroke1);
+}
+
+[data-theme="light"] .fui-Badge[class*="informative"],
+[data-theme="light"] .fui-Badge[class*="Informative"] {
+  background-color: var(--colorNeutralBackground3);
+  color: var(--colorNeutralForeground2);
+  border: 1px solid var(--colorNeutralStroke2);
+}
+
 /* Portalled Fluent surfaces sit outside most page containers. Give them the
    same neutral boundary everywhere so menus and popups remain distinct in
    both themes even though this design intentionally removes their shadows. */
 .fui-DialogSurface,
 .fui-MenuPopover,
 .fui-PopoverSurface,
-.fui-Listbox {
-  border: 1px solid var(--colorNeutralStroke1);
+.fui-Listbox,
+.fui-MenuList {
+  border: 1px solid var(--colorNeutralStroke1) !important;
 }
 
 a {

@@ -19,13 +19,16 @@ import { useApi } from "../lib/api-context";
 
 const useStyles = makeStyles({
   footer: {
-    display: "flex",
+    display: "none",
     flexWrap: "wrap",
     justifyContent: "center",
     alignItems: "center",
     gap: "6px 14px",
     padding: "12px 8px",
     fontSize: tokens.fontSizeBase200,
+    "@media (max-width: 768px)": {
+      display: "flex",
+    },
   },
   link: {
     color: tokens.colorNeutralForeground3,

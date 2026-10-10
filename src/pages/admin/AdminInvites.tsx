@@ -177,10 +177,58 @@ export function AdminInvites() {
     setCreateError("");
     setCreating(true);
     try {
+      const emailList = form.email
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+
+      if (emailList.length > 1) {
+        const remainingEmails = [...emailList];
+        const failed: string[] = [];
+        for (const em of emailList) {
+          try {
+            await api.adminCreateInvite({
+              email: em,
+              note: form.note || undefined,
+              max_uses: 1,
+              expires_in_days: form.expires_in_days
+                ? parseInt(form.expires_in_days, 10)
+                : undefined,
+              send_email: form.send_email,
+            });
+            const idx = remainingEmails.indexOf(em);
+            if (idx !== -1) remainingEmails.splice(idx, 1);
+          } catch {
+            failed.push(em);
+          }
+        }
+        qc.invalidateQueries({ queryKey: ["admin", "invites"] });
+        if (failed.length > 0) {
+          setForm((f) => ({
+            ...f,
+            email: failed.join(", "),
+            max_uses: String(failed.length),
+          }));
+          setCreateError(
+            `Created ${emailList.length - failed.length} invites. Failed for: ${failed.join(", ")}`,
+          );
+          return;
+        }
+        setNewInviteUrl(null);
+        setForm({
+          email: "",
+          note: "",
+          max_uses: "",
+          expires_in_days: "",
+          send_email: false,
+        });
+        return;
+      }
+
       const res = await api.adminCreateInvite({
-        email: form.email || undefined,
+        email: emailList[0] || undefined,
         note: form.note || undefined,
-        max_uses: form.max_uses ? parseInt(form.max_uses, 10) : undefined,
+        max_uses: emailList.length === 1 ? 1 : form.max_uses ? parseInt(form.max_uses, 10) : undefined,
         expires_in_days: form.expires_in_days
           ? parseInt(form.expires_in_days, 10)
           : undefined,
@@ -309,9 +357,16 @@ export function AdminInvites() {
       <form onSubmit={handleCreate} className={styles.form}>
         <Field label={t("admin.inviteEmail")} hint={t("admin.inviteEmailHint")}>
           <Input
-            type="email"
             value={form.email}
-            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            onChange={(e) => {
+              const val = e.target.value;
+              const emails = val.split(",").map((x) => x.trim()).filter(Boolean);
+              setForm((f) => ({
+                ...f,
+                email: val,
+                max_uses: emails.length > 0 ? String(emails.length) : f.max_uses,
+              }));
+            }}
             placeholder="user@example.com"
           />
         </Field>
@@ -330,7 +385,17 @@ export function AdminInvites() {
           <Input
             type="number"
             min={1}
-            value={form.max_uses}
+            value={
+              form.email.trim()
+                ? String(
+                    form.email
+                      .split(",")
+                      .map((x) => x.trim())
+                      .filter(Boolean).length || 1,
+                  )
+                : form.max_uses
+            }
+            disabled={form.email.trim().length > 0}
             onChange={(e) =>
               setForm((f) => ({ ...f, max_uses: e.target.value }))
             }
@@ -670,22 +735,53 @@ export function AdminInvites() {
             <DialogTitle>{t("admin.inviteRevokeConfirm")}</DialogTitle>
             <DialogContent>
               {revokeTarget && (
-                <Text block>
-                  {[
-                    revokeTarget.email,
-                    revokeTarget.note,
-                    `${revokeTarget.use_count}${revokeTarget.max_uses !== null ? ` / ${revokeTarget.max_uses}` : ""}`,
-                    revokeTarget.created_by_username ?? revokeTarget.created_by,
-                    revokeTarget.expires_at
-                      ? formatDate(revokeTarget.expires_at)
-                      : t("admin.inviteNoExpiry"),
-                    revokeTarget.token_available === false
-                      ? "(hashed)"
-                      : `${revokeTarget.token.slice(0, 4)}...${revokeTarget.token.slice(-4)}`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </Text>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+                  <div>
+                    <Text weight="semibold">{t("admin.inviteToken")}: </Text>
+                    <Text style={{ fontFamily: "monospace" }}>
+                      {revokeTarget.token_available === false
+                        ? "(hashed)"
+                        : `${revokeTarget.token.slice(0, 4)}...${revokeTarget.token.slice(-4)}`}
+                    </Text>
+                  </div>
+                  {revokeTarget.email && (
+                    <div>
+                      <Text weight="semibold">{t("admin.inviteEmail")}: </Text>
+                      <Text>{revokeTarget.email}</Text>
+                    </div>
+                  )}
+                  {revokeTarget.note && (
+                    <div>
+                      <Text weight="semibold">{t("admin.inviteNote")}: </Text>
+                      <Text>{revokeTarget.note}</Text>
+                    </div>
+                  )}
+                  <div>
+                    <Text weight="semibold">{t("admin.inviteUsed")}: </Text>
+                    <Text>
+                      {revokeTarget.use_count}
+                      {revokeTarget.max_uses !== null
+                        ? ` / ${revokeTarget.max_uses}`
+                        : ` / ${t("admin.inviteUnlimited")}`}
+                    </Text>
+                  </div>
+                  <div>
+                    <Text weight="semibold">{t("admin.inviteCreatedBy")}: </Text>
+                    <Text>
+                      {revokeTarget.created_by_username
+                        ? `@${revokeTarget.created_by_username}`
+                        : revokeTarget.created_by}
+                    </Text>
+                  </div>
+                  <div>
+                    <Text weight="semibold">{t("admin.inviteExpiresIn")}: </Text>
+                    <Text>
+                      {revokeTarget.expires_at
+                        ? formatDate(revokeTarget.expires_at)
+                        : t("admin.inviteNoExpiry")}
+                    </Text>
+                  </div>
+                </div>
               )}
             </DialogContent>
             <DialogActions>

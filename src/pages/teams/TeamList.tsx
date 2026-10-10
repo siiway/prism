@@ -297,6 +297,7 @@ export function TeamList() {
                       <Text
                         size={200}
                         style={{ color: tokens.colorNeutralForeground3 }}
+                        truncate
                       >
                         {team.description}
                       </Text>

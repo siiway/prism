@@ -145,9 +145,7 @@ app.get("/webfinger", (c) => {
   return c.body(JSON.stringify({ subject: resource, links }));
 });
 
-// RFC 9116 security.txt — the operator's security contact / policy. Served only
-// when a contact is configured (a security.txt without Contact is invalid).
-app.get("/security.txt", async (c) => {
+export async function getSecurityTxtHandler(c: import("hono").Context<{ Bindings: Env; Variables: Variables }>) {
   let contact = await getConfigValue(c.env.DB, "security_contact");
   if (!contact) return c.text("security.txt is not configured", 404);
   // A bare email address is normalised to a mailto: URI, as RFC 9116 requires
@@ -162,7 +160,11 @@ app.get("/security.txt", async (c) => {
   if (policy) body += `Policy: ${policy}\n`;
   c.header("Content-Type", "text/plain; charset=utf-8");
   return c.body(body);
-});
+}
+
+// RFC 9116 security.txt — the operator's security contact / policy. Served only
+// when a contact is configured (a security.txt without Contact is invalid).
+app.get("/security.txt", getSecurityTxtHandler);
 
 // W3C well-known change-password: send password managers to the page where a
 // user changes their password.

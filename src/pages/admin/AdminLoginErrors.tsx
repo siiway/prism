@@ -257,7 +257,11 @@ export function AdminLoginErrors() {
                       </Badge>
                     </TableCell>
                     <TableCell
-                      style={{ fontFamily: "monospace", fontSize: 12 }}
+                      style={{
+                        fontFamily: "monospace",
+                        fontSize: 12,
+                        wordBreak: "break-all",
+                      }}
                     >
                       {err.identifier ?? "—"}
                     </TableCell>
@@ -270,7 +274,12 @@ export function AdminLoginErrors() {
                     >
                       {err.ip_address ?? "—"}
                     </TableCell>
-                    <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                    <TableCell
+                      style={{
+                        fontSize: 12,
+                        wordBreak: "break-all",
+                      }}
+                    >
                       {formatIpGeo(err.ip_geo) || "—"}
                     </TableCell>
                     <TableCell

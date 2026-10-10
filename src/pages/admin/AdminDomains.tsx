@@ -172,125 +172,127 @@ export function AdminDomains() {
         <Button onClick={applySearch}>{t("common.search")}</Button>
       </div>
 
-      <div className={styles.tableScroll}>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.domainHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.addedHeader")}</TableHeaderCell>
-              <TableHeaderCell style={{ width: 1 }} />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <SkeletonTableRows rows={8} cols={5} />
-            ) : data?.domains.length === 0 ? (
+      {isLoading ? (
+        <SkeletonTableRows rows={8} cols={5} />
+      ) : (
+        <div className={styles.tableScroll}>
+          <Table style={{ tableLayout: "auto" }}>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5}>
-                  <Text className={styles.muted}>{t("admin.noDomains")}</Text>
-                </TableCell>
+                <TableHeaderCell>{t("admin.domainHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
+                <TableHeaderCell>{t("admin.addedHeader")}</TableHeaderCell>
+                <TableHeaderCell style={{ width: 1 }} />
               </TableRow>
-            ) : (
-              data?.domains.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <Text className={styles.domain}>{row.domain}</Text>
-                  </TableCell>
-                  <TableCell>
-                    {row.team_id ? (
-                      <Button
-                        appearance="subtle"
-                        size="small"
-                        onClick={() => navigate(`/teams/${row.team_id}`)}
-                      >
-                        <span className={styles.owner}>
-                          <Avatar
-                            name={row.team_name ?? ""}
-                            image={
-                              row.team_avatar
-                                ? { src: row.team_avatar }
-                                : undefined
-                            }
-                            size={20}
-                          />
-                          {row.team_name ?? row.team_id}
-                        </span>
-                      </Button>
-                    ) : row.user_id ? (
-                      <Button
-                        appearance="subtle"
-                        size="small"
-                        onClick={() => navigate(`/admin/users/${row.user_id}`)}
-                      >
-                        @{row.owner_username ?? row.user_id}
-                      </Button>
-                    ) : (
-                      <Text className={styles.muted}>—</Text>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      appearance="tint"
-                      color={row.verified ? "success" : "subtle"}
-                    >
-                      {row.verified
-                        ? t("admin.verifiedStatus")
-                        : t("admin.unverifiedStatus")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Text size={200}>{formatDate(row.created_at)}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <CopyIdButton id={row.id} />
-                      {row.verified ? (
-                        <Tooltip
-                          relationship="label"
-                          content={t("admin.domainUnverify")}
-                        >
-                          <Button
-                            size="small"
-                            appearance="subtle"
-                            icon={<DismissCircleRegular />}
-                            onClick={() =>
-                              setVerified.mutate({
-                                id: row.id,
-                                verified: false,
-                              })
-                            }
-                          />
-                        </Tooltip>
-                      ) : (
-                        <Tooltip
-                          relationship="label"
-                          content={t("admin.domainForceVerify")}
-                        >
-                          <Button
-                            size="small"
-                            appearance="subtle"
-                            icon={<CheckmarkCircleRegular />}
-                            onClick={() => setPendingVerify(row)}
-                          />
-                        </Tooltip>
-                      )}
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        icon={<DeleteRegular />}
-                        aria-label={t("common.delete")}
-                        onClick={() => setPendingDelete(row)}
-                      />
-                    </div>
+            </TableHeader>
+            <TableBody>
+              {data?.domains.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <Text className={styles.muted}>{t("admin.noDomains")}</Text>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ) : (
+                data?.domains.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      <Text className={styles.domain}>{row.domain}</Text>
+                    </TableCell>
+                    <TableCell>
+                      {row.team_id ? (
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          onClick={() => navigate(`/teams/${row.team_id}`)}
+                        >
+                          <span className={styles.owner}>
+                            <Avatar
+                              name={row.team_name ?? ""}
+                              image={
+                                row.team_avatar
+                                  ? { src: row.team_avatar }
+                                  : undefined
+                              }
+                              size={20}
+                            />
+                            {row.team_name ?? row.team_id}
+                          </span>
+                        </Button>
+                      ) : row.user_id ? (
+                        <Button
+                          appearance="subtle"
+                          size="small"
+                          onClick={() => navigate(`/admin/users/${row.user_id}`)}
+                        >
+                          @{row.owner_username ?? row.user_id}
+                        </Button>
+                      ) : (
+                        <Text className={styles.muted}>—</Text>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        appearance="tint"
+                        color={row.verified ? "success" : "subtle"}
+                      >
+                        {row.verified
+                          ? t("admin.verifiedStatus")
+                          : t("admin.unverifiedStatus")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Text size={200}>{formatDate(row.created_at)}</Text>
+                    </TableCell>
+                    <TableCell>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <CopyIdButton id={row.id} />
+                        {row.verified ? (
+                          <Tooltip
+                            relationship="label"
+                            content={t("admin.domainUnverify")}
+                          >
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              icon={<DismissCircleRegular />}
+                              onClick={() =>
+                                setVerified.mutate({
+                                  id: row.id,
+                                  verified: false,
+                                })
+                              }
+                            />
+                          </Tooltip>
+                        ) : (
+                          <Tooltip
+                            relationship="label"
+                            content={t("admin.domainForceVerify")}
+                          >
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              icon={<CheckmarkCircleRegular />}
+                              onClick={() => setPendingVerify(row)}
+                            />
+                          </Tooltip>
+                        )}
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<DeleteRegular />}
+                          aria-label={t("common.delete")}
+                          onClick={() => setPendingDelete(row)}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {totalPages > 1 && (
         <Pagination

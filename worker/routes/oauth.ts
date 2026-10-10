@@ -2,7 +2,7 @@
 
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { configBag, getConfig, getRsaKeyPair } from "../lib/config";
+import { configBag, getConfig, getConfigValue, getRsaKeyPair } from "../lib/config";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
 import {
@@ -35,8 +35,9 @@ import {
   buildVerifiedTeamDomainsMap,
   computeVerified,
   normalizeDomainInput,
+  resolveAppVerified,
 } from "../lib/domainVerify";
-import { proxyImageUrl } from "../lib/proxyImage";
+import { proxyImageUrl, sweepOrphanedImageProxyMappings } from "../lib/proxyImage";
 import { readPage, likePattern } from "../lib/pagination";
 import {
   parseRedirectUris,
@@ -599,7 +600,7 @@ app.get("/consents", requireAuth, async (c) => {
     c.env.DB.prepare(
       `SELECT oc.client_id, oc.scopes, oc.granted_at, oc.auto_authorize,
               oa.name, oa.description, oa.icon_url, oa.website_url,
-              oa.owner_id, oa.team_id, oa.redirect_uris
+              oa.owner_id, oa.team_id, oa.redirect_uris, oa.is_verified
        FROM oauth_consents oc
        JOIN oauth_apps oa ON oa.client_id = oc.client_id
        WHERE ${where}
@@ -618,6 +619,7 @@ app.get("/consents", requireAuth, async (c) => {
         owner_id: string;
         team_id: string | null;
         redirect_uris: string;
+        is_verified: number;
       }>(),
     c.env.DB.prepare(
       `SELECT COUNT(*) AS n FROM oauth_consents oc
@@ -679,15 +681,18 @@ app.get("/consents", requireAuth, async (c) => {
           icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, r.icon_url),
           unproxied_icon_url: r.icon_url,
           website_url: r.website_url,
-          is_verified: computeVerified(
-            new Set([
-              ...(domainsMap.get(r.owner_id) ?? []),
-              ...(r.team_id
-                ? (teamDomainsMap.get(r.team_id) ?? new Set<string>())
-                : []),
-            ]),
-            r.website_url,
-            r.redirect_uris,
+          is_verified: resolveAppVerified(
+            r.is_verified,
+            computeVerified(
+              new Set([
+                ...(domainsMap.get(r.owner_id) ?? []),
+                ...(r.team_id
+                  ? (teamDomainsMap.get(r.team_id) ?? new Set<string>())
+                  : []),
+              ]),
+              r.website_url,
+              r.redirect_uris,
+            ),
           ),
         },
         tokens: (tokensByApp.get(r.client_id) ?? []).map((t) => ({
@@ -932,7 +937,7 @@ app.get("/app-info", optionalAuth, async (c) => {
 
   const requestedScopes = (scope ?? "").split(" ").filter(Boolean);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
-  const [{ scopes, appScopes, rejected }, isVerified] = await Promise.all([
+  const [{ scopes, appScopes, rejected }, autoVerified] = await Promise.all([
     resolveRequestedScopes(
       c.env.DB,
       c.env.APP_URL,
@@ -948,6 +953,7 @@ app.get("/app-info", optionalAuth, async (c) => {
       oauthApp.team_id,
     ),
   ]);
+  const isVerified = resolveAppVerified(oauthApp.is_verified, autoVerified);
 
   // If the app requests team-scoped permissions, load the teams where the
   // authenticated user is owner or admin so the consent UI can show a picker.
@@ -1866,13 +1872,14 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
-  const isVerified = await computeIsVerified(
+  const autoVerified = await computeIsVerified(
     c.env.DB,
     oauthApp.owner_id,
     oauthApp.website_url,
     oauthApp.redirect_uris,
     oauthApp.team_id,
   );
+  const isVerified = resolveAppVerified(oauthApp.is_verified, autoVerified);
 
   // Show what 2FA methods this user has enrolled.
   let totpEnrolled = false;
@@ -3296,13 +3303,14 @@ app.get("/device", optionalAuth, async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
-  const isVerified = await computeIsVerified(
+  const autoVerified = await computeIsVerified(
     c.env.DB,
     oauthApp.owner_id,
     oauthApp.website_url,
     oauthApp.redirect_uris,
     oauthApp.team_id,
   );
+  const isVerified = resolveAppVerified(oauthApp.is_verified, autoVerified);
   const scopes = JSON.parse(dc.scopes) as string[];
   return c.json({
     app: await buildConsentAppSummary(c.env, oauthApp, isVerified),
@@ -4508,6 +4516,12 @@ app.post("/me/teams", async (c) => {
     avatar_url?: string;
   }>();
   if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+  if (body.description) {
+    const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 200;
+    if (body.description.length > maxDesc) {
+      return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+    }
+  }
 
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
@@ -4892,6 +4906,12 @@ app.post("/me/apps", async (c) => {
   }>();
 
   if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+  if (body.description) {
+    const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 200;
+    if (body.description.length > maxDesc) {
+      return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+    }
+  }
   if (!Array.isArray(body.redirect_uris) || body.redirect_uris.length === 0)
     return c.json({ error: "redirect_uris is required" }, 400);
 
@@ -4965,12 +4985,12 @@ async function canManageAppViaToken(
   callerUserId: string,
 ): Promise<{
   allowed: boolean;
-  app: { id: string; owner_id: string; team_id: string | null } | null;
+  app: { id: string; client_id: string; owner_id: string; team_id: string | null } | null;
 }> {
   const app = await db
-    .prepare("SELECT id, owner_id, team_id FROM oauth_apps WHERE id = ?")
+    .prepare("SELECT id, client_id, owner_id, team_id FROM oauth_apps WHERE id = ?")
     .bind(appId)
-    .first<{ id: string; owner_id: string; team_id: string | null }>();
+    .first<{ id: string; client_id: string; owner_id: string; team_id: string | null }>();
   if (!app) return { allowed: false, app: null };
 
   if (!app.team_id) {
@@ -5069,6 +5089,12 @@ app.patch("/me/apps/:id", async (c) => {
     values.push(body.name.trim());
   }
   if (body.description !== undefined) {
+    if (body.description) {
+      const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 200;
+      if (body.description.length > maxDesc) {
+        return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+      }
+    }
     updates.push("description = ?");
     values.push(body.description);
   }
@@ -5141,15 +5167,18 @@ app.delete("/me/apps/:id", async (c) => {
   if (!access.app) return c.json({ error: "App not found" }, 404);
   if (!access.allowed) return c.json({ error: "Forbidden" }, 403);
 
+  const clientId = access.app.client_id;
   await c.env.DB.batch([
-    c.env.DB.prepare(
-      "DELETE FROM oauth_tokens WHERE client_id = (SELECT client_id FROM oauth_apps WHERE id = ?)",
-    ).bind(appId),
-    c.env.DB.prepare(
-      "DELETE FROM oauth_consents WHERE client_id = (SELECT client_id FROM oauth_apps WHERE id = ?)",
-    ).bind(appId),
+    c.env.DB.prepare("DELETE FROM oauth_tokens WHERE client_id = ?").bind(clientId),
+    c.env.DB.prepare("DELETE FROM oauth_codes WHERE client_id = ?").bind(clientId),
+    c.env.DB.prepare("DELETE FROM oauth_device_codes WHERE client_id = ?").bind(clientId),
+    c.env.DB.prepare("DELETE FROM oauth_2fa_codes WHERE client_id = ?").bind(clientId),
+    c.env.DB.prepare("DELETE FROM oauth_2fa_challenges WHERE client_id = ?").bind(clientId),
+    c.env.DB.prepare("DELETE FROM oauth_consents WHERE client_id = ?").bind(clientId),
     c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?").bind(appId),
   ]);
+
+  c.executionCtx.waitUntil(sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}));
 
   return c.json({ message: "App deleted" });
 });
@@ -5583,8 +5612,14 @@ app.patch("/me/team/:teamId/info", async (c) => {
     values.push(body.name.trim());
   }
   if (body.description !== undefined) {
+    if (body.description) {
+      const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 200;
+      if (body.description.length > maxDesc) {
+        return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+      }
+    }
     updates.push("description = ?");
-    values.push(body.description ?? null);
+    values.push(body.description);
   }
   if ("avatar_url" in body) {
     updates.push("avatar_url = ?");

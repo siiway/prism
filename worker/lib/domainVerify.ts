@@ -73,6 +73,20 @@ export function computeVerified(
   );
 }
 
+/**
+ * Resolves the effective verification status of an app, where an explicit
+ * admin override (1 = verified, -1 = unverified) takes precedence over
+ * automatic domain-based verification.
+ */
+export function resolveAppVerified(
+  storedVerified: number | undefined | null,
+  computedVerified: boolean,
+): boolean {
+  if (storedVerified === 1) return true;
+  if (storedVerified === -1) return false;
+  return computedVerified;
+}
+
 /** Fetch verified domains for a single owner (and optionally a team) and compute is_verified. */
 export async function computeIsVerified(
   db: D1Database,

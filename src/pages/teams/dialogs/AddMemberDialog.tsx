@@ -21,10 +21,15 @@ import { useApi } from "../../../lib/api-context";
 
 interface AddMemberDialogProps {
   teamId: string;
+  isOwner?: boolean;
   showMsg: (type: "success" | "error", text: string) => void;
 }
 
-export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
+export function AddMemberDialog({
+  teamId,
+  isOwner,
+  showMsg,
+}: AddMemberDialogProps) {
   const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -88,7 +93,7 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
                 >
                   <option value="member">Member</option>
                   <option value="admin">Admin</option>
-                  <option value="co-owner">Co-owner</option>
+                  {isOwner && <option value="co-owner">Co-owner</option>}
                 </Select>
               </Field>
             </div>

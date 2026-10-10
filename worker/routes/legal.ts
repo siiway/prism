@@ -126,7 +126,11 @@ adminRoutes.put("/:doc", async (c) => {
       ip: meta.ip ?? getIp(c),
       userAgent: meta.userAgent,
       geo: meta.geo,
-      metadata: { bytes: new TextEncoder().encode(content).byteLength },
+      metadata: {
+        bytes: new TextEncoder().encode(content).byteLength,
+        before: before?.content ?? "",
+        after: content,
+      },
     }),
   );
 

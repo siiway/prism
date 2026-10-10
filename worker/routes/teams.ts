@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { randomId, randomBase64url } from "../lib/crypto";
 import { encryptSecret, hashLookupCandidate } from "../lib/secretCrypto";
 import { requireAuth, optionalAuth } from "../middleware/auth";
-import { computeIsVerified } from "../lib/domainVerify";
+import { computeIsVerified, resolveAppVerified } from "../lib/domainVerify";
 import {
   checkMethod,
   isVerificationMethod,
@@ -16,6 +16,7 @@ import { getConfigValue } from "../lib/config";
 import { validateImageUrl } from "../lib/imageValidation";
 import {
   proxyImageUrl,
+  registerImageProxyMapping,
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
 import { isAllowedScope } from "./apps";
@@ -1126,6 +1127,13 @@ app.post("/", async (c) => {
     if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
   }
 
+  if (body.description) {
+    const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 500;
+    if (body.description.length > maxDesc) {
+      return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+    }
+  }
+
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
   const teamUserUsername = teamUserSyntheticUsername(id);
@@ -1161,6 +1169,12 @@ app.post("/", async (c) => {
       "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
     ).bind(id, ownerId, now),
   ]);
+
+  if (body.avatar_url && body.avatar_url.startsWith("https://")) {
+    c.executionCtx.waitUntil(
+      registerImageProxyMapping(c.env.DB, body.avatar_url, ownerId).catch(() => {}),
+    );
+  }
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)
@@ -1420,6 +1434,7 @@ app.get("/:id", async (c) => {
 // Update team
 app.patch("/:id", async (c) => {
   const id = c.req.param("id");
+  const user = c.get("user");
 
   const eff = await teamAuthority(c, id);
   if (!eff) return c.json({ error: "Not found" }, 404);
@@ -1452,6 +1467,13 @@ app.patch("/:id", async (c) => {
   if (body.avatar_url) {
     const imgErr = await validateImageUrl(body.avatar_url);
     if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+  }
+
+  if (body.description !== undefined) {
+    const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 500;
+    if (body.description.length > maxDesc) {
+      return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+    }
   }
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
@@ -1631,6 +1653,12 @@ app.patch("/:id", async (c) => {
         id,
       )
       .run();
+  }
+
+  if (body.avatar_url && body.avatar_url.startsWith("https://")) {
+    c.executionCtx.waitUntil(
+      registerImageProxyMapping(c.env.DB, body.avatar_url, user.id).catch(() => {}),
+    );
   }
 
   const updated = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
@@ -1907,6 +1935,8 @@ app.post("/:id/members", async (c) => {
   let role: string = "member";
   if (body.role === "admin") role = "admin";
   if (body.role === "co-owner" && eff.role === "owner") role = "co-owner";
+  if (body.role === "co-owner" && eff.role !== "owner")
+    return c.json({ error: "Only the owner can add co-owners" }, 403);
 
   const target = await c.env.DB.prepare(
     "SELECT id, username FROM users WHERE kind = 'user' AND (id = ? OR username = ?)",
@@ -2780,9 +2810,13 @@ app.get("/:id/invites", async (c) => {
   );
   const query = c.req.query("q")?.trim() ?? "";
 
-  const where = query
+  const isCoOwnerOrAbove = hasRole(eff.role, "co-owner");
+  let where = query
     ? "i.team_id = ? AND LOWER(COALESCE(i.email, '')) LIKE LOWER(?) ESCAPE '\\'"
     : "i.team_id = ?";
+  if (!isCoOwnerOrAbove) {
+    where += " AND i.role != 'admin'";
+  }
   const args: unknown[] = query ? [id, likePattern(query)] : [id];
 
   const [invites, countRow] = await Promise.all([
@@ -2856,8 +2890,14 @@ app.post("/:id/invites", async (c) => {
     return c.json({ error: "max_uses must be a non-negative integer" }, 400);
 
   let role: string = "member";
-  if (body.role === "admin") role = "admin";
-  if (body.role === "co-owner" && hasRole(eff.role, "owner")) role = "co-owner";
+  if (body.role === "co-owner" || body.role === "owner") {
+    return c.json({ error: "Invitations for owner or co-owner are not allowed" }, 400);
+  } else if (body.role === "admin") {
+    if (!hasRole(eff.role, "co-owner")) {
+      return c.json({ error: "Only team owners and co-owners can create admin invites" }, 403);
+    }
+    role = "admin";
+  }
   const maxUses = body.max_uses ?? 0;
 
   let allowsRegistration = 0;
@@ -3086,6 +3126,8 @@ app.patch("/:id/invites/:token", async (c) => {
   if (!invite) return c.json({ error: "Invite not found" }, 404);
   if (!canManageTeamInvite(eff.role, user.id, invite.created_by))
     return c.json({ error: "Forbidden" }, 403);
+  if (invite.role === "admin" && !hasRole(eff.role, "co-owner"))
+    return c.json({ error: "Forbidden" }, 403);
 
   const body = await c.req.json<{
     email?: string | null;
@@ -3207,12 +3249,16 @@ app.delete("/:id/invites/:token", async (c) => {
 
   const tokenLookup = await hashLookupCandidate(c.env, token);
   const invite = await c.env.DB.prepare(
-    "SELECT created_by FROM team_invites WHERE (token = ? OR token = ?) AND team_id = ?",
+    "SELECT created_by, role FROM team_invites WHERE (token = ? OR token = ?) AND team_id = ?",
   )
     .bind(token, tokenLookup ?? token, id)
-    .first<{ created_by: string }>();
-  if (invite && !canManageTeamInvite(eff.role, user.id, invite.created_by))
-    return c.json({ error: "Forbidden" }, 403);
+    .first<{ created_by: string; role: string }>();
+  if (invite) {
+    if (!canManageTeamInvite(eff.role, user.id, invite.created_by))
+      return c.json({ error: "Forbidden" }, 403);
+    if (invite.role === "admin" && !hasRole(eff.role, "co-owner"))
+      return c.json({ error: "Forbidden" }, 403);
+  }
   // For revoke, missing/suspicious tokens are silently treated as a no-op
   // delete — caller already gated by team admin role above, so a probe
   // here can't be used to enumerate invites.
@@ -3684,11 +3730,14 @@ app.get("/:id/apps", async (c) => {
 
   const apps = await Promise.all(
     rows.results.map(async (row) => {
-      const isVerified = await computeIsVerified(
-        c.env.DB,
-        row.owner_id,
-        row.website_url,
-        row.redirect_uris,
+      const isVerified = resolveAppVerified(
+        row.is_verified,
+        await computeIsVerified(
+          c.env.DB,
+          row.owner_id,
+          row.website_url,
+          row.redirect_uris,
+        ),
       );
       return safeApp(c.env.APP_URL, c.env.DB, row, isVerified);
     }),
@@ -3729,6 +3778,12 @@ app.post("/:id/apps", async (c) => {
   }>();
 
   if (!body.name) return c.json({ error: "name is required" }, 400);
+  if (body.description) {
+    const maxDesc = (await getConfigValue(c.env.DB, "max_description_length")) ?? 200;
+    if (body.description.length > maxDesc) {
+      return c.json({ error: `Description exceeds max length of ${maxDesc}` }, 400);
+    }
+  }
   if (!body.redirect_uris?.length)
     return c.json({ error: "At least one redirect_uri required" }, 400);
 
@@ -3798,11 +3853,14 @@ app.post("/:id/apps", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(appId)
     .first<OAuthAppRow>();
-  const isVerified = await computeIsVerified(
-    c.env.DB,
-    user.id,
-    body.website_url ?? null,
-    JSON.stringify(redirectUris),
+  const isVerified = resolveAppVerified(
+    row?.is_verified,
+    await computeIsVerified(
+      c.env.DB,
+      user.id,
+      body.website_url ?? null,
+      JSON.stringify(redirectUris),
+    ),
   );
   return c.json(
     {

@@ -20,9 +20,11 @@ import {
   recordAccountDeletion,
   auditRequestMeta,
 } from "../lib/audit";
-import { isUserLocked } from "../lib/lockdown";
+import { isUserLocked, isTeamLocked } from "../lib/lockdown";
+import { hasLiveRestrictedAccounts } from "../lib/userCapabilities";
+import { dissolveTeam } from "./teams";
 import { readPage, likePattern } from "../lib/pagination";
-import { proxyImageUrl } from "../lib/proxyImage";
+import { proxyImageUrl, sweepOrphanedImageProxyMappings } from "../lib/proxyImage";
 import type { DomainRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -768,6 +770,216 @@ app.post("/users/bulk", async (c) => {
     // act on, and one of them being their own account matters.
     skipped,
   });
+});
+
+/** Cap on bulk apps call. */
+const BULK_APPS_LIMIT = 50;
+
+app.post("/apps/bulk", async (c) => {
+  const body = await c.req.json<{
+    app_ids: string[];
+    action: "delete" | "revoke" | "transfer" | "update_properties";
+    deactivate_on_revoke?: boolean;
+    owner_id?: string;
+    team_id?: string;
+    properties?: {
+      is_active?: boolean;
+      is_verified?: boolean;
+      is_official?: boolean;
+      is_first_party?: boolean;
+    };
+  }>();
+
+  if (!Array.isArray(body.app_ids) || body.app_ids.length === 0)
+    return c.json({ error: "app_ids is required" }, 400);
+  if (body.app_ids.length > BULK_APPS_LIMIT)
+    return c.json({ error: `At most ${BULK_APPS_LIMIT} apps per request` }, 400);
+
+  const placeholders = body.app_ids.map(() => "?").join(", ");
+  const { results: targets } = await c.env.DB.prepare(
+    `SELECT id, client_id, name, owner_id, team_id, icon_url FROM oauth_apps WHERE id IN (${placeholders})`,
+  )
+    .bind(...(body.app_ids as never[]))
+    .all<{
+      id: string;
+      client_id: string;
+      name: string;
+      owner_id: string;
+      team_id: string | null;
+      icon_url: string | null;
+    }>();
+
+  const now = Math.floor(Date.now() / 1000);
+  let affected = 0;
+
+  if (body.action === "delete") {
+    const stmts: D1PreparedStatement[] = [];
+    for (const app of targets) {
+      stmts.push(
+        c.env.DB.prepare("DELETE FROM oauth_tokens WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_device_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_2fa_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_2fa_challenges WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_consents WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?").bind(app.id),
+      );
+    }
+    if (stmts.length > 0) {
+      await c.env.DB.batch(stmts);
+      affected = targets.length;
+      c.executionCtx.waitUntil(sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}));
+    }
+  } else if (body.action === "revoke") {
+    const stmts: D1PreparedStatement[] = [];
+    for (const app of targets) {
+      stmts.push(
+        c.env.DB.prepare("DELETE FROM oauth_tokens WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_device_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_2fa_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_2fa_challenges WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_consents WHERE client_id = ?").bind(app.client_id),
+      );
+      if (body.deactivate_on_revoke) {
+        stmts.push(
+          c.env.DB.prepare("UPDATE oauth_apps SET is_active = 0, updated_at = ? WHERE id = ?").bind(now, app.id),
+        );
+      }
+    }
+    if (stmts.length > 0) {
+      await c.env.DB.batch(stmts);
+      affected = targets.length;
+    }
+  } else if (body.action === "transfer") {
+    let newOwnerId: string;
+    let newTeamId: string | null;
+    if (body.team_id) {
+      const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?").bind(body.team_id).first<{ id: string; name: string }>();
+      if (!team) return c.json({ error: "Team not found" }, 404);
+      if (isTeamLocked(c.env, team.name)) return c.json({ error: "Target team is locked" }, 400);
+      newOwnerId = team.id;
+      newTeamId = team.id;
+    } else if (body.owner_id) {
+      const u = await c.env.DB.prepare("SELECT id FROM users WHERE kind = 'user' AND (id = ? OR username = ?)").bind(body.owner_id, body.owner_id).first<{ id: string }>();
+      if (!u) return c.json({ error: "User not found" }, 404);
+      newOwnerId = u.id;
+      newTeamId = null;
+    } else {
+      return c.json({ error: "owner_id or team_id required" }, 400);
+    }
+    const stmts: D1PreparedStatement[] = [];
+    for (const app of targets) {
+      stmts.push(
+        c.env.DB.prepare("UPDATE oauth_apps SET owner_id = ?, team_id = ?, updated_at = ? WHERE id = ?")
+          .bind(newOwnerId, newTeamId, now, app.id),
+      );
+    }
+    if (stmts.length > 0) {
+      await c.env.DB.batch(stmts);
+      affected = targets.length;
+    }
+  } else if (body.action === "update_properties") {
+    const props = body.properties || {};
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    if (props.is_active !== undefined) {
+      sets.push("is_active = ?");
+      vals.push(props.is_active ? 1 : 0);
+    }
+    if (props.is_verified !== undefined) {
+      sets.push("is_verified = ?");
+      vals.push(props.is_verified ? 1 : -1);
+    }
+    if (props.is_official !== undefined) {
+      sets.push("is_official = ?");
+      vals.push(props.is_official ? 1 : 0);
+    }
+    if (props.is_first_party !== undefined) {
+      sets.push("is_first_party = ?");
+      vals.push(props.is_first_party ? 1 : 0);
+    }
+    if (sets.length > 0) {
+      sets.push("updated_at = ?");
+      vals.push(now);
+      const stmts: D1PreparedStatement[] = [];
+      for (const app of targets) {
+        stmts.push(
+          c.env.DB.prepare(`UPDATE oauth_apps SET ${sets.join(", ")} WHERE id = ?`)
+            .bind(...vals, app.id),
+        );
+      }
+      await c.env.DB.batch(stmts);
+      affected = targets.length;
+    }
+  }
+
+  const targetIds = new Set(targets.map((t) => t.id));
+  const skipped = body.app_ids
+    .filter((id) => !targetIds.has(id))
+    .map((id) => ({ id, reason: "not_found" }));
+
+  auditOps(c, `admin.apps.bulk_${body.action}`, {
+    requested: body.app_ids.length,
+    affected,
+    skipped,
+    app_names: targets.map((t) => t.name),
+  });
+
+  return c.json({ message: "Done", affected, skipped });
+});
+
+/** Cap on bulk teams call. */
+const BULK_TEAMS_LIMIT = 50;
+
+app.post("/teams/bulk", async (c) => {
+  const admin = c.get("user");
+  const body = await c.req.json<{
+    team_ids: string[];
+    action: "delete";
+  }>();
+
+  if (!Array.isArray(body.team_ids) || body.team_ids.length === 0)
+    return c.json({ error: "team_ids is required" }, 400);
+  if (body.team_ids.length > BULK_TEAMS_LIMIT)
+    return c.json({ error: `At most ${BULK_TEAMS_LIMIT} teams per request` }, 400);
+
+  let affected = 0;
+  const skipped: Array<{ id: string; reason: string }> = [];
+
+  for (const tid of body.team_ids) {
+    try {
+      const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
+        .bind(tid)
+        .first<{ id: string; name: string }>();
+      if (!team) {
+        skipped.push({ id: tid, reason: "not_found" });
+        continue;
+      }
+      if (isTeamLocked(c.env, team.name)) {
+        skipped.push({ id: tid, reason: "locked" });
+        continue;
+      }
+      if (await hasLiveRestrictedAccounts(c.env.DB, tid)) {
+        skipped.push({ id: tid, reason: "staged_required" });
+        continue;
+      }
+      await dissolveTeam(c.env.DB, tid, admin.id);
+      affected++;
+    } catch (e) {
+      skipped.push({ id: tid, reason: e instanceof Error ? e.message : "failed" });
+    }
+  }
+
+  c.executionCtx.waitUntil(sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}));
+
+  auditOps(c, `admin.teams.bulk_${body.action}`, {
+    requested: body.team_ids.length,
+    affected,
+    skipped,
+  });
+
+  return c.json({ message: "Done", affected, skipped });
 });
 
 // ─── Elevated scope grants ────────────────────────────────────────────────────

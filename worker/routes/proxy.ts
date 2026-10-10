@@ -21,6 +21,7 @@ import { isBlockedHost, safeFetch } from "../lib/safeFetch";
 import { registerImageProxyMapping } from "../lib/proxyImage";
 import { getConfig } from "../lib/config";
 import { requireAuth } from "../middleware/auth";
+import { rateLimit } from "../middleware/rateLimit";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -177,6 +178,97 @@ app.post("/register", requireAuth, async (c) => {
   const user = c.get("user");
   const id = await registerImageProxyMapping(c.env.DB, raw, user?.id ?? null);
   return c.json({ id });
+});
+
+app.get("/preview", requireAuth, async (c) => {
+  const user = c.get("user");
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+  // Rate limit: 20/min per user
+  const rl = await rateLimit(c.env.DB, `image-proxy-preview:${user.id}`, 20, 60);
+  if (!rl.allowed) {
+    return c.json({ error: "Rate limit exceeded (20/min)" }, 429);
+  }
+
+  // 300ms jitter
+  const jitter = 250 + Math.floor(Math.random() * 100);
+  await new Promise((resolve) => setTimeout(resolve, jitter));
+
+  const rawUrl = c.req.query("url")?.trim();
+  if (!rawUrl) return c.json({ error: "url is required" }, 400);
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return c.json({ error: "Invalid URL" }, 400);
+  }
+
+  if (parsed.protocol !== "https:") {
+    return c.json({ error: "Only HTTPS URLs are allowed" }, 400);
+  }
+
+  if (isBlockedHost(parsed.hostname)) {
+    return c.json({ error: "Host not allowed" }, 400);
+  }
+
+  const config = await getConfig(c.env.DB);
+  const maxBytes = Math.min(
+    Math.max(config.avatar_proxy_max_source_bytes, 64 * 1024),
+    25 * 1024 * 1024,
+  );
+
+  let upstream: Response;
+  try {
+    upstream = await safeFetch(rawUrl, {
+      method: "GET",
+      headers: { Accept: "image/*" },
+      cf: { cacheTtl: 0, cacheEverything: false },
+    } as RequestInit);
+  } catch {
+    return c.json({ error: "Could not reach upstream URL" }, 502);
+  }
+
+  if (!upstream.ok) {
+    cancelStream(upstream.body);
+    return c.json({ error: `Upstream returned HTTP ${upstream.status}` }, 502);
+  }
+
+  const rawCt = upstream.headers.get("content-type") ?? "";
+  const ct = rawCt.toLowerCase().split(";")[0].trim();
+
+  if (!ALLOWED_TYPES.has(ct)) {
+    cancelStream(upstream.body);
+    return c.json({ error: "Upstream URL is not an image" }, 400);
+  }
+
+  if (
+    declaredLengthExceedsLimit(upstream.headers.get("content-length"), maxBytes)
+  ) {
+    cancelStream(upstream.body, new BodySizeLimitError(maxBytes));
+    return c.json({ error: "Image exceeds the configured size limit" }, 400);
+  }
+
+  const captured = await readStreamWithLimit(upstream.body, maxBytes);
+  if (captured.exceeded) {
+    return c.json({ error: "Image exceeds the configured size limit" }, 400);
+  }
+
+  let bytes = captured.bytes;
+  if (ct === "image/svg+xml") {
+    bytes = new TextEncoder().encode(
+      sanitizeSvg(new TextDecoder().decode(captured.bytes)),
+    );
+  }
+
+  return new Response(bytes, {
+    headers: {
+      "Content-Type": ct,
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Pragma": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 });
 
 app.get("/:id", async (c) => {

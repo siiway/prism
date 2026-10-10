@@ -9,7 +9,7 @@
 import { Field, Image, Input, Text, tokens } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import { unproxyImageUrl, useProxiedImage } from "../lib/api";
+import { unproxyImageUrl } from "../lib/api";
 
 interface Props {
   label: string;
@@ -41,7 +41,11 @@ export function ImageUrlInput({ label, value, onChange, placeholder }: Props) {
   const httpsError =
     normalizedValue && !isLocal && !isValidHttpsUrl(normalizedValue);
 
-  const previewSrc = useProxiedImage(showPreview ? normalizedValue : null);
+  const previewSrc = showPreview
+    ? isLocal
+      ? normalizedValue
+      : `/api/proxy/image/preview?url=${encodeURIComponent(normalizedValue)}`
+    : "";
 
   return (
     <Field
