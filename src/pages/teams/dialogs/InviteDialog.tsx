@@ -37,7 +37,7 @@ import {
 
 interface InviteDialogProps {
   teamId: string;
-  isOwner?: boolean;
+  isCoOwnerOrAbove?: boolean;
   /** True when this team may hand out links that create accounts. Hides the
    *  option entirely when it can't, rather than showing a control that
    *  always errors. */
@@ -47,7 +47,7 @@ interface InviteDialogProps {
 
 export function InviteDialog({
   teamId,
-  isOwner,
+  isCoOwnerOrAbove,
   canRegister,
   showMsg,
 }: InviteDialogProps) {
@@ -135,19 +135,39 @@ export function InviteDialog({
         .filter(Boolean);
 
       if (emailList.length > 1) {
+        const remainingEmails = [...emailList];
+        const failed: string[] = [];
         for (const em of emailList) {
-          await api.createTeamInvite(teamId, {
-            role: form.role,
-            email: em,
-            max_uses: 1,
-            expires_at: expiresAt,
-            group_ids: groupIds,
-            allow_existing_members:
-              groupIds.length > 0 ? allowExistingMembers : undefined,
-            allows_registration: allowsRegistration || undefined,
-          });
+          try {
+            await api.createTeamInvite(teamId, {
+              role: form.role,
+              email: em,
+              max_uses: 1,
+              expires_at: expiresAt,
+              group_ids: groupIds,
+              allow_existing_members:
+                groupIds.length > 0 ? allowExistingMembers : undefined,
+              allows_registration: allowsRegistration || undefined,
+            });
+            const idx = remainingEmails.indexOf(em);
+            if (idx !== -1) remainingEmails.splice(idx, 1);
+          } catch {
+            failed.push(em);
+          }
         }
         await qc.invalidateQueries({ queryKey: ["team-invites", teamId] });
+        if (failed.length > 0) {
+          setForm((f) => ({
+            ...f,
+            email: failed.join(", "),
+            max_uses: String(failed.length),
+          }));
+          showMsg(
+            "error",
+            `Created ${emailList.length - failed.length} invites. Failed for: ${failed.join(", ")}`,
+          );
+          return;
+        }
         showMsg("success", t("teams.inviteEmailSent"));
         setOpen(false);
         resetState();
@@ -255,13 +275,13 @@ export function InviteDialog({
                 <Field label={t("teams.inviteRole")}>
                   <Select
                     value={form.role}
+                    disabled={!isCoOwnerOrAbove}
                     onChange={(_, d) =>
                       setForm((f) => ({ ...f, role: d.value }))
                     }
                   >
                     <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                    {isOwner && <option value="co-owner">Co-owner</option>}
+                    {isCoOwnerOrAbove && <option value="admin">Admin</option>}
                   </Select>
                 </Field>
                 <Field

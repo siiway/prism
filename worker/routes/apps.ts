@@ -12,11 +12,16 @@ import {
 import { requireAuth, tryPatAuth } from "../middleware/auth";
 import { getConfigValue } from "../lib/config";
 import { readPage, likePattern } from "../lib/pagination";
-import { computeIsVerified, computeVerified } from "../lib/domainVerify";
+import {
+  computeIsVerified,
+  computeVerified,
+  resolveAppVerified,
+} from "../lib/domainVerify";
 import { validateImageUrl } from "../lib/imageValidation";
 import { validateOutboundUrl } from "../lib/safeFetch";
 import {
   proxyImageUrl,
+  registerImageProxyMapping,
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
 import {
@@ -259,7 +264,10 @@ app.get("/", async (c) => {
           c.env.APP_URL,
           c.env.DB,
           row,
-          computeVerified(verifiedDomains, row.website_url, row.redirect_uris),
+          resolveAppVerified(
+            row.is_verified,
+            computeVerified(verifiedDomains, row.website_url, row.redirect_uris),
+          ),
         ),
       ),
     ),
@@ -281,12 +289,15 @@ app.get("/:id", async (c) => {
   if (!(await canAccess(c.env.DB, row, user.id, user.role, false)))
     return c.json({ error: "Forbidden" }, 403);
 
-  const isVerified = await computeIsVerified(
-    c.env.DB,
-    row.owner_id,
-    row.website_url,
-    row.redirect_uris,
-    row.team_id,
+  const isVerified = resolveAppVerified(
+    row.is_verified,
+    await computeIsVerified(
+      c.env.DB,
+      row.owner_id,
+      row.website_url,
+      row.redirect_uris,
+      row.team_id,
+    ),
   );
   return c.json({
     app: await safeApp(c.env.APP_URL, c.env.DB, row, isVerified),
@@ -379,11 +390,14 @@ app.post("/", async (c) => {
     .bind(id)
     .first<OAuthAppRow>();
 
-  const isVerified = await computeIsVerified(
-    c.env.DB,
-    user.id,
-    body.website_url ?? null,
-    JSON.stringify(redirectUris),
+  const isVerified = resolveAppVerified(
+    row?.is_verified,
+    await computeIsVerified(
+      c.env.DB,
+      user.id,
+      body.website_url ?? null,
+      JSON.stringify(redirectUris),
+    ),
   );
   auditAppLifecycle(c, "app.create", {
     id,
@@ -661,18 +675,27 @@ app.patch("/:id", async (c) => {
     )
     .run();
 
+  if (updated.icon_url && updated.icon_url.startsWith("https://")) {
+    c.executionCtx.waitUntil(
+      registerImageProxyMapping(c.env.DB, updated.icon_url, user.id).catch(() => {}),
+    );
+  }
+
   const updatedRow = await c.env.DB.prepare(
     "SELECT * FROM oauth_apps WHERE id = ?",
   )
     .bind(id)
     .first<OAuthAppRow>();
 
-  const isVerified = await computeIsVerified(
-    c.env.DB,
-    row.owner_id,
-    updatedRow!.website_url,
-    updatedRow!.redirect_uris,
-    row.team_id,
+  const isVerified = resolveAppVerified(
+    updatedRow?.is_verified,
+    await computeIsVerified(
+      c.env.DB,
+      row.owner_id,
+      updatedRow!.website_url,
+      updatedRow!.redirect_uris,
+      row.team_id,
+    ),
   );
   auditAppLifecycle(c, "app.update", {
     id,
@@ -741,6 +764,9 @@ app.delete("/:id", async (c) => {
       row.client_id,
     ),
     c.env.DB.prepare("DELETE FROM oauth_codes WHERE client_id = ?").bind(
+      row.client_id,
+    ),
+    c.env.DB.prepare("DELETE FROM oauth_device_codes WHERE client_id = ?").bind(
       row.client_id,
     ),
     c.env.DB.prepare("DELETE FROM oauth_2fa_codes WHERE client_id = ?").bind(

@@ -1181,7 +1181,7 @@ export function TeamDetail() {
             <div style={{ display: "flex", marginLeft: "auto" }}>
               <InviteDialog
                 teamId={id!}
-                isOwner={isOwner}
+                isCoOwnerOrAbove={isCoOwnerOrAbove}
                 canRegister={
                   team.invite_registration_granted &&
                   team.invite_registration_enabled

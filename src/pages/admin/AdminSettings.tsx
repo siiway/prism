@@ -1076,9 +1076,9 @@ export function AdminSettings() {
             >
               <Input
                 type="number"
-                min={50}
+                min={1}
                 max={5000}
-                value={String(get("max_description_length") ?? 500)}
+                value={String(get("max_description_length") ?? 200)}
                 onChange={(_, d) => {
                   const n = parseInt(d.value, 10);
                   if (Number.isFinite(n)) set("max_description_length", n);

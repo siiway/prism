@@ -140,6 +140,7 @@ export function AdminApps() {
           { deactivate_on_revoke: revokeDeactivate },
         );
         setSelected(new Set());
+        showMsg("success", t("common.done"));
       } else {
         const res = await api.adminRevokeApp(revoking.id, revokeDeactivate);
         showMsg(
@@ -153,7 +154,6 @@ export function AdminApps() {
       await qc.invalidateQueries({ queryKey: ["admin-apps"] });
       setRevoking(null);
       setRevokeDeactivate(false);
-      showMsg("success", t("common.done"));
     } catch (err) {
       showMsg(
         "error",
@@ -169,13 +169,23 @@ export function AdminApps() {
   const [confirmingBulkDelete, setConfirmingBulkDelete] = useState(false);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState("");
   const [bulkEditingProps, setBulkEditingProps] = useState(false);
-  const [bulkPropActive, setBulkPropActive] = useState<boolean>(false);
-  const [bulkPropVerified, setBulkPropVerified] = useState<boolean>(false);
-  const [bulkPropOfficial, setBulkPropOfficial] = useState<boolean>(false);
-  const [bulkPropFirstParty, setBulkPropFirstParty] = useState<boolean>(false);
+  const [bulkPropActive, setBulkPropActive] = useState<boolean | null>(null);
+  const [bulkPropVerified, setBulkPropVerified] = useState<boolean | null>(null);
+  const [bulkPropOfficial, setBulkPropOfficial] = useState<boolean | null>(null);
+  const [bulkPropFirstParty, setBulkPropFirstParty] = useState<boolean | null>(null);
   const [singleDeleting, setSingleDeleting] = useState<{ id: string; name: string } | null>(null);
 
   const BULK_LIMIT = 50;
+
+  const cycleCheckbox = (val: boolean | null) => (val === null ? true : val === true ? false : null);
+
+  const openBulkEditProps = () => {
+    setBulkPropActive(null);
+    setBulkPropVerified(null);
+    setBulkPropOfficial(null);
+    setBulkPropFirstParty(null);
+    setBulkEditingProps(true);
+  };
 
   const runBulkAction = async (
     action: "delete" | "revoke" | "transfer" | "update_properties",
@@ -185,11 +195,20 @@ export function AdminApps() {
     try {
       const res = await api.adminBulkApps([...selected], action, payload as never);
       await qc.invalidateQueries({ queryKey: ["admin-apps"] });
-      setSelected(new Set());
       setConfirmingBulkDelete(false);
       setBulkDeleteConfirm("");
       setBulkEditingProps(false);
-      showMsg("success", t("common.done") + `: ${res.affected}`);
+      const skippedIds = new Set((res.skipped ?? []).map((s) => s.id));
+      if (skippedIds.size > 0) {
+        setSelected(skippedIds);
+        showMsg(
+          "error",
+          `Updated ${res.affected} apps; ${skippedIds.size} failed/skipped and remained selected.`,
+        );
+      } else {
+        setSelected(new Set());
+        showMsg("success", t("common.done") + `: ${res.affected}`);
+      }
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : t("common.error"));
     } finally {
@@ -322,7 +341,7 @@ export function AdminApps() {
               size="small"
               disabled={bulkBusy || selected.size > BULK_LIMIT}
               onClick={() => {
-                setBulkEditingProps(true);
+                openBulkEditProps();
               }}
             >
               {t("admin.bulkEditProps")}
@@ -777,24 +796,24 @@ export function AdminApps() {
                     ))}
                 </div>
                 <Checkbox
-                  checked={bulkPropActive}
-                  onChange={(_, d) => setBulkPropActive(!!d.checked)}
-                  label={t("admin.activeStatus")}
+                  checked={bulkPropActive === null ? "mixed" : bulkPropActive}
+                  onChange={() => setBulkPropActive(cycleCheckbox(bulkPropActive))}
+                  label={`${t("admin.activeStatus")} (${bulkPropActive === null ? "—" : bulkPropActive ? t("common.enabled") : t("common.disabled")})`}
                 />
                 <Checkbox
-                  checked={bulkPropVerified}
-                  onChange={(_, d) => setBulkPropVerified(!!d.checked)}
-                  label={t("admin.verifiedBadge")}
+                  checked={bulkPropVerified === null ? "mixed" : bulkPropVerified}
+                  onChange={() => setBulkPropVerified(cycleCheckbox(bulkPropVerified))}
+                  label={`${t("admin.verifiedBadge")} (${bulkPropVerified === null ? "—" : bulkPropVerified ? t("common.enabled") : t("common.disabled")})`}
                 />
                 <Checkbox
-                  checked={bulkPropOfficial}
-                  onChange={(_, d) => setBulkPropOfficial(!!d.checked)}
-                  label={t("admin.officialHeader")}
+                  checked={bulkPropOfficial === null ? "mixed" : bulkPropOfficial}
+                  onChange={() => setBulkPropOfficial(cycleCheckbox(bulkPropOfficial))}
+                  label={`${t("admin.officialHeader")} (${bulkPropOfficial === null ? "—" : bulkPropOfficial ? t("common.enabled") : t("common.disabled")})`}
                 />
                 <Checkbox
-                  checked={bulkPropFirstParty}
-                  onChange={(_, d) => setBulkPropFirstParty(!!d.checked)}
-                  label={t("admin.firstPartyHeader")}
+                  checked={bulkPropFirstParty === null ? "mixed" : bulkPropFirstParty}
+                  onChange={() => setBulkPropFirstParty(cycleCheckbox(bulkPropFirstParty))}
+                  label={`${t("admin.firstPartyHeader")} (${bulkPropFirstParty === null ? "—" : bulkPropFirstParty ? t("common.enabled") : t("common.disabled")})`}
                 />
               </div>
             </DialogContent>
@@ -804,17 +823,21 @@ export function AdminApps() {
               </Button>
               <Button
                 appearance="primary"
-                disabled={bulkBusy}
-                onClick={() =>
-                  runBulkAction("update_properties", {
-                    properties: {
-                      is_active: bulkPropActive,
-                      is_verified: bulkPropVerified,
-                      is_official: bulkPropOfficial,
-                      is_first_party: bulkPropFirstParty,
-                    },
-                  })
+                disabled={
+                  bulkBusy ||
+                  (bulkPropActive === null &&
+                    bulkPropVerified === null &&
+                    bulkPropOfficial === null &&
+                    bulkPropFirstParty === null)
                 }
+                onClick={() => {
+                  const properties: Record<string, boolean> = {};
+                  if (bulkPropActive !== null) properties.is_active = bulkPropActive;
+                  if (bulkPropVerified !== null) properties.is_verified = bulkPropVerified;
+                  if (bulkPropOfficial !== null) properties.is_official = bulkPropOfficial;
+                  if (bulkPropFirstParty !== null) properties.is_first_party = bulkPropFirstParty;
+                  runBulkAction("update_properties", { properties });
+                }}
               >
                 {t("common.save")}
               </Button>

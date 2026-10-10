@@ -39,6 +39,8 @@ function readSessionToken(c: Context<AppEnv>): string | null {
   }
   const xst = c.req.header("X-Session-Token");
   if (xst) return xst;
+  const tokenQuery = c.req.query("token");
+  if (tokenQuery) return tokenQuery;
   return readSessionCookie(c);
 }
 

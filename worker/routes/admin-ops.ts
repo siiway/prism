@@ -20,9 +20,11 @@ import {
   recordAccountDeletion,
   auditRequestMeta,
 } from "../lib/audit";
-import { isUserLocked } from "../lib/lockdown";
+import { isUserLocked, isTeamLocked } from "../lib/lockdown";
+import { hasLiveRestrictedAccounts } from "../lib/userCapabilities";
+import { dissolveTeam } from "./teams";
 import { readPage, likePattern } from "../lib/pagination";
-import { proxyImageUrl } from "../lib/proxyImage";
+import { proxyImageUrl, sweepOrphanedImageProxyMappings } from "../lib/proxyImage";
 import type { DomainRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -811,38 +813,51 @@ app.post("/apps/bulk", async (c) => {
   let affected = 0;
 
   if (body.action === "delete") {
+    const stmts: D1PreparedStatement[] = [];
     for (const app of targets) {
-      await c.env.DB.batch([
+      stmts.push(
         c.env.DB.prepare("DELETE FROM oauth_tokens WHERE client_id = ?").bind(app.client_id),
         c.env.DB.prepare("DELETE FROM oauth_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_device_codes WHERE client_id = ?").bind(app.client_id),
         c.env.DB.prepare("DELETE FROM oauth_2fa_codes WHERE client_id = ?").bind(app.client_id),
         c.env.DB.prepare("DELETE FROM oauth_2fa_challenges WHERE client_id = ?").bind(app.client_id),
         c.env.DB.prepare("DELETE FROM oauth_consents WHERE client_id = ?").bind(app.client_id),
         c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?").bind(app.id),
-      ]);
-      affected++;
+      );
+    }
+    if (stmts.length > 0) {
+      await c.env.DB.batch(stmts);
+      affected = targets.length;
+      c.executionCtx.waitUntil(sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}));
     }
   } else if (body.action === "revoke") {
+    const stmts: D1PreparedStatement[] = [];
     for (const app of targets) {
-      const stmts = [
+      stmts.push(
         c.env.DB.prepare("DELETE FROM oauth_tokens WHERE client_id = ?").bind(app.client_id),
         c.env.DB.prepare("DELETE FROM oauth_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_device_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_2fa_codes WHERE client_id = ?").bind(app.client_id),
+        c.env.DB.prepare("DELETE FROM oauth_2fa_challenges WHERE client_id = ?").bind(app.client_id),
         c.env.DB.prepare("DELETE FROM oauth_consents WHERE client_id = ?").bind(app.client_id),
-      ];
+      );
       if (body.deactivate_on_revoke) {
         stmts.push(
           c.env.DB.prepare("UPDATE oauth_apps SET is_active = 0, updated_at = ? WHERE id = ?").bind(now, app.id),
         );
       }
+    }
+    if (stmts.length > 0) {
       await c.env.DB.batch(stmts);
-      affected++;
+      affected = targets.length;
     }
   } else if (body.action === "transfer") {
     let newOwnerId: string;
     let newTeamId: string | null;
     if (body.team_id) {
-      const team = await c.env.DB.prepare("SELECT id FROM teams WHERE id = ?").bind(body.team_id).first<{ id: string }>();
+      const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?").bind(body.team_id).first<{ id: string; name: string }>();
       if (!team) return c.json({ error: "Team not found" }, 404);
+      if (isTeamLocked(c.env, team.name)) return c.json({ error: "Target team is locked" }, 400);
       newOwnerId = team.id;
       newTeamId = team.id;
     } else if (body.owner_id) {
@@ -853,11 +868,16 @@ app.post("/apps/bulk", async (c) => {
     } else {
       return c.json({ error: "owner_id or team_id required" }, 400);
     }
+    const stmts: D1PreparedStatement[] = [];
     for (const app of targets) {
-      await c.env.DB.prepare("UPDATE oauth_apps SET owner_id = ?, team_id = ?, updated_at = ? WHERE id = ?")
-        .bind(newOwnerId, newTeamId, now, app.id)
-        .run();
-      affected++;
+      stmts.push(
+        c.env.DB.prepare("UPDATE oauth_apps SET owner_id = ?, team_id = ?, updated_at = ? WHERE id = ?")
+          .bind(newOwnerId, newTeamId, now, app.id),
+      );
+    }
+    if (stmts.length > 0) {
+      await c.env.DB.batch(stmts);
+      affected = targets.length;
     }
   } else if (body.action === "update_properties") {
     const props = body.properties || {};
@@ -869,7 +889,7 @@ app.post("/apps/bulk", async (c) => {
     }
     if (props.is_verified !== undefined) {
       sets.push("is_verified = ?");
-      vals.push(props.is_verified ? 1 : 0);
+      vals.push(props.is_verified ? 1 : -1);
     }
     if (props.is_official !== undefined) {
       sets.push("is_official = ?");
@@ -882,22 +902,31 @@ app.post("/apps/bulk", async (c) => {
     if (sets.length > 0) {
       sets.push("updated_at = ?");
       vals.push(now);
+      const stmts: D1PreparedStatement[] = [];
       for (const app of targets) {
-        await c.env.DB.prepare(`UPDATE oauth_apps SET ${sets.join(", ")} WHERE id = ?`)
-          .bind(...vals, app.id)
-          .run();
-        affected++;
+        stmts.push(
+          c.env.DB.prepare(`UPDATE oauth_apps SET ${sets.join(", ")} WHERE id = ?`)
+            .bind(...vals, app.id),
+        );
       }
+      await c.env.DB.batch(stmts);
+      affected = targets.length;
     }
   }
+
+  const targetIds = new Set(targets.map((t) => t.id));
+  const skipped = body.app_ids
+    .filter((id) => !targetIds.has(id))
+    .map((id) => ({ id, reason: "not_found" }));
 
   auditOps(c, `admin.apps.bulk_${body.action}`, {
     requested: body.app_ids.length,
     affected,
+    skipped,
     app_names: targets.map((t) => t.name),
   });
 
-  return c.json({ message: "Done", affected });
+  return c.json({ message: "Done", affected, skipped });
 });
 
 /** Cap on bulk teams call. */
@@ -920,13 +949,29 @@ app.post("/teams/bulk", async (c) => {
 
   for (const tid of body.team_ids) {
     try {
-      const { dissolveTeam } = await import("./teams");
+      const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
+        .bind(tid)
+        .first<{ id: string; name: string }>();
+      if (!team) {
+        skipped.push({ id: tid, reason: "not_found" });
+        continue;
+      }
+      if (isTeamLocked(c.env, team.name)) {
+        skipped.push({ id: tid, reason: "locked" });
+        continue;
+      }
+      if (await hasLiveRestrictedAccounts(c.env.DB, tid)) {
+        skipped.push({ id: tid, reason: "staged_required" });
+        continue;
+      }
       await dissolveTeam(c.env.DB, tid, admin.id);
       affected++;
     } catch (e) {
       skipped.push({ id: tid, reason: e instanceof Error ? e.message : "failed" });
     }
   }
+
+  c.executionCtx.waitUntil(sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}));
 
   auditOps(c, `admin.teams.bulk_${body.action}`, {
     requested: body.team_ids.length,

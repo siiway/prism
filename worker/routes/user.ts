@@ -20,6 +20,7 @@ import { requireAuth } from "../middleware/auth";
 import { readSessionCookie, setSessionCookie } from "../lib/cookies";
 import {
   proxyImageUrl,
+  registerImageProxyMapping,
   registerMarkdownImageMappings,
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
@@ -352,6 +353,10 @@ app.patch("/me", async (c) => {
   await c.env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`)
     .bind(...values)
     .run();
+
+  if (body.avatar_url && body.avatar_url.startsWith("https://")) {
+    await registerImageProxyMapping(c.env.DB, body.avatar_url, user.id);
+  }
 
   if (body.profile_readme !== undefined) {
     // See note in POST /me/readme — anonymous public-profile viewers can't

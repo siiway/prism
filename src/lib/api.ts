@@ -2361,6 +2361,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     request<{
       message: string;
       affected: number;
+      skipped?: Array<{ id: string; reason: string }>;
     }>("POST", "/admin/apps/bulk", { app_ids: appIds, action, ...payload }, getToken()),
   adminBulkTeams: (
     teamIds: string[],

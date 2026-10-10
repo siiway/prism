@@ -40,6 +40,7 @@ import {
   buildVerifiedDomainsMap,
   buildVerifiedTeamDomainsMap,
   computeVerified,
+  resolveAppVerified,
 } from "../lib/domainVerify";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { hashBackupCodes } from "../lib/totp";
@@ -400,6 +401,16 @@ app.patch("/config", async (c) => {
   // otherwise — legacy plaintext storage continues to work.
   const encrypted = await encryptConfigUpdates(c.env, updates);
   await setConfigValues(c.env.DB, encrypted);
+
+  if (
+    updates.site_icon_url &&
+    typeof updates.site_icon_url === "string" &&
+    updates.site_icon_url.startsWith("https://")
+  ) {
+    c.executionCtx.waitUntil(
+      registerImageProxyMapping(c.env.DB, updates.site_icon_url, c.get("user").id).catch(() => {}),
+    );
+  }
 
   await logAudit(
     c.env,
@@ -1209,6 +1220,12 @@ app.patch("/users/:id", async (c) => {
     )
       .bind(...values)
       .run();
+
+    if (body.avatar_url && body.avatar_url.startsWith("https://")) {
+      c.executionCtx.waitUntil(
+        registerImageProxyMapping(c.env.DB, body.avatar_url, id).catch(() => {}),
+      );
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
@@ -1416,9 +1433,10 @@ app.get("/apps", async (c) => {
             c.env.DB,
             a.team_avatar_url,
           ),
-          is_verified:
-            a.is_verified === 1 ||
+          is_verified: resolveAppVerified(
+            a.is_verified,
             computeVerified(merged, a.website_url, a.redirect_uris),
+          ),
         };
       }),
     ),
@@ -1458,7 +1476,7 @@ app.patch("/apps/:id", async (c) => {
   }
   if (body.is_verified !== undefined) {
     updates.push("is_verified = ?");
-    values.push(body.is_verified ? 1 : 0);
+    values.push(body.is_verified ? 1 : -1);
   }
   if (body.is_official !== undefined) {
     updates.push("is_official = ?");

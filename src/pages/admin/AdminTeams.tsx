@@ -84,10 +84,19 @@ export function AdminTeams() {
     try {
       const res = await api.adminBulkTeams([...selected], "delete");
       await qc.invalidateQueries({ queryKey: ["admin-teams"] });
-      setSelected(new Set());
       setConfirmingBulkDelete(false);
       setBulkDeleteConfirm("");
-      showMsg("success", t("common.done") + `: ${res.affected}`);
+      const skippedIds = new Set((res.skipped ?? []).map((s) => s.id));
+      if (skippedIds.size > 0) {
+        setSelected(skippedIds);
+        showMsg(
+          "error",
+          `Deleted ${res.affected} teams; ${skippedIds.size} failed/skipped and remained selected: ${res.skipped.map((s) => s.reason).join(", ")}`,
+        );
+      } else {
+        setSelected(new Set());
+        showMsg("success", t("common.done") + `: ${res.affected}`);
+      }
     } catch (err) {
       showMsg("error", err instanceof ApiError ? err.message : t("common.error"));
     } finally {

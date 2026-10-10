@@ -183,16 +183,36 @@ export function AdminInvites() {
         .filter(Boolean);
 
       if (emailList.length > 1) {
+        const remainingEmails = [...emailList];
+        const failed: string[] = [];
         for (const em of emailList) {
-          await api.adminCreateInvite({
-            email: em,
-            note: form.note || undefined,
-            max_uses: 1,
-            expires_in_days: form.expires_in_days
-              ? parseInt(form.expires_in_days, 10)
-              : undefined,
-            send_email: form.send_email,
-          });
+          try {
+            await api.adminCreateInvite({
+              email: em,
+              note: form.note || undefined,
+              max_uses: 1,
+              expires_in_days: form.expires_in_days
+                ? parseInt(form.expires_in_days, 10)
+                : undefined,
+              send_email: form.send_email,
+            });
+            const idx = remainingEmails.indexOf(em);
+            if (idx !== -1) remainingEmails.splice(idx, 1);
+          } catch {
+            failed.push(em);
+          }
+        }
+        qc.invalidateQueries({ queryKey: ["admin", "invites"] });
+        if (failed.length > 0) {
+          setForm((f) => ({
+            ...f,
+            email: failed.join(", "),
+            max_uses: String(failed.length),
+          }));
+          setCreateError(
+            `Created ${emailList.length - failed.length} invites. Failed for: ${failed.join(", ")}`,
+          );
+          return;
         }
         setNewInviteUrl(null);
         setForm({
@@ -202,7 +222,6 @@ export function AdminInvites() {
           expires_in_days: "",
           send_email: false,
         });
-        qc.invalidateQueries({ queryKey: ["admin", "invites"] });
         return;
       }
 

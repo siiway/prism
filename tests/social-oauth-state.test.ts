@@ -34,6 +34,10 @@ class SqliteD1Statement {
   }
 
   async run() {
+    if (/returning/i.test(this.sql)) {
+      const results = this.db.query(this.sql).all(...this.values);
+      return { success: true, results, meta: { changes: Number(results.length) } };
+    }
     const result = this.db.query(this.sql).run(...this.values);
     return { success: true, meta: { changes: Number(result.changes) } };
   }
