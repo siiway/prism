@@ -354,8 +354,11 @@ Authorization: Basic <base64(client_id:client_secret)>
 token=<ACCESS_TOKEN>
 ```
 
-Client credentials are required, and a client can only introspect tokens that
-were issued to it — anything else answers `{"active": false}`.
+Client credentials are required. A client can introspect tokens issued to it.
+A confidential resource app can also introspect a token issued to another app
+when the token explicitly grants a cross-app scope in the resource app's
+namespace (`app:<resource_client_id>:<scope>`). Anything else answers
+`{"active": false}`.
 
 ### Response (active token)
 

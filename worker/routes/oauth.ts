@@ -46,6 +46,7 @@ import {
 import { loggedFetch } from "../lib/logger";
 import {
   parseAppScope,
+  canClientIntrospectToken,
   parseUnboundTeamScope,
   parseBoundTeamScope,
   bindTeamScopes,
@@ -3891,10 +3892,13 @@ app.post("/introspect", async (c) => {
   }
 
   if (!tokenRow || tokenRow.expires_at < now) return c.json({ active: false });
-  // A client may only introspect what was issued to it.
-  if (tokenRow.client_id !== caller.client_id) return c.json({ active: false });
-
   const scopes = JSON.parse(tokenRow.scopes) as string[];
+  // The issuing client may inspect its own token. A target resource app may
+  // also inspect a cross-app token that explicitly names its client_id in an
+  // app:<client_id>:<scope> grant. No other client gets a token oracle.
+  if (!canClientIntrospectToken(tokenRow.client_id, caller.client_id, scopes))
+    return c.json({ active: false });
+
   return c.json({
     active: true,
     scope: scopes.join(" "),

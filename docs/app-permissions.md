@@ -137,6 +137,7 @@ App A **must** verify the token using Prism's introspection endpoint and check t
 ```bash
 POST /api/oauth/introspect
 Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(App_A_client_id:App_A_client_secret)>
 
 token=<access_token>
 ```
@@ -160,11 +161,19 @@ async function requireAppScope(
   accessToken: string,
   prismBase: string,
   requiredScope: string, // e.g. "app:prism_xxxxx:read_posts"
+  resourceClientId: string, // App A client_id
+  resourceClientSecret: string, // App A client_secret
   expectedClientId?: string, // optional: only accept tokens from App B
 ): Promise<{ userId: string; clientId: string }> {
+  const credentials = Buffer.from(
+    `${resourceClientId}:${resourceClientSecret}`,
+  ).toString("base64");
   const res = await fetch(`${prismBase}/api/oauth/introspect`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${credentials}`,
+    },
     body: new URLSearchParams({ token: accessToken }),
   });
   const data = (await res.json()) as {
@@ -287,7 +296,7 @@ sequenceDiagram
   Prism-->>AppBOwner: 9. Access token (includes scope)
 
   AppBOwner->>AppA: 10. API request with Bearer token
-  AppA->>Prism: 11. Introspect token, verify scope
+  AppA->>Prism: 11. Introspect with App A credentials, verify scope
   Prism-->>AppA: active + scope confirmed
   AppA-->>AppBOwner: 12. Response
 ```
@@ -296,8 +305,9 @@ sequenceDiagram
 
 ## Security notes
 
-- App A's `client_secret` is not involved in this flow — only the `client_id`
-  identifies App A's scope namespace.
+- App A never shares its `client_secret` with App B, and App B only uses App
+  A's `client_id` when requesting the scope. App A uses its own credentials
+  server-side when it introspects the resulting token.
 - App A should always verify tokens via introspection, not by trusting the
   token payload directly.
 - If you want to restrict which apps can use your scopes, set `app_allow` rules
