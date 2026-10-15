@@ -320,10 +320,14 @@ token=<ACCESS_TOKEN>
   "token_type": "Bearer",
   "exp": 1234567890,
   "iat": 1234564290,
-  "aud": "...",
+  "aud": ["https://your-prism-domain", "prism_resource_clientid"],
   "iss": "https://your-prism-domain"
 }
 ```
+
+`aud` 与令牌签发使用相同的受众计算方式：其中包含 Prism 签发方、由
+`app:<client_id>:<scope>` 授权指定的每个资源应用，以及令牌中保存的所有
+RFC 8707 资源指示符。
 
 ## 令牌撤销（RFC 7009）
 

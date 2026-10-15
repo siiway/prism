@@ -34,8 +34,18 @@ class SqliteD1Statement {
   }
 
   async run() {
-    const result = this.db.query(this.sql).run(...this.values);
-    return { success: true, meta: { changes: Number(result.changes) } };
+    const before = this.db.query("SELECT total_changes() AS n").get() as {
+      n: number;
+    };
+    const results = this.db.query(this.sql).all(...this.values);
+    const after = this.db.query("SELECT total_changes() AS n").get() as {
+      n: number;
+    };
+    return {
+      success: true,
+      results,
+      meta: { changes: after.n - before.n },
+    };
   }
 
   async first<T>() {

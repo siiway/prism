@@ -87,11 +87,18 @@ beforeEach(() => {
       client_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       scopes TEXT NOT NULL,
+      resource TEXT,
       dpop_jkt TEXT,
       auth_time INTEGER,
       amr TEXT,
       expires_at INTEGER NOT NULL,
       created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE users (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'user',
+      is_active INTEGER NOT NULL DEFAULT 1
     );
   `);
 
@@ -101,6 +108,7 @@ beforeEach(() => {
   insertApp.run("workbench", "workbench-secret");
   insertApp.run("glint", "glint-secret");
   insertApp.run("unrelated", "unrelated-secret");
+  sqlite.run("INSERT INTO users (id) VALUES ('user-id')");
 
   const now = Math.floor(Date.now() / 1000);
   sqlite.run(
@@ -135,7 +143,29 @@ describe("OAuth token introspection authorization", () => {
       active: true,
       client_id: "workbench",
       sub: "user-id",
+      aud: ["https://prism.example", "glint"],
     });
+  });
+
+  test("includes stored resource indicators in the audience", async () => {
+    sqlite.run("UPDATE oauth_tokens SET resource = ? WHERE id = 'token-id'", [
+      JSON.stringify(["https://api.example/resource"]),
+    ]);
+
+    const response = await introspect("glint", "glint-secret");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      active: true,
+      aud: ["https://prism.example", "glint", "https://api.example/resource"],
+    });
+  });
+
+  test("reports tokens for inactive users as inactive", async () => {
+    sqlite.run("UPDATE users SET is_active = 0 WHERE id = 'user-id'");
+
+    const response = await introspect("glint", "glint-secret");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ active: false });
   });
 
   test("still requires the resource app to be confidential", async () => {

@@ -371,10 +371,14 @@ namespace (`app:<resource_client_id>:<scope>`). Anything else answers
   "token_type": "Bearer",
   "exp": 1234567890,
   "iat": 1234564290,
-  "aud": "...",
+  "aud": ["https://your-prism-domain", "prism_resource_clientid"],
   "iss": "https://your-prism-domain"
 }
 ```
+
+`aud` uses the same audience calculation as token issuance: it contains the
+Prism issuer, every resource app named by an `app:<client_id>:<scope>` grant,
+and any RFC 8707 resource indicators stored with the token.
 
 ## Token revocation (RFC 7009)
 

@@ -3892,6 +3892,13 @@ app.post("/introspect", async (c) => {
   }
 
   if (!tokenRow || tokenRow.expires_at < now) return c.json({ active: false });
+  const activeUser = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE id = ? AND is_active = 1 AND kind = 'user'",
+  )
+    .bind(tokenRow.user_id)
+    .first<{ id: string }>();
+  if (!activeUser) return c.json({ active: false });
+
   const scopes = JSON.parse(tokenRow.scopes) as string[];
   // The issuing client may inspect its own token. A target resource app may
   // also inspect a cross-app token that explicitly names its client_id in an
@@ -3910,7 +3917,7 @@ app.post("/introspect", async (c) => {
     exp: tokenRow.expires_at,
     iat: tokenRow.created_at,
     sub: tokenRow.user_id,
-    aud: tokenRow.client_id,
+    aud: extractAud(scopes, c.env.APP_URL, parseResources(tokenRow.resource)),
     iss: c.env.APP_URL,
     ...(tokenRow.dpop_jkt ? { cnf: { jkt: tokenRow.dpop_jkt } } : {}),
     // RFC 9470 authentication context, for a resource server's step-up decision.
