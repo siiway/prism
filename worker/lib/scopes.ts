@@ -12,6 +12,24 @@ export function parseAppScope(
   return { clientId: rest.slice(0, sep), innerScope: rest.slice(sep + 1) };
 }
 
+/**
+ * Whether an OAuth client may inspect a token's metadata.
+ *
+ * The issuing client may always inspect its own token. A different client may
+ * do so only when the grant contains a cross-app scope explicitly addressed to
+ * that client, making it a resource server for the token.
+ */
+export function canClientIntrospectToken(
+  tokenClientId: string,
+  callerClientId: string,
+  scopes: string[],
+): boolean {
+  return (
+    tokenClientId === callerClientId ||
+    scopes.some((scope) => parseAppScope(scope)?.clientId === callerClientId)
+  );
+}
+
 // ── Team-scoped permissions ──────────────────────────────────────────────────
 
 /**

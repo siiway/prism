@@ -305,8 +305,9 @@ Authorization: Basic <base64(client_id:client_secret)>
 token=<ACCESS_TOKEN>
 ```
 
-必须提供客户端凭据，且客户端只能内省签发给自己的令牌，其他令牌一律返回
-`{"active": false}`。
+必须提供客户端凭据。客户端可以内省签发给自己的令牌；机密资源应用也可以内省
+签发给其他应用、但通过 `app:<资源应用client_id>:<scope>` 明确授予该资源应用
+跨应用权限的令牌。其他令牌一律返回 `{"active": false}`。
 
 ### 响应（有效令牌）
 
@@ -319,10 +320,14 @@ token=<ACCESS_TOKEN>
   "token_type": "Bearer",
   "exp": 1234567890,
   "iat": 1234564290,
-  "aud": "...",
+  "aud": ["https://your-prism-domain", "prism_resource_clientid"],
   "iss": "https://your-prism-domain"
 }
 ```
+
+`aud` 与令牌签发使用相同的受众计算方式：其中包含 Prism 签发方、由
+`app:<client_id>:<scope>` 授权指定的每个资源应用，以及令牌中保存的所有
+RFC 8707 资源指示符。
 
 ## 令牌撤销（RFC 7009）
 

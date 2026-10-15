@@ -128,6 +128,7 @@ curl -X POST https://your-prism.example/api/apps/<appA_id>/scope-access-rules \
 ```bash
 POST /api/oauth/introspect
 Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(应用A_client_id:应用A_client_secret)>
 
 token=<access_token>
 ```
@@ -151,11 +152,19 @@ async function requireAppScope(
   accessToken: string,
   prismBase: string,
   requiredScope: string, // 例如 "app:prism_xxxxx:read_posts"
+  resourceClientId: string, // 应用 A 的 client_id
+  resourceClientSecret: string, // 应用 A 的 client_secret
   expectedClientId?: string, // 可选：只接受来自应用 B 的令牌
 ): Promise<{ userId: string; clientId: string }> {
+  const credentials = Buffer.from(
+    `${resourceClientId}:${resourceClientSecret}`,
+  ).toString("base64");
   const res = await fetch(`${prismBase}/api/oauth/introspect`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${credentials}`,
+    },
     body: new URLSearchParams({ token: accessToken }),
   });
   const data = (await res.json()) as {
@@ -270,7 +279,7 @@ sequenceDiagram
   Prism-->>AppBOwner: 9. 访问令牌（含权限范围）
 
   AppBOwner->>AppA: 10. 携带 Bearer 令牌调用 API
-  AppA->>Prism: 11. 自省令牌，验证权限范围
+  AppA->>Prism: 11. 使用应用 A 凭据自省令牌，验证权限范围
   Prism-->>AppA: 活跃 + 权限范围已确认
   AppA-->>AppBOwner: 12. 返回响应
 ```
@@ -279,7 +288,8 @@ sequenceDiagram
 
 ## 安全说明
 
-- 应用 A 的 `client_secret` 不参与此流程——仅 `client_id` 用于标识应用 A 的权限范围命名空间。
+- 应用 A 绝不能向应用 B 共享 `client_secret`；应用 B 请求权限范围时只使用应用 A 的
+  `client_id`。应用 A 在服务端自省最终令牌时使用自己的凭据。
 - 应用 A 应始终通过令牌自省来验证令牌，而非直接信任令牌内容。
 - 若要限制哪些应用可以使用您的权限范围，请在对外公开 `client_id` 之前设置 `app_allow` 规则。
 - 用户通过授权撤销界面撤销对应用 B 的授权后，其对应用 A 资源的访问权限也会同时失效，无需额外操作。
