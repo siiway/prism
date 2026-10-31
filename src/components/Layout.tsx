@@ -198,12 +198,17 @@ const useStyles = makeStyles({
     flexShrink: 0,
     color: tokens.colorNeutralForeground3,
   },
-  // Admin mode: a muted way back out, then the admin nav. Which mode you
+  // Admin mode: a muted way back out, fixed above the scrolling admin nav
+  // so it stays reachable however far down the list you are. Which mode you
   // are in is shown by modeTag in the brand row, not by a heading here.
+  backWrap: {
+    flexShrink: 0,
+    padding: "8px 10px",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   navBack: {
     color: tokens.colorNeutralForeground3,
     fontWeight: tokens.fontWeightRegular,
-    marginBottom: "8px",
   },
   modeTag: {
     flexShrink: 0,
@@ -426,18 +431,9 @@ function NavItem({
  */
 function AdminSidebarNav({ onNavigate }: { onNavigate: () => void }) {
   const styles = useStyles();
-  const { t } = useTranslation();
   const groups = useAdminNav();
   return (
     <>
-      <NavItem
-        to="/"
-        end
-        icon={ArrowLeftRegular}
-        label={t("admin.backToAccount")}
-        onNavigate={onNavigate}
-        className={styles.navBack}
-      />
       {groups.map((group, i) => (
         <div key={group.label ?? i}>
           {group.label && (
@@ -611,6 +607,19 @@ export function Layout() {
             <kbd className={styles.kbd}>{isMac ? "⌘K" : "Ctrl K"}</kbd>
           </button>
         </div>
+
+        {inAdmin && (
+          <div className={styles.backWrap}>
+            <NavItem
+              to="/"
+              end
+              icon={ArrowLeftRegular}
+              label={t("admin.backToAccount")}
+              onNavigate={closeSidebar}
+              className={styles.navBack}
+            />
+          </div>
+        )}
 
         <nav className={styles.nav}>
           {inAdmin ? (
