@@ -66,7 +66,10 @@ export function Pagination({
     </Text>
   );
 
-  if (pageCount <= 1) {
+  // One page and on it: only the count. A list that shrank under a later
+  // page (e.g. after deleting its last row) keeps the controls, so Previous
+  // still leads back to the rows.
+  if (pageCount <= 1 && page <= 1) {
     return count ? <div className={styles.pager}>{count}</div> : null;
   }
 
