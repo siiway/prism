@@ -14,6 +14,7 @@ import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useSiteName } from "../lib/useSiteName";
 import { useApi } from "../lib/api-context";
 import { AuthShell } from "../components/AuthShell";
 import { useAuthStore } from "../store/auth";
@@ -54,6 +55,7 @@ export function SocialSelect() {
   const [searchParams] = useSearchParams();
   const { setAuth } = useAuthStore();
   const { t } = useTranslation();
+  const siteName = useSiteName();
   const key = searchParams.get("key") ?? "";
 
   const { data, isLoading, error } = useQuery({
@@ -128,6 +130,7 @@ export function SocialSelect() {
             style={{ color: tokens.colorNeutralForeground3, marginTop: 8 }}
           >
             {t("auth.multipleAccountsLinked", {
+              siteName,
               provider: providerLabel,
               profileSuffix,
             })}

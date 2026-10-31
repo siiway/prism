@@ -62,6 +62,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useSiteName } from "../../lib/useSiteName";
 import {
   ApiError,
   type Domain,
@@ -223,6 +224,7 @@ export function TeamDetail() {
     dismissAdminBanner,
   } = useAdminViewStore();
   const { t } = useTranslation();
+  const siteName = useSiteName();
   const isAdmin = me?.role === "admin";
 
   // Flip the session-wide site-admin override on/off, then refetch everything
@@ -1727,7 +1729,7 @@ export function TeamDetail() {
                       marginTop: 4,
                     }}
                   >
-                    {t("teams.inviteRegDesc")}
+                    {t("teams.inviteRegDesc", { siteName })}
                   </Text>
                 </div>
 
@@ -1781,7 +1783,7 @@ export function TeamDetail() {
                 )}
 
                 <Switch
-                  label={t("teams.allowNormalJoin")}
+                  label={t("teams.allowNormalJoin", { siteName })}
                   checked={team.allow_normal_user_join}
                   disabled={savingRequirement === "allow_normal_user_join"}
                   onChange={(_, d) =>

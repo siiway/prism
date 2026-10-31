@@ -1479,6 +1479,11 @@ app.patch("/apps/:id", async (c) => {
 
 // ─── Test email ───────────────────────────────────────────────────────────────
 
+// The site name is admin-set but still goes into HTML.
+function escapeEmailHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 app.post("/test-email", async (c) => {
   const config = await getConfig(c.env.DB);
   if (config.email_provider === "none") {
@@ -1490,9 +1495,9 @@ app.post("/test-email", async (c) => {
       c.env,
       {
         to: admin.email,
-        subject: "Prism — Test Email",
-        html: '<div style="font-family:sans-serif"><h2>Test Email</h2><p>This is a test email from your Prism instance. Email is working correctly!</p></div>',
-        text: "This is a test email from your Prism instance. Email is working correctly!",
+        subject: `${config.site_name} — Test Email`,
+        html: `<div style="font-family:sans-serif"><h2>Test Email</h2><p>This is a test email from ${escapeEmailHtml(config.site_name)}. Email is working correctly!</p></div>`,
+        text: `This is a test email from ${config.site_name}. Email is working correctly!`,
       },
       {
         provider: config.email_provider as "resend" | "mailchannels" | "smtp",
@@ -1546,7 +1551,7 @@ app.post("/test-email-receiving", async (c) => {
     const emailHost =
       config.email_receive_host || new URL(c.env.APP_URL).hostname;
     toAddress = `verify-${testCode}@${emailHost}`;
-    subject = `Prism — Email Receive Test`;
+    subject = `${config.site_name} — Email Receive Test`;
   }
 
   // Store in KV so the handler/poller can validate it

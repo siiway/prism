@@ -31,6 +31,7 @@ import { AddRegular, DeleteRegular, EditRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useSiteName } from "../../lib/useSiteName";
 import { ApiError, type TeamGroup } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { EmptyState } from "../../components/EmptyState";
@@ -83,6 +84,7 @@ export function GroupsTab({
   const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
+  const siteName = useSiteName();
   const qc = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -127,7 +129,7 @@ export function GroupsTab({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <MessageBar intent="info">
-        <MarkdownText source={t("teams.groupsDesc")} />
+        <MarkdownText source={t("teams.groupsDesc", { siteName })} />
       </MessageBar>
 
       {!enabled && (

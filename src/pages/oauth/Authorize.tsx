@@ -27,6 +27,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useSiteName } from "../../lib/useSiteName";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { AuthShell } from "../../components/AuthShell";
@@ -105,6 +106,7 @@ export function Authorize() {
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const { t } = useTranslation();
+  const siteName = useSiteName();
 
   const params = Object.fromEntries(searchParams.entries());
 
@@ -1211,7 +1213,7 @@ export function Authorize() {
           size={100}
           style={{ color: tokens.colorNeutralForeground4, textAlign: "center" }}
         >
-          {t("oauth.footerNote", { appName: data.app.name })}
+          {t("oauth.footerNote", { appName: data.app.name, siteName })}
         </Text>
       </>
     </AuthShell>

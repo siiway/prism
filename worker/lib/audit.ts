@@ -16,6 +16,7 @@ import { decryptSecret } from "./secretCrypto";
 import { loggedFetch, loggedSafeFetch } from "./logger";
 import { validateOutboundUrl } from "./safeFetch";
 import { geoJson } from "./geo";
+import { getConfigValue } from "./config";
 import type { WaitUntilCtx } from "../types";
 
 export type AuditScope = "user" | "team" | "platform";
@@ -320,6 +321,11 @@ async function deliverAuditWebhooks(
   });
   if (!matching.length) return;
 
+  // Discord and Telegram messages name the instance, not the software.
+  const siteName = await getConfigValue(env.DB, "site_name").catch(
+    () => "Prism",
+  );
+
   await Promise.all(
     matching.map(async (wh) => {
       let config: Record<string, unknown>;
@@ -332,9 +338,9 @@ async function deliverAuditWebhooks(
       let outcome: DeliveryOutcome;
       try {
         if (wh.kind === "discord")
-          outcome = await deliverDiscord(env, config, event);
+          outcome = await deliverDiscord(env, config, event, siteName);
         else if (wh.kind === "telegram")
-          outcome = await deliverTelegram(env, config, event);
+          outcome = await deliverTelegram(env, config, event, siteName);
         else outcome = await deliverGeneral(env, config, event);
       } catch (err) {
         outcome = {
@@ -387,6 +393,7 @@ async function deliverDiscord(
   env: Env,
   config: Record<string, unknown>,
   event: DeliveredEvent,
+  siteName: string,
 ): Promise<DeliveryOutcome> {
   const url = String(config.webhook_url ?? "");
   if (validateOutboundUrl(url) !== null)
@@ -401,12 +408,16 @@ async function deliverDiscord(
       : null,
     event.ip ? { name: "IP", value: event.ip, inline: true } : null,
   ].filter(Boolean);
+  // Discord rejects empty or over-80-character usernames and any containing
+  // "discord" or "clyde"; leave it unset then so the webhook's own name shows.
+  const username = siteName.trim().slice(0, 80);
   const body = JSON.stringify({
-    username: "Prism",
+    username:
+      username && !/discord|clyde/i.test(username) ? username : undefined,
     avatar_url: DISCORD_AVATAR_URL,
     embeds: [
       {
-        title: "Prism audit event",
+        title: `${siteName} audit event`,
         description: eventSummary(event),
         color: 0x5865f2,
         fields,
@@ -431,6 +442,7 @@ async function deliverTelegram(
   env: Env,
   config: Record<string, unknown>,
   event: DeliveredEvent,
+  siteName: string,
 ): Promise<DeliveryOutcome> {
   const token = String(config.bot_token ?? "");
   const chatId = String(config.chat_id ?? "");
@@ -438,7 +450,7 @@ async function deliverTelegram(
   if (!token || !chatId)
     return { success: false, status: null, body: "missing bot_token/chat_id" };
   const lines = [
-    `<b>Prism audit event</b>`,
+    `<b>${escapeHtml(siteName)} audit event</b>`,
     `<b>Action:</b> ${escapeHtml(event.action)}`,
     event.actorName ? `<b>Actor:</b> ${escapeHtml(event.actorName)}` : "",
     event.resourceName

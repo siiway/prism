@@ -40,6 +40,7 @@ import {
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useSiteName } from "../../lib/useSiteName";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
@@ -66,6 +67,7 @@ export function AdminTeams() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const siteName = useSiteName();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -564,6 +566,7 @@ export function AdminTeams() {
             <DialogContent>
               <Text block>
                 {t("admin.stagedDissolveBody", {
+                  siteName,
                   name: dissolving?.name ?? "",
                 })}
               </Text>
