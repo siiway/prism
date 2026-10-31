@@ -23,6 +23,12 @@
       href="/ic_fluent_lock_shield_48_color.svg"
     />
 
+    <!-- Global stylesheet as a render-blocking <link> rather than a JS
+         import: Vite only injects JS-imported CSS once the module runs, so
+         in dev the server-rendered page painted unstyled (default margins,
+         no box-sizing reset) before snapping into place. -->
+    <link rel="stylesheet" href="/src/index.css" />
+
     <!-- Resolve color scheme synchronously before paint and refresh the
          prism_color_scheme cookie. An explicit user choice saved by the
          in-app theme switcher (localStorage prism_theme_mode) wins over

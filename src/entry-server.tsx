@@ -14,6 +14,8 @@ import {
   StaticRouterProvider,
   createStaticHandler,
   createStaticRouter,
+  isRouteErrorResponse,
+  type StaticHandlerContext,
 } from "react-router";
 import {
   QueryClient,
@@ -186,7 +188,15 @@ export async function render(
             <ApiProvider client={apiClient} origin={origin}>
               <AuthStoreProvider store={authStore}>
                 <ThemeProvider initialColorScheme={opts.colorScheme}>
-                  <StaticRouterProvider router={router} context={context} />
+                  {/* hydrate={false}: the router's hydration data goes in
+                      the app-state slot below, not inside #root. Rendered
+                      here it is a <script> the client tree never has, and
+                      that one node failed hydration on every page. */}
+                  <StaticRouterProvider
+                    router={router}
+                    context={context}
+                    hydrate={false}
+                  />
                 </ThemeProvider>
               </AuthStoreProvider>
             </ApiProvider>
@@ -251,14 +261,50 @@ export async function render(
   const initialJson = JSON.stringify(initialPayload).replace(/</g, "\\u003c");
   const initialScript = `<script>window.__INITIAL__=${initialJson}</script>`;
 
+  // createBrowserRouter reads this global to start with the server's loader
+  // results instead of re-running every loader before its first render.
+  const routerJson = JSON.stringify(routerHydrationData(context)).replace(
+    /</g,
+    "\\u003c",
+  );
+  const routerScript = `<script>window.__staticRouterHydrationData=${routerJson}</script>`;
+
   const body = opts.template
     .replace("<!--app-head-->", styleHtml)
     .replace("<!--app-html-->", appHtml)
-    .replace("<!--app-state-->", initialScript);
+    .replace("<!--app-state-->", initialScript + routerScript);
 
   return {
     status: matchedNotFound ? 404 : 200,
     headers: { "Content-Type": "text/html; charset=utf-8" },
     body,
+  };
+}
+
+// The payload StaticRouterProvider would have inlined with hydrate={true}.
+// Errors need the same markers React Router uses so the client can revive
+// route error responses and Error instances for errorElement boundaries.
+function routerHydrationData(context: StaticHandlerContext) {
+  let errors: Record<string, unknown> | null = null;
+  if (context.errors) {
+    errors = {};
+    for (const [routeId, error] of Object.entries(context.errors)) {
+      if (isRouteErrorResponse(error)) {
+        errors[routeId] = { ...error, __type: "RouteErrorResponse" };
+      } else if (error instanceof Error) {
+        errors[routeId] = {
+          message: error.message,
+          __type: "Error",
+          ...(error.name !== "Error" ? { __subType: error.name } : {}),
+        };
+      } else {
+        errors[routeId] = error;
+      }
+    }
+  }
+  return {
+    loaderData: context.loaderData,
+    actionData: context.actionData,
+    errors,
   };
 }

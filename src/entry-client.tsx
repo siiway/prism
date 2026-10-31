@@ -15,8 +15,11 @@ import {
   HydrationBoundary,
   type DehydratedState,
 } from "@tanstack/react-query";
-import { RouterProvider, createBrowserRouter } from "react-router-dom";
-import "./index.css";
+import {
+  RouterProvider,
+  createBrowserRouter,
+  matchRoutes,
+} from "react-router-dom";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { createRoutes } from "./routes";
 import { AuthStoreProvider, authStore } from "./store/auth";
@@ -70,7 +73,26 @@ async function start(): Promise<void> {
     },
   });
 
-  const router = createBrowserRouter(createRoutes({ qc, api, authStore }));
+  const routes = createRoutes({ qc, api, authStore });
+
+  // Resolve the lazy route modules for the current URL before hydrating.
+  // Otherwise the router renders nothing until they load, React sees an
+  // empty tree where the server streamed the page, throws the server HTML
+  // away and re-renders it — a visible flash of half-styled, misaligned
+  // components on every full page load.
+  const lazyMatches = matchRoutes(routes, window.location)?.filter(
+    (m) => typeof m.route.lazy === "function",
+  );
+  if (lazyMatches?.length) {
+    await Promise.all(
+      lazyMatches.map(async (m) => {
+        const load = m.route.lazy as () => Promise<Record<string, unknown>>;
+        Object.assign(m.route, { ...(await load()), lazy: undefined });
+      }),
+    );
+  }
+
+  const router = createBrowserRouter(routes);
 
   hydrateRoot(
     document.getElementById("root")!,
