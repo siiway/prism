@@ -1731,10 +1731,23 @@ export function TeamDetail() {
                   </Text>
                 </div>
 
+                {/* Shown but disabled until a site admin grants it, with
+                    the reason right under the switch. */}
                 {!team.invite_registration_granted ? (
-                  <MessageBar intent="info">
-                    {t("teams.inviteRegNotGranted")}
-                  </MessageBar>
+                  <div>
+                    <Switch
+                      label={t("teams.inviteRegEnable")}
+                      checked={false}
+                      disabled
+                    />
+                    <Text
+                      size={200}
+                      block
+                      style={{ color: tokens.colorNeutralForeground3 }}
+                    >
+                      {t("teams.inviteRegNotGranted")}
+                    </Text>
+                  </div>
                 ) : (
                   <>
                     <Switch

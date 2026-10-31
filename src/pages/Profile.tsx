@@ -164,7 +164,9 @@ export function Profile() {
   const { data: connectionsData } = useQuery({
     queryKey: ["connections"],
     queryFn: api.listConnections,
-    enabled: !!me?.user.profile_is_public,
+    // The README card shows whenever public profiles are on, and its GitHub
+    // option is disabled without a linked account, so load this for it.
+    enabled: !!me && (site?.enable_public_profiles ?? true),
   });
   const githubConnections = (connectionsData?.connections ?? []).filter(
     (c) => c.provider === "github",
@@ -807,7 +809,17 @@ export function Profile() {
             kb: Math.floor(readmeMaxBytes / 1024),
           })}
         >
-          <SettingsRow label={t("profile.readmeSourceLabel")}>
+          <SettingsRow
+            label={t("profile.readmeSourceLabel")}
+            description={
+              connectionsData &&
+              githubConnections.length === 0 && (
+                <Link onClick={() => navigate("/connections")}>
+                  {t("profile.readmeLinkGithub")}
+                </Link>
+              )
+            }
+          >
             <RadioGroup
               layout="horizontal"
               aria-label={t("profile.readmeSourceLabel")}
@@ -830,7 +842,14 @@ export function Profile() {
               }}
             >
               <Radio value="manual" label={t("profile.readmeSourceManual")} />
-              <Radio value="github" label={t("profile.readmeSourceGithub")} />
+              <Radio
+                value="github"
+                label={t("profile.readmeSourceGithub")}
+                disabled={
+                  githubConnections.length === 0 &&
+                  me.user.profile_readme_source !== "github"
+                }
+              />
             </RadioGroup>
           </SettingsRow>
 

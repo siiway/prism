@@ -28,6 +28,7 @@ import {
   MenuPopover,
   MenuTrigger,
   MessageBar,
+  MessageBarActions,
   MessageBarBody,
   Option,
   Radio,
@@ -59,6 +60,7 @@ import {
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
 import { PageHeader } from "../components/PageHeader";
@@ -976,6 +978,7 @@ export function Notifications() {
   const { t } = useTranslation();
   const styles = useStyles();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["notification-prefs"],
@@ -1276,11 +1279,21 @@ export function Notifications() {
       {hasTgBot && !showTg && (
         <MessageBar intent="info">
           <MessageBarBody>{t("notifications.tgNoAccount")}</MessageBarBody>
+          <MessageBarActions>
+            <Button size="small" onClick={() => navigate("/connections")}>
+              {t("notifications.linkAccount")}
+            </Button>
+          </MessageBarActions>
         </MessageBar>
       )}
       {hasDiscordBot && discordConnections.length === 0 && (
         <MessageBar intent="info">
           <MessageBarBody>{t("notifications.discordNoAccount")}</MessageBarBody>
+          <MessageBarActions>
+            <Button size="small" onClick={() => navigate("/connections")}>
+              {t("notifications.linkAccount")}
+            </Button>
+          </MessageBarActions>
         </MessageBar>
       )}
 

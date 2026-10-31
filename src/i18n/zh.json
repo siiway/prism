@@ -125,7 +125,7 @@
     "loginFailed": "登录失败",
     "registrationFailed": "注册失败",
     "registrationSuccessEmail": "注册成功！请查收邮件以验证您的账户。",
-    "emailOrUsernameRequired": "请先输入您的邮箱或用户名",
+    "emailOrUsernameRequired": "输入邮箱或用户名后即可使用 GPG 登录。",
     "errorInvalidToken": "此链接无效或已过期，请重新登录。",
     "errorNoToken": "未提供认证令牌，请重新登录。",
     "errorGeneric": "发生错误，请重新登录。",
@@ -279,7 +279,8 @@
     "usernameDesc": "用于登录，也出现在你的个人主页链接中。",
     "emailAddressesDesc": "主邮箱会收到登录和账户相关的邮件。",
     "addEmailDesc": "我们会向新邮箱发送一封验证邮件。",
-    "publicProfileFollowingDefaultLong": "跟随站点默认设置"
+    "publicProfileFollowingDefaultLong": "跟随站点默认设置",
+    "readmeLinkGithub": "关联一个 GitHub 账号即可使用其个人主页 README。"
   },
   "security": {
     "title": "安全",
@@ -950,7 +951,7 @@
     "capabilityDeny": "不允许",
     "inviteRegTitle": "邀请链接注册",
     "inviteRegDesc": "让没有 Prism 账号的人通过专用页面直接注册并加入本团队。以这种方式创建的账号，Prism 的大部分功能是关闭的。",
-    "inviteRegNotGranted": "站点管理员尚未授权本团队使用邀请链接注册。请先联系管理员开启。",
+    "inviteRegNotGranted": "站点管理员尚未允许本团队使用邀请链接注册，请联系管理员开启。",
     "inviteRegEnable": "接受通过邀请链接注册",
     "inviteRegPageLink": "注册页面",
     "inviteRegExemptEmail": "本团队的邀请注册路径已跳过邮箱验证（由站点管理员设置）。",
@@ -1629,7 +1630,7 @@
     "tgNotifyDesc": "通过 Telegram 机器人向用户发送通知消息。机器人令牌来自所选 OAuth 来源。用户需关联 Telegram 账号并在通知页面订阅对应事件。",
     "tgNotifyBot": "通知机器人",
     "tgNotifyNone": "已禁用",
-    "tgNotifyNoSources": "未找到已启用的 Telegram OAuth 来源，请先在「Admin → OAuth 来源」中添加。",
+    "tgNotifyNoSources": "还没有已启用的 Telegram OAuth 来源。",
     "discordNotifyTitle": "Discord",
     "discordNotifyToggle": "启用 Discord 推送",
     "discordNotifyDesc": "通过 Discord 机器人向用户发送私聊通知。Discord OAuth client secret 与 bot token 是两个不同凭据；请在下方单独填写 bot token。用户需关联 Discord 账号并在通知页面订阅对应事件。",
@@ -1637,7 +1638,7 @@
     "discordBotToken": "Discord bot token",
     "discordNotifyBot": "通知机器人",
     "discordNotifyNone": "已禁用",
-    "discordNotifyNoSources": "未找到已启用的 Discord OAuth 来源，请先在「Admin → OAuth 来源」中添加。",
+    "discordNotifyNoSources": "还没有已启用的 Discord OAuth 来源。",
     "thirdPartySaved": "已保存",
     "thirdPartySaveFailed": "保存失败",
     "emailReceiveProvider": "接收方式",
@@ -2175,7 +2176,8 @@
     "deleteNoticeBody": "{{title}} 将对所有人移除，连同谁关闭过它的记录一并删除。若只是想收回，请改用「取消发布」保留为草稿。",
     "noticesUnavailable": "公告板不可用",
     "noticesUnknown": "无法加载公告。",
-    "dbAppendOnlyNotice": "审计日志在这里是只追加的：无论任何设置，{{tables}} 都不能通过该控制台修改。正是它让其他所有管理操作可被追责。"
+    "dbAppendOnlyNotice": "审计日志在这里是只追加的：无论任何设置，{{tables}} 都不能通过该控制台修改。正是它让其他所有管理操作可被追责。",
+    "addOAuthSource": "去添加"
   },
   "webhooks": {
     "title": "Webhooks",
@@ -2225,8 +2227,8 @@
     "allEvents": "所有事件",
     "noDestinations": "暂时没有可以接收通知的地方。请验证一个邮箱地址，或关联 Telegram 或 Discord 账号。",
     "noEmail": "此服务器未配置邮件通知。",
-    "tgNoAccount": "请在「个人资料 → 关联账号」中关联 Telegram 账号，以接收 Telegram 通知。",
-    "discordNoAccount": "请在「个人资料 → 关联账号」中关联 Discord 账号，以接收 Discord 通知。",
+    "tgNoAccount": "关联 Telegram 账号后即可接收 Telegram 通知。",
+    "discordNoAccount": "关联 Discord 账号后即可接收 Discord 通知。",
     "emailChannel": "邮件",
     "tgChannel": "Telegram",
     "tgAccountLabel": "TG {{account}}",
@@ -2330,7 +2332,8 @@
     "rulesetsStop": "匹配后停止处理后续规则",
     "rulesetActiveOverride": "已激活的规则集（\"{{name}}\"）正在覆盖下方的逐事件规则。",
     "rulesTab": "通知",
-    "auditTab": "审计日志"
+    "auditTab": "审计日志",
+    "linkAccount": "关联账号"
   },
   "verifyChoose": {
     "title": "验证您的邮箱",

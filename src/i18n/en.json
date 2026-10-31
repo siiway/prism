@@ -125,7 +125,7 @@
     "loginFailed": "Login failed",
     "registrationFailed": "Registration failed",
     "registrationSuccessEmail": "Registration successful! Please check your email to verify your account.",
-    "emailOrUsernameRequired": "Please enter your email or username first",
+    "emailOrUsernameRequired": "Enter your email or username to sign in with GPG.",
     "errorInvalidToken": "This link is invalid or has expired. Please sign in again.",
     "errorNoToken": "No authentication token was provided. Please sign in again.",
     "errorGeneric": "An error occurred. Please sign in again.",
@@ -279,7 +279,8 @@
     "usernameDesc": "Used to sign in and in your profile link.",
     "emailAddressesDesc": "Your primary address receives sign-in and account emails.",
     "addEmailDesc": "We'll send a verification link to the new address.",
-    "publicProfileFollowingDefaultLong": "Following the site default"
+    "publicProfileFollowingDefaultLong": "Following the site default",
+    "readmeLinkGithub": "Link a GitHub account to use its profile README."
   },
   "security": {
     "title": "Security",
@@ -950,7 +951,7 @@
     "capabilityDeny": "Not allowed",
     "inviteRegTitle": "Invite-link registration",
     "inviteRegDesc": "Lets people without a Prism account sign up straight into this team from a dedicated page. Accounts created this way have most Prism features switched off.",
-    "inviteRegNotGranted": "A site administrator has not authorised this team for invite-link registration. Ask them to enable it first.",
+    "inviteRegNotGranted": "A site administrator hasn’t allowed this team to use invite-link registration. Ask them to turn it on.",
     "inviteRegEnable": "Accept registrations through invite links",
     "inviteRegPageLink": "Registration page",
     "inviteRegExemptEmail": "This team's invite path skips email verification (set by a site administrator).",
@@ -1629,7 +1630,7 @@
     "tgNotifyDesc": "Send notification messages to users via a Telegram bot. The bot token is taken from the selected OAuth source. Users must link their Telegram account and opt in to events on their Notifications page.",
     "tgNotifyBot": "Notification bot",
     "tgNotifyNone": "Disabled",
-    "tgNotifyNoSources": "No enabled Telegram OAuth sources found. Add one under Admin → OAuth Sources first.",
+    "tgNotifyNoSources": "No enabled Telegram OAuth sources yet.",
     "discordNotifyTitle": "Discord",
     "discordNotifyToggle": "Enable Discord push",
     "discordNotifyDesc": "Send notification direct messages to users via a Discord bot. Discord OAuth client secrets and bot tokens are separate; paste the bot token below. Users must link their Discord account and opt in to events on their Notifications page.",
@@ -1637,7 +1638,7 @@
     "discordBotToken": "Discord bot token",
     "discordNotifyBot": "Notification bot",
     "discordNotifyNone": "Disabled",
-    "discordNotifyNoSources": "No enabled Discord OAuth sources found. Add one under Admin → OAuth Sources first.",
+    "discordNotifyNoSources": "No enabled Discord OAuth sources yet.",
     "thirdPartySaved": "Saved",
     "thirdPartySaveFailed": "Failed to save",
     "emailReceiveProvider": "Receive Provider",
@@ -2175,7 +2176,8 @@
     "deleteNoticeBody": "{{title}} is removed for everyone, along with the record of who dismissed it. Unpublishing keeps it as a draft instead.",
     "noticesUnavailable": "Notice board unavailable",
     "noticesUnknown": "Could not load notices.",
-    "dbAppendOnlyNotice": "The audit log is append-only here: {{tables}} cannot be modified from this console at any setting. It is what makes every other admin action accountable."
+    "dbAppendOnlyNotice": "The audit log is append-only here: {{tables}} cannot be modified from this console at any setting. It is what makes every other admin action accountable.",
+    "addOAuthSource": "Add one"
   },
   "webhooks": {
     "title": "Webhooks",
@@ -2225,8 +2227,8 @@
     "allEvents": "All events",
     "noDestinations": "There's nowhere to send notifications yet. Verify an email address or link a Telegram or Discord account.",
     "noEmail": "Email notifications are not configured on this server.",
-    "tgNoAccount": "Link a Telegram account under Profile → Linked Accounts to receive Telegram notifications.",
-    "discordNoAccount": "Link a Discord account under Profile → Linked Accounts to receive Discord notifications.",
+    "tgNoAccount": "Link a Telegram account to receive Telegram notifications.",
+    "discordNoAccount": "Link a Discord account to receive Discord notifications.",
     "emailChannel": "Email",
     "tgChannel": "Telegram",
     "tgAccountLabel": "TG {{account}}",
@@ -2330,7 +2332,8 @@
     "rulesetsStop": "Stop processing further rules after this match",
     "rulesetActiveOverride": "An active ruleset (\"{{name}}\") is currently overriding the per-event rules below.",
     "rulesTab": "Notifications",
-    "auditTab": "Audit log"
+    "auditTab": "Audit log",
+    "linkAccount": "Link account"
   },
   "verifyChoose": {
     "title": "Verify Your Email",

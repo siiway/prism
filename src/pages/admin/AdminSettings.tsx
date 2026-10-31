@@ -18,6 +18,7 @@ import {
   Switch,
   Tab,
   TabList,
+  Link,
   Text,
   Textarea,
   Subtitle2,
@@ -2045,7 +2046,10 @@ export function AdminSettings() {
                     size={200}
                     style={{ color: tokens.colorNeutralForeground3 }}
                   >
-                    {t("admin.tgNotifyNoSources")}
+                    {t("admin.tgNotifyNoSources")}{" "}
+                    <Link onClick={() => navigate("/admin/connections")}>
+                      {t("admin.addOAuthSource")}
+                    </Link>
                   </Text>
                 )}
                 <div>
@@ -2134,7 +2138,10 @@ export function AdminSettings() {
                     size={200}
                     style={{ color: tokens.colorNeutralForeground3 }}
                   >
-                    {t("admin.discordNotifyNoSources")}
+                    {t("admin.discordNotifyNoSources")}{" "}
+                    <Link onClick={() => navigate("/admin/connections")}>
+                      {t("admin.addOAuthSource")}
+                    </Link>
                   </Text>
                 )}
                 <div>
