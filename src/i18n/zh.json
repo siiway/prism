@@ -272,7 +272,14 @@
     "altEmailLoginHint": "允许使用备用邮箱地址登录，而不仅限于主邮箱。",
     "altEmailDefault": "站点默认",
     "altEmailAllow": "允许",
-    "altEmailDeny": "禁止"
+    "altEmailDeny": "禁止",
+    "subtitle": "你在他人和所登录的应用面前的样子。",
+    "basicInformationDesc": "你的名字和头像。",
+    "avatarLabel": "头像",
+    "usernameDesc": "用于登录，也出现在你的个人主页链接中。",
+    "emailAddressesDesc": "主邮箱会收到登录和账户相关的邮件。",
+    "addEmailDesc": "我们会向新邮箱发送一封验证邮件。",
+    "publicProfileFollowingDefaultLong": "跟随站点默认设置"
   },
   "security": {
     "title": "安全",
@@ -353,7 +360,7 @@
     "sessionRevoked": "会话已撤销",
     "failedRevokeSession": "撤销会话失败",
     "revokeSession": "撤销",
-    "revokeAllSessions": "撤销所有其他会话",
+    "revokeAllSessions": "退出其他所有会话",
     "revokeAllConfirm": "这会将除当前会话外的所有会话登出。确定继续吗？",
     "sessionsRevokedCount": "已撤销 {{n}} 个会话",
     "twoFaEnabled": "2FA 已启用",
@@ -424,7 +431,22 @@
     "oauthSettingsSaved": "OAuth 设置已保存",
     "tokenTtlSaveFailed": "保存令牌有效期失败",
     "oauthSettingsSaveFailed": "保存 OAuth 设置失败",
-    "tokenTtlInvalid": "令牌有效期必须是正整数或留空"
+    "tokenTtlInvalid": "令牌有效期必须是正整数或留空",
+    "subtitle": "你的登录方式、保护账户的第二重验证，以及你在哪些地方处于登录状态。",
+    "passwordTitle": "密码",
+    "passwordDesc": "修改用于登录的密码。",
+    "noAuthenticators": "还没有身份验证器应用。",
+    "noPasskeys": "还没有通行密钥。",
+    "noGpgKeys": "还没有 GPG 密钥。",
+    "addedOn": "添加于 {{date}}",
+    "lastUsedOn": "上次使用 {{date}}",
+    "neverUsed": "从未使用",
+    "signedInOn": "登录于 {{date}}",
+    "details": "详情",
+    "backupCodesTitle": "备用码",
+    "addAuthenticatorDesc": "起个名字以便区分设备，下一步用应用扫描二维码。",
+    "addPasskeyDesc": "起个名字以便区分设备，随后浏览器会引导你创建通行密钥。",
+    "sessionsDesc": "当前登录了你账户的浏览器和设备。"
   },
   "dashboard": {
     "welcomeBack": "欢迎回来，{{name}}！",

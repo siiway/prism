@@ -1,0 +1,269 @@
+// Building blocks for account settings pages (Profile, Security), laid out
+// like the Cloudflare dashboard's profile pages: a narrow column of cards,
+// each with a title, a one-line description and an optional action on the
+// right, holding either divided rows (label left, control right) or a padded
+// form. Add flows open from the card's action instead of sitting open.
+
+import {
+  MessageBar,
+  Subtitle2,
+  Text,
+  makeStyles,
+  mergeClasses,
+  tokens,
+} from "@fluentui/react-components";
+import type { ReactNode } from "react";
+
+const NARROW = "@media (max-width: 640px)";
+
+const useStyles = makeStyles({
+  page: {
+    maxWidth: "960px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "20px",
+  },
+  // Keeps the latest result in view while scrolled down a long page.
+  toast: {
+    position: "sticky",
+    top: "8px",
+    zIndex: 2,
+  },
+  card: {
+    "--card-pad": "24px",
+    [NARROW]: { "--card-pad": "16px" },
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusXLarge,
+    background: tokens.colorNeutralBackground1,
+  },
+  head: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: "12px 16px",
+    padding: "20px var(--card-pad) 16px",
+  },
+  titles: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    flex: "1 1 320px",
+    minWidth: 0,
+  },
+  titleLine: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
+  muted: {
+    color: tokens.colorNeutralForeground3,
+  },
+  action: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flexShrink: 0,
+  },
+  body: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    padding: "16px var(--card-pad) 20px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  row: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px 16px",
+    minHeight: "60px",
+    padding: "12px var(--card-pad)",
+    boxSizing: "border-box",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    [NARROW]: { flexWrap: "wrap" },
+  },
+  rowIcon: {
+    display: "inline-flex",
+    flexShrink: 0,
+    fontSize: "20px",
+    color: tokens.colorNeutralForeground3,
+  },
+  rowText: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+    flex: "1 1 240px",
+    minWidth: 0,
+  },
+  rowLabel: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "6px",
+    minWidth: 0,
+    overflowWrap: "anywhere",
+  },
+  rowControl: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: "8px",
+    flexShrink: 0,
+    maxWidth: "100%",
+    [NARROW]: { justifyContent: "flex-start" },
+  },
+  subhead: {
+    padding: "10px var(--card-pad)",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: tokens.colorNeutralBackground2,
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  empty: {
+    padding: "16px var(--card-pad)",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    color: tokens.colorNeutralForeground3,
+  },
+  footer: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: "8px",
+    padding: "12px var(--card-pad)",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  footerStart: {
+    marginRight: "auto",
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+});
+
+export function SettingsPage({ children }: { children: ReactNode }) {
+  const styles = useStyles();
+  return <div className={styles.page}>{children}</div>;
+}
+
+export function SettingsToast({
+  message,
+}: {
+  message: { type: "success" | "error"; text: string } | null;
+}) {
+  const styles = useStyles();
+  if (!message) return null;
+  return (
+    <div className={styles.toast} role="status">
+      <MessageBar intent={message.type === "success" ? "success" : "error"}>
+        {message.text}
+      </MessageBar>
+    </div>
+  );
+}
+
+interface SettingsCardProps {
+  title: string;
+  description?: ReactNode;
+  /** Shown beside the title, e.g. an Enabled badge. */
+  badge?: ReactNode;
+  /** Top-right of the card, e.g. an Add button. */
+  action?: ReactNode;
+  children?: ReactNode;
+}
+
+export function SettingsCard({
+  title,
+  description,
+  badge,
+  action,
+  children,
+}: SettingsCardProps) {
+  const styles = useStyles();
+  return (
+    <section className={styles.card}>
+      <div className={styles.head}>
+        <div className={styles.titles}>
+          <div className={styles.titleLine}>
+            <Subtitle2 as="h2">{title}</Subtitle2>
+            {badge}
+          </div>
+          {description && (
+            <Text size={200} className={styles.muted}>
+              {description}
+            </Text>
+          )}
+        </div>
+        {action && <div className={styles.action}>{action}</div>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Padded content (a form, an editor) below the card header. */
+export function SettingsBody({ children }: { children: ReactNode }) {
+  const styles = useStyles();
+  return <div className={styles.body}>{children}</div>;
+}
+
+interface SettingsRowProps {
+  icon?: ReactNode;
+  label: ReactNode;
+  description?: ReactNode;
+  /** Controls on the right: a switch, a short input, row actions. */
+  children?: ReactNode;
+  className?: string;
+}
+
+export function SettingsRow({
+  icon,
+  label,
+  description,
+  children,
+  className,
+}: SettingsRowProps) {
+  const styles = useStyles();
+  return (
+    <div className={mergeClasses(styles.row, className)}>
+      {icon && <span className={styles.rowIcon}>{icon}</span>}
+      <div className={styles.rowText}>
+        <div className={styles.rowLabel}>{label}</div>
+        {description && (
+          <Text size={200} className={styles.muted}>
+            {description}
+          </Text>
+        )}
+      </div>
+      {children && <div className={styles.rowControl}>{children}</div>}
+    </div>
+  );
+}
+
+/** A quiet heading between groups of rows. */
+export function SettingsSubhead({ children }: { children: ReactNode }) {
+  const styles = useStyles();
+  return <div className={styles.subhead}>{children}</div>;
+}
+
+export function SettingsEmpty({ children }: { children: ReactNode }) {
+  const styles = useStyles();
+  return <div className={styles.empty}>{children}</div>;
+}
+
+export function SettingsFooter({
+  start,
+  children,
+}: {
+  /** Left-aligned note, e.g. a byte count. */
+  start?: ReactNode;
+  children: ReactNode;
+}) {
+  const styles = useStyles();
+  return (
+    <div className={styles.footer}>
+      {start && <span className={styles.footerStart}>{start}</span>}
+      {children}
+    </div>
+  );
+}

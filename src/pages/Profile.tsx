@@ -1,4 +1,5 @@
-// User profile page
+// Profile page: how the account appears (name, avatar, emails) and what the
+// public profile shares. Password and sign-in methods live on Security.
 
 import {
   Avatar,
@@ -8,24 +9,21 @@ import {
   Field,
   Input,
   Link,
-  MessageBar,
   Option,
   Radio,
   RadioGroup,
   Spinner,
   Switch,
-  Text,
   Textarea,
   Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import {
-  AddRegular,
-  ArrowUpRegular,
   DeleteRegular,
-  GlobeRegular,
   MailRegular,
+  OpenRegular,
+  PeopleTeamRegular,
 } from "@fluentui/react-icons";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -39,49 +37,93 @@ import { ImageUrlInput } from "../components/ImageUrlInput";
 import { PageHeader } from "../components/PageHeader";
 import { PasswordInput } from "../components/PasswordInput";
 import {
+  SettingsBody,
+  SettingsCard,
+  SettingsFooter,
+  SettingsPage,
+  SettingsRow,
+  SettingsSubhead,
+  SettingsToast,
+} from "../components/Settings";
+import {
   SkeletonProfileCard,
   SkeletonEmailCard,
   SkeletonFormCard,
 } from "../components/Skeletons";
 
 const useStyles = makeStyles({
-  page: { display: "flex", flexDirection: "column", gap: "20px" },
-  card: {
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "10px",
-    padding: "18px",
-    background: tokens.colorNeutralBackground1,
+  input: { width: "300px", maxWidth: "100%" },
+  urlInput: { width: "360px", maxWidth: "100%" },
+  dropdown: { minWidth: "0", width: "200px" },
+  value: { color: tokens.colorNeutralForeground2 },
+  readme: { fontFamily: tokens.fontFamilyMonospace },
+  hiddenInput: { display: "none" },
+  linkIcon: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    fontSize: tokens.fontSizeBase300,
+  },
+  formNarrow: {
     display: "flex",
     flexDirection: "column",
-    gap: "16px",
-  },
-  avatarRow: { display: "flex", alignItems: "center", gap: "20px" },
-  form: { display: "flex", flexDirection: "column", gap: "10px" },
-  row: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "10px",
-    "@media (max-width: 600px)": {
-      gridTemplateColumns: "1fr",
-    },
-  },
-  actions: { display: "flex", gap: "8px" },
-  emailRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "6px 12px",
-    borderRadius: "6px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground1,
-  },
-  emailActions: {
-    display: "flex",
-    gap: "4px",
-    marginLeft: "auto",
-    flexShrink: 0,
+    gap: "12px",
+    maxWidth: "420px",
   },
 });
+
+const PUBLIC_FIELDS = [
+  [
+    "profile_show_display_name",
+    "default_profile_show_display_name",
+    "profile.publicProfileShowDisplayName",
+  ],
+  [
+    "profile_show_avatar",
+    "default_profile_show_avatar",
+    "profile.publicProfileShowAvatar",
+  ],
+  [
+    "profile_show_email",
+    "default_profile_show_email",
+    "profile.publicProfileShowEmail",
+  ],
+  [
+    "profile_show_joined_at",
+    "default_profile_show_joined_at",
+    "profile.publicProfileShowJoinedAt",
+  ],
+  [
+    "profile_show_gpg_keys",
+    "default_profile_show_gpg_keys",
+    "profile.publicProfileShowGpgKeys",
+  ],
+  [
+    "profile_show_authorized_apps",
+    "default_profile_show_authorized_apps",
+    "profile.publicProfileShowAuthorizedApps",
+  ],
+  [
+    "profile_show_owned_apps",
+    "default_profile_show_owned_apps",
+    "profile.publicProfileShowOwnedApps",
+  ],
+  [
+    "profile_show_domains",
+    "default_profile_show_domains",
+    "profile.publicProfileShowDomains",
+  ],
+  [
+    "profile_show_joined_teams",
+    "default_profile_show_joined_teams",
+    "profile.publicProfileShowJoinedTeams",
+  ],
+  [
+    "profile_show_readme",
+    "default_profile_show_readme",
+    "profile.publicProfileShowReadme",
+  ],
+] as const;
 
 export function Profile() {
   const api = useApi();
@@ -147,8 +189,6 @@ export function Profile() {
   const [avatarUrl, setAvatarUrl] = useState(user?.unproxied_avatar_url ?? "");
   const [saveLoading, setSaveLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
-  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
-  const [pwLoading, setPwLoading] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [emailLoading, setEmailLoading] = useState(false);
   const [savingVisibility, setSavingVisibility] = useState<string | null>(null);
@@ -168,6 +208,12 @@ export function Profile() {
     setReadme(me.user.profile_readme ?? "");
     setReadmeLoaded(true);
   }
+
+  const profileDirty =
+    !!me &&
+    (displayName.trim() !== (me.user.display_name ?? "") ||
+      (!r2Enabled &&
+        avatarUrl.trim() !== (me.user.unproxied_avatar_url ?? "")));
 
   const handleSave = async () => {
     setSaveLoading(true);
@@ -333,68 +379,96 @@ export function Profile() {
     }
   };
 
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pwForm.next !== pwForm.confirm) {
-      showMsg("error", t("profile.passwordMismatch"));
-      return;
-    }
-    setPwLoading(true);
+  const handleAddEmail = async () => {
+    setEmailLoading(true);
     try {
-      await api.changePassword(pwForm.current, pwForm.next);
-      setPwForm({ current: "", next: "", confirm: "" });
-      showMsg("success", t("profile.passwordChanged"));
+      await api.addEmail(newEmail.trim());
+      setNewEmail("");
+      await refetchEmails();
+      showMsg("success", t("profile.emailAdded"));
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError
-          ? err.message
-          : t("profile.passwordChangeFailed"),
+        err instanceof ApiError ? err.message : t("common.error"),
       );
     } finally {
-      setPwLoading(false);
+      setEmailLoading(false);
+    }
+  };
+
+  const emailAction = async (
+    run: () => Promise<unknown>,
+    successKey: string,
+    refresh = false,
+  ) => {
+    try {
+      await run();
+      if (refresh) {
+        await refetchEmails();
+        await qc.invalidateQueries({ queryKey: ["me"] });
+      }
+      showMsg("success", t(successKey));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     }
   };
 
   if (isLoading)
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <SettingsPage>
         <SkeletonProfileCard />
         <SkeletonEmailCard />
         <SkeletonFormCard rows={2} />
-      </div>
+      </SettingsPage>
     );
 
+  const verifiedBadge = (verified: boolean) => (
+    <Badge
+      color={verified ? "success" : "warning"}
+      appearance="tint"
+      size="small"
+    >
+      {verified ? t("profile.verified") : t("profile.unverified")}
+    </Badge>
+  );
+
+  const publicProfiles = (site?.enable_public_profiles ?? true) && !!me;
+
   return (
-    <div className={styles.page}>
-      <PageHeader title={t("profile.title")} style={{ marginBottom: 0 }} />
+    <SettingsPage>
+      <PageHeader
+        title={t("profile.title")}
+        subtitle={t("profile.subtitle")}
+        style={{ marginBottom: 4 }}
+      />
+      <SettingsToast message={message} />
 
-      {message && (
-        <MessageBar intent={message.type === "success" ? "success" : "error"}>
-          {message.text}
-        </MessageBar>
-      )}
-
-      {/* Avatar + basic info */}
-      <div className={styles.card}>
-        <Text weight="semibold" size={400}>
-          {t("profile.basicInformation")}
-        </Text>
-        <div className={styles.avatarRow}>
+      {/* ── Profile details ── */}
+      <SettingsCard
+        title={t("profile.basicInformation")}
+        description={t("profile.basicInformationDesc")}
+      >
+        <SettingsRow
+          label={t("profile.avatarLabel")}
+          description={r2Enabled ? t("profile.avatarFormats") : undefined}
+        >
           <Avatar
             name={me?.user.display_name}
             image={
               me?.user.avatar_url ? { src: me.user.avatar_url } : undefined
             }
-            size={72}
+            size={40}
           />
           {r2Enabled ? (
-            <div>
+            <>
               <input
                 ref={fileRef}
                 type="file"
                 accept="image/*"
-                style={{ display: "none" }}
+                className={styles.hiddenInput}
                 onChange={handleAvatarChange}
               />
               <Button
@@ -408,693 +482,169 @@ export function Profile() {
                   t("profile.changeAvatar")
                 )}
               </Button>
-              <Text
-                size={200}
-                block
-                style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
-              >
-                {t("profile.avatarFormats")}
-              </Text>
-            </div>
-          ) : (
-            <ImageUrlInput
-              label={t("profile.avatarUrl")}
-              value={avatarUrl}
-              onChange={setAvatarUrl}
-              placeholder={t("profile.avatarPlaceholder")}
-            />
-          )}
-        </div>
-
-        <div className={styles.form}>
-          <div className={styles.row}>
-            <Field label={t("profile.usernameLabel")}>
-              <Input
-                value={me?.user.username}
-                readOnly
-                appearance="filled-lighter"
-              />
-            </Field>
-            <Field
-              label={t("profile.emailLabel")}
-              hint={
-                me && !me.user.email_verified ? (
-                  <Button
-                    appearance="transparent"
-                    size="small"
-                    style={{ padding: 0, minWidth: 0, height: "auto" }}
-                    onClick={() => navigate("/verify-choose")}
-                  >
-                    {t("profile.verifyEmail")}
-                  </Button>
-                ) : undefined
-              }
-            >
-              <Input
-                value={me?.user.email}
-                readOnly
-                appearance="filled-lighter"
-                contentAfter={
-                  me?.user.email_verified ? (
-                    <Badge color="success" appearance="filled" size="small">
-                      {t("profile.verified")}
-                    </Badge>
-                  ) : (
-                    <Badge color="warning" appearance="filled" size="small">
-                      {t("profile.unverified")}
-                    </Badge>
-                  )
-                }
-              />
-            </Field>
-          </div>
-          <Field label={t("profile.displayName")}>
-            <Input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
-          </Field>
-          <div className={styles.actions}>
-            <Button
-              appearance="primary"
-              onClick={handleSave}
-              disabled={saveLoading}
-            >
-              {saveLoading ? <Spinner size="tiny" /> : t("common.saveChanges")}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Public profile visibility */}
-      {(site?.enable_public_profiles ?? true) && me && (
-        <div className={styles.card}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              gap: 12,
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text weight="semibold" size={400} block>
-                {t("profile.publicProfileTitle")}
-              </Text>
-              <Text
-                size={200}
-                block
-                style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
-              >
-                {t("profile.publicProfileDesc")}
-              </Text>
-            </div>
-            {me.user.profile_is_public && (
-              <Link
-                href={`/u/${me.user.username}`}
-                target="_blank"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  flexShrink: 0,
-                }}
-              >
-                <GlobeRegular fontSize={14} />
-                {t("profile.viewPublicProfile")}
-              </Link>
-            )}
-          </div>
-          <Switch
-            label={t("profile.makeProfilePublic")}
-            checked={me.user.profile_is_public}
-            disabled={savingVisibility === "profile_is_public"}
-            onChange={(_, d) =>
-              handleVisibilityChange("profile_is_public", d.checked)
-            }
-          />
-          {me.user.profile_is_public && site && (
-            <div
-              className={styles.form}
-              style={{
-                paddingLeft: 12,
-                borderLeft: `2px solid ${tokens.colorNeutralStroke2}`,
-              }}
-            >
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground3 }}
-              >
-                {t("profile.publicProfileFieldsHint")}
-              </Text>
-              {(
-                [
-                  [
-                    "profile_show_display_name",
-                    "default_profile_show_display_name",
-                    "profile.publicProfileShowDisplayName",
-                  ],
-                  [
-                    "profile_show_avatar",
-                    "default_profile_show_avatar",
-                    "profile.publicProfileShowAvatar",
-                  ],
-                  [
-                    "profile_show_email",
-                    "default_profile_show_email",
-                    "profile.publicProfileShowEmail",
-                  ],
-                  [
-                    "profile_show_joined_at",
-                    "default_profile_show_joined_at",
-                    "profile.publicProfileShowJoinedAt",
-                  ],
-                  [
-                    "profile_show_gpg_keys",
-                    "default_profile_show_gpg_keys",
-                    "profile.publicProfileShowGpgKeys",
-                  ],
-                  [
-                    "profile_show_authorized_apps",
-                    "default_profile_show_authorized_apps",
-                    "profile.publicProfileShowAuthorizedApps",
-                  ],
-                  [
-                    "profile_show_owned_apps",
-                    "default_profile_show_owned_apps",
-                    "profile.publicProfileShowOwnedApps",
-                  ],
-                  [
-                    "profile_show_domains",
-                    "default_profile_show_domains",
-                    "profile.publicProfileShowDomains",
-                  ],
-                  [
-                    "profile_show_joined_teams",
-                    "default_profile_show_joined_teams",
-                    "profile.publicProfileShowJoinedTeams",
-                  ],
-                  [
-                    "profile_show_readme",
-                    "default_profile_show_readme",
-                    "profile.publicProfileShowReadme",
-                  ],
-                ] as const
-              ).map(([userKey, siteKey, labelKey]) => {
-                const userValue = me.user[userKey];
-                const siteDefault = site[siteKey];
-                const effective = userValue ?? siteDefault;
-                return (
-                  <Switch
-                    key={userKey}
-                    label={
-                      userValue === null
-                        ? `${t(labelKey)} (${t("profile.publicProfileFollowingDefault")})`
-                        : t(labelKey)
-                    }
-                    checked={effective}
-                    disabled={savingVisibility === userKey}
-                    onChange={(_, d) =>
-                      handleVisibilityChange(userKey, d.checked)
-                    }
-                  />
-                );
-              })}
-              {/* Per-team override list. Surfaced even when the master toggle
-                  is off so users can pin specific teams. */}
-              {myTeams.length > 0 && (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                    marginTop: 8,
-                    paddingTop: 8,
-                    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-                  }}
-                >
-                  <Text
-                    size={200}
-                    style={{ color: tokens.colorNeutralForeground3 }}
-                  >
-                    {t("profile.publicProfilePerTeamHint")}
-                  </Text>
-                  {myTeams.map((team) => {
-                    const masterEffective =
-                      me.user.profile_show_joined_teams ??
-                      site.default_profile_show_joined_teams;
-                    const override = team.show_on_profile;
-                    const resolved =
-                      override === null || override === undefined
-                        ? masterEffective
-                        : override;
-                    const labelSuffix =
-                      override === null || override === undefined
-                        ? ` (${t("profile.publicProfileFollowingDefault")})`
-                        : "";
-                    return (
-                      <div
-                        key={team.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <Switch
-                          label={`${team.name}${labelSuffix}`}
-                          checked={resolved}
-                          disabled={
-                            savingVisibility === `team:${team.id}` ||
-                            !team.profile_is_public
-                          }
-                          onChange={(_, d) =>
-                            handleTeamShowOnProfile(team.id, d.checked)
-                          }
-                        />
-                        {(override === true || override === false) && (
-                          <Button
-                            appearance="subtle"
-                            size="small"
-                            onClick={() =>
-                              handleTeamShowOnProfile(team.id, null)
-                            }
-                          >
-                            {t("profile.publicProfileResetOverride")}
-                          </Button>
-                        )}
-                        {!team.profile_is_public && (
-                          <Text
-                            size={100}
-                            style={{ color: tokens.colorNeutralForeground3 }}
-                          >
-                            {t("profile.publicProfileTeamPrivate")}
-                          </Text>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Profile README — markdown shown on the public profile. Only useful
-          when the public profile is enabled at all, so we hide the card
-          otherwise. */}
-      {(site?.enable_public_profiles ?? true) && me && (
-        <div className={styles.card}>
-          <div>
-            <Text weight="semibold" size={400} block>
-              {t("profile.readmeTitle")}
-            </Text>
-            <Text
-              size={200}
-              block
-              style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
-            >
-              {t("profile.readmeDesc", {
-                kb: Math.floor(readmeMaxBytes / 1024),
-              })}
-            </Text>
-          </div>
-
-          <Field label={t("profile.readmeSourceLabel")}>
-            <RadioGroup
-              value={me.user.profile_readme_source}
-              disabled={readmeSaving}
-              onChange={(_, d) => {
-                const next = d.value as "manual" | "github";
-                if (next === me.user.profile_readme_source) return;
-                if (next === "github") {
-                  // Pick the first available connection by default; if none,
-                  // the picker below will surface the empty state.
-                  const first = githubConnections[0];
-                  if (!first) {
-                    showMsg("error", t("profile.readmeNoGithubConnection"));
-                    return;
-                  }
-                  void handleReadmeSourceChange("github", first.id);
-                } else {
-                  void handleReadmeSourceChange("manual");
-                }
-              }}
-            >
-              <Radio value="manual" label={t("profile.readmeSourceManual")} />
-              <Radio value="github" label={t("profile.readmeSourceGithub")} />
-            </RadioGroup>
-          </Field>
-
-          {me.user.profile_readme_source === "manual" && (
-            <>
-              <Field
-                validationState={readmeOverLimit ? "error" : "none"}
-                validationMessage={
-                  readmeOverLimit
-                    ? t("profile.readmeTooLarge")
-                    : t("profile.readmeBytesUsed", {
-                        used: readmeBytes,
-                        max: readmeMaxBytes,
-                      })
-                }
-              >
-                <Textarea
-                  value={readme}
-                  onChange={(_, d) => setReadme(d.value)}
-                  placeholder={t("profile.readmePlaceholder")}
-                  rows={12}
-                  resize="vertical"
-                  style={{ fontFamily: "monospace" }}
-                />
-              </Field>
-              <div className={styles.actions}>
-                <Button
-                  appearance="primary"
-                  onClick={handleReadmeSave}
-                  disabled={readmeSaving || readmeOverLimit}
-                >
-                  {readmeSaving ? (
-                    <Spinner size="tiny" />
-                  ) : (
-                    t("common.saveChanges")
-                  )}
-                </Button>
-                <input
-                  ref={readmeFileRef}
-                  type="file"
-                  accept=".md,.markdown,text/markdown,text/plain"
-                  style={{ display: "none" }}
-                  onChange={handleReadmeUpload}
-                />
-                <Button
-                  disabled={readmeSaving}
-                  onClick={() => readmeFileRef.current?.click()}
-                >
-                  {t("profile.readmeUpload")}
-                </Button>
-                {readme && (
-                  <Button
-                    appearance="subtle"
-                    disabled={readmeSaving}
-                    onClick={() => setReadme("")}
-                  >
-                    {t("profile.readmeClear")}
-                  </Button>
-                )}
-              </div>
             </>
-          )}
-
-          {me.user.profile_readme_source === "github" && (
-            <div
-              className={styles.form}
-              style={{
-                paddingLeft: 12,
-                borderLeft: `2px solid ${tokens.colorNeutralStroke2}`,
-              }}
-            >
-              <Field
-                label={t("profile.readmeGithubAccount")}
-                hint={
-                  githubConnections.length === 0
-                    ? t("profile.readmeNoGithubConnection")
-                    : undefined
-                }
-                validationState={
-                  githubConnections.length === 0 ? "warning" : "none"
-                }
-              >
-                <Dropdown
-                  value={
-                    me.user.profile_readme_source_meta?.github_login
-                      ? `@${me.user.profile_readme_source_meta.github_login}`
-                      : ""
-                  }
-                  selectedOptions={
-                    me.user.profile_readme_source_meta?.connection_id
-                      ? [me.user.profile_readme_source_meta.connection_id]
-                      : []
-                  }
-                  disabled={readmeSaving || githubConnections.length === 0}
-                  onOptionSelect={(_, d) => {
-                    if (d.optionValue)
-                      void handleReadmeSourceChange("github", d.optionValue);
-                  }}
-                >
-                  {githubConnections.map((conn) => {
-                    const profile = conn.profile as { login?: string } | null;
-                    const login = profile?.login ?? conn.provider_user_id;
-                    return (
-                      <Option key={conn.id} value={conn.id} text={`@${login}`}>
-                        @{login}
-                      </Option>
-                    );
-                  })}
-                </Dropdown>
-              </Field>
-
-              <Field
-                label={t("profile.readmeGithubToken")}
-                hint={
-                  me.user.github_readme_token_set
-                    ? t("profile.readmeGithubTokenSet")
-                    : site?.github_readme_has_site_token
-                      ? t("profile.readmeGithubTokenOptionalSite")
-                      : t("profile.readmeGithubTokenOptionalNoSite")
-                }
-              >
-                <PasswordInput
-                  value={ghTokenInput}
-                  placeholder={
-                    me.user.github_readme_token_set ? "••••••••" : "ghp_…"
-                  }
-                  onChange={(_, d) => setGhTokenInput(d.value)}
-                />
-              </Field>
-              <div className={styles.actions}>
-                <Button
-                  appearance="primary"
-                  disabled={readmeSyncing || readmeSaving}
-                  onClick={handleReadmeSync}
-                >
-                  {readmeSyncing ? (
-                    <Spinner size="tiny" />
-                  ) : (
-                    t("profile.readmeSyncNow")
-                  )}
-                </Button>
-                <Button
-                  disabled={readmeSaving || !ghTokenInput.trim()}
-                  onClick={() => handleGithubTokenSave(ghTokenInput.trim())}
-                >
-                  {t("profile.readmeSaveToken")}
-                </Button>
-                {me.user.github_readme_token_set && (
-                  <Button
-                    appearance="subtle"
-                    disabled={readmeSaving}
-                    onClick={() => handleGithubTokenSave(null)}
-                  >
-                    {t("profile.readmeClearToken")}
-                  </Button>
-                )}
-              </div>
-              {me.user.profile_readme_synced_at && (
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {t("profile.readmeLastSynced", {
-                    when: new Date(
-                      me.user.profile_readme_synced_at * 1000,
-                    ).toLocaleString(),
-                  })}
-                </Text>
-              )}
+          ) : (
+            <div className={styles.urlInput}>
+              <ImageUrlInput
+                label={t("profile.avatarUrl")}
+                hideLabel
+                value={avatarUrl}
+                onChange={setAvatarUrl}
+                placeholder={t("profile.avatarPlaceholder")}
+              />
             </div>
           )}
-        </div>
-      )}
+        </SettingsRow>
+        <SettingsRow label={t("profile.displayName")}>
+          <Input
+            className={styles.input}
+            aria-label={t("profile.displayName")}
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t("profile.usernameLabel")}
+          description={t("profile.usernameDesc")}
+        >
+          <span className={styles.value}>{me?.user.username}</span>
+        </SettingsRow>
+        <SettingsRow label={t("profile.emailLabel")}>
+          <span className={styles.value}>{me?.user.email}</span>
+          {me && verifiedBadge(!!me.user.email_verified)}
+          {me && !me.user.email_verified && (
+            <Button size="small" onClick={() => navigate("/verify-choose")}>
+              {t("profile.verifyEmail")}
+            </Button>
+          )}
+        </SettingsRow>
+        <SettingsFooter>
+          <Button
+            appearance="primary"
+            onClick={handleSave}
+            disabled={saveLoading || !profileDirty}
+          >
+            {saveLoading ? <Spinner size="tiny" /> : t("common.saveChanges")}
+          </Button>
+        </SettingsFooter>
+      </SettingsCard>
 
-      {/* Email addresses */}
-      <div className={styles.card}>
-        <Text weight="semibold" size={400}>
-          {t("profile.emailAddresses")}
-        </Text>
-
-        {/* Primary email */}
+      {/* ── Email addresses ── */}
+      <SettingsCard
+        title={t("profile.emailAddresses")}
+        description={t("profile.emailAddressesDesc")}
+      >
         {emails && (
-          <div className={styles.emailRow}>
-            <MailRegular />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text weight="semibold" style={{ wordBreak: "break-all" }}>
-                {emails.primary.email}
-              </Text>
-              <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
-                <Badge
-                  color={emails.primary.verified ? "success" : "warning"}
-                  appearance="filled"
-                  size="small"
-                >
-                  {emails.primary.verified
-                    ? t("profile.verified")
-                    : t("profile.unverified")}
-                </Badge>
-                <Badge color="informative" appearance="outline" size="small">
+          <SettingsRow
+            icon={<MailRegular />}
+            label={
+              <>
+                <span>{emails.primary.email}</span>
+                <Badge color="brand" appearance="tint" size="small">
                   {t("profile.primary")}
                 </Badge>
-              </div>
-            </div>
+                {verifiedBadge(emails.primary.verified)}
+              </>
+            }
+          >
             {!emails.primary.verified && (
-              <Button
-                appearance="transparent"
-                size="small"
-                onClick={() => navigate("/verify-choose")}
-              >
+              <Button size="small" onClick={() => navigate("/verify-choose")}>
                 {t("profile.verifyEmail")}
               </Button>
             )}
-          </div>
+          </SettingsRow>
         )}
-
-        {/* Alternate emails */}
         {emails?.emails.map((alt) => (
-          <div key={alt.id} className={styles.emailRow}>
-            <MailRegular />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ wordBreak: "break-all" }}>{alt.email}</Text>
-              <div style={{ marginTop: 2 }}>
-                <Badge
-                  color={alt.verified ? "success" : "warning"}
-                  appearance="filled"
-                  size="small"
-                >
-                  {alt.verified
-                    ? t("profile.verified")
-                    : t("profile.unverified")}
-                </Badge>
-              </div>
-            </div>
-            <div className={styles.emailActions}>
-              {!alt.verified && (
-                <Button
-                  appearance="subtle"
-                  size="small"
-                  onClick={async () => {
-                    try {
-                      await api.resendEmailVerify(alt.id);
-                      showMsg("success", t("profile.verifySent"));
-                    } catch (err) {
-                      showMsg(
-                        "error",
-                        err instanceof ApiError
-                          ? err.message
-                          : t("common.error"),
-                      );
-                    }
-                  }}
-                >
-                  {t("profile.resend")}
-                </Button>
-              )}
-              {alt.verified && (
-                <Tooltip
-                  content={t("profile.makePrimary")}
-                  relationship="label"
-                >
-                  <Button
-                    appearance="subtle"
-                    size="small"
-                    icon={<ArrowUpRegular />}
-                    onClick={async () => {
-                      try {
-                        await api.setEmailPrimary(alt.id);
-                        await refetchEmails();
-                        await qc.invalidateQueries({ queryKey: ["me"] });
-                        showMsg("success", t("profile.primaryUpdated"));
-                      } catch (err) {
-                        showMsg(
-                          "error",
-                          err instanceof ApiError
-                            ? err.message
-                            : t("common.error"),
-                        );
-                      }
-                    }}
-                  />
-                </Tooltip>
-              )}
-              <Tooltip content={t("common.remove")} relationship="label">
-                <Button
-                  appearance="subtle"
-                  size="small"
-                  icon={<DeleteRegular />}
-                  onClick={async () => {
-                    try {
-                      await api.removeEmail(alt.id);
-                      await refetchEmails();
-                      showMsg("success", t("profile.emailRemoved"));
-                    } catch (err) {
-                      showMsg(
-                        "error",
-                        err instanceof ApiError
-                          ? err.message
-                          : t("common.error"),
-                      );
-                    }
-                  }}
-                />
-              </Tooltip>
-            </div>
-          </div>
+          <SettingsRow
+            key={alt.id}
+            icon={<MailRegular />}
+            label={
+              <>
+                <span>{alt.email}</span>
+                {verifiedBadge(alt.verified)}
+              </>
+            }
+          >
+            {alt.verified ? (
+              <Button
+                size="small"
+                appearance="subtle"
+                onClick={() =>
+                  emailAction(
+                    () => api.setEmailPrimary(alt.id),
+                    "profile.primaryUpdated",
+                    true,
+                  )
+                }
+              >
+                {t("profile.makePrimary")}
+              </Button>
+            ) : (
+              <Button
+                size="small"
+                appearance="subtle"
+                onClick={() =>
+                  emailAction(
+                    () => api.resendEmailVerify(alt.id),
+                    "profile.verifySent",
+                  )
+                }
+              >
+                {t("profile.resend")}
+              </Button>
+            )}
+            <Tooltip content={t("common.remove")} relationship="label">
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<DeleteRegular />}
+                onClick={() =>
+                  emailAction(
+                    () => api.removeEmail(alt.id),
+                    "profile.emailRemoved",
+                    true,
+                  )
+                }
+              />
+            </Tooltip>
+          </SettingsRow>
         ))}
-
-        {/* Add new email */}
-        <div style={{ display: "flex", gap: 8, alignItems: "end" }}>
-          <Field label={t("profile.addEmail")} style={{ flex: 1 }}>
+        <SettingsRow
+          label={t("profile.addEmail")}
+          description={t("profile.addEmailDesc")}
+        >
+          <form
+            style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (newEmail.trim()) void handleAddEmail();
+            }}
+          >
             <Input
               type="email"
+              className={styles.input}
+              aria-label={t("profile.addEmail")}
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
               placeholder="user@example.com"
             />
-          </Field>
-          <Button
-            appearance="primary"
-            size="small"
-            icon={emailLoading ? <Spinner size="tiny" /> : <AddRegular />}
-            disabled={emailLoading || !newEmail.trim()}
-            onClick={async () => {
-              setEmailLoading(true);
-              try {
-                await api.addEmail(newEmail.trim());
-                setNewEmail("");
-                await refetchEmails();
-                showMsg("success", t("profile.emailAdded"));
-              } catch (err) {
-                showMsg(
-                  "error",
-                  err instanceof ApiError ? err.message : t("common.error"),
-                );
-              } finally {
-                setEmailLoading(false);
-              }
-            }}
-            style={{ marginBottom: 1 }}
-          >
-            {t("common.add")}
-          </Button>
-        </div>
-
-        {/* Per-user alt email login toggle */}
+            <Button
+              type="submit"
+              disabled={emailLoading || !newEmail.trim()}
+              icon={emailLoading ? <Spinner size="tiny" /> : undefined}
+            >
+              {t("common.add")}
+            </Button>
+          </form>
+        </SettingsRow>
         {emails && emails.emails.length > 0 && (
-          <Field
+          <SettingsRow
             label={t("profile.altEmailLogin")}
-            hint={t("profile.altEmailLoginHint")}
+            description={t("profile.altEmailLoginHint")}
           >
             <Dropdown
+              className={styles.dropdown}
+              aria-label={t("profile.altEmailLogin")}
               value={
                 me?.user.alt_email_login === 1
                   ? t("profile.altEmailAllow")
@@ -1131,53 +681,340 @@ export function Profile() {
               <Option value="allow">{t("profile.altEmailAllow")}</Option>
               <Option value="deny">{t("profile.altEmailDeny")}</Option>
             </Dropdown>
-          </Field>
+          </SettingsRow>
         )}
-      </div>
+      </SettingsCard>
 
-      {/* Password change */}
-      <div className={styles.card}>
-        <Text weight="semibold" size={400}>
-          {t("profile.changePassword")}
-        </Text>
-        <form onSubmit={handlePasswordChange} className={styles.form}>
-          <Field label={t("profile.currentPassword")}>
-            <PasswordInput
-              value={pwForm.current}
-              onChange={(e) =>
-                setPwForm((f) => ({ ...f, current: e.target.value }))
+      {/* ── Public profile ── */}
+      {publicProfiles && me && (
+        <SettingsCard
+          title={t("profile.publicProfileTitle")}
+          description={t("profile.publicProfileDesc")}
+          action={
+            me.user.profile_is_public ? (
+              <Link
+                href={`/u/${me.user.username}`}
+                target="_blank"
+                className={styles.linkIcon}
+              >
+                {t("profile.viewPublicProfile")}
+                <OpenRegular />
+              </Link>
+            ) : undefined
+          }
+        >
+          <SettingsRow label={t("profile.makeProfilePublic")}>
+            <Switch
+              aria-label={t("profile.makeProfilePublic")}
+              checked={me.user.profile_is_public}
+              disabled={savingVisibility === "profile_is_public"}
+              onChange={(_, d) =>
+                handleVisibilityChange("profile_is_public", d.checked)
               }
             />
-          </Field>
-          <Field label={t("profile.newPassword")}>
-            <PasswordInput
-              value={pwForm.next}
-              onChange={(e) =>
-                setPwForm((f) => ({ ...f, next: e.target.value }))
-              }
-              placeholder={t("profile.newPasswordPlaceholder")}
-            />
-          </Field>
-          <Field label={t("profile.confirmNewPassword")}>
-            <PasswordInput
-              value={pwForm.confirm}
-              onChange={(e) =>
-                setPwForm((f) => ({ ...f, confirm: e.target.value }))
-              }
-              placeholder={t("profile.confirmNewPasswordPlaceholder")}
-            />
-          </Field>
-          <div className={styles.actions}>
-            <Button appearance="primary" type="submit" disabled={pwLoading}>
-              {pwLoading ? (
-                <Spinner size="tiny" />
-              ) : (
-                t("profile.updatePassword")
+          </SettingsRow>
+          {me.user.profile_is_public && site && (
+            <>
+              <SettingsSubhead>
+                {t("profile.publicProfileFieldsHint")}
+              </SettingsSubhead>
+              {PUBLIC_FIELDS.map(([userKey, siteKey, labelKey]) => {
+                const userValue = me.user[userKey];
+                return (
+                  <SettingsRow
+                    key={userKey}
+                    label={t(labelKey)}
+                    description={
+                      userValue === null
+                        ? t("profile.publicProfileFollowingDefaultLong")
+                        : undefined
+                    }
+                  >
+                    <Switch
+                      aria-label={t(labelKey)}
+                      checked={userValue ?? site[siteKey]}
+                      disabled={savingVisibility === userKey}
+                      onChange={(_, d) =>
+                        handleVisibilityChange(userKey, d.checked)
+                      }
+                    />
+                  </SettingsRow>
+                );
+              })}
+              {/* Per-team overrides of "Teams I'm a member of". */}
+              {myTeams.length > 0 && (
+                <>
+                  <SettingsSubhead>
+                    {t("profile.publicProfilePerTeamHint")}
+                  </SettingsSubhead>
+                  {myTeams.map((team) => {
+                    const masterEffective =
+                      me.user.profile_show_joined_teams ??
+                      site.default_profile_show_joined_teams;
+                    const override = team.show_on_profile;
+                    const following =
+                      override === null || override === undefined;
+                    return (
+                      <SettingsRow
+                        key={team.id}
+                        icon={<PeopleTeamRegular />}
+                        label={team.name}
+                        description={
+                          !team.profile_is_public
+                            ? t("profile.publicProfileTeamPrivate")
+                            : following
+                              ? t("profile.publicProfileFollowingDefaultLong")
+                              : undefined
+                        }
+                      >
+                        {!following && (
+                          <Button
+                            appearance="subtle"
+                            size="small"
+                            onClick={() =>
+                              handleTeamShowOnProfile(team.id, null)
+                            }
+                          >
+                            {t("profile.publicProfileResetOverride")}
+                          </Button>
+                        )}
+                        <Switch
+                          aria-label={team.name}
+                          checked={following ? masterEffective : override}
+                          disabled={
+                            savingVisibility === `team:${team.id}` ||
+                            !team.profile_is_public
+                          }
+                          onChange={(_, d) =>
+                            handleTeamShowOnProfile(team.id, d.checked)
+                          }
+                        />
+                      </SettingsRow>
+                    );
+                  })}
+                </>
               )}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+            </>
+          )}
+        </SettingsCard>
+      )}
+
+      {/* ── README ── */}
+      {publicProfiles && me && (
+        <SettingsCard
+          title={t("profile.readmeTitle")}
+          description={t("profile.readmeDesc", {
+            kb: Math.floor(readmeMaxBytes / 1024),
+          })}
+        >
+          <SettingsRow label={t("profile.readmeSourceLabel")}>
+            <RadioGroup
+              layout="horizontal"
+              aria-label={t("profile.readmeSourceLabel")}
+              value={me.user.profile_readme_source}
+              disabled={readmeSaving}
+              onChange={(_, d) => {
+                const next = d.value as "manual" | "github";
+                if (next === me.user.profile_readme_source) return;
+                if (next === "github") {
+                  // Pick the first available connection by default.
+                  const first = githubConnections[0];
+                  if (!first) {
+                    showMsg("error", t("profile.readmeNoGithubConnection"));
+                    return;
+                  }
+                  void handleReadmeSourceChange("github", first.id);
+                } else {
+                  void handleReadmeSourceChange("manual");
+                }
+              }}
+            >
+              <Radio value="manual" label={t("profile.readmeSourceManual")} />
+              <Radio value="github" label={t("profile.readmeSourceGithub")} />
+            </RadioGroup>
+          </SettingsRow>
+
+          {me.user.profile_readme_source === "manual" && (
+            <>
+              <SettingsBody>
+                <Field
+                  validationState={readmeOverLimit ? "error" : "none"}
+                  validationMessage={
+                    readmeOverLimit ? t("profile.readmeTooLarge") : undefined
+                  }
+                >
+                  <Textarea
+                    aria-label={t("profile.readmeTitle")}
+                    value={readme}
+                    onChange={(_, d) => setReadme(d.value)}
+                    placeholder={t("profile.readmePlaceholder")}
+                    rows={10}
+                    resize="vertical"
+                    textarea={{ className: styles.readme }}
+                  />
+                </Field>
+              </SettingsBody>
+              <SettingsFooter
+                start={t("profile.readmeBytesUsed", {
+                  used: readmeBytes,
+                  max: readmeMaxBytes,
+                })}
+              >
+                <input
+                  ref={readmeFileRef}
+                  type="file"
+                  accept=".md,.markdown,text/markdown,text/plain"
+                  className={styles.hiddenInput}
+                  onChange={handleReadmeUpload}
+                />
+                {readme && (
+                  <Button
+                    appearance="subtle"
+                    disabled={readmeSaving}
+                    onClick={() => setReadme("")}
+                  >
+                    {t("profile.readmeClear")}
+                  </Button>
+                )}
+                <Button
+                  disabled={readmeSaving}
+                  onClick={() => readmeFileRef.current?.click()}
+                >
+                  {t("profile.readmeUpload")}
+                </Button>
+                <Button
+                  appearance="primary"
+                  onClick={handleReadmeSave}
+                  disabled={
+                    readmeSaving ||
+                    readmeOverLimit ||
+                    readme === (me.user.profile_readme ?? "")
+                  }
+                >
+                  {readmeSaving ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    t("common.saveChanges")
+                  )}
+                </Button>
+              </SettingsFooter>
+            </>
+          )}
+
+          {me.user.profile_readme_source === "github" && (
+            <>
+              <SettingsBody>
+                <div className={styles.formNarrow}>
+                  <Field
+                    label={t("profile.readmeGithubAccount")}
+                    hint={
+                      githubConnections.length === 0
+                        ? t("profile.readmeNoGithubConnection")
+                        : undefined
+                    }
+                    validationState={
+                      githubConnections.length === 0 ? "warning" : "none"
+                    }
+                  >
+                    <Dropdown
+                      value={
+                        me.user.profile_readme_source_meta?.github_login
+                          ? `@${me.user.profile_readme_source_meta.github_login}`
+                          : ""
+                      }
+                      selectedOptions={
+                        me.user.profile_readme_source_meta?.connection_id
+                          ? [me.user.profile_readme_source_meta.connection_id]
+                          : []
+                      }
+                      disabled={readmeSaving || githubConnections.length === 0}
+                      onOptionSelect={(_, d) => {
+                        if (d.optionValue)
+                          void handleReadmeSourceChange(
+                            "github",
+                            d.optionValue,
+                          );
+                      }}
+                    >
+                      {githubConnections.map((conn) => {
+                        const profile = conn.profile as {
+                          login?: string;
+                        } | null;
+                        const login = profile?.login ?? conn.provider_user_id;
+                        return (
+                          <Option
+                            key={conn.id}
+                            value={conn.id}
+                            text={`@${login}`}
+                          >
+                            @{login}
+                          </Option>
+                        );
+                      })}
+                    </Dropdown>
+                  </Field>
+                  <Field
+                    label={t("profile.readmeGithubToken")}
+                    hint={
+                      me.user.github_readme_token_set
+                        ? t("profile.readmeGithubTokenSet")
+                        : site?.github_readme_has_site_token
+                          ? t("profile.readmeGithubTokenOptionalSite")
+                          : t("profile.readmeGithubTokenOptionalNoSite")
+                    }
+                  >
+                    <PasswordInput
+                      value={ghTokenInput}
+                      placeholder={
+                        me.user.github_readme_token_set ? "••••••••" : "ghp_…"
+                      }
+                      onChange={(_, d) => setGhTokenInput(d.value)}
+                    />
+                  </Field>
+                </div>
+              </SettingsBody>
+              <SettingsFooter
+                start={
+                  me.user.profile_readme_synced_at
+                    ? t("profile.readmeLastSynced", {
+                        when: new Date(
+                          me.user.profile_readme_synced_at * 1000,
+                        ).toLocaleString(),
+                      })
+                    : undefined
+                }
+              >
+                {me.user.github_readme_token_set && (
+                  <Button
+                    appearance="subtle"
+                    disabled={readmeSaving}
+                    onClick={() => handleGithubTokenSave(null)}
+                  >
+                    {t("profile.readmeClearToken")}
+                  </Button>
+                )}
+                <Button
+                  disabled={readmeSaving || !ghTokenInput.trim()}
+                  onClick={() => handleGithubTokenSave(ghTokenInput.trim())}
+                >
+                  {t("profile.readmeSaveToken")}
+                </Button>
+                <Button
+                  appearance="primary"
+                  disabled={readmeSyncing || readmeSaving}
+                  onClick={handleReadmeSync}
+                >
+                  {readmeSyncing ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    t("profile.readmeSyncNow")
+                  )}
+                </Button>
+              </SettingsFooter>
+            </>
+          )}
+        </SettingsCard>
+      )}
+    </SettingsPage>
   );
 }
