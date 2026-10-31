@@ -54,6 +54,9 @@ export interface SearchEntry {
   icon: FluentIcon;
   /** Found by a server-side search (it may match fields not shown here). */
   remote?: boolean;
+  /** A site-wide (admin) result: open it with the site-admin override on,
+   *  as entering a resource from the admin panel does. */
+  adminAuthority?: boolean;
 }
 
 const plain = (text: string): Label => ({ text, all: [text] });
@@ -197,6 +200,7 @@ export function useRemoteEntries(query: string): {
         to: hit.url,
         icon: KIND_ICONS[hit.kind],
         remote: true,
+        adminAuthority: hit.admin,
       })),
     [data, t],
   );

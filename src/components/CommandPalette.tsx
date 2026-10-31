@@ -13,6 +13,7 @@ import { ArrowEnterLeftRegular, SearchRegular } from "@fluentui/react-icons";
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { useAdminViewStore } from "../store/adminView";
 import {
   searchEntries,
   useRemoteEntries,
@@ -196,9 +197,15 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
   // ranked, and group labels would only interrupt the ranking.
   const grouped = query.trim() === "";
 
+  const setNormalView = useAdminViewStore((s) => s.setNormalView);
   const go = (r: SearchResult | undefined) => {
     if (!r) return;
     onClose();
+    // Admin results (any user's app or team) need the site-admin override,
+    // which is otherwise only switched on by navigating via the admin panel;
+    // without it the request counts as the admin's own membership and
+    // resources they don't belong to answer 403.
+    if (r.entry.adminAuthority) setNormalView(false);
     navigate(r.entry.to);
   };
 

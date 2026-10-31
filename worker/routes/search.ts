@@ -16,6 +16,7 @@ import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth";
 import { likePattern } from "../lib/pagination";
 import type { Variables } from "../types";
+import { listEffectiveTeamMemberships } from "./teams";
 
 const RESULT_LIMIT = 5;
 const MIN_QUERY = 2;
@@ -60,37 +61,55 @@ app.get("/", async (c) => {
 
   const lookups: Lookup[] = [];
 
+  // Teams the user can open: direct memberships plus, when the site has
+  // membership inheritance on, every sub-team of those (the same set the
+  // team list shows). Their names are matched here; their apps in SQL.
+  const ownTeams: SearchHit[] = [];
+  let effectiveTeamIds: string[] = [];
+  if (!isAdmin) {
+    const memberships = await listEffectiveTeamMemberships(db, user.id);
+    effectiveTeamIds = memberships.map((m) => m.team.id);
+    const needle = q.toLowerCase();
+    ownTeams.push(
+      ...memberships
+        .filter((m) => m.team.name.toLowerCase().includes(needle))
+        .sort((a, b) => b.team.created_at - a.team.created_at)
+        .slice(0, RESULT_LIMIT)
+        .map((m) => ({
+          kind: "team" as const,
+          admin: false,
+          id: m.team.id,
+          title: m.team.name,
+          subtitle: null,
+          url: `/teams/${m.team.id}`,
+        })),
+    );
+  }
+
   if (!isAdmin) {
     lookups.push(
       {
         kind: "app",
         admin: false,
+        // Team ids go in as one JSON array (json_each), so a user in many
+        // teams can't exceed the bound-parameter limit.
         sql: `SELECT a.id, a.name, a.client_id FROM oauth_apps a
               WHERE ((a.owner_id = ? AND a.team_id IS NULL)
-                     OR a.team_id IN (SELECT team_id FROM team_members WHERE user_id = ?))
+                     OR a.team_id IN (SELECT value FROM json_each(?)))
                 AND (LOWER(a.name) LIKE ${ci} OR LOWER(a.client_id) LIKE ${ci})
               ORDER BY a.created_at DESC LIMIT ?`,
-        args: [user.id, user.id, like, like, RESULT_LIMIT],
+        args: [
+          user.id,
+          JSON.stringify(effectiveTeamIds),
+          like,
+          like,
+          RESULT_LIMIT,
+        ],
         map: (r) => ({
           id: String(r.id),
           title: String(r.name),
           subtitle: str(r.client_id),
           url: `/apps/${r.id}`,
-        }),
-      },
-      {
-        kind: "team",
-        admin: false,
-        sql: `SELECT t.id, t.name FROM teams t
-              JOIN team_members tm ON tm.team_id = t.id
-              WHERE tm.user_id = ? AND LOWER(t.name) LIKE ${ci}
-              ORDER BY t.created_at DESC LIMIT ?`,
-        args: [user.id, like, RESULT_LIMIT],
-        map: (r) => ({
-          id: String(r.id),
-          title: String(r.name),
-          subtitle: null,
-          url: `/teams/${r.id}`,
         }),
       },
       {
@@ -234,7 +253,7 @@ app.get("/", async (c) => {
       ...l.map(row),
     })),
   );
-  return c.json({ results });
+  return c.json({ results: [...ownTeams, ...results] });
 });
 
 export default app;
