@@ -27,6 +27,9 @@ const useStyles = makeStyles({
     alignItems: "flex-start",
   },
   typeCol: { width: "130px", flexShrink: 0 },
+  // Fluent's Dropdown ships with a 250px min-width, which overflowed the
+  // 130px column and slid under the URI input. Let it fill the column.
+  typeDropdown: { minWidth: "0", width: "100%" },
   valueCol: { flex: 1, minWidth: 0 },
   list: {
     display: "flex",
@@ -78,6 +81,7 @@ export function RedirectUriEditor({ label, value, onChange }: Props) {
           <div key={i} className={styles.row}>
             <div className={styles.typeCol}>
               <Dropdown
+                className={styles.typeDropdown}
                 value={typeLabel(entry.type)}
                 selectedOptions={[entry.type]}
                 onOptionSelect={(_, d) =>
