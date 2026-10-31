@@ -34,7 +34,6 @@ import {
   Radio,
   RadioGroup,
   Spinner,
-  Subtitle2,
   Text,
   Textarea,
   ToggleButton,
@@ -65,6 +64,7 @@ import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
 import { PageHeader } from "../components/PageHeader";
 import { Segmented, type SegmentedOption } from "../components/Segmented";
+import { SettingsCard } from "../components/Settings";
 import type {
   NotificationRules,
   NotificationRuleset,
@@ -331,28 +331,6 @@ const useStyles = makeStyles({
     display: "flex",
     flexDirection: "column",
     gap: "20px",
-  },
-  card: {
-    "--card-pad": "24px",
-    [NARROW]: { "--card-pad": "16px" },
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusXLarge,
-    background: tokens.colorNeutralBackground1,
-  },
-  cardHead: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: "12px 16px",
-    padding: "20px var(--card-pad) 16px",
-  },
-  cardTitles: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    flex: "1 1 320px",
-    minWidth: 0,
   },
   muted: {
     color: tokens.colorNeutralForeground3,
@@ -1298,14 +1276,11 @@ export function Notifications() {
       )}
 
       {/* ── Events ── */}
-      <section className={styles.card}>
-        <div className={styles.cardHead}>
-          <div className={styles.cardTitles}>
-            <Subtitle2 as="h2">{t("notifications.eventsTitle")}</Subtitle2>
-            <Text size={200} className={styles.muted}>
-              {t("notifications.eventsDesc")}
-            </Text>
-          </div>
+      <SettingsCard
+        id="events"
+        title={t("notifications.eventsTitle")}
+        description={t("notifications.eventsDesc")}
+        action={
           <Button
             size="small"
             appearance="subtle"
@@ -1314,8 +1289,8 @@ export function Notifications() {
           >
             {t("notifications.jsonEdit")}
           </Button>
-        </div>
-
+        }
+      >
         {activeRuleset && (
           <div className={styles.cardNotice}>
             <MessageBar intent="info">
@@ -1417,17 +1392,14 @@ export function Notifications() {
             </Button>
           </div>
         )}
-      </section>
+      </SettingsCard>
 
       {/* ── Rulesets ── */}
-      <section className={styles.card}>
-        <div className={styles.cardHead}>
-          <div className={styles.cardTitles}>
-            <Subtitle2 as="h2">{t("notifications.rulesetsTitle")}</Subtitle2>
-            <Text size={200} className={styles.muted}>
-              {t("notifications.rulesetsDesc")}
-            </Text>
-          </div>
+      <SettingsCard
+        id="rulesets"
+        title={t("notifications.rulesetsTitle")}
+        description={t("notifications.rulesetsDesc")}
+        action={
           <Button
             size="small"
             icon={<AddRegular />}
@@ -1436,8 +1408,8 @@ export function Notifications() {
           >
             {t("notifications.rulesetsNew")}
           </Button>
-        </div>
-
+        }
+      >
         {rulesetMessage && (
           <div className={styles.cardNotice}>
             <MessageBar intent={rulesetMessage.intent}>
@@ -1600,7 +1572,7 @@ export function Notifications() {
             </div>
           );
         })}
-      </section>
+      </SettingsCard>
 
       {/* ── Dialogs ── */}
       <Dialog

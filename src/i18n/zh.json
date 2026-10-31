@@ -2581,5 +2581,20 @@
     "notPublished": "此页面尚未发布。",
     "backHome": "首页",
     "goBack": "返回"
+  },
+  "search": {
+    "button": "搜索",
+    "placeholder": "搜索页面和设置…",
+    "noResults": "没有与“{{query}}”匹配的结果",
+    "hintMove": "↑ ↓ 移动",
+    "hintOpen": "Enter 打开",
+    "hintClose": "Esc 关闭",
+    "group": {
+      "pages": "页面",
+      "settings": "设置",
+      "admin": "管理",
+      "results": "结果"
+    },
+    "searching": "搜索中…"
   }
 }

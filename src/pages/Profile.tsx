@@ -476,6 +476,7 @@ export function Profile() {
 
       {/* ── Profile details ── */}
       <SettingsCard
+        id="basic"
         title={t("profile.basicInformation")}
         description={t("profile.basicInformationDesc")}
       >
@@ -559,6 +560,7 @@ export function Profile() {
 
       {/* ── Email addresses ── */}
       <SettingsCard
+        id="emails"
         title={t("profile.emailAddresses")}
         description={t("profile.emailAddressesDesc")}
       >
@@ -722,6 +724,7 @@ export function Profile() {
       {/* ── Public profile ── */}
       {publicProfiles && me && (
         <SettingsCard
+          id="public-profile"
           title={t("profile.publicProfileTitle")}
           description={t("profile.publicProfileDesc")}
           action={
@@ -836,6 +839,7 @@ export function Profile() {
       {/* ── README ── */}
       {publicProfiles && me && (
         <SettingsCard
+          id="readme"
           title={t("profile.readmeTitle")}
           description={t("profile.readmeDesc", {
             kb: Math.floor(readmeMaxBytes / 1024),

@@ -32,6 +32,7 @@ import {
   NavigationRegular,
   PeopleRegular,
   PersonRegular,
+  SearchRegular,
   SettingsRegular,
   ShieldPersonRegular,
   ShieldTaskRegular,
@@ -51,6 +52,7 @@ import { BrandMark } from "./BrandMark";
 import { Segmented } from "./Segmented";
 import { NoticeBoard } from "./NoticeBoard";
 import { LegalFooter } from "./LegalFooter";
+import { CommandPalette } from "./CommandPalette";
 import { useAdminNav } from "../pages/admin/adminNav";
 
 const HEADER_HEIGHT = "52px";
@@ -117,6 +119,47 @@ const useStyles = makeStyles({
       display: "none",
     },
   },
+  searchWrap: {
+    padding: "10px 10px 0",
+  },
+  // Looks like a field, acts as a button: opens the command palette.
+  searchBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "100%",
+    height: "32px",
+    padding: "0 8px 0 10px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    background: tokens.colorNeutralBackground1,
+    color: tokens.colorNeutralForeground3,
+    fontFamily: "inherit",
+    fontSize: "13px",
+    cursor: "pointer",
+    "& > svg": { fontSize: "16px", flexShrink: 0 },
+    ":hover": {
+      borderTopColor: tokens.colorNeutralStroke1,
+      borderRightColor: tokens.colorNeutralStroke1,
+      borderBottomColor: tokens.colorNeutralStroke1,
+      borderLeftColor: tokens.colorNeutralStroke1,
+      color: tokens.colorNeutralForeground2,
+    },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "1px",
+    },
+  },
+  searchLabel: { flex: 1, textAlign: "left" },
+  kbd: {
+    padding: "0 5px",
+    borderRadius: tokens.borderRadiusSmall,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    fontSize: "11px",
+    lineHeight: "18px",
+    fontFamily: "inherit",
+  },
+  headerSearch: { marginLeft: "auto" },
   nav: {
     flex: 1,
     overflowY: "auto",
@@ -473,6 +516,39 @@ export function Layout() {
 
   const closeSidebar = () => setSidebarOpen(false);
 
+  // Command palette: Ctrl/⌘ K anywhere, or the search field in the sidebar.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- platform is only known in the browser; SSR renders "Ctrl"
+    setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Search results link to cards as /page#card-id. The router doesn't scroll
+  // to hashes, and the target may render only after its data loads, so look
+  // for it for a few seconds.
+  useEffect(() => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (!id) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ block: "start", behavior: "smooth" });
+        window.clearInterval(timer);
+      } else if (++tries > 100) window.clearInterval(timer); // ~5 s
+    }, 50);
+    return () => window.clearInterval(timer);
+  }, [location.pathname, location.hash, location.key]);
+
   const [accountOpen, setAccountOpen] = useState(false);
   const lang = i18n.language.startsWith("zh") ? "zh" : "en";
 
@@ -516,6 +592,22 @@ export function Layout() {
             className={styles.closeBtnHidden}
             aria-label={t("nav.closeMenu")}
           />
+        </div>
+
+        <div className={styles.searchWrap}>
+          <button
+            type="button"
+            className={styles.searchBtn}
+            onClick={() => {
+              closeSidebar();
+              setSearchOpen(true);
+            }}
+            aria-keyshortcuts="Control+K Meta+K"
+          >
+            <SearchRegular />
+            <span className={styles.searchLabel}>{t("search.button")}</span>
+            <kbd className={styles.kbd}>{isMac ? "⌘K" : "Ctrl K"}</kbd>
+          </button>
         </div>
 
         <nav className={styles.nav}>
@@ -755,6 +847,13 @@ export function Layout() {
               {siteName}
             </Text>
           </div>
+          <Button
+            appearance="subtle"
+            icon={<SearchRegular />}
+            className={styles.headerSearch}
+            onClick={() => setSearchOpen(true)}
+            aria-label={t("search.button")}
+          />
         </header>
 
         <main className={styles.main}>
@@ -767,6 +866,8 @@ export function Layout() {
           <LegalFooter />
         </main>
       </div>
+
+      <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* Blocking feedback while sign-out is in flight. */}
       {busy && (

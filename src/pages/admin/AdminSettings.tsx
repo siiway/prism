@@ -45,6 +45,7 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: tokens.borderRadiusXLarge,
     padding: "20px 24px",
+    scrollMarginTop: "16px",
     background: tokens.colorNeutralBackground1,
     display: "flex",
     flexDirection: "column",
@@ -115,17 +116,20 @@ const CAPTCHA_PROVIDERS: CaptchaProvider[] = [
 
 /** One titled group of related settings within a settings section. */
 function SettingsCard({
+  id,
   title,
   description,
   children,
 }: {
+  /** Anchor for search deep links; the card's title key. */
+  id?: string;
   title?: string;
   description?: string;
   children: ReactNode;
 }) {
   const styles = useStyles();
   return (
-    <section className={styles.card}>
+    <section id={id} className={styles.card}>
       {(title || description) && (
         <div className={styles.cardHead}>
           {title && <Subtitle2 as="h2">{title}</Subtitle2>}
@@ -697,7 +701,7 @@ export function AdminSettings() {
 
       {tab === "general" && (
         <>
-          <SettingsCard title={t("admin.cardSite")}>
+          <SettingsCard id="admin.cardSite" title={t("admin.cardSite")}>
             <Field label={t("admin.siteName")}>
               <Input
                 value={get("site_name") ?? ""}
@@ -717,6 +721,7 @@ export function AdminSettings() {
             />
           </SettingsCard>
           <SettingsCard
+            id="admin.securityTxtTitle"
             title={t("admin.securityTxtTitle")}
             description={t("admin.securityTxtDesc")}
           >
@@ -741,7 +746,7 @@ export function AdminSettings() {
               />
             </Field>
           </SettingsCard>
-          <SettingsCard title={t("admin.cardAdvanced")}>
+          <SettingsCard id="admin.cardAdvanced" title={t("admin.cardAdvanced")}>
             <Field hint={t("admin.disableSsrHint")}>
               <Switch
                 label={t("admin.disableSsr")}
@@ -755,7 +760,10 @@ export function AdminSettings() {
 
       {tab === "signup" && (
         <>
-          <SettingsCard title={t("admin.cardRegistration")}>
+          <SettingsCard
+            id="admin.cardRegistration"
+            title={t("admin.cardRegistration")}
+          >
             <Field label={t("admin.registrationMode")}>
               <Dropdown
                 value={
@@ -817,6 +825,7 @@ export function AdminSettings() {
             />
           </SettingsCard>
           <SettingsCard
+            id="admin.cardInviteSignup"
             title={t("admin.cardInviteSignup")}
             description={t("admin.enableInviteRegistrationHint")}
           >
@@ -871,6 +880,7 @@ export function AdminSettings() {
             </div>
           </SettingsCard>
           <SettingsCard
+            id="admin.cardRestricted"
             title={t("admin.cardRestricted")}
             description={t("admin.cardRestrictedDesc")}
           >
@@ -944,7 +954,7 @@ export function AdminSettings() {
 
       {tab === "auth" && (
         <>
-          <SettingsCard title={t("admin.cardSessions")}>
+          <SettingsCard id="admin.cardSessions" title={t("admin.cardSessions")}>
             <div className={styles.row}>
               <Field label={t("admin.sessionTtl")}>
                 <Input
@@ -993,6 +1003,7 @@ export function AdminSettings() {
             </div>
           </SettingsCard>
           <SettingsCard
+            id="admin.cardSignInProtection"
             title={t("admin.cardSignInProtection")}
             description={t("admin.loginRateLimitsHint")}
           >
@@ -1096,7 +1107,10 @@ export function AdminSettings() {
               />
             </Field>
           </SettingsCard>
-          <SettingsCard title={t("admin.cardVerification")}>
+          <SettingsCard
+            id="admin.cardVerification"
+            title={t("admin.cardVerification")}
+          >
             <Field
               label={t("admin.gpgChallengePrefix")}
               hint={t("admin.gpgChallengePrefixHint")}
@@ -1123,7 +1137,7 @@ export function AdminSettings() {
 
       {tab === "teams" && (
         <>
-          <SettingsCard title={t("admin.cardCreation")}>
+          <SettingsCard id="admin.cardCreation" title={t("admin.cardCreation")}>
             <Switch
               label={t("admin.disableUserCreateTeam")}
               checked={!!get("disable_user_create_team")}
@@ -1136,6 +1150,7 @@ export function AdminSettings() {
             />
           </SettingsCard>
           <SettingsCard
+            id="admin.cardTeamRequirements"
             title={t("admin.cardTeamRequirements")}
             description={t("admin.teamJoinRequirementsHint")}
           >
@@ -1153,6 +1168,7 @@ export function AdminSettings() {
             />
           </SettingsCard>
           <SettingsCard
+            id="admin.cardSubTeams"
             title={t("admin.cardSubTeams")}
             description={t("admin.subTeamConfigHint")}
           >
@@ -1198,6 +1214,7 @@ export function AdminSettings() {
       {tab === "profiles" && (
         <>
           <SettingsCard
+            id="admin.publicProfilesTitle"
             title={t("admin.publicProfilesTitle")}
             description={t("admin.publicProfilesDesc")}
           >
@@ -1329,6 +1346,7 @@ export function AdminSettings() {
             </Field>
           </SettingsCard>
           <SettingsCard
+            id="admin.cardTeamProfiles"
             title={t("admin.cardTeamProfiles")}
             description={t("admin.teamProfileDefaultsHint")}
           >

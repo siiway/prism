@@ -31,6 +31,7 @@ const useStyles = makeStyles({
   },
   card: {
     "--card-pad": "24px",
+    scrollMarginTop: "16px",
     [NARROW]: { "--card-pad": "16px" },
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: tokens.borderRadiusXLarge,
@@ -170,6 +171,8 @@ export function SettingsToast({
 }
 
 interface SettingsCardProps {
+  /** Anchor for search deep links (/page#id). */
+  id?: string;
   title: string;
   description?: ReactNode;
   /** Shown beside the title, e.g. an Enabled badge. */
@@ -180,6 +183,7 @@ interface SettingsCardProps {
 }
 
 export function SettingsCard({
+  id,
   title,
   description,
   badge,
@@ -188,7 +192,7 @@ export function SettingsCard({
 }: SettingsCardProps) {
   const styles = useStyles();
   return (
-    <section className={styles.card}>
+    <section id={id} className={styles.card}>
       <div className={styles.head}>
         <div className={styles.titles}>
           <div className={styles.titleLine}>

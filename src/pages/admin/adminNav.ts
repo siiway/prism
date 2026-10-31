@@ -30,6 +30,7 @@ import {
   type FluentIcon,
 } from "@fluentui/react-icons";
 import { useQuery } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../../lib/api-context";
 
@@ -101,7 +102,15 @@ export function useAdminNav(): AdminNavGroup[] {
   const storageConsole =
     (dbStatus && dbStatus.mode !== "off") ||
     (kvStatus && kvStatus.mode !== "off");
+  return buildAdminNav(t, !!storageConsole);
+}
 
+/** The admin navigation, without fetching anything: also used by search,
+ *  which must not call admin endpoints for everyone who opens it. */
+export function buildAdminNav(
+  t: TFunction,
+  storageConsole: boolean,
+): AdminNavGroup[] {
   const item = (
     to: string,
     key: string,

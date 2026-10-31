@@ -630,6 +630,7 @@ export function Security() {
         <>
           {/* ── Password ── */}
           <SettingsCard
+            id="password"
             title={t("security.passwordTitle")}
             description={t("security.passwordDesc")}
             action={
@@ -703,6 +704,7 @@ export function Security() {
 
           {/* ── Authenticator apps ── */}
           <SettingsCard
+            id="authenticators"
             title={t("security.totpTitle")}
             description={t("security.totpDesc")}
             badge={
@@ -768,6 +770,7 @@ export function Security() {
 
           {/* ── Passkeys ── */}
           <SettingsCard
+            id="passkeys"
             title={t("security.passkeysTitle")}
             description={t("security.passkeysDesc")}
             action={
@@ -807,6 +810,7 @@ export function Security() {
 
           {/* ── GPG keys ── */}
           <SettingsCard
+            id="gpg-keys"
             title={t("security.gpgKeysTitle")}
             description={
               <>
@@ -884,6 +888,7 @@ export function Security() {
 
           {/* ── Sessions ── */}
           <SettingsCard
+            id="sessions"
             title={t("security.sessionsTitle")}
             description={t("security.sessionsDesc")}
             action={
@@ -961,6 +966,7 @@ export function Security() {
 
           {/* ── OAuth settings ── */}
           <SettingsCard
+            id="oauth"
             title={t("security.oauthSettingsTitle")}
             description={t("security.oauthSettingsDesc")}
           >

@@ -508,7 +508,7 @@
   "apps": {
     "siteAdminViewActive": "You're managing this app with site-administrator authority. Changes are recorded in the resource and platform audit logs.",
     "memberViewActive": "You're managing this app with your ordinary owner or team membership permissions.",
-    "myApplications": "My Applications",
+    "myApplications": "My applications",
     "newApp": "New app",
     "createOAuthApp": "Create OAuth App",
     "noAppsYet": "No apps yet",
@@ -2581,5 +2581,20 @@
     "notPublished": "This page has not been published yet.",
     "backHome": "Home",
     "goBack": "Go back"
+  },
+  "search": {
+    "button": "Search",
+    "placeholder": "Search pages and settings…",
+    "noResults": "No results for “{{query}}”",
+    "hintMove": "↑ ↓ to move",
+    "hintOpen": "Enter to open",
+    "hintClose": "Esc to close",
+    "group": {
+      "pages": "Pages",
+      "settings": "Settings",
+      "admin": "Admin",
+      "results": "Results"
+    },
+    "searching": "Searching…"
   }
 }
