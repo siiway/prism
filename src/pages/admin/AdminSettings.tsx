@@ -37,7 +37,7 @@ import { useAuthStore } from "../../store/auth";
 import type { SiteConfig, CaptchaProvider } from "../../types";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { PasswordInput } from "../../components/PasswordInput";
-import { SkeletonFormCard } from "../../components/Skeletons";
+import { SkeletonSettingsPage } from "../../components/Skeletons";
 import { ColorPickerInput } from "../../components/ColorPickerInput";
 
 const useStyles = makeStyles({
@@ -689,7 +689,7 @@ export function AdminSettings() {
     }
   };
 
-  if (isLoading) return <SkeletonFormCard rows={6} />;
+  if (isLoading) return <SkeletonSettingsPage cards={[3, 2]} form />;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>

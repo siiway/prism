@@ -267,7 +267,7 @@ export function AdminDashboard() {
       )}
 
       {stats.isLoading ? (
-        <SkeletonStatCards count={3} />
+        <SkeletonStatCards count={6} />
       ) : stats.isError || !stats.data ? (
         <MessageBar intent="error">
           {t("admin.statsError")}{" "}

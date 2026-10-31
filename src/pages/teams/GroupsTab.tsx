@@ -36,7 +36,7 @@ import { ApiError, type TeamGroup } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { EmptyState } from "../../components/EmptyState";
 import { MarkdownText } from "../../components/MarkdownText";
-import { SkeletonTableRows } from "../../components/Skeletons";
+import { SkeletonTableBodyRows } from "../../components/Skeletons";
 import { ColorPickerInput } from "../../components/ColorPickerInput";
 
 const useStyles = makeStyles({
@@ -152,7 +152,7 @@ export function GroupsTab({
       {isLoading ? (
         <Table>
           <TableBody>
-            <SkeletonTableRows rows={3} cols={4} />
+            <SkeletonTableBodyRows rows={3} cols={4} />
           </TableBody>
         </Table>
       ) : groups.length === 0 ? (

@@ -53,7 +53,7 @@ import { formatDate } from "../lib/datetime";
 import { useAuthStore } from "../store/auth";
 import { PageHeader } from "../components/PageHeader";
 import { PasswordInput } from "../components/PasswordInput";
-import { SkeletonSecurityCard } from "../components/Skeletons";
+import { SkeletonSettingsPage } from "../components/Skeletons";
 import { DurationInput } from "../components/DurationInput";
 import { LabeledLine } from "../components/LabeledLine";
 import {
@@ -620,12 +620,7 @@ export function Security() {
       <SettingsToast message={message} />
 
       {isPageLoading ? (
-        <>
-          <SkeletonSecurityCard rows={2} />
-          <SkeletonSecurityCard rows={3} />
-          <SkeletonSecurityCard rows={2} />
-          <SkeletonSecurityCard rows={4} />
-        </>
+        <SkeletonSettingsPage cards={[0, 1, 1, 2, 2]} />
       ) : (
         <>
           {/* ── Password ── */}

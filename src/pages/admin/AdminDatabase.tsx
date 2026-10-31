@@ -51,7 +51,7 @@ import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import type { DbColumn, DbQueryResult, DbRowPage } from "../../lib/api";
 import { Pagination } from "../../components/Pagination";
-import { SkeletonTableRows } from "../../components/Skeletons";
+import { SkeletonTableBodyRows } from "../../components/Skeletons";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { AdminKvBrowser } from "./AdminKvBrowser";
 
@@ -437,7 +437,7 @@ function TableBrowser({
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows
+              <SkeletonTableBodyRows
                 rows={6}
                 cols={columns.length + (writable ? 1 : 0)}
               />

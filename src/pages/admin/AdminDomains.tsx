@@ -51,7 +51,7 @@ import { useApi } from "../../lib/api-context";
 import type { AdminDomain } from "../../lib/api";
 import { CopyIdButton } from "../../components/CopyIdButton";
 import { Pagination } from "../../components/Pagination";
-import { SkeletonTableRows } from "../../components/Skeletons";
+import { SkeletonTableBodyRows } from "../../components/Skeletons";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { formatDate } from "../../lib/datetime";
 
@@ -185,7 +185,7 @@ export function AdminDomains() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={8} cols={5} />
+              <SkeletonTableBodyRows rows={8} cols={5} />
             ) : data?.domains.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5}>

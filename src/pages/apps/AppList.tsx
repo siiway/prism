@@ -2,6 +2,8 @@
 
 import {
   Avatar,
+  Skeleton,
+  SkeletonItem,
   Badge,
   Button,
   Input,
@@ -28,7 +30,6 @@ import { GetStartedPanel } from "../../components/GetStartedPanel";
 import { AppArt } from "../../components/Illustrations";
 import { PageHeader } from "../../components/PageHeader";
 import { Pagination } from "../../components/Pagination";
-import { SkeletonAppCards } from "../../components/Skeletons";
 
 // Cloudflare-style list: one bordered card, a muted header row, and one
 // clickable row per app with its key facts in columns. Secondary columns
@@ -187,7 +188,36 @@ export function AppList() {
     <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       <PageHeader title={t("apps.myApplications")} actions={newAppButton} />
 
-      {isFetching && !data && <SkeletonAppCards count={6} />}
+      {/* Loading: the list itself with placeholder rows, so nothing moves
+          when the apps arrive. */}
+      {isFetching && !data && (
+        <Skeleton aria-busy>
+          <div className={styles.list}>
+            <div className={styles.head}>
+              <span>{t("apps.colName")}</span>
+              <span>{t("apps.clientId")}</span>
+              <span>{t("apps.colType")}</span>
+              <span>{t("apps.colCreated")}</span>
+              <span />
+            </div>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className={styles.row}>
+                <div className={styles.nameCell}>
+                  <SkeletonItem shape="square" size={32} />
+                  <SkeletonItem
+                    size={12}
+                    style={{ width: `${40 + (i % 3) * 12}%` }}
+                  />
+                </div>
+                <SkeletonItem size={12} style={{ width: "70%" }} />
+                <SkeletonItem size={12} style={{ width: 60 }} />
+                <SkeletonItem size={12} style={{ width: 72 }} />
+                <span />
+              </div>
+            ))}
+          </div>
+        </Skeleton>
+      )}
 
       {!isFetching && data?.apps.length === 0 && !debouncedQuery && (
         <GetStartedPanel

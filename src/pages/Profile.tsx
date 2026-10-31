@@ -46,11 +46,7 @@ import {
   SettingsSubhead,
   SettingsToast,
 } from "../components/Settings";
-import {
-  SkeletonProfileCard,
-  SkeletonEmailCard,
-  SkeletonFormCard,
-} from "../components/Skeletons";
+import { SkeletonSettingsPage } from "../components/Skeletons";
 
 const useStyles = makeStyles({
   input: { width: "300px", maxWidth: "100%" },
@@ -447,9 +443,7 @@ export function Profile() {
   if (isLoading)
     return (
       <SettingsPage>
-        <SkeletonProfileCard />
-        <SkeletonEmailCard />
-        <SkeletonFormCard rows={2} />
+        <SkeletonSettingsPage cards={[4, 2, 1]} />
       </SettingsPage>
     );
 

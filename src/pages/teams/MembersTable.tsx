@@ -37,7 +37,7 @@ import { type TeamMember } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { CopyIdTrigger } from "../../components/CopyIdTrigger";
 import { Pagination } from "../../components/Pagination";
-import { SkeletonTableRows } from "../../components/Skeletons";
+import { SkeletonTableBodyRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
   // Let the table scroll sideways on narrow screens instead of
@@ -283,7 +283,7 @@ export function MembersTable({
               {/* placeholderData keeps the previous page on screen while the
                   next loads, so this only fires on the first filtered fetch. */}
               {rows.length === 0 && isFetching ? (
-                <SkeletonTableRows
+                <SkeletonTableBodyRows
                   rows={3}
                   cols={
                     // member, role, joined + the two conditional columns

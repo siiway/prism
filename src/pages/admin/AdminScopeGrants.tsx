@@ -43,7 +43,7 @@ import { useApi } from "../../lib/api-context";
 import type { AdminScopeGrant } from "../../lib/api";
 import { CopyIdButton } from "../../components/CopyIdButton";
 import { Pagination } from "../../components/Pagination";
-import { SkeletonTableRows } from "../../components/Skeletons";
+import { SkeletonTableBodyRows } from "../../components/Skeletons";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { formatDate } from "../../lib/datetime";
 
@@ -134,7 +134,7 @@ export function AdminScopeGrants() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={6} cols={5} />
+              <SkeletonTableBodyRows rows={6} cols={5} />
             ) : data?.grants.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5}>

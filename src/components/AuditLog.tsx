@@ -23,6 +23,8 @@ import {
   MenuTrigger,
   MessageBar,
   Option,
+  Skeleton,
+  SkeletonItem,
   Spinner,
   Text,
   makeStyles,
@@ -116,6 +118,12 @@ const useStyles = makeStyles({
   td: {
     padding: "10px 16px",
     verticalAlign: "middle",
+  },
+  skeletonRow: {
+    height: "43px",
+    ":not(:last-child) > td": {
+      borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    },
   },
   time: {
     whiteSpace: "nowrap",
@@ -471,11 +479,27 @@ export function AuditLog({ base }: { base: string }) {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr>
-                <td colSpan={6} className={styles.message}>
-                  <Spinner size="tiny" />
-                </td>
-              </tr>
+              Array.from({ length: 8 }).map((_, i) => (
+                <tr key={i} className={styles.skeletonRow} aria-hidden>
+                  {[20, 26, 16, 30, 22].map((w, j) => (
+                    <td
+                      key={j}
+                      className={mergeClasses(
+                        styles.td,
+                        (j === 2 || j === 4) && styles.hideNarrow,
+                      )}
+                    >
+                      <Skeleton>
+                        <SkeletonItem
+                          size={12}
+                          style={{ width: `${w + ((i * 7 + j * 3) % 5) * 6}%` }}
+                        />
+                      </Skeleton>
+                    </td>
+                  ))}
+                  <td className={styles.chevronCell} />
+                </tr>
+              ))
             ) : events.length === 0 ? (
               <tr>
                 <td colSpan={6} className={styles.message}>

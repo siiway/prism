@@ -48,6 +48,11 @@ const LIGHT = {
   colorNeutralStrokeAccessible: "#858585",
   colorNeutralStrokeAccessibleHover: "#6b6b6b",
   colorNeutralStrokeAccessiblePressed: "#595959",
+  // Loading placeholders: a shade off the card, not a block of grey.
+  colorNeutralStencil1: "#ececec",
+  colorNeutralStencil2: "#f6f6f6",
+  colorNeutralStencil1Alpha: "rgba(0, 0, 0, 0.07)",
+  colorNeutralStencil2Alpha: "rgba(0, 0, 0, 0.035)",
 };
 
 const DARK = {
@@ -94,6 +99,10 @@ const DARK = {
   colorNeutralStrokeAccessible: "#8f8f8f",
   colorNeutralStrokeAccessibleHover: "#a8a8a8",
   colorNeutralStrokeAccessiblePressed: "#bababa",
+  colorNeutralStencil1: "#303030",
+  colorNeutralStencil2: "#282828",
+  colorNeutralStencil1Alpha: "rgba(255, 255, 255, 0.07)",
+  colorNeutralStencil2Alpha: "rgba(255, 255, 255, 0.035)",
 };
 
 const RADII = {

@@ -56,7 +56,7 @@ import type {
 } from "../../lib/api";
 import { renderMarkdown } from "../../lib/markdown";
 import { Pagination } from "../../components/Pagination";
-import { SkeletonTableRows } from "../../components/Skeletons";
+import { SkeletonTableBodyRows } from "../../components/Skeletons";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { formatDateTime } from "../../lib/datetime";
 
@@ -449,7 +449,7 @@ export function AdminNotices() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonTableRows rows={6} cols={5} />
+              <SkeletonTableBodyRows rows={6} cols={5} />
             ) : !data || data.notices.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5}>

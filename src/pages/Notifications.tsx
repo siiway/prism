@@ -75,7 +75,7 @@ import type {
   NotifTgConnection,
   NotifDiscordConnection,
 } from "../lib/api";
-import { SkeletonToggleRows } from "../components/Skeletons";
+import { SkeletonSettingsPage } from "../components/Skeletons";
 
 // ─── Event catalogue ─────────────────────────────────────────────────────────
 
@@ -1202,7 +1202,17 @@ export function Notifications() {
     }
   }
 
-  if (isLoading) return <SkeletonToggleRows rows={8} />;
+  if (isLoading)
+    return (
+      <div className={styles.root}>
+        <PageHeader
+          title={t("notifications.title")}
+          subtitle={t("notifications.subtitle")}
+          style={{ marginBottom: 4 }}
+        />
+        <SkeletonSettingsPage cards={[8]} />
+      </div>
+    );
 
   const levelRow = (
     key: string,
