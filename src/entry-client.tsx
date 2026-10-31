@@ -87,7 +87,13 @@ async function start(): Promise<void> {
     await Promise.all(
       lazyMatches.map(async (m) => {
         const load = m.route.lazy as () => Promise<Record<string, unknown>>;
-        Object.assign(m.route, { ...(await load()), lazy: undefined });
+        try {
+          Object.assign(m.route, { ...(await load()), lazy: undefined });
+        } catch {
+          // A chunk that fails to load (network error, stale deploy) must
+          // not abort startup: leave the route lazy so the router retries it
+          // and, if it fails again, shows its ErrorElement with a refresh.
+        }
       }),
     );
   }
