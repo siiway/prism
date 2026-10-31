@@ -19,8 +19,11 @@ const useStyles = makeStyles({
     justifyContent: "center",
     width: "56px",
     height: "56px",
-    borderRadius: "50%",
-    background: tokens.colorNeutralBackground3,
+    borderRadius: tokens.borderRadiusXLarge,
+    // Bordered tile rather than a grey disc: empty states often sit straight
+    // on the canvas, where a Background3 fill all but disappears.
+    background: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
     color: tokens.colorNeutralForeground3,
     fontSize: "28px",
     marginBottom: "8px",

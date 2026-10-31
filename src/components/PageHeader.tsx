@@ -12,13 +12,16 @@ const useStyles = makeStyles({
     justifyContent: "space-between",
     flexWrap: "wrap",
     gap: "12px",
-    marginBottom: "16px",
+    marginBottom: "24px",
   },
   titles: {
     display: "flex",
     flexDirection: "column",
-    gap: "4px",
+    gap: "6px",
     minWidth: 0,
+  },
+  title: {
+    letterSpacing: "-0.015em",
   },
   subtitle: {
     color: tokens.colorNeutralForeground3,
@@ -49,7 +52,7 @@ export function PageHeader({
   return (
     <div className={styles.root} style={style}>
       <div className={styles.titles}>
-        <Title2>{title}</Title2>
+        <Title2 className={styles.title}>{title}</Title2>
         {subtitle && <Text className={styles.subtitle}>{subtitle}</Text>}
       </div>
       {actions && <div className={styles.actions}>{actions}</div>}

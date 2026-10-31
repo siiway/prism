@@ -8,7 +8,25 @@
     <title>Prism</title>
     <meta name="description" content="Sign in to your account" />
     <meta name="application-name" content="Prism" />
-    <meta name="theme-color" content="#0078d4" />
+    <meta name="theme-color" content="#ffffff" />
+
+    <!-- Page canvas, inline so it applies before the first paint. The
+         bundled stylesheet can arrive after the server-rendered markup has
+         already painted (always in dev, where Vite injects CSS from JS), and
+         until then the page would show the browser's default white — a
+         flash on every dark-mode reload. Keyed off the data-theme attribute
+         the script below sets synchronously. -->
+    <style>
+      html {
+        --prism-canvas: #ffffff;
+        color-scheme: light;
+        background: var(--prism-canvas);
+      }
+      html[data-theme="dark"] {
+        --prism-canvas: #1a1a1a;
+        color-scheme: dark;
+      }
+    </style>
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
@@ -62,6 +80,13 @@
           scheme +
           "; path=/; max-age=31536000; samesite=lax";
         document.documentElement.setAttribute("data-theme", scheme);
+        // Match the browser chrome (mobile address bar) to the canvas too.
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta)
+          meta.setAttribute(
+            "content",
+            scheme === "dark" ? "#1a1a1a" : "#ffffff",
+          );
       })();
     </script>
     <!--app-head-->
