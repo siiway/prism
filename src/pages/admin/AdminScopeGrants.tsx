@@ -42,7 +42,6 @@ import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import type { AdminScopeGrant } from "../../lib/api";
 import { CopyIdButton } from "../../components/CopyIdButton";
-import { MarkdownText } from "../../components/MarkdownText";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 import { useToastMessage } from "../../lib/useToastMessage";
@@ -102,9 +101,6 @@ export function AdminScopeGrants() {
   return (
     <div className={styles.root}>
       {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
-      <MessageBar intent="info">
-        <MarkdownText source={t("admin.scopeGrantsNotice")} />
-      </MessageBar>
 
       <TabList
         selectedValue={kind}

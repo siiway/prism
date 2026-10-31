@@ -55,7 +55,6 @@ import type {
   NoticeLevel,
 } from "../../lib/api";
 import { renderMarkdown } from "../../lib/markdown";
-import { MarkdownText } from "../../components/MarkdownText";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 import { useToastMessage } from "../../lib/useToastMessage";
@@ -426,9 +425,6 @@ export function AdminNotices() {
         </MessageBar>
       )}
 
-      <MessageBar intent="info">
-        <MarkdownText source={t("admin.noticesIntro")} />
-      </MessageBar>
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <Button
           appearance="primary"

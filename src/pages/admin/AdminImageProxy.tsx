@@ -34,7 +34,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
-import { MarkdownText } from "../../components/MarkdownText";
 import { Pagination } from "../../components/Pagination";
 import { SkeletonTableRows } from "../../components/Skeletons";
 
@@ -171,10 +170,6 @@ export function AdminImageProxy() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
-      <MessageBar intent="info">
-        <MarkdownText source={t("admin.imageProxySubtitle")} />
-      </MessageBar>
-
       {config && (
         <div
           style={{

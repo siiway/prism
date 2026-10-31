@@ -43,7 +43,6 @@ import { useTranslation } from "react-i18next";
 import { ApiError, type OAuthSource } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { EmptyState } from "../../components/EmptyState";
-import { MarkdownText } from "../../components/MarkdownText";
 import { Pagination } from "../../components/Pagination";
 import { PasswordInput } from "../../components/PasswordInput";
 import { SkeletonTableRows } from "../../components/Skeletons";
@@ -375,10 +374,6 @@ export function AdminConnections() {
 
   return (
     <div className={styles.section}>
-      <MessageBar intent="info">
-        <MarkdownText source={t("admin.oauthSourcesHint")} />
-      </MessageBar>
-
       {/* Legacy migration banner */}
       {data && data.legacy_providers.length > 0 && !migrateResult && (
         <MessageBar intent="warning">
