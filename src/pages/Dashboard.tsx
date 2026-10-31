@@ -7,11 +7,16 @@
 import { Button } from "@fluentui/react-components";
 import {
   AppsRegular,
+  GlobeErrorRegular,
   GlobeRegular,
   HistoryRegular,
+  KeyMultipleRegular,
+  KeyResetRegular,
+  LockClosedRegular,
   MailRegular,
   ShieldErrorRegular,
 } from "@fluentui/react-icons";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -34,6 +39,9 @@ import { shortTime } from "../lib/datetime";
 import { GetStarted } from "./dashboard/GetStarted";
 
 const LIST_LIMIT = 5;
+// Warn about backup codes at this many left, and tokens this close to expiry.
+const LOW_BACKUP_CODES = 2;
+const TOKEN_EXPIRY_WARNING = 7 * 86_400;
 
 export function Dashboard() {
   const api = useApi();
@@ -74,6 +82,27 @@ export function Dashboard() {
     queryKey: ["audit-events", "me", 1, {}],
     queryFn: () => api.auditEvents("me", { page: 1 }),
   });
+  // Same entries as the Security page and the first page of Access tokens.
+  const { data: totpData } = useQuery({
+    queryKey: ["totp-list"],
+    queryFn: api.totpList,
+    enabled: !!me?.totp_enabled,
+  });
+  // Counted in select, not during render, so the clock read stays out of
+  // the render path.
+  const { data: expiringTokens = 0 } = useQuery({
+    queryKey: ["pat", 1, ""],
+    queryFn: () => api.listTokens({ page: 1, limit: 20 }),
+    select: (d) => {
+      const now = Math.floor(Date.now() / 1000);
+      return d.tokens.filter(
+        (tok) =>
+          tok.expires_at !== null &&
+          tok.expires_at > now &&
+          tok.expires_at - now <= TOKEN_EXPIRY_WARNING,
+      ).length;
+    },
+  });
 
   const isLoading =
     meLoading || appsLoading || domainsLoading || connectionsLoading;
@@ -99,23 +128,97 @@ export function Dashboard() {
   const isNewAccount =
     appsData?.total === 0 && domainsData?.total === 0 && !!me;
 
-  const emailCallout = showEmailBanner && (
+  // Things worth doing, most urgent first. Each shows only while it applies.
+  // Only with 2FA on: the Security page caches this list for everyone, and
+  // without an authenticator it reports 0 codes, which means nothing.
+  const backupCodesLeft = me?.totp_enabled
+    ? totpData?.backup_codes_remaining
+    : undefined;
+  const unverifiedDomains = domains.filter((d) => !d.verified).length;
+
+  const task = (
+    key: string,
+    icon: ReactNode,
+    title: string,
+    description: string,
+    action: string,
+    to: string,
+  ) => (
     <Callout
-      icon={<MailRegular />}
-      title={t("dashboard.verifyEmailTitle")}
-      description={t("dashboard.verifyEmailDesc")}
-      action={
-        <Button appearance="primary" onClick={() => navigate("/verify-choose")}>
-          {t("dashboard.verifyNow")}
-        </Button>
-      }
+      key={key}
+      icon={icon}
+      title={title}
+      description={description}
+      action={<Button onClick={() => navigate(to)}>{action}</Button>}
     />
   );
 
+  const tasks = (includeSecurity: boolean): ReactNode[] =>
+    [
+      showEmailBanner &&
+        task(
+          "email",
+          <MailRegular />,
+          t("dashboard.verifyEmailTitle"),
+          t("dashboard.verifyEmailDesc"),
+          t("dashboard.verifyNow"),
+          "/verify-choose",
+        ),
+      restriction?.restricted &&
+        task(
+          "restricted",
+          <LockClosedRegular />,
+          t("dashboard.restrictedTitle"),
+          t("dashboard.restrictedDesc"),
+          t("dashboard.restrictedAction"),
+          "/security",
+        ),
+      includeSecurity &&
+        showSecurityWarning &&
+        task(
+          "security",
+          <ShieldErrorRegular />,
+          t("dashboard.improveSecurityTitle"),
+          t("dashboard.improveSecurityDesc"),
+          t("dashboard.setUp2FA"),
+          "/security#authenticators",
+        ),
+      backupCodesLeft !== undefined &&
+        backupCodesLeft <= LOW_BACKUP_CODES &&
+        task(
+          "backup-codes",
+          <KeyResetRegular />,
+          t("dashboard.backupCodesTitle", { count: backupCodesLeft }),
+          t("dashboard.backupCodesDesc"),
+          t("dashboard.backupCodesAction"),
+          "/security#authenticators",
+        ),
+      expiringTokens > 0 &&
+        task(
+          "tokens",
+          <KeyMultipleRegular />,
+          t("dashboard.tokensExpiringTitle", { count: expiringTokens }),
+          t("dashboard.tokensExpiringDesc", { count: expiringTokens }),
+          t("dashboard.tokensExpiringAction"),
+          "/tokens",
+        ),
+      unverifiedDomains > 0 &&
+        task(
+          "domains",
+          <GlobeErrorRegular />,
+          t("dashboard.unverifiedDomainsTitle", { count: unverifiedDomains }),
+          t("dashboard.unverifiedDomainsDesc"),
+          t("dashboard.unverifiedDomainsAction"),
+          "/domains",
+        ),
+    ].filter(Boolean);
+
   if (isNewAccount) {
+    // The getting-started cards already cover securing the account.
+    const newTasks = tasks(false);
     return (
       <div>
-        {emailCallout && <Callouts>{emailCallout}</Callouts>}
+        {newTasks.length > 0 && <Callouts>{newTasks}</Callouts>}
         <GetStarted
           siteName={site?.site_name ?? "Prism"}
           canCreateApp={!restrictedCaps || !!restrictedCaps["app:create"]}
@@ -138,27 +241,7 @@ export function Dashboard() {
         subtitle={t("dashboard.manageDesc")}
       />
 
-      {(showEmailBanner || showSecurityWarning) && (
-        <Callouts>
-          {emailCallout}
-
-          {showSecurityWarning && (
-            <Callout
-              icon={<ShieldErrorRegular />}
-              title={t("dashboard.improveSecurityTitle")}
-              description={t("dashboard.improveSecurityDesc")}
-              action={
-                <Button
-                  appearance="primary"
-                  onClick={() => navigate("/security")}
-                >
-                  {t("dashboard.setUp2FA")}
-                </Button>
-              }
-            />
-          )}
-        </Callouts>
-      )}
+      {tasks(true).length > 0 && <Callouts>{tasks(true)}</Callouts>}
 
       <ListGrid>
         <ListColumn
