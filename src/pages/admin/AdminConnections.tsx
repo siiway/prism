@@ -660,7 +660,7 @@ export function AdminConnections() {
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={t("teams.searchInvitesPlaceholder")}
+          placeholder={t("admin.searchSourcesPlaceholder")}
           contentBefore={<SearchRegular />}
           contentAfter={
             query ? (

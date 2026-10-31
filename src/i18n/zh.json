@@ -1231,6 +1231,7 @@
     "title": "管理面板",
     "subtitle": "管理您的 Prism 平台。",
     "backToAccount": "返回账户",
+    "searchSourcesPlaceholder": "搜索来源",
     "settingsNav": {
       "general": "常规",
       "signup": "注册",

@@ -165,9 +165,10 @@ function DebugControls() {
         display: "flex",
         flexDirection: "column",
         gap: 12,
-        padding: 16,
-        borderRadius: 8,
-        background: tokens.colorNeutralBackground3,
+        padding: "16px 20px",
+        borderRadius: tokens.borderRadiusXLarge,
+        border: `1px solid ${tokens.colorNeutralStroke1}`,
+        background: tokens.colorNeutralBackground1,
       }}
     >
       <div
@@ -346,7 +347,7 @@ function DebugControls() {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {data?.spectate_user_id ? (
             <>
-              <Badge appearance="filled" color="warning">
+              <Badge appearance="outline" color="warning">
                 {t("admin.logs.spectating")}:{" "}
                 <Text font="monospace">{data.spectate_user_id}</Text>
               </Badge>
@@ -403,7 +404,7 @@ function DebugControls() {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {data?.spectate_path ? (
             <>
-              <Badge appearance="filled" color="warning">
+              <Badge appearance="outline" color="warning">
                 {t("admin.logs.spectating")}:{" "}
                 <Text font="monospace">{data.spectate_path}</Text>
               </Badge>

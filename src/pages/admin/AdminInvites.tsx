@@ -24,7 +24,6 @@ import {
   TableRow,
   Text,
   Tooltip,
-  Title3,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -303,8 +302,6 @@ export function AdminInvites() {
         <Tab value="site">{t("admin.siteInvitesTab")}</Tab>
         <Tab value="team">{t("admin.teamInvitesTab")}</Tab>
       </TabList>
-
-      <Title3>{t("admin.invites")}</Title3>
 
       <form onSubmit={handleCreate} className={styles.form}>
         <Field label={t("admin.inviteEmail")} hint={t("admin.inviteEmailHint")}>

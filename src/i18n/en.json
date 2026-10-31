@@ -1231,6 +1231,7 @@
     "title": "Admin Panel",
     "subtitle": "Manage your Prism platform.",
     "backToAccount": "Back to account",
+    "searchSourcesPlaceholder": "Search sources",
     "settingsNav": {
       "general": "General",
       "signup": "Sign-up",
