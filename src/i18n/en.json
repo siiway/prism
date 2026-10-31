@@ -2488,9 +2488,20 @@
     "webhookSaveFailed": "Failed to save webhook.",
     "webhookDeleteFailed": "Failed to delete webhook.",
     "pageTitle": "Audit Log",
-    "pageSubtitle": "Your login, authorization, and account activity (Transparent User Control).",
+    "pageSubtitle": "Sign-ins, authorizations and changes to your account.",
     "export": "Export",
-    "exportFailed": "Export failed"
+    "exportFailed": "Export failed",
+    "rangeLabel": "Time range",
+    "range": {
+      "all": "All time",
+      "24h": "Last 24 hours",
+      "7d": "Last 7 days",
+      "30d": "Last 30 days",
+      "custom": "Custom range"
+    },
+    "colSource": "Source",
+    "noEventsYet": "Nothing recorded yet.",
+    "filterSame": "Show only events with the same"
   },
   "join": {
     "intro": "Create an account to join this team. Your account is created on Prism, the identity provider this team uses.",

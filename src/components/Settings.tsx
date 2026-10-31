@@ -103,6 +103,13 @@ const useStyles = makeStyles({
     minWidth: 0,
     overflowWrap: "anywhere",
   },
+  // A div, not Text, so descriptions can hold block content.
+  rowDesc: {
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+    color: tokens.colorNeutralForeground3,
+    minWidth: 0,
+  },
   rowControl: {
     display: "flex",
     alignItems: "center",
@@ -229,11 +236,7 @@ export function SettingsRow({
       {icon && <span className={styles.rowIcon}>{icon}</span>}
       <div className={styles.rowText}>
         <div className={styles.rowLabel}>{label}</div>
-        {description && (
-          <Text size={200} className={styles.muted}>
-            {description}
-          </Text>
-        )}
+        {description && <div className={styles.rowDesc}>{description}</div>}
       </div>
       {children && <div className={styles.rowControl}>{children}</div>}
     </div>
