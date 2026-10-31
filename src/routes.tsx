@@ -337,6 +337,17 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
             })),
         },
         {
+          path: "apps/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/apps/AppCreate").then((m) => ({
+              Component: m.AppCreate,
+            })),
+        },
+        {
           path: "apps/:id",
           loader: ({ request }) => {
             requireAuthLoader(request);
@@ -357,6 +368,17 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           lazy: () =>
             import("./pages/teams/TeamList").then((m) => ({
               Component: m.TeamList,
+            })),
+        },
+        {
+          path: "teams/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/teams/TeamCreate").then((m) => ({
+              Component: m.TeamCreate,
             })),
         },
         {
@@ -410,6 +432,17 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           },
           lazy: () =>
             import("./pages/Tokens").then((m) => ({ Component: m.Tokens })),
+        },
+        {
+          path: "tokens/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/TokenCreate").then((m) => ({
+              Component: m.TokenCreate,
+            })),
         },
         {
           path: "notifications",

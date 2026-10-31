@@ -39,6 +39,8 @@ import { ApiError, type OAuthConsent, type OAuthToken } from "../lib/api";
 import { useApi } from "../lib/api-context";
 import { CopyIdTrigger } from "../components/CopyIdTrigger";
 import { EmptyState } from "../components/EmptyState";
+import { GetStartedPanel } from "../components/GetStartedPanel";
+import { ConnectedAppsArt } from "../components/Illustrations";
 import { PageHeader } from "../components/PageHeader";
 import { Pagination } from "../components/Pagination";
 import { SkeletonConsentCards } from "../components/Skeletons";
@@ -411,6 +413,12 @@ export function ConnectedApps() {
   const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();
+  const { data: site } = useQuery({
+    queryKey: ["site"],
+    queryFn: api.site,
+    staleTime: 60_000,
+  });
+  const siteName = site?.site_name ?? "Prism";
   const [revokingConsent, setRevokingConsent] = useState<string | null>(null);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
   const [disablingAutoAuthorize, setDisablingAutoAuthorize] = useState<
@@ -495,7 +503,16 @@ export function ConnectedApps() {
       {isFetching && !data ? (
         <SkeletonConsentCards count={3} />
       ) : !isFetching && data?.consents.length === 0 && !debouncedQuery ? (
-        <EmptyState icon={<GlobeRegular />} title={t("connectedApps.noApps")} />
+        <GetStartedPanel
+          art={<ConnectedAppsArt />}
+          title={t("connectedApps.getStarted.title")}
+          description={t("connectedApps.getStarted.desc", { siteName })}
+          steps={[
+            t("connectedApps.getStarted.step1", { siteName }),
+            t("connectedApps.getStarted.step2"),
+            t("connectedApps.getStarted.step3"),
+          ]}
+        />
       ) : !isFetching && data?.consents.length === 0 && debouncedQuery ? (
         <EmptyState icon={<GlobeRegular />} title={t("teams.noResultsMatch")} />
       ) : data && data.consents.length > 0 ? (

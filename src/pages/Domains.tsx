@@ -15,6 +15,7 @@ import {
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
@@ -25,6 +26,8 @@ import { DomainsTable } from "./domains/DomainsTable";
 import { DnsAddedInfo } from "./domains/components";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState } from "../components/EmptyState";
+import { GetStartedPanel } from "../components/GetStartedPanel";
+import { DomainArt } from "../components/Illustrations";
 import { Pagination } from "../components/Pagination";
 import { useToastMessage } from "../lib/useToastMessage";
 
@@ -32,6 +35,12 @@ export function Domains() {
   const api = useApi();
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const { data: site } = useQuery({
+    queryKey: ["site"],
+    queryFn: api.site,
+    staleTime: 60_000,
+  });
+  const siteName = site?.site_name ?? "Prism";
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -59,7 +68,11 @@ export function Domains() {
     (t) => t.role === "owner" || t.role === "admin",
   );
 
-  const [newDomain, setNewDomain] = useState("");
+  // Pre-filled when arriving from the dashboard's "Add a domain" card.
+  const location = useLocation();
+  const [newDomain, setNewDomain] = useState(
+    () => (location.state as { newDomain?: string } | null)?.newDomain ?? "",
+  );
   const [adding, setAdding] = useState(false);
   const [addedInfo, setAddedInfo] = useState<DomainAddResponse | null>(null);
   const { message, showMsg } = useToastMessage();
@@ -153,6 +166,8 @@ export function Domains() {
   const showSearchResults = !!data && data.domains.length > 0;
   const hasNoSearchResults =
     !isFetching && data?.domains.length === 0 && !!debouncedQuery;
+  const hasNoDomains =
+    !isFetching && data?.domains.length === 0 && !debouncedQuery;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24, flex: 1 }}>
@@ -196,7 +211,22 @@ export function Domains() {
         <EmptyState icon={<GlobeRegular />} title={t("teams.noResultsMatch")} />
       )}
 
-      {!hasNoSearchResults && (
+      {/* No domains at all: the add field above is the action, so the panel
+          only explains the steps. */}
+      {hasNoDomains && (
+        <GetStartedPanel
+          art={<DomainArt />}
+          title={t("domains.getStarted.title")}
+          description={t("domains.getStarted.desc")}
+          steps={[
+            t("domains.getStarted.step1"),
+            t("domains.getStarted.step2"),
+            t("domains.getStarted.step3", { siteName }),
+          ]}
+        />
+      )}
+
+      {!hasNoSearchResults && !hasNoDomains && (
         <>
           {showSearchResults && (
             <div

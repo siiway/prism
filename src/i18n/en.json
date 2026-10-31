@@ -593,7 +593,20 @@
     "ruleTargetId": "Target ID",
     "ruleTargetUserIdPlaceholder": "User ID",
     "noRules": "No rules — all allowed by default",
-    "addRule": "Add rule"
+    "addRule": "Add rule",
+    "getStarted": {
+      "title": "Create your first application",
+      "desc": "Let people sign in to your app with their {{siteName}} account over OAuth 2.0 and OpenID Connect.",
+      "step1": "Create an app and give it a name.",
+      "step2": "Add the redirect URIs your app sends people back to.",
+      "step3": "Plug the client ID and secret into your app's OAuth library."
+    },
+    "createSubtitle": "Register an OAuth 2.0 / OpenID Connect client. You can change any of this later.",
+    "colName": "Name",
+    "colType": "Type",
+    "colCreated": "Created",
+    "typePublic": "Public",
+    "typeConfidential": "Confidential"
   },
   "domains": {
     "title": "Domain Verification",
@@ -659,7 +672,14 @@
     "returnToPersonalTooltip": "Move back to personal (removes from team)",
     "shareToPersonalTooltip": "Share to your personal domains (keeps team copy)",
     "domainReturnedToPersonal": "Domain returned to personal ownership",
-    "domainSharedToPersonal": "Domain shared to your personal domains"
+    "domainSharedToPersonal": "Domain shared to your personal domains",
+    "getStarted": {
+      "title": "Verify your first domain",
+      "desc": "Prove you own a domain so it can back your apps' redirect URIs.",
+      "step1": "Type your domain in the field above and add it.",
+      "step2": "Publish the DNS TXT record, HTML meta tag, or .well-known file you're given.",
+      "step3": "Click Verify. {{siteName}} checks it now and re-checks it periodically."
+    }
   },
   "teams": {
     "title": "Teams",
@@ -910,7 +930,15 @@
     "siteAdminSwitchToNormal": "Switch to normal view",
     "normalViewActive": "You're viewing this team as a member — your site-administrator controls are switched off here.",
     "normalViewSwitchBack": "Switch to site admin view",
-    "normalViewNotMember": "You're in normal view and aren't a member of this team, so there's nothing to show. Switch back to site admin view to manage it."
+    "normalViewNotMember": "You're in normal view and aren't a member of this team, so there's nothing to show. Switch back to site admin view to manage it.",
+    "getStarted": {
+      "title": "Create your first team",
+      "desc": "Teams own apps and verified domains together, so the people you work with can manage them too.",
+      "step1": "Create a team and give it a name.",
+      "step2": "Invite members and give them roles.",
+      "step3": "Create apps under the team, or move your existing ones in."
+    },
+    "createSubtitle": "A team owns apps and verified domains together with its members."
   },
   "connections": {
     "title": "Linked Accounts",
@@ -954,7 +982,15 @@
     "name": "Name",
     "scopesCol": "Scopes",
     "lastUsed": "Last used",
-    "expires": "Expires"
+    "expires": "Expires",
+    "getStarted": {
+      "title": "Create a personal access token",
+      "desc": "Call the {{siteName}} API from scripts and tools without using your password.",
+      "step1": "Create a token and give it only the scopes it needs.",
+      "step2": "Copy it right away — it's shown only once.",
+      "step3": "Send it in the Authorization header as Bearer <token>."
+    },
+    "newTokenTitle": "Create personal access token"
   },
   "connectedApps": {
     "title": "Connected Apps",
@@ -991,7 +1027,14 @@
     "inHours": "in {{count}}h",
     "inHours_other": "in {{count}}h",
     "issuedAgo": "Issued {{time}}",
-    "expiresAgo": "Expires {{time}}"
+    "expiresAgo": "Expires {{time}}",
+    "getStarted": {
+      "title": "No apps connected yet",
+      "desc": "When you sign in to an app with your {{siteName}} account, it shows up here with the access you granted it.",
+      "step1": "Choose “Sign in with {{siteName}}” on an app that supports it.",
+      "step2": "Review the permissions it asks for, then approve.",
+      "step3": "Come back here any time to review or revoke its access."
+    }
   },
   "oauth": {
     "authorizationRequest": "Authorization Request",

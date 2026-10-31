@@ -593,7 +593,20 @@
     "ruleTargetId": "目标 ID",
     "ruleTargetUserIdPlaceholder": "用户 ID",
     "noRules": "无规则 — 默认允许所有",
-    "addRule": "添加规则"
+    "addRule": "添加规则",
+    "getStarted": {
+      "title": "创建您的第一个应用",
+      "desc": "通过 OAuth 2.0 和 OpenID Connect，让用户使用 {{siteName}} 账户登录您的应用。",
+      "step1": "创建应用并为其命名。",
+      "step2": "添加应用用于回跳的重定向 URI。",
+      "step3": "将客户端 ID 和密钥填入应用的 OAuth 库。"
+    },
+    "createSubtitle": "注册一个 OAuth 2.0 / OpenID Connect 客户端。这些设置之后都可以修改。",
+    "colName": "名称",
+    "colType": "类型",
+    "colCreated": "创建时间",
+    "typePublic": "公开客户端",
+    "typeConfidential": "机密客户端"
   },
   "domains": {
     "title": "域名验证",
@@ -659,7 +672,14 @@
     "returnToPersonalTooltip": "移回个人（从团队中移除）",
     "shareToPersonalTooltip": "共享到您的个人域名（保留团队副本）",
     "domainReturnedToPersonal": "域名已归还到个人所有权",
-    "domainSharedToPersonal": "域名已共享到您的个人域名"
+    "domainSharedToPersonal": "域名已共享到您的个人域名",
+    "getStarted": {
+      "title": "验证您的第一个域名",
+      "desc": "证明您拥有某个域名，以便将其用于应用的重定向 URI。",
+      "step1": "在上方输入框中填写并添加您的域名。",
+      "step2": "按提示发布 DNS TXT 记录、HTML meta 标签或 .well-known 文件。",
+      "step3": "点击验证。{{siteName}} 会立即检查，并定期重新验证。"
+    }
   },
   "teams": {
     "title": "团队",
@@ -910,7 +930,15 @@
     "siteAdminSwitchToNormal": "切换到普通视图",
     "normalViewActive": "你正以成员身份查看该团队 —— 此处的站点管理员权限已关闭。",
     "normalViewSwitchBack": "切换到站点管理员视图",
-    "normalViewNotMember": "你正处于普通视图，且不是该团队的成员，因此没有可显示的内容。切换回站点管理员视图即可管理它。"
+    "normalViewNotMember": "你正处于普通视图，且不是该团队的成员，因此没有可显示的内容。切换回站点管理员视图即可管理它。",
+    "getStarted": {
+      "title": "创建您的第一个团队",
+      "desc": "团队共同拥有应用和已验证域名，让您的协作者也能管理它们。",
+      "step1": "创建团队并为其命名。",
+      "step2": "邀请成员并分配角色。",
+      "step3": "在团队下创建应用，或将现有应用迁入团队。"
+    },
+    "createSubtitle": "团队与其成员共同拥有应用和已验证域名。"
   },
   "connections": {
     "title": "关联账号",
@@ -954,7 +982,15 @@
     "name": "名称",
     "scopesCol": "权限范围",
     "lastUsed": "最后使用",
-    "expires": "到期时间"
+    "expires": "到期时间",
+    "getStarted": {
+      "title": "创建个人访问令牌",
+      "desc": "无需使用密码，即可从脚本和工具调用 {{siteName}} API。",
+      "step1": "创建令牌，并仅授予其所需的权限范围。",
+      "step2": "立即复制——令牌只显示一次。",
+      "step3": "在 Authorization 请求头中以 Bearer <token> 形式发送。"
+    },
+    "newTokenTitle": "创建个人访问令牌"
   },
   "connectedApps": {
     "title": "已授权应用",
@@ -991,7 +1027,14 @@
     "inHours": "{{count}} 小时后",
     "inHours_other": "{{count}} 小时后",
     "issuedAgo": "签发于 {{time}}",
-    "expiresAgo": "到期于 {{time}}"
+    "expiresAgo": "到期于 {{time}}",
+    "getStarted": {
+      "title": "尚未连接任何应用",
+      "desc": "使用 {{siteName}} 账户登录某个应用后，它会连同您授予的权限显示在这里。",
+      "step1": "在支持的应用上选择“使用 {{siteName}} 登录”。",
+      "step2": "查看其请求的权限，然后批准。",
+      "step3": "随时回到这里查看或撤销其访问权限。"
+    }
   },
   "oauth": {
     "authorizationRequest": "授权请求",
