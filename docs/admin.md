@@ -9,41 +9,46 @@ The admin panel is available at `/admin` and is visible only to users with `role
 The first admin is created during first-run setup. Additional admins are promoted via
 **Admin → Users → Edit User → Role → Admin**.
 
-## Dashboard
+## Overview
 
-Shows four summary stats:
+The admin panel opens on an overview:
 
-| Stat             | Description                      |
-| ---------------- | -------------------------------- |
-| Total users      | All registered accounts          |
-| OAuth apps       | All registered applications      |
-| Verified domains | Domains that passed verification |
-| Active tokens    | Non-expired OAuth access tokens  |
+- **Needs attention** — callouts for things to fix: email not set up, no
+  captcha on sign-up and sign-in, stored secrets not yet encrypted (once
+  [`SECRETS_KEY`](configuration.md#secrets_key-setup) is bound; the action
+  leads to **Maintenance → Danger zone**), and request logging left on.
+- **Usage** — users, teams, OAuth apps, verified domains, active tokens and
+  proxied images, each linking to its page; the first four show a 30-day trend.
+- **Recent** — newest users, admin activity and failed sign-ins.
+- **Configuration** — the key settings at a glance, each linking to its
+  settings section.
 
-A panel under the stats surfaces operational warnings — most importantly, when
-[`SECRETS_KEY`](configuration.md#secrets_key-setup) is bound but the D1 data
-hasn't been migrated yet. Click through to **Settings → Danger Zone** to run the
-one-time encryption pass.
+While you are in `/admin` the sidebar shows the admin sections instead of
+your account's; **Back to account** returns to it. Press Ctrl/⌘ K anywhere to
+search pages, settings and data by name.
 
 ## Settings
 
-Settings are grouped into tabs. All changes take effect immediately — no redeployment needed.
+Settings are split into sections, each its own page in the admin sidebar: **General**, **Sign-up**, **Sign-in & security**, **Users & teams**, **Public profiles**, **Captcha**, **Email & notifications**, **Appearance** and **Legal**. **Danger zone** sits under **Maintenance**. All changes take effect immediately — no redeployment needed.
 
 ### General
 
 - **Site name** — shown in the browser tab and email templates
 - **Site description** — shown on the login page
 - **Site icon URL** — link to a PNG/SVG logo
-- **Registration mode** — `open` (anyone can register), `invite-only` (requires an invite token), or `closed` (no new registrations)
-- **Require email verification** — users must click the verification link before logging in
 
-Further down the General tab:
+Also under General:
 
 - **Security contact** (`security_contact`) — a `mailto:` address or an https URL
   where vulnerability reports should go. When set, Prism serves an RFC 9116
   `/.well-known/security.txt`; leave it empty to disable that file.
 - **Security policy URL** (`security_policy_url`) — optional link to your
   disclosure policy, added to `security.txt` as `Policy:`.
+
+### Sign-up
+
+- **Registration mode** — `open` (anyone can register), `invite-only` (requires an invite token), or `closed` (no new registrations)
+- **Require email verification** — users must click the verification link before logging in
 
 ### Appearance
 
@@ -61,7 +66,7 @@ appears in the footer of every page. Leaving a field empty hides both that page
 and its footer link. Each document is capped at 256 KiB. See
 [Configuration → Legal pages](configuration.md#legal-pages).
 
-### Security / Sessions
+### Sign-in & security
 
 - **Session TTL (days)** — how long a login session lasts
 - **Access token TTL (minutes)** — OAuth access token lifetime
@@ -83,7 +88,7 @@ and its footer link. Each document is capped at 256 KiB. See
   user (`15/300s`). The password and TOTP steps are separate requests and both
   count toward the shared login limits.
 
-### Bot Protection
+### Captcha
 
 Prism runs an **ordered set of providers**. Pick a **default provider** (shown
 first) and, optionally, one or more **alternate providers** the visitor can
@@ -235,7 +240,7 @@ full semantics.
 
 ### Danger zone
 
-Tools that change the shape of the database. Each runs a single batched
+Under **Maintenance** in the admin sidebar. Tools that change the shape of the database. Each runs a single batched
 migration and is idempotent — re-running is safe.
 
 - **Migrate secrets to Secrets Store** — encrypts existing site-config secret
@@ -705,7 +710,7 @@ routine task.
 
 ### Sign everyone out
 
-**Admin → Settings → Danger Zone → Sign everyone out** deletes every active
+**Admin → Maintenance → Danger zone → Sign everyone out** deletes every active
 session. The count is shown before you press it. Your own session is kept by
 default — an operator who signs themselves out mid-incident has to log back in
 through whatever they were trying to contain — and "include my own session" is

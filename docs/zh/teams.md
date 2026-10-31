@@ -337,7 +337,7 @@ OAuth 应用可以直接在团队下创建（**Teams → \<team\> → Apps → N
 只有有效的团队管理员（或更高角色）可以创建应用或轮换其密钥。新生成的
 `client_secret` 只在创建或轮换的当次响应中显示；其他团队成员可读取的应用对象只
 暴露 `has_client_secret`。配置 `SECRETS_KEY` 后，团队应用密钥会加密存储。旧部署
-升级后，请执行 **Admin → Settings → Danger Zone → Migrate secrets to Secrets Store**，
+升级后，请执行 **管理面板 → 维护 → 危险区域 → Migrate secrets to Secrets Store**，
 并轮换已有团队应用密钥；
 加密无法撤销此前可能已经泄露的副本。
 
