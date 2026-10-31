@@ -5,6 +5,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import { RESOURCES, SUPPORTED_LNGS } from "./init";
+import { LANGUAGE_COOKIE } from "../store/language";
 
 i18n
   .use(LanguageDetector)
@@ -15,9 +16,16 @@ i18n
     supportedLngs: [...SUPPORTED_LNGS],
     interpolation: { escapeValue: false },
     detection: {
-      order: ["localStorage", "navigator"],
-      caches: ["localStorage"],
+      order: ["cookie", "navigator"],
+      lookupCookie: LANGUAGE_COOKIE,
+      // The language store writes the cookie; the detector only reads.
+      caches: [],
     },
   });
+
+// Keep <html lang> in step for screen readers and translation tools.
+i18n.on("languageChanged", (lng) => {
+  if (typeof document !== "undefined") document.documentElement.lang = lng;
+});
 
 export default i18n;

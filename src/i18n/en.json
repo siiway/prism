@@ -2390,7 +2390,8 @@
   "language": {
     "label": "Language",
     "switchToZh": "中文",
-    "switchToEn": "English"
+    "switchToEn": "English",
+    "system": "System"
   },
   "theme": {
     "label": "Theme",

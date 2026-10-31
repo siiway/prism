@@ -270,6 +270,7 @@ export async function render(
   const routerScript = `<script>window.__staticRouterHydrationData=${routerJson}</script>`;
 
   const body = opts.template
+    .replace('<html lang="en">', `<html lang="${i18n.language}">`)
     .replace("<!--app-head-->", styleHtml)
     .replace("<!--app-html-->", appHtml)
     .replace("<!--app-state-->", initialScript + routerScript);

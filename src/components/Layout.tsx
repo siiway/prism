@@ -48,6 +48,7 @@ import { useTranslation } from "react-i18next";
 import { useApi } from "../lib/api-context";
 import { useAuthStore } from "../store/auth";
 import { useThemeStore, type ThemeMode } from "../store/theme";
+import { useLanguageStore, type LanguageMode } from "../store/language";
 import { BrandMark } from "./BrandMark";
 import { Segmented } from "./Segmented";
 import { NoticeBoard } from "./NoticeBoard";
@@ -467,7 +468,7 @@ export function Layout() {
   const { user, clearAuth } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
 
@@ -550,7 +551,8 @@ export function Layout() {
   }, [location.pathname, location.hash, location.key]);
 
   const [accountOpen, setAccountOpen] = useState(false);
-  const lang = i18n.language.startsWith("zh") ? "zh" : "en";
+  const languageMode = useLanguageStore((s) => s.mode);
+  const setLanguageMode = useLanguageStore((s) => s.setMode);
 
   const siteName = site?.site_name ?? "Prism";
   const inAdmin =
@@ -798,11 +800,16 @@ export function Layout() {
                 </div>
                 <div className={styles.prefRow}>
                   <span>{t("language.label")}</span>
-                  <Segmented<"en" | "zh">
+                  <Segmented<LanguageMode>
                     label={t("language.label")}
-                    value={lang}
-                    onChange={(next) => void i18n.changeLanguage(next)}
+                    value={languageMode}
+                    onChange={setLanguageMode}
                     options={[
+                      {
+                        value: "system",
+                        label: t("language.system"),
+                        content: <DesktopRegular />,
+                      },
                       { value: "en", label: "English", content: "EN" },
                       { value: "zh", label: "中文", content: "中文" },
                     ]}
