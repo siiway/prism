@@ -166,7 +166,9 @@ app.get("/security.txt", async (c) => {
 
 // W3C well-known change-password: send password managers to the page where a
 // user changes their password.
-app.get("/change-password", (c) => c.redirect(`${c.env.APP_URL}/profile`, 302));
+app.get("/change-password", (c) =>
+  c.redirect(`${c.env.APP_URL}/security#password`, 302),
+);
 
 app.get("/jwks.json", async (c) => {
   const rsa = await getRsaKeyPair(c.env.KV_SESSIONS);

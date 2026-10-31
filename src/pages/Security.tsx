@@ -15,6 +15,8 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
+  MessageBar,
+  MessageBarBody,
   Input,
   Link as FluentLink,
   Spinner,
@@ -242,6 +244,19 @@ export function Security() {
 
   const { message, showMsg } = useToastMessage(6000);
   const { confirm, confirmDialog } = useConfirm();
+  // Errors from an action inside a dialog show in that dialog. Only one
+  // dialog is open at a time, so one slot serves them all; it is cleared
+  // when a dialog opens and when an action is retried.
+  const [dialogError, setDialogError] = useState<string | null>(null);
+  const openDialog = (open: () => void) => {
+    setDialogError(null);
+    open();
+  };
+  const dialogErrorBar = dialogError && (
+    <MessageBar intent="error">
+      <MessageBarBody>{dialogError}</MessageBarBody>
+    </MessageBar>
+  );
   const errorText = (err: unknown, fallbackKey: string) =>
     err instanceof ApiError ? err.message : t(fallbackKey);
 
@@ -375,13 +390,14 @@ export function Security() {
   };
 
   const handleSetupTotp = async () => {
+    setDialogError(null);
     setTotpLoading(true);
     try {
       const res = await api.totpSetup(totpName.trim() || undefined);
       setTotpSetup(res);
       setTotpCode("");
     } catch (err) {
-      showMsg("error", errorText(err, "security.failedSetupTotp"));
+      setDialogError(errorText(err, "security.failedSetupTotp"));
     } finally {
       setTotpLoading(false);
     }
@@ -389,6 +405,7 @@ export function Security() {
 
   const handleVerifyTotp = async () => {
     if (!totpSetup) return;
+    setDialogError(null);
     setTotpLoading(true);
     try {
       const res = await api.totpVerify(totpSetup.id, totpCode);
@@ -400,7 +417,7 @@ export function Security() {
       ]);
       showMsg("success", t("security.authenticatorAdded"));
     } catch (err) {
-      showMsg("error", errorText(err, "security.invalidCode"));
+      setDialogError(errorText(err, "security.invalidCode"));
     } finally {
       setTotpLoading(false);
     }
@@ -408,6 +425,7 @@ export function Security() {
 
   const handleRemoveTotp = async () => {
     if (!removeId) return;
+    setDialogError(null);
     try {
       await api.totpRemove(removeId, removeCode);
       setRemoveId(null);
@@ -418,11 +436,12 @@ export function Security() {
       ]);
       showMsg("success", t("security.authenticatorRemoved"));
     } catch (err) {
-      showMsg("error", errorText(err, "security.invalidCode"));
+      setDialogError(errorText(err, "security.invalidCode"));
     }
   };
 
   const handleResetBackupCodes = async () => {
+    setDialogError(null);
     try {
       const res = await api.totpNewBackupCodes(resetBkCode);
       setBackupCodes(res.backup_codes);
@@ -431,7 +450,7 @@ export function Security() {
       await refetchTotp();
       showMsg("success", t("security.backupCodesRegenerated"));
     } catch (err) {
-      showMsg("error", errorText(err, "security.invalidCode"));
+      setDialogError(errorText(err, "security.invalidCode"));
     }
   };
 
@@ -441,6 +460,7 @@ export function Security() {
   const [passkeyLoading, setPasskeyLoading] = useState(false);
 
   const handleAddPasskey = async () => {
+    setDialogError(null);
     setPasskeyLoading(true);
     try {
       const options = await api.passkeyRegBegin();
@@ -455,7 +475,7 @@ export function Security() {
       await refetchPasskeys();
       showMsg("success", t("security.passkeyRegistered"));
     } catch (err) {
-      showMsg("error", errorText(err, "security.passkeyRegistrationFailed"));
+      setDialogError(errorText(err, "security.passkeyRegistrationFailed"));
     } finally {
       setPasskeyLoading(false);
     }
@@ -497,6 +517,7 @@ export function Security() {
   };
 
   const handleAddGpgKey = async () => {
+    setDialogError(null);
     setGpgLoading(true);
     try {
       const res = await api.addGpgKey(
@@ -517,7 +538,7 @@ export function Security() {
       }
       showMsg("success", parts.join(" "));
     } catch (err) {
-      showMsg("error", errorText(err, "security.gpgKeyAddFailed"));
+      setDialogError(errorText(err, "security.gpgKeyAddFailed"));
     } finally {
       setGpgLoading(false);
     }
@@ -560,6 +581,7 @@ export function Security() {
   };
 
   const handleRevokeAllSessions = async () => {
+    setDialogError(null);
     setRevokingAll(true);
     try {
       const res = await api.revokeAllOtherSessions();
@@ -571,7 +593,7 @@ export function Security() {
         t("security.sessionsRevokedCount", { n: res.revoked }),
       );
     } catch (err) {
-      showMsg("error", errorText(err, "security.failedRevokeSession"));
+      setDialogError(errorText(err, "security.failedRevokeSession"));
     } finally {
       setRevokingAll(false);
     }
@@ -679,12 +701,11 @@ export function Security() {
                   <Button
                     appearance="primary"
                     type="submit"
-                    disabled={
-                      pwLoading ||
-                      !pwForm.current ||
-                      !pwForm.next ||
-                      !pwForm.confirm
-                    }
+                    // No current-password requirement here: accounts created
+                    // through social sign-in have none and set their first
+                    // password with it left blank. The server asks for it
+                    // whenever the account already has a password.
+                    disabled={pwLoading || !pwForm.next || !pwForm.confirm}
                   >
                     {pwLoading ? (
                       <Spinner size="tiny" />
@@ -717,7 +738,7 @@ export function Security() {
               <Button
                 size="small"
                 icon={<AddRegular />}
-                onClick={() => setTotpOpen(true)}
+                onClick={() => openDialog(() => setTotpOpen(true))}
               >
                 {t("security.addAuthenticator")}
               </Button>
@@ -736,6 +757,7 @@ export function Security() {
                   })}
                 >
                   {removeButton(t("security.removeAuthenticator"), () => {
+                    setDialogError(null);
                     setRemoveId(a.id);
                     setRemoveCode("");
                   })}
@@ -756,7 +778,10 @@ export function Security() {
                       })
                 }
               >
-                <Button size="small" onClick={() => setResetOpen(true)}>
+                <Button
+                  size="small"
+                  onClick={() => openDialog(() => setResetOpen(true))}
+                >
                   {t("security.resetBackupCodes")}
                 </Button>
               </SettingsRow>
@@ -772,7 +797,7 @@ export function Security() {
               <Button
                 size="small"
                 icon={<AddRegular />}
-                onClick={() => setPasskeyOpen(true)}
+                onClick={() => openDialog(() => setPasskeyOpen(true))}
               >
                 {t("security.addPasskey")}
               </Button>
@@ -828,7 +853,7 @@ export function Security() {
               <Button
                 size="small"
                 icon={<AddRegular />}
-                onClick={() => setGpgOpen(true)}
+                onClick={() => openDialog(() => setGpgOpen(true))}
               >
                 {t("security.addGpgKey")}
               </Button>
@@ -888,7 +913,10 @@ export function Security() {
             description={t("security.sessionsDesc")}
             action={
               sessions.length > 1 && (
-                <Button size="small" onClick={() => setRevokeAllOpen(true)}>
+                <Button
+                  size="small"
+                  onClick={() => openDialog(() => setRevokeAllOpen(true))}
+                >
                   {t("security.revokeAllSessions")}
                 </Button>
               )
@@ -1062,6 +1090,7 @@ export function Security() {
             <DialogBody>
               <DialogTitle>{t("security.addAuthenticator")}</DialogTitle>
               <DialogContent>
+                {dialogErrorBar}
                 {!totpSetup ? (
                   <div className={styles.dialogStack}>
                     <Text className={styles.muted}>
@@ -1192,6 +1221,7 @@ export function Security() {
           <DialogBody>
             <DialogTitle>{t("security.resetBackupCodesTitle")}</DialogTitle>
             <DialogContent>
+              {dialogErrorBar}
               <Field label={t("security.enterTotpToConfirm")}>
                 <Input
                   autoFocus
@@ -1231,6 +1261,7 @@ export function Security() {
           <DialogBody>
             <DialogTitle>{t("security.removeAuthenticator")}</DialogTitle>
             <DialogContent>
+              {dialogErrorBar}
               <Field label={t("security.enterTotpToConfirm")}>
                 <Input
                   autoFocus
@@ -1277,6 +1308,7 @@ export function Security() {
             <DialogBody>
               <DialogTitle>{t("security.addPasskey")}</DialogTitle>
               <DialogContent>
+                {dialogErrorBar}
                 <div className={styles.dialogStack}>
                   <Text className={styles.muted}>
                     {t("security.addPasskeyDesc")}
@@ -1327,6 +1359,7 @@ export function Security() {
           <DialogBody>
             <DialogTitle>{t("security.addGpgKey")}</DialogTitle>
             <DialogContent>
+              {dialogErrorBar}
               <div className={styles.dialogStack}>
                 <Field label={t("security.gpgKeyName")}>
                   <Input
@@ -1513,7 +1546,10 @@ export function Security() {
         <DialogSurface>
           <DialogBody>
             <DialogTitle>{t("security.revokeAllSessions")}</DialogTitle>
-            <DialogContent>{t("security.revokeAllConfirm")}</DialogContent>
+            <DialogContent>
+              {dialogErrorBar}
+              {t("security.revokeAllConfirm")}
+            </DialogContent>
             <DialogActions>
               <Button
                 disabled={revokingAll}
