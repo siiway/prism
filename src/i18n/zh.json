@@ -45,7 +45,8 @@
     "edit": "编辑",
     "clear": "清除",
     "refresh": "刷新",
-    "retry": "重试"
+    "retry": "重试",
+    "totalItems_one": "共 {{count}} 项"
   },
   "colorPicker": {
     "area": "颜色饱和度和亮度",

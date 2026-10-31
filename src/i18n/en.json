@@ -45,7 +45,8 @@
     "edit": "Edit",
     "clear": "Clear",
     "refresh": "Refresh",
-    "retry": "Retry"
+    "retry": "Retry",
+    "totalItems_one": "{{count}} item"
   },
   "colorPicker": {
     "area": "Color saturation and brightness",

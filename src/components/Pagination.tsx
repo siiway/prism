@@ -1,5 +1,6 @@
-// Shared pagination bar: previous / next / jump-to-page, with the current
-// and total page count always on screen.
+// Shared pagination bar: previous / next / jump-to-page with the current and
+// total page count. With a single page only the item count is shown — the
+// controls would all be disabled anyway.
 
 import {
   Button,
@@ -18,11 +19,9 @@ const useStyles = makeStyles({
     justifyContent: "flex-end",
     gap: "8px",
     flexWrap: "wrap",
-    // Pin the bar to the bottom of the page's flex column regardless of how
-    // few rows the list holds; paddingTop keeps the gap when there is no
-    // free space to absorb.
-    marginTop: "auto",
-    paddingTop: "16px",
+    // Directly under the list it pages, not pinned to the window bottom
+    // where it ends up far from a short list.
+    paddingTop: "12px",
   },
   pageCount: {
     color: tokens.colorNeutralForeground3,
@@ -61,13 +60,19 @@ export function Pagination({
     }
   };
 
+  const count = total !== undefined && (
+    <Text size={200} className={styles.pageCount}>
+      {t("common.totalItems", { count: total })}
+    </Text>
+  );
+
+  if (pageCount <= 1) {
+    return count ? <div className={styles.pager}>{count}</div> : null;
+  }
+
   return (
     <div className={styles.pager}>
-      {total !== undefined && (
-        <Text size={200} className={styles.pageCount}>
-          {t("common.totalItems", { count: total })}
-        </Text>
-      )}
+      {count}
       <Button
         size="small"
         appearance="subtle"
