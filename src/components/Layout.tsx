@@ -40,7 +40,7 @@ import {
   WeatherSunnyRegular,
   type FluentIcon,
 } from "@fluentui/react-icons";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -48,6 +48,7 @@ import { useApi } from "../lib/api-context";
 import { useAuthStore } from "../store/auth";
 import { useThemeStore, type ThemeMode } from "../store/theme";
 import { BrandMark } from "./BrandMark";
+import { Segmented } from "./Segmented";
 import { NoticeBoard } from "./NoticeBoard";
 import { LegalFooter } from "./LegalFooter";
 import { useAdminNav } from "../pages/admin/adminNav";
@@ -247,40 +248,6 @@ const useStyles = makeStyles({
     padding: "0 4px 0 8px",
     color: tokens.colorNeutralForeground2,
   },
-  segmented: {
-    display: "inline-flex",
-    padding: "2px",
-    gap: "2px",
-    borderRadius: tokens.borderRadiusMedium,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-  },
-  segment: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: "26px",
-    height: "24px",
-    padding: "0 6px",
-    border: "none",
-    borderRadius: tokens.borderRadiusSmall,
-    background: "transparent",
-    color: tokens.colorNeutralForeground3,
-    fontFamily: "inherit",
-    fontSize: "12px",
-    cursor: "pointer",
-    "& svg": { fontSize: "14px" },
-    ":hover": {
-      color: tokens.colorNeutralForeground1,
-    },
-    ":focus-visible": {
-      outline: `2px solid ${tokens.colorStrokeFocus2}`,
-      outlineOffset: "-2px",
-    },
-  },
-  segmentActive: {
-    background: tokens.colorNeutralBackground3,
-    color: tokens.colorNeutralForeground1,
-  },
   accountAction: {
     display: "flex",
     alignItems: "center",
@@ -369,44 +336,6 @@ const useStyles = makeStyles({
     boxShadow: tokens.shadow16,
   },
 });
-
-interface SegmentedProps<T extends string> {
-  label: string;
-  value: T;
-  options: { value: T; label: string; content: ReactNode }[];
-  onChange: (value: T) => void;
-}
-
-/** Compact radio group of icon/text segments (theme, language). */
-function Segmented<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: SegmentedProps<T>) {
-  const styles = useStyles();
-  return (
-    <div role="radiogroup" aria-label={label} className={styles.segmented}>
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={o.value === value}
-          aria-label={o.label}
-          title={o.label}
-          className={mergeClasses(
-            styles.segment,
-            o.value === value && styles.segmentActive,
-          )}
-          onClick={() => onChange(o.value)}
-        >
-          {o.content}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 interface NavItemProps {
   to: string;
