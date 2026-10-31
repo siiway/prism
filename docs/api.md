@@ -561,6 +561,40 @@ Manage which apps the current user has authorized. `DELETE` revokes the consent
 and all outstanding tokens for that app. `GET` accepts `?page=`, `?limit=`,
 `?q=` app-name search and returns `total`.
 
+## Search
+
+### `GET /api/search?q=<text>`
+
+Used by the command palette (Ctrl/⌘ K). Requires a session. Looks up every
+kind of item the caller can open whose name contains `q` (case-insensitive,
+at least 2 characters, at most 100 are used) in a single request, returning
+up to 5 matches per kind:
+
+- everyone: their OAuth apps (own and their teams'), teams, domains, personal
+  access tokens and the apps they have authorized;
+- admins: every user (by username, display name or email), team, OAuth app
+  (by name or client ID), domain and OAuth source, instead of the personal
+  app, team and domain lookups.
+
+```json
+{
+  "results": [
+    {
+      "kind": "app",
+      "admin": false,
+      "id": "…",
+      "title": "My app",
+      "subtitle": "prism_…",
+      "url": "/apps/…"
+    }
+  ]
+}
+```
+
+`kind` is one of `app`, `team`, `domain`, `token`, `consent`, `user`,
+`oauth_source`; `admin` marks site-wide results; `url` is the in-app path
+that opens the item. Shorter queries return an empty list.
+
 ## Public profiles
 
 ### `GET /api/users/:username`

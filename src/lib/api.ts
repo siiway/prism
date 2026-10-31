@@ -1332,6 +1332,15 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
 
+  // ─── Search (command palette) ──────────────────────────────────────────────
+  search: (q: string) =>
+    request<{ results: SearchHit[] }>(
+      "GET",
+      `/search?q=${encodeURIComponent(q)}`,
+      undefined,
+      getToken(),
+    ),
+
   // ─── Audit logs (Transparent Control) ─────────────────────────────────────
   // `base` is one of: "me", "team/<id>", "platform".
   auditEvents: (base: string, params: AuditQuery = {}) => {
@@ -2683,10 +2692,7 @@ export const api = createApiClient({
  *  concrete "global"/"china"; the client-side modes are resolved in the browser
  *  by the Captcha component. Absent on older servers → treated as "global". */
 export type TurnstileEndpointDirective =
-  | "global"
-  | "china"
-  | "client_language"
-  | "client_region";
+  "global" | "china" | "client_language" | "client_region";
 
 /** Which of the two configured Turnstile widgets minted a token. Sent back
  *  with the token so the server verifies it against the matching secret — the
@@ -2694,13 +2700,7 @@ export type TurnstileEndpointDirective =
 export type TurnstileVariant = "global" | "china";
 
 export type CaptchaProvider =
-  | "none"
-  | "turnstile"
-  | "hcaptcha"
-  | "recaptcha"
-  | "pow"
-  | "geetest"
-  | "cap";
+  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
 
 export type CapMode = "embedded" | "external";
 
@@ -3715,6 +3715,19 @@ export interface CreateAppBody {
 
 // ─── Audit logs (Transparent Control) ────────────────────────────────────────
 
+/** One match from GET /api/search. */
+export interface SearchHit {
+  kind:
+    "app" | "team" | "domain" | "token" | "consent" | "user" | "oauth_source";
+  /** Site-wide (admin) result rather than one of the user's own. */
+  admin: boolean;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  /** In-app path to open it. */
+  url: string;
+}
+
 export interface AuditEvent {
   id: string;
   scope: "user" | "team" | "platform";
@@ -4180,8 +4193,7 @@ export type NotificationRuleSendChannel =
   | { kind: "discord"; connection_id: string; level: NotificationLevel };
 
 export type NotificationRuleAction =
-  | { type: "drop" }
-  | { type: "send"; channels: NotificationRuleSendChannel[] };
+  { type: "drop" } | { type: "send"; channels: NotificationRuleSendChannel[] };
 
 export interface NotificationRulesetRule {
   id: string;

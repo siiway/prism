@@ -485,6 +485,35 @@ OAuth scope 版本：
 
 管理当前用户已授权的应用。`DELETE` 同时撤销该应用的所有未过期 token。`GET` 支持 `?page=`、`?limit=`、`?q=` 应用名称搜索并返回 `total`。
 
+## 搜索
+
+### `GET /api/search?q=<文本>`
+
+供命令面板（Ctrl/⌘ K）使用，需要登录会话。在一次请求中查找调用者可以打开、且名称包含 `q`
+的各类条目（不区分大小写，至少 2 个字符，最多取前 100 个），每类最多返回 5 条：
+
+- 所有用户：自己的 OAuth 应用（含所在团队的应用）、团队、域名、个人访问令牌，以及已授权的应用；
+- 管理员：改为查找全站的用户（按用户名、显示名或邮箱）、团队、OAuth 应用（按名称或 Client ID）、
+  域名和 OAuth 来源，不再单独查找个人的应用、团队和域名。
+
+```json
+{
+  "results": [
+    {
+      "kind": "app",
+      "admin": false,
+      "id": "…",
+      "title": "My app",
+      "subtitle": "prism_…",
+      "url": "/apps/…"
+    }
+  ]
+}
+```
+
+`kind` 取值为 `app`、`team`、`domain`、`token`、`consent`、`user`、`oauth_source`；
+`admin` 表示全站范围的结果；`url` 是打开该条目的应用内路径。查询过短时返回空列表。
+
 ## 公开资料
 
 ### `GET /api/users/:username`

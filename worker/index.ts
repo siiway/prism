@@ -42,6 +42,7 @@ import adminRoutes from "./routes/admin";
 import { readerRoutes as noticeRoutes } from "./routes/notices";
 import { readerRoutes as legalRoutes } from "./routes/legal";
 import auditRoutes from "./routes/audit";
+import searchRoutes from "./routes/search";
 import proxyRoutes from "./routes/proxy";
 import { ssrHandler } from "./ssr";
 
@@ -98,6 +99,7 @@ app.route("/api/notices", noticeRoutes);
 app.route("/api/legal", legalRoutes);
 app.route("/api/admin", adminRoutes);
 app.route("/api/audit", auditRoutes);
+app.route("/api/search", searchRoutes);
 app.route("/api/proxy/image", proxyRoutes);
 app.route("/.well-known", wellknownRoutes);
 app.route("/", publicRoutes);

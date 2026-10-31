@@ -4,8 +4,8 @@
 //   virtual:search-index, extracted from the routes and page sources at
 //   build time (vite/searchIndex.ts).
 // - Admin pages come from the admin sidebar's own definitions.
-// - Data (apps, teams, users, …) comes from the existing list endpoints,
-//   queried with the search text.
+// - Data (apps, teams, users, …) comes from GET /api/search, one request
+//   that runs every lookup server-side (worker/routes/search.ts).
 //
 // Every built-in label is matched in all languages and shown in the
 // current one, so "通行密钥" finds Passkeys in the English UI and vice versa.
@@ -24,11 +24,12 @@ import {
   SettingsRegular,
   type FluentIcon,
 } from "@fluentui/react-icons";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import searchIndex from "virtual:search-index";
 import { useApi } from "./api-context";
+import type { SearchHit } from "./api";
 import { useAuthStore } from "../store/auth";
 import { SUPPORTED_LNGS } from "../i18n/init";
 import { buildAdminNav } from "../pages/admin/adminNav";
@@ -145,232 +146,61 @@ export function useStaticEntries(): SearchEntry[] {
 
 // ── Data ─────────────────────────────────────────────────────────────────
 
-const REMOTE_LIMIT = 5;
+const KIND_ICONS: Record<SearchHit["kind"], FluentIcon> = {
+  app: AppsRegular,
+  team: PeopleRegular,
+  domain: GlobeRegular,
+  token: KeyRegular,
+  consent: LockClosedRegular,
+  user: PersonRegular,
+  oauth_source: PlugConnectedRegular,
+};
 
-interface RemoteItem {
-  id: string;
-  title: string;
-  description?: string;
-  to: string;
-}
+// Where a result lives: the user's own list, or the admin list for
+// site-wide results.
+const KIND_CONTEXT: Record<SearchHit["kind"], [mine: string, admin: string]> = {
+  app: ["nav.myApps", "admin.applicationsTab"],
+  team: ["nav.teams", "admin.teamsTab"],
+  domain: ["nav.domains", "admin.domainsTab"],
+  token: ["nav.tokens", "nav.tokens"],
+  consent: ["nav.connectedApps", "nav.connectedApps"],
+  user: ["admin.usersTab", "admin.usersTab"],
+  oauth_source: ["admin.connectionsTab", "admin.connectionsTab"],
+};
 
-/** Server-side matches for `query` (2+ characters) from the list endpoints
- *  the pages themselves use. Admin-wide lists only for admins. */
+/** Server-side matches for `query` (2+ characters), from GET /api/search:
+ *  one request that looks up every kind of item the user can open. */
 export function useRemoteEntries(query: string): {
   entries: SearchEntry[];
   loading: boolean;
 } {
   const api = useApi();
   const { t } = useTranslation();
-  const isAdmin = useAuthStore((s) => s.user?.role === "admin");
   const q = query.trim();
-  const on = q.length >= 2;
-
-  const { data: restriction } = useQuery({
-    queryKey: ["my-restriction"],
-    queryFn: api.myRestriction,
-    staleTime: 60_000,
+  const { data, isFetching } = useQuery({
+    queryKey: ["search", q],
+    queryFn: () => api.search(q),
+    enabled: q.length >= 2,
+    staleTime: 30_000,
     retry: false,
   });
-  const caps = restriction?.restricted ? restriction.capabilities : null;
-  const developer =
-    !caps || caps["app:create"] || caps["domain:create"] || caps["pat:create"];
 
-  const sources: {
-    key: string;
-    context: string;
-    icon: FluentIcon;
-    enabled: boolean;
-    fetch: () => Promise<RemoteItem[]>;
-  }[] = [
-    {
-      key: "apps",
-      context: "nav.myApps",
-      icon: AppsRegular,
-      // Admins get every app, theirs included, from the admin list.
-      enabled: !!developer && !isAdmin,
-      fetch: () =>
-        api.listApps({ q, limit: REMOTE_LIMIT }).then((r) =>
-          r.apps.map((a) => ({
-            id: a.id,
-            title: a.name,
-            description: a.client_id,
-            to: `/apps/${a.id}`,
-          })),
-        ),
-    },
-    {
-      key: "teams",
-      context: "nav.teams",
-      icon: PeopleRegular,
-      enabled: !isAdmin,
-      fetch: () =>
-        api.listTeams({ q, limit: REMOTE_LIMIT }).then((r) =>
-          r.teams.map((x) => ({
-            id: x.id,
-            title: x.name,
-            to: `/teams/${x.id}`,
-          })),
-        ),
-    },
-    {
-      key: "domains",
-      context: "nav.domains",
-      icon: GlobeRegular,
-      enabled: !!developer && !isAdmin,
-      fetch: () =>
-        api.listDomains({ q, limit: REMOTE_LIMIT }).then((r) =>
-          r.domains.map((d) => ({
-            id: d.id,
-            title: d.domain,
-            to: "/domains",
-          })),
-        ),
-    },
-    {
-      key: "tokens",
-      context: "nav.tokens",
-      icon: KeyRegular,
-      enabled: !!developer,
-      fetch: () =>
-        api
-          .listTokens({ q, limit: REMOTE_LIMIT })
-          .then((r) =>
-            r.tokens.map((x) => ({ id: x.id, title: x.name, to: "/tokens" })),
-          ),
-    },
-    {
-      key: "consents",
-      context: "nav.connectedApps",
-      icon: LockClosedRegular,
-      enabled: true,
-      fetch: () =>
-        api.listConsents({ q, limit: REMOTE_LIMIT }).then((r) =>
-          r.consents.map((c) => ({
-            id: c.client_id,
-            title: c.app.name,
-            to: "/connected-apps",
-          })),
-        ),
-    },
-    {
-      key: "admin-users",
-      context: "admin.usersTab",
-      icon: PersonRegular,
-      enabled: isAdmin,
-      fetch: () =>
-        api.adminListUsers(1, REMOTE_LIMIT, q).then((r) =>
-          r.users.map((u) => ({
-            id: u.id,
-            title: u.display_name || u.username,
-            description: [`@${u.username}`, u.email]
-              .filter(Boolean)
-              .join(" · "),
-            to: `/admin/users/${u.id}`,
-          })),
-        ),
-    },
-    {
-      key: "admin-teams",
-      context: "admin.teamsTab",
-      icon: PeopleRegular,
-      enabled: isAdmin,
-      fetch: () =>
-        api.adminListTeams(1, q).then((r) =>
-          r.teams.slice(0, REMOTE_LIMIT).map((x) => ({
-            id: x.id,
-            title: x.name,
-            description: x.owner_username ? `@${x.owner_username}` : undefined,
-            to: `/teams/${x.id}`,
-          })),
-        ),
-    },
-    {
-      key: "admin-apps",
-      context: "admin.applicationsTab",
-      icon: AppsRegular,
-      enabled: isAdmin,
-      fetch: () =>
-        api.adminListApps(1, q).then((r) =>
-          r.apps.slice(0, REMOTE_LIMIT).map((a) => ({
-            id: a.id,
-            title: a.name,
-            description: a.client_id,
-            to: `/apps/${a.id}`,
-          })),
-        ),
-    },
-    {
-      key: "admin-domains",
-      context: "admin.domainsTab",
-      icon: GlobeRegular,
-      enabled: isAdmin,
-      fetch: () =>
-        api.adminListDomains({ q, limit: REMOTE_LIMIT }).then((r) =>
-          r.domains.map((d) => ({
-            id: d.id,
-            title: d.domain,
-            description: d.owner_username
-              ? `@${d.owner_username}`
-              : (d.team_name ?? undefined),
-            to: "/admin/domains",
-          })),
-        ),
-    },
-    {
-      key: "admin-sources",
-      context: "admin.connectionsTab",
-      icon: PlugConnectedRegular,
-      enabled: isAdmin,
-      fetch: () =>
-        api.adminListOAuthSources({ q, limit: REMOTE_LIMIT }).then((r) =>
-          r.sources.map((s) => ({
-            id: s.id,
-            title: s.name,
-            description: s.slug,
-            to: "/admin/connections",
-          })),
-        ),
-    },
-  ];
-
-  const results = useQueries({
-    queries: sources.map((s) => ({
-      queryKey: ["search", s.key, q],
-      queryFn: s.fetch,
-      enabled: on && s.enabled,
-      staleTime: 30_000,
-      retry: false,
-    })),
-  });
-
-  const entries: SearchEntry[] = [];
-  const seen = new Set<string>();
-  results.forEach((r, i) => {
-    const source = sources[i];
-    for (const item of r.data ?? []) {
-      // The same app can come back as yours and as an admin result.
-      const key = `${item.to}|${item.title}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      entries.push({
-        id: `${source.key}:${item.id}`,
+  const entries = useMemo(
+    () =>
+      (data?.results ?? []).map((hit): SearchEntry => ({
+        id: `${hit.kind}:${hit.admin ? "admin" : "mine"}:${hit.id}`,
         group: "results",
-        title: plain(item.title),
-        context: plain(t(source.context)),
-        description: item.description ? plain(item.description) : undefined,
+        title: plain(hit.title),
+        context: plain(t(KIND_CONTEXT[hit.kind][hit.admin ? 1 : 0])),
+        description: hit.subtitle ? plain(hit.subtitle) : undefined,
         keywords: [],
-        to: item.to,
-        icon: source.icon,
+        to: hit.url,
+        icon: KIND_ICONS[hit.kind],
         remote: true,
-      });
-    }
-  });
-
-  return {
-    entries,
-    loading: on && results.some((r) => r.isFetching),
-  };
+      })),
+    [data, t],
+  );
+  return { entries, loading: q.length >= 2 && isFetching };
 }
 
 // ── Matching ─────────────────────────────────────────────────────────────

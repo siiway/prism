@@ -175,9 +175,14 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
     return () => window.clearTimeout(id);
   }, [query]);
   const remote = useRemoteEntries(remoteQuery);
+  // Server results belong to the query they were fetched for; while the
+  // next one is pending, drop them rather than show stale matches.
+  const remoteCurrent = remoteQuery.trim() === query.trim();
+  const remoteLoading =
+    remote.loading || (!remoteCurrent && query.trim().length >= 2);
   const entries = useMemo(
-    () => [...staticEntries, ...remote.entries],
-    [staticEntries, remote.entries],
+    () => [...staticEntries, ...(remoteCurrent ? remote.entries : [])],
+    [staticEntries, remote.entries, remoteCurrent],
   );
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -242,7 +247,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       <div ref={listRef} id={listId} role="listbox" className={styles.list}>
         {results.length === 0 ? (
           <div className={styles.empty}>
-            {remote.loading
+            {remoteLoading
               ? t("search.searching")
               : t("search.noResults", { query: query.trim() })}
           </div>
@@ -296,7 +301,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
             );
           })
         )}
-        {results.length > 0 && remote.loading && (
+        {results.length > 0 && remoteLoading && (
           <div className={styles.searching}>{t("search.searching")}</div>
         )}
       </div>
