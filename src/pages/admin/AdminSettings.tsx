@@ -20,12 +20,13 @@ import {
   TabList,
   Text,
   Textarea,
-  Title3,
+  Subtitle2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState, type ReactNode } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { isSettingsSection } from "./adminNav";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
@@ -41,9 +42,9 @@ import { ColorPickerInput } from "../../components/ColorPickerInput";
 const useStyles = makeStyles({
   card: {
     border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "8px",
-    padding: "24px",
-    background: tokens.colorNeutralBackground2,
+    borderRadius: tokens.borderRadiusXLarge,
+    padding: "20px 24px",
+    background: tokens.colorNeutralBackground1,
     display: "flex",
     flexDirection: "column",
     gap: "16px",
@@ -65,16 +66,20 @@ const useStyles = makeStyles({
       gridTemplateColumns: "1fr",
     },
   },
-  tabsWrap: {
-    minWidth: 0,
-    overflowX: "auto",
-    overflowY: "hidden",
-    WebkitOverflowScrolling: "touch",
-  },
-  tabs: {
-    minWidth: "max-content",
-  },
   actions: { display: "flex", gap: "8px", marginTop: "4px" },
+  unit: {
+    color: tokens.colorNeutralForeground3,
+    whiteSpace: "nowrap",
+  },
+  cardHead: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+  cardDesc: {
+    color: tokens.colorNeutralForeground3,
+    maxWidth: "720px",
+  },
   subGroup: {
     display: "flex",
     flexDirection: "column",
@@ -106,6 +111,34 @@ const CAPTCHA_PROVIDERS: CaptchaProvider[] = [
   "geetest",
   "cap",
 ];
+
+/** One titled group of related settings within a settings section. */
+function SettingsCard({
+  title,
+  description,
+  children,
+}: {
+  title?: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  const styles = useStyles();
+  return (
+    <section className={styles.card}>
+      {(title || description) && (
+        <div className={styles.cardHead}>
+          {title && <Subtitle2 as="h2">{title}</Subtitle2>}
+          {description && (
+            <Text size={200} className={styles.cardDesc}>
+              {description}
+            </Text>
+          )}
+        </div>
+      )}
+      <div className={styles.form}>{children}</div>
+    </section>
+  );
+}
 
 export function AdminSettings() {
   const api = useApi();
@@ -215,7 +248,9 @@ export function AdminSettings() {
   const [localConfig, setLocalConfig] = useState<Partial<SiteConfig>>({});
   const [saving, setSaving] = useState(false);
   const { message, showMsg } = useToastMessage();
-  const [tab, setTab] = useState("general");
+  // The section comes from the URL; the sidebar lists them (adminNav.ts).
+  const { tab: tabParam } = useParams();
+  const tab = isSettingsSection(tabParam) ? tabParam : "general";
   const [testingEmail, setTestingEmail] = useState(false);
   const [testingEmailReceiving, setTestingEmailReceiving] = useState(false);
   const [emailSubTab, setEmailSubTab] = useState("send");
@@ -659,26 +694,9 @@ export function AdminSettings() {
         </MessageBar>
       )}
 
-      <div className={styles.tabsWrap}>
-        <TabList
-          className={styles.tabs}
-          selectedValue={tab}
-          onTabSelect={(_, d) => setTab(d.value as string)}
-        >
-          <Tab value="general">{t("admin.generalTab")}</Tab>
-          <Tab value="auth">{t("admin.authTab")}</Tab>
-          <Tab value="captcha">{t("admin.captchaTab")}</Tab>
-          <Tab value="email">{t("admin.emailTab")}</Tab>
-          <Tab value="appearance">{t("admin.appearanceTab")}</Tab>
-          <Tab value="legal">{t("admin.legalTab")}</Tab>
-          <Tab value="danger">{t("admin.dangerTab")}</Tab>
-        </TabList>
-      </div>
-
       {tab === "general" && (
-        <div className={styles.card}>
-          <Title3>{t("admin.generalTitle")}</Title3>
-          <div className={styles.form}>
+        <>
+          <SettingsCard title={t("admin.cardSite")}>
             <Field label={t("admin.siteName")}>
               <Input
                 value={get("site_name") ?? ""}
@@ -696,6 +714,47 @@ export function AdminSettings() {
               value={get("site_icon_url") ?? ""}
               onChange={(v) => set("site_icon_url", v || null)}
             />
+          </SettingsCard>
+          <SettingsCard
+            title={t("admin.securityTxtTitle")}
+            description={t("admin.securityTxtDesc")}
+          >
+            <Field
+              label={t("admin.securityContact")}
+              hint={t("admin.securityContactHint")}
+            >
+              <Input
+                value={get("security_contact") ?? ""}
+                onChange={(e) => set("security_contact", e.target.value)}
+                placeholder="mailto:security@example.com"
+              />
+            </Field>
+            <Field
+              label={t("admin.securityPolicyUrl")}
+              hint={t("admin.securityPolicyUrlHint")}
+            >
+              <Input
+                value={get("security_policy_url") ?? ""}
+                onChange={(e) => set("security_policy_url", e.target.value)}
+                placeholder="https://example.com/security-policy"
+              />
+            </Field>
+          </SettingsCard>
+          <SettingsCard title={t("admin.cardAdvanced")}>
+            <Field hint={t("admin.disableSsrHint")}>
+              <Switch
+                label={t("admin.disableSsr")}
+                checked={!!get("disable_ssr")}
+                onChange={(_, d) => set("disable_ssr", d.checked)}
+              />
+            </Field>
+          </SettingsCard>
+        </>
+      )}
+
+      {tab === "signup" && (
+        <>
+          <SettingsCard title={t("admin.cardRegistration")}>
             <Field label={t("admin.registrationMode")}>
               <Dropdown
                 value={
@@ -755,76 +814,11 @@ export function AdminSettings() {
               checked={get("allow_alt_email_login") ?? true}
               onChange={(_, d) => set("allow_alt_email_login", d.checked)}
             />
-            <Switch
-              label={t("admin.disableUserCreateTeam")}
-              checked={!!get("disable_user_create_team")}
-              onChange={(_, d) => set("disable_user_create_team", d.checked)}
-            />
-            <Switch
-              label={t("admin.disableUserCreateApp")}
-              checked={!!get("disable_user_create_app")}
-              onChange={(_, d) => set("disable_user_create_app", d.checked)}
-            />
-            <Field hint={t("admin.disableSsrHint")}>
-              <Switch
-                label={t("admin.disableSsr")}
-                checked={!!get("disable_ssr")}
-                onChange={(_, d) => set("disable_ssr", d.checked)}
-              />
-            </Field>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.teamJoinRequirementsHint")}
-            </Text>
-            <Switch
-              label={t("admin.defaultTeamRequireVerifiedEmail")}
-              checked={!!get("default_team_require_verified_email")}
-              onChange={(_, d) =>
-                set("default_team_require_verified_email", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultTeamRequire2FA")}
-              checked={!!get("default_team_require_2fa")}
-              onChange={(_, d) => set("default_team_require_2fa", d.checked)}
-            />
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.subTeamConfigHint")}
-            </Text>
-            <Switch
-              label={t("admin.enableSubTeams")}
-              checked={get("enable_sub_teams") ?? true}
-              onChange={(_, d) => set("enable_sub_teams", d.checked)}
-            />
-            <div className={styles.subGroup}>
-              <Field
-                label={t("admin.maxTeamDepth")}
-                hint={t("admin.maxTeamDepthHint")}
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={String(get("max_team_depth") ?? 5)}
-                  onChange={(e) =>
-                    set("max_team_depth", Number(e.target.value))
-                  }
-                  disabled={!(get("enable_sub_teams") ?? true)}
-                  style={{ width: 100 }}
-                />
-              </Field>
-              <Switch
-                label={t("admin.inheritTeamMembership")}
-                checked={get("inherit_team_membership") ?? true}
-                disabled={!(get("enable_sub_teams") ?? true)}
-                onChange={(_, d) => set("inherit_team_membership", d.checked)}
-              />
-              <Switch
-                label={t("admin.inheritTeamDomains")}
-                checked={get("inherit_team_domains") ?? true}
-                disabled={!(get("enable_sub_teams") ?? true)}
-                onChange={(_, d) => set("inherit_team_domains", d.checked)}
-              />
-            </div>
+          </SettingsCard>
+          <SettingsCard
+            title={t("admin.cardInviteSignup")}
+            description={t("admin.enableInviteRegistrationHint")}
+          >
             <Switch
               label={t("admin.enableInviteRegistration")}
               checked={inviteRegOn}
@@ -832,9 +826,6 @@ export function AdminSettings() {
                 set("enable_team_invite_registration", d.checked)
               }
             />
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.enableInviteRegistrationHint")}
-            </Text>
             <div className={styles.subGroup}>
               <Field
                 label={t("admin.inviteRegMaxUsesCap")}
@@ -876,76 +867,199 @@ export function AdminSettings() {
                   style={{ width: 120 }}
                 />
               </Field>
-              <Field
-                label={t("admin.pendingTtlHours")}
-                hint={t("admin.pendingTtlHoursHint")}
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  value={String(get("restricted_pending_ttl_hours") ?? 72)}
-                  onChange={(e) =>
-                    setNumber("restricted_pending_ttl_hours", e.target.value)
-                  }
-                  disabled={!inviteRegOn}
-                  style={{ width: 120 }}
-                />
-              </Field>
-              <Field
-                label={t("admin.dissolveGraceHours")}
-                hint={t("admin.dissolveGraceHoursHint")}
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  value={String(get("restricted_dissolve_grace_hours") ?? 168)}
-                  onChange={(e) =>
-                    setNumber("restricted_dissolve_grace_hours", e.target.value)
-                  }
-                  disabled={!inviteRegOn}
-                  style={{ width: 120 }}
-                />
-              </Field>
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground3 }}
-              >
-                {t("admin.restrictedCapsLabel")}
-              </Text>
-              {(
-                [
-                  ["team:create", "admin.capTeamCreate"],
-                  ["app:create", "admin.capAppCreate"],
-                  ["domain:create", "admin.capDomainCreate"],
-                  ["pat:create", "admin.capPatCreate"],
-                  ["profile:public", "admin.capProfilePublic"],
-                  ["gpg:manage", "admin.capGpgManage"],
-                  ["self:convert", "admin.capSelfConvert"],
-                ] as const
-              ).map(([key, label]) => {
-                const caps =
-                  (get("restricted_user_capabilities") as Record<
-                    string,
-                    boolean
-                  > | null) ?? {};
-                return (
-                  <Switch
-                    key={key}
-                    label={t(label)}
-                    checked={caps[key] ?? false}
-                    disabled={
-                      !(get("enable_team_invite_registration") ?? false)
-                    }
-                    onChange={(_, d) =>
-                      set("restricted_user_capabilities", {
-                        ...caps,
-                        [key]: d.checked,
-                      })
-                    }
-                  />
-                );
-              })}
             </div>
+          </SettingsCard>
+          <SettingsCard
+            title={t("admin.cardRestricted")}
+            description={t("admin.cardRestrictedDesc")}
+          >
+            <Field
+              label={t("admin.pendingTtlHours")}
+              hint={t("admin.pendingTtlHoursHint")}
+            >
+              <Input
+                type="number"
+                min={1}
+                value={String(get("restricted_pending_ttl_hours") ?? 72)}
+                onChange={(e) =>
+                  setNumber("restricted_pending_ttl_hours", e.target.value)
+                }
+                disabled={!inviteRegOn}
+                style={{ width: 120 }}
+              />
+            </Field>
+            <Field
+              label={t("admin.dissolveGraceHours")}
+              hint={t("admin.dissolveGraceHoursHint")}
+            >
+              <Input
+                type="number"
+                min={1}
+                value={String(get("restricted_dissolve_grace_hours") ?? 168)}
+                onChange={(e) =>
+                  setNumber("restricted_dissolve_grace_hours", e.target.value)
+                }
+                disabled={!inviteRegOn}
+                style={{ width: 120 }}
+              />
+            </Field>
+            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+              {t("admin.restrictedCapsLabel")}
+            </Text>
+            {(
+              [
+                ["team:create", "admin.capTeamCreate"],
+                ["app:create", "admin.capAppCreate"],
+                ["domain:create", "admin.capDomainCreate"],
+                ["pat:create", "admin.capPatCreate"],
+                ["profile:public", "admin.capProfilePublic"],
+                ["gpg:manage", "admin.capGpgManage"],
+                ["self:convert", "admin.capSelfConvert"],
+              ] as const
+            ).map(([key, label]) => {
+              const caps =
+                (get("restricted_user_capabilities") as Record<
+                  string,
+                  boolean
+                > | null) ?? {};
+              return (
+                <Switch
+                  key={key}
+                  label={t(label)}
+                  checked={caps[key] ?? false}
+                  disabled={!(get("enable_team_invite_registration") ?? false)}
+                  onChange={(_, d) =>
+                    set("restricted_user_capabilities", {
+                      ...caps,
+                      [key]: d.checked,
+                    })
+                  }
+                />
+              );
+            })}
+          </SettingsCard>
+        </>
+      )}
+
+      {tab === "auth" && (
+        <>
+          <SettingsCard title={t("admin.cardSessions")}>
+            <div className={styles.row}>
+              <Field label={t("admin.sessionTtl")}>
+                <Input
+                  type="number"
+                  value={String(get("session_ttl_days") ?? 30)}
+                  onChange={(e) =>
+                    set("session_ttl_days", parseInt(e.target.value))
+                  }
+                />
+              </Field>
+              <Field label={t("admin.accessTokenTtl")}>
+                <Input
+                  type="number"
+                  value={String(get("access_token_ttl_minutes") ?? 60)}
+                  onChange={(e) =>
+                    set("access_token_ttl_minutes", parseInt(e.target.value))
+                  }
+                />
+              </Field>
+            </div>
+            <div className={styles.row}>
+              <Field label={t("admin.refreshTokenTtl")}>
+                <Input
+                  type="number"
+                  value={String(get("refresh_token_ttl_days") ?? 30)}
+                  onChange={(e) =>
+                    set("refresh_token_ttl_days", parseInt(e.target.value))
+                  }
+                />
+              </Field>
+              <Field
+                label={t("admin.sudoModeTtl")}
+                hint={t("admin.sudoModeTtlHint")}
+              >
+                <Input
+                  type="number"
+                  value={String(get("sudo_mode_ttl_minutes") ?? 5)}
+                  onChange={(e) =>
+                    set(
+                      "sudo_mode_ttl_minutes",
+                      Math.max(0, parseInt(e.target.value) || 0),
+                    )
+                  }
+                />
+              </Field>
+            </div>
+          </SettingsCard>
+          <SettingsCard
+            title={t("admin.cardSignInProtection")}
+            description={t("admin.loginRateLimitsHint")}
+          >
+            {(
+              [
+                [
+                  "login_dos_rate_limit",
+                  "login_dos_rate_window_seconds",
+                  "admin.loginDosRateLimit",
+                  120,
+                  60,
+                ],
+                [
+                  "login_ip_rate_limit",
+                  "login_ip_rate_window_seconds",
+                  "admin.loginIpRateLimit",
+                  60,
+                  60,
+                ],
+                [
+                  "login_identifier_rate_limit",
+                  "login_identifier_rate_window_seconds",
+                  "admin.loginIdentifierRateLimit",
+                  30,
+                  300,
+                ],
+                [
+                  "login_totp_rate_limit",
+                  "login_totp_rate_window_seconds",
+                  "admin.loginTotpRateLimit",
+                  15,
+                  300,
+                ],
+              ] as const
+            ).map(
+              ([limitKey, windowKey, label, defaultLimit, defaultWindow]) => (
+                <Field key={limitKey} label={t(label)}>
+                  <div className={styles.row}>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={86400}
+                      aria-label={t("admin.loginRateLimitAttempts")}
+                      contentAfter={
+                        <Text size={200} className={styles.unit}>
+                          {t("admin.loginRateLimitAttempts")}
+                        </Text>
+                      }
+                      value={String(get(limitKey) ?? defaultLimit)}
+                      onChange={(e) => setNumber(limitKey, e.target.value)}
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      max={86400}
+                      aria-label={t("admin.loginRateLimitWindow")}
+                      contentAfter={
+                        <Text size={200} className={styles.unit}>
+                          {t("admin.loginRateLimitWindow")}
+                        </Text>
+                      }
+                      value={String(get(windowKey) ?? defaultWindow)}
+                      onChange={(e) => setNumber(windowKey, e.target.value)}
+                    />
+                  </div>
+                </Field>
+              ),
+            )}
             <Field
               label={t("admin.ipv6RateLimitPrefix")}
               hint={t("admin.ipv6RateLimitPrefixHint")}
@@ -961,17 +1075,131 @@ export function AdminSettings() {
                 style={{ width: 100 }}
               />
             </Field>
-          </div>
-        </div>
+            <Field hint={t("admin.requireCaptchaFor2faHint")}>
+              <Switch
+                label={t("admin.requireCaptchaFor2fa")}
+                checked={!!get("require_captcha_for_2fa")}
+                onChange={(_, d) => set("require_captcha_for_2fa", d.checked)}
+              />
+            </Field>
+            <Field
+              label={t("admin.loginErrorRetentionDays")}
+              hint={t("admin.loginErrorRetentionDaysHint")}
+            >
+              <Input
+                type="number"
+                value={String(get("login_error_retention_days") ?? 30)}
+                onChange={(e) =>
+                  set("login_error_retention_days", parseInt(e.target.value))
+                }
+              />
+            </Field>
+          </SettingsCard>
+          <SettingsCard title={t("admin.cardVerification")}>
+            <Field
+              label={t("admin.gpgChallengePrefix")}
+              hint={t("admin.gpgChallengePrefixHint")}
+            >
+              <Textarea
+                value={(get("gpg_challenge_prefix") as string) ?? ""}
+                onChange={(e) => set("gpg_challenge_prefix", e.target.value)}
+                placeholder={t("admin.gpgChallengePrefixPlaceholder")}
+                rows={3}
+              />
+            </Field>
+            <Field label={t("admin.domainReverify")}>
+              <Input
+                type="number"
+                value={String(get("domain_reverify_days") ?? 30)}
+                onChange={(e) =>
+                  set("domain_reverify_days", parseInt(e.target.value))
+                }
+              />
+            </Field>
+          </SettingsCard>
+        </>
       )}
 
-      {tab === "general" && (
-        <div className={styles.card}>
-          <Title3>{t("admin.publicProfilesTitle")}</Title3>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("admin.publicProfilesDesc")}
-          </Text>
-          <div className={styles.form}>
+      {tab === "teams" && (
+        <>
+          <SettingsCard title={t("admin.cardCreation")}>
+            <Switch
+              label={t("admin.disableUserCreateTeam")}
+              checked={!!get("disable_user_create_team")}
+              onChange={(_, d) => set("disable_user_create_team", d.checked)}
+            />
+            <Switch
+              label={t("admin.disableUserCreateApp")}
+              checked={!!get("disable_user_create_app")}
+              onChange={(_, d) => set("disable_user_create_app", d.checked)}
+            />
+          </SettingsCard>
+          <SettingsCard
+            title={t("admin.cardTeamRequirements")}
+            description={t("admin.teamJoinRequirementsHint")}
+          >
+            <Switch
+              label={t("admin.defaultTeamRequireVerifiedEmail")}
+              checked={!!get("default_team_require_verified_email")}
+              onChange={(_, d) =>
+                set("default_team_require_verified_email", d.checked)
+              }
+            />
+            <Switch
+              label={t("admin.defaultTeamRequire2FA")}
+              checked={!!get("default_team_require_2fa")}
+              onChange={(_, d) => set("default_team_require_2fa", d.checked)}
+            />
+          </SettingsCard>
+          <SettingsCard
+            title={t("admin.cardSubTeams")}
+            description={t("admin.subTeamConfigHint")}
+          >
+            <Switch
+              label={t("admin.enableSubTeams")}
+              checked={get("enable_sub_teams") ?? true}
+              onChange={(_, d) => set("enable_sub_teams", d.checked)}
+            />
+            <div className={styles.subGroup}>
+              <Field
+                label={t("admin.maxTeamDepth")}
+                hint={t("admin.maxTeamDepthHint")}
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={String(get("max_team_depth") ?? 5)}
+                  onChange={(e) =>
+                    set("max_team_depth", Number(e.target.value))
+                  }
+                  disabled={!(get("enable_sub_teams") ?? true)}
+                  style={{ width: 100 }}
+                />
+              </Field>
+              <Switch
+                label={t("admin.inheritTeamMembership")}
+                checked={get("inherit_team_membership") ?? true}
+                disabled={!(get("enable_sub_teams") ?? true)}
+                onChange={(_, d) => set("inherit_team_membership", d.checked)}
+              />
+              <Switch
+                label={t("admin.inheritTeamDomains")}
+                checked={get("inherit_team_domains") ?? true}
+                disabled={!(get("enable_sub_teams") ?? true)}
+                onChange={(_, d) => set("inherit_team_domains", d.checked)}
+              />
+            </div>
+          </SettingsCard>
+        </>
+      )}
+
+      {tab === "profiles" && (
+        <>
+          <SettingsCard
+            title={t("admin.publicProfilesTitle")}
+            description={t("admin.publicProfilesDesc")}
+          >
             <Switch
               label={t("admin.enablePublicProfiles")}
               checked={get("enable_public_profiles") ?? true}
@@ -1098,16 +1326,11 @@ export function AdminSettings() {
                 }}
               />
             </Field>
-            <Text
-              size={200}
-              style={{
-                color: tokens.colorNeutralForeground3,
-                marginTop: 8,
-                marginBottom: -4,
-              }}
-            >
-              {t("admin.teamProfileDefaultsHint")}
-            </Text>
+          </SettingsCard>
+          <SettingsCard
+            title={t("admin.cardTeamProfiles")}
+            description={t("admin.teamProfileDefaultsHint")}
+          >
             <Switch
               label={t("admin.defaultTeamProfileShowDescription")}
               checked={get("default_team_profile_show_description") ?? true}
@@ -1175,195 +1398,12 @@ export function AdminSettings() {
                 set("default_team_profile_show_sub_teams", d.checked)
               }
             />
-          </div>
-        </div>
-      )}
-
-      {tab === "general" && (
-        <div className={styles.card}>
-          <Title3>{t("admin.securityTxtTitle")}</Title3>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("admin.securityTxtDesc")}
-          </Text>
-          <div className={styles.form}>
-            <Field
-              label={t("admin.securityContact")}
-              hint={t("admin.securityContactHint")}
-            >
-              <Input
-                value={get("security_contact") ?? ""}
-                onChange={(e) => set("security_contact", e.target.value)}
-                placeholder="mailto:security@example.com"
-              />
-            </Field>
-            <Field
-              label={t("admin.securityPolicyUrl")}
-              hint={t("admin.securityPolicyUrlHint")}
-            >
-              <Input
-                value={get("security_policy_url") ?? ""}
-                onChange={(e) => set("security_policy_url", e.target.value)}
-                placeholder="https://example.com/security-policy"
-              />
-            </Field>
-          </div>
-        </div>
-      )}
-
-      {tab === "auth" && (
-        <div className={styles.card}>
-          <Title3>{t("admin.authTitle")}</Title3>
-          <div className={styles.form}>
-            <div className={styles.row}>
-              <Field label={t("admin.sessionTtl")}>
-                <Input
-                  type="number"
-                  value={String(get("session_ttl_days") ?? 30)}
-                  onChange={(e) =>
-                    set("session_ttl_days", parseInt(e.target.value))
-                  }
-                />
-              </Field>
-              <Field label={t("admin.accessTokenTtl")}>
-                <Input
-                  type="number"
-                  value={String(get("access_token_ttl_minutes") ?? 60)}
-                  onChange={(e) =>
-                    set("access_token_ttl_minutes", parseInt(e.target.value))
-                  }
-                />
-              </Field>
-            </div>
-            <div className={styles.row}>
-              <Field label={t("admin.refreshTokenTtl")}>
-                <Input
-                  type="number"
-                  value={String(get("refresh_token_ttl_days") ?? 30)}
-                  onChange={(e) =>
-                    set("refresh_token_ttl_days", parseInt(e.target.value))
-                  }
-                />
-              </Field>
-              <Field label={t("admin.domainReverify")}>
-                <Input
-                  type="number"
-                  value={String(get("domain_reverify_days") ?? 30)}
-                  onChange={(e) =>
-                    set("domain_reverify_days", parseInt(e.target.value))
-                  }
-                />
-              </Field>
-            </div>
-            <Field
-              label={t("admin.loginErrorRetentionDays")}
-              hint={t("admin.loginErrorRetentionDaysHint")}
-            >
-              <Input
-                type="number"
-                value={String(get("login_error_retention_days") ?? 30)}
-                onChange={(e) =>
-                  set("login_error_retention_days", parseInt(e.target.value))
-                }
-              />
-            </Field>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.loginRateLimitsHint")}
-            </Text>
-            {(
-              [
-                [
-                  "login_dos_rate_limit",
-                  "login_dos_rate_window_seconds",
-                  "admin.loginDosRateLimit",
-                  120,
-                  60,
-                ],
-                [
-                  "login_ip_rate_limit",
-                  "login_ip_rate_window_seconds",
-                  "admin.loginIpRateLimit",
-                  60,
-                  60,
-                ],
-                [
-                  "login_identifier_rate_limit",
-                  "login_identifier_rate_window_seconds",
-                  "admin.loginIdentifierRateLimit",
-                  30,
-                  300,
-                ],
-                [
-                  "login_totp_rate_limit",
-                  "login_totp_rate_window_seconds",
-                  "admin.loginTotpRateLimit",
-                  15,
-                  300,
-                ],
-              ] as const
-            ).map(
-              ([limitKey, windowKey, label, defaultLimit, defaultWindow]) => (
-                <Field key={limitKey} label={t(label)}>
-                  <div className={styles.row}>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={86400}
-                      aria-label={t("admin.loginRateLimitAttempts")}
-                      value={String(get(limitKey) ?? defaultLimit)}
-                      onChange={(e) => setNumber(limitKey, e.target.value)}
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      max={86400}
-                      aria-label={t("admin.loginRateLimitWindow")}
-                      value={String(get(windowKey) ?? defaultWindow)}
-                      onChange={(e) => setNumber(windowKey, e.target.value)}
-                    />
-                  </div>
-                </Field>
-              ),
-            )}
-            <Field
-              label={t("admin.gpgChallengePrefix")}
-              hint={t("admin.gpgChallengePrefixHint")}
-            >
-              <Textarea
-                value={(get("gpg_challenge_prefix") as string) ?? ""}
-                onChange={(e) => set("gpg_challenge_prefix", e.target.value)}
-                placeholder={t("admin.gpgChallengePrefixPlaceholder")}
-                rows={3}
-              />
-            </Field>
-            <Field
-              label={t("admin.sudoModeTtl")}
-              hint={t("admin.sudoModeTtlHint")}
-            >
-              <Input
-                type="number"
-                value={String(get("sudo_mode_ttl_minutes") ?? 5)}
-                onChange={(e) =>
-                  set(
-                    "sudo_mode_ttl_minutes",
-                    Math.max(0, parseInt(e.target.value) || 0),
-                  )
-                }
-              />
-            </Field>
-            <Field hint={t("admin.requireCaptchaFor2faHint")}>
-              <Switch
-                label={t("admin.requireCaptchaFor2fa")}
-                checked={!!get("require_captcha_for_2fa")}
-                onChange={(_, d) => set("require_captcha_for_2fa", d.checked)}
-              />
-            </Field>
-          </div>
-        </div>
+          </SettingsCard>
+        </>
       )}
 
       {tab === "captcha" && (
         <div className={styles.card}>
-          <Title3>{t("admin.captchaTitle")}</Title3>
           <div className={styles.form}>
             {/* Default provider — element 0 of the enabled set. "none" turns
                 captcha off entirely. */}
@@ -1709,7 +1749,7 @@ export function AdminSettings() {
 
       {tab === "email" && (
         <div className={styles.card}>
-          <Title3>{t("admin.emailTitle")}</Title3>
+          <Subtitle2 as="h2">{t("admin.emailTitle")}</Subtitle2>
           <TabList
             size="small"
             selectedValue={emailSubTab}
@@ -2127,7 +2167,6 @@ export function AdminSettings() {
 
       {tab === "appearance" && (
         <div className={styles.card}>
-          <Title3>{t("admin.appearanceTitle")}</Title3>
           <div className={styles.form}>
             <Field label={t("admin.accentColor")}>
               <ColorPickerInput
@@ -2149,7 +2188,6 @@ export function AdminSettings() {
 
       {tab === "legal" && (
         <div className={styles.card}>
-          <Title3>{t("admin.legalTitle")}</Title3>
           <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
             {t("admin.legalDesc")}
           </Text>
@@ -2215,7 +2253,6 @@ export function AdminSettings() {
           className={styles.card}
           style={{ borderColor: tokens.colorPaletteRedBorder2 }}
         >
-          <Title3>{t("admin.dangerTitle")}</Title3>
           <Text>{t("admin.dangerDesc")}</Text>
           <div
             style={{
@@ -2795,20 +2832,23 @@ export function AdminSettings() {
         </div>
       )}
 
-      <div className={styles.actions}>
-        <Button
-          appearance="primary"
-          onClick={handleSave}
-          disabled={saving || Object.keys(localConfig).length === 0}
-        >
-          {saving ? <Spinner size="tiny" /> : t("admin.saveSettings")}
-        </Button>
-        {Object.keys(localConfig).length > 0 && (
-          <Button onClick={() => setLocalConfig({})}>
-            {t("common.discard")}
+      {/* Legal saves its own drafts; Danger Zone only runs actions. */}
+      {tab !== "legal" && tab !== "danger" && (
+        <div className={styles.actions}>
+          <Button
+            appearance="primary"
+            onClick={handleSave}
+            disabled={saving || Object.keys(localConfig).length === 0}
+          >
+            {saving ? <Spinner size="tiny" /> : t("admin.saveSettings")}
           </Button>
-        )}
-      </div>
+          {Object.keys(localConfig).length > 0 && (
+            <Button onClick={() => setLocalConfig({})}>
+              {t("common.discard")}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

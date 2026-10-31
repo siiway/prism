@@ -514,8 +514,15 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                   Component: m.AdminTeams,
                 })),
             },
+            // Each settings section is its own sidebar entry and URL. One
+            // route (not one per section) so the page, and any unsaved
+            // edits it holds, survives moving between sections.
             {
               path: "settings",
+              loader: () => redirect("/admin/settings/general"),
+            },
+            {
+              path: "settings/:tab",
               lazy: () =>
                 import("./pages/admin/AdminSettings").then((m) => ({
                   Component: m.AdminSettings,
