@@ -26,6 +26,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../lib/api-context";
+import { useConfirm } from "../lib/useConfirm";
 import { formatDate } from "../lib/datetime";
 import { EmptyState } from "../components/EmptyState";
 import { GetStartedPanel } from "../components/GetStartedPanel";
@@ -65,6 +66,7 @@ const useStyles = makeStyles({
 });
 
 export function Tokens() {
+  const { confirm, confirmDialog } = useConfirm();
   const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
@@ -231,7 +233,14 @@ export function Tokens() {
                           icon={<DeleteRegular />}
                           size="small"
                           style={{ color: tokens.colorPaletteRedForeground1 }}
-                          onClick={() => handleRevoke(tok.id)}
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: t("tokens.revokeTitle"),
+                              body: t("tokens.revokeBody", { name: tok.name }),
+                              confirmLabel: t("tokens.revoke"),
+                            });
+                            if (ok) void handleRevoke(tok.id);
+                          }}
                         >
                           {t("tokens.revoke")}
                         </Button>
@@ -251,6 +260,7 @@ export function Tokens() {
           ) : null}
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

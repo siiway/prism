@@ -44,6 +44,7 @@ import {
 } from "../lib/api";
 import { useApi } from "../lib/api-context";
 import { useToastMessage } from "../lib/useToastMessage";
+import { useConfirm } from "../lib/useConfirm";
 import { SettingsCard, SettingsEmpty, SettingsRow } from "./Settings";
 import {
   AUDIT_EVENT_CATALOG,
@@ -203,6 +204,7 @@ export function AuditWebhooks({
   const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
+  const { confirm, confirmDialog } = useConfirm();
   const qc = useQueryClient();
   const { message, showMsg } = useToastMessage();
   const scopeKey = scopeKeyFromBase(base);
@@ -484,7 +486,14 @@ export function AuditWebhooks({
                   size="small"
                   appearance="subtle"
                   icon={<DeleteRegular />}
-                  onClick={() => handleDelete(wh.id)}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: t("audit.deleteWebhookTitle"),
+                      body: t("audit.deleteWebhookBody", { name: wh.name }),
+                      confirmLabel: t("common.delete"),
+                    });
+                    if (ok) void handleDelete(wh.id);
+                  }}
                 />
               </Tooltip>
             </SettingsRow>
@@ -740,6 +749,7 @@ export function AuditWebhooks({
           </DialogBody>
         </DialogSurface>
       </Dialog>
+      {confirmDialog}
     </div>
   );
 }

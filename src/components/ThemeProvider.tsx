@@ -11,6 +11,7 @@ import type { BrandVariants } from "@fluentui/react-components";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "../lib/api-context";
+import { setDocumentSiteName } from "../lib/documentTitle";
 import { useThemeStore } from "../store/theme";
 import { patchTheme } from "../theme";
 
@@ -173,7 +174,7 @@ export function ThemeProvider({
   useEffect(() => {
     if (!siteConfig) return;
 
-    document.title = siteConfig.site_name;
+    setDocumentSiteName(siteConfig.site_name);
 
     if (siteConfig.site_icon_url) {
       let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');

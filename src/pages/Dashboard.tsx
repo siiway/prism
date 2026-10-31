@@ -129,6 +129,7 @@ export function Dashboard() {
   return (
     <div>
       <PageHeader
+        tabTitle={t("nav.dashboard")}
         title={
           displayName
             ? t("dashboard.welcomeBack", { name: displayName })

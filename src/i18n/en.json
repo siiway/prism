@@ -46,7 +46,9 @@
     "clear": "Clear",
     "refresh": "Refresh",
     "retry": "Retry",
-    "totalItems_one": "{{count}} item"
+    "totalItems_one": "{{count}} item",
+    "uploadFailed": "Upload failed",
+    "deleteFailed": "Delete failed"
   },
   "colorPicker": {
     "area": "Color saturation and brightness",
@@ -280,7 +282,9 @@
     "emailAddressesDesc": "Your primary address receives sign-in and account emails.",
     "addEmailDesc": "We'll send a verification link to the new address.",
     "publicProfileFollowingDefaultLong": "Following the site default",
-    "readmeLinkGithub": "Link a GitHub account to use its profile README."
+    "readmeLinkGithub": "Link a GitHub account to use its profile README.",
+    "removeEmailTitle": "Remove email address?",
+    "removeEmailBody": "{{email}} will be removed from your account."
   },
   "security": {
     "title": "Security",
@@ -447,7 +451,11 @@
     "backupCodesTitle": "Backup codes",
     "addAuthenticatorDesc": "Name it so you can tell your devices apart. Next you'll scan a QR code with the app.",
     "addPasskeyDesc": "Name it so you can tell your devices apart. Your browser will then ask you to create the passkey.",
-    "sessionsDesc": "Browsers and devices currently signed in to your account."
+    "sessionsDesc": "Browsers and devices currently signed in to your account.",
+    "removePasskeyTitle": "Remove passkey?",
+    "removePasskeyBody": "“{{name}}” will no longer be able to sign in to your account.",
+    "removeGpgKeyTitle": "Remove GPG key?",
+    "removeGpgKeyBody": "Signatures from “{{name}}” will no longer sign you in."
   },
   "dashboard": {
     "welcomeBack": "Welcome back, {{name}}!",
@@ -1036,7 +1044,9 @@
       "step2": "Copy it right away — it's shown only once.",
       "step3": "Send it in the Authorization header as Bearer <token>."
     },
-    "newTokenTitle": "Create personal access token"
+    "newTokenTitle": "Create personal access token",
+    "revokeTitle": "Revoke token?",
+    "revokeBody": "Anything using “{{name}}” will stop working immediately."
   },
   "connectedApps": {
     "title": "Connected Apps",
@@ -2504,7 +2514,9 @@
     },
     "colSource": "Source",
     "noEventsYet": "Nothing recorded yet.",
-    "filterSame": "Show only events with the same"
+    "filterSame": "Show only events with the same",
+    "deleteWebhookTitle": "Delete webhook?",
+    "deleteWebhookBody": "“{{name}}” will stop receiving audit events."
   },
   "join": {
     "intro": "Create an account to join this team. Your account is created on Prism, the identity provider this team uses.",

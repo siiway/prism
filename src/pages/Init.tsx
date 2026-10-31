@@ -87,7 +87,7 @@ export function Init() {
       setAuth(res.user);
       navigate("/");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong");
+      setError(err instanceof ApiError ? err.message : t("common.error"));
     } finally {
       setLoading(false);
     }

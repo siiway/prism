@@ -66,6 +66,7 @@ import {
   SettingsToast,
 } from "../components/Settings";
 import { useToastMessage } from "../lib/useToastMessage";
+import { useConfirm } from "../lib/useConfirm";
 
 // Turn a raw User-Agent string into a friendly "Browser on OS" label for
 // the sessions list. Returns null when the UA is empty/unparseable so the
@@ -240,6 +241,7 @@ export function Security() {
   });
 
   const { message, showMsg } = useToastMessage(6000);
+  const { confirm, confirmDialog } = useConfirm();
   const errorText = (err: unknown, fallbackKey: string) =>
     err instanceof ApiError ? err.message : t(fallbackKey);
 
@@ -788,9 +790,16 @@ export function Security() {
                   label={p.name ?? t("security.passkeysTitle")}
                   description={usage(p.created_at, p.last_used_at)}
                 >
-                  {removeButton(t("security.deletePasskey"), () =>
-                    handleDeletePasskey(p.id),
-                  )}
+                  {removeButton(t("security.deletePasskey"), async () => {
+                    const ok = await confirm({
+                      title: t("security.removePasskeyTitle"),
+                      body: t("security.removePasskeyBody", {
+                        name: p.name ?? t("security.passkeysTitle"),
+                      }),
+                      confirmLabel: t("common.remove"),
+                    });
+                    if (ok) void handleDeletePasskey(p.id);
+                  })}
                 </SettingsRow>
               ))
             )}
@@ -847,9 +856,14 @@ export function Security() {
                     </>
                   }
                 >
-                  {removeButton(t("security.deleteGpgKey"), () =>
-                    handleDeleteGpgKey(k.id),
-                  )}
+                  {removeButton(t("security.deleteGpgKey"), async () => {
+                    const ok = await confirm({
+                      title: t("security.removeGpgKeyTitle"),
+                      body: t("security.removeGpgKeyBody", { name: k.name }),
+                      confirmLabel: t("common.remove"),
+                    });
+                    if (ok) void handleDeleteGpgKey(k.id);
+                  })}
                 </SettingsRow>
               ))
             )}
@@ -1485,6 +1499,8 @@ export function Security() {
           </DialogBody>
         </DialogSurface>
       </Dialog>
+
+      {confirmDialog}
 
       {/* Revoke-all confirmation */}
       <Dialog

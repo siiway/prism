@@ -46,7 +46,9 @@
     "clear": "清除",
     "refresh": "刷新",
     "retry": "重试",
-    "totalItems_one": "共 {{count}} 项"
+    "totalItems_one": "共 {{count}} 项",
+    "uploadFailed": "上传失败",
+    "deleteFailed": "删除失败"
   },
   "colorPicker": {
     "area": "颜色饱和度和亮度",
@@ -280,7 +282,9 @@
     "emailAddressesDesc": "主邮箱会收到登录和账户相关的邮件。",
     "addEmailDesc": "我们会向新邮箱发送一封验证邮件。",
     "publicProfileFollowingDefaultLong": "跟随站点默认设置",
-    "readmeLinkGithub": "关联一个 GitHub 账号即可使用其个人主页 README。"
+    "readmeLinkGithub": "关联一个 GitHub 账号即可使用其个人主页 README。",
+    "removeEmailTitle": "移除邮箱地址？",
+    "removeEmailBody": "{{email}} 将从你的账户中移除。"
   },
   "security": {
     "title": "安全",
@@ -447,7 +451,11 @@
     "backupCodesTitle": "备用码",
     "addAuthenticatorDesc": "起个名字以便区分设备，下一步用应用扫描二维码。",
     "addPasskeyDesc": "起个名字以便区分设备，随后浏览器会引导你创建通行密钥。",
-    "sessionsDesc": "当前登录了你账户的浏览器和设备。"
+    "sessionsDesc": "当前登录了你账户的浏览器和设备。",
+    "removePasskeyTitle": "移除通行密钥？",
+    "removePasskeyBody": "「{{name}}」将无法再登录你的账户。",
+    "removeGpgKeyTitle": "移除 GPG 密钥？",
+    "removeGpgKeyBody": "「{{name}}」的签名将无法再用于登录。"
   },
   "dashboard": {
     "welcomeBack": "欢迎回来，{{name}}！",
@@ -1036,7 +1044,9 @@
       "step2": "立即复制——令牌只显示一次。",
       "step3": "在 Authorization 请求头中以 Bearer <token> 形式发送。"
     },
-    "newTokenTitle": "创建个人访问令牌"
+    "newTokenTitle": "创建个人访问令牌",
+    "revokeTitle": "撤销令牌？",
+    "revokeBody": "使用「{{name}}」的程序将立即失效。"
   },
   "connectedApps": {
     "title": "已授权应用",
@@ -2504,7 +2514,9 @@
     },
     "colSource": "来源",
     "noEventsYet": "暂无记录。",
-    "filterSame": "仅显示相同的"
+    "filterSame": "仅显示相同的",
+    "deleteWebhookTitle": "删除 Webhook？",
+    "deleteWebhookBody": "「{{name}}」将不再接收审计事件。"
   },
   "join": {
     "intro": "创建账号以加入该团队。你的账号创建在 Prism 上 —— 这是该团队使用的身份提供方。",

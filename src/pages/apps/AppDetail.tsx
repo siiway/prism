@@ -1238,7 +1238,10 @@ export function AppDetail() {
       await qc.invalidateQueries({ queryKey: ["app", id] });
       showMsg("success", t("apps.appUpdated"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.saveFailed"),
+      );
     } finally {
       setSaving(false);
     }
@@ -1280,7 +1283,10 @@ export function AppDetail() {
       await qc.invalidateQueries({ queryKey: ["apps"] });
       navigate("/apps");
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.deleteFailed"),
+      );
     }
   };
 
@@ -1925,10 +1931,7 @@ export function AppDetail() {
                       onOptionSelect={(_, d) =>
                         setAccessRuleMinRole(
                           (d.optionValue ?? "member") as
-                            | "owner"
-                            | "co-owner"
-                            | "admin"
-                            | "member",
+                            "owner" | "co-owner" | "admin" | "member",
                         )
                       }
                     >

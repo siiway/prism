@@ -32,6 +32,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
 import { useToastMessage } from "../lib/useToastMessage";
+import { useConfirm } from "../lib/useConfirm";
 import { useAuthStore } from "../store/auth";
 import { ImageUrlInput } from "../components/ImageUrlInput";
 import { PageHeader } from "../components/PageHeader";
@@ -181,7 +182,10 @@ export function Profile() {
       await api.setTeamShowOnProfile(teamId, value);
       await qc.invalidateQueries({ queryKey: ["my-teams"] });
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.saveFailed"),
+      );
     } finally {
       setSavingVisibility(null);
     }
@@ -201,6 +205,7 @@ export function Profile() {
   const [ghTokenInput, setGhTokenInput] = useState<string>("");
   const readmeFileRef = useRef<HTMLInputElement>(null);
   const { message, showMsg } = useToastMessage();
+  const { confirm, confirmDialog } = useConfirm();
 
   // Seed the readme textarea from /me on first load. We don't keep the
   // textarea in sync with later refetches because that would clobber the
@@ -229,7 +234,10 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.profileUpdated"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.saveFailed"),
+      );
     } finally {
       setSaveLoading(false);
     }
@@ -245,7 +253,10 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.avatarUpdated"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Upload failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.uploadFailed"),
+      );
     } finally {
       setAvatarLoading(false);
     }
@@ -272,7 +283,10 @@ export function Profile() {
       if (res.user) setAuth(res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.saveFailed"),
+      );
     } finally {
       setSavingVisibility(null);
     }
@@ -294,7 +308,10 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.saveFailed"),
+      );
     } finally {
       setReadmeSaving(false);
     }
@@ -319,7 +336,10 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Upload failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.uploadFailed"),
+      );
     } finally {
       setReadmeSaving(false);
     }
@@ -344,7 +364,10 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.saveFailed"),
+      );
     } finally {
       setReadmeSaving(false);
     }
@@ -359,7 +382,10 @@ export function Profile() {
       setGhTokenInput("");
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.saveFailed"),
+      );
     } finally {
       setReadmeSaving(false);
     }
@@ -600,13 +626,19 @@ export function Profile() {
                 size="small"
                 appearance="subtle"
                 icon={<DeleteRegular />}
-                onClick={() =>
-                  emailAction(
-                    () => api.removeEmail(alt.id),
-                    "profile.emailRemoved",
-                    true,
-                  )
-                }
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: t("profile.removeEmailTitle"),
+                    body: t("profile.removeEmailBody", { email: alt.email }),
+                    confirmLabel: t("common.remove"),
+                  });
+                  if (ok)
+                    void emailAction(
+                      () => api.removeEmail(alt.id),
+                      "profile.emailRemoved",
+                      true,
+                    );
+                }}
               />
             </Tooltip>
           </SettingsRow>
@@ -1034,6 +1066,7 @@ export function Profile() {
           )}
         </SettingsCard>
       )}
+      {confirmDialog}
     </SettingsPage>
   );
 }
