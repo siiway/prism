@@ -95,37 +95,94 @@ parsed by `parsePrefsEvents` for forward-compat with old data.
 ## Rulesets
 
 A ruleset is an ordered array of rules. When an event fires the engine walks
-top-to-bottom, applies actions for every match, and returns the deduped
-delivery list to actually send to.
+top-to-bottom, applies the action of every rule that matches, and returns the
+deduped delivery list to actually send to. Only one ruleset can be active; while
+one is, it replaces the flat preferences.
+
+In the UI each ruleset has its own page (**Notifications → Rulesets**), and
+each rule has its own page with a visual expression builder, a raw expression
+editor, the action, its place in the order, and a live test against a made-up
+event. The ruleset page's **Trace** runs every rule against a made-up event and
+shows which matched and where the notification would go; it uses the same
+evaluator as dispatch (`shared/notificationRules.ts`).
 
 ### Rule shape
 
 ```json
 {
   "id": "rule_xyz",
-  "name": "Mute domain noise on burner email",
+  "name": "Security events from outside the office",
   "enabled": true,
   "match": {
-    "event": "domain.*",
-    "accounts": ["email:burner-id"]
+    "expression": "event.category eq \"security\" and not ip.src in {10.0.0.0/8}"
   },
   "action": {
-    "type": "drop"
+    "type": "send",
+    "channels": [{ "kind": "tg", "connection_id": "tg_abc", "level": "full" }]
   },
   "stop": false
 }
 ```
 
-| Field                         | Meaning                                                                                                                                           |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                          | Stable rule identifier (server-generated)                                                                                                         |
-| `name`                        | Human-readable label (≤ 64 chars, optional)                                                                                                       |
-| `enabled`                     | `false` skips the rule without affecting state                                                                                                    |
-| `match.event`                 | Glob: `*` matches everything, `?` matches one character, otherwise literal. Anchored — `app` matches `app`, not `appx`                            |
-| `match.accounts`              | Optional. Each entry is `email:<email_id>`, `tg:<connection_id>`, or `discord:<connection_id>`. Limits the rule's _effect_ to those accounts only |
-| `action.type`                 | `send` (append channels) or `drop` (clear delivery so far)                                                                                        |
-| `action.channels` (send only) | Array of `{ kind: "email", email_id, level }`, `{ kind: "tg", connection_id, level }`, or `{ kind: "discord", connection_id, level }`             |
-| `stop`                        | `true` halts evaluation after this rule fires                                                                                                     |
+| Field                         | Meaning                                                                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                          | Stable rule identifier                                                                                                                                  |
+| `name`                        | Human-readable label (≤ 64 chars, optional)                                                                                                             |
+| `enabled`                     | `false` skips the rule without affecting state                                                                                                          |
+| `match.expression`            | Rule expression (below). Empty or missing matches every event. Stored in canonical form                                                                 |
+| `match.event`                 | Legacy glob, still honoured: `*` matches everything, `?` one character, otherwise literal and anchored. ANDed with `match.expression` when both are set |
+| `match.accounts`              | Optional. Each entry is `email:<email_id>`, `tg:<connection_id>`, or `discord:<connection_id>`. Limits the rule's _effect_ to those accounts only       |
+| `action.type`                 | `send` (append channels) or `drop` (clear delivery so far)                                                                                              |
+| `action.channels` (send only) | Array of `{ kind: "email", email_id, level }`, `{ kind: "tg", connection_id, level }`, or `{ kind: "discord", connection_id, level }`                   |
+| `stop`                        | `true` halts evaluation after this rule matches                                                                                                         |
+
+### Rule expressions
+
+The syntax follows Cloudflare's Rules language, cut down to what a notification
+carries. The parser, type checks and evaluator are in
+`shared/ruleExpression.ts`, shared by the Worker and the frontend.
+
+```
+event.category eq "security" and not ip.src in {10.0.0.0/8 192.168.0.0/16}
+(resource.name wildcard "prod-*" or http.user_agent contains "curl")
+time.hour in {0..6 22..23} and starts_with(event, "connection.")
+```
+
+| Field                    | Type   | Value                                                                                 |
+| ------------------------ | ------ | ------------------------------------------------------------------------------------- |
+| `event`                  | string | Event name, e.g. `security.passkey_added`                                             |
+| `event.category`         | string | Part before the dot: `app`, `domain`, `connection`, `profile`, `security`, `token`, … |
+| `ip.src`                 | IP     | IP address of whoever caused the event (`CF-Connecting-IP`)                           |
+| `ip.src.country`         | string | Two-letter country of that address (`CF-IPCountry`); empty when unknown               |
+| `http.user_agent`        | string | Their User-Agent                                                                      |
+| `resource.name`          | string | What the event is about: app, domain, team, token, passkey or provider name           |
+| `oauth.scopes`           | array  | Scopes granted (`oauth.consent_granted`)                                              |
+| `profile.changed_fields` | array  | Fields changed (`profile.updated`)                                                    |
+| `time.hour`              | int    | Hour of the event, 0–23, UTC                                                          |
+| `time.weekday`           | int    | Day of the event, 1 (Monday) – 7 (Sunday), UTC                                        |
+
+| Type   | Comparisons                                                                                 |
+| ------ | ------------------------------------------------------------------------------------------- |
+| string | `eq` `ne` `contains` `wildcard`, `in {"a" "b"}`, `starts_with(f, "x")`, `ends_with(f, "x")` |
+| IP     | `eq` `ne`, `in {203.0.113.7 10.0.0.0/8 2001:db8::/32}` (IPv4 and IPv6, CIDR in sets)        |
+| int    | `eq` `ne` `lt` `le` `gt` `ge`, `in {1 2 9..17}` (ranges in sets)                            |
+| array  | `contains "x"` (any element equals), `in {"a" "b"}` (any element in the set)                |
+
+- Logic: `and` / `&&`, `or` / `||`, `not` / `!`, parentheses. `not` binds
+  tighter than `and`, which binds tighter than `or`. `==`, `!=`, `<`, `<=`, `>`,
+  `>=` mean `eq`, `ne`, `lt`, `le`, `gt`, `ge`.
+- Strings are double-quoted; `\"` and `\\` escape. Comparisons are
+  case-sensitive except `wildcard`, which is case-insensitive and supports `*`
+  only.
+- A field with no value (no country, an event without scopes) only satisfies
+  `ne`.
+- Limits: 4096 characters, 200 conditions, 100 values per set, 512 characters
+  per string, nesting depth 32. No user input is compiled into a regular
+  expression; wildcard matching is linear.
+
+The builder edits expressions that are OR-ed groups of AND-ed conditions (each
+condition one comparison, optionally `not contains` / `not … in`); anything
+else, such as `not (a or b)`, is edited as text.
 
 ### Evaluation rules
 
@@ -137,9 +194,11 @@ delivery list to actually send to.
 - `match.accounts` filters the _effect_ of the rule, not its match condition.
   A `send` rule with scoped accounts silently skips channels that don't belong
   to those accounts. A `drop` rule with scoped accounts only clears the listed
-  accounts — others pass through as if the rule hadn't fired.
+  accounts — others pass through as if the rule hadn't fired. The UI's "Mute
+  only these destinations" writes this.
 - `stop: true` halts evaluation. Useful as a tail-anchor to keep more general
   rules below from undoing the current one.
+- Disabled rules, and rules whose expression no longer parses, are skipped.
 
 ### Worked example
 
@@ -147,8 +206,8 @@ delivery list to actually send to.
 [
   {
     "id": "1",
-    "name": "All events to primary email",
-    "match": { "event": "*" },
+    "name": "Everything to primary email",
+    "match": {},
     "action": {
       "type": "send",
       "channels": [{ "kind": "email", "email_id": "primary", "level": "full" }]
@@ -156,27 +215,30 @@ delivery list to actually send to.
   },
   {
     "id": "2",
-    "name": "App events also to Telegram, brief",
-    "match": { "event": "app.*" },
+    "name": "Sign-ins from abroad also to Telegram",
+    "match": {
+      "expression": "event eq \"connection.login\" and ip.src.country ne \"DE\""
+    },
     "action": {
       "type": "send",
-      "channels": [
-        { "kind": "tg", "connection_id": "tg_abc", "level": "brief" }
-      ]
+      "channels": [{ "kind": "tg", "connection_id": "tg_abc", "level": "full" }]
     }
   },
   {
     "id": "3",
-    "name": "Mute domain noise everywhere",
-    "match": { "event": "domain.*" },
-    "action": { "type": "drop" }
+    "name": "Quiet nights, except security",
+    "match": {
+      "expression": "time.hour in {0..6} and event.category ne \"security\""
+    },
+    "action": { "type": "drop" },
+    "stop": true
   }
 ]
 ```
 
-`security.totp_enabled` → primary email (full). `app.created` → primary email
-(full) + Telegram (brief). `domain.verified` → nothing (rule 3 cleared what
-rule 1 added).
+`connection.login` from the US at 14:00 UTC → primary email + Telegram.
+`app.created` at 03:00 UTC → nothing (rule 3 cleared what rule 1 added).
+`security.totp_disabled` at 03:00 UTC → primary email.
 
 ### Endpoints
 
@@ -187,12 +249,16 @@ PUT    /api/user/me/notification-rulesets/:id
 DELETE /api/user/me/notification-rulesets/:id
 ```
 
-`POST` validates the rules array via `sanitizeRulesArray`:
+`POST` and `PUT` validate the rules array via `sanitizeRulesArray`:
 
 - Max 200 rules.
 - Unknown action types or malformed channels return `400`.
-- Unknown event names also return `400`. (Any event in `USER_NOTIFICATION_EVENTS`
-  is accepted, plus the `*` and `?` glob forms.)
+- Unknown event names in `match.event` return `400` (any event in
+  `USER_NOTIFICATION_EVENTS` is accepted, plus the `*` and `?` glob forms).
+- An expression that doesn't parse returns `400` with
+  `rule_expression_<reason>` (`unexpected_end`, `unexpected_token`,
+  `unterminated_string`, `unknown_field`, `bad_operator`, `bad_value`,
+  `too_long`, `too_deep`, `too_many_items`) and `params: { field, at, token }`.
 
 ## Telegram setup
 

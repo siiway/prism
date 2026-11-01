@@ -72,21 +72,23 @@ Prism 在与安全相关的事件上向用户推送通知 — 应用变更、域
 
 ## 规则集
 
-规则集是一组按顺序的规则。事件触发时，引擎从上向下遍历，把每条匹配规则的副作用累加，最后产出去重后的投递列表。
+规则集是一组按顺序的规则。事件触发时，引擎从上向下遍历，执行每条匹配规则的操作，最后产出去重后的投递列表。同一时间只能启用一个规则集；启用期间它会取代扁平偏好。
+
+在界面中，每个规则集都有自己的页面（**通知 → 规则集**），每条规则也有自己的页面：可视化表达式生成器、表达式文本编辑器、操作、在顺序中的位置，以及针对虚构事件的实时测试。规则集页面的 **追踪** 会用虚构事件运行所有规则，显示哪些规则匹配以及通知会发往何处；它与实际分发使用同一个求值器（`shared/notificationRules.ts`）。
 
 ### 规则结构
 
 ```json
 {
   "id": "rule_xyz",
-  "name": "burner 邮箱屏蔽域名噪音",
+  "name": "来自办公室以外的安全事件",
   "enabled": true,
   "match": {
-    "event": "domain.*",
-    "accounts": ["email:burner-id"]
+    "expression": "event.category eq \"security\" and not ip.src in {10.0.0.0/8}"
   },
   "action": {
-    "type": "drop"
+    "type": "send",
+    "channels": [{ "kind": "tg", "connection_id": "tg_abc", "level": "full" }]
   },
   "stop": false
 }
@@ -94,30 +96,69 @@ Prism 在与安全相关的事件上向用户推送通知 — 应用变更、域
 
 | 字段                         | 含义                                                                                                                                   |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                         | 服务端生成的稳定 ID                                                                                                                    |
+| `id`                         | 稳定的规则 ID                                                                                                                          |
 | `name`                       | 人类可读标签（≤ 64 字符，可选）                                                                                                        |
 | `enabled`                    | `false` 时跳过此规则，不影响状态                                                                                                       |
-| `match.event`                | 通配符：`*` 匹配任意，`?` 匹配单字符，其余字面匹配。锚定匹配 — `app` 只匹配 `app`，不匹配 `appx`                                       |
-| `match.accounts`             | 可选。每项形如 `email:<email_id>`、`tg:<connection_id>` 或 `discord:<connection_id>`。限定该规则副作用只作用于这些账号                 |
-| `action.type`                | `send`（追加通道）或 `drop`（清空已积累的投递集合）                                                                                    |
-| `action.channels`（仅 send） | 数组，元素 `{ kind: "email", email_id, level }`、`{ kind: "tg", connection_id, level }` 或 `{ kind: "discord", connection_id, level }` |
-| `stop`                       | `true` 在该规则触发后停止后续遍历                                                                                                      |
+| `match.expression`           | 规则表达式（见下文）。为空或缺省时匹配所有事件。以规范形式保存                                                                         |
+| `match.event`                | 旧版通配符，仍然有效：`*` 匹配任意，`?` 匹配单字符，其余字面锚定匹配。与 `match.expression` 同时存在时取“且”                           |
+| `match.accounts`             | 可选。每项为 `email:<email_id>`、`tg:<connection_id>` 或 `discord:<connection_id>`。把规则的**效果**限定在这些账号上                   |
+| `action.type`                | `send`（追加通道）或 `drop`（清空当前已收集的投递）                                                                                    |
+| `action.channels`（仅 send） | `{ kind: "email", email_id, level }`、`{ kind: "tg", connection_id, level }` 或 `{ kind: "discord", connection_id, level }` 组成的数组 |
+| `stop`                       | `true` 时此规则匹配后停止遍历                                                                                                          |
 
-### 评估语义
+### 规则表达式
 
-- 多条 `send` 累加。同一通道再次出现且等级更高，则升级（`full > brief`）。
-- `drop` 清空目前积累的投递。配合上方更宽松的规则，可表达「除了 X 之外都发到主邮箱」。
-- `match.accounts` 过滤的是规则的*副作用*，而非匹配条件。带账号过滤的 `send` 会静默跳过不在列表中的通道；带账号过滤的 `drop` 只清空列出的账号，其它通道继续保留。
-- `stop: true` 停止遍历。常用作锚点，避免下方更通用的规则把当前规则的效果撤销。
+语法沿用 Cloudflare Rules 语言，并精简为通知所携带的信息。解析器、类型检查和求值器位于 `shared/ruleExpression.ts`，由 Worker 与前端共用。
 
-### 完整示例
+```
+event.category eq "security" and not ip.src in {10.0.0.0/8 192.168.0.0/16}
+(resource.name wildcard "prod-*" or http.user_agent contains "curl")
+time.hour in {0..6 22..23} and starts_with(event, "connection.")
+```
+
+| 字段                     | 类型   | 值                                                                            |
+| ------------------------ | ------ | ----------------------------------------------------------------------------- |
+| `event`                  | string | 事件名，例如 `security.passkey_added`                                         |
+| `event.category`         | string | 点号前的部分：`app`、`domain`、`connection`、`profile`、`security`、`token`…… |
+| `ip.src`                 | IP     | 触发事件者的 IP 地址（`CF-Connecting-IP`）                                    |
+| `ip.src.country`         | string | 该地址的两位国家/地区代码（`CF-IPCountry`）；未知时为空                       |
+| `http.user_agent`        | string | 其 User-Agent                                                                 |
+| `resource.name`          | string | 事件涉及的对象：应用、域名、团队、令牌、通行密钥或提供方的名称                |
+| `oauth.scopes`           | array  | 授予的权限范围（`oauth.consent_granted`）                                     |
+| `profile.changed_fields` | array  | 更改的字段（`profile.updated`）                                               |
+| `time.hour`              | int    | 事件发生的小时，0–23，UTC                                                     |
+| `time.weekday`           | int    | 事件发生的星期，1（星期一）– 7（星期日），UTC                                 |
+
+| 类型   | 比较方式                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------- |
+| string | `eq` `ne` `contains` `wildcard`、`in {"a" "b"}`、`starts_with(f, "x")`、`ends_with(f, "x")` |
+| IP     | `eq` `ne`、`in {203.0.113.7 10.0.0.0/8 2001:db8::/32}`（IPv4 与 IPv6，集合中可用 CIDR）     |
+| int    | `eq` `ne` `lt` `le` `gt` `ge`、`in {1 2 9..17}`（集合中可用区间）                           |
+| array  | `contains "x"`（任一元素相等）、`in {"a" "b"}`（任一元素在集合中）                          |
+
+- 逻辑：`and` / `&&`、`or` / `||`、`not` / `!`、括号。`not` 优先于 `and`，`and` 优先于 `or`。`==`、`!=`、`<`、`<=`、`>`、`>=` 分别等同于 `eq`、`ne`、`lt`、`le`、`gt`、`ge`。
+- 字符串用双引号；`\"` 和 `\\` 转义。除 `wildcard` 外的比较都区分大小写；`wildcard` 不区分大小写，只支持 `*`。
+- 没有值的字段（没有国家/地区、事件不含权限范围）只满足 `ne`。
+- 限制：4096 字符、200 个条件、每个集合 100 个值、每个字符串 512 字符、嵌套深度 32。用户输入不会被编译成正则表达式；通配符匹配是线性的。
+
+生成器可编辑由“或”连接的若干组、每组由“且”连接的条件构成的表达式（每个条件是一次比较，可带 `not contains` / `not … in`）；其他形式（例如 `not (a or b)`）以文本编辑。
+
+### 求值规则
+
+- 多条 `send` 规则会累加。同一通道再次出现且等级更高时会被升级（`full > brief`）。
+- `drop` 会清空当前已经累加出来的投递。与上方更宽松的规则配合，就能表达“所有事件发到主邮箱，但域名事件不发到 burner 邮箱”。
+- `match.accounts` 过滤的是规则的**效果**，而不是它的匹配条件。带账号范围的 `send` 规则会静默跳过不属于这些账号的通道；带账号范围的 `drop` 规则只清空列出的账号，其他账号视为此规则没有触发。界面中的“仅静音这些接收方”写入的就是它。
+- `stop: true` 会停止遍历。适合作为尾部锚点，防止下方更通用的规则覆盖当前规则。
+- 已停用的规则，以及表达式无法解析的规则，会被跳过。
+
+### 示例
 
 ```json
 [
   {
     "id": "1",
-    "name": "全事件 → 主邮箱",
-    "match": { "event": "*" },
+    "name": "所有事件发到主邮箱",
+    "match": {},
     "action": {
       "type": "send",
       "channels": [{ "kind": "email", "email_id": "primary", "level": "full" }]
@@ -125,25 +166,28 @@ Prism 在与安全相关的事件上向用户推送通知 — 应用变更、域
   },
   {
     "id": "2",
-    "name": "应用事件再发到 Telegram（brief）",
-    "match": { "event": "app.*" },
+    "name": "来自国外的登录也发到 Telegram",
+    "match": {
+      "expression": "event eq \"connection.login\" and ip.src.country ne \"DE\""
+    },
     "action": {
       "type": "send",
-      "channels": [
-        { "kind": "tg", "connection_id": "tg_abc", "level": "brief" }
-      ]
+      "channels": [{ "kind": "tg", "connection_id": "tg_abc", "level": "full" }]
     }
   },
   {
     "id": "3",
-    "name": "屏蔽域名噪音",
-    "match": { "event": "domain.*" },
-    "action": { "type": "drop" }
+    "name": "夜间免打扰，安全事件除外",
+    "match": {
+      "expression": "time.hour in {0..6} and event.category ne \"security\""
+    },
+    "action": { "type": "drop" },
+    "stop": true
   }
 ]
 ```
 
-`security.totp_enabled` → 主邮箱（full）。`app.created` → 主邮箱（full）+ Telegram（brief）。`domain.verified` → 无投递（规则 3 把规则 1 加进来的清空了）。
+UTC 14:00 来自美国的 `connection.login` → 主邮箱 + Telegram。UTC 03:00 的 `app.created` → 无投递（规则 3 清空了规则 1 加进来的）。UTC 03:00 的 `security.totp_disabled` → 主邮箱。
 
 ### 端点
 
@@ -154,11 +198,12 @@ PUT    /api/user/me/notification-rulesets/:id
 DELETE /api/user/me/notification-rulesets/:id
 ```
 
-`POST` 调用 `sanitizeRulesArray` 进行校验：
+`POST` 和 `PUT` 调用 `sanitizeRulesArray` 校验规则数组：
 
 - 最多 200 条。
 - 未知的 action 类型或错误结构的 channel 一律 `400`。
-- 未知事件名也 `400`（接受 `USER_NOTIFICATION_EVENTS` 中的所有事件以及 `*` / `?` 通配符）。
+- `match.event` 中的未知事件名返回 `400`（接受 `USER_NOTIFICATION_EVENTS` 中的所有事件以及 `*` / `?` 通配符）。
+- 无法解析的表达式返回 `400`，错误码为 `rule_expression_<原因>`（`unexpected_end`、`unexpected_token`、`unterminated_string`、`unknown_field`、`bad_operator`、`bad_value`、`too_long`、`too_deep`、`too_many_items`），并带有 `params: { field, at, token }`。
 
 ## Telegram 配置
 

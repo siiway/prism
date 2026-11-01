@@ -4152,43 +4152,20 @@ export interface NotifDiscordConnection {
 
 // Notification rule shapes — see shared/types.ts.
 
-// ─── Rule-engine ruleset (new model) ─────────────────────────────────────────
+// ─── Rule-engine ruleset ─────────────────────────────────────────────────────
 //
-// A ruleset is an ordered list of NotificationRulesetRule entries. The active
-// ruleset replaces the legacy per-event NotificationRules at dispatch.
-//
-// match.event is a glob: "*" matches everything, "security.*" matches
-// every security event, "app.created" matches exactly one. Channels
-// across matching rules merge; duplicates collapse to the highest level.
+// A ruleset is an ordered list of rules; the active one replaces the
+// per-event NotificationRules at dispatch. The shapes are shared with the
+// Worker: see shared/notificationRules.ts and shared/ruleExpression.ts.
 
-export type NotificationLevel = "brief" | "full";
-
-export interface NotificationRuleMatch {
-  event?: string;
-  /**
-   * Account-key filter ("email:<email_id>" or "tg:<connection_id>").
-   * Empty/missing means the rule applies to every account uniformly;
-   * non-empty restricts the rule's effect to those accounts only.
-   */
-  accounts?: string[];
-}
-
-export type NotificationRuleSendChannel =
-  | { kind: "email"; email_id: string; level: NotificationLevel }
-  | { kind: "tg"; connection_id: string; level: NotificationLevel }
-  | { kind: "discord"; connection_id: string; level: NotificationLevel };
-
-export type NotificationRuleAction =
-  { type: "drop" } | { type: "send"; channels: NotificationRuleSendChannel[] };
-
-export interface NotificationRulesetRule {
-  id: string;
-  name?: string;
-  enabled?: boolean;
-  match: NotificationRuleMatch;
-  action: NotificationRuleAction;
-  stop?: boolean;
-}
+export type {
+  NotificationLevel,
+  RuleMatch as NotificationRuleMatch,
+  RuleSendChannel as NotificationRuleSendChannel,
+  RuleAction as NotificationRuleAction,
+  NotificationRule as NotificationRulesetRule,
+} from "../../shared/notificationRules";
+import type { NotificationRule as NotificationRulesetRule } from "../../shared/notificationRules";
 
 export interface NotificationRuleset {
   id: string;

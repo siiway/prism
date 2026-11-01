@@ -3,9 +3,9 @@
 // - Events (notifications/EventsCard): destination-first. A list of
 //   destinations (each verified email, linked Telegram and Discord account);
 //   picking one shows every event with a single Off / Brief / Full picker.
-// - Rulesets (notifications/RulesetsCard): conditional rules ("if the event
-//   matches X, send to Y at level Z"). While one is active it replaces the
-//   per-event settings at dispatch time.
+// - Rulesets (notifications/RulesetsCard): the user's rulesets, each on its
+//   own page (/notifications/rulesets/:id). While one is active it replaces
+//   the per-event settings at dispatch time.
 
 import {
   Button,
@@ -14,16 +14,14 @@ import {
   MessageBarBody,
   makeStyles,
 } from "@fluentui/react-components";
-import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import type { NotificationRules } from "../lib/api";
-import { useApi } from "../lib/api-context";
 import { PageHeader } from "../components/PageHeader";
 import { SkeletonSettingsPage } from "../components/Skeletons";
-import { listDestinations } from "./notifications/destinations";
 import { EventsCard } from "./notifications/EventsCard";
 import { RulesetsCard } from "./notifications/RulesetsCard";
+import { useDestinations } from "./notifications/useDestinations";
 
 const useStyles = makeStyles({
   root: {
@@ -38,25 +36,11 @@ const useStyles = makeStyles({
 const NO_RULES: NotificationRules = {};
 
 export function Notifications() {
-  const api = useApi();
   const { t } = useTranslation();
   const styles = useStyles();
   const navigate = useNavigate();
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["notification-prefs"],
-    queryFn: () => api.getNotificationPrefs(),
-  });
-
-  const { data: site } = useQuery({
-    queryKey: ["site"],
-    queryFn: api.site,
-    staleTime: 60_000,
-  });
-
-  const hasTgBot = !!site?.tg_notify_source_slug;
-  const hasDiscordBot = !!site?.discord_notify_source_slug;
-  const destinations = listDestinations(data, hasDiscordBot);
+  const { prefs, isLoading, hasTgBot, hasDiscordBot, destinations } =
+    useDestinations();
 
   const header = (
     <PageHeader
@@ -86,18 +70,18 @@ export function Notifications() {
     <div className={styles.root}>
       {header}
 
-      {!data?.emails.length && (
+      {!prefs?.emails.length && (
         <MessageBar intent="warning">
           <MessageBarBody>{t("notifications.noEmail")}</MessageBarBody>
         </MessageBar>
       )}
-      {hasTgBot && !data?.tg_connections.length && (
+      {hasTgBot && !prefs?.tg_connections.length && (
         <MessageBar intent="info">
           <MessageBarBody>{t("notifications.tgNoAccount")}</MessageBarBody>
           {linkAccount}
         </MessageBar>
       )}
-      {hasDiscordBot && !data?.discord_connections.length && (
+      {hasDiscordBot && !prefs?.discord_connections.length && (
         <MessageBar intent="info">
           <MessageBarBody>{t("notifications.discordNoAccount")}</MessageBarBody>
           {linkAccount}
@@ -105,10 +89,10 @@ export function Notifications() {
       )}
 
       <EventsCard
-        savedRules={data?.rules ?? NO_RULES}
+        savedRules={prefs?.rules ?? NO_RULES}
         destinations={destinations}
       />
-      <RulesetsCard destinations={destinations} />
+      <RulesetsCard />
     </div>
   );
 }

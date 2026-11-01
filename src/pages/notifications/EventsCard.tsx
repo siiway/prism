@@ -6,12 +6,10 @@ import {
   Button,
   MessageBar,
   MessageBarBody,
-  Spinner,
   makeStyles,
-  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
-import { CheckmarkRegular, CodeRegular } from "@fluentui/react-icons";
+import { CodeRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -21,6 +19,7 @@ import { SettingsCard } from "../../components/Settings";
 import { DestinationList } from "./DestinationList";
 import { EventLevels } from "./EventLevels";
 import { JsonDialog } from "./JsonDialog";
+import { SaveBar } from "./SaveBar";
 import { destKey, type Destination } from "./destinations";
 import { WIDE, useNotificationStyles } from "./styles";
 
@@ -31,31 +30,6 @@ const useStyles = makeStyles({
     gridTemplateColumns: "232px minmax(0, 1fr)",
     borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
     [WIDE]: { gridTemplateColumns: "minmax(0, 1fr)" },
-  },
-  footer: {
-    position: "sticky",
-    bottom: 0,
-    zIndex: 1,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: "8px",
-    padding: "12px var(--card-pad)",
-    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    borderBottomLeftRadius: tokens.borderRadiusXLarge,
-    borderBottomRightRadius: tokens.borderRadiusXLarge,
-    background: tokens.colorNeutralBackground1,
-  },
-  footerStatus: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    marginRight: "auto",
-    fontSize: tokens.fontSizeBase300,
-    color: tokens.colorNeutralForeground3,
-  },
-  footerStatusOk: {
-    color: tokens.colorStatusSuccessForeground1,
   },
 });
 
@@ -170,48 +144,17 @@ export function EventsCard({
         </div>
       )}
 
-      {/* Only while there is something to save or just saved; idle, the
-          card ends at its last row. */}
-      {(dirty || saved || mutation.isPending) && (
-        <div className={styles.footer}>
-          <span
-            className={mergeClasses(
-              styles.footerStatus,
-              saved && styles.footerStatusOk,
-            )}
-            role="status"
-          >
-            {saved ? (
-              <>
-                <CheckmarkRegular />
-                {t("notifications.saved")}
-              </>
-            ) : dirty ? (
-              t("notifications.unsaved")
-            ) : null}
-          </span>
-          <Button
-            disabled={!dirty || mutation.isPending}
-            onClick={() => {
-              setRules(savedRules);
-              setDirty(false);
-            }}
-          >
-            {t("common.discard")}
-          </Button>
-          <Button
-            appearance="primary"
-            disabled={!dirty || mutation.isPending}
-            onClick={() => mutation.mutate(rules)}
-          >
-            {mutation.isPending ? (
-              <Spinner size="tiny" />
-            ) : (
-              t("common.saveChanges")
-            )}
-          </Button>
-        </div>
-      )}
+      <SaveBar
+        dirty={dirty}
+        saved={saved}
+        pending={mutation.isPending}
+        savedLabel={t("notifications.saved")}
+        onDiscard={() => {
+          setRules(savedRules);
+          setDirty(false);
+        }}
+        onSave={() => mutation.mutate(rules)}
+      />
 
       <JsonDialog
         open={jsonOpen}

@@ -514,6 +514,50 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
             })),
         },
         {
+          path: "notifications/rulesets/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/notifications/RulesetNew").then((m) => ({
+              Component: m.RulesetNew,
+            })),
+        },
+        {
+          path: "notifications/rulesets/:id",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/notifications/RulesetDetail").then((m) => ({
+              Component: m.RulesetDetail,
+            })),
+        },
+        {
+          path: "notifications/rulesets/:id/rules/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/notifications/RuleDetail").then((m) => ({
+              Component: m.RuleDetail,
+            })),
+        },
+        {
+          path: "notifications/rulesets/:id/rules/:ruleId",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/notifications/RuleDetail").then((m) => ({
+              Component: m.RuleDetail,
+            })),
+        },
+        {
           path: "audit-log",
           loader: ({ request }) => {
             requireAuthLoader(request);

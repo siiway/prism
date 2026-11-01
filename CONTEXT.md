@@ -218,5 +218,13 @@ dismissible per reader.
 _Avoid_: banner, alert, announcement.
 
 **Notification ruleset**:
-A named, ordered set of match / action / stop rules that route a user's
-per-event email and Telegram notifications.
+A named, ordered set of rules that route a user's email, Telegram and Discord
+notifications. Each rule has a **rule expression**, an action (send to
+destinations at a level, or mute) and an optional stop. At most one ruleset is
+active; while one is, it replaces the per-event preferences.
+
+**Rule expression**:
+The condition a ruleset rule matches on, written in a Cloudflare-style
+language over an event's fields (event, IP address, country, user agent,
+resource name, time…). Empty means every event.
+_Avoid_: filter, query.
