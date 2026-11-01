@@ -8,13 +8,7 @@
 // missing on the other the way it did while each tier kept its own copy.
 
 export type CaptchaProvider =
-  | "none"
-  | "turnstile"
-  | "hcaptcha"
-  | "recaptcha"
-  | "pow"
-  | "geetest"
-  | "cap";
+  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
 
 /** How the embedded Cap challenge store is backed / where verification runs.
  *  "embedded" runs capjs-core inside the Worker (KV-backed replay guard);

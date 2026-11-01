@@ -212,13 +212,13 @@ Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆主
 
 [邀请链接注册](teams.md#邀请链接注册)的各项上限。团队能否使用该功能由站点管理员按团队授权；`allow_registration` 为 `false` 时不会创建任何账号。
 
-| 键                                       | 类型   | 默认值  | 说明                                                              |
-| ---------------------------------------- | ------ | ------- | ----------------------------------------------------------------- |
-| `team_invite_registration_max_uses_cap`  | int    | `1000`  | 团队为可注册邀请设置 `max_uses` 的上限。                          |
-| `team_invite_registration_rate_per_hour` | int    | `200`   | 单个邀请码每小时注册次数。按 IP 限流约束不了被广传的链接。        |
-| `restricted_user_capabilities`           | object | `{}`    | 放开给受限账号的功能，如 `{"app:create": true}`。留空即全部拒绝。 |
-| `restricted_pending_ttl_hours`           | int    | `72`    | 未完成的注册存活多久后被清理。                                    |
-| `restricted_dissolve_grace_hours`        | int    | `168`   | 解散停用账号到实际删除之间的宽限期。                              |
+| 键                                       | 类型   | 默认值 | 说明                                                              |
+| ---------------------------------------- | ------ | ------ | ----------------------------------------------------------------- |
+| `team_invite_registration_max_uses_cap`  | int    | `1000` | 团队为可注册邀请设置 `max_uses` 的上限。                          |
+| `team_invite_registration_rate_per_hour` | int    | `200`  | 单个邀请码每小时注册次数。按 IP 限流约束不了被广传的链接。        |
+| `restricted_user_capabilities`           | object | `{}`   | 放开给受限账号的功能，如 `{"app:create": true}`。留空即全部拒绝。 |
+| `restricted_pending_ttl_hours`           | int    | `72`   | 未完成的注册存活多久后被清理。                                    |
+| `restricted_dissolve_grace_hours`        | int    | `168`  | 解散停用账号到实际删除之间的宽限期。                              |
 
 能力键：`team:create`、`app:create`、`domain:create`、`pat:create`、`profile:public`、`gpg:manage`、`self:convert`。未列出的键落回内置默认值（全部拒绝）。账号安全永不受限。`self:convert` 是站点默认值，各团队可单独覆盖（见 [团队 → 转换为完整账号](teams.md#转换为完整账号)）。
 
