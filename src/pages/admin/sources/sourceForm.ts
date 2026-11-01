@@ -4,7 +4,7 @@
 
 import type { TFunction } from "i18next";
 import type { OAuthSource } from "../../../lib/api";
-import { PROVIDER_ICON_URLS } from "../../../lib/providerIcons";
+import { PROVIDER_ICON_URLS } from "../../../../shared/providerIcons";
 
 // Brand names stay as they are in every language; only the generic
 // providers have names that get translated.

@@ -10,7 +10,7 @@ import { proxyImageUrl } from "../lib/proxyImage";
 import {
   resolveProviderIconUrl,
   isMonochromeDarkProvider,
-} from "../lib/providerIcons";
+} from "../../shared/providerIcons";
 import type { Variables } from "../types";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();

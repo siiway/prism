@@ -1,9 +1,5 @@
-// Server-side mirror of src/lib/providerIcons.ts. Duplicated (not shared)
-// because worker/ and src/ have separate tsconfig include trees.
-//
-// Kept here so /api/site can pre-register each enabled source's icon
-// mapping for anonymous viewers (the public /proxy/image/register endpoint
-// requires auth, which the Login page doesn't have yet).
+// Default icons for the built-in OAuth providers, keyed by provider TYPE (not
+// slug). A source's own `icon_url` overrides these when set.
 
 // Shipped with the app (public/provider-icons, from Simple Icons, CC0) so
 // the sign-in page never waits on, or breaks with, a third-party CDN.
@@ -28,13 +24,13 @@ export function isMonochromeDarkProvider(provider: string): boolean {
   return MONOCHROME_DARK_PROVIDERS.has(provider);
 }
 
-/** Same fallback chain as the client helper:
- *  show_icon=0 → null; per-source override → that; global default → that;
- *  otherwise null. */
+/** Pick the icon URL for a provider entry on the login / connections page:
+ *  null when the admin turned the icon off (`show_icon = 0`), else the
+ *  per-source override, else the bundled default, else null. */
 export function resolveProviderIconUrl(p: {
   provider: string;
-  icon_url: string | null;
-  show_icon: number;
+  icon_url?: string | null;
+  show_icon?: number | null;
 }): string | null {
   if (p.show_icon === 0) return null;
   return p.icon_url ?? PROVIDER_ICON_URLS[p.provider] ?? null;
