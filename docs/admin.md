@@ -843,11 +843,15 @@ empty a table or hand out admin — so three things hold it in place:
 
 ### Browse tables
 
-Pick a table to page through its rows. The header marks primary-key columns,
-the DDL that created the table is shown above the grid, and the filter box
-takes a raw SQL `WHERE` fragment (without the keyword).
+Pick a table from the list (filterable, and a dropdown on narrow screens) to
+page through its rows; the view and table are kept in the URL. The header
+marks primary-key columns, the DDL that created the table is under
+**Schema**, and the filter box takes a raw SQL `WHERE` fragment (without the
+keyword). D1's own `_cf_*` bookkeeping tables are not listed: D1 refuses to
+let queries read them.
 
-Rows are edited, inserted and deleted in place. An update sends only the
+Rows are edited and inserted in a form that takes the grid's place, and
+deleted after a confirmation that shows the row's key. An update sends only the
 columns you actually changed. An empty input means `NULL`, which the grid also
 renders distinctly from an empty string — the two are not the same value and
 must not look alike in a table you are about to edit.
@@ -864,7 +868,7 @@ fails halfway leaves nothing behind. Result sets are capped at 500 rows and
 marked as truncated when they hit it.
 
 Write mode is a switch, and turning it on adds a confirmation step that shows
-the statement one more time before it runs.
+the statement one more time before it runs. Ctrl/Cmd+Enter runs the query.
 
 ### Endpoints
 
@@ -881,7 +885,7 @@ All of them sit behind `requireAdmin` and are session-only.
 
 ### Key–value browser
 
-The third tab in **Admin → Database**. KV holds most of what makes an instance
+The **Key–value** view of **Admin → Database**. KV holds most of what makes an instance
 behave the way it does on a given day — the debug switches, pending social
 confirmation and 2FA handoffs, sudo grants, the pending site reset — and
 nothing else renders any of it.
@@ -889,7 +893,9 @@ nothing else renders any of it.
 KV has no schema, so navigation is a namespace picker and a prefix box rather
 than a table list. Two namespaces are exposed: `sessions` (sessions, system
 flags, signing keys) and `cache`. Listing pages with KV's own opaque cursor,
-so it moves forward and back rather than jumping to a page number.
+so it moves forward and back rather than jumping to a page number. A key
+opens in place of the list to read, edit or delete it; deleting one, like
+purging a prefix, confirms first.
 
 **Key material is withheld.** `system:jwt_secret` and the signing keypairs
 come back flagged, without their value, and cannot be written through this
