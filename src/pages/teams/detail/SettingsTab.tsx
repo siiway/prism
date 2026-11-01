@@ -152,8 +152,13 @@ export function SettingsTab({
     form.avatar_url !== base.avatar_url;
   const [saving, setSaving] = useState(false);
 
+  // Every team update rewrites the profile fields from the server's copy, so
+  // a switch toggled during a profile save could undo it: the two never
+  // run at once (the switches disable while the profile saves, and back).
   const saveProfile = async () => {
+    if (pending) return;
     setSaving(true);
+    const sent = { ...form };
     try {
       await api.updateTeam(teamId, {
         name: form.name.trim(),
@@ -162,7 +167,13 @@ export function SettingsTab({
       });
       await qc.invalidateQueries({ queryKey: ["team", teamId] });
       await qc.invalidateQueries({ queryKey: ["teams"] });
-      setEdits({});
+      // Keep anything typed while the request was in flight.
+      setEdits((e) => {
+        const next = { ...e };
+        for (const k of Object.keys(sent) as (keyof typeof sent)[])
+          if (next[k] === sent[k]) delete next[k];
+        return next;
+      });
       showMsg("success", t("teams.teamUpdated"));
     } catch (err) {
       fail(err);
@@ -174,6 +185,7 @@ export function SettingsTab({
   // ── Switches ───────────────────────────────────────────────────────────────
   const [pending, setPending] = useState<TeamFlag | null>(null);
   const setFlag = async (field: TeamFlag, value: boolean) => {
+    if (saving) return;
     setPending(field);
     try {
       await api.updateTeam(teamId, { [field]: value });
@@ -198,7 +210,7 @@ export function SettingsTab({
     <Switch
       aria-label={label}
       checked={checked}
-      disabled={disabled || pending === field}
+      disabled={disabled || pending === field || saving}
       onChange={(_, d) => setFlag(field, d.checked)}
     />
   );
@@ -267,7 +279,7 @@ export function SettingsTab({
           )}
           <Button
             appearance="primary"
-            disabled={!dirty || saving || !form.name.trim()}
+            disabled={!dirty || saving || !!pending || !form.name.trim()}
             onClick={saveProfile}
           >
             {saving ? <Spinner size="tiny" /> : t("common.saveChanges")}

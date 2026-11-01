@@ -110,7 +110,13 @@ export interface AppFormApi {
   form: AppForm;
   set: <K extends keyof AppForm>(key: K, value: AppForm[K]) => void;
   dirty: (section: Section) => boolean;
-  saving: Section | null;
+  /** The write in flight: a section's Save, or "switch" for an instant
+   *  toggle elsewhere on the page. Only one runs at a time, because every
+   *  app update rewrites the whole row from what the server read. */
+  saving: Section | "switch" | null;
   save: (section: Section) => void;
   discard: (section: Section) => void;
+  /** Run an instant update (a switch) under the same one-at-a-time rule.
+   *  Does nothing while another write is in flight. */
+  exclusive: (run: () => Promise<void>) => Promise<void>;
 }

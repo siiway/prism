@@ -47,6 +47,7 @@ import {
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import { CopyButton } from "./shared";
 import { useDetailStyles } from "./styles";
+import type { AppFormApi } from "./form";
 
 type RuleType = AppScopeAccessRule["rule_type"];
 const RULE_TYPES: RuleType[] = [
@@ -60,10 +61,11 @@ type ImportDef = { scope: string; title: string; description?: string };
 
 interface Props {
   app: OAuthApp;
+  formApi: AppFormApi;
   showMsg: (type: "success" | "error", text: string) => void;
 }
 
-export function PermissionsTab({ app, showMsg }: Props) {
+export function PermissionsTab({ app, formApi, showMsg }: Props) {
   const api = useApi();
   const styles = useDetailStyles();
   const qc = useQueryClient();
@@ -189,12 +191,18 @@ export function PermissionsTab({ app, showMsg }: Props) {
   };
 
   // ── Self-management switch ─────────────────────────────────────────────────
-  const selfManage = useMutation({
-    mutationFn: (enabled: boolean) =>
-      api.updateApp(appId, { allow_self_manage_exported_permissions: enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["app", appId] }),
-    onError: (e) => showMsg("error", errorText(e)),
-  });
+  // Through the page's write lock: this update rewrites the whole app row.
+  const setSelfManage = (enabled: boolean) =>
+    formApi.exclusive(async () => {
+      try {
+        await api.updateApp(appId, {
+          allow_self_manage_exported_permissions: enabled,
+        });
+        await qc.invalidateQueries({ queryKey: ["app", appId] });
+      } catch (e) {
+        showMsg("error", errorText(e));
+      }
+    });
 
   // ── Access rules ───────────────────────────────────────────────────────────
   const rulesKey = ["app-scope-rules", appId];
@@ -338,8 +346,8 @@ export function PermissionsTab({ app, showMsg }: Props) {
           <Switch
             aria-label={t("apps.selfManageLabel")}
             checked={app.allow_self_manage_exported_permissions}
-            disabled={selfManage.isPending}
-            onChange={(_, d) => selfManage.mutate(d.checked)}
+            disabled={formApi.saving !== null}
+            onChange={(_, d) => void setSelfManage(d.checked)}
           />
         </SettingsRow>
       </SettingsCard>

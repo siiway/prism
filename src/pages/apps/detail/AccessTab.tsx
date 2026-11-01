@@ -37,6 +37,7 @@ import {
   SettingsRow,
 } from "../../../components/Settings";
 import { useDetailStyles } from "./styles";
+import type { AppFormApi } from "./form";
 
 type MinRole = "owner" | "co-owner" | "admin" | "member";
 const ROLES: MinRole[] = ["member", "admin", "co-owner", "owner"];
@@ -49,10 +50,11 @@ const ROLE_KEY: Record<MinRole, string> = {
 
 interface Props {
   app: OAuthApp;
+  formApi: AppFormApi;
   showMsg: (type: "success" | "error", text: string) => void;
 }
 
-export function AccessTab({ app, showMsg }: Props) {
+export function AccessTab({ app, formApi, showMsg }: Props) {
   const api = useApi();
   const styles = useDetailStyles();
   const qc = useQueryClient();
@@ -75,12 +77,16 @@ export function AccessTab({ app, showMsg }: Props) {
   });
   const rules = rulesData?.rules ?? [];
 
-  const toggle = useMutation({
-    mutationFn: (enabled: boolean) =>
-      api.updateApp(appId, { access_whitelist_enabled: enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["app", appId] }),
-    onError: (e) => showMsg("error", errorText(e)),
-  });
+  // Through the page's write lock: this update rewrites the whole app row.
+  const setEnabled = (enabled: boolean) =>
+    formApi.exclusive(async () => {
+      try {
+        await api.updateApp(appId, { access_whitelist_enabled: enabled });
+        await qc.invalidateQueries({ queryKey: ["app", appId] });
+      } catch (e) {
+        showMsg("error", errorText(e));
+      }
+    });
 
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<"team" | "user">("team");
@@ -150,8 +156,8 @@ export function AccessTab({ app, showMsg }: Props) {
           <Switch
             aria-label={t("accessWhitelist.enabled")}
             checked={enabled}
-            disabled={toggle.isPending}
-            onChange={(_, d) => toggle.mutate(d.checked)}
+            disabled={formApi.saving !== null}
+            onChange={(_, d) => void setEnabled(d.checked)}
           />
         </SettingsRow>
         {rules.length === 0 ? (

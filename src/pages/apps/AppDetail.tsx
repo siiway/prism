@@ -188,7 +188,7 @@ export function AppDetail() {
 
   // ── Form: unsaved edits over the server copy ───────────────────────────────
   const [edits, setEdits] = useState<Partial<AppForm>>({});
-  const [saving, setSaving] = useState<Section | null>(null);
+  const [saving, setSaving] = useState<Section | "switch" | null>(null);
 
   if (isLoading) return <SkeletonSettingsPage cards={[2, 5, 4]} />;
 
@@ -225,12 +225,26 @@ export function AppDetail() {
       JSON.stringify(payloadFor(section, base)),
     saving,
     save: async (section) => {
+      // One save at a time (every footer disables while one is in flight):
+      // the server rewrites the whole app row from what it read, so two
+      // overlapping saves could quietly undo each other.
+      if (saving) return;
       setSaving(section);
+      // What was sent, so edits typed while the request is in flight
+      // survive it instead of being cleared along with the saved ones.
+      const sent = new Map(
+        sectionFields(section).map((k) => [k, JSON.stringify(form[k])]),
+      );
       try {
         await api.updateApp(app.id, payloadFor(section, form));
         await qc.invalidateQueries({ queryKey: ["app", app.id] });
         await qc.invalidateQueries({ queryKey: ["apps"] });
-        discard(section);
+        setEdits((e) => {
+          const next = { ...e };
+          for (const [k, value] of sent)
+            if (k in next && JSON.stringify(next[k]) === value) delete next[k];
+          return next;
+        });
         showMsg("success", t("apps.appUpdated"));
       } catch (err) {
         showMsg(
@@ -242,6 +256,15 @@ export function AppDetail() {
       }
     },
     discard,
+    exclusive: async (run) => {
+      if (saving) return;
+      setSaving("switch");
+      try {
+        await run();
+      } finally {
+        setSaving(null);
+      }
+    },
   };
 
   return (
@@ -372,8 +395,12 @@ export function AppDetail() {
         />
       )}
       {tab === "sign-in" && <SignInTab formApi={formApi} />}
-      {tab === "permissions" && <PermissionsTab app={app} showMsg={showMsg} />}
-      {tab === "access" && <AccessTab app={app} showMsg={showMsg} />}
+      {tab === "permissions" && (
+        <PermissionsTab app={app} formApi={formApi} showMsg={showMsg} />
+      )}
+      {tab === "access" && (
+        <AccessTab app={app} formApi={formApi} showMsg={showMsg} />
+      )}
     </SettingsPage>
   );
 }

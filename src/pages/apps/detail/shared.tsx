@@ -43,6 +43,8 @@ export function SectionFooter({
   const { t } = useTranslation();
   const dirty = api.dirty(section);
   const saving = api.saving === section;
+  // Any save in flight blocks the rest, so saves never overlap.
+  const busy = api.saving !== null;
   return (
     <SettingsFooter>
       {dirty && !saving && (
@@ -52,7 +54,7 @@ export function SectionFooter({
       )}
       <Button
         appearance="primary"
-        disabled={!dirty || saving}
+        disabled={!dirty || busy}
         onClick={() => api.save(section)}
       >
         {saving ? <Spinner size="tiny" /> : t("common.saveChanges")}
