@@ -12,7 +12,7 @@
 // record the bare IP.
 
 // Full snapshot. Stored as a single JSON blob everywhere (session_ips.geo and
-// the *_geo columns on audit_events / login_errors / request_logs) so adding a
+// the *_geo columns on audit_events / login_errors) so adding a
 // field never needs a migration.
 export interface GeoInfo {
   /** Continent code, e.g. "AS", "EU". */
@@ -127,31 +127,6 @@ export function isEmptyGeo(g: GeoInfo): boolean {
 export function geoJson(c: HasRawRequest): string | null {
   const g = getGeo(c);
   return isEmptyGeo(g) ? null : JSON.stringify(g);
-}
-
-// Render a stored geo JSON snapshot as a short human-readable location
-// ("City, Region, Country"), de-duplicating repeated parts (common for
-// city-states like Hong Kong). Returns "" for null/empty/unparseable input so
-// callers can drop it straight into a CSV cell or table.
-export function formatGeoLabel(json: string | null | undefined): string {
-  if (!json) return "";
-  let g: Partial<GeoInfo>;
-  try {
-    g = JSON.parse(json) as Partial<GeoInfo>;
-  } catch {
-    return "";
-  }
-  const parts = [g.city, g.region, g.country].filter(
-    (p): p is string => !!p && p.trim().length > 0,
-  );
-  const seen = new Set<string>();
-  const unique = parts.filter((p) => {
-    const key = p.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  return unique.join(", ");
 }
 
 // Upsert the (session, ip) pair, bumping last_seen and refreshing the geo in

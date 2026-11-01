@@ -13,8 +13,7 @@
 
 import { randomId } from "./crypto";
 import { decryptSecret } from "./secretCrypto";
-import { loggedFetch, loggedSafeFetch } from "./logger";
-import { validateOutboundUrl } from "./safeFetch";
+import { safeFetch, validateOutboundUrl } from "./safeFetch";
 import { geoJson } from "./geo";
 import { getConfigValue } from "./config";
 import type { WaitUntilCtx } from "../types";
@@ -425,7 +424,7 @@ async function deliverDiscord(
       },
     ],
   });
-  const res = await loggedSafeFetch(env, url, {
+  const res = await safeFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body,
@@ -464,16 +463,12 @@ async function deliverTelegram(
     parse_mode: "HTML",
   };
   if (threadId) payload.message_thread_id = Number(threadId);
-  const res = await loggedFetch(
-    env,
-    `https://api.telegram.org/bot${token}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
-    },
-  );
+  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
+  });
   return summarizeResponse(res);
 }
 
@@ -500,6 +495,6 @@ async function deliverGeneral(
   if (method !== "GET" && method !== "HEAD" && config.body != null) {
     init.body = interpolate(String(config.body), values);
   }
-  const res = await loggedSafeFetch(env, url, init);
+  const res = await safeFetch(url, init);
   return summarizeResponse(res);
 }

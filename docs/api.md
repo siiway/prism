@@ -786,18 +786,13 @@ Writes to `audit_events`, `audit_log` and `sqlite_master` are refused with
 the console — reads are unaffected. See
 [Admin → The audit log is append-only here](admin.md#the-audit-log-is-append-only-here).
 
-### Audit / request logs / login errors
+### Audit / login errors
 
-| Method   | Path                                  | Notes                                                                                                       |
-| -------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/admin/audit-log?page=…`         | Audit events                                                                                                |
-| `GET`    | `/api/audit/:scope/export`            | Export any scope the caller can read. `?format=csv\|json` plus the table's filters. Capped at 10,000 events |
-| `GET`    | `/api/admin/login-errors`             | Failed-login table                                                                                          |
-| `GET`    | `/api/admin/request-logs`             | Filterable per-request log                                                                                  |
-| `GET`    | `/api/admin/request-logs/export`      | CSV export of the current filter                                                                            |
-| `GET`    | `/api/admin/request-logs/:id/details` | Single request detail                                                                                       |
-| `DELETE` | `/api/admin/request-logs`             | Purge all                                                                                                   |
-| `DELETE` | `/api/admin/request-logs/spectate`    | Clear the live spectate buffer                                                                              |
+| Method | Path                          | Notes                                                                                                       |
+| ------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/admin/audit-log?page=…` | Audit events                                                                                                |
+| `GET`  | `/api/audit/:scope/export`    | Export any scope the caller can read. `?format=csv\|json` plus the table's filters. Capped at 10,000 events |
+| `GET`  | `/api/admin/login-errors`     | Failed-login table                                                                                          |
 
 ### Secrets migration / Danger Zone
 
@@ -813,7 +808,6 @@ the console — reads are unaffected. See
 | `GET / DELETE` | `/api/admin/image-proxy[/:id]`                                  | Browse / clear proxy entries                                                            |
 | `POST`         | `/api/admin/migrate-recovery-codes`                             | Re-hash legacy plaintext backup codes                                                   |
 | `GET / POST`   | `/api/admin/reset/status` & `/request` & `/cancel` & `/confirm` | Site-reset workflow (email-signed)                                                      |
-| `GET / POST`   | `/api/admin/debug`                                              | Internal toggles for diagnosing deploys                                                 |
 
 ## Health
 

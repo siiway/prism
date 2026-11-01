@@ -17,7 +17,7 @@
 - **Webhook 与通知** — 用户 + 管理员 webhook、应用事件流（webhook / SSE / WebSocket）、邮件 + Telegram 通知，规则引擎做精细路由
 - **公开资料** — 可选启用 `/u/<username>` 与 `/t/<team-id>`，按字段控制可见性，支持 GPG 公钥与 GitHub README 同步
 - **数据库加密** — AES-GCM 信封 + keyed HMAC，根植于 Cloudflare Secrets Store 绑定
-- **管理面板** — 用户/应用/团队审核、审计日志、请求日志、登录错误、完整站点配置
+- **管理面板** — 用户/应用/团队审核、审计日志、登录错误、完整站点配置
 - **高度可定制** — 站点名称、图标、主题色、自定义 CSS、邮件 / 验证码 provider
 - **边缘原生 + SSR** — Cloudflare Workers + D1 + KV + R2，React 19 服务端渲染，零服务器
 

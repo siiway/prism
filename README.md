@@ -17,7 +17,7 @@ A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare W
 - **Webhooks & notifications** — user + admin webhooks, app event streams (webhook / SSE / WebSocket), email + Telegram notifications with a rule engine
 - **Public profiles** — opt-in `/u/<username>` and `/t/<team-id>` pages with per-field visibility, GPG keys, GitHub README sync
 - **Encrypted at rest** — AES-GCM envelope + keyed HMAC, rooted in a Cloudflare Secrets Store binding
-- **Admin panel** — user/app/team moderation, audit log, request log, login errors, full site config
+- **Admin panel** — user/app/team moderation, audit log, login errors, full site config
 - **Customizable** — site name, icon, accent color, custom CSS, email provider, captcha provider
 - **Edge-native + SSR** — Cloudflare Workers + D1 + KV + R2, server-side rendered React 19, no servers
 

@@ -41,7 +41,6 @@ import {
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
 import { proxyImageUrl } from "../lib/proxyImage";
-import { loggedFetch } from "../lib/logger";
 import { verifyAnyTotp } from "../lib/totp";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -873,7 +872,7 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
   // Exchange code for token
   let tokenData: Record<string, unknown>;
   try {
-    const tokenRes = await loggedFetch(c.env, source.tokenUrl, {
+    const tokenRes = await fetch(source.tokenUrl, {
       method: "POST",
       headers: tokenHeaders,
       body: new URLSearchParams(tokenBody),
@@ -896,7 +895,7 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
   // Fetch user profile
   let profileData: Record<string, unknown>;
   try {
-    const userRes = await loggedFetch(c.env, source.userUrl, {
+    const userRes = await fetch(source.userUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
@@ -948,17 +947,13 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
   // the email unverified.
   if (provider === "github") {
     try {
-      const emailsRes = await loggedFetch(
-        c.env,
-        "https://api.github.com/user/emails",
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/json",
-            "User-Agent": "Prism/1.0",
-          },
+      const emailsRes = await fetch("https://api.github.com/user/emails", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+          "User-Agent": "Prism/1.0",
         },
-      );
+      });
       if (emailsRes.ok) {
         const emails = (await emailsRes.json()) as Array<{
           email: string;
@@ -1568,7 +1563,7 @@ app.post("/:id/refresh", requireAuth, async (c) => {
   if (source.provider === "telegram")
     return c.json({ error: "unsupported_refresh" }, 400);
   const fetchProfile = async (accessToken: string) => {
-    const userRes = await loggedFetch(c.env, source.userUrl, {
+    const userRes = await fetch(source.userUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
@@ -1602,7 +1597,7 @@ app.post("/:id/refresh", requireAuth, async (c) => {
       refreshBody.client_secret = source.clientSecret;
     }
     try {
-      tokenRes = await loggedFetch(c.env, source.tokenUrl, {
+      tokenRes = await fetch(source.tokenUrl, {
         method: "POST",
         headers: refreshHeaders,
         body: new URLSearchParams(refreshBody),

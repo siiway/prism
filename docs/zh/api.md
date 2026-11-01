@@ -667,18 +667,13 @@ OAuth scope 版本：
 
 对 `audit_events`、`audit_log` 与 `sqlite_master` 的写入，在任何设置下都会以 `403 { append_only: true }` 拒绝，行编辑端点与控制台皆然 —— 读取不受影响。详见 [管理员 → 审计日志在此处只追加](admin.md#审计日志在此处只追加)。
 
-### 审计 / 请求日志 / 登录错误
+### 审计 / 登录错误
 
-| Method   | Path                                  | 说明                                                                                |
-| -------- | ------------------------------------- | ----------------------------------------------------------------------------------- |
-| `GET`    | `/api/admin/audit-log?page=…`         | 审计事件                                                                            |
-| `GET`    | `/api/audit/:scope/export`            | 导出调用者有权读取的任意作用域。`?format=csv\|json` 及表格的筛选条件。上限 10000 条 |
-| `GET`    | `/api/admin/login-errors`             | 失败登录表                                                                          |
-| `GET`    | `/api/admin/request-logs`             | 可筛选的请求日志                                                                    |
-| `GET`    | `/api/admin/request-logs/export`      | 当前筛选导出 CSV                                                                    |
-| `GET`    | `/api/admin/request-logs/:id/details` | 单条请求详情                                                                        |
-| `DELETE` | `/api/admin/request-logs`             | 全部清空                                                                            |
-| `DELETE` | `/api/admin/request-logs/spectate`    | 清空 spectate 缓冲                                                                  |
+| Method | Path                          | 说明                                                                                |
+| ------ | ----------------------------- | ----------------------------------------------------------------------------------- |
+| `GET`  | `/api/admin/audit-log?page=…` | 审计事件                                                                            |
+| `GET`  | `/api/audit/:scope/export`    | 导出调用者有权读取的任意作用域。`?format=csv\|json` 及表格的筛选条件。上限 10000 条 |
+| `GET`  | `/api/admin/login-errors`     | 失败登录表                                                                          |
 
 ### 密钥迁移 / Danger Zone
 
@@ -694,7 +689,6 @@ OAuth scope 版本：
 | `GET / DELETE` | `/api/admin/image-proxy[/:id]`                                  | 浏览 / 删除代理映射                                           |
 | `POST`         | `/api/admin/migrate-recovery-codes`                             | 重新哈希历史明文备用码                                        |
 | `GET / POST`   | `/api/admin/reset/status` & `/request` & `/cancel` & `/confirm` | 邮件签署的站点重置流程                                        |
-| `GET / POST`   | `/api/admin/debug`                                              | 部署诊断的内部开关                                            |
 
 ## 健康检查
 

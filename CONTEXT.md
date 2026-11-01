@@ -211,7 +211,6 @@ closed so an outage does not silently drop bot protection.
 **Audit log (Transparent Control)**:
 The append-only record of significant actions, scoped to a user, a team, or the
 platform, and fanned out to scoped Discord / Telegram / general webhooks.
-_Avoid_: request log (that is separate operational telemetry).
 
 **Notice**:
 An operator-authored announcement shown inside the product within a time window,

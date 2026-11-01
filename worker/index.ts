@@ -7,7 +7,6 @@ import { secureHeaders } from "hono/secure-headers";
 import type { Variables } from "./types";
 
 import { BodySizeLimitError } from "./lib/bodyLimit";
-import { requestLogger } from "./lib/logger";
 import { requestBodyLimit } from "./middleware/bodyLimit";
 import { runReverification } from "./cron/reverify";
 import { runImapPoll } from "./cron/imap-poll";
@@ -72,7 +71,6 @@ app.use(
     allowHeaders: ["Content-Type", "Authorization", "X-Session-Token"],
   }),
 );
-app.use("*", requestLogger);
 app.use("*", requestBodyLimit);
 
 app.route("/api", siteRoutes);

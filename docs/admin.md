@@ -16,7 +16,7 @@ The admin panel opens on an overview:
 - **Needs attention** — callouts for things to fix: email not set up, no
   captcha on sign-up and sign-in, stored secrets not yet encrypted (once
   [`SECRETS_KEY`](configuration.md#secrets_key-setup) is bound; the action
-  leads to **Maintenance → Danger zone**), and request logging left on.
+  leads to **Maintenance → Danger zone**).
 - **Usage** — users, teams, OAuth apps, verified domains, active tokens and
   proxied images, each linking to its page; the first four show a 30-day trend.
 - **Recent** — newest users, admin activity and failed sign-ins.
@@ -533,36 +533,6 @@ link produced — the query to run when one leaks.
 
 See [Teams → Restricted accounts](teams.md#restricted-accounts) for the full
 model.
-
-## Request Logs
-
-**Admin → Request Logs** is a paginated, filterable table of every Worker
-request — method, path, status, duration, IP, user agent, optional user ID
-(when authenticated), and the matching audit log row if any.
-
-- **Filter** by method, status range, path prefix, or user.
-- **Spectate** opens a tail-style live view that auto-refreshes.
-- **Export CSV** dumps the current filter to CSV.
-- **Details** for a single request shows the full request/response timing and
-  any audit-log linkage.
-- **Purge** drops the entire table (or just the spectate buffer).
-
-Request logs are independent of audit logs: a request hit may or may not result
-in an audit-worthy state change, and audit log entries for cron-driven actions
-have no associated request row. Prism checks the request-logging flags before it
-clones or reads a body. Body details are captured only for Force log all or a
-matching Spectate selection, and each request or response body recorded in
-Details is capped at 64 KiB. Larger bodies, and slow or long-lived streams that
-do not complete within the short capture window, are represented by an omission
-marker.
-
-**Log outbound requests** is a separate debug switch for external API calls made
-by the Worker, such as Telegram and Discord notification delivery. When enabled,
-Prism writes those calls into `request_logs` with the external URL as `path` and
-the redacted request/response bodies in Details. The same 64 KiB per-body log
-cap applies. Keep it off unless actively debugging third-party delivery failures
-because it records message payloads and performs an extra KV read per outbound
-call.
 
 ## Login Errors
 

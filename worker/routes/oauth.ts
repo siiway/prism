@@ -43,7 +43,6 @@ import {
   redirectUriMatchesRegistered,
   validateRedirectUriForRegistration,
 } from "../lib/redirectUri";
-import { loggedFetch } from "../lib/logger";
 import {
   parseAppScope,
   canClientIntrospectToken,
@@ -5189,8 +5188,7 @@ app.post("/me/domains/:domain/verify", async (c) => {
   // DNS TXT lookup via Cloudflare DNS-over-HTTPS
   let verified: boolean;
   try {
-    const resp = await loggedFetch(
-      c.env,
+    const resp = await fetch(
       `https://cloudflare-dns.com/dns-query?name=_prism-verify.${domain}&type=TXT`,
       { headers: { Accept: "application/dns-json" } },
     );

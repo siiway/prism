@@ -557,13 +557,6 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
-              path: "logs",
-              lazy: () =>
-                import("./pages/admin/AdminLogs").then((m) => ({
-                  Component: m.AdminLogs,
-                })),
-            },
-            {
               path: "image-proxy",
               lazy: () =>
                 import("./pages/admin/AdminImageProxy").then((m) => ({

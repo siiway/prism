@@ -89,8 +89,7 @@ worker/
 │   ├── redirectUri.ts      # OAuth redirect URI 校验，已注册域名检查
 │   ├── socialOAuthState.ts # 原子消费且绑定浏览器的社交 OAuth state
 │   ├── cookies.ts          # Session 与社交 OAuth 关联 cookie 工具
-│   ├── lockdown.ts         # 用户/团队删除锁定（基于环境变量）
-│   └── logger.ts           # 请求日志中间件
+│   └── lockdown.ts         # 用户/团队删除锁定（基于环境变量）
 │
 ├── middleware/
 │   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
@@ -123,7 +122,7 @@ worker/
     ├── site.ts             # GET /api/site（公开站点配置）
     ├── assets.ts           # /api/assets/* — 头像/应用图标
     ├── wellknown.ts        # /.well-known/openid-configuration、jwks.json
-    └── admin.ts            # 配置、用户、应用、团队、审计、请求日志、密钥迁移
+    └── admin.ts            # 配置、用户、应用、团队、审计、密钥迁移
 ```
 
 两端必须保持一致的类型——`SiteConfig`、各类能力枚举、通知规则结构——统一定义在
@@ -246,9 +245,9 @@ Transparent Control 审核日志。`audit_events` 是单一的追加型表，按
 
 扁平 KV 表。值为 JSON 字符串，确保 boolean / number 能正确往返。`secretCrypto.ts` 中 `SENSITIVE_CONFIG_KEYS` 列出的键写入时 AES-GCM 加密，读取时由 `getDecryptedConfig()` 透明解密。
 
-### `audit_log` / `request_logs` / `login_errors`
+### `audit_log` / `login_errors`
 
-三张相互独立的诊断表。`audit_log` 是高层「重要状态变化」记录。`request_logs` 是 Worker 每次请求的运维遥测（method、path、status、耗时、IP、UA、可选的用户/审计关联）。`login_errors` 记录失败认证尝试，保留时长由 `login_error_retention_days` 控制。
+两张相互独立的诊断表。`audit_log` 是高层「重要状态变化」记录。`login_errors` 记录失败认证尝试，保留时长由 `login_error_retention_days` 控制。
 
 ### 原子安全状态（迁移 0073）
 

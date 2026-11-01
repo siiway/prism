@@ -8,7 +8,6 @@ import {
   BotRegular,
   DataBarVerticalRegular,
   DatabaseRegular,
-  DocumentTextRegular,
   ErrorCircleRegular,
   GavelRegular,
   GlobeRegular,
@@ -186,7 +185,6 @@ export function buildAdminNav(
           "admin.loginErrorsTab",
           ErrorCircleRegular,
         ),
-        item("/admin/logs", "logs", "admin.logsTab", DocumentTextRegular),
       ],
     },
     {

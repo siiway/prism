@@ -10,7 +10,6 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
-  BugRegular,
   ErrorCircleRegular,
   HistoryRegular,
   LockOpenRegular,
@@ -50,7 +49,7 @@ interface LoginErrorRow {
 }
 
 interface AttentionItem {
-  key: "email" | "captcha" | "secrets" | "logging";
+  key: "email" | "captcha" | "secrets";
   icon: ReactNode;
   to: string;
 }
@@ -116,10 +115,6 @@ export function AdminDashboard() {
     queryKey: ["admin-secrets-status"],
     queryFn: api.adminSecretsStatus,
   });
-  const { data: debug } = useQuery({
-    queryKey: ["admin-debug"],
-    queryFn: api.adminGetDebug,
-  });
   // Same keys as the first, unfiltered page of each list page.
   const users = useQuery({
     queryKey: ["admin-users", 1, ""],
@@ -148,12 +143,6 @@ export function AdminDashboard() {
   const captchaProviders = (config?.captcha_providers ?? []).filter(
     (p) => p !== "none",
   );
-  const debugOn =
-    !!debug &&
-    (debug.logging_enabled ||
-      debug.force_log_all ||
-      !!debug.spectate_user_id ||
-      !!debug.spectate_path);
 
   const attention: AttentionItem[] = [];
   if (config?.email_provider === "none") {
@@ -178,9 +167,6 @@ export function AdminDashboard() {
       icon: <LockOpenRegular />,
       to: "/admin/settings/danger",
     });
-  }
-  if (debugOn) {
-    attention.push({ key: "logging", icon: <BugRegular />, to: "/admin/logs" });
   }
 
   // ── Configuration summary ────────────────────────────────────────────
