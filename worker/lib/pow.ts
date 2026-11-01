@@ -22,6 +22,7 @@
 // HMAC envelope.
 
 import { getJwtSecret } from "./config";
+import { bufToBase64url, sha256, tryBase64urlToBuf } from "./crypto";
 
 const VERSION = 1;
 const PAYLOAD_LEN = 1 + 8 + 16; // version + expiry + nonce
@@ -35,10 +36,7 @@ async function getPowKey(env: Env): Promise<CryptoKey> {
   const jwt = await getJwtSecret(env.KV_SESSIONS);
   // Domain-separate the key with HKDF-style suffix so a leak of one HMAC
   // output can't be reused as the other.
-  const material = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`${jwt}\0pow-v1`),
-  );
+  const material = await sha256(`${jwt}\0pow-v1`);
   return crypto.subtle.importKey(
     "raw",
     material,
@@ -46,25 +44,6 @@ async function getPowKey(env: Env): Promise<CryptoKey> {
     false,
     ["sign", "verify"],
   );
-}
-
-function bytesToBase64Url(bytes: Uint8Array): string {
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function base64UrlToBytes(s: string): Uint8Array | null {
-  try {
-    const padded =
-      s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
-    const bin = atob(padded);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  } catch {
-    return null;
-  }
 }
 
 function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -98,7 +77,7 @@ export async function issuePowChallenge(env: Env): Promise<IssuedPowChallenge> {
   out.set(payload, 0);
   out.set(sig, PAYLOAD_LEN);
 
-  return { challenge: bytesToBase64Url(out), expires_at: expiresAt };
+  return { challenge: bufToBase64url(out), expires_at: expiresAt };
 }
 
 export type PowVerifyResult =
@@ -131,7 +110,7 @@ export async function verifyPowChallenge(
   nonce: number,
   difficulty: number,
 ): Promise<PowVerifyResult> {
-  const raw = base64UrlToBytes(challenge);
+  const raw = tryBase64urlToBuf(challenge);
   if (!raw || raw.length !== PAYLOAD_LEN + HMAC_LEN) {
     return { ok: false, reason: "malformed" };
   }

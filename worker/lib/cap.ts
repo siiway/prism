@@ -22,6 +22,12 @@ import {
   type ValidateChallengeBody,
 } from "capjs-core";
 import { getJwtSecret } from "./config";
+import {
+  decodeBase64urlJson,
+  hmacSha256Hex,
+  sha256Hex,
+  timingSafeStrEqual,
+} from "./crypto";
 import { claimReplayValue } from "./securityState";
 
 /** Scope bound into the challenge JWT, so a token minted for captcha cannot be
@@ -39,54 +45,7 @@ export interface CapEmbeddedOptions {
  *  ≥16 bytes; a 64-hex-char digest satisfies that across restarts. */
 async function getCapSecret(env: Env): Promise<string> {
   const jwt = await getJwtSecret(env.KV_SESSIONS);
-  const material = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`${jwt}\0cap-v1`),
-  );
-  return Array.from(new Uint8Array(material))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/** HMAC-SHA256(secret, msg) as hex. Used to mint/verify the deterministic
- *  redeem token below. */
-async function capMac(secret: string, msg: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(msg),
-  );
-  return Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let r = 0;
-  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return r === 0;
-}
-
-/** Decode a base64url segment (a JWT part) to a UTF-8 string. */
-function b64urlToString(seg: string): string | null {
-  try {
-    const b64 =
-      seg.replace(/-/g, "+").replace(/_/g, "/") +
-      "=".repeat((4 - (seg.length % 4)) % 4);
-    const bin = atob(b64);
-    const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
-  } catch {
-    return null;
-  }
+  return sha256Hex(`${jwt}\0cap-v1`);
 }
 
 /**
@@ -110,16 +69,11 @@ async function deriveCapToken(
   const parts = challengeJwt.split(".");
   if (parts.length !== 3) return null;
   const sig = parts[2];
-  const payloadJson = b64urlToString(parts[1]);
-  if (!payloadJson) return null;
-  let exp: number;
-  try {
-    exp = Number((JSON.parse(payloadJson) as { exp?: number }).exp);
-  } catch {
-    return null;
-  }
+  const payload = decodeBase64urlJson<{ exp?: number }>(parts[1]);
+  if (!payload) return null;
+  const exp = Number(payload.exp);
   if (!sig || !Number.isFinite(exp)) return null;
-  const mac = await capMac(secret, `${sig}.${exp}`);
+  const mac = await hmacSha256Hex(secret, `${sig}.${exp}`);
   return { token: `${sig}.${exp}.${mac}`, expires: exp };
 }
 
@@ -177,8 +131,8 @@ async function verifyCapEmbedded(env: Env, token: string): Promise<boolean> {
 
   // Authenticity: only we can produce this MAC, and only after a solve (redeem).
   const secret = await getCapSecret(env);
-  const expected = await capMac(secret, `${sig}.${expStr}`);
-  if (!timingSafeEqual(mac, expected)) return false;
+  const expected = await hmacSha256Hex(secret, `${sig}.${expStr}`);
+  if (!timingSafeStrEqual(mac, expected)) return false;
 
   const exp = Number(expStr);
   if (!Number.isFinite(exp) || exp <= Date.now()) return false;

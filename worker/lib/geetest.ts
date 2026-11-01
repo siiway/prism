@@ -18,6 +18,8 @@
 // fails to reach a verdict; we treat any transport or non-success outcome as
 // governed by `failOpen`.
 
+import { hmacSha256Hex } from "./crypto";
+
 /** The four fields the initGeetest4 widget hands back on success. */
 export interface GeetestOutput {
   lot_number: string;
@@ -27,32 +29,6 @@ export interface GeetestOutput {
 }
 
 const GEETEST_VALIDATE_URL = "https://gcaptcha4.geetest.com/validate";
-
-function bytesToHex(bytes: ArrayBuffer): string {
-  return Array.from(new Uint8Array(bytes))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/** HMAC-SHA256(lot_number) keyed by the GeeTest private key, hex-encoded. */
-async function signLotNumber(
-  lotNumber: string,
-  captchaKey: string,
-): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(captchaKey),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(lotNumber),
-  );
-  return bytesToHex(sig);
-}
 
 /**
  * Verify a GeeTest v4 submission. `captchaId` is the public id, `captchaKey`
@@ -76,7 +52,7 @@ export async function verifyGeetest(
 
   let signToken: string;
   try {
-    signToken = await signLotNumber(lot_number, captchaKey);
+    signToken = await hmacSha256Hex(captchaKey, lot_number);
   } catch {
     // A signing failure is a server-side error (e.g. a bad key), not a GeeTest
     // outage. Reject rather than fail open.

@@ -1,6 +1,7 @@
 // Site configuration loader from D1
 
 import type { SiteConfig, SiteConfigRow } from "../types";
+import { randomId } from "./crypto";
 import {
   SENSITIVE_CONFIG_KEYS,
   decryptSecret,
@@ -340,10 +341,7 @@ export async function getJwtSecret(kv: KVNamespace): Promise<string> {
   if (existing) return existing;
 
   // First call: generate a cryptographically random 256-bit secret
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  const secret = Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const secret = randomId(32);
 
   await kv.put(JWT_SECRET_KEY, secret);
   return secret;

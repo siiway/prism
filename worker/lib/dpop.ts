@@ -6,17 +6,14 @@
 // token is then bound to the key's SHA-256 thumbprint (`jkt`), so a stolen
 // bearer value is useless without the key.
 
-import { bufToBase64url, base64urlToBuf } from "./crypto";
+import {
+  base64urlToBuf,
+  bufToBase64url,
+  decodeBase64urlJson,
+  sha256,
+} from "./crypto";
+import { importVerifyKey, type PublicJwk as Jwk } from "./jwk";
 import { claimReplayValue } from "./securityState";
-
-interface Jwk {
-  kty: string;
-  crv?: string;
-  x?: string;
-  y?: string;
-  n?: string;
-  e?: string;
-}
 
 interface DpopHeader {
   typ?: string;
@@ -33,20 +30,8 @@ interface DpopPayload {
   nonce?: string;
 }
 
-function decodeJson<T>(segment: string): T | null {
-  try {
-    return JSON.parse(new TextDecoder().decode(base64urlToBuf(segment))) as T;
-  } catch {
-    return null;
-  }
-}
-
 async function sha256Base64url(input: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(input),
-  );
-  return bufToBase64url(digest);
+  return bufToBase64url(await sha256(input));
 }
 
 /** RFC 7638 JWK thumbprint: base64url(SHA-256(canonical JWK)). The canonical
@@ -63,49 +48,6 @@ export async function jwkThumbprint(jwk: Jwk): Promise<string | null> {
     return null;
   }
   return sha256Base64url(canonical);
-}
-
-type VerifyAlgo = Parameters<SubtleCrypto["verify"]>[0];
-
-async function importPublicJwk(
-  jwk: Jwk,
-  alg: string,
-): Promise<{ key: CryptoKey; verifyAlgo: VerifyAlgo } | null> {
-  try {
-    if (alg === "RS256" && jwk.kty === "RSA") {
-      const key = await crypto.subtle.importKey(
-        "jwk",
-        jwk as JsonWebKey,
-        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-        false,
-        ["verify"],
-      );
-      return { key, verifyAlgo: "RSASSA-PKCS1-v1_5" };
-    }
-    if (alg === "ES256" && jwk.kty === "EC" && jwk.crv === "P-256") {
-      const key = await crypto.subtle.importKey(
-        "jwk",
-        jwk as JsonWebKey,
-        { name: "ECDSA", namedCurve: "P-256" },
-        false,
-        ["verify"],
-      );
-      return { key, verifyAlgo: { name: "ECDSA", hash: "SHA-256" } };
-    }
-    if (alg === "EdDSA" && jwk.kty === "OKP" && jwk.crv === "Ed25519") {
-      const key = await crypto.subtle.importKey(
-        "jwk",
-        jwk as JsonWebKey,
-        { name: "Ed25519" },
-        false,
-        ["verify"],
-      );
-      return { key, verifyAlgo: "Ed25519" };
-    }
-  } catch {
-    return null;
-  }
-  return null;
 }
 
 /** Strip query + fragment: the DPoP `htu` is compared against the bare URI. */
@@ -140,13 +82,13 @@ export async function verifyDpopProof(
 ): Promise<{ jkt: string } | { error: string }> {
   const parts = proof.split(".");
   if (parts.length !== 3) return { error: "invalid_dpop_proof" };
-  const header = decodeJson<DpopHeader>(parts[0]);
-  const payload = decodeJson<DpopPayload>(parts[1]);
+  const header = decodeBase64urlJson<DpopHeader>(parts[0]);
+  const payload = decodeBase64urlJson<DpopPayload>(parts[1]);
   if (!header || !payload) return { error: "invalid_dpop_proof" };
   if (header.typ !== "dpop+jwt" || !header.alg || !header.jwk)
     return { error: "invalid_dpop_proof" };
 
-  const imported = await importPublicJwk(header.jwk, header.alg);
+  const imported = await importVerifyKey(header.jwk, header.alg);
   if (!imported) return { error: "invalid_dpop_proof" };
   const ok = await crypto.subtle.verify(
     imported.verifyAlgo,

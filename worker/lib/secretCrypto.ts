@@ -34,6 +34,12 @@
 //     ("prism:hash-subkey:v1") rather than the raw master key, so the
 //     same master can safely serve both AES-GCM and HMAC-SHA256.
 
+import {
+  bufToBase64url,
+  timingSafeStrEqual,
+  tryBase64urlToBuf,
+} from "./crypto";
+
 const ENC_PREFIX = "__ENC_v1__";
 const HASH_PREFIX = "__HASH_v1__";
 const KEY_LENGTH = 32;
@@ -83,7 +89,7 @@ async function getKeys(env: Env): Promise<KeyPair> {
     cachedKeys = (async () => {
       const raw = await env.SECRETS_KEY!.get();
       if (!raw) throw new Error("SECRETS_KEY value is empty");
-      const bytes = base64UrlToBytes(raw.trim());
+      const bytes = tryBase64urlToBuf(raw.trim());
       if (!bytes || bytes.length !== KEY_LENGTH) {
         throw new Error(
           `SECRETS_KEY must be ${KEY_LENGTH} bytes encoded as base64url`,
@@ -179,7 +185,7 @@ export async function encryptSecret(
       new TextEncoder().encode(plaintext),
     ),
   );
-  return `${ENC_PREFIX}${bytesToBase64Url(iv)}:${bytesToBase64Url(ct)}`;
+  return `${ENC_PREFIX}${bufToBase64url(iv)}:${bufToBase64url(ct)}`;
 }
 
 /** Decrypt a stored secret. No-op when:
@@ -206,8 +212,8 @@ export async function decryptSecret(
   const rest = value.slice(ENC_PREFIX.length);
   const sep = rest.indexOf(":");
   if (sep < 0) throw new Error("Malformed encrypted secret");
-  const iv = base64UrlToBytes(rest.slice(0, sep));
-  const ct = base64UrlToBytes(rest.slice(sep + 1));
+  const iv = tryBase64urlToBuf(rest.slice(0, sep));
+  const ct = tryBase64urlToBuf(rest.slice(sep + 1));
   if (!iv || !ct) throw new Error("Malformed encrypted secret");
 
   const { aes } = await getKeys(env);
@@ -238,11 +244,18 @@ export async function hashSecret(
   if (isHashedSecret(plaintext)) return plaintext;
   if (!env.SECRETS_KEY) return plaintext;
 
+  return hmacTag(env, plaintext);
+}
+
+/** `HASH_PREFIX` + base64url(HMAC(hash subkey, text)). */
+async function hmacTag(env: Env, text: string): Promise<string> {
   const { hmac } = await getKeys(env);
-  const sig = new Uint8Array(
-    await crypto.subtle.sign("HMAC", hmac, new TextEncoder().encode(plaintext)),
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    hmac,
+    new TextEncoder().encode(text),
   );
-  return `${HASH_PREFIX}${bytesToBase64Url(sig)}`;
+  return `${HASH_PREFIX}${bufToBase64url(sig)}`;
 }
 
 /** Hash a user-supplied candidate so it can be used in a `WHERE col = ?`
@@ -267,11 +280,7 @@ export async function hashLookupCandidate(
   if (typeof candidate !== "string" || candidate === "") return null;
   if (looksLikeStoredSecret(candidate)) return null;
   if (!env.SECRETS_KEY) return candidate;
-  const { hmac } = await getKeys(env);
-  const sig = new Uint8Array(
-    await crypto.subtle.sign("HMAC", hmac, new TextEncoder().encode(candidate)),
-  );
-  return `${HASH_PREFIX}${bytesToBase64Url(sig)}`;
+  return hmacTag(env, candidate);
 }
 
 /** Constant-time comparison: hashes the candidate and compares to the
@@ -284,27 +293,11 @@ export async function timingSafeHashEqual(
   candidate: string,
 ): Promise<boolean> {
   if (!stored || !candidate) return false;
-  const expected = isHashedSecret(stored) ? stored : stored; // plaintext path: compare directly below
+  // Legacy plaintext rows compare directly against the raw candidate.
   const actual = isHashedSecret(stored)
     ? ((await hashSecret(env, candidate)) ?? "")
     : candidate;
-  return constantTimeStringEqual(expected, actual);
-}
-
-function constantTimeStringEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    let acc = 1;
-    const max = Math.max(a.length, b.length);
-    for (let i = 0; i < max; i++) {
-      acc |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
-    }
-    return acc === 0;
-  }
-  let acc = 0;
-  for (let i = 0; i < a.length; i++) {
-    acc |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return acc === 0;
+  return timingSafeStrEqual(stored, actual);
 }
 
 /** Constant-time comparison helper that decrypts the stored value first.
@@ -318,26 +311,5 @@ export async function timingSafeSecretEqual(
   if (!stored || !candidate) return false;
   const plain = await decryptSecret(env, stored);
   if (plain == null) return false;
-  return constantTimeStringEqual(plain, candidate);
-}
-
-// ─── base64url ───────────────────────────────────────────────────────────────
-
-function bytesToBase64Url(bytes: Uint8Array): string {
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function base64UrlToBytes(s: string): Uint8Array | null {
-  try {
-    const padded =
-      s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
-    const bin = atob(padded);
-    const out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  } catch {
-    return null;
-  }
+  return timingSafeStrEqual(plain, candidate);
 }

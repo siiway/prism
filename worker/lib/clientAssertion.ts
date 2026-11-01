@@ -6,25 +6,14 @@
 // or one fetched from its jwks_uri), and enforce the assertion claims and a
 // one-time jti so a captured assertion can't be replayed.
 
-import { base64urlToBuf } from "./crypto";
+import { base64urlToBuf, decodeBase64urlJson } from "./crypto";
+import { importVerifyKey, type PublicJwk as Jwk } from "./jwk";
 import { safeFetch } from "./safeFetch";
 import { claimReplayValue } from "./securityState";
 import type { OAuthAppRow } from "../types";
 
 export const CLIENT_ASSERTION_TYPE =
   "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
-
-interface Jwk {
-  kty: string;
-  kid?: string;
-  alg?: string;
-  crv?: string;
-  use?: string;
-  n?: string;
-  e?: string;
-  x?: string;
-  y?: string;
-}
 
 interface AssertionHeader {
   alg: string;
@@ -42,68 +31,14 @@ interface AssertionPayload {
   jti?: string;
 }
 
-function decodeJson<T>(segment: string): T | null {
-  try {
-    return JSON.parse(new TextDecoder().decode(base64urlToBuf(segment))) as T;
-  } catch {
-    return null;
-  }
-}
-
 /** The client_id an assertion claims (iss / sub), read WITHOUT verifying the
  *  signature — used only to look up which client's keys to verify against. */
 export function assertionClientId(assertion: string): string | null {
   const parts = assertion.split(".");
   if (parts.length !== 3) return null;
-  const payload = decodeJson<AssertionPayload>(parts[1]);
+  const payload = decodeBase64urlJson<AssertionPayload>(parts[1]);
   return payload?.iss ?? payload?.sub ?? null;
 }
-
-/** Map a JWK + JWS alg to a Web Crypto import + verify parameters. Returns null
- *  for key/alg combinations we don't support. Covers RS256, ES256, EdDSA. */
-type VerifyAlgo = Parameters<SubtleCrypto["verify"]>[0];
-
-async function importVerifyKey(
-  jwk: Jwk,
-  alg: string,
-): Promise<{ key: CryptoKey; verifyAlgo: VerifyAlgo } | null> {
-  try {
-    if (alg === "RS256" && jwk.kty === "RSA") {
-      const key = await crypto.subtle.importKey(
-        "jwk",
-        jwk as JsonWebKey,
-        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-        false,
-        ["verify"],
-      );
-      return { key, verifyAlgo: "RSASSA-PKCS1-v1_5" };
-    }
-    if (alg === "ES256" && jwk.kty === "EC" && jwk.crv === "P-256") {
-      const key = await crypto.subtle.importKey(
-        "jwk",
-        jwk as JsonWebKey,
-        { name: "ECDSA", namedCurve: "P-256" },
-        false,
-        ["verify"],
-      );
-      return { key, verifyAlgo: { name: "ECDSA", hash: "SHA-256" } };
-    }
-    if (alg === "EdDSA" && jwk.kty === "OKP" && jwk.crv === "Ed25519") {
-      const key = await crypto.subtle.importKey(
-        "jwk",
-        jwk as JsonWebKey,
-        { name: "Ed25519" },
-        false,
-        ["verify"],
-      );
-      return { key, verifyAlgo: "Ed25519" };
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
 /** Resolve the client's JWK Set: the inline `jwks` first, else a cached fetch
  *  of `jwks_uri` (SSRF-guarded, cached 5 minutes). */
 async function resolveClientJwks(env: Env, app: OAuthAppRow): Promise<Jwk[]> {
@@ -159,8 +94,8 @@ export async function verifyClientAssertion(
 ): Promise<boolean> {
   const parts = assertion.split(".");
   if (parts.length !== 3) return false;
-  const header = decodeJson<AssertionHeader>(parts[0]);
-  const payload = decodeJson<AssertionPayload>(parts[1]);
+  const header = decodeBase64urlJson<AssertionHeader>(parts[0]);
+  const payload = decodeBase64urlJson<AssertionPayload>(parts[1]);
   if (!header || !payload || !header.alg || header.alg === "none") return false;
 
   // RFC 7523 §3: iss and sub are the client_id; aud names the AS; exp is

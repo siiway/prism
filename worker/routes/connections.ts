@@ -5,8 +5,11 @@ import type { Context } from "hono";
 import {
   randomId,
   randomBase64url,
+  sha256,
   sha256Hex,
   bufToBase64url,
+  hmacSha256Hex,
+  timingSafeStrEqual,
 } from "../lib/crypto";
 import { getConfig, getJwtSecret } from "../lib/config";
 import { getIp } from "../lib/clientIp";
@@ -558,11 +561,7 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
     params.set("prompt", "consent");
   }
   if (source.provider === "x" && codeVerifier) {
-    const challengeBuf = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(codeVerifier),
-    );
-    params.set("code_challenge", bufToBase64url(challengeBuf));
+    params.set("code_challenge", bufToBase64url(await sha256(codeVerifier)));
     params.set("code_challenge_method", "S256");
   }
 
@@ -609,28 +608,11 @@ app.post("/:provider/tg-verify", optionalAuth, async (c) => {
     .sort()
     .map((k) => `${k}=${checkParams[k]}`)
     .join("\n");
-  const enc = new TextEncoder();
-  const secretKey = await crypto.subtle.digest(
-    "SHA-256",
-    enc.encode(source.clientSecret),
+  const expectedHash = await hmacSha256Hex(
+    await sha256(source.clientSecret),
+    dataCheckString,
   );
-  const hmacKey = await crypto.subtle.importKey(
-    "raw",
-    secretKey,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    hmacKey,
-    enc.encode(dataCheckString),
-  );
-  const expectedHash = Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  if (expectedHash !== telegramHash)
+  if (!timingSafeStrEqual(expectedHash, telegramHash))
     return c.json({ error: "invalid_signature" }, 400);
 
   // Reject stale auth (> 24 h)

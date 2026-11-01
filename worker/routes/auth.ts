@@ -12,6 +12,7 @@ import {
   hashPassword,
   randomId,
   randomBase64url,
+  sha256Hex,
   verifyPassword,
 } from "../lib/crypto";
 import {
@@ -138,7 +139,7 @@ export async function issueSession(
     secret,
     ttlSeconds,
   );
-  const hash = await sha256(token);
+  const hash = await sha256Hex(token);
   await db
     .prepare(
       "INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at, amr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1850,16 +1851,6 @@ export async function safeUser(
     role: user.role,
     email_verified: user.email_verified === 1,
   };
-}
-
-async function sha256(str: string): Promise<string> {
-  const buf = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(str),
-  );
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 export default app;

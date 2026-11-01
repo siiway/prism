@@ -2,8 +2,7 @@
 
 import { Hono } from "hono";
 import { isInitialized, setConfigValue, getJwtSecret } from "../lib/config";
-import { hashPassword } from "../lib/crypto";
-import { randomId } from "../lib/crypto";
+import { hashPassword, randomId, sha256Hex } from "../lib/crypto";
 import { getIp } from "../lib/clientIp";
 import { geoJson, recordSessionIp } from "../lib/geo";
 import { signJWT } from "../lib/jwt";
@@ -110,7 +109,7 @@ app.post("/", async (c) => {
   );
 
   // Store session record
-  const tokenHash = await sha256(token);
+  const tokenHash = await sha256Hex(token);
   await c.env.DB.prepare(
     `INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at, amr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   )
@@ -153,15 +152,5 @@ app.post("/", async (c) => {
     201,
   );
 });
-
-async function sha256(str: string): Promise<string> {
-  const buf = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(str),
-  );
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 export default app;

@@ -1,5 +1,6 @@
 // TOTP implementation (RFC 6238 / RFC 4226) using Web Crypto
 
+import { bytesToHex, sha256Hex } from "./crypto";
 import { decryptSecret } from "./secretCrypto";
 
 const BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -117,11 +118,7 @@ export function generateBackupCodes(count = 10): string[] {
   const codes: string[] = [];
   for (let i = 0; i < count; i++) {
     const bytes = crypto.getRandomValues(new Uint8Array(5));
-    const code = Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")
-      .slice(0, 8)
-      .toUpperCase();
+    const code = bytesToHex(bytes).slice(0, 8).toUpperCase();
     codes.push(`${code.slice(0, 4)}-${code.slice(4)}`);
   }
   return codes;
@@ -130,14 +127,7 @@ export function generateBackupCodes(count = 10): string[] {
 /** Hash a single backup code with SHA-256. Normalises (strips hyphens, uppercases) before hashing. */
 export async function hashBackupCode(code: string): Promise<string> {
   const normalized = code.replace(/-/g, "").toUpperCase();
-  const buf = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(normalized),
-  );
-  const hex = Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  return `$sha256$${hex}`;
+  return `$sha256$${await sha256Hex(normalized)}`;
 }
 
 /** Hash all codes in a plaintext array. Already-hashed entries (starting with `$sha256$`) are passed through unchanged. */
