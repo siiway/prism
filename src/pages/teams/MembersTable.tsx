@@ -1,4 +1,5 @@
-// Members table for TeamDetail
+// Members table for TeamDetail. Renders inside the Members card: an optional
+// search row, the table, and a pager footer.
 
 import {
   Avatar,
@@ -6,11 +7,11 @@ import {
   Button,
   Input,
   Menu,
+  MenuDivider,
   MenuItem,
   MenuList,
   MenuPopover,
   MenuTrigger,
-  MessageBar,
   Table,
   TableBody,
   TableCell,
@@ -35,45 +36,38 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { type TeamMember } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
+import { formatDate } from "../../lib/datetime";
 import { CopyIdTrigger } from "../../components/CopyIdTrigger";
 import { Pagination } from "../../components/Pagination";
+import { RoleBadge } from "../../components/RoleBadge";
+import {
+  SettingsEmpty,
+  SettingsFooter,
+  SettingsTable,
+} from "../../components/Settings";
 import { SkeletonTableBodyRows } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
-  // Let the table scroll sideways on narrow screens instead of
-  // overflowing the page
-  tableScroll: { overflowX: "auto" },
   toolbar: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    marginBottom: "12px",
     flexWrap: "wrap",
+    padding: "0 var(--card-pad) 16px",
   },
-  search: { minWidth: "220px", flex: "1 1 220px", height: "32px" },
-  empty: {
-    padding: "32px 16px",
-    textAlign: "center",
-    color: tokens.colorNeutralForeground3,
-  },
-  pager: {
+  search: { minWidth: "220px", flex: "1 1 220px" },
+  filter: { width: "200px", maxWidth: "100%" },
+  muted: { color: tokens.colorNeutralForeground3 },
+  person: { display: "flex", alignItems: "center", gap: "10px", minWidth: 0 },
+  actions: {
     display: "flex",
-    alignItems: "center",
     justifyContent: "flex-end",
-    gap: "8px",
-    marginTop: "auto",
+    gap: "2px",
+    whiteSpace: "nowrap",
   },
+  actionsHead: { width: "1px" },
+  danger: { color: tokens.colorPaletteRedForeground1 },
 });
-
-const ROLE_COLORS: Record<
-  string,
-  "brand" | "success" | "subtle" | "informative"
-> = {
-  owner: "brand",
-  "co-owner": "informative",
-  admin: "success",
-  member: "subtle",
-};
 
 interface MembersTableProps {
   teamId: string;
@@ -93,12 +87,10 @@ interface MembersTableProps {
   /** Team-level groups switch. Drives both the extra column and the
    *  "manage groups" action. */
   groupsEnabled: boolean;
-  restrictMemberListForMembers?: boolean;
-  /** Optional actions (e.g. Add Member) rendered in the toolbar row */
-  toolbarActions?: React.ReactNode;
   onChangeRole: (userId: string, role: string) => void;
-  onRemoveMember: (userId: string) => void;
-  onTransferOwnership: (userId: string) => void;
+  /** Also used for leaving, when the member is the viewer. */
+  onRemoveMember: (member: TeamMember) => void;
+  onTransferOwnership: (member: TeamMember) => void;
   onAssignGroups: (member: TeamMember) => void;
 }
 
@@ -113,8 +105,6 @@ export function MembersTable({
   meId,
   normalView,
   groupsEnabled,
-  restrictMemberListForMembers,
-  toolbarActions,
   onChangeRole,
   onRemoveMember,
   onTransferOwnership,
@@ -194,38 +184,41 @@ export function MembersTable({
   }, [groupData, members, rows]);
 
   const showSearchControls = total > 5 || isFiltering;
+  // Anyone but the owner may leave, so the actions column also shows for
+  // plain members on their own row.
+  const canLeave = (m: TeamMember) => m.user_id === meId && m.role !== "owner";
+  const canEditRole = (m: TeamMember) =>
+    canManage &&
+    m.user_id !== meId &&
+    m.role !== "owner" &&
+    !(m.role === "co-owner" && myRole !== "owner");
+  const showActions = canManage || rows.some(canLeave);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-      {restrictMemberListForMembers && (
-        <MessageBar intent="info" style={{ marginBottom: "12px" }}>
-          {t("teams.memberListHiddenNotice")}
-        </MessageBar>
-      )}
-      {(showSearchControls || toolbarActions) && (
+    <>
+      {showSearchControls && (
         <div className={styles.toolbar}>
-          {showSearchControls && (
-            <Input
-              className={styles.search}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("teams.searchMembersPlaceholder")}
-              contentBefore={<SearchRegular />}
-              contentAfter={
-                query ? (
-                  <Button
-                    appearance="transparent"
-                    size="small"
-                    icon={<DismissRegular />}
-                    aria-label={t("common.clear")}
-                    onClick={() => setQuery("")}
-                  />
-                ) : undefined
-              }
-            />
-          )}
-          {showSearchControls && groupsEnabled && groupOptions.length > 0 && (
+          <Input
+            className={styles.search}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("teams.searchMembersPlaceholder")}
+            contentBefore={<SearchRegular />}
+            contentAfter={
+              query ? (
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  icon={<DismissRegular />}
+                  aria-label={t("common.clear")}
+                  onClick={() => setQuery("")}
+                />
+              ) : undefined
+            }
+          />
+          {groupsEnabled && groupOptions.length > 0 && (
             <Select
+              className={styles.filter}
               value={groupFilter}
               onChange={(_, d) => {
                 setGroupFilter(d.value);
@@ -241,32 +234,18 @@ export function MembersTable({
               ))}
             </Select>
           )}
-          {showSearchControls && isFiltering && (
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
+          {isFiltering && (
+            <Text size={200} className={styles.muted}>
               {t("teams.memberMatchCount", { count: total })}
             </Text>
-          )}
-          {toolbarActions && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginLeft: showSearchControls ? "auto" : undefined,
-              }}
-            >
-              {toolbarActions}
-            </div>
           )}
         </div>
       )}
 
       {isFiltering && rows.length === 0 && !isFetching ? (
-        <div className={styles.empty}>
-          <Text>{t("teams.noMembersMatch")}</Text>
-        </div>
+        <SettingsEmpty>{t("teams.noMembersMatch")}</SettingsEmpty>
       ) : (
-        <div className={styles.tableScroll}>
+        <SettingsTable>
           <Table>
             <TableHeader>
               <TableRow>
@@ -276,7 +255,9 @@ export function MembersTable({
                   <TableHeaderCell>{t("teams.groupsHeader")}</TableHeaderCell>
                 )}
                 <TableHeaderCell>{t("teams.joinedHeader")}</TableHeaderCell>
-                {canManage && <TableHeaderCell />}
+                {showActions && (
+                  <TableHeaderCell className={styles.actionsHead} />
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -285,18 +266,13 @@ export function MembersTable({
               {rows.length === 0 && isFetching ? (
                 <SkeletonTableBodyRows
                   rows={3}
-                  cols={
-                    // member, role, joined + the two conditional columns
-                    3 + (groupsEnabled ? 1 : 0) + (canManage ? 1 : 0)
-                  }
+                  cols={3 + (groupsEnabled ? 1 : 0) + (showActions ? 1 : 0)}
                 />
               ) : null}
               {rows.map((m) => (
                 <TableRow key={m.user_id}>
                   <TableCell>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 8 }}
-                    >
+                    <div className={styles.person}>
                       <CopyIdTrigger
                         id={m.user_id}
                         label={t("common.copyUserId")}
@@ -307,30 +283,19 @@ export function MembersTable({
                           image={
                             m.avatar_url ? { src: m.avatar_url } : undefined
                           }
-                          size={24}
+                          size={28}
                         />
                       </CopyIdTrigger>
                       <div>
-                        <Text weight="semibold" block>
-                          {m.display_name}
-                        </Text>
-                        <Text
-                          size={200}
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
+                        <Text block>{m.display_name}</Text>
+                        <Text size={200} className={styles.muted}>
                           @{m.username}
                         </Text>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      color={ROLE_COLORS[m.role] ?? "subtle"}
-                      appearance="filled"
-                      size="small"
-                    >
-                      {m.role}
-                    </Badge>
+                    <RoleBadge role={m.role} />
                   </TableCell>
                   {groupsEnabled && (
                     <TableCell>
@@ -350,9 +315,9 @@ export function MembersTable({
                             }
                           >
                             <Badge
-                              // Inherited labels are outlined rather than filled:
-                              // they can't be changed from this team, so they
-                              // shouldn't read as locally-set.
+                              // Inherited labels are outlined rather than
+                              // filled: they can't be changed from this team,
+                              // so they shouldn't read as locally set.
                               appearance={
                                 g.inherited_from ? "outline" : "filled"
                               }
@@ -372,35 +337,46 @@ export function MembersTable({
                     </TableCell>
                   )}
                   <TableCell>
-                    {new Date(m.joined_at * 1000).toLocaleDateString()}
+                    <Text size={200} className={styles.muted}>
+                      {formatDate(m.joined_at)}
+                    </Text>
                   </TableCell>
-                  {canManage && (
+                  {showActions && (
                     <TableCell>
-                      {/* Standalone rather than a menu entry: labels are
-                      orthogonal to role, so this stays available for the
-                      owner and for yourself, where the role menu is hidden. */}
-                      {groupsEnabled && (
-                        <Tooltip
-                          relationship="label"
-                          content={t("teams.manageGroupsAction")}
-                        >
+                      <div className={styles.actions}>
+                        {/* Standalone rather than a menu entry: labels are
+                            orthogonal to role, so this stays available for
+                            the owner and for yourself. */}
+                        {canManage && groupsEnabled && (
+                          <Tooltip
+                            relationship="label"
+                            content={t("teams.manageGroupsAction")}
+                          >
+                            <Button
+                              appearance="subtle"
+                              size="small"
+                              icon={<TagRegular />}
+                              onClick={() => onAssignGroups(m)}
+                            />
+                          </Tooltip>
+                        )}
+                        {canLeave(m) && (
                           <Button
                             appearance="subtle"
                             size="small"
-                            icon={<TagRegular />}
-                            onClick={() => onAssignGroups(m)}
-                          />
-                        </Tooltip>
-                      )}
-                      {m.user_id !== meId &&
-                        m.role !== "owner" &&
-                        !(m.role === "co-owner" && myRole !== "owner") && (
+                            onClick={() => onRemoveMember(m)}
+                          >
+                            {t("teams.leave")}
+                          </Button>
+                        )}
+                        {canEditRole(m) && (
                           <Menu>
                             <MenuTrigger disableButtonEnhancement>
                               <Button
                                 appearance="subtle"
                                 icon={<MoreHorizontalRegular />}
                                 size="small"
+                                aria-label={t("teams.memberActions")}
                               />
                             </MenuTrigger>
                             <MenuPopover>
@@ -445,53 +421,42 @@ export function MembersTable({
                                 )}
                                 {isOwner && (
                                   <MenuItem
-                                    onClick={() =>
-                                      onTransferOwnership(m.user_id)
-                                    }
+                                    onClick={() => onTransferOwnership(m)}
                                   >
                                     {t("teams.transferOwnership")}
                                   </MenuItem>
                                 )}
+                                <MenuDivider />
                                 <MenuItem
                                   icon={<DeleteRegular />}
-                                  onClick={() => onRemoveMember(m.user_id)}
-                                  style={{
-                                    color: tokens.colorPaletteRedForeground1,
-                                  }}
+                                  className={styles.danger}
+                                  onClick={() => onRemoveMember(m)}
                                 >
-                                  {t("common.remove")}
+                                  {t("teams.removeFromTeam")}
                                 </MenuItem>
                               </MenuList>
                             </MenuPopover>
                           </Menu>
                         )}
-                      {m.user_id === meId && m.role !== "owner" && (
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          onClick={() => onRemoveMember(m.user_id)}
-                        >
-                          {t("teams.leave")}
-                        </Button>
-                      )}
+                      </div>
                     </TableCell>
                   )}
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-          {pageCount > 1 && (
-            <div className={styles.pager}>
-              <Pagination
-                page={page}
-                pageCount={pageCount}
-                onChange={setPage}
-                disabled={isFetching}
-              />
-            </div>
-          )}
-        </div>
+        </SettingsTable>
       )}
-    </div>
+      {pageCount > 1 && (
+        <SettingsFooter>
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            onChange={setPage}
+            disabled={isFetching}
+          />
+        </SettingsFooter>
+      )}
+    </>
   );
 }

@@ -12,7 +12,9 @@ import {
   mergeClasses,
   tokens,
 } from "@fluentui/react-components";
+import { ChevronRightRegular } from "@fluentui/react-icons";
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 const NARROW = "@media (max-width: 640px)";
 
@@ -141,6 +143,48 @@ const useStyles = makeStyles({
     gap: "8px",
     padding: "12px var(--card-pad)",
     borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  // A data table inside a card: edge cells line up with the card padding.
+  table: {
+    overflowX: "auto",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    "& th:first-child, & td:first-child": {
+      paddingLeft: "var(--card-pad)",
+    },
+    "& th:last-child, & td:last-child": {
+      paddingRight: "var(--card-pad)",
+    },
+    "& tbody tr:last-child": { borderBottomStyle: "none" },
+  },
+  linkRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    minHeight: "60px",
+    padding: "10px var(--card-pad)",
+    boxSizing: "border-box",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    color: "inherit",
+    textDecorationLine: "none",
+    ":hover": { background: tokens.colorNeutralBackground1Hover },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "-2px",
+    },
+  },
+  linkMeta: {
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+    [NARROW]: { display: "none" },
+  },
+  chevron: {
+    flexShrink: 0,
+    fontSize: "16px",
+    color: tokens.colorNeutralForeground3,
   },
   footerStart: {
     marginRight: "auto",
@@ -272,5 +316,43 @@ export function SettingsFooter({
       {start && <span className={styles.footerStart}>{start}</span>}
       {children}
     </div>
+  );
+}
+
+/** A table in a card, edge-aligned with the card's padding. */
+export function SettingsTable({ children }: { children: ReactNode }) {
+  const styles = useStyles();
+  return <div className={styles.table}>{children}</div>;
+}
+
+interface SettingsLinkRowProps {
+  to: string;
+  /** Usually an Avatar. */
+  icon?: ReactNode;
+  label: ReactNode;
+  description?: ReactNode;
+  /** Muted facts on the right, hidden on narrow screens. */
+  meta?: ReactNode;
+}
+
+/** A row that opens another page, e.g. one app in a team's app list. */
+export function SettingsLinkRow({
+  to,
+  icon,
+  label,
+  description,
+  meta,
+}: SettingsLinkRowProps) {
+  const styles = useStyles();
+  return (
+    <Link to={to} className={styles.linkRow}>
+      {icon}
+      <div className={styles.rowText}>
+        <div className={styles.rowLabel}>{label}</div>
+        {description && <div className={styles.rowDesc}>{description}</div>}
+      </div>
+      {meta && <div className={styles.linkMeta}>{meta}</div>}
+      <ChevronRightRegular className={styles.chevron} />
+    </Link>
   );
 }

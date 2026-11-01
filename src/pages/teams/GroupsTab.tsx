@@ -23,6 +23,7 @@ import {
   TableRow,
   Text,
   Textarea,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -34,21 +35,27 @@ import { useTranslation } from "react-i18next";
 import { useSiteName } from "../../lib/useSiteName";
 import { ApiError, type TeamGroup } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
-import { EmptyState } from "../../components/EmptyState";
-import { MarkdownText } from "../../components/MarkdownText";
+import {
+  SettingsBody,
+  SettingsCard,
+  SettingsEmpty,
+  SettingsRow,
+  SettingsTable,
+} from "../../components/Settings";
 import { SkeletonTableBodyRows } from "../../components/Skeletons";
 import { ColorPickerInput } from "../../components/ColorPickerInput";
 
 const useStyles = makeStyles({
-  tableScroll: { overflowX: "auto" },
-  panel: {
+  muted: { color: tokens.colorNeutralForeground3 },
+  nameCell: { display: "flex", alignItems: "center", gap: "8px" },
+  actions: {
     display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    padding: "16px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "8px",
+    justifyContent: "flex-end",
+    gap: "2px",
+    whiteSpace: "nowrap",
   },
+  actionsHead: { width: "1px" },
+  control: { width: "320px", maxWidth: "100%" },
 });
 
 /** Derive a slug suggestion from the display name so the common case needs
@@ -127,124 +134,136 @@ export function GroupsTab({
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <MessageBar intent="info">
-        <MarkdownText source={t("teams.groupsDesc", { siteName })} />
-      </MessageBar>
-
-      {!enabled && (
-        <MessageBar intent="info">{t("teams.groupsDisabledNotice")}</MessageBar>
-      )}
-
-      {canManage && (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <Button
-            appearance="primary"
-            icon={<AddRegular />}
-            size="small"
-            onClick={() => setCreating(true)}
-          >
-            {t("teams.newGroup")}
-          </Button>
-        </div>
-      )}
-
-      {isLoading ? (
-        <Table>
-          <TableBody>
-            <SkeletonTableBodyRows rows={3} cols={4} />
-          </TableBody>
-        </Table>
-      ) : groups.length === 0 ? (
-        <EmptyState
-          title={t("teams.noGroupsTitle")}
-          description={t("teams.noGroupsDesc")}
-        />
-      ) : (
-        <div className={styles.tableScroll}>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>{t("teams.groupHeader")}</TableHeaderCell>
-                <TableHeaderCell>{t("teams.groupSlugHeader")}</TableHeaderCell>
-                <TableHeaderCell>
-                  {t("teams.groupAssignableHeader")}
-                </TableHeaderCell>
-                {canManage && <TableHeaderCell />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {groups.map((g) => (
-                <TableRow key={g.id}>
-                  <TableCell>
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 8 }}
-                    >
-                      <Badge
-                        appearance="filled"
-                        size="small"
-                        style={
-                          g.color
-                            ? { backgroundColor: g.color, color: "#fff" }
-                            : undefined
-                        }
-                        color={g.color ? undefined : "informative"}
-                      >
-                        {g.name}
-                      </Badge>
-                      {g.description && (
-                        <Text
-                          size={200}
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          {g.description}
-                        </Text>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Text
-                      font="monospace"
-                      size={200}
-                      style={{ color: tokens.colorNeutralForeground3 }}
-                    >
-                      {g.slug}
-                    </Text>
-                  </TableCell>
-                  <TableCell>
-                    <Text size={200}>
-                      {g.admin_assignable === null
-                        ? t("teams.groupAssignableDefault")
-                        : g.admin_assignable
-                          ? t("teams.groupAssignableAdmins")
-                          : t("teams.groupAssignableOwners")}
-                    </Text>
-                  </TableCell>
+    <>
+      <SettingsCard
+        id="groups"
+        title={t("teams.groupsTitle")}
+        description={t("teams.groupsCardDesc", { siteName })}
+        badge={
+          !enabled && (
+            <Badge appearance="tint" color="subtle" size="small">
+              {t("security.disabled")}
+            </Badge>
+          )
+        }
+        action={
+          canManage && (
+            <Button
+              size="small"
+              icon={<AddRegular />}
+              onClick={() => setCreating(true)}
+            >
+              {t("teams.newGroup")}
+            </Button>
+          )
+        }
+      >
+        {!enabled && (
+          <SettingsBody>
+            <MessageBar intent="info">
+              {t("teams.groupsDisabledNotice")}
+            </MessageBar>
+          </SettingsBody>
+        )}
+        {!isLoading && groups.length === 0 ? (
+          <SettingsEmpty>
+            {canManage ? t("teams.noGroupsDesc") : t("teams.noGroupsTitle")}
+          </SettingsEmpty>
+        ) : (
+          <SettingsTable>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>{t("teams.groupHeader")}</TableHeaderCell>
+                  <TableHeaderCell>
+                    {t("teams.groupSlugHeader")}
+                  </TableHeaderCell>
+                  <TableHeaderCell>
+                    {t("teams.groupAssignableHeader")}
+                  </TableHeaderCell>
                   {canManage && (
-                    <TableCell>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          icon={<EditRegular />}
-                          onClick={() => setEditing(g)}
-                        />
-                        <Button
-                          appearance="subtle"
-                          size="small"
-                          icon={<DeleteRegular />}
-                          style={{ color: tokens.colorPaletteRedForeground1 }}
-                          onClick={() => setDeleting(g)}
-                        />
-                      </div>
-                    </TableCell>
+                    <TableHeaderCell className={styles.actionsHead} />
                   )}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+              </TableHeader>
+              <TableBody>
+                {isLoading && <SkeletonTableBodyRows rows={3} cols={4} />}
+                {groups.map((g) => (
+                  <TableRow key={g.id}>
+                    <TableCell>
+                      <div className={styles.nameCell}>
+                        <Badge
+                          appearance="filled"
+                          size="small"
+                          style={
+                            g.color
+                              ? { backgroundColor: g.color, color: "#fff" }
+                              : undefined
+                          }
+                          color={g.color ? undefined : "informative"}
+                        >
+                          {g.name}
+                        </Badge>
+                        {g.description && (
+                          <Text size={200} className={styles.muted}>
+                            {g.description}
+                          </Text>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Text
+                        font="monospace"
+                        size={200}
+                        className={styles.muted}
+                      >
+                        {g.slug}
+                      </Text>
+                    </TableCell>
+                    <TableCell>
+                      <Text size={200}>
+                        {g.admin_assignable === null
+                          ? t("teams.groupAssignableDefault")
+                          : g.admin_assignable
+                            ? t("teams.groupAssignableAdmins")
+                            : t("teams.groupAssignableOwners")}
+                      </Text>
+                    </TableCell>
+                    {canManage && (
+                      <TableCell>
+                        <div className={styles.actions}>
+                          <Tooltip
+                            content={t("common.edit")}
+                            relationship="label"
+                          >
+                            <Button
+                              appearance="subtle"
+                              size="small"
+                              icon={<EditRegular />}
+                              onClick={() => setEditing(g)}
+                            />
+                          </Tooltip>
+                          <Tooltip
+                            content={t("common.delete")}
+                            relationship="label"
+                          >
+                            <Button
+                              appearance="subtle"
+                              size="small"
+                              icon={<DeleteRegular />}
+                              onClick={() => setDeleting(g)}
+                            />
+                          </Tooltip>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </SettingsTable>
+        )}
+      </SettingsCard>
 
       {isOwner && <AdminCapabilitiesPanel teamId={teamId} showMsg={showMsg} />}
 
@@ -289,7 +308,7 @@ export function GroupsTab({
           </DialogBody>
         </DialogSurface>
       </Dialog>
-    </div>
+    </>
   );
 }
 
@@ -362,8 +381,10 @@ function AdminCapabilitiesPanel({
   ) => {
     const override = overrides[key];
     return (
-      <Field key={key} label={label}>
+      <SettingsRow key={key} label={label}>
         <Select
+          className={styles.control}
+          aria-label={label}
           value={override === undefined ? "" : override ? "yes" : "no"}
           disabled={saving === key}
           onChange={(_, d) =>
@@ -380,27 +401,19 @@ function AdminCapabilitiesPanel({
           <option value="yes">{t("teams.capabilityAllow")}</option>
           <option value="no">{t("teams.capabilityDeny")}</option>
         </Select>
-      </Field>
+      </SettingsRow>
     );
   };
 
   return (
-    <div className={styles.panel}>
-      <div>
-        <Text weight="semibold" size={400} block>
-          {t("teams.adminCapabilitiesTitle")}
-        </Text>
-        <Text
-          size={200}
-          block
-          style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}
-        >
-          {t("teams.adminCapabilitiesDesc")}
-        </Text>
-      </div>
+    <SettingsCard
+      id="admin-permissions"
+      title={t("teams.adminCapabilitiesTitle")}
+      description={t("teams.adminCapabilitiesDesc")}
+    >
       {capabilityField("groups:manage", t("teams.capabilityGroupsManage"))}
       {capabilityField("groups:assign", t("teams.capabilityGroupsAssign"))}
-    </div>
+    </SettingsCard>
   );
 }
 

@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
-  Input,
+  Input,
   Spinner,
 } from "@fluentui/react-components";
 import { Select } from "../../../components/Select";
@@ -41,6 +41,7 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
         role: form.role,
       });
       await qc.invalidateQueries({ queryKey: ["team", teamId] });
+      await qc.invalidateQueries({ queryKey: ["team-members", teamId] });
       setOpen(false);
       setForm({ username: "", role: "member" });
       showMsg("success", t("teams.memberAdded"));
@@ -57,7 +58,7 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
       <DialogTrigger disableButtonEnhancement>
-        <Button appearance="primary" icon={<AddRegular />} size="small">
+        <Button icon={<AddRegular />} size="small">
           {t("teams.addMemberButton")}
         </Button>
       </DialogTrigger>

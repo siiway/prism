@@ -84,7 +84,7 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
       <DialogTrigger disableButtonEnhancement>
-        <Button appearance="primary" icon={<AddRegular />} size="small">
+        <Button icon={<AddRegular />} size="small">
           {t("teams.newAppButton")}
         </Button>
       </DialogTrigger>
@@ -119,11 +119,18 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
                   placeholder={t("teams.websiteUrlPlaceholder")}
                 />
               </Field>
-              <RedirectUriEditor
+              {/* Unlike personal apps, team apps cannot learn their first
+                  redirect URI, so the server requires one up front. */}
+              <Field
                 label={t("teams.redirectUrisField")}
-                value={form.redirect_uris}
-                onChange={(v) => setForm((f) => ({ ...f, redirect_uris: v }))}
-              />
+                hint={t("teams.teamAppRedirectRequired")}
+                required
+              >
+                <RedirectUriEditor
+                  value={form.redirect_uris}
+                  onChange={(v) => setForm((f) => ({ ...f, redirect_uris: v }))}
+                />
+              </Field>
             </div>
           </DialogContent>
           <DialogActions>
@@ -133,7 +140,11 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
             <Button
               appearance="primary"
               onClick={handleCreate}
-              disabled={creating}
+              disabled={
+                creating ||
+                !form.name.trim() ||
+                !form.redirect_uris.some((u) => u.value.trim())
+              }
             >
               {creating ? <Spinner size="tiny" /> : t("common.create")}
             </Button>

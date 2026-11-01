@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
-  Input,
+  Input,
   Spinner,
   Checkbox,
   Text,
