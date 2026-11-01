@@ -1,36 +1,36 @@
-// Admin login error log viewer
+// Admin login error log: failed sign-in attempts, newest first, filterable
+// by reason, by who was being signed in as, and by address. Filters apply
+// as you type.
 
 import {
   Badge,
   Button,
-  Dropdown,
   Input,
-  Option,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
+  Skeleton,
+  SkeletonItem,
   Text,
   Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { useState } from "react";
+import { ShieldErrorRegular } from "@fluentui/react-icons";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../../lib/api-context";
 import { parseClient } from "../../lib/auditFormat";
+import { formatDateTime } from "../../lib/datetime";
 import { formatIpGeo } from "../../lib/geo";
+import {
+  DataList,
+  DataListRow,
+  type DataListColumn,
+} from "../../components/DataList";
+import { EmptyState } from "../../components/EmptyState";
 import { Pagination } from "../../components/Pagination";
-import { SkeletonTableRows } from "../../components/Skeletons";
+import { Select } from "../../components/Select";
 
-const useStyles = makeStyles({
-  // Let the table scroll sideways on narrow screens instead of
-  // overflowing the page
-  tableScroll: { overflowX: "auto" },
-});
+const PAGE_SIZE = 50;
 
 type LoginError = {
   id: string;
@@ -51,18 +51,50 @@ const ERROR_CODES = [
   "gpg_invalid_signature",
 ] as const;
 
-function errorBadgeColor(
-  code: string,
-): "danger" | "warning" | "informative" | "subtle" {
-  if (
-    code === "invalid_credentials" ||
-    code === "totp_invalid" ||
-    code === "gpg_invalid_signature"
-  )
-    return "danger";
+function badgeColor(code: string): "danger" | "warning" | "informative" {
   if (code === "rate_limited") return "warning";
-  if (code === "account_disabled") return "informative";
-  return "subtle";
+  if (code === "account_disabled" || code === "captcha_failed")
+    return "informative";
+  return "danger";
+}
+
+const useStyles = makeStyles({
+  filters: {
+    display: "flex",
+    gap: "8px",
+    marginBottom: "12px",
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  filter: { flex: "1 1 180px", minWidth: "160px" },
+  count: {
+    marginLeft: "auto",
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  mono: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
+  },
+  sub: {
+    display: "block",
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+});
+
+/** A text filter that settles 300ms after the last keystroke. */
+function useSettled(value: string, onSettle: () => void) {
+  const [settled, setSettled] = useState("");
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setSettled(value.trim());
+      onSettle();
+    }, 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return settled;
 }
 
 export function AdminLoginErrors() {
@@ -70,256 +102,173 @@ export function AdminLoginErrors() {
   const styles = useStyles();
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
-  const [filterCode, setFilterCode] = useState("");
-  const [filterIdentifier, setFilterIdentifier] = useState("");
-  const [filterIp, setFilterIp] = useState("");
+  const [code, setCode] = useState("");
+  const [identifier, setIdentifier] = useState("");
+  const [ip, setIp] = useState("");
+  const appliedIdentifier = useSettled(identifier, () => setPage(1));
+  const appliedIp = useSettled(ip, () => setPage(1));
 
-  // Applied filters (only committed on search)
-  const [appliedCode, setAppliedCode] = useState("");
-  const [appliedIdentifier, setAppliedIdentifier] = useState("");
-  const [appliedIp, setAppliedIp] = useState("");
-
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: [
-      "admin-login-errors",
-      page,
-      appliedCode,
-      appliedIdentifier,
-      appliedIp,
-    ],
+  const { data, isFetching } = useQuery({
+    queryKey: ["admin-login-errors", page, code, appliedIdentifier, appliedIp],
     queryFn: () =>
       api.adminLoginErrors(page, {
-        error_code: appliedCode || undefined,
+        error_code: code || undefined,
         identifier: appliedIdentifier || undefined,
         ip: appliedIp || undefined,
       }),
   });
-
   const errors = (data?.errors as LoginError[]) ?? [];
-  const totalPages = data ? Math.ceil(data.total / 50) : 1;
+  const total = data?.total ?? 0;
+  const filtered = !!(code || appliedIdentifier || appliedIp);
 
-  function applyFilters() {
-    setAppliedCode(filterCode);
-    setAppliedIdentifier(filterIdentifier);
-    setAppliedIp(filterIp);
-    setPage(1);
-  }
-
-  function clearFilters() {
-    setFilterCode("");
-    setFilterIdentifier("");
-    setFilterIp("");
-    setAppliedCode("");
-    setAppliedIdentifier("");
-    setAppliedIp("");
-    setPage(1);
-  }
-
-  const hasFilters = appliedCode || appliedIdentifier || appliedIp;
+  const columns: DataListColumn[] = [
+    { label: t("admin.loginErrors.timeHeader"), width: "170px" },
+    { label: t("admin.loginErrors.errorCodeHeader"), width: "170px" },
+    {
+      label: t("admin.loginErrors.identifierHeader"),
+      width: "minmax(0, 1.4fr)",
+    },
+    {
+      label: t("admin.loginErrors.ipHeader"),
+      width: "minmax(0, 1.4fr)",
+      secondary: true,
+    },
+    {
+      label: t("admin.loginErrors.userAgentHeader"),
+      width: "110px",
+      secondary: true,
+    },
+  ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
-      {/* Filter bar */}
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          alignItems: "flex-end",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("admin.loginErrors.filterErrorCode")}
-          </Text>
-          <Dropdown
-            style={{ minWidth: 180 }}
-            value={
-              filterCode
-                ? t(`admin.loginErrors.error_${filterCode}`)
-                : t("admin.loginErrors.allErrors")
-            }
-            selectedOptions={[filterCode]}
-            onOptionSelect={(_, d) =>
-              setFilterCode(
-                d.optionValue === "__all" ? "" : (d.optionValue ?? ""),
-              )
-            }
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+      <div className={styles.filters}>
+        <Select
+          className={styles.filter}
+          aria-label={t("admin.loginErrors.filterErrorCode")}
+          value={code}
+          onChange={(_, d) => {
+            setCode(d.value);
+            setPage(1);
+          }}
+        >
+          <option value="">{t("admin.loginErrors.allErrors")}</option>
+          {ERROR_CODES.map((c) => (
+            <option key={c} value={c}>
+              {t(`admin.loginErrors.error_${c}`)}
+            </option>
+          ))}
+        </Select>
+        <Input
+          className={styles.filter}
+          aria-label={t("admin.loginErrors.filterIdentifier")}
+          placeholder={t("admin.loginErrors.filterIdentifier")}
+          value={identifier}
+          onChange={(_, d) => setIdentifier(d.value)}
+        />
+        <Input
+          className={styles.filter}
+          aria-label={t("admin.loginErrors.filterIp")}
+          placeholder={t("admin.loginErrors.filterIp")}
+          value={ip}
+          onChange={(_, d) => setIp(d.value)}
+        />
+        {filtered && (
+          <Button
+            appearance="subtle"
+            onClick={() => {
+              setCode("");
+              setIdentifier("");
+              setIp("");
+              setPage(1);
+            }}
           >
-            <Option value="__all">{t("admin.loginErrors.allErrors")}</Option>
-            {ERROR_CODES.map((code) => (
-              <Option key={code} value={code}>
-                {t(`admin.loginErrors.error_${code}`)}
-              </Option>
-            ))}
-          </Dropdown>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("admin.loginErrors.filterIdentifier")}
-          </Text>
-          <Input
-            placeholder="user@example.com"
-            value={filterIdentifier}
-            onChange={(e) => setFilterIdentifier(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && applyFilters()}
-          />
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("admin.loginErrors.filterIp")}
-          </Text>
-          <Input
-            placeholder="1.2.3.4"
-            value={filterIp}
-            onChange={(e) => setFilterIp(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && applyFilters()}
-          />
-        </div>
-
-        <Button appearance="primary" onClick={applyFilters}>
-          {t("common.search")}
-        </Button>
-        {hasFilters && (
-          <Button appearance="subtle" onClick={clearFilters}>
             {t("admin.loginErrors.clearFilters")}
           </Button>
         )}
+        {data && (
+          <span className={styles.count}>
+            {t("admin.loginErrors.resultCount", { count: total })}
+          </span>
+        )}
       </div>
 
-      {/* Total count */}
-      {data && (
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          {data.total} {t("admin.loginErrors.totalResults")}
-        </Text>
-      )}
-
-      {isLoading ? (
-        <SkeletonTableRows rows={8} cols={6} />
-      ) : (
-        <div className={styles.tableScroll}>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>
-                  {t("admin.loginErrors.timeHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.loginErrors.errorCodeHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.loginErrors.identifierHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.loginErrors.ipHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.loginErrors.locationHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.loginErrors.userAgentHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.loginErrors.idHeader")}
-                </TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {errors.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    style={{
-                      textAlign: "center",
-                      color: tokens.colorNeutralForeground3,
-                    }}
-                  >
-                    {t("admin.loginErrors.noResults")}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                errors.map((err) => (
-                  <TableRow key={err.id}>
-                    <TableCell style={{ whiteSpace: "nowrap", fontSize: 12 }}>
-                      {new Date(err.created_at * 1000).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        color={errorBadgeColor(err.error_code)}
-                        appearance="filled"
-                        style={{ fontSize: 11 }}
-                      >
-                        {t(`admin.loginErrors.error_${err.error_code}`, {
-                          defaultValue: err.error_code,
-                        })}
-                      </Badge>
-                    </TableCell>
-                    <TableCell
-                      style={{ fontFamily: "monospace", fontSize: 12 }}
-                    >
-                      {err.identifier ?? "—"}
-                    </TableCell>
-                    <TableCell
-                      style={{
-                        fontFamily: "monospace",
-                        fontSize: 12,
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {err.ip_address ?? "—"}
-                    </TableCell>
-                    <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                      {formatIpGeo(err.ip_geo) || "—"}
-                    </TableCell>
-                    <TableCell
-                      style={{
-                        fontSize: 11,
-                        color: tokens.colorNeutralForeground3,
-                        maxWidth: 240,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {err.user_agent ? (
-                        <Tooltip
-                          content={err.user_agent}
-                          relationship="description"
-                        >
-                          <Text>{parseClient(err.user_agent)}</Text>
-                        </Tooltip>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Text
-                        style={{
-                          fontFamily: "monospace",
-                          fontSize: 11,
-                          color: tokens.colorNeutralForeground3,
-                        }}
-                      >
-                        {err.id.slice(0, 12)}
-                      </Text>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {totalPages > 1 && (
-        <Pagination
-          page={page}
-          pageCount={totalPages}
-          onChange={setPage}
-          disabled={isLoading || isFetching}
+      {isFetching && !data ? (
+        <Skeleton aria-busy>
+          <DataList columns={columns}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <DataListRow
+                key={i}
+                cells={columns.map((_, c) => (
+                  <SkeletonItem key={c} size={12} style={{ width: "70%" }} />
+                ))}
+              />
+            ))}
+          </DataList>
+        </Skeleton>
+      ) : errors.length === 0 ? (
+        <EmptyState
+          icon={<ShieldErrorRegular />}
+          title={
+            filtered
+              ? t("admin.loginErrors.noResults")
+              : t("admin.loginErrors.none")
+          }
         />
+      ) : (
+        <>
+          <DataList columns={columns}>
+            {errors.map((err) => (
+              <DataListRow
+                key={err.id}
+                cells={[
+                  formatDateTime(err.created_at),
+                  <Badge
+                    key="code"
+                    appearance="tint"
+                    size="small"
+                    color={badgeColor(err.error_code)}
+                  >
+                    {t(`admin.loginErrors.error_${err.error_code}`, {
+                      defaultValue: err.error_code,
+                    })}
+                  </Badge>,
+                  <span key="id" className={styles.mono}>
+                    {err.identifier ?? "—"}
+                  </span>,
+                  <span key="ip">
+                    <span className={styles.mono}>{err.ip_address ?? "—"}</span>
+                    {formatIpGeo(err.ip_geo) && (
+                      <span className={styles.sub}>
+                        {formatIpGeo(err.ip_geo)}
+                      </span>
+                    )}
+                  </span>,
+                  err.user_agent ? (
+                    <Tooltip
+                      key="ua"
+                      content={err.user_agent}
+                      relationship="description"
+                    >
+                      <Text size={200}>{parseClient(err.user_agent)}</Text>
+                    </Tooltip>
+                  ) : (
+                    "—"
+                  ),
+                ]}
+              />
+            ))}
+          </DataList>
+          {(total > PAGE_SIZE || page > 1) && (
+            <Pagination
+              page={page}
+              pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
+              total={total}
+              onChange={setPage}
+              disabled={isFetching}
+            />
+          )}
+        </>
       )}
     </div>
   );

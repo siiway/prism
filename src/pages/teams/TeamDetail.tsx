@@ -9,7 +9,6 @@ import {
   BreadcrumbDivider,
   BreadcrumbItem,
   Button,
-  MessageBar,
   Tab,
   TabList,
   Text,
@@ -18,9 +17,14 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { DismissRegular, OpenRegular } from "@fluentui/react-icons";
+import { OpenRegular } from "@fluentui/react-icons";
 import { Fragment, useEffect } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
@@ -30,6 +34,7 @@ import { useToastMessage } from "../../lib/useToastMessage";
 import { AuditLog } from "../../components/AuditLog";
 import { RoleBadge } from "../../components/RoleBadge";
 import { SettingsPage, SettingsToast } from "../../components/Settings";
+import { ViewBanner } from "../../components/ViewBanner";
 import { SkeletonSettingsPage } from "../../components/Skeletons";
 import { useAuthStore } from "../../store/auth";
 import { useAdminViewStore } from "../../store/adminView";
@@ -37,6 +42,7 @@ import { GroupsTab } from "./GroupsTab";
 import { AppsTab } from "./detail/AppsTab";
 import { DomainsTab } from "./detail/DomainsTab";
 import { MembersTab } from "./detail/MembersTab";
+import { ModerationTab } from "./detail/ModerationTab";
 import { SettingsTab } from "./detail/SettingsTab";
 import { SubTeamsTab } from "./detail/SubTeamsTab";
 import type { TeamTabProps } from "./detail/types";
@@ -48,7 +54,8 @@ type TabId =
   | "domains"
   | "sub-teams"
   | "audit"
-  | "settings";
+  | "settings"
+  | "moderation";
 
 const useStyles = makeStyles({
   breadcrumb: { marginLeft: "-8px" },
@@ -73,13 +80,6 @@ const useStyles = makeStyles({
   },
   title: { letterSpacing: "-0.015em", overflowWrap: "anywhere" },
   muted: { color: tokens.colorNeutralForeground3 },
-  banner: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "8px 12px",
-  },
-  bannerClose: { marginLeft: "auto" },
   tabBar: { borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
   // Line the first tab label up with the content edge.
   tabs: { marginLeft: "-10px", overflowX: "auto" },
@@ -91,6 +91,9 @@ export function TeamDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const location = useLocation();
+  const fromAdmin =
+    (location.state as { from?: string } | null)?.from === "admin-teams";
   const qc = useQueryClient();
   const { t } = useTranslation();
   const { message, showMsg } = useToastMessage();
@@ -150,14 +153,15 @@ export function TeamDetail() {
     // anyone else. Offer the way back instead of a dead end.
     if (isAdmin && normalView && (isError || !data))
       return (
-        <MessageBar intent="info">
-          <div className={styles.banner}>
-            <span>{t("teams.normalViewNotMember")}</span>
-            <Button size="small" onClick={() => setView(false)}>
-              {t("teams.normalViewSwitchBack")}
-            </Button>
-          </div>
-        </MessageBar>
+        <ViewBanner
+          intent="info"
+          action={{
+            label: t("teams.normalViewSwitchBack"),
+            onClick: () => setView(false),
+          }}
+        >
+          {t("teams.normalViewNotMember")}
+        </ViewBanner>
       );
     return <Text>{t("teams.teamNotFound")}</Text>;
   }
@@ -186,6 +190,12 @@ export function TeamDetail() {
     { id: "sub-teams", label: t("teams.subTeamsTitle"), show: subTeamsOn },
     { id: "audit", label: t("teams.auditTab"), show: canManage },
     { id: "settings", label: t("teams.settingsTab"), show: canManage },
+    {
+      id: "moderation",
+      label: t("teams.moderation.tab"),
+      // Site admins in admin view only.
+      show: isAdmin && !normalView,
+    },
   ];
   const visible = tabs.filter((x) => x.show);
   const requested = params.get("tab");
@@ -195,7 +205,11 @@ export function TeamDetail() {
     const p = new URLSearchParams(params);
     if (next === "members") p.delete("tab");
     else p.set("tab", next);
-    navigate({ search: p.toString() ? `?${p}` : "" }, { replace: true });
+    // Keep router state (where the page was opened from) across tabs.
+    navigate(
+      { search: p.toString() ? `?${p}` : "" },
+      { replace: true, state: location.state },
+    );
   };
 
   const tabProps: TeamTabProps = {
@@ -216,8 +230,11 @@ export function TeamDetail() {
         aria-label={t("teams.breadcrumbLabel")}
       >
         <BreadcrumbItem>
-          <BreadcrumbButton onClick={() => navigate("/teams")}>
-            {t("teams.title")}
+          {/* Opened from the admin team list: lead back there. */}
+          <BreadcrumbButton
+            onClick={() => navigate(fromAdmin ? "/admin/teams" : "/teams")}
+          >
+            {fromAdmin ? t("admin.teamsTab") : t("teams.title")}
           </BreadcrumbButton>
         </BreadcrumbItem>
         {ancestors.map((a) => (
@@ -275,45 +292,36 @@ export function TeamDetail() {
       {/* A site admin acting through the override is shown as owner. Say
           where that came from, and offer their real membership if any. */}
       {team.site_admin_access && !adminBannerDismissed && (
-        <MessageBar intent="warning">
-          <div className={styles.banner}>
-            <span>{t("teams.siteAdminAccess")}</span>
-            {team.my_member_role && (
-              <Button size="small" onClick={() => setView(true)}>
-                {t("teams.siteAdminSwitchToNormal")}
-              </Button>
-            )}
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<DismissRegular />}
-              aria-label={t("common.close")}
-              onClick={dismissAdminBanner}
-              className={styles.bannerClose}
-            />
-          </div>
-        </MessageBar>
+        <ViewBanner
+          intent="warning"
+          onDismiss={dismissAdminBanner}
+          // Only offered when there's a real membership to drop back to.
+          action={
+            team.my_member_role
+              ? {
+                  label: t("teams.siteAdminSwitchToNormal"),
+                  onClick: () => setView(true),
+                }
+              : undefined
+          }
+        >
+          {t("teams.siteAdminAccess")}
+        </ViewBanner>
       )}
       {isAdmin &&
         normalView &&
         !team.site_admin_access &&
         !normalBannerDismissed && (
-          <MessageBar intent="info">
-            <div className={styles.banner}>
-              <span>{t("teams.normalViewActive")}</span>
-              <Button size="small" onClick={() => setView(false)}>
-                {t("teams.normalViewSwitchBack")}
-              </Button>
-              <Button
-                appearance="subtle"
-                size="small"
-                icon={<DismissRegular />}
-                aria-label={t("common.close")}
-                onClick={dismissNormalBanner}
-                className={styles.bannerClose}
-              />
-            </div>
-          </MessageBar>
+          <ViewBanner
+            intent="info"
+            onDismiss={dismissNormalBanner}
+            action={{
+              label: t("teams.normalViewSwitchBack"),
+              onClick: () => setView(false),
+            }}
+          >
+            {t("teams.normalViewActive")}
+          </ViewBanner>
         )}
 
       <div className={styles.tabBar}>
@@ -352,6 +360,7 @@ export function TeamDetail() {
       {tab === "sub-teams" && <SubTeamsTab {...tabProps} />}
       {tab === "audit" && <AuditLog base={`team/${team.id}`} />}
       {tab === "settings" && <SettingsTab {...tabProps} />}
+      {tab === "moderation" && <ModerationTab {...tabProps} />}
     </SettingsPage>
   );
 }

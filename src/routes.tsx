@@ -580,6 +580,13 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
+              path: "invites/new",
+              lazy: () =>
+                import("./pages/admin/AdminInviteNew").then((m) => ({
+                  Component: m.AdminInviteNew,
+                })),
+            },
+            {
               path: "connections",
               lazy: () =>
                 import("./pages/admin/AdminConnections").then((m) => ({

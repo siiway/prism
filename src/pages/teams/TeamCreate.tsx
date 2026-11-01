@@ -9,18 +9,25 @@ import {
   Textarea,
 } from "@fluentui/react-components";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { FormPage } from "../../components/FormPage";
+import { useAuthStore } from "../../store/auth";
 
 export function TeamCreate() {
   const api = useApi();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { t } = useTranslation();
+  const isSiteAdmin = useAuthStore((s) => s.user?.role === "admin");
+  // Opened from the admin team list: cancel and back lead there.
+  const location = useLocation();
+  const fromAdmin =
+    (location.state as { from?: string } | null)?.from === "admin-teams";
+  const listPath = fromAdmin ? "/admin/teams" : "/teams";
 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +35,7 @@ export function TeamCreate() {
     name: "",
     description: "",
     avatar_url: "",
+    owner: "",
   });
 
   const update =
@@ -44,8 +52,11 @@ export function TeamCreate() {
         name: form.name.trim(),
         description: form.description || undefined,
         avatar_url: form.avatar_url || undefined,
+        // Site admins can hand the team straight to its intended owner.
+        owner_username: (isSiteAdmin && form.owner.trim()) || undefined,
       });
       await qc.invalidateQueries({ queryKey: ["teams"] });
+      await qc.invalidateQueries({ queryKey: ["admin-teams"] });
       navigate(`/teams/${res.team.id}`, { replace: true });
     } catch (err) {
       setError(
@@ -57,14 +68,14 @@ export function TeamCreate() {
 
   return (
     <FormPage
-      backTo="/teams"
-      backLabel={t("nav.teams")}
+      backTo={listPath}
+      backLabel={fromAdmin ? t("admin.teamsTab") : t("nav.teams")}
       title={t("teams.createTeam")}
       subtitle={t("teams.createSubtitle")}
       onSubmit={handleCreate}
       actions={
         <>
-          <Button onClick={() => navigate("/teams")}>
+          <Button onClick={() => navigate(listPath)}>
             {t("common.cancel")}
           </Button>
           <Button
@@ -100,6 +111,14 @@ export function TeamCreate() {
           placeholder={t("teams.avatarUrlPlaceholder")}
         />
       </Field>
+      {isSiteAdmin && (
+        <Field
+          label={t("admin.teamOwnerLabel")}
+          hint={t("admin.teamOwnerHint")}
+        >
+          <Input value={form.owner} onChange={update("owner")} />
+        </Field>
+      )}
     </FormPage>
   );
 }

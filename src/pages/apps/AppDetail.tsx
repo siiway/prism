@@ -5,7 +5,6 @@ import {
   Avatar,
   Badge,
   Button,
-  MessageBar,
   Tab,
   TabList,
   Text,
@@ -15,7 +14,6 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowLeftRegular,
-  DismissRegular,
   OpenRegular,
   ShieldCheckmarkRegular,
 } from "@fluentui/react-icons";
@@ -33,6 +31,7 @@ import { useApi } from "../../lib/api-context";
 import { setDocumentPageTitle } from "../../lib/documentTitle";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { SettingsPage, SettingsToast } from "../../components/Settings";
+import { ViewBanner } from "../../components/ViewBanner";
 import { SkeletonSettingsPage } from "../../components/Skeletons";
 import { useAuthStore } from "../../store/auth";
 import { useAdminViewStore } from "../../store/adminView";
@@ -48,8 +47,15 @@ import { OverviewTab } from "./detail/OverviewTab";
 import { SignInTab } from "./detail/SignInTab";
 import { PermissionsTab } from "./detail/PermissionsTab";
 import { AccessTab } from "./detail/AccessTab";
+import { ModerationTab } from "./detail/ModerationTab";
 
-const TABS = ["overview", "sign-in", "permissions", "access"] as const;
+const TABS = [
+  "overview",
+  "sign-in",
+  "permissions",
+  "access",
+  "moderation",
+] as const;
 type TabId = (typeof TABS)[number];
 
 // Card anchors, so /apps/:id#scopes opens the tab that holds the card.
@@ -98,13 +104,6 @@ const useStyles = makeStyles({
     overflowWrap: "anywhere",
   },
   muted: { color: tokens.colorNeutralForeground3 },
-  banner: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "8px 12px",
-  },
-  bannerClose: { marginLeft: "auto" },
   tabBar: {
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
   },
@@ -147,14 +146,25 @@ export function AppDetail() {
   // ── Tabs ───────────────────────────────────────────────────────────────────
   const hashTab = CARD_TAB[location.hash.slice(1)];
   const paramTab = params.get("tab") as TabId | null;
-  const tab: TabId =
+  // Opened from the admin app list: back leads there.
+  const fromAdmin =
+    (location.state as { from?: string } | null)?.from === "admin-apps";
+  // Moderation is for site admins in admin view only.
+  const canModerate = isSiteAdmin && !normalView;
+  const requested =
     hashTab ?? (paramTab && TABS.includes(paramTab) ? paramTab : "overview");
+  const tab: TabId =
+    requested === "moderation" && !canModerate ? "overview" : requested;
   const selectTab = (next: TabId) => {
     const p = new URLSearchParams(params);
     if (next === "overview") p.delete("tab");
     else p.set("tab", next);
     // Drop a card anchor from another tab, or it would pull the tab back.
-    navigate({ search: p.toString() ? `?${p}` : "" }, { replace: true });
+    // Keep router state (where the page was opened from) across tabs.
+    navigate(
+      { search: p.toString() ? `?${p}` : "" },
+      { replace: true, state: location.state },
+    );
   };
 
   // ── One-time secret ────────────────────────────────────────────────────────
@@ -197,14 +207,15 @@ export function AppDetail() {
     // offer the way back rather than a dead end.
     if (isSiteAdmin && normalView)
       return (
-        <MessageBar intent="info">
-          <div className={styles.banner}>
-            <span>{t("apps.normalViewNotOwner")}</span>
-            <Button size="small" onClick={() => setView(false)}>
-              {t("teams.normalViewSwitchBack")}
-            </Button>
-          </div>
-        </MessageBar>
+        <ViewBanner
+          intent="info"
+          action={{
+            label: t("teams.normalViewSwitchBack"),
+            onClick: () => setView(false),
+          }}
+        >
+          {t("apps.normalViewNotOwner")}
+        </ViewBanner>
       );
     return <Text>{t("apps.appNotFound")}</Text>;
   }
@@ -275,12 +286,20 @@ export function AppDetail() {
         icon={<ArrowLeftRegular />}
         className={styles.back}
         onClick={() =>
-          navigate(app.team_id ? `/teams/${app.team_id}` : "/apps")
+          navigate(
+            fromAdmin
+              ? "/admin/apps"
+              : app.team_id
+                ? `/teams/${app.team_id}`
+                : "/apps",
+          )
         }
       >
-        {app.team_id
-          ? (app.team_name ?? t("apps.team"))
-          : t("apps.myApplications")}
+        {fromAdmin
+          ? t("admin.applicationsTab")
+          : app.team_id
+            ? (app.team_name ?? t("apps.team"))
+            : t("apps.myApplications")}
       </Button>
 
       <div className={styles.header}>
@@ -334,40 +353,28 @@ export function AppDetail() {
       </div>
 
       {isSiteAdmin && !normalView && !adminBannerDismissed && (
-        <MessageBar intent="warning">
-          <div className={styles.banner}>
-            <span>{t("apps.siteAdminViewActive")}</span>
-            <Button size="small" onClick={() => setView(true)}>
-              {t("teams.siteAdminSwitchToNormal")}
-            </Button>
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<DismissRegular />}
-              aria-label={t("common.close")}
-              onClick={dismissAdminBanner}
-              className={styles.bannerClose}
-            />
-          </div>
-        </MessageBar>
+        <ViewBanner
+          intent="warning"
+          onDismiss={dismissAdminBanner}
+          action={{
+            label: t("teams.siteAdminSwitchToNormal"),
+            onClick: () => setView(true),
+          }}
+        >
+          {t("apps.siteAdminViewActive")}
+        </ViewBanner>
       )}
       {isSiteAdmin && normalView && !normalBannerDismissed && (
-        <MessageBar intent="info">
-          <div className={styles.banner}>
-            <span>{t("apps.memberViewActive")}</span>
-            <Button size="small" onClick={() => setView(false)}>
-              {t("teams.normalViewSwitchBack")}
-            </Button>
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<DismissRegular />}
-              aria-label={t("common.close")}
-              onClick={dismissNormalBanner}
-              className={styles.bannerClose}
-            />
-          </div>
-        </MessageBar>
+        <ViewBanner
+          intent="info"
+          onDismiss={dismissNormalBanner}
+          action={{
+            label: t("teams.normalViewSwitchBack"),
+            onClick: () => setView(false),
+          }}
+        >
+          {t("apps.memberViewActive")}
+        </ViewBanner>
       )}
 
       <div className={styles.tabBar}>
@@ -380,6 +387,9 @@ export function AppDetail() {
           <Tab value="sign-in">{t("apps.tabSignIn")}</Tab>
           <Tab value="permissions">{t("apps.permissionsTab")}</Tab>
           <Tab value="access">{t("apps.tabAccess")}</Tab>
+          {canModerate && (
+            <Tab value="moderation">{t("apps.moderation.tab")}</Tab>
+          )}
         </TabList>
       </div>
 
@@ -400,6 +410,9 @@ export function AppDetail() {
       )}
       {tab === "access" && (
         <AccessTab app={app} formApi={formApi} showMsg={showMsg} />
+      )}
+      {tab === "moderation" && (
+        <ModerationTab app={app} formApi={formApi} showMsg={showMsg} />
       )}
     </SettingsPage>
   );
