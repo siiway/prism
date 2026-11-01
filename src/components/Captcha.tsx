@@ -15,6 +15,7 @@ import {
   Text,
   ProgressBar,
   Link,
+  tokens,
 } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../lib/api-context";
@@ -36,6 +37,33 @@ import { solvePoW } from "../lib/pow";
 import capWasmUrl from "@cap.js/wasm/browser/cap_wasm_bg.wasm?url";
 
 const CAP_PAKO_FALLBACK_URL = "/vendor/pako_inflate.min.js";
+
+// <cap-widget> draws a white, heavily rounded card of its own. It reads these
+// custom properties inside its shadow root, so pointing them at the Fluent
+// theme tokens makes it look like the inputs around it in both themes. The
+// label's size and weight aren't variables; index.css sets them through
+// ::part(label).
+const CAP_THEME: Record<string, string> = {
+  "--cap-widget-width": "100%",
+  "--cap-widget-height": "48px",
+  "--cap-widget-padding": "12px",
+  "--cap-gap": "10px",
+  "--cap-background": tokens.colorNeutralBackground1,
+  "--cap-border-color": tokens.colorNeutralStroke1,
+  "--cap-border-radius": tokens.borderRadiusMedium,
+  "--cap-color": tokens.colorNeutralForeground1,
+  "--cap-font": tokens.fontFamilyBase,
+  "--cap-focus-ring": tokens.colorStrokeFocus2,
+  "--cap-checkbox-size": "20px",
+  "--cap-checkbox-margin": "0px",
+  "--cap-checkbox-border": `1px solid ${tokens.colorNeutralStrokeAccessible}`,
+  "--cap-checkbox-border-radius": tokens.borderRadiusSmall,
+  "--cap-checkbox-background": tokens.colorNeutralBackground1,
+  "--cap-spinner-color": tokens.colorBrandForeground1,
+  "--cap-spinner-background-color": tokens.colorNeutralStroke2,
+  "--cap-invalid-border-color": tokens.colorPaletteRedBorder2,
+  "--cap-invalid-ring-color": "transparent",
+};
 
 export interface CaptchaValue {
   /** Which provider produced this proof. The server verifies against this and
@@ -408,6 +436,17 @@ function ProviderWidget({
       if (cancelled || !containerRef.current) return;
       el = document.createElement("cap-widget");
       el.setAttribute("data-cap-api-endpoint", endpoint);
+      const tr = tRef.current;
+      el.setAttribute("data-cap-i18n-initial-state", tr("captcha.capInitial"));
+      el.setAttribute(
+        "data-cap-i18n-verifying-label",
+        tr("captcha.capVerifying"),
+      );
+      el.setAttribute("data-cap-i18n-solved-label", tr("captcha.capSolved"));
+      el.setAttribute("data-cap-i18n-error-label", tr("captcha.capError"));
+      el.style.display = "flex";
+      for (const [k, v] of Object.entries(CAP_THEME))
+        el.style.setProperty(k, v);
       el.addEventListener("solve", (e: Event) => {
         const detail = (e as CustomEvent<{ token: string }>).detail;
         if (detail?.token) {
@@ -577,7 +616,15 @@ export function Captcha({ captcha, onVerified, onError }: CaptchaProps) {
         >
           <Text size={200}>{t("captcha.switchPrompt")}</Text>
           {alternates.map((p) => (
-            <Link key={p} as="button" onClick={() => switchTo(p)}>
+            <Link
+              key={p}
+              as="button"
+              onClick={() => switchTo(p)}
+              style={{
+                fontSize: tokens.fontSizeBase200,
+                lineHeight: tokens.lineHeightBase200,
+              }}
+            >
               {t(`captcha.provider_${p}`)}
             </Link>
           ))}

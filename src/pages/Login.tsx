@@ -400,29 +400,31 @@ export function Login() {
 
         {!totpRequired && gpgStep === "idle" && (
           <>
-            <Button
-              appearance="outline"
-              icon={<KeyMultipleRegular />}
-              onClick={handlePasskeyLogin}
-              disabled={passkeyLoading}
-            >
-              {passkeyLoading
-                ? t("auth.authenticating")
-                : t("auth.signInWithPasskey")}
-            </Button>
+            <div className={styles.providers}>
+              <Button
+                appearance="outline"
+                icon={<KeyMultipleRegular />}
+                onClick={handlePasskeyLogin}
+                disabled={passkeyLoading}
+              >
+                {passkeyLoading
+                  ? t("auth.authenticating")
+                  : t("auth.signInWithPasskey")}
+              </Button>
 
-            <Button
-              appearance="outline"
-              icon={<LockClosedRegular />}
-              onClick={handleGpgBegin}
-              disabled={gpgLoading}
-            >
-              {gpgLoading ? (
-                <Spinner size="tiny" />
-              ) : (
-                t("security.signInWithGpg")
-              )}
-            </Button>
+              <Button
+                appearance="outline"
+                icon={<LockClosedRegular />}
+                onClick={handleGpgBegin}
+                disabled={gpgLoading}
+              >
+                {gpgLoading ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("security.signInWithGpg")
+                )}
+              </Button>
+            </div>
 
             {(site?.enabled_providers?.length ?? 0) > 0 && (
               <>

@@ -36,6 +36,13 @@ body {
 /* Edge adds a native reveal (eye) and clear button to password and text
    inputs; PasswordInput already renders its own toggle, so the browser one
    showed up as a duplicate icon. */
+/* The Cap widget's label is 15px semibold inside its shadow root; match the
+   body text of the form instead. The rest of its theme is set in Captcha.tsx. */
+cap-widget::part(label) {
+  font-size: var(--fontSizeBase300);
+  font-weight: var(--fontWeightRegular);
+}
+
 input::-ms-reveal,
 input::-ms-clear {
   display: none;
