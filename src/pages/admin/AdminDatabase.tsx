@@ -12,6 +12,8 @@ import {
   Field,
   Input,
   MessageBar,
+  Skeleton,
+  SkeletonItem,
   Spinner,
   Subtitle2,
   Switch,
@@ -134,6 +136,25 @@ const useStyles = makeStyles({
   // Fill the viewport below the sticky top rather than running off it.
   navListTall: { maxHeight: "calc(100vh - 140px)" },
   navEmpty: { padding: "8px 10px", color: tokens.colorNeutralForeground3 },
+  navSkeleton: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    padding: "8px 10px",
+  },
+  skeletonHead: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "16px",
+  },
+  skeletonRow: {
+    display: "flex",
+    gap: "24px",
+    padding: "12px 16px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   narrowPicker: { display: "none", [NARROW]: { display: "block" } },
   pane: { minWidth: 0, display: "flex", flexDirection: "column", gap: "12px" },
   paneHead: {
@@ -284,6 +305,7 @@ function RowEditor({
   const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
+  const { confirm, confirmDialog } = useConfirm();
   const isInsert = row === null;
   const original = useMemo(
     () =>
@@ -305,20 +327,48 @@ function RowEditor({
   );
   // On update, only send what actually changed — a table with a trigger or a
   // default shouldn't be rewritten column by column because it was opened.
-  const changed = Object.entries(draft).filter(
-    ([name, value]) => isInsert || value !== original[name],
+  // An insert leaves empty fields out, so those columns get their defaults
+  // (or NULL) instead of an explicit NULL that a NOT NULL column refuses.
+  const changed = Object.entries(draft).filter(([name, value]) =>
+    isInsert ? value !== "" : value !== original[name],
   );
 
   const save = async () => {
     if (saving || !changed.length) return;
-    setSaving(true);
-    setError("");
     const values = Object.fromEntries(
       changed.map(([name, value]) => [
         name,
         parseInput(value, columnByName.get(name)),
       ]),
     );
+    // Show exactly what will be written: every value for an insert, each
+    // change (old → new) for an update. Nothing here checks it first.
+    const shown = (v: unknown) =>
+      v === null || v === undefined ? "NULL" : JSON.stringify(v);
+    const lines = Object.entries(values).map(([name, value]) =>
+      isInsert
+        ? `${name} = ${shown(value)}`
+        : `${name}: ${shown(row?.[name])} → ${shown(value)}`,
+    );
+    const ok = await confirm({
+      title: isInsert
+        ? t("admin.dbConfirmInsertTitle", { table: page.table })
+        : t("admin.dbConfirmUpdateTitle", { table: page.table }),
+      body: (
+        <>
+          <Text>
+            {isInsert
+              ? t("admin.dbConfirmInsertBody")
+              : t("admin.dbConfirmUpdateBody", { count: lines.length })}
+          </Text>
+          <pre className={styles.code}>{lines.join("\n")}</pre>
+        </>
+      ),
+      confirmLabel: isInsert ? t("admin.dbInsertRow") : t("common.saveChanges"),
+    });
+    if (!ok) return;
+    setSaving(true);
+    setError("");
     try {
       if (isInsert) await api.adminDbInsertRow(page.table, values);
       else
@@ -369,7 +419,13 @@ function RowEditor({
                 </>
               }
               hint={
-                col.notnull && !col.pk ? t("admin.dbNotNullHint") : undefined
+                // An insert skips empty fields, so a column with a default
+                // is fine left empty there.
+                col.notnull &&
+                !col.pk &&
+                (!isInsert || col.default_value === null)
+                  ? t("admin.dbNotNullHint")
+                  : undefined
               }
             >
               <Input
@@ -402,6 +458,7 @@ function RowEditor({
           )}
         </Button>
       </SettingsFooter>
+      {confirmDialog}
     </SettingsCard>
   );
 }
@@ -517,10 +574,12 @@ function TableBrowser({
               {t("admin.dbAppendOnlyBadge")}
             </Badge>
           )}
-          <Text size={200} className={styles.muted}>
-            {t("admin.dbRowCount", { count: data?.total ?? rowCount ?? 0 })}
-            {where && ` · ${t("admin.dbFiltered")}`}
-          </Text>
+          {(data?.total ?? rowCount) != null && (
+            <Text size={200} className={styles.muted}>
+              {t("admin.dbRowCount", { count: data?.total ?? rowCount ?? 0 })}
+              {where && ` · ${t("admin.dbFiltered")}`}
+            </Text>
+          )}
         </div>
         <div className={styles.headActions}>
           {ddl && (
@@ -690,6 +749,35 @@ function TableBrowser({
   );
 }
 
+/** The table view's shape while the table list loads: a title and actions,
+ *  the filter, and a grid of placeholder rows. */
+function TableSkeleton() {
+  const styles = useStyles();
+  return (
+    <Skeleton aria-busy className={styles.pane}>
+      <div className={styles.skeletonHead}>
+        <SkeletonItem size={20} style={{ width: 180 }} />
+        <SkeletonItem size={32} style={{ width: 120 }} />
+      </div>
+      <SkeletonItem size={32} />
+      <div className={styles.grid}>
+        <div className={styles.skeletonRow} style={{ borderTop: "none" }}>
+          {[60, 90, 80, 110, 70].map((w, i) => (
+            <SkeletonItem key={i} size={12} style={{ width: w }} />
+          ))}
+        </div>
+        {Array.from({ length: 6 }).map((_, r) => (
+          <div key={r} className={styles.skeletonRow}>
+            {[60, 90, 80, 110, 70].map((w, i) => (
+              <SkeletonItem key={i} size={12} style={{ width: w }} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </Skeleton>
+  );
+}
+
 /** Pick a table: a filterable list on wide screens, a dropdown on narrow. */
 function TablePicker({
   tables,
@@ -725,7 +813,19 @@ function TablePicker({
           />
         </div>
         <div className={mergeClasses(styles.navList, styles.navListTall)}>
-          {loading && <Spinner size="tiny" />}
+          {loading && (
+            <Skeleton aria-busy>
+              {Array.from({ length: 14 }).map((_, i) => (
+                <div key={i} className={styles.navSkeleton}>
+                  <SkeletonItem
+                    size={12}
+                    style={{ width: `${45 + ((i * 37) % 40)}%` }}
+                  />
+                  <SkeletonItem size={12} style={{ width: 18 }} />
+                </div>
+              ))}
+            </Skeleton>
+          )}
           {shown.map((tbl) => (
             <button
               key={tbl.name}
@@ -1009,10 +1109,14 @@ export function AdminDatabase() {
   const tables = data?.tables ?? [];
   const appendOnly = status?.append_only ?? [];
   const requestedTable = params.get("table");
-  const active =
-    tables.find((tbl) => tbl.name === requestedTable)?.name ??
-    tables[0]?.name ??
-    null;
+  // A table named in the URL opens at once: its rows load in well under a
+  // second, while the list (which counts every table) can take several.
+  // Once the list is in, an unknown name falls back to the first table.
+  const active = data
+    ? (tables.find((tbl) => tbl.name === requestedTable)?.name ??
+      tables[0]?.name ??
+      null)
+    : requestedTable;
   const activeTable = tables.find((tbl) => tbl.name === active) ?? null;
   const selectTable = (name: string) =>
     setParams({ table: name }, { replace: true });
@@ -1083,10 +1187,10 @@ export function AdminDatabase() {
               appendOnly={appendOnly.includes(active)}
               showMsg={showMsg}
             />
+          ) : isLoading ? (
+            <TableSkeleton />
           ) : (
-            !isLoading && (
-              <Text className={styles.muted}>{t("admin.dbNoTables")}</Text>
-            )
+            <Text className={styles.muted}>{t("admin.dbNoTables")}</Text>
           )}
         </div>
       )}

@@ -850,11 +850,14 @@ marks primary-key columns, the DDL that created the table is under
 keyword). D1's own `_cf_*` bookkeeping tables are not listed: D1 refuses to
 let queries read them.
 
-Rows are edited and inserted in a form that takes the grid's place, and
-deleted after a confirmation that shows the row's key. An update sends only the
-columns you actually changed. An empty input means `NULL`, which the grid also
-renders distinctly from an empty string — the two are not the same value and
-must not look alike in a table you are about to edit.
+Rows are edited and inserted in a form that takes the grid's place. Saving
+confirms first and shows exactly what will be written (each changed column as
+old → new, or every value being inserted), and deleting confirms with the
+row's key. An update sends only the columns you actually changed, and an
+empty input there means `NULL`. An insert leaves empty inputs out, so those
+columns take their defaults. The grid renders `NULL` distinctly from an empty
+string — the two are not the same value and must not look alike in a table
+you are about to edit.
 
 A table with no primary key is browsable but not row-editable: there is no way
 to address a single row. SQLite's `rowid` is used where one exists, so this
@@ -894,8 +897,9 @@ KV has no schema, so navigation is a namespace picker and a prefix box rather
 than a table list. Two namespaces are exposed: `sessions` (sessions, system
 flags, signing keys) and `cache`. Listing pages with KV's own opaque cursor,
 so it moves forward and back rather than jumping to a page number. A key
-opens in place of the list to read, edit or delete it; deleting one, like
-purging a prefix, confirms first.
+opens in place of the list to read, edit or delete it; saving or deleting one, like
+purging a prefix, confirms first; saving shows the key, its expiry and the
+value to be written.
 
 **Key material is withheld.** `system:jwt_secret` and the signing keypairs
 come back flagged, without their value, and cannot be written through this

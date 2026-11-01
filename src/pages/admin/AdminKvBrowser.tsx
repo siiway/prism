@@ -73,6 +73,18 @@ const useStyles = makeStyles({
     overflowWrap: "anywhere",
   },
   value: { fontFamily: tokens.fontFamilyMonospace, minHeight: "220px" },
+  preview: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    maxHeight: "200px",
+    overflowY: "auto",
+    margin: "8px 0 0",
+    padding: "10px 12px",
+    borderRadius: tokens.borderRadiusMedium,
+    background: tokens.colorNeutralBackground2,
+  },
   pager: {
     display: "flex",
     alignItems: "center",
@@ -142,6 +154,33 @@ function KeyEditor({
 
   const save = async () => {
     if (busy || !key.trim()) return;
+    const preview =
+      current.length > 400 ? `${current.slice(0, 400)}…` : current;
+    const ok = await confirm({
+      title: isNew
+        ? t("admin.kvConfirmNewTitle")
+        : t("admin.kvConfirmSaveTitle"),
+      body: (
+        <>
+          <Text block className={styles.key}>
+            {key}
+          </Text>
+          <Text block style={{ marginTop: 8 }}>
+            {ttl.trim()
+              ? t("admin.kvConfirmSaveBodyTtl", {
+                  namespace: ns,
+                  seconds: Number(ttl),
+                })
+              : t("admin.kvConfirmSaveBody", { namespace: ns })}
+          </Text>
+          <pre className={styles.preview}>
+            {preview || t("admin.kvEmptyValue")}
+          </pre>
+        </>
+      ),
+      confirmLabel: t("common.save"),
+    });
+    if (!ok) return;
     setBusy("save");
     try {
       await api.adminKvPut(ns, key, current, ttl.trim() ? Number(ttl) : null);
