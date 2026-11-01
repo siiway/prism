@@ -4363,7 +4363,7 @@ app.get("/me/domains", async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT domain, verified_at, next_reverify_at, created_at
      FROM domains
-     WHERE user_id = ? AND verified = 1
+     WHERE user_id = ? AND team_id IS NULL AND verified = 1
      ORDER BY verified_at DESC`,
   )
     .bind(resolved.userId)
@@ -4642,7 +4642,7 @@ app.post("/me/domains", async (c) => {
     return c.json({ error: "Invalid domain format" }, 400);
 
   const existing = await c.env.DB.prepare(
-    "SELECT id FROM domains WHERE user_id = ? AND domain = ?",
+    "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
   )
     .bind(resolved.userId, domain)
     .first();
@@ -6033,7 +6033,7 @@ async function buildClaims(
   if (scopes.includes("domains:read") && wants("domains")) {
     const rows = await db
       .prepare(
-        "SELECT id, domain, verified FROM domains WHERE user_id = ? ORDER BY created_at DESC",
+        "SELECT id, domain, verified FROM domains WHERE user_id = ? AND team_id IS NULL ORDER BY created_at DESC",
       )
       .bind(user.id)
       .all<{ id: string; domain: string; verified: number }>();

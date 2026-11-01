@@ -246,7 +246,7 @@ app.get("/", async (c) => {
       .bind(...args)
       .first<{ n: number }>(),
     c.env.DB.prepare(
-      "SELECT domain FROM domains WHERE user_id = ? AND verified = 1",
+      "SELECT domain FROM domains WHERE user_id = ? AND team_id IS NULL AND verified = 1",
     )
       .bind(user.id)
       .all<{ domain: string }>(),

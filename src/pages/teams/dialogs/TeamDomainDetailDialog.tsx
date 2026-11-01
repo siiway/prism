@@ -60,12 +60,12 @@ export function TeamDomainDetailDialog({
                   ? t("domains.verifiedBadge")
                   : t("domains.pending")}
               </Badge>
-              {domain?.verified_at && (
+              {!!domain?.verified_at && (
                 <LabeledLine label={t("domains.verifiedLabel")}>
                   {new Date(domain.verified_at * 1000).toLocaleDateString()}
                 </LabeledLine>
               )}
-              {domain?.verified && domain.verification_method && (
+              {!!domain?.verified && domain.verification_method && (
                 <LabeledLine label={t("domains.methodLabel")}>
                   {t(`domains.method.${domain.verification_method}`)}
                 </LabeledLine>

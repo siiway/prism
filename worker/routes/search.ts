@@ -116,7 +116,7 @@ app.get("/", async (c) => {
         kind: "domain",
         admin: false,
         sql: `SELECT id, domain FROM domains
-              WHERE user_id = ? AND LOWER(domain) LIKE ${ci}
+              WHERE user_id = ? AND team_id IS NULL AND LOWER(domain) LIKE ${ci}
               ORDER BY created_at DESC LIMIT ?`,
         args: [user.id, like, RESULT_LIMIT],
         map: (r) => ({

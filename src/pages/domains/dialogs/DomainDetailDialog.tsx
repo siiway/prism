@@ -62,17 +62,17 @@ export function DomainDetailDialog({
                   : t("domains.pending")}
               </Badge>
 
-              {domain?.verified_at && (
+              {!!domain?.verified_at && (
                 <LabeledLine label={t("domains.verifiedLabel")}>
                   {new Date(domain.verified_at * 1000).toLocaleDateString()}
                 </LabeledLine>
               )}
-              {domain?.verified && domain.verification_method && (
+              {!!domain?.verified && domain.verification_method && (
                 <LabeledLine label={t("domains.methodLabel")}>
                   {t(`domains.method.${domain.verification_method}`)}
                 </LabeledLine>
               )}
-              {domain?.next_reverify_at && (
+              {!!domain?.next_reverify_at && (
                 <LabeledLine label={t("domains.nextReverifyLabel")}>
                   {new Date(
                     domain.next_reverify_at * 1000,

@@ -38,8 +38,8 @@ app.get("/", async (c) => {
   const query = c.req.query("q")?.trim() ?? "";
 
   const where = query
-    ? "user_id = ? AND LOWER(domain) LIKE LOWER(?) ESCAPE '\\'"
-    : "user_id = ?";
+    ? "user_id = ? AND team_id IS NULL AND LOWER(domain) LIKE LOWER(?) ESCAPE '\\'"
+    : "user_id = ? AND team_id IS NULL";
   const args: unknown[] = query ? [user.id, likePattern(query)] : [user.id];
 
   const [rows, countRow] = await Promise.all([
@@ -78,7 +78,7 @@ app.post("/", async (c) => {
     return c.json({ error: "Invalid domain format" }, 400);
 
   const existing = await c.env.DB.prepare(
-    "SELECT id FROM domains WHERE user_id = ? AND domain = ?",
+    "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
   )
     .bind(user.id, domain)
     .first();
@@ -168,7 +168,7 @@ app.post("/:id/verify", async (c) => {
   const id = c.req.param("id");
 
   const row = await c.env.DB.prepare(
-    "SELECT * FROM domains WHERE id = ? AND user_id = ?",
+    "SELECT * FROM domains WHERE id = ? AND user_id = ? AND team_id IS NULL",
   )
     .bind(id, user.id)
     .first<DomainRow>();
@@ -367,7 +367,7 @@ app.delete("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const row = await c.env.DB.prepare(
-    "SELECT * FROM domains WHERE id = ? AND user_id = ?",
+    "SELECT * FROM domains WHERE id = ? AND user_id = ? AND team_id IS NULL",
   )
     .bind(id, user.id)
     .first<DomainRow>();
