@@ -45,7 +45,8 @@ const useStyles = makeStyles({
 const MATCH_TYPES: RedirectUriMatchType[] = ["equals", "regex", "wildcard"];
 
 interface Props {
-  label: string;
+  /** Omit inside a card that already names the list; the hints go too. */
+  label?: string;
   value: RedirectUri[];
   onChange: (value: RedirectUri[]) => void;
 }
@@ -71,66 +72,72 @@ export function RedirectUriEditor({ label, value, onChange }: Props) {
     (e) => e.type === "regex" && (e.value === ".*" || e.value === "^.*$"),
   );
 
-  return (
-    <Field label={label} hint={t("apps.redirectUrisHint")}>
-      <div className={styles.list}>
-        {value.length === 0 && (
-          <Text className={styles.empty}>{t("apps.redirectUrisEmpty")}</Text>
-        )}
-        {value.map((entry, i) => (
-          <div key={i} className={styles.row}>
-            <div className={styles.typeCol}>
-              <Dropdown
-                className={styles.typeDropdown}
-                value={typeLabel(entry.type)}
-                selectedOptions={[entry.type]}
-                onOptionSelect={(_, d) =>
-                  update(i, {
-                    type: (d.optionValue as RedirectUriMatchType) ?? "equals",
-                  })
-                }
-              >
-                {MATCH_TYPES.map((mt) => (
-                  <Option key={mt} value={mt}>
-                    {typeLabel(mt)}
-                  </Option>
-                ))}
-              </Dropdown>
-            </div>
-            <div className={styles.valueCol}>
-              <Input
-                style={{ width: "100%" }}
-                value={entry.value}
-                placeholder={
-                  entry.type === "equals"
-                    ? t("apps.redirectUrisPlaceholder")
-                    : entry.type === "wildcard"
-                      ? "https://example.com/*"
-                      : "https://example\\.com/.*"
-                }
-                onChange={(e) => update(i, { value: e.target.value })}
-              />
-            </div>
-            <Button
-              icon={<DeleteRegular />}
-              appearance="subtle"
-              aria-label={t("common.remove")}
-              onClick={() => remove(i)}
+  const list = (
+    <div className={styles.list}>
+      {value.length === 0 && label && (
+        <Text className={styles.empty}>{t("apps.redirectUrisEmpty")}</Text>
+      )}
+      {value.map((entry, i) => (
+        <div key={i} className={styles.row}>
+          <div className={styles.typeCol}>
+            <Dropdown
+              className={styles.typeDropdown}
+              value={typeLabel(entry.type)}
+              selectedOptions={[entry.type]}
+              onOptionSelect={(_, d) =>
+                update(i, {
+                  type: (d.optionValue as RedirectUriMatchType) ?? "equals",
+                })
+              }
+            >
+              {MATCH_TYPES.map((mt) => (
+                <Option key={mt} value={mt}>
+                  {typeLabel(mt)}
+                </Option>
+              ))}
+            </Dropdown>
+          </div>
+          <div className={styles.valueCol}>
+            <Input
+              style={{ width: "100%" }}
+              value={entry.value}
+              placeholder={
+                entry.type === "equals"
+                  ? t("apps.redirectUrisPlaceholder")
+                  : entry.type === "wildcard"
+                    ? "https://example.com/*"
+                    : "https://example\\.com/.*"
+              }
+              onChange={(e) => update(i, { value: e.target.value })}
             />
           </div>
-        ))}
-        <div>
-          <Button icon={<AddRegular />} size="small" onClick={add}>
-            {t("apps.redirectUrisAdd")}
-          </Button>
+          <Button
+            icon={<DeleteRegular />}
+            appearance="subtle"
+            aria-label={t("common.remove")}
+            onClick={() => remove(i)}
+          />
         </div>
-        {hasWideRegex && (
-          <MessageBar intent="warning">
-            {t("apps.redirectUrisWideRegexWarning")}
-          </MessageBar>
-        )}
-        <Text className={styles.empty}>{t("apps.redirectUrisRegexTip")}</Text>
+      ))}
+      <div>
+        <Button icon={<AddRegular />} size="small" onClick={add}>
+          {t("apps.redirectUrisAdd")}
+        </Button>
       </div>
+      {hasWideRegex && (
+        <MessageBar intent="warning">
+          {t("apps.redirectUrisWideRegexWarning")}
+        </MessageBar>
+      )}
+      {label && (
+        <Text className={styles.empty}>{t("apps.redirectUrisRegexTip")}</Text>
+      )}
+    </div>
+  );
+  if (!label) return list;
+  return (
+    <Field label={label} hint={t("apps.redirectUrisHint")}>
+      {list}
     </Field>
   );
 }
