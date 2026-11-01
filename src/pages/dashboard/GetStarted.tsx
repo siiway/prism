@@ -121,7 +121,7 @@ export function GetStarted({
   const submitDomain = () => {
     const value = domain.trim();
     if (!value) return;
-    navigate("/domains", { state: { newDomain: value } });
+    navigate("/domains/new", { state: { newDomain: value } });
   };
 
   return (

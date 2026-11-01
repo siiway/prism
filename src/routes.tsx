@@ -403,6 +403,50 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
             import("./pages/Domains").then((m) => ({ Component: m.Domains })),
         },
         {
+          path: "domains/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/domains/DomainNew").then((m) => ({
+              Component: m.DomainNew,
+            })),
+        },
+        {
+          path: "domains/:id",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/domains/DomainDetail").then((m) => ({
+              Component: m.DomainDetail,
+            })),
+        },
+        {
+          path: "teams/:teamId/domains/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/domains/DomainNew").then((m) => ({
+              Component: m.DomainNew,
+            })),
+        },
+        {
+          path: "teams/:teamId/domains/:id",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/domains/DomainDetail").then((m) => ({
+              Component: m.DomainDetail,
+            })),
+        },
+        {
           path: "connections",
           loader: ({ request }) => {
             requireAuthLoader(request);

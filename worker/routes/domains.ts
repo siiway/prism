@@ -60,6 +60,18 @@ app.get("/", async (c) => {
   });
 });
 
+// One of your domains
+app.get("/:id", async (c) => {
+  const user = c.get("user");
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE id = ? AND user_id = ? AND team_id IS NULL",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first<DomainRow>();
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+  return c.json({ domain: row });
+});
+
 // Add domain
 app.post("/", async (c) => {
   const user = c.get("user");

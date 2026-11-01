@@ -3302,6 +3302,20 @@ app.get(":id/domains", async (c) => {
   });
 });
 
+// One domain the team owns. Any member can read it, like the list.
+app.get(":id/domains/:domainId", async (c) => {
+  const id = c.req.param("id");
+  const eff = await teamAuthority(c, id);
+  if (!eff) return c.json({ error: "Not a team member" }, 403);
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE id = ? AND team_id = ?",
+  )
+    .bind(c.req.param("domainId"), id)
+    .first<DomainRow>();
+  if (!row) return c.json({ error: "Domain not found" }, 404);
+  return c.json({ domain: row });
+});
+
 // Add team domain
 app.post(":id/domains", async (c) => {
   const user = c.get("user");

@@ -766,6 +766,8 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       limit: number;
     }>("GET", `/domains${qs ? `?${qs}` : ""}`, undefined, getToken());
   },
+  getDomain: (id: string) =>
+    request<{ domain: Domain }>("GET", `/domains/${id}`, undefined, getToken()),
   addDomain: (domain: string, app_id?: string) =>
     request<DomainAddResponse>(
       "POST",
@@ -1670,7 +1672,9 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     if (params.q) search.set("q", params.q);
     const qs = search.toString();
     return request<{
-      domains: Domain[];
+      /** Ancestor teams' domains come along read-only, tagged with
+       *  `inherited_from`. */
+      domains: (Domain & { inherited_from?: string | null })[];
       total: number;
       page: number;
       limit: number;
@@ -1681,6 +1685,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     );
   },
+  getTeamDomain: (teamId: string, domainId: string) =>
+    request<{ domain: Domain }>(
+      "GET",
+      `/teams/${teamId}/domains/${domainId}`,
+      undefined,
+      getToken(),
+    ),
   addTeamDomain: (teamId: string, domain: string) =>
     request<DomainAddResponse>(
       "POST",

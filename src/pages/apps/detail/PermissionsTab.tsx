@@ -45,7 +45,7 @@ import {
   SettingsSubhead,
 } from "../../../components/Settings";
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
-import { CopyButton } from "./shared";
+import { CopyButton } from "../../../components/CopyButton";
 import { useDetailStyles } from "./styles";
 import type { AppFormApi } from "./form";
 

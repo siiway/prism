@@ -37,7 +37,8 @@ import {
   SettingsCard,
   SettingsRow,
 } from "../../../components/Settings";
-import { CopyButton, SectionFooter } from "./shared";
+import { SectionFooter } from "./shared";
+import { CopyButton } from "../../../components/CopyButton";
 import { useDetailStyles } from "./styles";
 import { type AppFormApi } from "./form";
 
