@@ -630,10 +630,13 @@ app.get("/consents", requireAuth, async (c) => {
     c.env.DB.prepare(
       `SELECT id, client_id, scopes, created_at, expires_at, refresh_expires_at
        FROM oauth_tokens
-       WHERE user_id = ? AND expires_at > ?
+       WHERE user_id = ? AND (expires_at > ? OR refresh_expires_at > ?)
        ORDER BY created_at DESC`,
     )
-      .bind(user.id, now)
+      // A remembered sign-in outlives its access token: the refresh token
+      // keeps the app signed in, so it stays listed (and revocable) until
+      // that runs out too.
+      .bind(user.id, now, now)
       .all<{
         id: string;
         client_id: string;
@@ -696,6 +699,8 @@ app.get("/consents", requireAuth, async (c) => {
           scopes: JSON.parse(t.scopes) as string[],
           created_at: t.created_at,
           expires_at: t.expires_at,
+          // When the app loses access unless you approve it again.
+          ends_at: t.refresh_expires_at ?? t.expires_at,
           is_persistent: t.refresh_expires_at !== null,
         })),
       })),

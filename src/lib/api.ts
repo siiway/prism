@@ -3051,6 +3051,8 @@ export interface OAuthToken {
   scopes: string[];
   created_at: number;
   expires_at: number;
+  /** When the sign-in ends: the refresh token's expiry for remembered ones. */
+  ends_at: number;
   is_persistent: boolean;
 }
 
