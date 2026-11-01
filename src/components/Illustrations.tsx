@@ -267,6 +267,39 @@ export function NoProvidersArt() {
   );
 }
 
+/** A page with an announcement banner across its top, and a second one
+ *  waiting to go up: the notice board. */
+export function NoticeArt() {
+  return (
+    <svg viewBox="0 0 240 150" aria-hidden>
+      <rect x="28" y="16" width="184" height="118" rx="8" style={panel} />
+      <path d="M28 32 h184" style={line} />
+      <circle cx="40" cy="24" r="2.5" style={bar} />
+      <circle cx="49" cy="24" r="2.5" style={bar} />
+      <circle cx="58" cy="24" r="2.5" style={bar} />
+      {/* The published notice. */}
+      <rect x="40" y="42" width="160" height="26" rx="5" style={accent} />
+      <circle cx="54" cy="55" r="6" style={onAccentFill} />
+      <rect x="66" y="49" width="64" height="5" rx="2.5" style={onAccentFill} />
+      <rect x="66" y="58" width="96" height="4" rx="2" style={onAccentFill} />
+      <path d="M184 51 l8 8 M192 51 l-8 8" style={onAccent} />
+      {/* A draft, dashed until it's published. */}
+      <rect
+        x="40"
+        y="76"
+        width="160"
+        height="22"
+        rx="5"
+        style={{ ...accentLine, strokeDasharray: "4 3" }}
+      />
+      <rect x="50" y="84" width="58" height="6" rx="3" style={bar} />
+      {/* The page underneath. */}
+      <rect x="40" y="110" width="96" height="6" rx="3" style={bar} />
+      <rect x="40" y="122" width="64" height="6" rx="3" style={bar} />
+    </svg>
+  );
+}
+
 /** A user at the centre with apps attached: apps you've authorized. */
 export function ConnectedAppsArt() {
   return (

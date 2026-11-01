@@ -2328,7 +2328,6 @@
     "noticeDraftBadge": "Draft",
     "noticeWindow": "Window",
     "noticeAlways": "Always",
-    "noNotices": "No notices yet.",
     "noticeCreated": "Notice created",
     "noticeUpdated": "Notice updated",
     "publishNotice": "Publish",
@@ -2338,7 +2337,13 @@
     "noticesUnavailable": "Notice board unavailable",
     "noticesUnknown": "Could not load notices.",
     "searchNoticesPlaceholder": "Search notices by title",
-    "noNoticesDesc": "Write one for planned downtime, a policy change or a security advisory.",
+    "noticesGetStarted": {
+      "title": "Write your first notice",
+      "desc": "Announce planned downtime, a policy change or a security advisory where people already are, instead of emailing everyone.",
+      "step1": "Write the notice. The body is Markdown, previewed as readers will see it.",
+      "step2": "Choose who sees it and, if you like, when it shows.",
+      "step3": "Publish it now, or save a draft and publish it later."
+    },
     "noticeNewDesc": "Saved as a draft until you publish it, so nothing half-written is shown.",
     "noticeSaveDraft": "Save as draft",
     "noticePublishedDone": "Notice published",

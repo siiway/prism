@@ -37,6 +37,8 @@ import {
   type DataListColumn,
 } from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
+import { GetStartedPanel } from "../../components/GetStartedPanel";
+import { NoticeArt } from "../../components/Illustrations";
 import { ListSearch } from "../../components/ListSearch";
 import { Pagination } from "../../components/Pagination";
 import { SettingsToast } from "../../components/Settings";
@@ -125,6 +127,10 @@ export function AdminNotices() {
     </Button>
   );
 
+  // Nothing written yet (not just nothing matching a search): explain the
+  // board instead of showing an empty list.
+  const boardEmpty = !!data && total === 0 && !search && !query;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       {message && (
@@ -146,13 +152,15 @@ export function AdminNotices() {
         </MessageBar>
       )}
 
-      <ListSearch
-        value={query}
-        onChange={setQuery}
-        placeholder={t("admin.searchNoticesPlaceholder")}
-      >
-        {create}
-      </ListSearch>
+      {!boardEmpty && (
+        <ListSearch
+          value={query}
+          onChange={setQuery}
+          placeholder={t("admin.searchNoticesPlaceholder")}
+        >
+          {create}
+        </ListSearch>
+      )}
 
       {isFetching && !data ? (
         <Skeleton aria-busy>
@@ -167,11 +175,22 @@ export function AdminNotices() {
             ))}
           </DataList>
         </Skeleton>
-      ) : error ? null : notices.length === 0 ? (
+      ) : error ? null : boardEmpty ? (
+        <GetStartedPanel
+          art={<NoticeArt />}
+          title={t("admin.noticesGetStarted.title")}
+          description={t("admin.noticesGetStarted.desc")}
+          steps={[
+            t("admin.noticesGetStarted.step1"),
+            t("admin.noticesGetStarted.step2"),
+            t("admin.noticesGetStarted.step3"),
+          ]}
+          action={create}
+        />
+      ) : notices.length === 0 ? (
         <EmptyState
           icon={<MegaphoneRegular />}
-          title={search ? t("teams.noResultsMatch") : t("admin.noNotices")}
-          description={search ? undefined : t("admin.noNoticesDesc")}
+          title={t("teams.noResultsMatch")}
         />
       ) : (
         <>
