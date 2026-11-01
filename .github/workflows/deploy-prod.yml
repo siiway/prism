@@ -1,0 +1,28 @@
+name: Deploy production
+
+# Deploys the production `prism` Worker through the shared deploy.yml, with
+# lint, tests and translation parity run first. This replaces the Cloudflare
+# Workers Builds integration -- disconnect the repository under the Worker's
+# Settings -> Builds in the dashboard, or every push to main deploys twice.
+#
+# Triggers:
+#   * push to `main`                 -> deploy production
+#   * manual run (workflow_dispatch) -> redeploy production from main
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # A manual run started from another branch must not ship that branch.
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: production
+      checks: true
+    secrets: inherit

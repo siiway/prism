@@ -190,8 +190,8 @@ is about to be applied. Useful options:
 | `--skip-migrations` | Publish without touching the database    |
 | `--skip-build`      | Deploy what is already in `dist/`        |
 
-Cloudflare Workers Builds runs the same script on every push to `main`: the
-build command is `bash scripts/build.sh` and the deploy command is
+GitHub Actions runs the same scripts on every push to `main` (see
+[CI](#ci-github-actions)): `bash scripts/build.sh`, then
 `bash scripts/deploy.sh --skip-build --yes`, so CI deploys apply pending
 migrations exactly the way a local deploy does.
 
@@ -277,11 +277,22 @@ wrangler kv namespace create prism-staging-cache
 
 ### CI (GitHub Actions)
 
-Production is built and deployed by **Cloudflare Workers Builds** (the Git
-repository is connected in the dashboard under the `prism` Worker's
-**Settings → Builds**), which runs on pushes to `main`. GitHub Actions never
-touches production; it covers the non-production Workers only.
+Every deploy, production included, runs through one shared reusable workflow,
+`.github/workflows/deploy.yml`, which takes the target environment
+(`production`, `staging` or `preview`). It runs the job in the GitHub
+Environment of the same name (add required reviewers there to gate deploys) and
+allows one deploy per Worker at a time. A newer non-production deploy cancels
+the older one; a production deploy is never cancelled, so it cannot be cut off
+between migrating and publishing. The workflows below only decide when to call
+it.
 
+- **Production** (`.github/workflows/deploy-prod.yml`) deploys on a push to
+  `main`, or a manual run from `main`. It runs lint, tests and translation
+  parity first, then `scripts/build.sh` and `scripts/deploy.sh`, which
+  applies pending D1 migrations before publishing. If the repository is still
+  connected to Cloudflare Workers Builds (the `prism` Worker's
+  **Settings → Builds**), disconnect it, or every push to `main` deploys
+  twice.
 - **Pull requests** (`.github/workflows/pr.yml`) run the checks — typecheck
   (app + worker), lint, translation parity, and a build — then deploy the PR's
   code to the shared **preview** Worker (`prism-preview`) once the checks pass.
@@ -301,11 +312,13 @@ touches production; it covers the non-production Workers only.
 - **Staging** (`.github/workflows/deploy-nonprod.yml`) deploys on a push to the
   `staging` branch, or a manual run (which can target staging or preview).
 
-Both deploy workflows need one repository secret, `CLOUDFLARE_API_TOKEN`,
-scoped to the account with **Workers Scripts:Edit**, **D1:Edit**,
-**Workers KV Storage:Edit**, and **Secrets Store:Read** (the Workers bind a
-Secrets Store `SECRETS_KEY`). The account id is pinned in `wrangler.jsonc`, so
-no account-id secret is required.
+Deploys need one secret, `CLOUDFLARE_API_TOKEN` (repository-wide, or per
+Environment to give production its own token), scoped to the account with
+**Workers Scripts:Edit**, **D1:Edit**, **Workers KV Storage:Edit**, and
+**Secrets Store:Read** (the Workers bind a Secrets Store `SECRETS_KEY`).
+Production is on a custom domain, so the token also needs
+**Workers Routes:Edit** and **Zone:Read** on that zone. The account id is pinned
+in `wrangler.jsonc`, so no account-id secret is required.
 
 ## Social login setup
 

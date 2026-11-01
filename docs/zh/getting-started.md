@@ -165,7 +165,7 @@ bash scripts/deploy.sh          # 或：pwsh scripts/deploy.ps1
 | `--skip-migrations` | 只部署，不改动数据库             |
 | `--skip-build`      | 直接部署 `dist/` 中已有的产物    |
 
-Cloudflare Workers Builds 在每次推送到 `main` 时执行同一套脚本：构建命令为 `bash scripts/build.sh`，部署命令为 `bash scripts/deploy.sh --skip-build --yes`，因此 CI 部署与本地部署一样会应用待处理的迁移。
+GitHub Actions 在每次推送到 `main` 时执行同一套脚本（见下文「CI（GitHub Actions）」一节）：先 `bash scripts/build.sh`，再 `bash scripts/deploy.sh --skip-build --yes`，因此 CI 部署与本地部署一样会应用待处理的迁移。
 
 `bun deploy` 仍然可用，它会跑 `tsc -b && vite build` 再执行 `wrangler deploy` — 但它**不会**应用迁移，使用它时请自行执行 `bun db:migrate:prod`。
 
@@ -223,10 +223,17 @@ wrangler kv namespace create prism-staging-cache
 
 ### CI（GitHub Actions）
 
-生产环境由 **Cloudflare Workers Builds** 构建并部署（在控制台 `prism` Worker 的
-**Settings → Builds** 中连接了 Git 仓库），在推送到 `main` 时触发。GitHub Actions
-不会触及生产环境，只负责非生产 Worker。
+所有部署（包括生产环境）都经由同一个可复用工作流 `.github/workflows/deploy.yml`，
+它接收目标环境（`production`、`staging` 或 `preview`），在同名的 GitHub
+Environment 中运行（可在其中添加必需审核者来控制部署），并保证每个 Worker 同一时间只有
+一个部署。非生产环境中较新的部署会取消较旧的；生产部署永不取消，因此不会在迁移与发布之间
+被中断。下面的工作流只负责决定何时调用它。
 
+- **生产环境**（`.github/workflows/deploy-prod.yml`）在推送到 `main` 时部署，也可从
+  `main` 手动运行。它先运行 lint、测试与翻译一致性检查，再运行 `scripts/build.sh` 与
+  `scripts/deploy.sh`——先应用待处理的 D1 迁移再发布。如果仓库仍连接着 Cloudflare
+  Workers Builds（`prism` Worker 的 **Settings → Builds**），请断开连接，否则每次推送
+  到 `main` 都会部署两次。
 - **Pull Request**（`.github/workflows/pr.yml`）先运行检查——类型检查（app +
   worker）、lint、翻译一致性、构建——检查通过后把该 PR 的代码部署到共享的
   **preview** Worker（`prism-preview`）。preview 是一个共享 Worker、使用独立数据库，
@@ -241,10 +248,12 @@ wrangler kv namespace create prism-staging-cache
 - **Staging**（`.github/workflows/deploy-nonprod.yml`）在推送到 `staging` 分支时部署，
   也可手动运行（可选择 staging 或 preview）。
 
-两个部署工作流都需要一个仓库 Secret `CLOUDFLARE_API_TOKEN`，其权限范围需覆盖该账号的
-**Workers Scripts:Edit**、**D1:Edit**、**Workers KV Storage:Edit** 与
-**Secrets Store:Read**（这些 Worker 绑定了 Secrets Store 中的 `SECRETS_KEY`）。账号
-ID 已固定写在 `wrangler.jsonc` 中，因此无需再配置账号 ID 的 Secret。
+部署需要一个 Secret `CLOUDFLARE_API_TOKEN`（可设为仓库级，也可按 Environment 设置，
+从而让生产环境使用独立的 Token），其权限范围需覆盖该账号的 **Workers Scripts:Edit**、
+**D1:Edit**、**Workers KV Storage:Edit** 与 **Secrets Store:Read**（这些 Worker 绑定了
+Secrets Store 中的 `SECRETS_KEY`）。生产环境绑定了自定义域名，因此该 Token 还需要对应
+Zone 的 **Workers Routes:Edit** 与 **Zone:Read**。账号 ID 已固定写在 `wrangler.jsonc`
+中，因此无需再配置账号 ID 的 Secret。
 
 ## 社交登录配置
 
