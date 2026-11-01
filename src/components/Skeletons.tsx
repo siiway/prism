@@ -45,15 +45,6 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "12px",
   },
-  appCard: {
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "10px",
-    padding: "16px",
-    background: tokens.colorNeutralBackground1,
-    display: "flex",
-    flexDirection: "column",
-    gap: "10px",
-  },
   // Shaped like components/Settings' SettingsCard.
   settingsCard: {
     border: `1px solid ${tokens.colorNeutralStroke1}`,
@@ -164,40 +155,6 @@ export function SkeletonStatCards({ count = 4 }: { count?: number }) {
             </div>
             <SkeletonItem style={{ width: "30%", height: 28 }} />
             <SkeletonItem style={{ width: "70%", height: 14 }} />
-          </div>
-        </Skeleton>
-      ))}
-    </div>
-  );
-}
-
-export function SkeletonAppCards({ count = 6 }: { count?: number }) {
-  const styles = useStyles();
-  return (
-    <div className={styles.grid}>
-      {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i}>
-          <div className={styles.appCard}>
-            <div className={styles.row}>
-              <SkeletonItem
-                shape="square"
-                size={40}
-                style={{ borderRadius: 8 }}
-              />
-              <div
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 6,
-                }}
-              >
-                <SkeletonItem style={{ width: "60%", height: 16 }} />
-                <SkeletonItem style={{ width: "40%", height: 12 }} />
-              </div>
-            </div>
-            <SkeletonItem style={{ width: "90%", height: 14 }} />
-            <SkeletonItem style={{ width: "75%", height: 14 }} />
           </div>
         </Skeleton>
       ))}

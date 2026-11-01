@@ -1,259 +1,186 @@
-// Social platform connections page
+// Linked accounts: third-party accounts (GitHub, Google, …) linked for
+// sign-in. Two settings cards: the accounts you've linked, grouped by
+// provider, and the providers you can link.
 
 import {
   Avatar,
   Badge,
   Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
   Image,
-  MessageBar,
-  Text,
+  Spinner,
   Tooltip,
   makeStyles,
-  Spinner,
   tokens,
 } from "@fluentui/react-components";
-import {
-  AddRegular,
-  ArrowClockwiseRegular,
-  DeleteRegular,
-  GlobeRegular,
-} from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { ArrowClockwiseRegular, GlobeRegular } from "@fluentui/react-icons";
+import { Fragment, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
+import { formatDate } from "../lib/datetime";
+import { useConfirm } from "../lib/useConfirm";
+import { useToastMessage } from "../lib/useToastMessage";
+import { useAuthStore } from "../store/auth";
 import { GetStartedPanel } from "../components/GetStartedPanel";
 import { NoProvidersArt, ProviderSetupArt } from "../components/Illustrations";
 import { PageHeader } from "../components/PageHeader";
-import { SkeletonAppCards } from "../components/Skeletons";
-import { useToastMessage } from "../lib/useToastMessage";
-import { useAuthStore } from "../store/auth";
+import {
+  SettingsCard,
+  SettingsEmpty,
+  SettingsPage,
+  SettingsRow,
+  SettingsSubhead,
+  SettingsToast,
+} from "../components/Settings";
+import { SkeletonSettingsCard } from "../components/Skeletons";
 
 const useStyles = makeStyles({
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-    gap: "12px",
-  },
-  providerCard: {
-    padding: "20px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground1,
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-  },
-  providerHeader: { display: "flex", alignItems: "center", gap: "12px" },
-  providerIcon: {
-    width: "40px",
-    height: "40px",
-    borderRadius: "8px",
+  // Provider logos are drawn for a light background, so the tile stays white.
+  logo: {
+    width: "32px",
+    height: "32px",
+    borderRadius: tokens.borderRadiusMedium,
     background: "#fff",
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
+    color: "#616161",
+    fontSize: "18px",
   },
-  connRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "8px 10px",
-    borderRadius: "6px",
-    background: tokens.colorNeutralBackground3,
-    gap: "8px",
-  },
-  // The identity column. `minWidth: 0` lets it shrink below its content's
-  // intrinsic width so the long, unbreakable values a provider can return
-  // (Cloudflare usernames and account ids are 32-char hex strings) truncate
-  // instead of shoving the action buttons out of the card.
-  connInfo: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    flex: 1,
-    minWidth: 0,
-  },
-  truncate: {
-    display: "block",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  // The buttons never shrink — they are the whole point of the row staying
-  // within the card.
-  connActions: {
-    display: "flex",
-    gap: "4px",
-    flexShrink: 0,
-  },
+  // Provider ids can be long unbroken strings (Cloudflare's are 32 hex chars).
+  wrap: { overflowWrap: "anywhere" },
+  danger: { color: tokens.colorPaletteRedForeground1 },
 });
 
-// URL is pre-proxied by /api/site so no client-side proxy registration is
-// needed here.
-function ProviderIcon({ url, alt }: { url: string; alt: string }) {
+// URL is pre-proxied by /api/site, so no client-side proxy registration.
+function ProviderLogo({ url, name }: { url: string | null; name: string }) {
+  const styles = useStyles();
   // A dead icon URL would otherwise show the browser's broken-image glyph.
   const [failed, setFailed] = useState(false);
-  if (failed) return <GlobeRegular style={{ fontSize: 20 }} />;
   return (
-    <Image
-      src={url}
-      alt={alt}
-      width={24}
-      height={24}
-      fit="contain"
-      onError={() => setFailed(true)}
-    />
+    <span className={styles.logo}>
+      {url && !failed ? (
+        <Image
+          src={url}
+          alt={name}
+          width={20}
+          height={20}
+          fit="contain"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <GlobeRegular />
+      )}
+    </span>
   );
 }
 
-const ERROR_MESSAGES: Record<string, string> = {
-  invalid_state:
-    "Login session expired or link was already used. Please try connecting again.",
-  profile_fetch_failed:
-    "Could not retrieve your profile from the provider. Check that the app has the correct permissions and try again.",
-  token_exchange_failed:
-    "Failed to complete sign-in with the provider. Please try again.",
-  no_access_token:
-    "The provider did not return an access token. Please try again.",
-  no_user_id: "Could not read your account ID from the provider.",
-  missing_params: "The provider returned an incomplete response.",
-  access_denied:
-    "You cancelled the sign-in or denied the requested permissions.",
-  registration_disabled:
-    "New registrations are currently disabled on this server.",
-  user_creation_failed:
-    "Account creation failed. Please contact an administrator.",
-  already_connected: "This account is already linked to your profile.",
-  account_taken: "This account is already linked to another user.",
-  invalid_signature:
-    "The response from Telegram could not be verified. Please try again.",
-  auth_expired:
-    "The Telegram authentication session expired. Please try again.",
-  unsupported_refresh:
-    "This provider does not support refreshing linked profile data.",
-  account_mismatch:
-    "Could not refresh this connection because the provider returned a different account.",
-  reauthorization_required:
-    "Refresh token expired or missing. Please reconnect this account.",
-};
+// Error codes the connect/refresh flows can come back with.
+const ERROR_CODES = [
+  "invalid_state",
+  "profile_fetch_failed",
+  "token_exchange_failed",
+  "no_access_token",
+  "no_user_id",
+  "missing_params",
+  "access_denied",
+  "registration_disabled",
+  "user_creation_failed",
+  "already_connected",
+  "account_taken",
+  "invalid_signature",
+  "auth_expired",
+  "unsupported_refresh",
+  "account_mismatch",
+  "reauthorization_required",
+] as const;
 
-function getDisplayName(profile: unknown): string | null {
-  if (!profile || typeof profile !== "object") return null;
-  const p = profile as Record<string, unknown>;
-  const telegramName =
-    [p.first_name, p.last_name].filter(Boolean).join(" ") || null;
-  return (
-    (p.name as string) ||
-    telegramName ||
-    (p.login as string) ||
-    (p.username as string) ||
-    (p.global_name as string) ||
-    (p.email as string) ||
-    null
-  );
+function textField(profile: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = profile[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" || typeof value === "bigint")
+      return String(value);
+  }
+  return null;
 }
 
-function getProfileAvatarUrl(conn: {
-  provider: string;
+function profileOf(profile: unknown): Record<string, unknown> | null {
+  return profile && typeof profile === "object"
+    ? (profile as Record<string, unknown>)
+    : null;
+}
+
+function avatarUrl(conn: {
+  provider_type?: string;
   provider_user_id: string;
   profile: unknown;
 }): string | null {
-  if (!conn.profile || typeof conn.profile !== "object") return null;
-  const profile = conn.profile as Record<string, unknown>;
-
-  const directAvatar = getProfileTextField(profile, [
+  const profile = profileOf(conn.profile);
+  if (!profile) return null;
+  const direct = textField(profile, [
     "avatar_url",
     "photo_url",
     "picture",
     "image",
     "profile_image_url",
   ]);
-  if (directAvatar) return directAvatar;
-
-  if (conn.provider === "discord") {
-    const discordId =
-      getProfileTextField(profile, ["id"]) ?? conn.provider_user_id;
-    const avatarHash = getProfileTextField(profile, ["avatar"]);
-    if (!discordId || !avatarHash) return null;
-    const ext = avatarHash.startsWith("a_") ? "gif" : "png";
-    return `https://cdn.discordapp.com/avatars/${discordId}/${avatarHash}.${ext}?size=128`;
-  }
-
-  return null;
-}
-
-function getProfileTextField(profile: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = profile[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number" || typeof value === "bigint") {
-      return String(value);
-    }
+  if (direct) return direct;
+  if (conn.provider_type === "discord") {
+    const id = textField(profile, ["id"]) ?? conn.provider_user_id;
+    const hash = textField(profile, ["avatar"]);
+    if (!id || !hash) return null;
+    const ext = hash.startsWith("a_") ? "gif" : "png";
+    return `https://cdn.discordapp.com/avatars/${id}/${hash}.${ext}?size=128`;
   }
   return null;
 }
 
-function getConnectionDetails(conn: {
-  profile: unknown;
-  provider_user_id: string;
-}) {
-  const profile =
-    conn.profile && typeof conn.profile === "object"
-      ? (conn.profile as Record<string, unknown>)
-      : null;
-  const telegramNickname = profile
+/** Display name, @username and platform id from a provider profile. */
+function accountDetails(conn: { profile: unknown; provider_user_id: string }) {
+  const profile = profileOf(conn.profile);
+  const telegramName = profile
     ? [profile.first_name, profile.last_name]
-        .filter((part): part is string => typeof part === "string" && !!part)
+        .filter((p): p is string => typeof p === "string" && !!p)
         .join(" ")
         .trim() || null
     : null;
-  const nickname = profile
-    ? (getProfileTextField(profile, [
+  const name = profile
+    ? (textField(profile, [
         "nickname",
         "display_name",
         "name",
         "global_name",
-      ]) ?? telegramNickname)
+      ]) ?? telegramName)
     : null;
   const username = profile
-    ? getProfileTextField(profile, [
+    ? textField(profile, [
         "username",
         "login",
         "preferred_username",
         "user_name",
       ])
     : null;
-  const platformId =
-    (profile
-      ? getProfileTextField(profile, ["id", "sub", "user_id", "uid"])
-      : null) ?? conn.provider_user_id;
-  return {
-    nickname,
-    username,
-    platformId,
-    display: nickname ?? username ?? getDisplayName(conn.profile) ?? platformId,
-  };
+  const id =
+    (profile ? textField(profile, ["id", "sub", "user_id", "uid"]) : null) ??
+    conn.provider_user_id;
+  const email = profile ? textField(profile, ["email"]) : null;
+  return { name: name ?? username ?? email ?? id, username, id };
 }
 
 export function Connections() {
   const api = useApi();
   const styles = useStyles();
   const qc = useQueryClient();
-  const { t } = useTranslation();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const isAdmin = useAuthStore((s) => s.user?.role === "admin");
+  const { message, showMsg } = useToastMessage(8000);
+  const { confirm, confirmDialog } = useConfirm();
+
   const { data: connectionsData, isLoading: connsLoading } = useQuery({
     queryKey: ["connections"],
     queryFn: api.listConnections,
@@ -263,44 +190,38 @@ export function Connections() {
     queryFn: api.site,
     staleTime: 60_000,
   });
-
   const isLoading = connsLoading || siteLoading;
 
-  const { message, showMsg } = useToastMessage(8000);
-  const [refreshingConnectionId, setRefreshingConnectionId] = useState<
-    string | null
-  >(null);
+  const errorText = (code: string) =>
+    (ERROR_CODES as readonly string[]).includes(code)
+      ? t(`connections.errors.${code}`)
+      : t("connections.errors.unknown", { code: code.replace(/_/g, " ") });
 
+  // Coming back from a provider: ?success=connected or ?error=<code>.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const error = params.get("error");
     const success = params.get("success");
     if (!error && success !== "connected") return;
-    // Run the user-visible side effect as a queued microtask so the rule
-    // sees the setState as detached from the effect body proper. The
-    // history rewrite still happens here so a refresh doesn't replay it.
+    // Queued so the setState isn't part of the effect body proper; the
+    // history rewrite stays here so a reload doesn't replay the message.
     queueMicrotask(() => {
-      if (error) {
-        showMsg(
-          "error",
-          ERROR_MESSAGES[error] ??
-            `Connection failed: ${error.replace(/_/g, " ")}`,
-        );
-      } else {
-        showMsg("success", t("connections.connectedSuccessfully"));
-      }
+      if (error) showMsg("error", errorText(error));
+      else showMsg("success", t("connections.connectedSuccessfully"));
     });
     window.history.replaceState({}, "", window.location.pathname);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const getConnections = (providerId: string) =>
-    connectionsData?.connections.filter((c) => c.provider === providerId) ?? [];
+  // One change at a time; holds what's being changed.
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const handleConnect = async (providerId: string) => {
+  const connect = async (slug: string) => {
+    if (busy) return;
+    setBusy(`connect:${slug}`);
     try {
       const { token: intent } = await api.connectionIntent();
-      const { redirect } = await api.connectionBegin(providerId, {
+      const { redirect } = await api.connectionBegin(slug, {
         mode: "connect",
         intent,
       });
@@ -312,10 +233,26 @@ export function Connections() {
           ? err.message
           : t("connections.failedStartConnection"),
       );
+      setBusy(null);
     }
   };
 
-  const handleDisconnect = async (id: string, providerName: string) => {
+  const disconnect = async (
+    id: string,
+    accountName: string,
+    providerName: string,
+  ) => {
+    if (busy) return;
+    const ok = await confirm({
+      title: t("connections.disconnectConfirm", {
+        name: accountName,
+        provider: providerName,
+      }),
+      body: t("connections.disconnectWarning"),
+      confirmLabel: t("connections.disconnectAction"),
+    });
+    if (!ok) return;
+    setBusy(`disconnect:${id}`);
     try {
       await api.disconnectConnection(id);
       await qc.invalidateQueries({ queryKey: ["connections"] });
@@ -330,11 +267,14 @@ export function Connections() {
           ? err.message
           : t("connections.disconnectFailed"),
       );
+    } finally {
+      setBusy(null);
     }
   };
 
-  const handleRefresh = async (id: string, providerName: string) => {
-    setRefreshingConnectionId(id);
+  const refresh = async (id: string, providerName: string) => {
+    if (busy) return;
+    setBusy(`refresh:${id}`);
     try {
       await api.refreshConnection(id);
       await qc.invalidateQueries({ queryKey: ["connections"] });
@@ -346,58 +286,63 @@ export function Connections() {
       showMsg(
         "error",
         err instanceof ApiError
-          ? (ERROR_MESSAGES[err.message] ?? err.message)
+          ? errorText(err.message)
           : t("connections.refreshFailed"),
       );
     } finally {
-      setRefreshingConnectionId((curr) => (curr === id ? null : curr));
+      setBusy(null);
     }
   };
 
   const providers = site?.enabled_providers ?? [];
-  const providerTypeBySlug = new Map(
-    providers.map((p) => [p.slug, p.provider]),
-  );
+  const connections = connectionsData?.connections ?? [];
   // Accounts linked through a provider an admin has since turned off still
-  // exist; list them so they can be seen and disconnected.
-  const disabledSlugs = [
-    ...new Set((connectionsData?.connections ?? []).map((c) => c.provider)),
-  ].filter((slug) => !providers.some((p) => p.slug === slug));
-  const cards = [
-    ...providers.map((p) => ({
-      slug: p.slug,
-      name: p.name,
-      iconUrl: p.icon_proxied_url ?? null,
-      enabled: true,
-    })),
-    ...disabledSlugs.map((slug) => ({
-      slug,
-      name: slug,
-      iconUrl: null,
-      enabled: false,
-    })),
+  // exist; they're listed so they can be seen and disconnected.
+  const slugs = [
+    ...providers.map((p) => p.slug),
+    ...new Set(
+      connections
+        .map((c) => c.provider)
+        .filter((s) => !providers.some((p) => p.slug === s)),
+    ),
   ];
+  const providerInfo = (slug: string) => {
+    const p = providers.find((x) => x.slug === slug);
+    return {
+      name: p?.name ?? slug,
+      type: p?.provider,
+      logo: p?.icon_proxied_url ?? null,
+      enabled: !!p,
+    };
+  };
+  const linkedGroups = slugs
+    .map((slug) => ({
+      slug,
+      ...providerInfo(slug),
+      conns: connections.filter((c) => c.provider === slug),
+    }))
+    .filter((g) => g.conns.length > 0);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <SettingsPage>
       <PageHeader
         title={t("connections.title")}
         subtitle={t("connections.description")}
         style={{ marginBottom: 0 }}
       />
+      <SettingsToast message={message} />
 
-      {message && (
-        <MessageBar intent={message.type === "success" ? "success" : "error"}>
-          {message.text}
-        </MessageBar>
+      {isLoading && (
+        <>
+          <SkeletonSettingsCard rows={2} />
+          <SkeletonSettingsCard rows={3} />
+        </>
       )}
 
-      {isLoading ? <SkeletonAppCards count={4} /> : null}
-
       {/* Nothing to link. An admin can fix that, so they get the steps;
-          everyone else just learns why the page is empty. */}
+          everyone else learns why the page is empty. */}
       {!isLoading &&
-        cards.length === 0 &&
+        slugs.length === 0 &&
         (isAdmin ? (
           <GetStartedPanel
             art={<ProviderSetupArt />}
@@ -425,219 +370,150 @@ export function Connections() {
           />
         ))}
 
-      <div className={styles.grid} style={isLoading ? { display: "none" } : {}}>
-        {cards.map((p) => {
-          const conns = getConnections(p.slug);
-          const providerIconUrl = p.iconUrl;
-
-          return (
-            <div key={p.slug} className={styles.providerCard}>
-              <div className={styles.providerHeader}>
-                <div className={styles.providerIcon}>
-                  {providerIconUrl ? (
-                    <ProviderIcon url={providerIconUrl} alt={p.name} />
-                  ) : (
-                    <GlobeRegular style={{ fontSize: 20 }} />
-                  )}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <Text weight="semibold" block>
-                    {p.name}
-                  </Text>
-                  {!p.enabled ? (
-                    <Badge color="warning" appearance="tint" size="small">
-                      {t("connections.providerDisabled")}
-                    </Badge>
-                  ) : conns.length > 0 ? (
-                    <Badge color="success" appearance="tint" size="small">
-                      {t("connections.connected", { count: conns.length })}
-                    </Badge>
-                  ) : (
-                    <Badge color="subtle" appearance="tint" size="small">
-                      {t("connections.notConnected")}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-
-              {conns.map((conn) => {
-                const details = getConnectionDetails(conn);
-                const displayName = details.display;
-                const profileAvatar = getProfileAvatarUrl(conn);
-                const canRefresh =
-                  p.enabled &&
-                  providerTypeBySlug.get(conn.provider) !== "telegram";
-                return (
-                  <div key={conn.id} className={styles.connRow}>
-                    <div className={styles.connInfo}>
-                      <Avatar
-                        size={32}
-                        name={displayName ?? conn.provider_user_id}
-                        image={
-                          profileAvatar ? { src: profileAvatar } : undefined
-                        }
-                      />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <Tooltip
-                          content={displayName ?? conn.provider_user_id}
-                          relationship="label"
-                        >
-                          <Text
-                            size={200}
-                            weight="semibold"
-                            className={styles.truncate}
-                          >
-                            {displayName ?? conn.provider_user_id}
-                          </Text>
-                        </Tooltip>
-                        {details.nickname ? (
-                          <Tooltip
-                            content={details.nickname}
-                            relationship="label"
-                          >
-                            <Text
-                              size={100}
-                              className={styles.truncate}
-                              style={{ color: tokens.colorNeutralForeground3 }}
+      {!isLoading && slugs.length > 0 && (
+        <SettingsCard
+          id="linked"
+          title={t("connections.linkedTitle")}
+          description={t("connections.linkedDesc")}
+        >
+          {linkedGroups.length === 0 ? (
+            <SettingsEmpty>{t("connections.noneLinked")}</SettingsEmpty>
+          ) : (
+            linkedGroups.map((g) => (
+              <Fragment key={g.slug}>
+                <SettingsSubhead>{g.name}</SettingsSubhead>
+                {g.conns.map((conn) => {
+                  const d = accountDetails(conn);
+                  const canRefresh = g.enabled && g.type !== "telegram";
+                  const facts = [
+                    d.username && d.username !== d.name ? `@${d.username}` : "",
+                    d.id !== d.name && d.id !== d.username
+                      ? t("connections.detailId", { value: d.id })
+                      : "",
+                    t("connections.connectedOn", {
+                      date: formatDate(conn.connected_at),
+                    }),
+                  ].filter(Boolean);
+                  return (
+                    <SettingsRow
+                      key={conn.id}
+                      icon={
+                        <Avatar
+                          size={32}
+                          name={d.name}
+                          image={(() => {
+                            const src = avatarUrl({
+                              ...conn,
+                              provider_type: g.type,
+                            });
+                            return src ? { src } : undefined;
+                          })()}
+                        />
+                      }
+                      label={
+                        <>
+                          <span className={styles.wrap}>{d.name}</span>
+                          {!g.enabled && (
+                            <Badge
+                              appearance="tint"
+                              color="warning"
+                              size="small"
                             >
-                              {t("connections.detailNickname", {
-                                value: details.nickname,
-                              })}
-                            </Text>
-                          </Tooltip>
-                        ) : null}
-                        {details.username ? (
-                          <Tooltip
-                            content={details.username}
-                            relationship="label"
-                          >
-                            <Text
-                              size={100}
-                              className={styles.truncate}
-                              style={{ color: tokens.colorNeutralForeground3 }}
-                            >
-                              {t("connections.detailUsername", {
-                                value: details.username,
-                              })}
-                            </Text>
-                          </Tooltip>
-                        ) : null}
-                        {details.platformId ? (
-                          <Tooltip
-                            content={details.platformId}
-                            relationship="label"
-                          >
-                            <Text
-                              size={100}
-                              className={styles.truncate}
-                              style={{ color: tokens.colorNeutralForeground3 }}
-                            >
-                              {t("connections.detailId", {
-                                value: details.platformId,
-                              })}
-                            </Text>
-                          </Tooltip>
-                        ) : null}
-                        <Text
-                          size={100}
-                          className={styles.truncate}
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          {t("connections.connectedOn", {
-                            date: new Date(
-                              conn.connected_at * 1000,
-                            ).toLocaleDateString(),
-                          })}
-                        </Text>
-                      </div>
-                    </div>
-
-                    <div className={styles.connActions}>
-                      {canRefresh ? (
+                              {t("connections.providerDisabled")}
+                            </Badge>
+                          )}
+                        </>
+                      }
+                      description={
+                        <span className={styles.wrap}>{facts.join(" · ")}</span>
+                      }
+                    >
+                      {canRefresh && (
                         <Tooltip
                           content={t("connections.refreshAction")}
                           relationship="label"
                         >
                           <Button
+                            size="small"
+                            appearance="subtle"
                             icon={
-                              refreshingConnectionId === conn.id ? (
+                              busy === `refresh:${conn.id}` ? (
                                 <Spinner size="tiny" />
                               ) : (
                                 <ArrowClockwiseRegular />
                               )
                             }
-                            appearance="subtle"
-                            size="small"
-                            onClick={() => handleRefresh(conn.id, p.name)}
-                            disabled={refreshingConnectionId === conn.id}
+                            disabled={busy !== null}
+                            onClick={() => void refresh(conn.id, g.name)}
                           />
                         </Tooltip>
-                      ) : null}
-                      <Dialog>
-                        <DialogTrigger disableButtonEnhancement>
-                          <Tooltip
-                            content={t("connections.disconnectAction")}
-                            relationship="label"
-                          >
-                            <Button
-                              icon={<DeleteRegular />}
-                              appearance="subtle"
-                              size="small"
-                            />
-                          </Tooltip>
-                        </DialogTrigger>
-                        <DialogSurface>
-                          <DialogBody>
-                            <DialogTitle>
-                              {t("connections.disconnectTitle", {
-                                provider: p.name,
-                              })}
-                            </DialogTitle>
-                            <DialogContent>
-                              {displayName
-                                ? t("connections.disconnectDesc", {
-                                    name: displayName,
-                                  })
-                                : null}{" "}
-                              {t("connections.disconnectWarning")}
-                            </DialogContent>
-                            <DialogActions>
-                              <DialogTrigger>
-                                <Button>{t("common.cancel")}</Button>
-                              </DialogTrigger>
-                              <Button
-                                appearance="primary"
-                                onClick={() =>
-                                  handleDisconnect(conn.id, p.name)
-                                }
-                              >
-                                {t("connections.disconnectAction")}
-                              </Button>
-                            </DialogActions>
-                          </DialogBody>
-                        </DialogSurface>
-                      </Dialog>
-                    </div>
-                  </div>
-                );
-              })}
+                      )}
+                      <Button
+                        size="small"
+                        className={styles.danger}
+                        disabled={busy !== null}
+                        onClick={() => void disconnect(conn.id, d.name, g.name)}
+                      >
+                        {busy === `disconnect:${conn.id}` ? (
+                          <Spinner size="tiny" />
+                        ) : (
+                          t("connections.disconnectAction")
+                        )}
+                      </Button>
+                    </SettingsRow>
+                  );
+                })}
+              </Fragment>
+            ))
+          )}
+        </SettingsCard>
+      )}
 
-              {p.enabled && (
+      {!isLoading && providers.length > 0 && (
+        <SettingsCard
+          id="link"
+          title={t("connections.linkTitle")}
+          description={t("connections.linkDesc")}
+        >
+          {providers.map((p) => {
+            const count = connections.filter(
+              (c) => c.provider === p.slug,
+            ).length;
+            return (
+              <SettingsRow
+                key={p.slug}
+                icon={
+                  <ProviderLogo
+                    url={p.icon_proxied_url ?? null}
+                    name={p.name}
+                  />
+                }
+                label={p.name}
+                description={
+                  count > 0
+                    ? t("connections.connected", { count })
+                    : t("connections.notConnected")
+                }
+              >
                 <Button
-                  appearance="outline"
                   size="small"
-                  icon={<AddRegular />}
-                  onClick={() => handleConnect(p.slug)}
+                  disabled={busy !== null}
+                  onClick={() => void connect(p.slug)}
                 >
-                  {conns.length > 0
-                    ? t("connections.addAnother", { provider: p.name })
-                    : t("connections.connect", { provider: p.name })}
+                  {busy === `connect:${p.slug}` ? (
+                    <Spinner size="tiny" />
+                  ) : count > 0 ? (
+                    t("connections.linkAnother")
+                  ) : (
+                    t("connections.linkAction")
+                  )}
                 </Button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+              </SettingsRow>
+            );
+          })}
+        </SettingsCard>
+      )}
+      {confirmDialog}
+    </SettingsPage>
   );
 }
