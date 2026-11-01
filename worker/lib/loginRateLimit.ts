@@ -6,6 +6,7 @@ import {
   rateLimitAll,
   rateLimitIp,
 } from "../middleware/rateLimit";
+import type { CodedError } from "./apiError";
 
 export type LoginRateLimitConfig = Pick<
   SiteConfig,
@@ -33,7 +34,7 @@ export const LOGIN_RATE_LIMIT_CONFIG_KEYS = [
 
 export function invalidLoginRateLimitConfig(
   updates: Record<string, unknown>,
-): string | null {
+): CodedError | null {
   for (const key of LOGIN_RATE_LIMIT_CONFIG_KEYS) {
     const value = updates[key];
     if (value === undefined) continue;
@@ -43,7 +44,10 @@ export function invalidLoginRateLimitConfig(
       value < 1 ||
       value > 86400
     ) {
-      return `${key} must be an integer between 1 and 86400`;
+      return {
+        error: "field_int_range",
+        params: { field: key, min: 1, max: 86400 },
+      };
     }
   }
   return null;

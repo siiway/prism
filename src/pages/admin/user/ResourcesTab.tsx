@@ -55,13 +55,16 @@ export function ResourcesTab({ userId, apps, showMsg, confirm }: UserTabProps) {
     if (!ok) return;
     setResetting(true);
     try {
-      const res = await api.adminResetUserNotifications(userId);
+      await api.adminResetUserNotifications(userId);
       await qc.invalidateQueries({
         queryKey: ["admin-user-notifications", userId],
       });
-      showMsg("success", res.message);
+      showMsg("success", t("admin.notificationRulesResetDone"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : String(err));
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     } finally {
       setResetting(false);
     }
@@ -143,6 +146,7 @@ export function ResourcesTab({ userId, apps, showMsg, confirm }: UserTabProps) {
         emptyText={t("admin.noDomains")}
         removeLabel={t("common.remove")}
         onRemove={(domainId) => api.adminRemoveUserDomain(userId, domainId)}
+        doneText={t("common.removedDone")}
         showMsg={showMsg}
         confirm={confirm}
       />

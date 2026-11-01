@@ -122,7 +122,10 @@ export function AdminKvBrowser({
     mutationFn: (key: string) => api.adminKvGet(ns, key),
     onSuccess: (entry) => setViewing(entry),
     onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      ),
   });
 
   const save = useMutation({
@@ -133,25 +136,31 @@ export function AdminKvBrowser({
         editing!.value,
         ttl.trim() ? Number(ttl) : null,
       ),
-    onSuccess: async (res) => {
+    onSuccess: async () => {
       await refresh();
       setEditing(null);
       setTtl("");
-      showMsg("success", res.message);
+      showMsg("success", t("admin.kvWrittenDone"));
     },
     onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      ),
   });
 
   const remove = useMutation({
     mutationFn: (key: string) => api.adminKvDelete(ns, key),
-    onSuccess: async (res) => {
+    onSuccess: async () => {
       await refresh();
       setViewing(null);
-      showMsg("success", res.message);
+      showMsg("success", t("common.deletedDone"));
     },
     onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      ),
   });
 
   const purge = useMutation({
@@ -168,12 +177,15 @@ export function AdminKvBrowser({
       );
     },
     onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      ),
   });
 
   const namespaces = status.data?.namespaces ?? [
-    { key: "sessions", description: "" },
-    { key: "cache", description: "" },
+    { key: "sessions" },
+    { key: "cache" },
   ];
 
   return (
@@ -190,7 +202,7 @@ export function AdminKvBrowser({
           >
             {namespaces.map((n) => (
               <Option key={n.key} value={n.key} text={n.key}>
-                {n.description ? `${n.key} — ${n.description}` : n.key}
+                {`${n.key} — ${t(`admin.kvNamespaceDesc.${n.key}`)}`}
               </Option>
             ))}
           </Dropdown>
@@ -248,7 +260,7 @@ export function AdminKvBrowser({
 
       {error && (
         <MessageBar intent="error">
-          {error instanceof ApiError ? error.message : String(error)}
+          {error instanceof ApiError ? error.message : t("common.error")}
         </MessageBar>
       )}
 
@@ -355,7 +367,7 @@ export function AdminKvBrowser({
             <DialogContent>
               {viewing?.protected ? (
                 <MessageBar intent="warning">
-                  {viewing.reason ?? t("admin.kvProtectedReason")}
+                  {t("admin.kvProtectedReason")}
                 </MessageBar>
               ) : (
                 <Textarea

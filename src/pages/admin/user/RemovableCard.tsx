@@ -44,7 +44,9 @@ interface Props {
   rows: RemovableRow[] | undefined;
   emptyText: string;
   removeLabel: string;
-  onRemove: (rowId: string) => Promise<{ message: string }>;
+  onRemove: (rowId: string) => Promise<unknown>;
+  /** The toast once a row is gone. */
+  doneText: string;
   showMsg: ShowMsg;
   confirm: (options: ConfirmOptions) => Promise<boolean>;
 }
@@ -58,6 +60,7 @@ export function RemovableCard({
   emptyText,
   removeLabel,
   onRemove,
+  doneText,
   showMsg,
   confirm,
 }: Props) {
@@ -80,15 +83,18 @@ export function RemovableCard({
     if (!ok) return;
     setBusy(row.id);
     try {
-      const res = await onRemove(row.id);
+      await onRemove(row.id);
       // Every query on this page is keyed "admin-user…"; refetch them all
       // rather than thread each key through.
       await qc.invalidateQueries({
         predicate: (q) => String(q.queryKey[0]).startsWith("admin-user"),
       });
-      showMsg("success", res.message);
+      showMsg("success", doneText);
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : String(err));
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     } finally {
       setBusy(null);
     }

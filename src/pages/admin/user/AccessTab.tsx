@@ -25,6 +25,7 @@ import {
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import { RemovableCard } from "./RemovableCard";
 import type { UserTabProps } from "./types";
+import { clientI18n } from "../../../i18n/init";
 
 const useStyles = makeStyles({
   mono: {
@@ -39,8 +40,9 @@ const useStyles = makeStyles({
   },
 });
 
+// Event handlers only, so the browser's i18n instance is the right one.
 const fail = (err: unknown) =>
-  err instanceof ApiError ? err.message : String(err);
+  err instanceof ApiError ? err.message : clientI18n.t("common.error");
 
 function SessionsCard({ userId, showMsg, confirm }: UserTabProps) {
   const api = useApi();
@@ -56,14 +58,15 @@ function SessionsCard({ userId, showMsg, confirm }: UserTabProps) {
 
   const run = async (
     key: string,
-    action: () => Promise<{ message: string }>,
+    action: () => Promise<unknown>,
+    done: string,
   ) => {
     if (busy) return;
     setBusy(key);
     try {
-      const res = await action();
+      await action();
       await qc.invalidateQueries({ queryKey: ["admin-user-sessions", userId] });
-      showMsg("success", res.message);
+      showMsg("success", done);
     } catch (err) {
       showMsg("error", fail(err));
     } finally {
@@ -79,7 +82,12 @@ function SessionsCard({ userId, showMsg, confirm }: UserTabProps) {
       body: t("admin.userPage.endAllBody"),
       confirmLabel: t("admin.endAllSessions"),
     });
-    if (ok) await run("all", () => api.adminTerminateSessions(userId));
+    if (ok)
+      await run(
+        "all",
+        () => api.adminTerminateSessions(userId),
+        t("admin.sessionsEndedDone"),
+      );
   };
 
   return (
@@ -139,7 +147,11 @@ function SessionsCard({ userId, showMsg, confirm }: UserTabProps) {
                 className={styles.danger}
                 disabled={busy !== null}
                 onClick={() =>
-                  void run(s.id, () => api.adminRevokeSession(userId, s.id))
+                  void run(
+                    s.id,
+                    () => api.adminRevokeSession(userId, s.id),
+                    t("admin.sessionEndedDone"),
+                  )
                 }
               >
                 {busy === s.id ? (
@@ -238,6 +250,7 @@ export function AccessTab(props: UserTabProps) {
         emptyText={t("admin.noTokens")}
         removeLabel={t("common.revoke")}
         onRemove={(tokenId) => api.adminRevokeUserToken(userId, tokenId)}
+        doneText={t("common.revokedDone")}
       />
 
       <RemovableCard
@@ -282,6 +295,7 @@ export function AccessTab(props: UserTabProps) {
         onRemove={(consentId) =>
           api.adminRevokeUserAuthorization(userId, consentId)
         }
+        doneText={t("common.revokedDone")}
       />
 
       <RemovableCard
@@ -304,6 +318,7 @@ export function AccessTab(props: UserTabProps) {
         emptyText={t("admin.noConnections")}
         removeLabel={t("common.remove")}
         onRemove={(connId) => api.adminRemoveUserConnection(userId, connId)}
+        doneText={t("common.removedDone")}
       />
 
       <RemovableCard
@@ -326,6 +341,7 @@ export function AccessTab(props: UserTabProps) {
         emptyText={t("admin.noGpgKeys")}
         removeLabel={t("common.remove")}
         onRemove={(keyId) => api.adminRemoveUserGpgKey(userId, keyId)}
+        doneText={t("common.removedDone")}
       />
     </>
   );

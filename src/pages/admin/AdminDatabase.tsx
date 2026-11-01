@@ -246,7 +246,7 @@ function RowEditor({
     onSuccess: () =>
       onSaved(isInsert ? t("admin.dbRowInserted") : t("admin.dbRowUpdated")),
     onError: (err) =>
-      setError(err instanceof ApiError ? err.message : String(err)),
+      setError(err instanceof ApiError ? err.message : t("common.error")),
   });
 
   return (
@@ -349,7 +349,10 @@ function TableBrowser({
       void qc.invalidateQueries({ queryKey: ["admin-db-tables"] });
     },
     onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      ),
   });
 
   const columns = data?.columns ?? [];
@@ -404,7 +407,7 @@ function TableBrowser({
 
       {error && (
         <MessageBar intent="error">
-          {error instanceof ApiError ? error.message : String(error)}
+          {error instanceof ApiError ? error.message : t("common.error")}
         </MessageBar>
       )}
 
@@ -580,7 +583,7 @@ function SqlConsole({
     },
     onError: (err) => {
       setResults(null);
-      setError(err instanceof ApiError ? err.message : String(err));
+      setError(err instanceof ApiError ? err.message : t("common.error"));
     },
   });
 

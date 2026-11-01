@@ -22,6 +22,30 @@ Request bodies are capped at 5 MiB globally. Prism rejects an excessive declared
 with a missing or inaccurate length is consumed. Oversized requests return
 `413`.
 
+## Errors
+
+A failed request answers with a stable, machine-readable code, never with
+English text:
+
+```json
+{ "error": "field_required", "params": { "field": "name" } }
+```
+
+`error` is a lowercase code such as `team_not_found`, `forbidden` or
+`invite_used_up`; compare against it, since codes don't change when wording
+does. `params` is present when the message has blanks to fill (a field name,
+a limit, a URL). The web UI translates each code into the reader's language
+from its locale files (`apiErrors.<code>` in `src/i18n/`), so the text a
+person sees and the code a program sees never drift apart.
+
+Successful writes answer with data, or `{ "ok": true }` when there is nothing
+to return; there is no `message` field to display.
+
+OAuth and OpenID Connect protocol endpoints (`/api/oauth/token`,
+`/api/oauth/register`, `/api/oauth/userinfo`, the device flow and so on)
+follow their RFCs instead: `error` is the standard code and
+`error_description` is English text for client developers.
+
 ## Init
 
 ### `GET /api/init/status`

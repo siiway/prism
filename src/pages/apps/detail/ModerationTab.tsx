@@ -102,13 +102,13 @@ export function ModerationTab({ app, formApi, showMsg }: Props) {
     if (!ok) return;
     await formApi.exclusive(async () => {
       try {
-        const res = await api.adminTransferApp(
+        await api.adminTransferApp(
           app.id,
           kind === "team" ? { team_id: value } : { owner_id: value },
         );
         setTarget("");
         await refresh();
-        showMsg("success", res.message);
+        showMsg("success", t("admin.appTransferredDone"));
       } catch (err) {
         fail(err);
       }

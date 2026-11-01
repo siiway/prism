@@ -18,6 +18,7 @@ import { readPage } from "../lib/pagination";
 import { optionalAuth } from "../middleware/auth";
 import { MIGRATIONS_PENDING, readWithFallback } from "../lib/schema";
 import type { NoticeRow, Variables } from "../types";
+import type { CodedError } from "../lib/apiError";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 
@@ -122,7 +123,7 @@ readerRoutes.get("/", async (c) => {
  *  which is worse than no dismiss button at all. */
 readerRoutes.post("/:id/dismiss", async (c) => {
   const user = c.get("user");
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  if (!user) return c.json({ error: "unauthorized" }, 401);
 
   // Unreachable in practice — with no tables the list is empty, so there is
   // nothing on screen to dismiss. Handled anyway because a stale tab from
@@ -134,9 +135,9 @@ readerRoutes.post("/:id/dismiss", async (c) => {
         .first<{ id: string; is_dismissible: number }>(),
     null,
   );
-  if (!notice) return c.json({ error: "Notice not found" }, 404);
+  if (!notice) return c.json({ error: "notice_not_found" }, 404);
   if (notice.is_dismissible !== 1)
-    return c.json({ error: "This notice cannot be dismissed" }, 403);
+    return c.json({ error: "notice_not_dismissible" }, 403);
 
   await c.env.DB.prepare(
     `INSERT INTO notice_dismissals (notice_id, user_id, dismissed_at)
@@ -145,7 +146,7 @@ readerRoutes.post("/:id/dismiss", async (c) => {
     .bind(notice.id, user.id, Math.floor(Date.now() / 1000))
     .run();
 
-  return c.json({ message: "Dismissed" });
+  return c.json({ ok: true });
 });
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
@@ -209,31 +210,45 @@ async function validate(
     starts_at: number | null;
     ends_at: number | null;
   }>,
-): Promise<string | null> {
+): Promise<CodedError | null> {
   if (body.title !== undefined) {
     const t = body.title.trim();
-    if (!t) return "title is required";
+    if (!t) return { error: "field_required", params: { field: "title" } };
     if (t.length > MAX_TITLE)
-      return `title must be ${MAX_TITLE} characters or fewer`;
+      return {
+        error: "field_max_length",
+        params: { field: "title", max: MAX_TITLE },
+      };
   }
   if (body.body !== undefined) {
-    if (!body.body.trim()) return "body is required";
+    if (!body.body.trim())
+      return { error: "field_required", params: { field: "body" } };
     const bytes = new TextEncoder().encode(body.body).byteLength;
     if (bytes > MAX_BODY_BYTES)
-      return `body exceeds the ${MAX_BODY_BYTES}-byte limit`;
+      return {
+        error: "field_max_bytes",
+        params: { field: "body", max: MAX_BODY_BYTES },
+      };
   }
   if (body.level !== undefined && !LEVELS.includes(body.level as NoticeLevel))
-    return `level must be one of: ${LEVELS.join(", ")}`;
+    return {
+      error: "field_one_of",
+      params: { field: "level", values: LEVELS.join(", ") },
+    };
   if (body.audience !== undefined) {
     if (!AUDIENCES.includes(body.audience as NoticeAudience))
-      return `audience must be one of: ${AUDIENCES.join(", ")}`;
+      return {
+        error: "field_one_of",
+        params: { field: "audience", values: AUDIENCES.join(", ") },
+      };
     if (body.audience === "team") {
-      if (!body.team_id) return "team_id is required for a team notice";
+      if (!body.team_id)
+        return { error: "field_required", params: { field: "team_id" } };
       const team = await db
         .prepare("SELECT id FROM teams WHERE id = ?")
         .bind(body.team_id)
         .first<{ id: string }>();
-      if (!team) return "Team not found";
+      if (!team) return { error: "team_not_found" };
     }
   }
   // A window that has already closed would publish to nobody, which reads as
@@ -243,7 +258,7 @@ async function validate(
     body.ends_at != null &&
     body.ends_at <= body.starts_at
   )
-    return "ends_at must be after starts_at";
+    return { error: "notice_window_invalid" };
   return null;
 }
 
@@ -303,7 +318,7 @@ adminRoutes.post("/", async (c) => {
     body: body.body ?? "",
     audience: body.audience ?? "users",
   });
-  if (err) return c.json({ error: err }, 400);
+  if (err) return c.json(err, 400);
 
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
@@ -351,7 +366,7 @@ adminRoutes.patch("/:id", async (c) => {
   const existing = await c.env.DB.prepare("SELECT * FROM notices WHERE id = ?")
     .bind(id)
     .first<NoticeRow>();
-  if (!existing) return c.json({ error: "Notice not found" }, 404);
+  if (!existing) return c.json({ error: "notice_not_found" }, 404);
 
   const body = await c.req.json<
     Partial<{
@@ -380,7 +395,7 @@ adminRoutes.patch("/:id", async (c) => {
       body.starts_at !== undefined ? body.starts_at : existing.starts_at,
     ends_at: body.ends_at !== undefined ? body.ends_at : existing.ends_at,
   });
-  if (err) return c.json({ error: err }, 400);
+  if (err) return c.json(err, 400);
 
   const updates: string[] = [];
   const values: unknown[] = [];
@@ -412,7 +427,7 @@ adminRoutes.patch("/:id", async (c) => {
   if (body.pinned !== undefined) set("pinned", body.pinned ? 1 : 0);
 
   if (!updates.length && !body.reset_dismissals)
-    return c.json({ error: "Nothing to update" }, 400);
+    return c.json({ error: "nothing_to_update" }, 400);
 
   if (updates.length) {
     set("updated_at", Math.floor(Date.now() / 1000));
@@ -465,10 +480,10 @@ adminRoutes.delete("/:id", async (c) => {
   )
     .bind(id)
     .first<{ id: string; title: string }>();
-  if (!existing) return c.json({ error: "Notice not found" }, 404);
+  if (!existing) return c.json({ error: "notice_not_found" }, 404);
 
   // Dismissals go with it through ON DELETE CASCADE.
   await c.env.DB.prepare("DELETE FROM notices WHERE id = ?").bind(id).run();
   auditNotice(c, "admin.notice.delete", existing);
-  return c.json({ message: "Notice deleted" });
+  return c.json({ ok: true });
 });

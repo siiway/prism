@@ -40,6 +40,7 @@ import type {
   WaitUntilCtx,
 } from "../types";
 import { PLATFORM_SCOPES } from "../../shared/scopes";
+import type { CodedError } from "../lib/apiError";
 
 // Mirror of the platform scope set in oauth.ts — used to validate app:* inner scopes
 const VALID_PLATFORM_SCOPES = new Set(PLATFORM_SCOPES);
@@ -56,18 +57,21 @@ export function isAllowedScope(s: string): boolean {
 }
 
 /** Check access rules for target app before adding an app:* scope to allowed_scopes.
- *  Returns null if allowed, or an error string if denied. */
+ *  Returns null if allowed, or the error if denied. */
 async function checkOwnerScopeAccess(
   db: D1Database,
   targetClientId: string,
   requestingUserId: string,
-): Promise<string | null> {
+): Promise<CodedError | null> {
   const targetApp = await db
     .prepare("SELECT id FROM oauth_apps WHERE client_id = ? AND is_active = 1")
     .bind(targetClientId)
     .first<{ id: string }>();
   if (!targetApp)
-    return `App with client_id ${targetClientId} not found or inactive`;
+    return {
+      error: "app_scope_target_missing",
+      params: { client_id: targetClientId },
+    };
 
   const rules = await db
     .prepare(
@@ -83,10 +87,9 @@ async function checkOwnerScopeAccess(
     .filter((r) => r.rule_type === "owner_deny")
     .map((r) => r.target_id);
 
-  if (denyList.includes(requestingUserId))
-    return "You are not permitted to use this app's scopes";
+  if (denyList.includes(requestingUserId)) return { error: "app_scope_denied" };
   if (allowList.length > 0 && !allowList.includes(requestingUserId))
-    return "You are not on the allow-list for this app's scopes";
+    return { error: "app_scope_not_allowed" };
 
   return null;
 }
@@ -277,9 +280,9 @@ app.get("/:id", async (c) => {
     .bind(id)
     .first<OAuthAppRow>();
 
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, false)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const isVerified = await computeIsVerified(
     c.env.DB,
@@ -299,7 +302,7 @@ app.post("/", async (c) => {
 
   if (user.role !== "admin") {
     const disabled = await getConfigValue(c.env.DB, "disable_user_create_app");
-    if (disabled) return c.json({ error: "App creation is disabled" }, 403);
+    if (disabled) return c.json({ error: "app_creation_disabled" }, 403);
   }
 
   const capErr = await guardCapability(c.env.DB, user.id, "app:create");
@@ -316,7 +319,8 @@ app.post("/", async (c) => {
     is_public?: boolean;
   }>();
 
-  if (!body.name) return c.json({ error: "name is required" }, 400);
+  if (!body.name)
+    return c.json({ error: "field_required", params: { field: "name" } }, 400);
 
   // Redirect URIs may be empty (the app then learns the first one used).
   const redirectUris = normalizeRedirectUriEntries(body.redirect_uris);
@@ -324,7 +328,7 @@ app.post("/", async (c) => {
     const reason = validateRedirectUriEntry(entry);
     if (reason)
       return c.json(
-        { error: `Invalid redirect_uri (${reason}): ${entry.value}` },
+        { error: `redirect_uri_${reason}`, params: { uri: entry.value } },
         400,
       );
   }
@@ -418,9 +422,9 @@ app.patch("/:id", async (c) => {
     .bind(id)
     .first<OAuthAppRow>();
 
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     name?: string;
@@ -444,7 +448,7 @@ app.patch("/:id", async (c) => {
 
   if (body.icon_url) {
     const imgErr = await validateImageUrl(body.icon_url);
-    if (imgErr) return c.json({ error: `icon_url: ${imgErr}` }, 400);
+    if (imgErr) return c.json(imgErr, 400);
   }
 
   // OIDC Back-Channel Logout endpoint (https, or empty/null to clear).
@@ -454,7 +458,10 @@ app.patch("/:id", async (c) => {
   if (body.backchannel_logout_uri !== undefined) {
     const v = body.backchannel_logout_uri;
     if (v && validateOutboundUrl(v)) {
-      return c.json({ error: `Invalid backchannel_logout_uri: ${v}` }, 400);
+      return c.json(
+        { error: "field_invalid", params: { field: "backchannel_logout_uri" } },
+        400,
+      );
     }
     backchannelLogoutUri = v || null;
   }
@@ -469,7 +476,10 @@ app.patch("/:id", async (c) => {
         if (!["https:", "http:"].includes(parsed.protocol) || parsed.hash)
           throw new Error("bad");
       } catch {
-        return c.json({ error: `Invalid post_logout_redirect_uri: ${u}` }, 400);
+        return c.json(
+          { error: "post_logout_uri_invalid", params: { uri: u } },
+          400,
+        );
       }
     }
     postLogoutJson = JSON.stringify([
@@ -490,7 +500,13 @@ app.patch("/:id", async (c) => {
       "private_key_jwt",
     ];
     if (m !== null && !validMethods.includes(m))
-      return c.json({ error: `Invalid token_endpoint_auth_method: ${m}` }, 400);
+      return c.json(
+        {
+          error: "field_invalid",
+          params: { field: "token_endpoint_auth_method" },
+        },
+        400,
+      );
     tokenEndpointAuthMethod = m;
   }
 
@@ -504,7 +520,10 @@ app.patch("/:id", async (c) => {
       try {
         parsed = JSON.parse(raw);
       } catch {
-        return c.json({ error: "Invalid jwks: not valid JSON" }, 400);
+        return c.json(
+          { error: "field_invalid", params: { field: "jwks" } },
+          400,
+        );
       }
       if (
         typeof parsed !== "object" ||
@@ -512,7 +531,7 @@ app.patch("/:id", async (c) => {
         !Array.isArray((parsed as { keys?: unknown }).keys)
       )
         return c.json(
-          { error: 'Invalid jwks: expected a JWK Set with a "keys" array' },
+          { error: "field_invalid", params: { field: "jwks" } },
           400,
         );
       jwks = JSON.stringify(parsed);
@@ -526,7 +545,10 @@ app.patch("/:id", async (c) => {
   if (body.jwks_uri !== undefined) {
     const v = body.jwks_uri;
     if (v && validateOutboundUrl(v)) {
-      return c.json({ error: `Invalid jwks_uri: ${v}` }, 400);
+      return c.json(
+        { error: "field_invalid", params: { field: "jwks_uri" } },
+        400,
+      );
     }
     jwksUri = v || null;
   }
@@ -534,7 +556,7 @@ app.patch("/:id", async (c) => {
   // A client that authenticates with private_key_jwt has no other credential —
   // it must register a key source, or the token endpoint can never verify it.
   if (tokenEndpointAuthMethod === "private_key_jwt" && !jwks && !jwksUri)
-    return c.json({ error: "private_key_jwt requires jwks or jwks_uri" }, 400);
+    return c.json({ error: "jwks_required" }, 400);
 
   // Redirect URIs may be an empty list (learn-first-used mode).
   const redirectUris = body.redirect_uris
@@ -545,7 +567,7 @@ app.patch("/:id", async (c) => {
       const reason = validateRedirectUriEntry(entry);
       if (reason)
         return c.json(
-          { error: `Invalid redirect_uri (${reason}): ${entry.value}` },
+          { error: `redirect_uri_${reason}`, params: { uri: entry.value } },
           400,
         );
     }
@@ -567,7 +589,7 @@ app.patch("/:id", async (c) => {
         parsed.clientId,
         user.id,
       );
-      if (err) return c.json({ error: err }, 403);
+      if (err) return c.json(err, 403);
     }
   }
 
@@ -692,9 +714,9 @@ app.post("/:id/rotate-secret", async (c) => {
     .bind(id)
     .first<OAuthAppRow>();
 
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const newSecret = randomBase64url(32);
   await c.env.DB.prepare(
@@ -718,9 +740,9 @@ app.delete("/:id", async (c) => {
     .bind(id)
     .first<OAuthAppRow>();
 
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM oauth_tokens WHERE client_id = ?").bind(
@@ -768,7 +790,7 @@ app.delete("/:id", async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ message: "App deleted" });
+  return c.json({ ok: true });
 });
 
 // ─── App notification channels ───────────────────────────────────────────────
@@ -828,9 +850,9 @@ app.get("/:id/webhooks", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, false)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const { results } = await c.env.DB.prepare(
     "SELECT id, url, events, is_active, created_at, updated_at FROM app_webhooks WHERE app_id = ? ORDER BY created_at DESC",
@@ -854,9 +876,9 @@ app.post("/:id/webhooks", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     url: string;
@@ -864,7 +886,8 @@ app.post("/:id/webhooks", async (c) => {
     secret?: string;
   }>();
 
-  if (!body.url) return c.json({ error: "url is required" }, 400);
+  if (!body.url)
+    return c.json({ error: "field_required", params: { field: "url" } }, 400);
   const urlErr = validateOutboundUrl(body.url);
   if (urlErr) return c.json({ error: urlErr }, 400);
 
@@ -905,16 +928,16 @@ app.patch("/:id/webhooks/:wid", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const wh = await c.env.DB.prepare(
     "SELECT * FROM app_webhooks WHERE id = ? AND app_id = ?",
   )
     .bind(wid, id)
     .first<AppWebhookRow>();
-  if (!wh) return c.json({ error: "Webhook not found" }, 404);
+  if (!wh) return c.json({ error: "webhook_not_found" }, 404);
 
   const body = await c.req.json<{
     url?: string;
@@ -976,16 +999,16 @@ app.delete("/:id/webhooks/:wid", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const wh = await c.env.DB.prepare(
     "SELECT * FROM app_webhooks WHERE id = ? AND app_id = ?",
   )
     .bind(wid, id)
     .first<AppWebhookRow>();
-  if (!wh) return c.json({ error: "Webhook not found" }, 404);
+  if (!wh) return c.json({ error: "webhook_not_found" }, 404);
 
   // Farewell push: deliver *before* removing the row so the endpoint can
   // learn it was deleted. Sent regardless of the hook's event subscription —
@@ -1031,7 +1054,7 @@ app.delete("/:id/webhooks/:wid", async (c) => {
   await c.env.DB.prepare("DELETE FROM app_webhooks WHERE id = ?")
     .bind(wid)
     .run();
-  return c.json({ message: "Deleted" });
+  return c.json({ ok: true });
 });
 
 // POST /:id/webhooks/:wid/test — send a test delivery
@@ -1041,16 +1064,16 @@ app.post("/:id/webhooks/:wid/test", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const wh = await c.env.DB.prepare(
     "SELECT * FROM app_webhooks WHERE id = ? AND app_id = ?",
   )
     .bind(wid, id)
     .first<AppWebhookRow>();
-  if (!wh) return c.json({ error: "Webhook not found" }, 404);
+  if (!wh) return c.json({ error: "webhook_not_found" }, 404);
 
   const { deliverOnce: deliver } = await import("../lib/webhooks");
   const now = Math.floor(Date.now() / 1000);
@@ -1095,9 +1118,9 @@ app.get("/:id/webhooks/:wid/deliveries", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, false)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const { results } = await c.env.DB.prepare(
     `SELECT id, event_type, response_status, success, delivered_at
@@ -1122,10 +1145,10 @@ app.get("/:id/webhooks/:wid/deliveries", async (c) => {
 // Auth: HTTP Basic  (client_id:client_secret)
 app.get("/:id/events/sse", async (c) => {
   const appRow = await verifyClientAuth(c.env, c.req.header("Authorization"));
-  if (!appRow) return c.json({ error: "Unauthorized" }, 401);
+  if (!appRow) return c.json({ error: "unauthorized" }, 401);
 
   const appId = c.req.param("id");
-  if (appRow.id !== appId) return c.json({ error: "Forbidden" }, 403);
+  if (appRow.id !== appId) return c.json({ error: "forbidden" }, 403);
 
   // Resume from Last-Event-ID (integer rowid cursor; 0 = tail from now)
   const rawCursor = c.req.header("Last-Event-ID");
@@ -1203,7 +1226,7 @@ app.get("/:id/events/sse", async (c) => {
 app.get("/:id/events/ws", async (c) => {
   const upgradeHeader = c.req.header("Upgrade");
   if (upgradeHeader?.toLowerCase() !== "websocket") {
-    return c.json({ error: "Expected WebSocket upgrade" }, 426);
+    return c.json({ error: "websocket_required" }, 426);
   }
 
   // Support Basic auth OR query-string for environments that can't set headers
@@ -1218,10 +1241,10 @@ app.get("/:id/events/ws", async (c) => {
   }
 
   const appRow = await verifyClientAuth(c.env, authHeader);
-  if (!appRow) return c.json({ error: "Unauthorized" }, 401);
+  if (!appRow) return c.json({ error: "unauthorized" }, 401);
 
   const appId = c.req.param("id");
-  if (appRow.id !== appId) return c.json({ error: "Forbidden" }, 403);
+  if (appRow.id !== appId) return c.json({ error: "forbidden" }, 403);
 
   const pair = new WebSocketPair();
   const [client, server] = Object.values(pair) as [
@@ -1312,9 +1335,9 @@ async function authorizeScopeDefsAccess(
   if (appSelf && appSelf.appId === appId) return null;
 
   const user = c.get("user");
-  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  if (!user) return c.json({ error: "unauthorized" }, 401);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, write)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
   return null;
 }
 
@@ -1326,7 +1349,7 @@ app.get("/:id/scope-definitions", async (c) => {
   )
     .bind(urlId, urlId)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   const denied = await authorizeScopeDefsAccess(c, row, row.id, false);
   if (denied) return denied;
 
@@ -1346,7 +1369,7 @@ app.post("/:id/scope-definitions", async (c) => {
   )
     .bind(urlId, urlId)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   const denied = await authorizeScopeDefsAccess(c, row, row.id, true);
   if (denied) return denied;
 
@@ -1355,15 +1378,14 @@ app.post("/:id/scope-definitions", async (c) => {
     title: string;
     description?: string;
   }>();
-  if (!body.scope?.trim()) return c.json({ error: "scope is required" }, 400);
-  if (!body.title?.trim()) return c.json({ error: "title is required" }, 400);
+  if (!body.scope?.trim())
+    return c.json({ error: "field_required", params: { field: "scope" } }, 400);
+  if (!body.title?.trim())
+    return c.json({ error: "field_required", params: { field: "title" } }, 400);
 
   // Scope must be a non-empty identifier (no whitespace, no colons)
   if (!/^[a-zA-Z0-9_.-]+$/.test(body.scope.trim()))
-    return c.json(
-      { error: "scope must be an alphanumeric identifier (a-z, 0-9, _, -, .)" },
-      400,
-    );
+    return c.json({ error: "scope_name_invalid" }, 400);
 
   const now = Math.floor(Date.now() / 1000);
   const defId = randomId();
@@ -1401,7 +1423,7 @@ app.patch("/:id/scope-definitions/:defId", async (c) => {
   )
     .bind(urlId, urlId)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   const denied = await authorizeScopeDefsAccess(c, row, row.id, true);
   if (denied) return denied;
 
@@ -1410,7 +1432,7 @@ app.patch("/:id/scope-definitions/:defId", async (c) => {
   )
     .bind(defId, row.id)
     .first<AppScopeDefinitionRow>();
-  if (!def) return c.json({ error: "Not found" }, 404);
+  if (!def) return c.json({ error: "not_found" }, 404);
 
   const body = await c.req.json<{ title?: string; description?: string }>();
   const now = Math.floor(Date.now() / 1000);
@@ -1443,7 +1465,7 @@ app.delete("/:id/scope-definitions/:defId", async (c) => {
   )
     .bind(urlId, urlId)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   const denied = await authorizeScopeDefsAccess(c, row, row.id, true);
   if (denied) return denied;
 
@@ -1452,7 +1474,7 @@ app.delete("/:id/scope-definitions/:defId", async (c) => {
   )
     .bind(defId, row.id)
     .run();
-  return c.json({ message: "Deleted" });
+  return c.json({ ok: true });
 });
 
 // ─── Scope access rules ───────────────────────────────────────────────────────
@@ -1464,9 +1486,9 @@ app.get("/:id/scope-access-rules", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, false)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM app_scope_access_rules WHERE app_id = ? ORDER BY rule_type, created_at ASC",
@@ -1483,9 +1505,9 @@ app.post("/:id/scope-access-rules", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{ rule_type: string; target_id: string }>();
   const VALID_RULE_TYPES = [
@@ -1496,11 +1518,17 @@ app.post("/:id/scope-access-rules", async (c) => {
   ];
   if (!VALID_RULE_TYPES.includes(body.rule_type))
     return c.json(
-      { error: `rule_type must be one of: ${VALID_RULE_TYPES.join(", ")}` },
+      {
+        error: "field_one_of",
+        params: { field: "rule_type", values: VALID_RULE_TYPES.join(", ") },
+      },
       400,
     );
   if (!body.target_id?.trim())
-    return c.json({ error: "target_id is required" }, 400);
+    return c.json(
+      { error: "field_required", params: { field: "target_id" } },
+      400,
+    );
 
   const now = Math.floor(Date.now() / 1000);
   const ruleId = randomId();
@@ -1512,7 +1540,7 @@ app.post("/:id/scope-access-rules", async (c) => {
       .bind(ruleId, id, body.rule_type, body.target_id.trim(), now)
       .run();
   } catch {
-    return c.json({ error: "Rule already exists" }, 409);
+    return c.json({ error: "rule_exists" }, 409);
   }
 
   return c.json(
@@ -1536,16 +1564,16 @@ app.delete("/:id/scope-access-rules/:ruleId", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   await c.env.DB.prepare(
     "DELETE FROM app_scope_access_rules WHERE id = ? AND app_id = ?",
   )
     .bind(ruleId, id)
     .run();
-  return c.json({ message: "Deleted" });
+  return c.json({ ok: true });
 });
 
 // ─── Access whitelist rules ───────────────────────────────────────────────────
@@ -1557,9 +1585,9 @@ app.get("/:id/access-rules", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, false)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM app_access_rules WHERE app_id = ? ORDER BY created_at ASC",
@@ -1577,9 +1605,9 @@ app.post("/:id/access-rules", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     rule_type: "team" | "user";
@@ -1587,9 +1615,18 @@ app.post("/:id/access-rules", async (c) => {
     min_role?: "owner" | "co-owner" | "admin" | "member";
   }>();
   if (!["team", "user"].includes(body.rule_type))
-    return c.json({ error: "rule_type must be 'team' or 'user'" }, 400);
+    return c.json(
+      {
+        error: "field_one_of",
+        params: { field: "rule_type", values: "team, user" },
+      },
+      400,
+    );
   if (!body.target_id?.trim())
-    return c.json({ error: "target_id is required" }, 400);
+    return c.json(
+      { error: "field_required", params: { field: "target_id" } },
+      400,
+    );
 
   // Validate min_role only for team rules
   const validRoles = ["owner", "co-owner", "admin", "member"];
@@ -1599,7 +1636,10 @@ app.post("/:id/access-rules", async (c) => {
     !validRoles.includes(body.min_role)
   )
     return c.json(
-      { error: "min_role must be one of: owner, co-owner, admin, member" },
+      {
+        error: "field_one_of",
+        params: { field: "min_role", values: "owner, co-owner, admin, member" },
+      },
       400,
     );
   const minRole = body.rule_type === "team" ? body.min_role || "member" : null;
@@ -1635,17 +1675,17 @@ app.delete("/:id/access-rules/:ruleId", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(id)
     .first<OAuthAppRow>();
-  if (!row) return c.json({ error: "Not found" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
   if (!(await canAccess(c.env.DB, row, user.id, user.role, true)))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const result = await c.env.DB.prepare(
     "DELETE FROM app_access_rules WHERE id = ? AND app_id = ?",
   )
     .bind(ruleId, id)
     .run();
-  if (!result.meta.changes) return c.json({ error: "Not found" }, 404);
-  return c.json({ message: "Deleted" });
+  if (!result.meta.changes) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

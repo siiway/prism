@@ -719,7 +719,7 @@ app.delete("/me/tokens/:id", requireAuth, async (c) => {
   )
     .bind(tokenId, user.id)
     .run();
-  return c.json({ message: "Token revoked" });
+  return c.json({ ok: true });
 });
 
 // DELETE /api/oauth/consents/:client_id — revoke consent and associated tokens
@@ -780,7 +780,7 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
     );
   }
 
-  return c.json({ message: "Access revoked" });
+  return c.json({ ok: true });
 });
 
 // PATCH /api/oauth/consents/:clientId — update consent settings, e.g. disable auto_authorize
@@ -793,7 +793,7 @@ app.patch("/consents/:clientId", requireAuth, async (c) => {
     if (body.auto_authorize) {
       return c.json(
         {
-          error: "Auto-authorization can only be enabled during authorization",
+          error: "auto_authorize_only_during_consent",
         },
         400,
       );
@@ -805,7 +805,7 @@ app.patch("/consents/:clientId", requireAuth, async (c) => {
       .run();
   }
 
-  return c.json({ message: "Consent updated" });
+  return c.json({ ok: true });
 });
 
 /** Check if the given user is allowed by the app's access whitelist rules.
@@ -1243,7 +1243,7 @@ app.post("/authorize", requireAuth, async (c) => {
       restriction,
       oauthApp,
     );
-    if (appErr) return c.json({ error: "access_denied", message: appErr }, 403);
+    if (appErr) return c.json({ error: appErr }, 403);
   }
 
   const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
@@ -1300,8 +1300,6 @@ app.post("/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "site_scope_admin_required",
-          message:
-            "Site-level scopes can only be granted by a site administrator.",
         },
         403,
       );
@@ -1323,10 +1321,6 @@ app.post("/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "site_scope_totp_invalid",
-          message:
-            body.totp_code || body.passkey_verify_token
-              ? "Invalid 2FA credential."
-              : "A 2FA verification is required to grant site-level scopes.",
         },
         400,
       );
@@ -1335,7 +1329,6 @@ app.post("/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "site_scope_confirm_required",
-          message: `Type "${SITE_SCOPE_CONFIRM_PHRASE}" to confirm.`,
         },
         400,
       );
@@ -1349,7 +1342,6 @@ app.post("/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "team_id_required",
-          message: "Select a team to grant access to.",
         },
         400,
       );
@@ -1366,7 +1358,6 @@ app.post("/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "team_scope_forbidden",
-          message: "You must be a team owner or admin to grant team access.",
         },
         403,
       );
@@ -1378,7 +1369,6 @@ app.post("/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "team_scope_owner_required",
-          message: "Only team owners can grant team deletion access.",
         },
         403,
       );
@@ -2028,7 +2018,6 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "captcha_failed",
-          message: captchaResult.error ?? "Captcha verification failed.",
         },
         400,
       );
@@ -2069,7 +2058,6 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "sudo_disabled",
-          message: "Sudo mode is not enabled on this site.",
         },
         400,
       );
@@ -2088,8 +2076,6 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "sudo_inactive",
-          message:
-            "Sudo grace period is not active. Confirm with TOTP or passkey.",
         },
         400,
       );
@@ -2101,7 +2087,6 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "rate_limited",
-          message: "Too many 2FA attempts. Try again in a few minutes.",
         },
         429,
       );
@@ -2124,10 +2109,6 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
       return c.json(
         {
           error: "invalid_2fa",
-          message:
-            body.totp_code || body.passkey_verify_token
-              ? "Invalid 2FA credential."
-              : "A 2FA verification is required.",
         },
         400,
       );
@@ -3363,7 +3344,7 @@ app.post("/device/decision", requireAuth, async (c) => {
       restriction,
       oauthApp,
     );
-    if (appErr) return c.json({ error: "access_denied", message: appErr }, 403);
+    if (appErr) return c.json({ error: appErr }, 403);
   }
   const whitelistDenied = await checkAccessWhitelist(
     c.env.DB,
@@ -3480,10 +3461,14 @@ interface DcrMetadata {
 }
 
 /** Validate + normalise the mutable parts of a registration request. Returns an
- *  error string (→ invalid_client_metadata / invalid_redirect_uri) or the
+ *  RFC 7591 error (code + English error_description, which is for client
+ *  developers and never shown in Prism's UI) or the
  *  normalised values. */
 function normaliseDcrMetadata(body: DcrMetadata):
-  | { error: string; code: "invalid_redirect_uri" | "invalid_client_metadata" }
+  | {
+      description: string;
+      code: "invalid_redirect_uri" | "invalid_client_metadata";
+    }
   | {
       redirectUris: { type: "equals"; value: string }[];
       isPublic: number;
@@ -3499,7 +3484,7 @@ function normaliseDcrMetadata(body: DcrMetadata):
     const reason = validateRedirectUriForRegistration(uri);
     if (reason)
       return {
-        error: `Invalid redirect_uri: ${uri} (${reason})`,
+        description: `Invalid redirect_uri: ${uri} (${reason})`,
         code: "invalid_redirect_uri",
       };
     redirectUris.push({ type: "equals", value: uri });
@@ -3514,7 +3499,7 @@ function normaliseDcrMetadata(body: DcrMetadata):
   ];
   if (!validMethods.includes(authMethod))
     return {
-      error: `Unsupported token_endpoint_auth_method: ${authMethod}`,
+      description: `Unsupported token_endpoint_auth_method: ${authMethod}`,
       code: "invalid_client_metadata",
     };
 
@@ -3523,16 +3508,16 @@ function normaliseDcrMetadata(body: DcrMetadata):
     try {
       jwks = JSON.stringify(body.jwks);
     } catch {
-      return { error: "Invalid jwks", code: "invalid_client_metadata" };
+      return { description: "Invalid jwks", code: "invalid_client_metadata" };
     }
   }
   const jwksUri = typeof body.jwks_uri === "string" ? body.jwks_uri : null;
   if (jwksUri && validateOutboundUrl(jwksUri))
-    return { error: "Invalid jwks_uri", code: "invalid_client_metadata" };
+    return { description: "Invalid jwks_uri", code: "invalid_client_metadata" };
 
   if (authMethod === "private_key_jwt" && !jwks && !jwksUri)
     return {
-      error: "private_key_jwt requires jwks or jwks_uri",
+      description: "private_key_jwt requires jwks or jwks_uri",
       code: "invalid_client_metadata",
     };
 
@@ -3545,7 +3530,7 @@ function normaliseDcrMetadata(body: DcrMetadata):
       postLogout.push(u);
     } catch {
       return {
-        error: `Invalid post_logout_redirect_uri: ${u}`,
+        description: `Invalid post_logout_redirect_uri: ${u}`,
         code: "invalid_client_metadata",
       };
     }
@@ -3558,7 +3543,7 @@ function normaliseDcrMetadata(body: DcrMetadata):
   ) {
     if (validateOutboundUrl(body.backchannel_logout_uri))
       return {
-        error: "Invalid backchannel_logout_uri",
+        description: "Invalid backchannel_logout_uri",
         code: "invalid_client_metadata",
       };
     backchannelLogoutUri = body.backchannel_logout_uri;
@@ -3589,8 +3574,11 @@ app.post(
       .catch(() => ({}) as DcrMetadata);
 
     const norm = normaliseDcrMetadata(body);
-    if ("error" in norm)
-      return c.json({ error: norm.code, error_description: norm.error }, 400);
+    if ("description" in norm)
+      return c.json(
+        { error: norm.code, error_description: norm.description },
+        400,
+      );
 
     const id = randomId();
     const clientId = `prism_${randomBase64url(16)}`;
@@ -3681,8 +3669,11 @@ app.put("/register/:client_id", async (c) => {
   if (!app) return c.json({ error: "invalid_token" }, 401);
   const body = await c.req.json<DcrMetadata>().catch(() => ({}) as DcrMetadata);
   const norm = normaliseDcrMetadata(body);
-  if ("error" in norm)
-    return c.json({ error: norm.code, error_description: norm.error }, 400);
+  if ("description" in norm)
+    return c.json(
+      { error: norm.code, error_description: norm.description },
+      400,
+    );
 
   const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(
@@ -4409,13 +4400,17 @@ app.post("/me/gpg-keys", async (c) => {
 
   const { parseArmoredPublicKey } = await import("../lib/gpg");
   const body = await c.req.json<{ public_key: string; name?: string }>();
-  if (!body.public_key) return c.json({ error: "public_key is required" }, 400);
+  if (!body.public_key)
+    return c.json(
+      { error: "field_required", params: { field: "public_key" } },
+      400,
+    );
 
   let parsed: Awaited<ReturnType<typeof parseArmoredPublicKey>>;
   try {
     parsed = await parseArmoredPublicKey(body.public_key);
   } catch {
-    return c.json({ error: "Invalid PGP public key" }, 400);
+    return c.json({ error: "pgp_key_invalid" }, 400);
   }
 
   const name = (body.name?.trim() || parsed.uids[0] || parsed.keyId).slice(
@@ -4427,7 +4422,7 @@ app.post("/me/gpg-keys", async (c) => {
   )
     .bind(resolved.userId, parsed.fingerprint)
     .first();
-  if (existing) return c.json({ error: "Key already added" }, 409);
+  if (existing) return c.json({ error: "key_exists" }, 409);
 
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
@@ -4465,8 +4460,8 @@ app.delete("/me/gpg-keys/:id", async (c) => {
   )
     .bind(c.req.param("id"), resolved.userId)
     .run();
-  if (!result.meta.changes) return c.json({ error: "Key not found" }, 404);
-  return c.json({ message: "Key removed" });
+  if (!result.meta.changes) return c.json({ error: "key_not_found" }, 404);
+  return c.json({ ok: true });
 });
 
 // GET /api/oauth/me/social-connections — list the token owner's social connections (requires social:read)
@@ -4508,8 +4503,8 @@ app.delete("/me/social-connections/:id", async (c) => {
     .bind(c.req.param("id"), resolved.userId)
     .run();
   if (!result.meta.changes)
-    return c.json({ error: "Connection not found" }, 404);
-  return c.json({ message: "Connection removed" });
+    return c.json({ error: "connection_not_found" }, 404);
+  return c.json({ ok: true });
 });
 
 // POST /api/oauth/me/teams — create a team (requires teams:create)
@@ -4522,7 +4517,8 @@ app.post("/me/teams", async (c) => {
     description?: string;
     avatar_url?: string;
   }>();
-  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+  if (!body.name?.trim())
+    return c.json({ error: "field_required", params: { field: "name" } }, 400);
 
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
@@ -4559,7 +4555,7 @@ app.patch("/me/teams/:id", async (c) => {
   const effective = await getEffectiveMember(c.env.DB, teamId, resolved.userId);
 
   if (!effective || !["owner", "co-owner", "admin"].includes(effective.role))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     name?: string;
@@ -4584,7 +4580,7 @@ app.patch("/me/teams/:id", async (c) => {
     values.push(body.avatar_url || null);
   }
 
-  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+  if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
   updates.push("updated_at = ?");
   values.push(now, teamId);
@@ -4611,7 +4607,7 @@ app.delete("/me/teams/:id", async (c) => {
   const effective = await getEffectiveMember(c.env.DB, teamId, resolved.userId);
 
   if (!effective || effective.role !== "owner")
-    return c.json({ error: "Only the team owner can delete the team" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
 
   // Same site-admin-only protection as the dashboard paths. Easiest of the
   // four to overlook and the most dangerous to miss: an authorized app can
@@ -4619,8 +4615,7 @@ app.delete("/me/teams/:id", async (c) => {
   if (await hasLiveRestrictedAccounts(c.env.DB, teamId))
     return c.json(
       {
-        error:
-          "This team has accounts registered through its invite links. Only a site administrator can dissolve it.",
+        error: "team_dissolve_admin_only",
       },
       403,
     );
@@ -4628,7 +4623,7 @@ app.delete("/me/teams/:id", async (c) => {
   // Recursive cascade — reassigns team-owned apps per level before deletion.
   await dissolveTeam(c.env.DB, teamId, resolved.userId);
 
-  return c.json({ message: "Team deleted" });
+  return c.json({ ok: true });
 });
 
 // POST /api/oauth/me/domains — add a domain for verification (requires domains:write)
@@ -4637,20 +4632,24 @@ app.post("/me/domains", async (c) => {
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const body = await c.req.json<{ domain: string }>();
-  if (!body.domain) return c.json({ error: "domain is required" }, 400);
+  if (!body.domain)
+    return c.json(
+      { error: "field_required", params: { field: "domain" } },
+      400,
+    );
 
   // Tolerate pasted URLs / whitespace / trailing dots, then validate
   const domain = normalizeDomainInput(body.domain);
   const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
   if (!domainRegex.test(domain))
-    return c.json({ error: "Invalid domain format" }, 400);
+    return c.json({ error: "domain_invalid" }, 400);
 
   const existing = await c.env.DB.prepare(
     "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
   )
     .bind(resolved.userId, domain)
     .first();
-  if (existing) return c.json({ error: "Domain already added" }, 409);
+  if (existing) return c.json({ error: "domain_exists" }, 409);
 
   const verificationToken = randomBase64url(24);
   const id = randomId();
@@ -4686,13 +4685,13 @@ app.delete("/me/domains/:domain", async (c) => {
     .bind(resolved.userId, domain)
     .first();
 
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM domains WHERE id = ?")
     .bind((row as { id: string }).id)
     .run();
 
-  return c.json({ message: "Domain removed" });
+  return c.json({ ok: true });
 });
 
 // POST /api/oauth/me/invites — create a site invite (requires admin:invites:create, admin only)
@@ -4705,7 +4704,7 @@ app.post("/me/invites", async (c) => {
     .first<{ role: string }>();
 
   if (!user || user.role !== "admin")
-    return c.json({ error: "Admin role required" }, 403);
+    return c.json({ error: "admin_required" }, 403);
 
   const body = await c.req.json<{
     email?: string;
@@ -4755,7 +4754,7 @@ app.get("/me/invites", async (c) => {
     .bind(resolved.userId)
     .first<{ role: string }>();
   if (!user || user.role !== "admin")
-    return c.json({ error: "Admin role required" }, 403);
+    return c.json({ error: "admin_required" }, 403);
 
   const { results } = await c.env.DB.prepare(
     `SELECT i.id, i.email, i.note, i.max_uses, i.use_count,
@@ -4778,20 +4777,20 @@ app.delete("/me/invites/:id", async (c) => {
     .bind(resolved.userId)
     .first<{ role: string }>();
   if (!user || user.role !== "admin")
-    return c.json({ error: "Admin role required" }, 403);
+    return c.json({ error: "admin_required" }, 403);
 
   const invite = await c.env.DB.prepare(
     "SELECT id FROM site_invites WHERE id = ?",
   )
     .bind(c.req.param("id"))
     .first();
-  if (!invite) return c.json({ error: "Invite not found" }, 404);
+  if (!invite) return c.json({ error: "invite_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM site_invites WHERE id = ?")
     .bind(c.req.param("id"))
     .run();
 
-  return c.json({ message: "Invite revoked" });
+  return c.json({ ok: true });
 });
 
 // GET /api/oauth/me/profile — read own profile (requires profile scope)
@@ -4814,7 +4813,7 @@ app.get("/me/profile", async (c) => {
       created_at: number;
     }>();
 
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
 
   return c.json({
     id: user.id,
@@ -4847,7 +4846,10 @@ app.patch("/me/profile", async (c) => {
 
   if (body.display_name !== undefined) {
     if (!body.display_name.trim())
-      return c.json({ error: "display_name cannot be empty" }, 400);
+      return c.json(
+        { error: "field_empty", params: { field: "display_name" } },
+        400,
+      );
     updates.push("display_name = ?");
     values.push(body.display_name.trim());
   }
@@ -4856,7 +4858,7 @@ app.patch("/me/profile", async (c) => {
     values.push(body.avatar_url ?? null);
   }
 
-  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+  if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
   updates.push("updated_at = ?");
   values.push(now, resolved.userId);
@@ -4906,14 +4908,15 @@ app.post("/me/apps", async (c) => {
     is_public?: boolean;
   }>();
 
-  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+  if (!body.name?.trim())
+    return c.json({ error: "field_required", params: { field: "name" } }, 400);
   if (!Array.isArray(body.redirect_uris) || body.redirect_uris.length === 0)
-    return c.json({ error: "redirect_uris is required" }, 400);
+    return c.json({ error: "redirect_uri_required" }, 400);
 
   for (const uri of body.redirect_uris) {
     const reason = validateRedirectUriForRegistration(uri);
     if (reason)
-      return c.json({ error: `Invalid redirect_uri (${reason}): ${uri}` }, 400);
+      return c.json({ error: `redirect_uri_${reason}`, params: { uri } }, 400);
   }
 
   const allowedScopes = (
@@ -5063,8 +5066,8 @@ app.patch("/me/apps/:id", async (c) => {
   const appId = c.req.param("id");
   const access = await canManageAppViaToken(c.env.DB, appId, resolved.userId);
 
-  if (!access.app) return c.json({ error: "App not found" }, 404);
-  if (!access.allowed) return c.json({ error: "Forbidden" }, 403);
+  if (!access.app) return c.json({ error: "app_not_found" }, 404);
+  if (!access.allowed) return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     name?: string;
@@ -5096,7 +5099,7 @@ app.patch("/me/apps/:id", async (c) => {
       const reason = validateRedirectUriForRegistration(uri);
       if (reason)
         return c.json(
-          { error: `Invalid redirect_uri (${reason}): ${uri}` },
+          { error: `redirect_uri_${reason}`, params: { uri } },
           400,
         );
     }
@@ -5114,7 +5117,7 @@ app.patch("/me/apps/:id", async (c) => {
     values.push(body.is_public ? 1 : 0);
   }
 
-  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+  if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
   updates.push("updated_at = ?");
   values.push(now, appId);
@@ -5153,8 +5156,8 @@ app.delete("/me/apps/:id", async (c) => {
   const appId = c.req.param("id");
   const access = await canManageAppViaToken(c.env.DB, appId, resolved.userId);
 
-  if (!access.app) return c.json({ error: "App not found" }, 404);
-  if (!access.allowed) return c.json({ error: "Forbidden" }, 403);
+  if (!access.app) return c.json({ error: "app_not_found" }, 404);
+  if (!access.allowed) return c.json({ error: "forbidden" }, 403);
 
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -5166,7 +5169,7 @@ app.delete("/me/apps/:id", async (c) => {
     c.env.DB.prepare("DELETE FROM oauth_apps WHERE id = ?").bind(appId),
   ]);
 
-  return c.json({ message: "App deleted" });
+  return c.json({ ok: true });
 });
 
 // POST /api/oauth/me/domains/:domain/verify — trigger DNS re-check (requires domains:write)
@@ -5181,9 +5184,8 @@ app.post("/me/domains/:domain/verify", async (c) => {
     .bind(resolved.userId, domain)
     .first<{ id: string; verification_token: string; verified: number }>();
 
-  if (!row) return c.json({ error: "Domain not found" }, 404);
-  if (row.verified === 1)
-    return c.json({ message: "Already verified", verified: true });
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
+  if (row.verified === 1) return c.json({ verified: true });
 
   // DNS TXT lookup via Cloudflare DNS-over-HTTPS
   let verified: boolean;
@@ -5198,11 +5200,11 @@ app.post("/me/domains/:domain/verify", async (c) => {
       (a) => a.data === expected || a.data === expected.slice(1, -1),
     );
   } catch {
-    return c.json({ error: "DNS lookup failed" }, 502);
+    return c.json({ error: "dns_lookup_failed" }, 502);
   }
 
   if (!verified)
-    return c.json({ error: "TXT record not found", verified: false }, 422);
+    return c.json({ error: "txt_record_not_found", verified: false }, 422);
 
   const now = Math.floor(Date.now() / 1000);
   const config = await import("../lib/config").then((m) =>
@@ -5228,13 +5230,17 @@ app.post("/me/teams/:id/members", async (c) => {
   const caller = await getEffectiveMember(c.env.DB, teamId, resolved.userId);
 
   if (!caller || !["owner", "admin"].includes(caller.role))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     username: string;
     role?: "admin" | "member";
   }>();
-  if (!body.username) return c.json({ error: "username is required" }, 400);
+  if (!body.username)
+    return c.json(
+      { error: "field_required", params: { field: "username" } },
+      400,
+    );
 
   const targetUser = await c.env.DB.prepare(
     "SELECT id FROM users WHERE username = ? AND is_active = 1 AND kind = 'user'",
@@ -5242,7 +5248,7 @@ app.post("/me/teams/:id/members", async (c) => {
     .bind(body.username.toLowerCase().trim())
     .first<{ id: string }>();
 
-  if (!targetUser) return c.json({ error: "User not found" }, 404);
+  if (!targetUser) return c.json({ error: "user_not_found" }, 404);
 
   const alreadyMember = await c.env.DB.prepare(
     "SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?",
@@ -5250,8 +5256,7 @@ app.post("/me/teams/:id/members", async (c) => {
     .bind(teamId, targetUser.id)
     .first();
 
-  if (alreadyMember)
-    return c.json({ error: "User is already a team member" }, 409);
+  if (alreadyMember) return c.json({ error: "already_member" }, 409);
 
   // Only owners can add admins
   const role =
@@ -5278,7 +5283,7 @@ app.delete("/me/teams/:id/members/:userId", async (c) => {
   const caller = await getEffectiveMember(c.env.DB, teamId, resolved.userId);
 
   if (!caller || !["owner", "admin"].includes(caller.role))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const target = await c.env.DB.prepare(
     "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
@@ -5286,15 +5291,15 @@ app.delete("/me/teams/:id/members/:userId", async (c) => {
     .bind(teamId, targetUserId)
     .first<{ role: string }>();
 
-  if (!target) return c.json({ error: "Member not found" }, 404);
+  if (!target) return c.json({ error: "member_not_found" }, 404);
 
   // Admins cannot remove owners or other admins
   if (caller.role === "admin" && target.role !== "member")
-    return c.json({ error: "Admins can only remove regular members" }, 403);
+    return c.json({ error: "admin_can_only_remove_members" }, 403);
 
   // Owners cannot remove themselves via this endpoint
   if (targetUserId === resolved.userId && target.role === "owner")
-    return c.json({ error: "Owner cannot remove themselves" }, 403);
+    return c.json({ error: "owner_cannot_leave" }, 403);
 
   await c.env.DB.prepare(
     "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
@@ -5302,7 +5307,7 @@ app.delete("/me/teams/:id/members/:userId", async (c) => {
     .bind(teamId, targetUserId)
     .run();
 
-  return c.json({ message: "Member removed" });
+  return c.json({ ok: true });
 });
 
 // ─── Admin resource endpoints (token owner must have role = 'admin') ─────────
@@ -5382,7 +5387,7 @@ function getUserByScope(requiredScope: string) {
       .bind(c.req.param("id"))
       .first();
 
-    if (!user) return c.json({ error: "User not found" }, 404);
+    if (!user) return c.json({ error: "user_not_found" }, 404);
     return c.json({
       user: await proxyUserAvatar(c.env.APP_URL, c.env.DB, user),
     });
@@ -5429,7 +5434,7 @@ app.patch("/me/admin/users/:id", async (c) => {
     values.push(body.avatar_url ?? null);
   }
 
-  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+  if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
   updates.push("updated_at = ?");
   values.push(now, targetId);
@@ -5457,17 +5462,14 @@ app.delete("/me/admin/users/:id", async (c) => {
   const targetId = c.req.param("id");
 
   if (targetId === resolved.userId)
-    return c.json(
-      { error: "Cannot delete your own account via this endpoint" },
-      403,
-    );
+    return c.json({ error: "cannot_delete_self" }, 403);
 
   const target = await c.env.DB.prepare(
     "SELECT id, username FROM users WHERE id = ?",
   )
     .bind(targetId)
     .first<{ id: string; username: string }>();
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   // This path emitted nothing at all before. Fan out before the delete so
   // the teams the user belonged to are still readable.
@@ -5496,7 +5498,7 @@ app.delete("/me/admin/users/:id", async (c) => {
     c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(targetId),
   ]);
 
-  return c.json({ message: "User deleted" });
+  return c.json({ ok: true });
 });
 
 // GET /api/oauth/me/site/users — list all users (requires site:user:read, token owner must be admin)
@@ -5568,7 +5570,7 @@ app.get("/me/team/:teamId/info", async (c) => {
       created_at: number;
     }>();
 
-  if (!team) return c.json({ error: "Team not found" }, 404);
+  if (!team) return c.json({ error: "team_not_found" }, 404);
   return c.json({
     team: {
       ...team,
@@ -5605,7 +5607,7 @@ app.patch("/me/team/:teamId/info", async (c) => {
     values.push(body.avatar_url ?? null);
   }
 
-  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+  if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
   const now = Math.floor(Date.now() / 1000);
   updates.push("updated_at = ?");
@@ -5635,7 +5637,7 @@ app.get("/me/team/:teamId/members", async (c) => {
   // effectiveTeamRole); demote/kick the grantor and the read right drops.
   const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
   if (!actorRole || !hasRole(actorRole, "member"))
-    return c.json({ error: "actor is no longer a team member" }, 403);
+    return c.json({ error: "actor_not_team_member" }, 403);
 
   const team = await c.env.DB.prepare(
     "SELECT restrict_member_list_for_members FROM teams WHERE id = ?",
@@ -5679,7 +5681,7 @@ app.get("/me/team/:teamId/members/:userId/profile", async (c) => {
 
   const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
   if (!actorRole || !hasRole(actorRole, "member"))
-    return c.json({ error: "actor is no longer a team member" }, 403);
+    return c.json({ error: "actor_not_team_member" }, 403);
 
   const team = await c.env.DB.prepare(
     "SELECT restrict_member_list_for_members FROM teams WHERE id = ?",
@@ -5710,7 +5712,7 @@ app.get("/me/team/:teamId/members/:userId/profile", async (c) => {
       joined_at: number;
     }>();
 
-  if (!row) return c.json({ error: "Member not found" }, 404);
+  if (!row) return c.json({ error: "member_not_found" }, 404);
   return c.json({
     member: {
       ...row,
@@ -5728,7 +5730,11 @@ app.post("/me/team/:teamId/members", async (c) => {
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const body = await c.req.json<{ user_id: string; role?: string }>();
-  if (!body.user_id) return c.json({ error: "user_id is required" }, 400);
+  if (!body.user_id)
+    return c.json(
+      { error: "field_required", params: { field: "user_id" } },
+      400,
+    );
 
   const role = body.role === "admin" ? "admin" : "member";
 
@@ -5738,9 +5744,9 @@ app.post("/me/team/:teamId/members", async (c) => {
   // owner-level rights.
   const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
   if (!actorRole || !hasRole(actorRole, "admin"))
-    return c.json({ error: "actor is no longer a team admin" }, 403);
+    return c.json({ error: "actor_not_team_admin" }, 403);
   if (role === "admin" && !hasRole(actorRole, "owner"))
-    return c.json({ error: "Only the owner can assign admin role" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
 
   const now = Math.floor(Date.now() / 1000);
   const existing = await c.env.DB.prepare(
@@ -5748,7 +5754,7 @@ app.post("/me/team/:teamId/members", async (c) => {
   )
     .bind(teamId, body.user_id)
     .first();
-  if (existing) return c.json({ error: "User is already a member" }, 409);
+  if (existing) return c.json({ error: "already_member" }, 409);
 
   await c.env.DB.prepare(
     "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
@@ -5756,7 +5762,7 @@ app.post("/me/team/:teamId/members", async (c) => {
     .bind(teamId, body.user_id, role, now)
     .run();
 
-  return c.json({ message: "Member added", user_id: body.user_id, role });
+  return c.json({ user_id: body.user_id, role });
 });
 
 // PATCH /api/oauth/me/team/:teamId/members/:userId/role
@@ -5769,25 +5775,25 @@ app.patch("/me/team/:teamId/members/:userId/role", async (c) => {
   const body = await c.req.json<{ role: string }>();
   const allowed = ["member", "admin", "co-owner"];
   if (!allowed.includes(body.role))
-    return c.json({ error: "Invalid role" }, 400);
+    return c.json({ error: "role_invalid" }, 400);
 
   const target = await getMember(c.env.DB, teamId, userId);
-  if (!target) return c.json({ error: "Member not found" }, 404);
+  if (!target) return c.json({ error: "member_not_found" }, 404);
 
   // Mirror the dashboard guards in worker/routes/teams.ts so an app with
   // `team:<id>:member:write` can never escalate beyond what the granting
   // user could do at the dashboard.
   if (target.role === "owner")
-    return c.json({ error: "Cannot change owner role" }, 403);
+    return c.json({ error: "cannot_change_owner_role" }, 403);
   const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
   if (!actorRole || !hasRole(actorRole, "admin"))
-    return c.json({ error: "actor is no longer a team admin" }, 403);
+    return c.json({ error: "actor_not_team_admin" }, 403);
   if (target.role === "co-owner" && actorRole !== "owner")
-    return c.json({ error: "Only the owner can change co-owner roles" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
   if (body.role === "co-owner" && actorRole !== "owner")
-    return c.json({ error: "Only the owner can assign co-owner role" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
   if ((ROLE_RANK[body.role] ?? 0) >= (ROLE_RANK[actorRole] ?? 0))
-    return c.json({ error: "Cannot grant a role at or above your own" }, 403);
+    return c.json({ error: "role_above_own" }, 403);
 
   await c.env.DB.prepare(
     "UPDATE team_members SET role = ? WHERE team_id = ? AND user_id = ?",
@@ -5795,7 +5801,7 @@ app.patch("/me/team/:teamId/members/:userId/role", async (c) => {
     .bind(body.role, teamId, userId)
     .run();
 
-  return c.json({ message: "Role updated", user_id: userId, role: body.role });
+  return c.json({ user_id: userId, role: body.role });
 });
 
 // DELETE /api/oauth/me/team/:teamId/members/:userId
@@ -5806,17 +5812,17 @@ app.delete("/me/team/:teamId/members/:userId", async (c) => {
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const target = await getMember(c.env.DB, teamId, userId);
-  if (!target) return c.json({ error: "Member not found" }, 404);
+  if (!target) return c.json({ error: "member_not_found" }, 404);
 
   // The dashboard refuses to remove the team owner; OAuth must too,
   // otherwise an app with member:write can leave the team ownerless.
   if (target.role === "owner")
-    return c.json({ error: "Cannot remove the team owner" }, 403);
+    return c.json({ error: "cannot_remove_owner" }, 403);
   const actorRole = await effectiveTeamRole(c.env.DB, teamId, resolved);
   if (!actorRole || !hasRole(actorRole, "admin"))
-    return c.json({ error: "actor is no longer a team admin" }, 403);
+    return c.json({ error: "actor_not_team_admin" }, 403);
   if (target.role === "co-owner" && actorRole !== "owner")
-    return c.json({ error: "Only the owner can remove co-owners" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
 
   await c.env.DB.prepare(
     "DELETE FROM team_members WHERE team_id = ? AND user_id = ?",
@@ -5824,7 +5830,7 @@ app.delete("/me/team/:teamId/members/:userId", async (c) => {
     .bind(teamId, userId)
     .run();
 
-  return c.json({ message: "Member removed" });
+  return c.json({ ok: true });
 });
 
 // GET /api/oauth/me/admin/config — read site config (requires admin:config:read)
@@ -5909,7 +5915,7 @@ app.patch("/me/admin/config", async (c) => {
   }
 
   if (Object.keys(updates).length === 0)
-    return c.json({ error: "No updatable fields provided" }, 400);
+    return c.json({ error: "nothing_to_update" }, 400);
 
   const { setConfigValues } = await import("../lib/config");
   await setConfigValues(c.env.DB, updates);

@@ -25,7 +25,7 @@ export function bodySizeLimit(maxBytes: number): MiddlewareHandler {
       )
     ) {
       cancelStream(body, new BodySizeLimitError(maxBytes));
-      return c.json({ error: "Request body too large" }, 413);
+      return c.json({ error: "request_too_large" }, 413);
     }
 
     let exceeded = false;
@@ -41,7 +41,7 @@ export function bodySizeLimit(maxBytes: number): MiddlewareHandler {
     // Route-level JSON/form parsers sometimes translate all body read errors
     // into a 400. Preserve the global size-limit contract in that case.
     if (exceeded) {
-      c.res = c.json({ error: "Request body too large" }, 413);
+      c.res = c.json({ error: "request_too_large" }, 413);
     }
   };
 }

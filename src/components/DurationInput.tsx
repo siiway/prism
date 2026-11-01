@@ -11,6 +11,7 @@
 
 import { Input, Text, tokens } from "@fluentui/react-components";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   formatDuration,
   parseDuration,
@@ -45,6 +46,7 @@ export function DurationInput({
   allowBlank = true,
   id,
 }: DurationInputProps) {
+  const { t } = useTranslation();
   // Local buffer of the displayed text. Synced from `value` only when value
   // changes externally — typing while the field is focused doesn't cause
   // a parent state round-trip on every keystroke.
@@ -70,7 +72,7 @@ export function DurationInput({
         onChange(null);
         setText("");
       } else {
-        setError("Required");
+        setError(t("common.required"));
         // Restore last known good value so the box doesn't go blank.
         setText(value === null ? "" : formatDuration(value, unit));
       }

@@ -200,9 +200,9 @@ app.post("/register", async (c) => {
     300,
     config.ipv6_rate_limit_prefix,
   );
-  if (!rl.allowed) return c.json({ error: "Too many requests" }, 429);
+  if (!rl.allowed) return c.json({ error: "too_many_requests" }, 429);
   if (!config.allow_registration)
-    return c.json({ error: "Registration is disabled" }, 403);
+    return c.json({ error: "registration_disabled" }, 403);
 
   const body = await c.req.json<{
     email: string;
@@ -237,17 +237,20 @@ app.post("/register", async (c) => {
     c.env,
   );
   if (!captchaOk.success)
-    return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
+    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 400);
 
   if (!body.email || !body.username || !body.password)
-    return c.json({ error: "email, username and password are required" }, 400);
-  if (body.password.length < 8)
-    return c.json({ error: "Password must be at least 8 characters" }, 400);
-  if (!/^[a-z0-9_.-]{2,32}$/i.test(body.username))
     return c.json(
-      { error: "Username must be 2-32 alphanumeric characters" },
+      {
+        error: "fields_required",
+        params: { fields: "email, username, password" },
+      },
       400,
     );
+  if (body.password.length < 8)
+    return c.json({ error: "password_too_short" }, 400);
+  if (!/^[a-z0-9_.-]{2,32}$/i.test(body.username))
+    return c.json({ error: "username_invalid" }, 400);
 
   const userId = randomId();
   const passwordHash = await hashPassword(body.password);
@@ -261,7 +264,7 @@ app.post("/register", async (c) => {
   // registrations cannot all pass the earlier check and overrun the cap. The
   // claim is released below if the insert is rejected.
   if (usedInvite && !(await claimSiteInvite(c.env, usedInvite)))
-    return c.json({ error: "Invite token has reached its usage limit" }, 403);
+    return c.json({ error: "invite_used_up" }, 403);
 
   try {
     await c.env.DB.prepare(
@@ -284,7 +287,7 @@ app.post("/register", async (c) => {
     if (usedInvite) await releaseSiteInvite(c.env, usedInvite);
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
-      return c.json({ error: "Email or username already taken" }, 409);
+      return c.json({ error: "email_or_username_taken" }, 409);
     throw err;
   }
 
@@ -303,16 +306,13 @@ app.post("/register", async (c) => {
   }
 
   if (config.require_email_verification) {
-    return c.json(
-      { message: "Registration successful. Please verify your email." },
-      201,
-    );
+    return c.json({ ok: true }, 201);
   }
 
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(userId)
     .first<UserRow>();
-  if (!user) return c.json({ error: "User not found after creation" }, 500);
+  if (!user) return c.json({ error: "user_create_failed" }, 500);
 
   const ttl = config.session_ttl_days * 24 * 60 * 60;
   await issueSession(c, user, ttl, ["pwd"]);
@@ -353,7 +353,7 @@ app.post("/login", async (c) => {
         {},
       ).catch(() => {}),
     );
-    return c.json({ error: "Too many requests" }, 429);
+    return c.json({ error: "too_many_requests" }, 429);
   }
 
   // Captcha is verified before the brute-force limit is *consumed*, so a
@@ -380,7 +380,7 @@ app.post("/login", async (c) => {
         {},
       ).catch(() => {}),
     );
-    return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
+    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 400);
   }
 
   // Brute-force guard: only credential attempts that cleared captcha count
@@ -403,7 +403,7 @@ app.post("/login", async (c) => {
         {},
       ).catch(() => {}),
     );
-    return c.json({ error: "Too many requests" }, 429);
+    return c.json({ error: "too_many_requests" }, 429);
   }
 
   const isEmail = body.identifier.includes("@");
@@ -469,7 +469,7 @@ app.post("/login", async (c) => {
         {},
       ).catch(() => {}),
     );
-    return c.json({ error: "Invalid credentials" }, 401);
+    return c.json({ error: "invalid_credentials" }, 401);
   }
   if (!user.is_active) {
     c.executionCtx.waitUntil(
@@ -483,7 +483,7 @@ app.post("/login", async (c) => {
         { user_id: user.id },
       ).catch(() => {}),
     );
-    return c.json({ error: "Account is disabled" }, 403);
+    return c.json({ error: "account_disabled" }, 403);
   }
 
   const passwordOk = await verifyPassword(body.password, user.password_hash);
@@ -499,7 +499,7 @@ app.post("/login", async (c) => {
         { user_id: user.id },
       ).catch(() => {}),
     );
-    return c.json({ error: "Invalid credentials" }, 401);
+    return c.json({ error: "invalid_credentials" }, 401);
   }
 
   // Check TOTP if any authenticators enabled
@@ -510,7 +510,7 @@ app.post("/login", async (c) => {
     .first<{ n: number }>();
   if ((totpCount?.n ?? 0) > 0) {
     if (!body.totp_code) {
-      return c.json({ error: "TOTP code required", totp_required: true }, 200);
+      return c.json({ error: "totp_required", totp_required: true }, 200);
     }
     const totpRl = await checkLoginTotpLimit(c.env.DB, user.id, loginConfig);
     if (!totpRl.allowed) {
@@ -525,7 +525,7 @@ app.post("/login", async (c) => {
           { user_id: user.id, factor: "totp" },
         ).catch(() => {}),
       );
-      return c.json({ error: "Too many requests" }, 429);
+      return c.json({ error: "too_many_requests" }, 429);
     }
     const ok = await verifyAnyTotp(c.env, user.id, body.totp_code);
     if (!ok) {
@@ -540,7 +540,7 @@ app.post("/login", async (c) => {
           { user_id: user.id },
         ).catch(() => {}),
       );
-      return c.json({ error: "Invalid credentials" }, 401);
+      return c.json({ error: "invalid_credentials" }, 401);
     }
   }
 
@@ -566,7 +566,7 @@ app.post("/logout", requireAuth, async (c) => {
     .bind(sessionId)
     .run();
   clearSessionCookie(c);
-  return c.json({ message: "Logged out" });
+  return c.json({ ok: true });
 });
 
 // ─── Email verification ───────────────────────────────────────────────────────
@@ -644,7 +644,7 @@ app.post("/email-verify-code", requireAuth, async (c) => {
     c.env,
   );
   if (!captchaOk.success)
-    return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);
+    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 403);
 
   const authUser = c.get("user");
 
@@ -657,9 +657,9 @@ app.post("/email-verify-code", requireAuth, async (c) => {
       email_verified: number;
       email_verify_code: string | null;
     }>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
   if (user.email_verified)
-    return c.json({ error: "Email is already verified" }, 400);
+    return c.json({ error: "email_already_verified" }, 400);
 
   // Reuse existing code or generate a new one. Stored value is the
   // keyed hash (or legacy plaintext when SECRETS_KEY is unbound) — but
@@ -716,7 +716,7 @@ app.post("/check-email-verification", requireAuth, async (c) => {
   )
     .bind(authUser.id)
     .first<{ email_verified: number }>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
   if (user.email_verified) return c.json({ verified: true });
 
   // If IMAP, do an on-demand poll to process any pending emails
@@ -766,7 +766,7 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
     c.env,
   );
   if (!captchaOk.success)
-    return c.json({ error: captchaOk.error ?? "Captcha failed" }, 403);
+    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 403);
 
   const authUser = c.get("user");
 
@@ -780,13 +780,13 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
       email_verified: number;
       display_name: string;
     }>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
   if (user.email_verified)
-    return c.json({ error: "Email is already verified" }, 400);
+    return c.json({ error: "email_already_verified" }, 400);
 
   const config = await getConfig(c.env.DB);
   if (config.email_provider === "none")
-    return c.json({ error: "Email sending is not configured" }, 503);
+    return c.json({ error: "email_not_configured" }, 503);
 
   // Generate a fresh token; stored as the keyed hash but emailed as
   // plaintext so the click-through URL is verifiable.
@@ -808,7 +808,7 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
     emailConfigFromSite(config),
   );
 
-  return c.json({ message: "Verification email sent" });
+  return c.json({ ok: true });
 });
 
 // ─── TOTP (multi-authenticator) ───────────────────────────────────────────────
@@ -866,12 +866,12 @@ app.post("/totp/verify", requireAuth, async (c) => {
   )
     .bind(body.id, user.id)
     .first<TotpAuthenticatorRow>();
-  if (!auth) return c.json({ error: "Authenticator not found" }, 404);
-  if (auth.enabled) return c.json({ error: "Already enabled" }, 409);
+  if (!auth) return c.json({ error: "authenticator_not_found" }, 404);
+  if (auth.enabled) return c.json({ error: "already_enabled" }, 409);
 
   const plainSecret = (await decryptSecret(c.env, auth.secret)) ?? auth.secret;
   const counter = await matchTotpCounter(body.code, plainSecret);
-  if (counter === null) return c.json({ error: "Invalid TOTP code" }, 400);
+  if (counter === null) return c.json({ error: "totp_invalid" }, 400);
 
   // Retire the enrolment code before enabling anything - otherwise a failure
   // between the two leaves 2FA on with the code the user just typed still live
@@ -904,7 +904,7 @@ app.post("/totp/verify", requireAuth, async (c) => {
   )
     .bind(user.id)
     .first<{ user_id: string }>();
-  if (existing) return c.json({ message: "Authenticator enabled" });
+  if (existing) return c.json({ ok: true });
 
   const backupCodes = generateBackupCodes();
   const hashedCodes = await hashBackupCodes(backupCodes);
@@ -915,7 +915,6 @@ app.post("/totp/verify", requireAuth, async (c) => {
     .bind(user.id, JSON.stringify(hashedCodes), now)
     .run();
   return c.json({
-    message: "Authenticator enabled",
     backup_codes: backupCodes,
   });
 });
@@ -930,10 +929,10 @@ app.delete("/totp/:id", requireAuth, async (c) => {
   )
     .bind(id, user.id)
     .first<{ id: string; name: string }>();
-  if (!auth) return c.json({ error: "Authenticator not found" }, 404);
+  if (!auth) return c.json({ error: "authenticator_not_found" }, 404);
 
   const ok = await verifyAnyTotp(c.env, user.id, body.code);
-  if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
+  if (!ok) return c.json({ error: "totp_invalid" }, 400);
 
   // Would removing this authenticator leave the user with no 2FA?
   // Compute hypothetical post-delete state and reject the change if a team
@@ -957,8 +956,7 @@ app.delete("/totp/:id", requireAuth, async (c) => {
     if (blockers.length) {
       return c.json(
         {
-          error:
-            "Cannot remove your last 2FA factor while you're a member of a team that requires 2FA",
+          error: "team_requires_2fa",
           teams: blockers,
         },
         409,
@@ -1000,7 +998,7 @@ app.delete("/totp/:id", requireAuth, async (c) => {
     ).catch(() => {}),
   );
 
-  return c.json({ message: "Authenticator removed" });
+  return c.json({ ok: true });
 });
 
 app.post("/totp/backup-codes", requireAuth, async (c) => {
@@ -1012,11 +1010,10 @@ app.post("/totp/backup-codes", requireAuth, async (c) => {
   )
     .bind(user.id)
     .first<{ n: number }>();
-  if ((count?.n ?? 0) === 0)
-    return c.json({ error: "No TOTP authenticators enabled" }, 400);
+  if ((count?.n ?? 0) === 0) return c.json({ error: "no_totp" }, 400);
 
   const ok = await verifyAnyTotp(c.env, user.id, body.code);
-  if (!ok) return c.json({ error: "Invalid TOTP code" }, 400);
+  if (!ok) return c.json({ error: "totp_invalid" }, 400);
 
   const backupCodes = generateBackupCodes();
   const hashedCodes = await hashBackupCodes(backupCodes);
@@ -1065,7 +1062,7 @@ app.post("/passkey/register/finish", requireAuth, async (c) => {
   const origin = c.env.APP_URL;
 
   const stored = await c.env.KV_CACHE.get(`passkey:reg:${user.id}`);
-  if (!stored) return c.json({ error: "Registration session expired" }, 400);
+  if (!stored) return c.json({ error: "registration_session_expired" }, 400);
 
   const options = JSON.parse(stored) as { challenge: string };
   const body = await c.req.json<{
@@ -1082,11 +1079,13 @@ app.post("/passkey/register/finish", requireAuth, async (c) => {
       origin,
     );
   } catch (err) {
-    return c.json({ error: `Registration failed: ${String(err)}` }, 400);
+    // The library's reason is for operators, not the person signing in.
+    console.warn("[passkey] registration failed:", err);
+    return c.json({ error: "passkey_registration_failed" }, 400);
   }
 
   if (!verification.verified || !verification.registrationInfo) {
-    return c.json({ error: "Verification failed" }, 400);
+    return c.json({ error: "verification_failed" }, 400);
   }
 
   await c.env.KV_CACHE.delete(`passkey:reg:${user.id}`);
@@ -1134,7 +1133,7 @@ app.post("/passkey/register/finish", requireAuth, async (c) => {
     ).catch(() => {}),
   );
 
-  return c.json({ message: "Passkey registered", id: passkeyId });
+  return c.json({ id: passkeyId });
 });
 
 // ─── Passkey authentication ──────────────────────────────────────────────────
@@ -1183,10 +1182,14 @@ app.post("/passkey/auth/finish", async (c) => {
   const origin = c.env.APP_URL;
 
   const body = await c.req.json<{ challenge?: string; response?: unknown }>();
-  if (!body.challenge) return c.json({ error: "challenge required" }, 400);
+  if (!body.challenge)
+    return c.json(
+      { error: "field_required", params: { field: "challenge" } },
+      400,
+    );
 
   const stored = await c.env.KV_CACHE.get(`passkey:auth:${body.challenge}`);
-  if (!stored) return c.json({ error: "Authentication session expired" }, 400);
+  if (!stored) return c.json({ error: "auth_session_expired" }, 400);
 
   // Spend the challenge up front rather than on success only: a failed
   // attempt otherwise leaves it usable for the rest of its TTL.
@@ -1196,14 +1199,14 @@ app.post("/passkey/auth/finish", async (c) => {
 
   // Find passkey by credential id
   const response = body.response as { id?: string };
-  if (!response?.id) return c.json({ error: "Invalid response" }, 400);
+  if (!response?.id) return c.json({ error: "invalid_response" }, 400);
 
   const passkeyRow = await c.env.DB.prepare(
     "SELECT * FROM passkeys WHERE credential_id = ?",
   )
     .bind(response.id)
     .first<PasskeyRow>();
-  if (!passkeyRow) return c.json({ error: "Passkey not found" }, 400);
+  if (!passkeyRow) return c.json({ error: "passkey_not_found" }, 400);
 
   let verification;
   try {
@@ -1215,11 +1218,12 @@ app.post("/passkey/auth/finish", async (c) => {
       origin,
     );
   } catch (err) {
-    return c.json({ error: `Authentication failed: ${String(err)}` }, 400);
+    console.warn("[passkey] authentication failed:", err);
+    return c.json({ error: "passkey_auth_failed" }, 400);
   }
 
   if (!verification.verified)
-    return c.json({ error: "Verification failed" }, 400);
+    return c.json({ error: "verification_failed" }, 400);
 
   // Update counter
   const now = Math.floor(Date.now() / 1000);
@@ -1233,7 +1237,7 @@ app.post("/passkey/auth/finish", async (c) => {
     .bind(passkeyRow.user_id)
     .first<UserRow>();
   if (!user || !user.is_active)
-    return c.json({ error: "Account not found or disabled" }, 400);
+    return c.json({ error: "account_not_found_or_disabled" }, 400);
 
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
@@ -1259,7 +1263,7 @@ app.post("/passkey/verify/begin", requireAuth, async (c) => {
     .all<PasskeyRow>();
 
   if (rows.results.length === 0) {
-    return c.json({ error: "No passkeys registered for this account" }, 400);
+    return c.json({ error: "no_passkeys" }, 400);
   }
 
   const options = await beginPasskeyAuthentication(
@@ -1282,23 +1286,27 @@ app.post("/passkey/verify/finish", requireAuth, async (c) => {
   const origin = c.env.APP_URL;
 
   const body = await c.req.json<{ challenge?: string; response?: unknown }>();
-  if (!body.challenge) return c.json({ error: "challenge required" }, 400);
+  if (!body.challenge)
+    return c.json(
+      { error: "field_required", params: { field: "challenge" } },
+      400,
+    );
 
   const challengeKey = `passkey:verify:${body.challenge}:${user.id}`;
   const stored = await c.env.KV_CACHE.get(challengeKey);
-  if (!stored) return c.json({ error: "Verification session expired" }, 400);
+  if (!stored) return c.json({ error: "session_invalid" }, 400);
 
   const options = JSON.parse(stored) as { challenge: string };
 
   const response = body.response as { id?: string };
-  if (!response?.id) return c.json({ error: "Invalid response" }, 400);
+  if (!response?.id) return c.json({ error: "invalid_response" }, 400);
 
   const passkeyRow = await c.env.DB.prepare(
     "SELECT * FROM passkeys WHERE credential_id = ? AND user_id = ?",
   )
     .bind(response.id, user.id)
     .first<PasskeyRow>();
-  if (!passkeyRow) return c.json({ error: "Passkey not found" }, 400);
+  if (!passkeyRow) return c.json({ error: "passkey_not_found" }, 400);
 
   let verification;
   try {
@@ -1310,11 +1318,12 @@ app.post("/passkey/verify/finish", requireAuth, async (c) => {
       origin,
     );
   } catch (err) {
-    return c.json({ error: `Verification failed: ${String(err)}` }, 400);
+    console.warn("[passkey] verification failed:", err);
+    return c.json({ error: "verification_failed" }, 400);
   }
 
   if (!verification.verified)
-    return c.json({ error: "Verification failed" }, 400);
+    return c.json({ error: "verification_failed" }, 400);
 
   await c.env.KV_CACHE.delete(challengeKey);
 
@@ -1368,7 +1377,7 @@ app.delete("/passkeys/:id", requireAuth, async (c) => {
   )
     .bind(id, user.id)
     .first<{ name: string }>();
-  if (!row) return c.json({ error: "Passkey not found" }, 404);
+  if (!row) return c.json({ error: "passkey_not_found" }, 404);
 
   const otherPasskey = await c.env.DB.prepare(
     "SELECT 1 AS x FROM passkeys WHERE user_id = ? AND id != ? LIMIT 1",
@@ -1389,8 +1398,7 @@ app.delete("/passkeys/:id", requireAuth, async (c) => {
     if (blockers.length) {
       return c.json(
         {
-          error:
-            "Cannot remove your last 2FA factor while you're a member of a team that requires 2FA",
+          error: "team_requires_2fa",
           teams: blockers,
         },
         409,
@@ -1413,7 +1421,7 @@ app.delete("/passkeys/:id", requireAuth, async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ message: "Passkey deleted" });
+  return c.json({ ok: true });
 });
 
 // ─── PoW challenge ───────────────────────────────────────────────────────────
@@ -1441,7 +1449,7 @@ app.post("/cap/challenge", async (c) => {
     !config.captcha_providers.includes("cap") ||
     config.cap_mode !== "embedded"
   ) {
-    return c.json({ error: "Cap not enabled" }, 404);
+    return c.json({ error: "captcha_provider_disabled" }, 404);
   }
   const challenge = await issueCapChallenge(c.env, {
     challengeCount: config.cap_challenge_count,
@@ -1457,7 +1465,7 @@ app.post("/cap/redeem", async (c) => {
     !config.captcha_providers.includes("cap") ||
     config.cap_mode !== "embedded"
   ) {
-    return c.json({ error: "Cap not enabled" }, 404);
+    return c.json({ error: "captcha_provider_disabled" }, 404);
   }
   const body = await c.req.json<{
     token?: string;
@@ -1526,7 +1534,7 @@ app.get("/sessions/:id/ips", requireAuth, async (c) => {
   )
     .bind(id, user.id)
     .first();
-  if (!owns) return c.json({ error: "Not found" }, 404);
+  if (!owns) return c.json({ error: "not_found" }, 404);
   const ips = await c.env.DB.prepare(
     `SELECT ip_address, geo, first_seen, last_seen
        FROM session_ips
@@ -1550,7 +1558,6 @@ app.delete("/sessions", requireAuth, async (c) => {
     .bind(user.id, currentSessionId ?? "")
     .run();
   return c.json({
-    message: "Other sessions revoked",
     revoked: result.meta.changes ?? 0,
   });
 });
@@ -1561,7 +1568,7 @@ app.delete("/sessions/:id", requireAuth, async (c) => {
   await c.env.DB.prepare("DELETE FROM sessions WHERE id = ? AND user_id = ?")
     .bind(id, user.id)
     .run();
-  return c.json({ message: "Session revoked" });
+  return c.json({ ok: true });
 });
 
 // ─── GPG login ───────────────────────────────────────────────────────────────
@@ -1579,10 +1586,13 @@ app.post("/gpg-challenge", async (c) => {
     60,
     ipv6_rate_limit_prefix,
   );
-  if (!rl.allowed) return c.json({ error: "Too many requests" }, 429);
+  if (!rl.allowed) return c.json({ error: "too_many_requests" }, 429);
   const body = await c.req.json<{ identifier: string }>();
   if (!body.identifier?.trim())
-    return c.json({ error: "identifier is required" }, 400);
+    return c.json(
+      { error: "field_required", params: { field: "identifier" } },
+      400,
+    );
 
   const identifier = body.identifier.toLowerCase().trim();
   const isEmail = identifier.includes("@");
@@ -1629,14 +1639,20 @@ app.post("/gpg-login", async (c) => {
     60,
     gpgLoginConfig.ipv6_rate_limit_prefix,
   );
-  if (!rl2.allowed) return c.json({ error: "Too many requests" }, 429);
+  if (!rl2.allowed) return c.json({ error: "too_many_requests" }, 429);
   const body = await c.req.json<{
     identifier: string;
     signed_message: string;
     totp_code?: string;
   }>();
   if (!body.identifier?.trim() || !body.signed_message?.trim())
-    return c.json({ error: "identifier and signed_message are required" }, 400);
+    return c.json(
+      {
+        error: "fields_required",
+        params: { fields: "identifier, signed_message" },
+      },
+      400,
+    );
 
   const ip = getIp(c);
   const ua = c.req.header("User-Agent") ?? null;
@@ -1665,7 +1681,7 @@ app.post("/gpg-login", async (c) => {
         {},
       ).catch(() => {}),
     );
-    return c.json({ error: "Invalid credentials" }, 401);
+    return c.json({ error: "invalid_credentials" }, 401);
   }
 
   // Load the user's GPG keys
@@ -1689,7 +1705,7 @@ app.post("/gpg-login", async (c) => {
         },
       ).catch(() => {}),
     );
-    return c.json({ error: "No GPG keys registered" }, 401);
+    return c.json({ error: "no_gpg_keys" }, 401);
   }
 
   // Verify the clearsign signature
@@ -1711,7 +1727,7 @@ app.post("/gpg-login", async (c) => {
         { user_id: user.id },
       ).catch(() => {}),
     );
-    return c.json({ error: "Invalid signature" }, 401);
+    return c.json({ error: "signature_invalid" }, 401);
   }
 
   if (!verifyResult.valid) {
@@ -1726,7 +1742,7 @@ app.post("/gpg-login", async (c) => {
         { user_id: user.id },
       ).catch(() => {}),
     );
-    return c.json({ error: "Invalid signature" }, 401);
+    return c.json({ error: "signature_invalid" }, 401);
   }
 
   // Extract and validate the challenge from the signed text
@@ -1734,7 +1750,7 @@ app.post("/gpg-login", async (c) => {
     /\nChallenge:\s*([a-f0-9]+)/,
   );
   if (!challengeMatch) {
-    return c.json({ error: "Invalid signed message format" }, 401);
+    return c.json({ error: "signed_message_invalid" }, 401);
   }
   const challenge = challengeMatch[1];
 
@@ -1752,7 +1768,7 @@ app.post("/gpg-login", async (c) => {
         { user_id: user.id },
       ).catch(() => {}),
     );
-    return c.json({ error: "Challenge expired or invalid" }, 401);
+    return c.json({ error: "challenge_expired" }, 401);
   }
 
   // Same 2FA gate the password flow applies. A GPG key is a possession
@@ -1772,7 +1788,7 @@ app.post("/gpg-login", async (c) => {
     .first<{ n: number }>();
   if ((gpgTotpCount?.n ?? 0) > 0 && user.gpg_require_2fa !== 0) {
     if (!body.totp_code)
-      return c.json({ error: "TOTP code required", totp_required: true }, 200);
+      return c.json({ error: "totp_required", totp_required: true }, 200);
     if (!(await verifyAnyTotp(c.env, user.id, body.totp_code))) {
       c.executionCtx.waitUntil(
         logLoginError(
@@ -1785,7 +1801,7 @@ app.post("/gpg-login", async (c) => {
           { user_id: user.id },
         ).catch(() => {}),
       );
-      return c.json({ error: "Invalid TOTP code" }, 401);
+      return c.json({ error: "totp_invalid" }, 401);
     }
   }
 

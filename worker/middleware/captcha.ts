@@ -49,12 +49,12 @@ export function extractCaptchaSubmission(body: unknown): CaptchaSubmission {
   };
 }
 
-const POW_ERROR_MESSAGES: Record<string, string> = {
-  malformed: "PoW challenge is malformed",
-  bad_signature: "PoW challenge was not issued by this server",
-  expired: "PoW challenge expired — request a new one",
-  replayed: "PoW challenge already used",
-  wrong_difficulty: "Invalid PoW solution",
+const POW_ERRORS: Record<string, string> = {
+  malformed: "pow_malformed",
+  bad_signature: "pow_bad_signature",
+  expired: "pow_expired",
+  replayed: "pow_replayed",
+  wrong_difficulty: "pow_invalid",
 };
 
 async function verifyTurnstile(
@@ -150,7 +150,7 @@ export async function verifyCaptchaToken(
 
   // A declared provider outside the enabled set is a hard failure.
   if (declared && !enabled.includes(declared)) {
-    return { success: false, error: "Captcha provider not enabled" };
+    return { success: false, error: "captcha_provider_disabled" };
   }
 
   // Decrypt an at-rest secret; no-op when SECRETS_KEY isn't bound or the value
@@ -160,10 +160,9 @@ export async function verifyCaptchaToken(
 
   switch (provider) {
     case "pow": {
-      if (!env)
-        return { success: false, error: "PoW verification unavailable" };
+      if (!env) return { success: false, error: "captcha_unavailable" };
       if (!submission.pow_challenge || submission.pow_nonce === undefined) {
-        return { success: false, error: "PoW solution required" };
+        return { success: false, error: "captcha_required" };
       }
       const result = await verifyPowChallenge(
         env,
@@ -175,15 +174,14 @@ export async function verifyCaptchaToken(
         ? { success: true }
         : {
             success: false,
-            error: POW_ERROR_MESSAGES[result.reason] ?? "Invalid PoW solution",
+            error: POW_ERRORS[result.reason] ?? "pow_invalid",
           };
     }
 
     case "cap": {
-      if (!env)
-        return { success: false, error: "Cap verification unavailable" };
+      if (!env) return { success: false, error: "captcha_unavailable" };
       if (!submission.cap_token) {
-        return { success: false, error: "Cap token required" };
+        return { success: false, error: "captcha_required" };
       }
       const ok = await verifyCapToken(
         env,
@@ -197,12 +195,12 @@ export async function verifyCaptchaToken(
       );
       return ok
         ? { success: true }
-        : { success: false, error: "Captcha failed" };
+        : { success: false, error: "captcha_failed" };
     }
 
     case "geetest": {
       if (!submission.geetest) {
-        return { success: false, error: "Captcha token required" };
+        return { success: false, error: "captcha_required" };
       }
       const ok = await verifyGeetest(
         submission.geetest,
@@ -212,12 +210,12 @@ export async function verifyCaptchaToken(
       );
       return ok
         ? { success: true }
-        : { success: false, error: "Captcha failed" };
+        : { success: false, error: "captcha_failed" };
     }
 
     case "turnstile": {
       if (!submission.captcha_token) {
-        return { success: false, error: "Captcha token required" };
+        return { success: false, error: "captcha_required" };
       }
       // Two Turnstile widgets can be configured — the global one and a
       // region:"china" one for visitors on challenges.cloudflare-cn.com — and a
@@ -238,7 +236,7 @@ export async function verifyCaptchaToken(
 
     case "hcaptcha": {
       if (!submission.captcha_token) {
-        return { success: false, error: "Captcha token required" };
+        return { success: false, error: "captcha_required" };
       }
       return verifyHCaptcha(
         submission.captcha_token,
@@ -249,7 +247,7 @@ export async function verifyCaptchaToken(
 
     case "recaptcha": {
       if (!submission.captcha_token) {
-        return { success: false, error: "Captcha token required" };
+        return { success: false, error: "captcha_required" };
       }
       return verifyRecaptcha(
         submission.captcha_token,

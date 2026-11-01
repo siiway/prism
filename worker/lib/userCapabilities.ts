@@ -190,7 +190,7 @@ export async function checkUserCapability(
  * One-liner for route handlers: load the account's restriction state and
  * check a capability in a single call.
  *
- * Returns an error message when refused, or null when allowed. Handlers can
+ * Returns an error code when refused, or null when allowed. Handlers can
  * write `const err = await guardCapability(db, user.id, "app:create"); if
  * (err) return c.json({ error: err }, 403);` — short enough that adding the
  * check to a new endpoint is never the inconvenient option.
@@ -206,11 +206,10 @@ export async function guardCapability(
   return denial ? denialMessage(denial) : null;
 }
 
-/** Human-facing message for a denial. */
+/** The error code for a denial. */
 export function denialMessage(denial: CapabilityDenial): string {
-  if (denial.reason === "pending_join")
-    return "Finish joining your team before using this feature";
-  return "This feature is not available to accounts registered through a team invite";
+  if (denial.reason === "pending_join") return "restricted_pending_join";
+  return "restricted_feature";
 }
 
 // ─── Scope guards ────────────────────────────────────────────────────────────
@@ -252,7 +251,7 @@ export async function isWithinOriginSubtree(
 
 /**
  * Gate for "may this account join / be added to this team?".
- * Returns null when allowed, or an error message.
+ * Returns null when allowed, or an error code.
  */
 export async function checkTeamJoinAllowed(
   db: D1Database,
@@ -268,7 +267,7 @@ export async function checkTeamJoinAllowed(
     maxDepth,
   );
   if (inside) return null;
-  return "Accounts registered through a team invite can only join their own team";
+  return "restricted_join_own_team";
 }
 
 /**
@@ -284,8 +283,7 @@ export async function checkAppAuthorizationAllowed(
   app: { team_id: string | null; owner_id: string },
 ): Promise<string | null> {
   if (!isRestricted(user)) return null;
-  if (isPendingJoin(user))
-    return "Finish joining your team before signing in to applications";
+  if (isPendingJoin(user)) return "restricted_pending_join_apps";
 
   // Team ownership is recorded two ways depending on how the app was made:
   // `team_id`, or an `owner_id` pointing at the team-shaped user row whose id
@@ -299,7 +297,7 @@ export async function checkAppAuthorizationAllowed(
     maxDepth,
   );
   if (inside) return null;
-  return "Accounts registered through a team invite can only sign in to their own team's applications";
+  return "restricted_team_apps_only";
 }
 
 // ─── Team-side protections ───────────────────────────────────────────────────

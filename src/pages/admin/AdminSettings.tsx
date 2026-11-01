@@ -387,8 +387,8 @@ export function AdminSettings() {
   const handleTestEmail = async () => {
     setTestingEmail(true);
     try {
-      const result = await api.adminTestEmail();
-      showMsg("success", result.message);
+      await api.adminTestEmail();
+      showMsg("success", t("admin.testEmailSentDone"));
     } catch (err) {
       showMsg(
         "error",
@@ -403,7 +403,10 @@ export function AdminSettings() {
     setTestingEmailReceiving(true);
     try {
       const result = await api.adminTestEmailReceiving();
-      showMsg("success", result.message);
+      showMsg(
+        "success",
+        t("admin.testEmailSentToDone", { address: result.address }),
+      );
     } catch (err) {
       showMsg(
         "error",
@@ -1307,7 +1310,7 @@ export function AdminSettings() {
               <PasswordInput
                 value={String(get("github_readme_token") ?? "")}
                 disabled={!(get("enable_public_profiles") ?? true)}
-                placeholder="ghp_… (optional)"
+                placeholder={t("admin.githubReadmeTokenPlaceholder")}
                 onChange={(_, d) => set("github_readme_token", d.value)}
               />
             </Field>
@@ -2188,7 +2191,7 @@ export function AdminSettings() {
                 value={get("custom_css") ?? ""}
                 onChange={(e) => set("custom_css", e.target.value)}
                 rows={8}
-                placeholder=":root { /* custom styles */ }"
+                placeholder={t("admin.customCssPlaceholder")}
               />
             </Field>
           </div>

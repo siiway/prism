@@ -33,6 +33,7 @@ import {
 } from "../../../components/Settings";
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import type { UserTabProps } from "./types";
+import { clientI18n } from "../../../i18n/init";
 
 const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
@@ -45,8 +46,9 @@ const useStyles = makeStyles({
   danger: { color: tokens.colorPaletteRedForeground1 },
 });
 
+// Event handlers only, so the browser's i18n instance is the right one.
 const fail = (err: unknown) =>
-  err instanceof ApiError ? err.message : String(err);
+  err instanceof ApiError ? err.message : clientI18n.t("common.error");
 
 // ─── Account: role and status ────────────────────────────────────────────────
 
@@ -234,9 +236,9 @@ function RestrictionCard({ userId, user, showMsg, confirm }: UserTabProps) {
     if (!ok) return;
     setBusy(true);
     try {
-      const res = await api.adminConvertUser(userId, !waiveEmail);
+      await api.adminConvertUser(userId, !waiveEmail);
       await qc.invalidateQueries({ queryKey: ["admin-user", userId] });
-      showMsg("success", res.message);
+      showMsg("success", t("admin.restrictionLiftedDone"));
     } catch (err) {
       showMsg("error", fail(err));
     } finally {
@@ -311,16 +313,17 @@ function SecurityCard({ userId, showMsg, confirm }: UserTabProps) {
 
   const run = async (
     key: string,
-    action: () => Promise<{ message: string }>,
+    action: () => Promise<unknown>,
+    done: string,
   ) => {
     if (busy) return false;
     setBusy(key);
     try {
-      const res = await action();
+      await action();
       await qc.invalidateQueries({
         queryKey: ["admin-user-security", userId],
       });
-      showMsg("success", res.message);
+      showMsg("success", done);
       return true;
     } catch (err) {
       showMsg("error", fail(err));
@@ -351,8 +354,10 @@ function SecurityCard({ userId, showMsg, confirm }: UserTabProps) {
   ];
 
   const savePassword = async () => {
-    const ok = await run("password", () =>
-      api.adminSetUserPassword(userId, password, { revokeSessions }),
+    const ok = await run(
+      "password",
+      () => api.adminSetUserPassword(userId, password, { revokeSessions }),
+      password ? t("admin.passwordSetDone") : t("admin.passwordClearedDone"),
     );
     if (ok) {
       setSettingPassword(false);
@@ -366,7 +371,12 @@ function SecurityCard({ userId, showMsg, confirm }: UserTabProps) {
       body: t("admin.reset2faBody"),
       confirmLabel: t("admin.reset2fa"),
     });
-    if (ok) await run("reset", () => api.adminReset2fa(userId));
+    if (ok)
+      await run(
+        "reset",
+        () => api.adminReset2fa(userId),
+        t("admin.twoFactorResetDone"),
+      );
   };
 
   const removeFactor = async (f: (typeof factors)[number]) => {
@@ -379,10 +389,13 @@ function SecurityCard({ userId, showMsg, confirm }: UserTabProps) {
       confirmLabel: t("common.remove"),
     });
     if (!ok) return;
-    await run(`factor:${f.id}`, () =>
-      f.kind === "totp"
-        ? api.adminDeleteUserTotp(userId, f.id)
-        : api.adminDeleteUserPasskey(userId, f.id),
+    await run(
+      `factor:${f.id}`,
+      () =>
+        f.kind === "totp"
+          ? api.adminDeleteUserTotp(userId, f.id)
+          : api.adminDeleteUserPasskey(userId, f.id),
+      t("common.removedDone"),
     );
   };
 
@@ -523,15 +536,16 @@ function EmailsCard({ userId, showMsg, confirm }: UserTabProps) {
 
   const run = async (
     key: string,
-    action: () => Promise<{ message: string }>,
+    action: () => Promise<unknown>,
+    done: string,
   ) => {
     if (busy) return;
     setBusy(key);
     try {
-      const res = await action();
+      await action();
       await qc.invalidateQueries({ queryKey: ["admin-user-emails", userId] });
       await qc.invalidateQueries({ queryKey: ["admin-user", userId] });
-      showMsg("success", res.message);
+      showMsg("success", done);
     } catch (err) {
       showMsg("error", fail(err));
     } finally {
@@ -551,8 +565,10 @@ function EmailsCard({ userId, showMsg, confirm }: UserTabProps) {
       confirmLabel: t("common.remove"),
     });
     if (ok)
-      await run(`remove:${row.id}`, () =>
-        api.adminRemoveUserEmail(userId, row.id),
+      await run(
+        `remove:${row.id}`,
+        () => api.adminRemoveUserEmail(userId, row.id),
+        t("common.removedDone"),
       );
   };
 
@@ -593,8 +609,10 @@ function EmailsCard({ userId, showMsg, confirm }: UserTabProps) {
                 size="small"
                 disabled={busy !== null}
                 onClick={() =>
-                  void run(`verify:${row.id}`, () =>
-                    api.adminVerifyUserEmail(userId, row.id),
+                  void run(
+                    `verify:${row.id}`,
+                    () => api.adminVerifyUserEmail(userId, row.id),
+                    t("admin.emailVerifiedDone"),
                   )
                 }
               >
@@ -607,8 +625,10 @@ function EmailsCard({ userId, showMsg, confirm }: UserTabProps) {
                   size="small"
                   disabled={busy !== null}
                   onClick={() =>
-                    void run(`primary:${row.id}`, () =>
-                      api.adminSetPrimaryUserEmail(userId, row.id),
+                    void run(
+                      `primary:${row.id}`,
+                      () => api.adminSetPrimaryUserEmail(userId, row.id),
+                      t("admin.primaryEmailDone"),
                     )
                   }
                 >

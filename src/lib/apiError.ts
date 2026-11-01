@@ -1,32 +1,18 @@
 // Turning an API failure into text for the person on the page.
 //
-// Endpoints answer with a stable code in `error` (e.g. "scope_grant_not_found")
-// and the UI translates it from `apiErrors.<code>`. Some older endpoints
-// still answer with an English sentence; until they move to codes, that
-// sentence is shown as it is, which is no worse than before.
+// The API answers with a stable code (e.g. "scope_grant_not_found") and the
+// client translates it from apiErrors.<code> when the request fails, so an
+// ApiError's message is already in the reader's language.
 
-import type { TFunction } from "i18next";
 import { ApiError } from "./api";
 
-const CODE = /^[a-z][a-z0-9_]*$/;
-
-/** The error code, when the API sent one rather than a sentence. */
+/** The error code, or null for something that isn't an API failure. */
 export function apiErrorCode(err: unknown): string | null {
-  return err instanceof ApiError && CODE.test(err.message) ? err.message : null;
+  return err instanceof ApiError ? err.code : null;
 }
 
-/** Text for a failed request: the translation of its code, the server's own
- *  sentence for endpoints that don't send codes yet, or `fallback`. */
-export function apiErrorText(
-  t: TFunction,
-  err: unknown,
-  fallback: string,
-): string {
-  const code = apiErrorCode(err);
-  if (code) {
-    const text = t(`apiErrors.${code}`, { defaultValue: "" });
-    return text || fallback;
-  }
-  if (err instanceof ApiError && err.message) return err.message;
-  return fallback;
+/** Text for a failed request: the API error, translated, or `fallback` for
+ *  anything else (a network failure, a bug). */
+export function apiErrorText(err: unknown, fallback: string): string {
+  return err instanceof ApiError ? err.message : fallback;
 }

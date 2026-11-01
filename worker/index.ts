@@ -104,7 +104,7 @@ app.route("/", publicRoutes);
 
 app.notFound(async (c) => {
   if (c.req.path.startsWith("/api/"))
-    return c.json({ error: "Not found" }, 404);
+    return c.json({ error: "not_found" }, 404);
   if (c.req.path.startsWith("/.well-known/"))
     return new Response(null, { status: 404 });
   // Anything that wasn't an API route and didn't match a static asset is a
@@ -117,10 +117,10 @@ app.notFound(async (c) => {
 
 app.onError((err, c) => {
   if (err instanceof BodySizeLimitError) {
-    return c.json({ error: "Request body too large" }, 413);
+    return c.json({ error: "request_too_large" }, 413);
   }
   console.error(err);
-  return c.json({ error: "Internal server error" }, 500);
+  return c.json({ error: "internal_error" }, 500);
 });
 
 export default {

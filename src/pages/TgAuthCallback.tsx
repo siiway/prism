@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
+import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
@@ -22,6 +23,7 @@ const useStyles = makeStyles({
 export function TgAuthCallback() {
   const api = useApi();
   const styles = useStyles();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const { setAuth } = useAuthStore();
@@ -85,9 +87,7 @@ export function TgAuthCallback() {
       })
       .catch((err) => {
         const code =
-          err instanceof ApiError
-            ? err.message.toLowerCase().replace(/\s+/g, "_")
-            : "token_exchange_failed";
+          err instanceof ApiError ? err.code : "token_exchange_failed";
         navigate(`/login?error=${code}`, { replace: true });
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount with the current params
@@ -97,7 +97,7 @@ export function TgAuthCallback() {
     <div className={styles.page}>
       <Spinner size="large" />
       <Text style={{ color: tokens.colorNeutralForeground3 }}>
-        Verifying Telegram login…
+        {t("auth.tgVerifying")}
       </Text>
     </div>
   );

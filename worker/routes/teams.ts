@@ -76,6 +76,7 @@ import {
   isInviteEnabled,
   validateInviteMaxUses,
 } from "../lib/inviteManagement";
+import type { CodedError } from "../lib/apiError";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -433,22 +434,22 @@ export async function isInvalidReparent(
   db: D1Database,
   teamId: string,
   newParentId: string | null,
-): Promise<string | null> {
+): Promise<CodedError | null> {
   if (!newParentId) return null;
-  if (newParentId === teamId) return "A team cannot be its own parent";
+  if (newParentId === teamId) return { error: "team_parent_self" };
 
   const maxDepth = await getMaxTeamDepth(db);
   const parentAncestors = await getTeamAncestors(db, newParentId);
-  if (!parentAncestors.length) return "Parent team not found";
+  if (!parentAncestors.length) return { error: "parent_team_not_found" };
   if (parentAncestors.some((a) => a.id === teamId))
-    return "Cannot move a team under one of its own descendants (cycle)";
+    return { error: "team_parent_cycle" };
   if (parentAncestors.length >= maxDepth)
-    return `Team nesting limit (${maxDepth}) reached`;
+    return { error: "team_depth_limit", params: { max: maxDepth } };
 
   // Need to also bound the subtree depth: parent depth + subtree depth ≤ MAX
   const subtreeDepth = await maxSubtreeDepth(db, teamId);
   if (parentAncestors.length + subtreeDepth > maxDepth)
-    return `Team nesting limit (${maxDepth}) would be exceeded`;
+    return { error: "team_depth_limit", params: { max: maxDepth } };
   return null;
 }
 
@@ -679,17 +680,16 @@ app.get("/join/:token", optionalAuth, async (c) => {
   const now = Math.floor(Date.now() / 1000);
 
   const tokenLookup = await hashLookupCandidate(c.env, token);
-  if (!tokenLookup)
-    return c.json({ error: "Invite not found or expired" }, 404);
+  if (!tokenLookup) return c.json({ error: "invite_invalid_or_expired" }, 404);
   const invite = await c.env.DB.prepare(
     "SELECT * FROM team_invites WHERE (token = ? OR token = ?) AND expires_at > ? AND enabled = 1",
   )
     .bind(token, tokenLookup, now)
     .first<InviteRow>();
 
-  if (!invite) return c.json({ error: "Invite not found or expired" }, 404);
+  if (!invite) return c.json({ error: "invite_invalid_or_expired" }, 404);
   if (invite.max_uses > 0 && invite.uses >= invite.max_uses)
-    return c.json({ error: "Invite link has reached its usage limit" }, 410);
+    return c.json({ error: "invite_used_up" }, 410);
 
   const team = await c.env.DB.prepare(
     "SELECT id, name, description, avatar_url, require_2fa, require_verified_email FROM teams WHERE id = ?",
@@ -703,7 +703,7 @@ app.get("/join/:token", optionalAuth, async (c) => {
       require_2fa: number;
       require_verified_email: number;
     }>();
-  if (!team) return c.json({ error: "Team not found" }, 404);
+  if (!team) return c.json({ error: "team_not_found" }, 404);
 
   const floor = await getSiteRequirementFloor(c.env.DB);
   const effective = mergeWithSiteFloor(team, floor);
@@ -767,23 +767,19 @@ app.post("/join/:token", requireAuth, async (c) => {
   const now = Math.floor(Date.now() / 1000);
 
   const tokenLookup = await hashLookupCandidate(c.env, token);
-  if (!tokenLookup)
-    return c.json({ error: "Invite not found or expired" }, 404);
+  if (!tokenLookup) return c.json({ error: "invite_invalid_or_expired" }, 404);
   const invite = await c.env.DB.prepare(
     "SELECT * FROM team_invites WHERE (token = ? OR token = ?) AND expires_at > ? AND enabled = 1",
   )
     .bind(token, tokenLookup, now)
     .first<InviteRow>();
 
-  if (!invite) return c.json({ error: "Invite not found or expired" }, 404);
+  if (!invite) return c.json({ error: "invite_invalid_or_expired" }, 404);
   if (invite.max_uses > 0 && invite.uses >= invite.max_uses)
-    return c.json({ error: "Invite link has reached its usage limit" }, 410);
+    return c.json({ error: "invite_used_up" }, 410);
   // Email-specific invites can only be used by the addressed user
   if (invite.email && invite.email.toLowerCase() !== user.email.toLowerCase())
-    return c.json(
-      { error: "This invite is for a different email address" },
-      403,
-    );
+    return c.json({ error: "invite_email_mismatch" }, 403);
 
   const existing = await getMember(c.env.DB, invite.team_id, user.id);
   const invitedGroups = await loadInviteGroups(c.env.DB, [invite.token]);
@@ -792,7 +788,7 @@ app.post("/join/:token", requireAuth, async (c) => {
     existing &&
     (groupIds.length === 0 || invite.allow_existing_members !== 1)
   )
-    return c.json({ error: "Already a member of this team" }, 409);
+    return c.json({ error: "already_member" }, 409);
   if (existing) {
     const count = await c.env.DB.prepare(
       "SELECT COUNT(*) AS n FROM team_member_groups WHERE team_id = ? AND user_id = ?",
@@ -809,13 +805,10 @@ app.post("/join/:token", requireAuth, async (c) => {
     const assignedIds = new Set(assigned.results.map((row) => row.group_id));
     groupIds = groupIds.filter((groupId) => !assignedIds.has(groupId));
     if (groupIds.length === 0)
-      return c.json(
-        { error: "This member already has all member groups from this invite" },
-        409,
-      );
+      return c.json({ error: "invite_groups_already_held" }, 409);
     if ((count?.n ?? 0) + groupIds.length > MAX_GROUPS_PER_MEMBER)
       return c.json(
-        { error: `A member can hold at most ${MAX_GROUPS_PER_MEMBER} groups` },
+        { error: "member_group_limit", params: { max: MAX_GROUPS_PER_MEMBER } },
         400,
       );
   }
@@ -841,8 +834,7 @@ app.post("/join/:token", requireAuth, async (c) => {
         if (target && target.allow_normal_user_join !== 1)
           return c.json(
             {
-              error:
-                "This team does not accept invite links from existing accounts",
+              error: "invite_existing_not_allowed",
             },
             403,
           );
@@ -859,7 +851,7 @@ app.post("/join/:token", requireAuth, async (c) => {
       if (unmet.length) {
         return c.json(
           {
-            error: "You don't meet this team's join requirements",
+            error: "join_requirements_unmet",
             unmet_requirements: unmet,
           },
           403,
@@ -875,8 +867,7 @@ app.post("/join/:token", requireAuth, async (c) => {
   )
     .bind(invite.token, now)
     .run();
-  if (!claim.meta.changes)
-    return c.json({ error: "Invite link has reached its usage limit" }, 410);
+  if (!claim.meta.changes) return c.json({ error: "invite_used_up" }, 410);
 
   try {
     if (existing) {
@@ -925,7 +916,6 @@ app.post("/join/:token", requireAuth, async (c) => {
 
   return c.json({
     team_id: invite.team_id,
-    message: existing ? "Member groups assigned" : "Joined team",
   });
 });
 
@@ -1046,7 +1036,7 @@ app.patch("/:id/membership/show-on-profile", async (c) => {
   )
     .bind(id, user.id)
     .first<{ x: number }>();
-  if (!member) return c.json({ error: "Not a member of this team" }, 404);
+  if (!member) return c.json({ error: "not_team_member" }, 404);
 
   const stored =
     body.show_on_profile === null ? null : body.show_on_profile ? 1 : 0;
@@ -1072,35 +1062,35 @@ app.post("/", async (c) => {
     owner_id?: string;
     owner_username?: string;
   }>();
-  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+  if (!body.name?.trim())
+    return c.json({ error: "field_required", params: { field: "name" } }, 400);
 
   // Parent validation — sub-team creation requires admin+ on the parent.
   // Top-level creation respects the site-wide disable toggle.
   let parentId: string | null = null;
   if (body.parent_team_id) {
     const enabled = await getConfigValue(c.env.DB, "enable_sub_teams");
-    if (!enabled)
-      return c.json({ error: "Sub-teams are disabled on this instance" }, 403);
+    if (!enabled) return c.json({ error: "subteams_disabled" }, 403);
     const parentRow = await c.env.DB.prepare(
       "SELECT id FROM teams WHERE id = ?",
     )
       .bind(body.parent_team_id)
       .first<{ id: string }>();
-    if (!parentRow) return c.json({ error: "Parent team not found" }, 404);
+    if (!parentRow) return c.json({ error: "parent_team_not_found" }, 404);
     const eff = await teamAuthority(c, body.parent_team_id);
     if (!eff || !hasRole(eff.role, "admin"))
-      return c.json(
-        { error: "Forbidden: must be admin+ of the parent team" },
-        403,
-      );
+      return c.json({ error: "parent_team_admin_required" }, 403);
     const maxDepth = await getMaxTeamDepth(c.env.DB);
     const ancestors = await getTeamAncestors(c.env.DB, body.parent_team_id);
     if (ancestors.length >= maxDepth)
-      return c.json({ error: `Team nesting limit (${maxDepth}) reached` }, 400);
+      return c.json(
+        { error: "team_depth_limit", params: { max: maxDepth } },
+        400,
+      );
     parentId = body.parent_team_id;
   } else if (user.role !== "admin") {
     const disabled = await getConfigValue(c.env.DB, "disable_user_create_team");
-    if (disabled) return c.json({ error: "Team creation is disabled" }, 403);
+    if (disabled) return c.json({ error: "team_creation_disabled" }, 403);
   }
 
   // Restricted accounts create nothing by default — including sub-teams,
@@ -1114,20 +1104,19 @@ app.post("/", async (c) => {
   // the site-wide authority they already had.
   let ownerId = user.id;
   if (body.owner_id || body.owner_username) {
-    if (!isSiteAdmin(c))
-      return c.json({ error: "Only site admins can set the owner" }, 403);
+    if (!isSiteAdmin(c)) return c.json({ error: "admin_required" }, 403);
     const owner = await c.env.DB.prepare(
       "SELECT id FROM users WHERE kind = 'user' AND (id = ? OR username = ?)",
     )
       .bind(body.owner_id ?? "", body.owner_username ?? "")
       .first<{ id: string }>();
-    if (!owner) return c.json({ error: "Owner not found" }, 404);
+    if (!owner) return c.json({ error: "user_not_found" }, 404);
     ownerId = owner.id;
   }
 
   if (body.avatar_url) {
     const imgErr = await validateImageUrl(body.avatar_url);
-    if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+    if (imgErr) return c.json(imgErr, 400);
   }
 
   const id = randomId();
@@ -1187,11 +1176,10 @@ app.get("/:id/sub-teams", async (c) => {
   const id = c.req.param("id");
 
   const enabled = await getConfigValue(c.env.DB, "enable_sub_teams");
-  if (!enabled)
-    return c.json({ error: "Sub-teams are disabled on this instance" }, 403);
+  if (!enabled) return c.json({ error: "subteams_disabled" }, 403);
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!eff) return c.json({ error: "not_found" }, 404);
 
   const { page, limit, offset } = readPage(
     c.req.query("page"),
@@ -1246,34 +1234,34 @@ app.post("/:id/sub-teams", async (c) => {
   const id = c.req.param("id");
 
   const enabled = await getConfigValue(c.env.DB, "enable_sub_teams");
-  if (!enabled)
-    return c.json({ error: "Sub-teams are disabled on this instance" }, 403);
+  if (!enabled) return c.json({ error: "subteams_disabled" }, 403);
 
   const body = await c.req.json<{
     name: string;
     description?: string;
     avatar_url?: string;
   }>();
-  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+  if (!body.name?.trim())
+    return c.json({ error: "field_required", params: { field: "name" } }, 400);
 
   const parentRow = await c.env.DB.prepare("SELECT id FROM teams WHERE id = ?")
     .bind(id)
     .first<{ id: string }>();
-  if (!parentRow) return c.json({ error: "Parent team not found" }, 404);
+  if (!parentRow) return c.json({ error: "parent_team_not_found" }, 404);
   const eff = await teamAuthority(c, id);
   if (!eff || !hasRole(eff.role, "admin"))
-    return c.json(
-      { error: "Forbidden: must be admin+ of the parent team" },
-      403,
-    );
+    return c.json({ error: "parent_team_admin_required" }, 403);
   const maxDepth = await getMaxTeamDepth(c.env.DB);
   const ancestors = await getTeamAncestors(c.env.DB, id);
   if (ancestors.length >= maxDepth)
-    return c.json({ error: `Team nesting limit (${maxDepth}) reached` }, 400);
+    return c.json(
+      { error: "team_depth_limit", params: { max: maxDepth } },
+      400,
+    );
 
   if (body.avatar_url) {
     const imgErr = await validateImageUrl(body.avatar_url);
-    if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+    if (imgErr) return c.json(imgErr, 400);
   }
 
   const subId = randomId();
@@ -1327,12 +1315,12 @@ app.get("/:id", async (c) => {
   const id = c.req.param("id");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!eff) return c.json({ error: "not_found" }, 404);
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)
     .first<TeamRow>();
-  if (!team) return c.json({ error: "Not found" }, 404);
+  if (!team) return c.json({ error: "not_found" }, 404);
 
   const viewerUserId =
     team.restrict_member_list_for_members === 1 &&
@@ -1426,8 +1414,8 @@ app.patch("/:id", async (c) => {
   const id = c.req.param("id");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
   const member = { role: eff.role };
 
   const body = await c.req.json<{
@@ -1454,13 +1442,13 @@ app.patch("/:id", async (c) => {
 
   if (body.avatar_url) {
     const imgErr = await validateImageUrl(body.avatar_url);
-    if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+    if (imgErr) return c.json(imgErr, 400);
   }
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)
     .first<TeamRow>();
-  if (!team) return c.json({ error: "Not found" }, 404);
+  if (!team) return c.json({ error: "not_found" }, 404);
 
   const updates: string[] = [
     "name = ?",
@@ -1481,18 +1469,14 @@ app.patch("/:id", async (c) => {
   }
   if (body.parent_team_id !== undefined) {
     const enabled = await getConfigValue(c.env.DB, "enable_sub_teams");
-    if (!enabled)
-      return c.json({ error: "Sub-teams are disabled on this instance" }, 403);
+    if (!enabled) return c.json({ error: "subteams_disabled" }, 403);
     // Moving a team. Owner-only (the team's own owner, direct or inherited)
     // because re-parenting redistributes inherited access across the whole
     // organisation tree.
     if (!hasRole(member.role, "owner"))
-      return c.json(
-        { error: "Only the owner can move the team to a new parent" },
-        403,
-      );
+      return c.json({ error: "team_owner_required" }, 403);
     const reason = await isInvalidReparent(c.env.DB, id, body.parent_team_id);
-    if (reason) return c.json({ error: reason }, 400);
+    if (reason) return c.json(reason, 400);
     // Moving a subtree that contains restricted members would strand them
     // outside their own origin team — every individual step legal, the
     // invariant broken retroactively. Tested on *members*, because a
@@ -1502,43 +1486,33 @@ app.patch("/:id", async (c) => {
     if (await subtreeHasRestrictedMembers(c.env.DB, id, descendants))
       return c.json(
         {
-          error:
-            "This team contains members registered through a team invite and cannot be moved",
+          error: "team_has_restricted_members",
         },
         403,
       );
     if (body.parent_team_id) {
       const parentEff = await teamAuthority(c, body.parent_team_id);
       if (!parentEff || !hasRole(parentEff.role, "admin"))
-        return c.json(
-          { error: "Forbidden: must be admin+ of the new parent team" },
-          403,
-        );
+        return c.json({ error: "parent_team_admin_required" }, 403);
     }
     updates.push("parent_team_id = ?");
     values.push(body.parent_team_id);
   }
   if (body.require_2fa !== undefined) {
     if (!hasRole(member.role, "owner"))
-      return c.json(
-        { error: "Only the owner can change join requirements" },
-        403,
-      );
+      return c.json({ error: "team_owner_required" }, 403);
     updates.push("require_2fa = ?");
     values.push(body.require_2fa ? 1 : 0);
   }
   if (body.require_verified_email !== undefined) {
     if (!hasRole(member.role, "owner"))
-      return c.json(
-        { error: "Only the owner can change join requirements" },
-        403,
-      );
+      return c.json({ error: "team_owner_required" }, 403);
     updates.push("require_verified_email = ?");
     values.push(body.require_verified_email ? 1 : 0);
   }
   if (body.enable_groups !== undefined) {
     if (!hasRole(member.role, "owner"))
-      return c.json({ error: "Only the owner can toggle member groups" }, 403);
+      return c.json({ error: "team_owner_required" }, 403);
     updates.push("enable_groups = ?");
     values.push(body.enable_groups ? 1 : 0);
   }
@@ -1547,10 +1521,7 @@ app.patch("/:id", async (c) => {
     // constrained role could edit would be no constraint at all — an admin
     // would simply grant themselves whatever the owner withheld.
     if (!hasRole(member.role, "owner"))
-      return c.json(
-        { error: "Only the owner can change role permissions" },
-        403,
-      );
+      return c.json({ error: "team_owner_required" }, 403);
     const cleaned = sanitizeRolePermissions(body.role_permissions);
     updates.push("role_permissions = ?");
     // Store NULL rather than "{}" when nothing is overridden, so the column
@@ -1561,7 +1532,7 @@ app.patch("/:id", async (c) => {
   }
   if (body.allow_normal_user_join !== undefined) {
     if (!hasRole(member.role, "admin"))
-      return c.json({ error: "Forbidden" }, 403);
+      return c.json({ error: "forbidden" }, 403);
     updates.push("allow_normal_user_join = ?");
     values.push(body.allow_normal_user_join ? 1 : 0);
   }
@@ -1569,7 +1540,7 @@ app.patch("/:id", async (c) => {
     if (!hasRole(member.role, "co-owner"))
       return c.json(
         {
-          error: "Only owners and co-owners can change member list visibility",
+          error: "team_owners_required",
         },
         403,
       );
@@ -1635,15 +1606,15 @@ app.delete("/:id", async (c) => {
   const id = c.req.param("id");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!eff) return c.json({ error: "not_found" }, 404);
   if (!hasRole(eff.role, "owner"))
-    return c.json({ error: "Only the team owner can delete the team" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
 
   const teamRow = await c.env.DB.prepare("SELECT name FROM teams WHERE id = ?")
     .bind(id)
     .first<{ name: string }>();
   if (teamRow && isTeamLocked(c.env, teamRow.name)) {
-    return c.json({ error: "This team is locked and cannot be deleted" }, 403);
+    return c.json({ error: "team_locked" }, 403);
   }
 
   // Dissolving a team that minted accounts destroys those accounts. That is
@@ -1657,8 +1628,7 @@ app.delete("/:id", async (c) => {
   if (await hasLiveRestrictedAccounts(c.env.DB, id))
     return c.json(
       {
-        error:
-          "This team has accounts registered through its invite links. Only a site administrator can dissolve it.",
+        error: "team_dissolve_admin_only",
       },
       403,
     );
@@ -1672,7 +1642,7 @@ app.delete("/:id", async (c) => {
     sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
   );
 
-  return c.json({ message: "Team deleted" });
+  return c.json({ ok: true });
 });
 
 // ─── Member listing ───────────────────────────────────────────────────────────
@@ -1831,14 +1801,14 @@ app.get("/:id/members", async (c) => {
   const id = c.req.param("id");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!eff) return c.json({ error: "not_found" }, 404);
 
   const team = await c.env.DB.prepare(
     "SELECT restrict_member_list_for_members FROM teams WHERE id = ?",
   )
     .bind(id)
     .first<{ restrict_member_list_for_members: number }>();
-  if (!team) return c.json({ error: "Not found" }, 404);
+  if (!team) return c.json({ error: "not_found" }, 404);
 
   const viewerUserId =
     team.restrict_member_list_for_members === 1 &&
@@ -1872,8 +1842,8 @@ app.post("/:id/members", async (c) => {
   const id = c.req.param("id");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   // `user_id` is what the admin panel has to hand; `username` is what the
   // team page's picker produces. Either identifies the account.
@@ -1883,7 +1853,7 @@ app.post("/:id/members", async (c) => {
     role?: string;
   }>();
   if (!body.username && !body.user_id)
-    return c.json({ error: "username or user_id is required" }, 400);
+    return c.json({ error: "user_required" }, 400);
   let role: string = "member";
   if (body.role === "admin") role = "admin";
   if (body.role === "co-owner" && eff.role === "owner") role = "co-owner";
@@ -1893,10 +1863,10 @@ app.post("/:id/members", async (c) => {
   )
     .bind(body.user_id ?? "", body.username ?? "")
     .first<{ id: string; username: string }>();
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const existing = await getMember(c.env.DB, id, target.id);
-  if (existing) return c.json({ error: "Already a member" }, 409);
+  if (existing) return c.json({ error: "already_member" }, 409);
 
   // Both gates below are the *team's* policy about who may join it. A site
   // admin adding someone is the site overruling that policy on purpose, so
@@ -1924,8 +1894,7 @@ app.post("/:id/members", async (c) => {
       if (!eff.elevated) {
         return c.json(
           {
-            error:
-              "User doesn't meet this team's join requirements (e.g. 2FA, verified email)",
+            error: "join_requirements_unmet_user",
             unmet_requirements: unmet,
           },
           403,
@@ -1968,7 +1937,7 @@ app.post("/:id/members", async (c) => {
     );
   }
 
-  return c.json({ message: "Member added" }, 201);
+  return c.json({ ok: true }, 201);
 });
 
 app.patch("/:id/members/:userId", async (c) => {
@@ -1977,13 +1946,13 @@ app.patch("/:id/members/:userId", async (c) => {
   const targetUserId = c.req.param("userId");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!eff) return c.json({ error: "not_found" }, 404);
   if (!hasRole(eff.role, "co-owner"))
-    return c.json({ error: "Only owners and co-owners can change roles" }, 403);
+    return c.json({ error: "team_owners_required" }, 403);
   // A member cannot promote themselves; a site admin reaching in from outside
   // is not "themselves" in the team's sense, so the guard doesn't apply.
   if (targetUserId === user.id && !eff.elevated)
-    return c.json({ error: "Cannot change your own role" }, 400);
+    return c.json({ error: "cannot_change_own_role" }, 400);
 
   const body = await c.req.json<{ role: string }>();
   // `owner` is admin-only, and means a transfer: a team has exactly one.
@@ -1991,12 +1960,18 @@ app.patch("/:id/members/:userId", async (c) => {
     ? ["owner", "co-owner", "admin", "member"]
     : ["co-owner", "admin", "member"];
   if (!allowedRoles.includes(body.role))
-    return c.json({ error: `Role must be ${allowedRoles.join(", ")}` }, 400);
+    return c.json(
+      {
+        error: "field_one_of",
+        params: { field: "role", values: allowedRoles.join(", ") },
+      },
+      400,
+    );
 
   // Target must be a *direct* member of this team — inherited memberships
   // are managed at the ancestor team they originate from.
   const target = await getMember(c.env.DB, id, targetUserId);
-  if (!target) return c.json({ error: "Member not found" }, 404);
+  if (!target) return c.json({ error: "member_not_found" }, 404);
   // A member cannot touch the owner's role — they transfer instead. A site
   // admin can, including straight down, which leaves the team without an
   // owner until someone is promoted.
@@ -2007,11 +1982,11 @@ app.patch("/:id/members/:userId", async (c) => {
   // an administrator to promote someone they may not want promoted — is the
   // team owner outranking the site, which is backwards.
   if (target.role === "owner" && !eff.elevated)
-    return c.json({ error: "Cannot change owner role" }, 403);
+    return c.json({ error: "cannot_change_owner_role" }, 403);
   if (target.role === "co-owner" && eff.role !== "owner")
-    return c.json({ error: "Only the owner can change co-owner roles" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
   if (body.role === "co-owner" && eff.role !== "owner")
-    return c.json({ error: "Only the owner can assign co-owner role" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
 
   const now = Math.floor(Date.now() / 1000);
   if (body.role === "owner") {
@@ -2021,8 +1996,7 @@ app.patch("/:id/members/:userId", async (c) => {
     if (restriction && isRestricted(restriction))
       return c.json(
         {
-          error:
-            "Cannot transfer ownership to an account registered through a team invite",
+          error: "transfer_to_restricted",
         },
         403,
       );
@@ -2054,7 +2028,7 @@ app.patch("/:id/members/:userId", async (c) => {
       resourceId: targetUserId,
       metadata: { from: currentOwner?.user_id ?? null, to: targetUserId },
     });
-    return c.json({ message: "Ownership transferred" });
+    return c.json({ ok: true });
   }
 
   await c.env.DB.prepare(
@@ -2077,7 +2051,6 @@ app.patch("/:id/members/:userId", async (c) => {
   });
 
   return c.json({
-    message: "Role updated",
     // Said back, because an administrator who demoted the owner should not
     // have to go and notice.
     owner_vacated: target.role === "owner",
@@ -2096,19 +2069,18 @@ app.delete("/:id/members/:userId", async (c) => {
   let elevated = false;
   if (isSelf) {
     const direct = await getMember(c.env.DB, id, user.id);
-    if (!direct)
-      return c.json({ error: "You are not a direct member of this team" }, 404);
+    if (!direct) return c.json({ error: "not_direct_member" }, 404);
     actorRole = direct.role;
   } else {
     const eff = await teamAuthority(c, id);
-    if (!eff) return c.json({ error: "Not found" }, 404);
-    if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+    if (!eff) return c.json({ error: "not_found" }, 404);
+    if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
     actorRole = eff.role;
     elevated = eff.elevated;
   }
 
   const target = await getMember(c.env.DB, id, targetUserId);
-  if (!target) return c.json({ error: "Member not found" }, 404);
+  if (!target) return c.json({ error: "member_not_found" }, 404);
 
   // A site admin may remove the owner — someone has to be able to, when the
   // owner is the problem. Where there is anyone to promote, the most senior
@@ -2116,8 +2088,7 @@ app.delete("/:id/members/:userId", async (c) => {
   // batch, so the common case never leaves a team ownerless by accident.
   let successorId: string | null = null;
   if (target.role === "owner" && !isSelf) {
-    if (!elevated)
-      return c.json({ error: "Cannot remove the team owner" }, 403);
+    if (!elevated) return c.json({ error: "cannot_remove_owner" }, 403);
     const { results } = await c.env.DB.prepare(
       `SELECT user_id, role FROM team_members
         WHERE team_id = ? AND user_id != ?
@@ -2136,7 +2107,7 @@ app.delete("/:id/members/:userId", async (c) => {
   }
   // Only owner can remove co-owners
   if (target.role === "co-owner" && !isSelf && actorRole !== "owner")
-    return c.json({ error: "Only the owner can remove co-owners" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
 
   if (target.role === "owner" && isSelf) {
     // Leaving as owner: only allowed if no other members
@@ -2145,11 +2116,7 @@ app.delete("/:id/members/:userId", async (c) => {
     )
       .bind(id)
       .all<{ user_id: string }>();
-    if (results.length > 1)
-      return c.json(
-        { error: "Transfer ownership before leaving the team" },
-        400,
-      );
+    if (results.length > 1) return c.json({ error: "owner_cannot_leave" }, 400);
     // Same protection as the explicit delete: leaving as the last member
     // would otherwise be a second, quieter route to the same destruction.
     // Pending accounts make this reachable even on a team that looks empty —
@@ -2157,14 +2124,13 @@ app.delete("/:id/members/:userId", async (c) => {
     if (await hasLiveRestrictedAccounts(c.env.DB, id))
       return c.json(
         {
-          error:
-            "This team has accounts registered through its invite links. Only a site administrator can dissolve it.",
+          error: "team_dissolve_admin_only",
         },
         403,
       );
     // Last member — delete the team
     await dissolveTeam(c.env.DB, id, user.id);
-    return c.json({ message: "Team deleted" });
+    return c.json({ ok: true });
   }
 
   if (successorId) {
@@ -2227,7 +2193,6 @@ app.delete("/:id/members/:userId", async (c) => {
   }
 
   return c.json({
-    message: "Member removed",
     // Who ended up holding the team, if anyone. Null after removing an owner
     // with nobody to promote — the team is now empty and ownerless, which the
     // caller should hear rather than discover.
@@ -2244,12 +2209,16 @@ app.post("/:id/transfer-ownership", async (c) => {
   const id = c.req.param("id");
 
   const auth = await teamAuthority(c, id);
-  if (!auth) return c.json({ error: "Not found" }, 404);
+  if (!auth) return c.json({ error: "not_found" }, 404);
   if (!hasRole(auth.role, "owner"))
-    return c.json({ error: "Only the owner can transfer ownership" }, 403);
+    return c.json({ error: "team_owner_required" }, 403);
 
   const body = await c.req.json<{ user_id: string }>();
-  if (!body.user_id) return c.json({ error: "user_id is required" }, 400);
+  if (!body.user_id)
+    return c.json(
+      { error: "field_required", params: { field: "user_id" } },
+      400,
+    );
 
   // Whoever holds the title right now — normally the caller, but an admin
   // acting from outside is not a member and must not be the one demoted.
@@ -2259,7 +2228,7 @@ app.post("/:id/transfer-ownership", async (c) => {
     .bind(id)
     .first<{ user_id: string }>();
   if (currentOwner && body.user_id === currentOwner.user_id)
-    return c.json({ error: "Already the owner" }, 400);
+    return c.json({ error: "already_owner" }, 400);
 
   // Ownership carries every setting on the team, including the invite
   // registration switches. Handing it to a restricted account would let the
@@ -2271,8 +2240,7 @@ app.post("/:id/transfer-ownership", async (c) => {
   if (targetRestriction && isRestricted(targetRestriction))
     return c.json(
       {
-        error:
-          "Cannot transfer ownership to an account registered through a team invite",
+        error: "transfer_to_restricted",
       },
       403,
     );
@@ -2282,14 +2250,13 @@ app.post("/:id/transfer-ownership", async (c) => {
   if (!target) {
     // Only the site-admin path gets here: a team owner still has to add
     // someone before handing them the team.
-    if (!auth.elevated)
-      return c.json({ error: "Target is not a team member" }, 404);
+    if (!auth.elevated) return c.json({ error: "target_not_member" }, 404);
     const exists = await c.env.DB.prepare(
       "SELECT id FROM users WHERE id = ? AND kind = 'user'",
     )
       .bind(body.user_id)
       .first<{ id: string }>();
-    if (!exists) return c.json({ error: "User not found" }, 404);
+    if (!exists) return c.json({ error: "user_not_found" }, 404);
     await c.env.DB.prepare(
       "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)",
     )
@@ -2322,7 +2289,7 @@ app.post("/:id/transfer-ownership", async (c) => {
     metadata: { from: currentOwner?.user_id ?? null, to: body.user_id },
   });
 
-  return c.json({ message: "Ownership transferred" });
+  return c.json({ ok: true });
 });
 
 // ─── Member groups ────────────────────────────────────────────────────────────
@@ -2364,7 +2331,7 @@ app.get("/:id/groups", async (c) => {
   const id = c.req.param("id");
 
   const ctx = await groupContext(c, id);
-  if (!ctx) return c.json({ error: "Not found" }, 404);
+  if (!ctx) return c.json({ error: "not_found" }, 404);
 
   // Definitions are listed even while the feature is off, so an owner can
   // see what flipping the switch back on would restore.
@@ -2401,11 +2368,11 @@ app.post("/:id/groups", async (c) => {
   const id = c.req.param("id");
 
   const ctx = await groupContext(c, id);
-  if (!ctx) return c.json({ error: "Not found" }, 404);
+  if (!ctx) return c.json({ error: "not_found" }, 404);
   if (ctx.team.enable_groups !== 1)
-    return c.json({ error: "Member groups are disabled for this team" }, 403);
+    return c.json({ error: "member_groups_disabled" }, 403);
   if (!canManageGroups(ctx.role, ctx.team.role_permissions, ctx.siteDefaults))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     slug?: string;
@@ -2417,13 +2384,17 @@ app.post("/:id/groups", async (c) => {
 
   const slug = (body.slug ?? "").trim().toLowerCase();
   const slugErr = validateGroupSlug(slug);
-  if (slugErr) return c.json({ error: slugErr }, 400);
+  if (slugErr) return c.json(slugErr, 400);
 
   const name = (body.name ?? "").trim();
-  if (!name) return c.json({ error: "name is required" }, 400);
+  if (!name)
+    return c.json({ error: "field_required", params: { field: "name" } }, 400);
   if (name.length > MAX_GROUP_NAME_LENGTH)
     return c.json(
-      { error: `name must be at most ${MAX_GROUP_NAME_LENGTH} characters` },
+      {
+        error: "field_max_length",
+        params: { field: "name", max: MAX_GROUP_NAME_LENGTH },
+      },
       400,
     );
 
@@ -2431,31 +2402,29 @@ app.post("/:id/groups", async (c) => {
   if (description.length > MAX_GROUP_DESCRIPTION_LENGTH)
     return c.json(
       {
-        error: `description must be at most ${MAX_GROUP_DESCRIPTION_LENGTH} characters`,
+        error: "field_max_length",
+        params: { field: "description", max: MAX_GROUP_DESCRIPTION_LENGTH },
       },
       400,
     );
 
   const color = body.color ?? null;
   const colorErr = validateGroupColor(color);
-  if (colorErr) return c.json({ error: colorErr }, 400);
+  if (colorErr) return c.json(colorErr, 400);
 
   // The per-group exception overrides the owner's capability set, so only
   // the owner may set it — otherwise a manager could exempt themselves.
   if (body.admin_assignable !== undefined && !hasRole(ctx.role, "owner"))
-    return c.json(
-      { error: "Only the owner can set per-group assignment rules" },
-      403,
-    );
+    return c.json({ error: "team_owner_required" }, 403);
 
   const existing = await listTeamGroups(c.env.DB, id);
   if (existing.length >= MAX_GROUPS_PER_TEAM)
     return c.json(
-      { error: `A team can have at most ${MAX_GROUPS_PER_TEAM} groups` },
+      { error: "team_group_limit", params: { max: MAX_GROUPS_PER_TEAM } },
       400,
     );
   if (existing.some((g) => g.slug === slug))
-    return c.json({ error: "A group with that slug already exists" }, 409);
+    return c.json({ error: "group_slug_taken" }, 409);
 
   const now = Math.floor(Date.now() / 1000);
   const groupId = randomId();
@@ -2486,7 +2455,7 @@ app.post("/:id/groups", async (c) => {
     // slug. UNIQUE (team_id, slug) is the real guard, so translate it into
     // the same 409 the checked path returns rather than a 500.
     if (String(err).includes("UNIQUE"))
-      return c.json({ error: "A group with that slug already exists" }, 409);
+      return c.json({ error: "group_slug_taken" }, 409);
     throw err;
   }
 
@@ -2511,18 +2480,18 @@ app.patch("/:id/groups/:groupId", async (c) => {
   const groupId = c.req.param("groupId");
 
   const ctx = await groupContext(c, id);
-  if (!ctx) return c.json({ error: "Not found" }, 404);
+  if (!ctx) return c.json({ error: "not_found" }, 404);
   if (ctx.team.enable_groups !== 1)
-    return c.json({ error: "Member groups are disabled for this team" }, 403);
+    return c.json({ error: "member_groups_disabled" }, 403);
   if (!canManageGroups(ctx.role, ctx.team.role_permissions, ctx.siteDefaults))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const group = await c.env.DB.prepare(
     "SELECT * FROM team_groups WHERE id = ? AND team_id = ?",
   )
     .bind(groupId, id)
     .first<TeamGroupRow>();
-  if (!group) return c.json({ error: "Group not found" }, 404);
+  if (!group) return c.json({ error: "group_not_found" }, 404);
 
   const body = await c.req.json<{
     slug?: string;
@@ -2536,20 +2505,21 @@ app.patch("/:id/groups/:groupId", async (c) => {
   // would silently break every policy referencing it, so the display name is
   // the only mutable label.
   if (body.slug !== undefined && body.slug !== group.slug)
-    return c.json(
-      { error: "slug is immutable — delete and recreate the group instead" },
-      400,
-    );
+    return c.json({ error: "group_slug_immutable" }, 400);
 
   const updates: string[] = ["updated_at = ?"];
   const values: unknown[] = [Math.floor(Date.now() / 1000)];
 
   if (body.name !== undefined) {
     const name = body.name.trim();
-    if (!name) return c.json({ error: "name cannot be empty" }, 400);
+    if (!name)
+      return c.json({ error: "field_empty", params: { field: "name" } }, 400);
     if (name.length > MAX_GROUP_NAME_LENGTH)
       return c.json(
-        { error: `name must be at most ${MAX_GROUP_NAME_LENGTH} characters` },
+        {
+          error: "field_max_length",
+          params: { field: "name", max: MAX_GROUP_NAME_LENGTH },
+        },
         400,
       );
     updates.push("name = ?");
@@ -2560,7 +2530,8 @@ app.patch("/:id/groups/:groupId", async (c) => {
     if (description.length > MAX_GROUP_DESCRIPTION_LENGTH)
       return c.json(
         {
-          error: `description must be at most ${MAX_GROUP_DESCRIPTION_LENGTH} characters`,
+          error: "field_max_length",
+          params: { field: "description", max: MAX_GROUP_DESCRIPTION_LENGTH },
         },
         400,
       );
@@ -2569,16 +2540,13 @@ app.patch("/:id/groups/:groupId", async (c) => {
   }
   if (body.color !== undefined) {
     const colorErr = validateGroupColor(body.color);
-    if (colorErr) return c.json({ error: colorErr }, 400);
+    if (colorErr) return c.json(colorErr, 400);
     updates.push("color = ?");
     values.push(body.color || null);
   }
   if (body.admin_assignable !== undefined) {
     if (!hasRole(ctx.role, "owner"))
-      return c.json(
-        { error: "Only the owner can set per-group assignment rules" },
-        403,
-      );
+      return c.json({ error: "team_owner_required" }, 403);
     updates.push("admin_assignable = ?");
     values.push(
       body.admin_assignable === null ? null : body.admin_assignable ? 1 : 0,
@@ -2613,18 +2581,18 @@ app.delete("/:id/groups/:groupId", async (c) => {
   const groupId = c.req.param("groupId");
 
   const ctx = await groupContext(c, id);
-  if (!ctx) return c.json({ error: "Not found" }, 404);
+  if (!ctx) return c.json({ error: "not_found" }, 404);
   if (ctx.team.enable_groups !== 1)
-    return c.json({ error: "Member groups are disabled for this team" }, 403);
+    return c.json({ error: "member_groups_disabled" }, 403);
   if (!canManageGroups(ctx.role, ctx.team.role_permissions, ctx.siteDefaults))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const group = await c.env.DB.prepare(
     "SELECT * FROM team_groups WHERE id = ? AND team_id = ?",
   )
     .bind(groupId, id)
     .first<TeamGroupRow>();
-  if (!group) return c.json({ error: "Group not found" }, 404);
+  if (!group) return c.json({ error: "group_not_found" }, 404);
 
   // Assignments go with it via ON DELETE CASCADE — downstream apps stop
   // seeing the label on their next token refresh.
@@ -2639,7 +2607,7 @@ app.delete("/:id/groups/:groupId", async (c) => {
     metadata: { slug: group.slug, name: group.name },
   });
 
-  return c.json({ message: "Group deleted" });
+  return c.json({ ok: true });
 });
 
 // Replace a member's group set. A full replacement rather than add/remove
@@ -2650,18 +2618,21 @@ app.put("/:id/members/:userId/groups", async (c) => {
   const targetUserId = c.req.param("userId");
 
   const ctx = await groupContext(c, id);
-  if (!ctx) return c.json({ error: "Not found" }, 404);
+  if (!ctx) return c.json({ error: "not_found" }, 404);
   if (ctx.team.enable_groups !== 1)
-    return c.json({ error: "Member groups are disabled for this team" }, 403);
+    return c.json({ error: "member_groups_disabled" }, 403);
 
   // Direct membership only — inherited members carry labels from the
   // ancestor they originate at, and that's where they're managed.
   const target = await getMember(c.env.DB, id, targetUserId);
-  if (!target) return c.json({ error: "Member not found" }, 404);
+  if (!target) return c.json({ error: "member_not_found" }, 404);
 
   const body = await c.req.json<{ group_ids?: unknown }>();
   if (!Array.isArray(body.group_ids))
-    return c.json({ error: "group_ids must be an array" }, 400);
+    return c.json(
+      { error: "field_must_be_array", params: { field: "group_ids" } },
+      400,
+    );
   const requested = [
     ...new Set(
       body.group_ids.filter((g): g is string => typeof g === "string"),
@@ -2670,7 +2641,8 @@ app.put("/:id/members/:userId/groups", async (c) => {
   if (requested.length > MAX_GROUPS_PER_MEMBER)
     return c.json(
       {
-        error: `A member can hold at most ${MAX_GROUPS_PER_MEMBER} groups`,
+        error: "member_group_limit",
+        params: { max: MAX_GROUPS_PER_MEMBER },
       },
       400,
     );
@@ -2678,7 +2650,7 @@ app.put("/:id/members/:userId/groups", async (c) => {
   const defined = await listTeamGroups(c.env.DB, id);
   const byId = new Map(defined.map((g) => [g.id, g]));
   const unknownId = requested.find((gid) => !byId.has(gid));
-  if (unknownId) return c.json({ error: `Unknown group: ${unknownId}` }, 400);
+  if (unknownId) return c.json({ error: "group_not_found" }, 400);
 
   const { results: currentRows } = await c.env.DB.prepare(
     "SELECT group_id FROM team_member_groups WHERE team_id = ? AND user_id = ?",
@@ -2690,8 +2662,7 @@ app.put("/:id/members/:userId/groups", async (c) => {
 
   const added = requested.filter((gid) => !current.has(gid));
   const removed = [...current].filter((gid) => !next.has(gid));
-  if (added.length === 0 && removed.length === 0)
-    return c.json({ message: "No changes" });
+  if (added.length === 0 && removed.length === 0) return c.json({ ok: true });
 
   // Only the groups actually changing are permission-checked. Checking the
   // whole set instead would mean an admin barred from one sensitive group
@@ -2699,7 +2670,7 @@ app.put("/:id/members/:userId/groups", async (c) => {
   for (const gid of [...added, ...removed]) {
     const group = byId.get(gid);
     // A group that vanished between the read and here — treat as unknown.
-    if (!group) return c.json({ error: `Unknown group: ${gid}` }, 400);
+    if (!group) return c.json({ error: "group_not_found" }, 400);
     if (
       !canAssignGroup(
         ctx.role,
@@ -2709,7 +2680,7 @@ app.put("/:id/members/:userId/groups", async (c) => {
       )
     )
       return c.json(
-        { error: `You cannot assign or remove the group "${group.slug}"` },
+        { error: "group_not_assignable", params: { group: group.slug } },
         403,
       );
   }
@@ -2750,8 +2721,8 @@ app.get("/:id/invites", async (c) => {
   const id = c.req.param("id");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const { page, limit, offset } = readPage(
     c.req.query("page"),
@@ -2816,8 +2787,8 @@ app.post("/:id/invites", async (c) => {
   const id = c.req.param("id");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     role?: string;
@@ -2833,7 +2804,10 @@ app.post("/:id/invites", async (c) => {
     body.max_uses !== undefined &&
     (!Number.isSafeInteger(body.max_uses) || body.max_uses < 0)
   )
-    return c.json({ error: "max_uses must be a non-negative integer" }, 400);
+    return c.json(
+      { error: "field_min", params: { field: "max_uses", min: 0 } },
+      400,
+    );
 
   let role: string = "member";
   if (body.role === "admin") role = "admin";
@@ -2850,10 +2824,7 @@ app.post("/:id/invites", async (c) => {
     // The site admin's grant, and sign-up not closed.
     const signUpOpen = await getConfigValue(c.env.DB, "allow_registration");
     if (!signUpOpen || team?.invite_registration_granted !== 1)
-      return c.json(
-        { error: "This team is not accepting invite-link registrations" },
-        403,
-      );
+      return c.json({ error: "team_invite_signup_off" }, 403);
     // An account-minting invite must be bounded. team_invites defaults
     // max_uses to 0 = unlimited, which is harmless while invites only admit
     // existing users but would mean unlimited registration here — so the
@@ -2863,12 +2834,9 @@ app.post("/:id/invites", async (c) => {
       "team_invite_registration_max_uses_cap",
     );
     if (!maxUses || maxUses < 1)
-      return c.json(
-        { error: "Invites that can create accounts need a usage limit" },
-        400,
-      );
+      return c.json({ error: "invite_needs_limit" }, 400);
     if (maxUses > cap)
-      return c.json({ error: `Usage limit cannot exceed ${cap}` }, 400);
+      return c.json({ error: "invite_uses_cap", params: { max: cap } }, 400);
     // Registration invites always land people as plain members. Someone
     // arriving through a link should never start out able to manage the team.
     role = "member";
@@ -2876,28 +2844,30 @@ app.post("/:id/invites", async (c) => {
   }
   const now = Math.floor(Date.now() / 1000);
   const expiry = parseInviteExpiry(body.expires_at, now);
-  if (!expiry.ok) return c.json({ error: expiry.error }, 400);
+  if (!expiry.ok)
+    return c.json({ error: expiry.error, params: expiry.params }, 400);
   const expiresAt = expiry.expiresAt;
 
   if (!Array.isArray(body.group_ids ?? []))
-    return c.json({ error: "group_ids must be an array" }, 400);
+    return c.json(
+      { error: "field_must_be_array", params: { field: "group_ids" } },
+      400,
+    );
   if ((body.group_ids ?? []).some((groupId) => typeof groupId !== "string"))
-    return c.json({ error: "group_ids must contain strings" }, 400);
+    return c.json(
+      { error: "field_invalid", params: { field: "group_ids" } },
+      400,
+    );
   const requestedGroupIds = [...new Set(body.group_ids ?? [])];
   if (requestedGroupIds.length > 1)
-    return c.json(
-      { error: "An invite can assign at most one member group" },
-      400,
-    );
+    return c.json({ error: "invite_one_group_max" }, 400);
   if (body.allow_existing_members && requestedGroupIds.length === 0)
-    return c.json(
-      { error: "allow_existing_members requires a member group" },
-      400,
-    );
+    return c.json({ error: "invite_existing_needs_group" }, 400);
   if (requestedGroupIds.length > MAX_GROUPS_PER_MEMBER)
     return c.json(
       {
-        error: `An invite can assign at most ${MAX_GROUPS_PER_MEMBER} member groups`,
+        error: "invite_group_limit",
+        params: { max: MAX_GROUPS_PER_MEMBER },
       },
       400,
     );
@@ -2909,10 +2879,7 @@ app.post("/:id/invites", async (c) => {
       .bind(id)
       .first<{ enable_groups: number; role_permissions: string | null }>();
     if (!team || team.enable_groups !== 1)
-      return c.json(
-        { error: "Member groups are not enabled for this team" },
-        400,
-      );
+      return c.json({ error: "member_groups_disabled" }, 400);
     const siteDefaults = await getSiteRolePermissions(c.env.DB);
     for (const groupId of requestedGroupIds) {
       const group = await c.env.DB.prepare(
@@ -2920,11 +2887,10 @@ app.post("/:id/invites", async (c) => {
       )
         .bind(groupId, id)
         .first<TeamGroupRow>();
-      if (!group)
-        return c.json({ error: `Unknown member group: ${groupId}` }, 400);
+      if (!group) return c.json({ error: "group_not_found" }, 400);
       if (!canAssignGroup(eff.role, group, team.role_permissions, siteDefaults))
         return c.json(
-          { error: `You cannot assign the member group "${group.slug}"` },
+          { error: "group_not_assignable", params: { group: group.slug } },
           403,
         );
       inviteGroups.push(group);
@@ -3046,17 +3012,17 @@ app.patch("/:id/invites/:token", async (c) => {
   const token = c.req.param("token");
   const user = c.get("user");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const invite = await c.env.DB.prepare(
     "SELECT * FROM team_invites WHERE token = ? AND team_id = ?",
   )
     .bind(token, id)
     .first<InviteRow>();
-  if (!invite) return c.json({ error: "Invite not found" }, 404);
+  if (!invite) return c.json({ error: "invite_not_found" }, 404);
   if (!canManageTeamInvite(eff.role, user.id, invite.created_by))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     email?: string | null;
@@ -3075,11 +3041,7 @@ app.patch("/:id/invites/:token", async (c) => {
   }
   if (body.max_uses !== undefined) {
     const valid = validateInviteMaxUses(body.max_uses, invite.uses, 0);
-    if (!valid.ok)
-      return c.json(
-        { error: "max_uses must be a safe integer no lower than uses" },
-        400,
-      );
+    if (!valid.ok) return c.json({ error: "max_uses_below_used" }, 400);
     maxUses = valid.value;
     if (invite.allows_registration === 1) {
       const cap = await getConfigValue(
@@ -3088,7 +3050,10 @@ app.patch("/:id/invites/:token", async (c) => {
       );
       if (maxUses < 1 || maxUses > cap)
         return c.json(
-          { error: `Usage limit must be between 1 and ${cap}` },
+          {
+            error: "field_int_range",
+            params: { field: "max_uses", min: 1, max: cap },
+          },
           400,
         );
     }
@@ -3099,18 +3064,22 @@ app.patch("/:id/invites/:token", async (c) => {
       body.expires_at,
       Math.floor(Date.now() / 1000),
     );
-    if (!expiry.ok) return c.json({ error: expiry.error }, 400);
+    if (!expiry.ok)
+      return c.json({ error: expiry.error, params: expiry.params }, 400);
     expiresAt = expiry.expiresAt;
     changes.expires_at = expiresAt;
   }
   if (body.enabled !== undefined) {
     if (typeof body.enabled !== "boolean")
-      return c.json({ error: "enabled must be a boolean" }, 400);
+      return c.json(
+        { error: "field_must_be_boolean", params: { field: "enabled" } },
+        400,
+      );
     enabled = body.enabled;
     changes.enabled = enabled;
   }
   if (!Object.keys(changes).length)
-    return c.json({ error: "No editable fields provided" }, 400);
+    return c.json({ error: "nothing_to_update" }, 400);
   const assignments: string[] = [];
   const values: unknown[] = [];
   if (body.email !== undefined) {
@@ -3138,10 +3107,7 @@ app.patch("/:id/invites/:token", async (c) => {
     .bind(...values, token, id)
     .run();
   if (!updated.meta.changes)
-    return c.json(
-      { error: "Invite usage changed; refresh and try again" },
-      409,
-    );
+    return c.json({ error: "invite_usage_changed" }, 409);
   auditTeam(
     c,
     id,
@@ -3173,8 +3139,8 @@ app.delete("/:id/invites/:token", async (c) => {
 
   const user = c.get("user");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const tokenLookup = await hashLookupCandidate(c.env, token);
   const invite = await c.env.DB.prepare(
@@ -3183,7 +3149,7 @@ app.delete("/:id/invites/:token", async (c) => {
     .bind(token, tokenLookup ?? token, id)
     .first<{ created_by: string }>();
   if (invite && !canManageTeamInvite(eff.role, user.id, invite.created_by))
-    return c.json({ error: "Forbidden" }, 403);
+    return c.json({ error: "forbidden" }, 403);
   // For revoke, missing/suspicious tokens are silently treated as a no-op
   // delete — caller already gated by team admin role above, so a probe
   // here can't be used to enumerate invites.
@@ -3199,7 +3165,7 @@ app.delete("/:id/invites/:token", async (c) => {
       resourceId: tokenLookup ?? token,
     });
 
-  return c.json({ message: "Invite revoked" });
+  return c.json({ ok: true });
 });
 
 // ─── Team domains ─────────────────────────────────────────────────────────────
@@ -3214,7 +3180,7 @@ const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
 app.get(":id/domains", async (c) => {
   const id = c.req.param("id");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not a team member" }, 403);
+  if (!eff) return c.json({ error: "not_team_member" }, 403);
 
   const { page, limit, offset } = readPage(
     c.req.query("page"),
@@ -3277,13 +3243,13 @@ app.get(":id/domains", async (c) => {
 app.get(":id/domains/:domainId", async (c) => {
   const id = c.req.param("id");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not a team member" }, 403);
+  if (!eff) return c.json({ error: "not_team_member" }, 403);
   const row = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE id = ? AND team_id = ?",
   )
     .bind(c.req.param("domainId"), id)
     .first<DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
   return c.json({ domain: row });
 });
 
@@ -3292,13 +3258,17 @@ app.post(":id/domains", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_team_member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{ domain: string }>();
-  if (!body.domain) return c.json({ error: "domain is required" }, 400);
+  if (!body.domain)
+    return c.json(
+      { error: "field_required", params: { field: "domain" } },
+      400,
+    );
   if (!DOMAIN_REGEX.test(body.domain))
-    return c.json({ error: "Invalid domain format" }, 400);
+    return c.json({ error: "domain_invalid" }, 400);
 
   const domain = body.domain.toLowerCase().trim();
 
@@ -3307,7 +3277,7 @@ app.post(":id/domains", async (c) => {
   )
     .bind(id, domain)
     .first();
-  if (existing) return c.json({ error: "Domain already added" }, 409);
+  if (existing) return c.json({ error: "domain_exists" }, 409);
 
   const verificationToken = randomBase64url(24);
   const domainId = randomId();
@@ -3362,15 +3332,15 @@ app.post(":id/domains/:domainId/verify", async (c) => {
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_team_member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE id = ? AND team_id = ?",
   )
     .bind(domainId, id)
     .first<DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   let requestedMethod: VerificationMethod | null = null;
   try {
@@ -3381,7 +3351,7 @@ app.post(":id/domains/:domainId/verify", async (c) => {
     };
     if (body.method !== undefined) {
       if (!isVerificationMethod(body.method))
-        return c.json({ error: "Invalid verification method" }, 400);
+        return c.json({ error: "verification_method_invalid" }, 400);
       requestedMethod = body.method;
     }
   } catch {
@@ -3438,20 +3408,20 @@ app.delete(":id/domains/:domainId", async (c) => {
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_team_member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT id FROM domains WHERE id = ? AND team_id = ?",
   )
     .bind(domainId, id)
     .first();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM domains WHERE id = ?")
     .bind(domainId)
     .run();
-  return c.json({ message: "Domain deleted" });
+  return c.json({ ok: true });
 });
 
 // Return team domain to its creator's personal domains
@@ -3459,15 +3429,15 @@ app.post(":id/domains/:domainId/to-personal", async (c) => {
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_team_member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE id = ? AND team_id = ?",
   )
     .bind(domainId, id)
     .first<import("../types").DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   // Check if the creator already has this domain personally
   const conflict = await c.env.DB.prepare(
@@ -3475,17 +3445,13 @@ app.post(":id/domains/:domainId/to-personal", async (c) => {
   )
     .bind(row.user_id, row.domain)
     .first();
-  if (conflict)
-    return c.json(
-      { error: "Domain creator already owns this domain personally" },
-      409,
-    );
+  if (conflict) return c.json({ error: "domain_adder_owns_it" }, 409);
 
   await c.env.DB.prepare("UPDATE domains SET team_id = NULL WHERE id = ?")
     .bind(domainId)
     .run();
 
-  return c.json({ message: "Domain returned to personal ownership" });
+  return c.json({ ok: true });
 });
 
 // Share team domain to another team (copy — keeps source, creates new row in target)
@@ -3494,28 +3460,28 @@ app.post(":id/domains/:domainId/share-to-team", async (c) => {
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_team_member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE id = ? AND team_id = ?",
   )
     .bind(domainId, id)
     .first<DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   const body = await c.req.json<{ team_id: string }>();
-  if (!body.team_id) return c.json({ error: "team_id is required" }, 400);
-  if (body.team_id === id)
-    return c.json({ error: "Cannot share to the same team" }, 400);
+  if (!body.team_id)
+    return c.json(
+      { error: "field_required", params: { field: "team_id" } },
+      400,
+    );
+  if (body.team_id === id) return c.json({ error: "share_same_team" }, 400);
 
   // Requester must be admin+ in the target team (effective)
   const targetEff = await teamAuthority(c, body.team_id);
   if (!targetEff || !hasRole(targetEff.role, "admin"))
-    return c.json(
-      { error: "Forbidden: must be admin or owner of target team" },
-      403,
-    );
+    return c.json({ error: "target_team_admin_required" }, 403);
 
   // Target team must not already have this domain
   const conflict = await c.env.DB.prepare(
@@ -3523,8 +3489,7 @@ app.post(":id/domains/:domainId/share-to-team", async (c) => {
   )
     .bind(body.team_id, row.domain)
     .first();
-  if (conflict)
-    return c.json({ error: "Target team already has this domain" }, 409);
+  if (conflict) return c.json({ error: "team_has_domain" }, 409);
 
   const newId = randomId();
   const newToken = randomBase64url(24);
@@ -3559,15 +3524,15 @@ app.post(":id/domains/:domainId/share-to-personal", async (c) => {
   const id = c.req.param("id");
   const domainId = c.req.param("domainId");
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not a team member" }, 403);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_team_member" }, 403);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const row = await c.env.DB.prepare(
     "SELECT * FROM domains WHERE id = ? AND team_id = ?",
   )
     .bind(domainId, id)
     .first<DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   // User must not already own this domain personally
   const conflict = await c.env.DB.prepare(
@@ -3575,8 +3540,7 @@ app.post(":id/domains/:domainId/share-to-personal", async (c) => {
   )
     .bind(user.id, row.domain)
     .first();
-  if (conflict)
-    return c.json({ error: "You already own this domain personally" }, 409);
+  if (conflict) return c.json({ error: "domain_already_yours" }, 409);
 
   const newId = randomId();
   const newToken = randomBase64url(24);
@@ -3641,7 +3605,7 @@ app.get("/:id/apps", async (c) => {
   const id = c.req.param("id");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
+  if (!eff) return c.json({ error: "not_found" }, 404);
 
   const { page, limit, offset } = readPage(
     c.req.query("page"),
@@ -3689,15 +3653,15 @@ app.post("/:id/apps", async (c) => {
 
   if (user.role !== "admin") {
     const disabled = await getConfigValue(c.env.DB, "disable_user_create_app");
-    if (disabled) return c.json({ error: "App creation is disabled" }, 403);
+    if (disabled) return c.json({ error: "app_creation_disabled" }, 403);
   }
 
   const capErr = await guardCapability(c.env.DB, user.id, "app:create");
   if (capErr) return c.json({ error: capErr }, 403);
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{
     name: string;
@@ -3713,20 +3677,21 @@ app.post("/:id/apps", async (c) => {
     is_public?: boolean;
   }>();
 
-  if (!body.name) return c.json({ error: "name is required" }, 400);
+  if (!body.name)
+    return c.json({ error: "field_required", params: { field: "name" } }, 400);
   if (!body.redirect_uris?.length)
-    return c.json({ error: "At least one redirect_uri required" }, 400);
+    return c.json({ error: "redirect_uri_required" }, 400);
 
   // parseRedirectUris tolerates the legacy string form too, so API clients
   // written against the old shape keep working.
   const redirectUris = parseRedirectUris(JSON.stringify(body.redirect_uris));
   if (!redirectUris.length)
-    return c.json({ error: "At least one redirect_uri required" }, 400);
+    return c.json({ error: "redirect_uri_required" }, 400);
   for (const entry of redirectUris) {
     const reason = validateRedirectUriEntry(entry);
     if (reason)
       return c.json(
-        { error: `Invalid redirect_uri (${reason}): ${entry.value}` },
+        { error: `redirect_uri_${reason}`, params: { uri: entry.value } },
         400,
       );
   }
@@ -3806,19 +3771,18 @@ app.post("/:id/apps/transfer", async (c) => {
   const id = c.req.param("id");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const body = await c.req.json<{ app_id: string }>();
   const appRow = await c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ?")
     .bind(body.app_id)
     .first<OAuthAppRow>();
 
-  if (!appRow) return c.json({ error: "App not found" }, 404);
-  if (appRow.team_id)
-    return c.json({ error: "App is already owned by a team" }, 409);
+  if (!appRow) return c.json({ error: "app_not_found" }, 404);
+  if (appRow.team_id) return c.json({ error: "app_already_team_owned" }, 409);
   if (appRow.owner_id !== user.id)
-    return c.json({ error: "You can only transfer apps you created" }, 403);
+    return c.json({ error: "app_not_yours" }, 403);
 
   // Re-point owner_id to the team-user row (id == teams.id, kind='team')
   // so the app appears owned by the team everywhere owner_id is joined to
@@ -3847,7 +3811,7 @@ app.post("/:id/apps/transfer", async (c) => {
       .run();
   }
 
-  return c.json({ message: "App transferred to team" });
+  return c.json({ ok: true });
 });
 
 // Remove app from team (back to personal — assigned to the requester)
@@ -3857,15 +3821,15 @@ app.delete("/:id/apps/:appId/transfer", async (c) => {
   const appId = c.req.param("appId");
 
   const eff = await teamAuthority(c, id);
-  if (!eff) return c.json({ error: "Not found" }, 404);
-  if (!hasRole(eff.role, "admin")) return c.json({ error: "Forbidden" }, 403);
+  if (!eff) return c.json({ error: "not_found" }, 404);
+  if (!hasRole(eff.role, "admin")) return c.json({ error: "forbidden" }, 403);
 
   const appRow = await c.env.DB.prepare(
     "SELECT * FROM oauth_apps WHERE id = ? AND team_id = ?",
   )
     .bind(appId, id)
     .first<OAuthAppRow>();
-  if (!appRow) return c.json({ error: "App not found in this team" }, 404);
+  if (!appRow) return c.json({ error: "app_not_in_team" }, 404);
 
   const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(
@@ -3874,7 +3838,7 @@ app.delete("/:id/apps/:appId/transfer", async (c) => {
     .bind(user.id, now, appId)
     .run();
 
-  return c.json({ message: "App moved back to personal" });
+  return c.json({ ok: true });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

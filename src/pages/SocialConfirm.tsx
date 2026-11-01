@@ -177,7 +177,7 @@ export function SocialConfirm() {
         )}
 
         <form onSubmit={handleCreate} className={styles.form}>
-          <Field label="Username" required>
+          <Field label={t("auth.username")} required>
             <Input
               value={username}
               onChange={(e) =>
@@ -191,11 +191,11 @@ export function SocialConfirm() {
               autoFocus
             />
           </Field>
-          <Field label="Display name" required>
+          <Field label={t("auth.displayName")} required>
             <Input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your Name"
+              placeholder={t("auth.displayNamePlaceholder")}
               maxLength={64}
             />
           </Field>

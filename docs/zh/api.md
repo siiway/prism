@@ -13,6 +13,20 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 请求正文全局上限为 5 MiB。Prism 会在进入路由前拒绝声明过大的 `Content-Length`，并在读取未声明长度或长度不准确的流式正文时执行相同限制。超限请求返回 `413`。
 
+## 错误
+
+请求失败时返回稳定、可供程序识别的错误码，而不是英文文本：
+
+```json
+{ "error": "field_required", "params": { "field": "name" } }
+```
+
+`error` 是小写错误码，例如 `team_not_found`、`forbidden` 或 `invite_used_up`；请据此判断，错误码不会因措辞调整而改变。当提示需要填入内容（字段名、上限、URL 等）时会附带 `params`。Web 界面会根据语言文件（`src/i18n/` 中的 `apiErrors.<code>`）把错误码翻译成读者的语言，因此用户看到的文字与程序看到的错误码始终一致。
+
+成功的写操作返回数据，没有可返回的内容时返回 `{ "ok": true }`；不再提供用于显示的 `message` 字段。
+
+OAuth 与 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/register`、`/api/oauth/userinfo`、设备授权流程等）遵循各自的 RFC：`error` 为标准错误码，`error_description` 为面向客户端开发者的英文说明。
+
 ## 初始化
 
 ### `GET /api/init/status`

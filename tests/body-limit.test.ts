@@ -117,7 +117,7 @@ describe("global request body limit", () => {
     app.post("/", async (c) => c.text(await c.req.text()));
     app.onError((error, c) =>
       error instanceof BodySizeLimitError
-        ? c.json({ error: "Request body too large" }, 413)
+        ? c.json({ error: "request_too_large" }, 413)
         : c.json({ error: "Internal server error" }, 500),
     );
 
@@ -131,7 +131,7 @@ describe("global request body limit", () => {
     const response = await app.request(request);
 
     expect(response.status).toBe(413);
-    expect(await response.json()).toEqual({ error: "Request body too large" });
+    expect(await response.json()).toEqual({ error: "request_too_large" });
     expect(cancelled).toBe(true);
   });
 
@@ -156,7 +156,7 @@ describe("global request body limit", () => {
     const response = await app.request(request);
 
     expect(response.status).toBe(413);
-    expect(await response.json()).toEqual({ error: "Request body too large" });
+    expect(await response.json()).toEqual({ error: "request_too_large" });
   });
 
   test("rejects an excessive Content-Length before reading the body", async () => {

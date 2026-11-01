@@ -190,7 +190,7 @@ function NoticeEditor({
     onSuccess: () =>
       onSaved(existing ? t("admin.noticeUpdated") : t("admin.noticeCreated")),
     onError: (err) =>
-      setError(err instanceof ApiError ? err.message : String(err)),
+      setError(err instanceof ApiError ? err.message : t("common.error")),
   });
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
@@ -402,7 +402,10 @@ export function AdminNotices() {
         await invalidate();
         showMsg("success", res?.message ?? t("admin.noticeUpdated"));
       } catch (err) {
-        showMsg("error", err instanceof ApiError ? err.message : String(err));
+        showMsg(
+          "error",
+          err instanceof ApiError ? err.message : t("common.error"),
+        );
       }
     };
 
@@ -420,7 +423,7 @@ export function AdminNotices() {
                 ? t("admin.noticesUnavailable")
                 : t("common.error")}
             </MessageBarTitle>
-            {error instanceof ApiError ? error.message : String(error)}
+            {error instanceof ApiError ? error.message : t("common.error")}
           </MessageBarBody>
         </MessageBar>
       )}

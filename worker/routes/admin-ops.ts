@@ -131,7 +131,6 @@ app.post("/revoke/sessions", async (c) => {
     actor_session_kept: body.include_self !== true,
   });
   return c.json({
-    message: "Sessions revoked",
     deleted: result.meta?.changes ?? 0,
     your_session_kept: body.include_self !== true,
     actor: admin.username,
@@ -152,7 +151,7 @@ app.post("/revoke/app/:appId", async (c) => {
   )
     .bind(appId, appId)
     .first<{ id: string; client_id: string; name: string }>();
-  if (!row) return c.json({ error: "Application not found" }, 404);
+  if (!row) return c.json({ error: "app_not_found" }, 404);
 
   const body = await c.req
     .json<{ deactivate?: boolean }>()
@@ -204,7 +203,6 @@ app.post("/revoke/app/:appId", async (c) => {
     { type: "app", id: row.id, name: row.name },
   );
   return c.json({
-    message: "Application access revoked",
     tokens_revoked: tokens,
     consents_revoked: consents,
     deactivated: body.deactivate === true,
@@ -225,7 +223,7 @@ app.post("/revoke/user/:userId/grants", async (c) => {
   )
     .bind(userId)
     .first<{ id: string; username: string }>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
 
   const [tokens, consents] = await Promise.all([
     countRows(
@@ -255,7 +253,6 @@ app.post("/revoke/user/:userId/grants", async (c) => {
     { type: "user", id: user.id, name: user.username },
   );
   return c.json({
-    message: "Authorizations revoked",
     tokens_revoked: tokens,
     consents_revoked: consents,
   });
@@ -338,7 +335,7 @@ app.post("/domains/:id/verify", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM domains WHERE id = ?")
     .bind(id)
     .first<DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   const body = await c.req
     .json<{ verified?: boolean }>()
@@ -364,9 +361,7 @@ app.post("/domains/:id/verify", async (c) => {
     },
     { type: "domain", id: row.id, name: row.domain },
   );
-  return c.json({
-    message: verified ? "Domain marked verified" : "Verification withdrawn",
-  });
+  return c.json({ ok: true });
 });
 
 app.delete("/domains/:id", async (c) => {
@@ -381,7 +376,7 @@ app.delete("/domains/:id", async (c) => {
       user_id: string | null;
       team_id: string | null;
     }>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM domains WHERE id = ?").bind(id).run();
   auditOps(
@@ -390,7 +385,7 @@ app.delete("/domains/:id", async (c) => {
     { domain: row.domain, owner_id: row.user_id, team_id: row.team_id },
     { type: "domain", id: row.id, name: row.domain },
   );
-  return c.json({ message: "Domain deleted" });
+  return c.json({ ok: true });
 });
 
 // ─── Application ownership ────────────────────────────────────────────────────
@@ -416,13 +411,13 @@ app.post("/apps/:id/transfer", async (c) => {
       owner_id: string;
       team_id: string | null;
     }>();
-  if (!row) return c.json({ error: "Application not found" }, 404);
+  if (!row) return c.json({ error: "app_not_found" }, 404);
 
   const body = await c.req.json<{ owner_id?: string; team_id?: string }>();
   if (!body.owner_id && !body.team_id)
-    return c.json({ error: "owner_id or team_id is required" }, 400);
+    return c.json({ error: "owner_or_team_required" }, 400);
   if (body.owner_id && body.team_id)
-    return c.json({ error: "Give owner_id or team_id, not both" }, 400);
+    return c.json({ error: "owner_or_team_not_both" }, 400);
 
   let newOwnerId: string;
   let newTeamId: string | null;
@@ -432,7 +427,7 @@ app.post("/apps/:id/transfer", async (c) => {
     )
       .bind(body.team_id)
       .first<{ id: string; name: string }>();
-    if (!team) return c.json({ error: "Team not found" }, 404);
+    if (!team) return c.json({ error: "team_not_found" }, 404);
     // Team-owned apps hang off the synthetic `kind = 'team'` user row whose id
     // matches the team's, so owner_id and team_id move together.
     newOwnerId = team.id;
@@ -443,13 +438,13 @@ app.post("/apps/:id/transfer", async (c) => {
     )
       .bind(body.owner_id ?? "", body.owner_id ?? "")
       .first<{ id: string }>();
-    if (!user) return c.json({ error: "User not found" }, 404);
+    if (!user) return c.json({ error: "user_not_found" }, 404);
     newOwnerId = user.id;
     newTeamId = null;
   }
 
   if (newOwnerId === row.owner_id && newTeamId === row.team_id)
-    return c.json({ error: "The application already has that owner" }, 400);
+    return c.json({ error: "app_same_owner" }, 400);
 
   await c.env.DB.prepare(
     "UPDATE oauth_apps SET owner_id = ?, team_id = ?, updated_at = ? WHERE id = ?",
@@ -466,7 +461,7 @@ app.post("/apps/:id/transfer", async (c) => {
     },
     { type: "app", id: row.id, name: row.name },
   );
-  return c.json({ message: "Application transferred" });
+  return c.json({ ok: true });
 });
 
 // ─── Restricted accounts ──────────────────────────────────────────────────────
@@ -493,11 +488,10 @@ app.post("/users/:id/convert", async (c) => {
       origin_team_id: string | null;
       converted_at: number | null;
     }>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
   if (!user.origin_team_id)
-    return c.json({ error: "This account is not restricted" }, 400);
-  if (user.converted_at)
-    return c.json({ error: "This account has already been converted" }, 409);
+    return c.json({ error: "account_not_restricted" }, 400);
+  if (user.converted_at) return c.json({ error: "already_converted" }, 409);
 
   const body = await c.req
     .json<{ require_verified_email?: boolean }>()
@@ -506,8 +500,7 @@ app.post("/users/:id/convert", async (c) => {
   if (requireVerified && user.email_verified !== 1)
     return c.json(
       {
-        error:
-          "This account has no verified email. Verify one first, or convert with require_verified_email: false.",
+        error: "convert_needs_verified_email",
       },
       409,
     );
@@ -528,7 +521,7 @@ app.post("/users/:id/convert", async (c) => {
     },
     { type: "user", id: user.id, name: user.username },
   );
-  return c.json({ message: "Restriction lifted" });
+  return c.json({ ok: true });
 });
 
 // ─── Team invites ─────────────────────────────────────────────────────────────
@@ -648,7 +641,7 @@ app.delete("/team-invites/:token", async (c) => {
       uses: number;
       team_name: string | null;
     }>();
-  if (!row) return c.json({ error: "Invite not found" }, 404);
+  if (!row) return c.json({ error: "invite_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM team_invites WHERE token = ?")
     .bind(token)
@@ -660,7 +653,7 @@ app.delete("/team-invites/:token", async (c) => {
     { team_id: row.team_id, uses: row.uses },
     { type: "team", id: row.team_id, name: row.team_name },
   );
-  return c.json({ message: "Invite revoked" });
+  return c.json({ ok: true });
 });
 
 // ─── Bulk account actions ─────────────────────────────────────────────────────
@@ -686,18 +679,25 @@ app.post("/users/bulk", async (c) => {
   }>();
 
   if (!Array.isArray(body.user_ids) || body.user_ids.length === 0)
-    return c.json({ error: "user_ids is required" }, 400);
+    return c.json(
+      { error: "field_required", params: { field: "user_ids" } },
+      400,
+    );
   if (body.user_ids.length > BULK_LIMIT)
     return c.json(
       {
-        error: `At most ${BULK_LIMIT} accounts per request`,
+        error: "bulk_limit",
+        params: { max: BULK_LIMIT },
         limit: BULK_LIMIT,
       },
       400,
     );
   if (!["deactivate", "activate", "delete"].includes(body.action))
     return c.json(
-      { error: "action must be deactivate, activate or delete" },
+      {
+        error: "field_one_of",
+        params: { field: "action", values: "deactivate, activate, delete" },
+      },
       400,
     );
 
@@ -768,7 +768,6 @@ app.post("/users/bulk", async (c) => {
   });
 
   return c.json({
-    message: "Done",
     action: body.action,
     affected,
     // Named, not just counted — "3 skipped" is not something an operator can
@@ -1261,14 +1260,14 @@ app.delete("/users/:id/sessions/:sessionId", async (c) => {
   )
     .bind(userId)
     .first<{ id: string; username: string }>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, ip_address FROM sessions WHERE id = ? AND user_id = ?",
   )
     .bind(c.req.param("sessionId"), userId)
     .first<{ id: string; ip_address: string | null }>();
-  if (!row) return c.json({ error: "Session not found" }, 404);
+  if (!row) return c.json({ error: "session_not_found" }, 404);
 
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(row.id),
@@ -1283,7 +1282,7 @@ app.delete("/users/:id/sessions/:sessionId", async (c) => {
     { session_id: row.id, ip: row.ip_address },
     { type: "user", id: user.id, name: user.username },
   );
-  return c.json({ message: "Session ended" });
+  return c.json({ ok: true });
 });
 
 export default app;

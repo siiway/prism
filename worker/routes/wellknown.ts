@@ -135,7 +135,10 @@ const OIDC_ISSUER_REL = "http://openid.net/specs/connect/1.0/issuer";
 app.get("/webfinger", (c) => {
   const resource = c.req.query("resource");
   if (!resource)
-    return c.json({ error: "the resource parameter is required" }, 400);
+    return c.json(
+      { error: "field_required", params: { field: "resource" } },
+      400,
+    );
   const rel = c.req.query("rel");
   const links =
     !rel || rel === OIDC_ISSUER_REL

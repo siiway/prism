@@ -1111,7 +1111,7 @@ export function Security() {
                     {totpQrSvg && (
                       <div
                         role="img"
-                        aria-label="TOTP QR Code"
+                        aria-label={t("security.totpQrLabel")}
                         className={styles.qr}
                         // Generated locally by the qrcode library — no
                         // untrusted markup, so safe to drop into the DOM.

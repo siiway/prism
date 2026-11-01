@@ -192,7 +192,7 @@ export function DeviceVerify() {
     } catch (err) {
       if (
         err instanceof ApiError &&
-        (err.status === 401 || err.message === "Unauthorized")
+        (err.status === 401 || err.code === "unauthorized")
       ) {
         navigate(
           `/login?redirect=${encodeURIComponent(

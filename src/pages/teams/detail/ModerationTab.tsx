@@ -90,8 +90,8 @@ export function ModerationTab({ team, showMsg }: TeamTabProps) {
     });
     if (ok)
       await run("cancel", async () => {
-        const res = await api.adminCancelDissolve(team.id);
-        return res.message;
+        await api.adminCancelDissolve(team.id);
+        return t("teams.moderation.dissolveCancelledDone");
       });
   };
 

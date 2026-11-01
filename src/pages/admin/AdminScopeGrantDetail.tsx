@@ -115,7 +115,7 @@ export function AdminScopeGrantDetail() {
       <SettingsPage>
         {back}
         <MessageBar intent="error">
-          {apiErrorText(t, error, t("apiErrors.scope_grant_not_found"))}
+          {apiErrorText(error, t("apiErrors.scope_grant_not_found"))}
         </MessageBar>
       </SettingsPage>
     );
@@ -141,7 +141,7 @@ export function AdminScopeGrantDetail() {
       qc.removeQueries({ queryKey: ["admin-scope-grant", kind, id] });
       navigate(listPath, { replace: true, state: { revoked: appName } });
     } catch (err) {
-      showMsg("error", apiErrorText(t, err, t("admin.revokeGrantFailed")));
+      showMsg("error", apiErrorText(err, t("admin.revokeGrantFailed")));
       setBusy(false);
     }
   };

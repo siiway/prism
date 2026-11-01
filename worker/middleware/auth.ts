@@ -101,42 +101,42 @@ export async function requireAuth(c: Context<AppEnv>, next: Next) {
   const token = readSessionToken(c);
 
   if (!token) {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "unauthorized" }, 401);
   }
 
   try {
     const session = await loadSession(c, token);
-    if (!session) return c.json({ error: "Unauthorized" }, 401);
+    if (!session) return c.json({ error: "unauthorized" }, 401);
 
     c.set("user", session.user);
     c.set("sessionId", session.sessionId);
     trackSessionIp(c, session.sessionId);
     await next();
   } catch {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "unauthorized" }, 401);
   }
 }
 
 export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
   const token = readSessionToken(c);
 
-  if (!token) return c.json({ error: "Unauthorized" }, 401);
+  if (!token) return c.json({ error: "unauthorized" }, 401);
 
   try {
     const session = await loadSession(c, token);
-    if (!session) return c.json({ error: "Unauthorized" }, 401);
+    if (!session) return c.json({ error: "unauthorized" }, 401);
 
     // The role as it stands right now, not the one the token was minted with:
     // an admin who has since been demoted loses access here, immediately.
     if (session.user.role !== "admin")
-      return c.json({ error: "Forbidden" }, 403);
+      return c.json({ error: "forbidden" }, 403);
 
     c.set("user", session.user);
     c.set("sessionId", session.sessionId);
     trackSessionIp(c, session.sessionId);
     await next();
   } catch {
-    return c.json({ error: "Unauthorized" }, 401);
+    return c.json({ error: "unauthorized" }, 401);
   }
 };
 
@@ -169,7 +169,7 @@ export function tryPatAuth(scopes: {
     // (post-migration). Look up under both forms so PATs issued before
     // SECRETS_KEY was wired up keep working until the admin migrate runs.
     const lookupHash = await hashLookupCandidate(c.env, raw);
-    if (!lookupHash) return c.json({ error: "Unauthorized" }, 401);
+    if (!lookupHash) return c.json({ error: "unauthorized" }, 401);
     const pat = await c.env.DB.prepare(
       "SELECT id, user_id, scopes, expires_at FROM personal_access_tokens WHERE token = ? OR token = ?",
     )
@@ -180,9 +180,9 @@ export function tryPatAuth(scopes: {
         scopes: string;
         expires_at: number | null;
       }>();
-    if (!pat) return c.json({ error: "Unauthorized" }, 401);
+    if (!pat) return c.json({ error: "unauthorized" }, 401);
     if (pat.expires_at !== null && pat.expires_at < now)
-      return c.json({ error: "Token expired" }, 401);
+      return c.json({ error: "token_expired" }, 401);
 
     const tokenScopes = JSON.parse(pat.scopes) as string[];
     const required =
@@ -206,7 +206,7 @@ export function tryPatAuth(scopes: {
         email_verified: number;
         is_active: number;
       }>();
-    if (!user || !user.is_active) return c.json({ error: "Unauthorized" }, 401);
+    if (!user || !user.is_active) return c.json({ error: "unauthorized" }, 401);
 
     c.set("user", {
       id: user.id,

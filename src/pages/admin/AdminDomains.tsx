@@ -88,15 +88,19 @@ export function AdminDomains() {
   const [busy, setBusy] = useState<string | null>(null);
   const run = async (
     id: string,
-    action: () => Promise<{ message: string }>,
+    action: () => Promise<unknown>,
+    done: string,
   ) => {
     setBusy(id);
     try {
-      const res = await action();
+      await action();
       await qc.invalidateQueries({ queryKey: ["admin-domains"] });
-      showMsg("success", res.message);
+      showMsg("success", done);
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : String(err));
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     } finally {
       setBusy(null);
     }
@@ -108,7 +112,12 @@ export function AdminDomains() {
       body: t("admin.domainForceVerifyBody", { domain: row.domain }),
       confirmLabel: t("admin.domainForceVerify"),
     });
-    if (ok) await run(row.id, () => api.adminSetDomainVerified(row.id, true));
+    if (ok)
+      await run(
+        row.id,
+        () => api.adminSetDomainVerified(row.id, true),
+        t("admin.domainVerifiedDone"),
+      );
   };
   const unverify = async (row: AdminDomain) => {
     const ok = await confirm({
@@ -116,7 +125,12 @@ export function AdminDomains() {
       body: t("admin.domainUnverifyBody", { domain: row.domain }),
       confirmLabel: t("admin.domainUnverify"),
     });
-    if (ok) await run(row.id, () => api.adminSetDomainVerified(row.id, false));
+    if (ok)
+      await run(
+        row.id,
+        () => api.adminSetDomainVerified(row.id, false),
+        t("admin.domainUnverifiedDone"),
+      );
   };
   const remove = async (row: AdminDomain) => {
     const ok = await confirm({
@@ -124,7 +138,12 @@ export function AdminDomains() {
       body: t("admin.domainDeleteBody", { domain: row.domain }),
       confirmLabel: t("common.delete"),
     });
-    if (ok) await run(row.id, () => api.adminDeleteDomain(row.id));
+    if (ok)
+      await run(
+        row.id,
+        () => api.adminDeleteDomain(row.id),
+        t("common.deletedDone"),
+      );
   };
 
   const columns: DataListColumn[] = [

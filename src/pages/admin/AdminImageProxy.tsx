@@ -189,7 +189,7 @@ export function AdminImageProxy() {
                 updateConfig.mutate({ avatar_proxy_cache_mode: d.value })
               }
             >
-              <option value="off">Off</option>
+              <option value="off">{t("admin.avatarProxyCacheOff")}</option>
               <option value="kv">KV</option>
               <option value="d1">D1</option>
             </Select>

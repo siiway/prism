@@ -103,11 +103,14 @@ export function AdminTeamInvites() {
     if (!ok) return;
     setBusy(row.token);
     try {
-      const res = await api.adminRevokeTeamInvite(row.token);
+      await api.adminRevokeTeamInvite(row.token);
       await qc.invalidateQueries({ queryKey: ["admin-team-invites"] });
-      showMsg("success", res.message);
+      showMsg("success", t("common.revokedDone"));
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : String(err));
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
     } finally {
       setBusy(null);
     }

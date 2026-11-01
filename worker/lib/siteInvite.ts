@@ -35,14 +35,13 @@ export async function validateSiteInvite(
   if (!token)
     return {
       ok: false,
-      error: "An invite token is required to register",
+      error: "invite_required",
       status: 403,
     };
 
   const now = Math.floor(Date.now() / 1000);
   const inviteLookup = await hashLookupCandidate(env, token);
-  if (!inviteLookup)
-    return { ok: false, error: "Invalid invite token", status: 403 };
+  if (!inviteLookup) return { ok: false, error: "invite_invalid", status: 403 };
 
   const invite = await env.DB.prepare(
     "SELECT * FROM site_invites WHERE (token = ? OR token = ?) AND enabled = 1",
@@ -50,13 +49,13 @@ export async function validateSiteInvite(
     .bind(token, inviteLookup)
     .first<SiteInviteRow>();
 
-  if (!invite) return { ok: false, error: "Invalid invite token", status: 403 };
+  if (!invite) return { ok: false, error: "invite_invalid", status: 403 };
   if (invite.expires_at !== null && invite.expires_at < now)
-    return { ok: false, error: "Invite token has expired", status: 403 };
+    return { ok: false, error: "invite_expired", status: 403 };
   if (invite.max_uses !== null && invite.use_count >= invite.max_uses)
     return {
       ok: false,
-      error: "Invite token has reached its usage limit",
+      error: "invite_used_up",
       status: 403,
     };
   if (
@@ -65,7 +64,7 @@ export async function validateSiteInvite(
   )
     return {
       ok: false,
-      error: "This invite is for a different email address",
+      error: "invite_email_mismatch",
       status: 403,
     };
 

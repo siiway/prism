@@ -147,7 +147,7 @@ export function Register() {
               </Field>
             )}
 
-            <Field label="Email" required>
+            <Field label={t("auth.email")} required>
               <Input
                 type="email"
                 value={form.email}
@@ -156,22 +156,22 @@ export function Register() {
               />
             </Field>
 
-            <Field label="Username" required>
+            <Field label={t("auth.username")} required>
               <Input
                 value={form.username}
                 onChange={update("username")}
                 placeholder="johndoe"
               />
             </Field>
-            <Field label="Display name">
+            <Field label={t("auth.displayName")}>
               <Input
                 value={form.display_name}
                 onChange={update("display_name")}
-                placeholder="John Doe"
+                placeholder={t("auth.displayNamePlaceholder")}
               />
             </Field>
 
-            <Field label="Password" required>
+            <Field label={t("auth.password")} required>
               <PasswordInput
                 value={form.password}
                 onChange={update("password")}

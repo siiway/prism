@@ -64,7 +64,7 @@ describe("image proxy body limit", () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
-      error: "Avatar exceeds the configured size limit",
+      error: "avatar_too_large",
     });
     expect(targetFetches).toBe(1);
     expect(cancelled).toBe(true);

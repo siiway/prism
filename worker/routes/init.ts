@@ -21,7 +21,7 @@ app.get("/status", async (c) => {
 app.post("/", async (c) => {
   const initialized = await isInitialized(c.env.DB);
   if (initialized) {
-    return c.json({ error: "Platform already initialized" }, 409);
+    return c.json({ error: "already_initialized" }, 409);
   }
 
   const body = await c.req.json<{
@@ -33,10 +33,16 @@ app.post("/", async (c) => {
   }>();
 
   if (!body.email || !body.username || !body.password) {
-    return c.json({ error: "email, username and password are required" }, 400);
+    return c.json(
+      {
+        error: "fields_required",
+        params: { fields: "email, username, password" },
+      },
+      400,
+    );
   }
   if (body.password.length < 8) {
-    return c.json({ error: "Password must be at least 8 characters" }, 400);
+    return c.json({ error: "password_too_short" }, 400);
   }
 
   const userId = randomId();
@@ -70,12 +76,12 @@ app.post("/", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE")) {
-      return c.json({ error: "Email or username already taken" }, 409);
+      return c.json({ error: "email_or_username_taken" }, 409);
     }
     throw err;
   }
   if (created.meta.changes !== 1) {
-    return c.json({ error: "Platform already initialized" }, 409);
+    return c.json({ error: "already_initialized" }, 409);
   }
 
   // Mark initialized and optionally set site name

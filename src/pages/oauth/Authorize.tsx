@@ -257,19 +257,14 @@ export function Authorize() {
       if (err instanceof ApiError) {
         // Session expired / invalid during the POST — redirect to login
         // so the user can re-authenticate and return to the consent screen.
-        if (err.status === 401 || err.message === "Unauthorized") {
+        if (err.status === 401 || err.code === "unauthorized") {
           const loginUrl = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
           navigate(loginUrl, { replace: true });
           return;
         }
 
-        const errorCode = err.message; // ApiError.message = the "error" field from JSON
-        const humanMsg =
-          typeof err.data === "object" &&
-          err.data !== null &&
-          "message" in (err.data as object)
-            ? String((err.data as Record<string, unknown>).message)
-            : err.message;
+        const errorCode = err.code;
+        const humanMsg = err.message; // already translated
         if (
           errorCode === "site_scope_totp_invalid" ||
           errorCode === "site_scope_totp_required" ||
@@ -294,7 +289,8 @@ export function Authorize() {
         const redirectTarget = data?.redirect_uri ?? params.redirect_uri;
         const url = new URL(redirectTarget);
         url.searchParams.set("error", "server_error");
-        url.searchParams.set("error_description", humanMsg);
+        // For the app's developers, not the person here: the stable code.
+        url.searchParams.set("error_description", errorCode);
         if (params.state) url.searchParams.set("state", params.state);
         window.location.href = url.toString();
       } else {
@@ -327,11 +323,7 @@ export function Authorize() {
     } catch (err) {
       const msg =
         err instanceof ApiError
-          ? typeof err.data === "object" &&
-            err.data !== null &&
-            "message" in (err.data as object)
-            ? String((err.data as Record<string, unknown>).message)
-            : err.message
+          ? err.message
           : t("oauth.siteScopePasskeyFailed");
       setSiteError(msg);
     } finally {

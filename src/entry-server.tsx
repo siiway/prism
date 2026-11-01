@@ -32,7 +32,11 @@ import { ThemeProvider } from "./components/ThemeProvider";
 import { createRoutes } from "./routes";
 import { createServerI18n } from "./i18n/init";
 import { AuthStoreProvider, createAuthStore } from "./store/auth";
-import { createApiClient, type SessionUser } from "./lib/api";
+import {
+  createApiClient,
+  i18nErrorTranslator,
+  type SessionUser,
+} from "./lib/api";
 import { ApiProvider } from "./lib/ApiProvider";
 
 export interface RenderOptions {
@@ -146,12 +150,14 @@ export async function render(
   const auth = opts.auth ?? { user: null };
   const origin = new URL(request.url).origin;
   const authStore = createAuthStore({ initialAuth: auth });
+  const i18n = createServerI18n(opts.locale ?? "en");
   const apiClient = createApiClient({
     fetcher: opts.fetcher,
     // A fresh navigation starts in ordinary membership mode. The admin layout
     // explicitly enables elevated mode after hydration when it opens a
     // team/app resource, matching the browser store's default.
     isNormalView: () => true,
+    translate: i18nErrorTranslator(i18n),
   });
 
   const routes = createRoutes({ qc: queryClient, api: apiClient, authStore });
@@ -171,7 +177,6 @@ export async function render(
 
   const renderer = createDOMRenderer();
   const router = createStaticRouter(handler.dataRoutes, context);
-  const i18n = createServerI18n(opts.locale ?? "en");
 
   // Did we hit the catch-all route? If so, the response should be 404 even
   // though the rendered page is the same NotFound component the client would

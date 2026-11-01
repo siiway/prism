@@ -14,6 +14,7 @@ import { getEffectiveMember } from "./teams";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import type { AuditScope, AuditEventRow } from "../lib/audit";
 import type { Variables } from "../types";
+import type { CodedError } from "../lib/apiError";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 
@@ -267,29 +268,35 @@ function mergeConfig(
 function validateConfig(
   kind: string,
   config: Record<string, unknown>,
-): string | null {
+): CodedError | null {
   if (kind === "discord") {
     const url = String(config.webhook_url ?? "");
-    if (!url) return "webhook_url is required";
+    if (!url)
+      return { error: "field_required", params: { field: "webhook_url" } };
     if (url !== SECRET_MASK && validateOutboundUrl(url) !== null)
-      return "webhook_url is not a valid public URL";
+      return { error: "public_url_required", params: { field: "webhook_url" } };
     return null;
   }
   if (kind === "telegram") {
-    if (!config.bot_token) return "bot_token is required";
+    if (!config.bot_token)
+      return { error: "field_required", params: { field: "bot_token" } };
     return null;
   }
   if (kind === "general") {
     const url = String(config.url ?? "");
     // The URL may contain {placeholders}; validate only when it has none.
-    if (!url) return "url is required";
+    if (!url) return { error: "field_required", params: { field: "url" } };
     if (!/\{[a-z_]+\}/.test(url) && validateOutboundUrl(url) !== null)
-      return "url is not a valid public URL";
+      return { error: "public_url_required", params: { field: "url" } };
     const method = String(config.method ?? "POST").toUpperCase();
-    if (!["GET", "POST"].includes(method)) return "method must be GET or POST";
+    if (!["GET", "POST"].includes(method))
+      return {
+        error: "field_one_of",
+        params: { field: "method", values: "GET, POST" },
+      };
     return null;
   }
-  return "unknown webhook kind";
+  return { error: "field_invalid", params: { field: "kind" } };
 }
 
 async function decryptConfig(
@@ -394,14 +401,16 @@ async function createWebhook(
   scopeId: string | null,
   createdBy: string,
   body: WebhookBody,
-): Promise<{ error?: string; status?: number; webhook?: unknown }> {
+): Promise<Partial<CodedError> & { status?: number; webhook?: unknown }> {
   const env = c.env;
   const kind = String(body.kind ?? "");
-  if (!WEBHOOK_KINDS.has(kind)) return { error: "invalid kind", status: 400 };
-  if (!body.name?.trim()) return { error: "name is required", status: 400 };
+  if (!WEBHOOK_KINDS.has(kind))
+    return { error: "field_invalid", params: { field: "kind" }, status: 400 };
+  if (!body.name?.trim())
+    return { error: "field_required", params: { field: "name" }, status: 400 };
   const config = body.config ?? {};
   const err = validateConfig(kind, config);
-  if (err) return { error: err, status: 400 };
+  if (err) return { ...err, status: 400 };
 
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
@@ -446,7 +455,7 @@ async function updateWebhook(
   scopeId: string | null,
   id: string,
   body: WebhookBody,
-): Promise<{ error?: string; status?: number; webhook?: unknown }> {
+): Promise<Partial<CodedError> & { status?: number; webhook?: unknown }> {
   const env = c.env;
   const row = await env.DB.prepare(
     scopeId === null
@@ -455,7 +464,7 @@ async function updateWebhook(
   )
     .bind(...(scopeId === null ? [id, scope] : [id, scope, scopeId]))
     .first<AuditWebhookRow>();
-  if (!row) return { error: "Not found", status: 404 };
+  if (!row) return { error: "not_found", status: 404 };
 
   const kind = row.kind;
   const priorConfig = await decryptConfig(env, row);
@@ -463,7 +472,7 @@ async function updateWebhook(
     ? mergeConfig(kind, body.config, priorConfig)
     : priorConfig;
   const err = validateConfig(kind, config);
-  if (err) return { error: err, status: 400 };
+  if (err) return { ...err, status: 400 };
 
   const now = Math.floor(Date.now() / 1000);
   const events =
@@ -545,7 +554,7 @@ function registerScope(
 ) {
   app.get(`${base}/events`, async (c) => {
     const r = await resolveScope(c);
-    if (!r.ok) return c.json({ error: "Forbidden" }, 403);
+    if (!r.ok) return c.json({ error: "forbidden" }, 403);
     const filters = readFilters(c);
     const { events, total } = await queryEvents(
       c.env,
@@ -564,7 +573,7 @@ function registerScope(
   // you were looking at.
   app.get(`${base}/export`, async (c) => {
     const r = await resolveScope(c);
-    if (!r.ok) return c.json({ error: "Forbidden" }, 403);
+    if (!r.ok) return c.json({ error: "forbidden" }, 403);
     const format = c.req.query("format") === "csv" ? "csv" : "json";
     const events = await exportEvents(
       c.env,
@@ -594,13 +603,13 @@ function registerScope(
 
   app.get(`${base}/webhooks`, async (c) => {
     const r = await resolveScope(c);
-    if (!r.ok) return c.json({ error: "Forbidden" }, 403);
+    if (!r.ok) return c.json({ error: "forbidden" }, 403);
     return c.json({ webhooks: await listWebhooks(c.env, r.scope, r.scopeId) });
   });
 
   app.post(`${base}/webhooks`, async (c) => {
     const r = await resolveScope(c);
-    if (!r.ok) return c.json({ error: "Forbidden" }, 403);
+    if (!r.ok) return c.json({ error: "forbidden" }, 403);
     const body = await c.req.json<WebhookBody>();
     const res = await createWebhook(
       c,
@@ -610,13 +619,16 @@ function registerScope(
       body,
     );
     if (res.error)
-      return c.json({ error: res.error }, (res.status ?? 400) as 400);
+      return c.json(
+        { error: res.error, params: res.params },
+        (res.status ?? 400) as 400,
+      );
     return c.json({ webhook: res.webhook }, 201);
   });
 
   app.patch(`${base}/webhooks/:id`, async (c) => {
     const r = await resolveScope(c);
-    if (!r.ok) return c.json({ error: "Forbidden" }, 403);
+    if (!r.ok) return c.json({ error: "forbidden" }, 403);
     const body = await c.req.json<WebhookBody>();
     const res = await updateWebhook(
       c,
@@ -626,16 +638,19 @@ function registerScope(
       body,
     );
     if (res.error)
-      return c.json({ error: res.error }, (res.status ?? 400) as 400);
+      return c.json(
+        { error: res.error, params: res.params },
+        (res.status ?? 400) as 400,
+      );
     return c.json({ webhook: res.webhook });
   });
 
   app.delete(`${base}/webhooks/:id`, async (c) => {
     const r = await resolveScope(c);
-    if (!r.ok) return c.json({ error: "Forbidden" }, 403);
+    if (!r.ok) return c.json({ error: "forbidden" }, 403);
     const ok = await deleteWebhook(c, r.scope, r.scopeId, c.req.param("id"));
-    if (!ok) return c.json({ error: "Not found" }, 404);
-    return c.json({ message: "Deleted" });
+    if (!ok) return c.json({ error: "not_found" }, 404);
+    return c.json({ ok: true });
   });
 }
 
@@ -685,7 +700,7 @@ registerScope("/platform", async (c) => {
 
 app.get("/platform/legacy-webhooks-status", async (c) => {
   const user = c.get("user");
-  if (user.role !== "admin") return c.json({ error: "Forbidden" }, 403);
+  if (user.role !== "admin") return c.json({ error: "forbidden" }, 403);
 
   const { results } = await c.env.DB.prepare(
     `SELECT w.id, w.name, w.user_id,
@@ -708,7 +723,7 @@ app.get("/platform/legacy-webhooks-status", async (c) => {
 
 app.post("/platform/migrate-legacy-webhooks", async (c) => {
   const user = c.get("user");
-  if (user.role !== "admin") return c.json({ error: "Forbidden" }, 403);
+  if (user.role !== "admin") return c.json({ error: "forbidden" }, 403);
 
   const { results } = await c.env.DB.prepare(
     "SELECT id, name, url, secret, events, user_id FROM webhooks",

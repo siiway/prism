@@ -65,7 +65,7 @@ app.get("/me", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(user.id)
     .first<UserRow>();
-  if (!row) return c.json({ error: "User not found" }, 404);
+  if (!row) return c.json({ error: "user_not_found" }, 404);
 
   const totp = await c.env.DB.prepare(
     "SELECT COUNT(*) AS n FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
@@ -149,14 +149,20 @@ app.patch("/me", async (c) => {
 
   if (body.display_name !== undefined) {
     if (body.display_name.length < 1 || body.display_name.length > 64)
-      return c.json({ error: "display_name must be 1-64 characters" }, 400);
+      return c.json(
+        {
+          error: "field_length",
+          params: { field: "display_name", min: 1, max: 64 },
+        },
+        400,
+      );
     updates.push("display_name = ?");
     values.push(body.display_name);
   }
   if (body.avatar_url !== undefined) {
     if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
       const imgErr = await validateImageUrl(body.avatar_url);
-      if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+      if (imgErr) return c.json(imgErr, 400);
     }
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
@@ -174,7 +180,10 @@ app.patch("/me", async (c) => {
         body.access_token_ttl_minutes < 1
       )
         return c.json(
-          { error: "access_token_ttl_minutes must be a positive integer" },
+          {
+            error: "field_must_be_positive_integer",
+            params: { field: "access_token_ttl_minutes" },
+          },
           400,
         );
     }
@@ -188,7 +197,10 @@ app.patch("/me", async (c) => {
         body.refresh_token_ttl_days < 1
       )
         return c.json(
-          { error: "refresh_token_ttl_days must be a positive integer" },
+          {
+            error: "field_must_be_positive_integer",
+            params: { field: "refresh_token_ttl_days" },
+          },
           400,
         );
     }
@@ -220,7 +232,10 @@ app.patch("/me", async (c) => {
   if (body.profile_readme !== undefined) {
     const raw = body.profile_readme;
     if (raw !== null && typeof raw !== "string") {
-      return c.json({ error: "profile_readme must be a string or null" }, 400);
+      return c.json(
+        { error: "field_must_be_string", params: { field: "profile_readme" } },
+        400,
+      );
     }
     // Empty string == clear (treat the same as null) so the public profile
     // can simply check truthiness.
@@ -235,7 +250,10 @@ app.patch("/me", async (c) => {
       );
       if (bytes > maxBytes) {
         return c.json(
-          { error: `profile_readme exceeds the ${maxBytes}-byte limit` },
+          {
+            error: "field_max_bytes",
+            params: { field: "profile_readme", max: maxBytes },
+          },
           413,
         );
       }
@@ -251,7 +269,10 @@ app.patch("/me", async (c) => {
       body.profile_readme_source !== "github"
     ) {
       return c.json(
-        { error: "profile_readme_source must be 'manual' or 'github'" },
+        {
+          error: "field_one_of",
+          params: { field: "profile_readme_source", values: "manual, github" },
+        },
         400,
       );
     }
@@ -268,10 +289,7 @@ app.patch("/me", async (c) => {
           .bind(connectionId, user.id)
           .first<{ id: string; profile_data: string }>();
         if (!conn) {
-          return c.json(
-            { error: "GitHub connection not found for this user" },
-            400,
-          );
+          return c.json({ error: "github_connection_not_found" }, 400);
         }
         try {
           const profile = JSON.parse(conn.profile_data) as { login?: string };
@@ -281,10 +299,7 @@ app.patch("/me", async (c) => {
         }
       }
       if (!login) {
-        return c.json(
-          { error: "github source requires a connection_id or github_login" },
-          400,
-        );
+        return c.json({ error: "github_source_needs_account" }, 400);
       }
       updates.push("profile_readme_source = ?");
       values.push("github");
@@ -308,13 +323,19 @@ app.patch("/me", async (c) => {
       typeof body.github_readme_token !== "string"
     ) {
       return c.json(
-        { error: "github_readme_token must be a string or null" },
+        {
+          error: "field_must_be_string",
+          params: { field: "github_readme_token" },
+        },
         400,
       );
     }
     const tok = body.github_readme_token?.trim() || null;
     if (tok && tok.length > 256) {
-      return c.json({ error: "github_readme_token is too long" }, 400);
+      return c.json(
+        { error: "field_too_long", params: { field: "github_readme_token" } },
+        400,
+      );
     }
     // Encrypt at rest if the SECRETS_KEY binding is configured. No-op
     // otherwise (legacy plaintext path).
@@ -345,7 +366,7 @@ app.patch("/me", async (c) => {
     }
   }
 
-  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+  if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
   updates.push("updated_at = ?");
   values.push(now, user.id);
@@ -430,17 +451,20 @@ app.post("/me/change-password", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(user.id)
     .first<UserRow>();
-  if (!row) return c.json({ error: "User not found" }, 404);
+  if (!row) return c.json({ error: "user_not_found" }, 404);
 
   if (row.password_hash) {
     if (!body.current_password)
-      return c.json({ error: "current_password required" }, 400);
+      return c.json(
+        { error: "field_required", params: { field: "current_password" } },
+        400,
+      );
     const ok = await verifyPassword(body.current_password, row.password_hash);
-    if (!ok) return c.json({ error: "Invalid current password" }, 401);
+    if (!ok) return c.json({ error: "wrong_password" }, 401);
   }
 
   if (!body.new_password || body.new_password.length < 8)
-    return c.json({ error: "New password must be at least 8 characters" }, 400);
+    return c.json({ error: "password_too_short" }, 400);
 
   const hash = await hashPassword(body.new_password);
   await c.env.DB.prepare(
@@ -449,29 +473,29 @@ app.post("/me/change-password", async (c) => {
     .bind(hash, Math.floor(Date.now() / 1000), user.id)
     .run();
 
-  return c.json({ message: "Password updated" });
+  return c.json({ ok: true });
 });
 
 // Upload avatar to R2
 app.post("/me/avatar", async (c) => {
-  if (!c.env.R2_ASSETS)
-    return c.json(
-      { error: "File uploads are not enabled on this instance" },
-      503,
-    );
+  if (!c.env.R2_ASSETS) return c.json({ error: "uploads_disabled" }, 503);
 
   const r2 = c.env.R2_ASSETS;
   const user = c.get("user");
   const formData = await c.req.formData();
   const file = formData.get("avatar") as unknown as File | null;
 
-  if (!file) return c.json({ error: "avatar file required" }, 400);
+  if (!file)
+    return c.json(
+      { error: "field_required", params: { field: "avatar" } },
+      400,
+    );
   if (file.size > 2 * 1024 * 1024)
-    return c.json({ error: "Avatar must be < 2MB" }, 400);
+    return c.json({ error: "avatar_too_large" }, 400);
   if (
     !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)
   )
-    return c.json({ error: "Invalid file type" }, 400);
+    return c.json({ error: "file_type_invalid" }, 400);
 
   const ext = file.type.split("/")[1];
   const key = `avatars/${user.id}.${ext}`;
@@ -505,9 +529,16 @@ app.post("/me/readme", async (c) => {
   const formData = await c.req.formData();
   const file = formData.get("readme") as unknown as File | null;
 
-  if (!file) return c.json({ error: "readme file required" }, 400);
+  if (!file)
+    return c.json(
+      { error: "field_required", params: { field: "readme" } },
+      400,
+    );
   if (file.size > maxBytes) {
-    return c.json({ error: `Readme exceeds the ${maxBytes}-byte limit` }, 413);
+    return c.json(
+      { error: "field_max_bytes", params: { field: "readme", max: maxBytes } },
+      413,
+    );
   }
   // Restrict to text-ish types. Some browsers send empty type for .md.
   const type = (file.type || "").toLowerCase();
@@ -516,13 +547,16 @@ app.post("/me/readme", async (c) => {
     !type.startsWith("text/") &&
     type !== "application/octet-stream"
   ) {
-    return c.json({ error: "Readme must be a text/markdown file" }, 400);
+    return c.json({ error: "readme_type_invalid" }, 400);
   }
 
   const text = await file.text();
   if (new TextEncoder().encode(text).byteLength > maxBytes) {
     // file.size can lie when the upstream stream is chunked; recheck after read.
-    return c.json({ error: `Readme exceeds the ${maxBytes}-byte limit` }, 413);
+    return c.json(
+      { error: "field_max_bytes", params: { field: "readme", max: maxBytes } },
+      413,
+    );
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -565,7 +599,7 @@ app.post("/me/readme/sync", async (c) => {
       profile_readme_source_meta: string | null;
     }>();
   if (!row || row.profile_readme_source !== "github") {
-    return c.json({ error: "README source is not github" }, 400);
+    return c.json({ error: "readme_not_github" }, 400);
   }
   let login: string | null = null;
   try {
@@ -576,7 +610,7 @@ app.post("/me/readme/sync", async (c) => {
   } catch {
     // ignore
   }
-  if (!login) return c.json({ error: "No GitHub login configured" }, 400);
+  if (!login) return c.json({ error: "github_login_missing" }, 400);
 
   // Force-refresh by deleting the cache row, then routing through the
   // standard cache resolver so we pick up the same token cascade and
@@ -607,15 +641,12 @@ app.post("/me/readme/sync", async (c) => {
     .bind(login.toLowerCase())
     .first<{ status: number }>();
   if (cacheRow?.status === 404) {
-    return c.json(
-      { status: 404, error: "GitHub user has no profile README" },
-      404,
-    );
+    return c.json({ status: 404, error: "github_no_readme" }, 404);
   }
   return c.json(
     {
       status: 502,
-      error: "GitHub fetch failed — try again or check your token",
+      error: "github_fetch_failed",
     },
     502,
   );
@@ -627,20 +658,21 @@ app.delete("/me", async (c) => {
   const body = await c.req.json<{ password?: string; confirm: string }>();
 
   if (body.confirm !== "DELETE")
-    return c.json(
-      { error: 'Confirm deletion by sending confirm="DELETE"' },
-      400,
-    );
+    return c.json({ error: "confirm_delete" }, 400);
 
   const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(user.id)
     .first<UserRow>();
-  if (!row) return c.json({ error: "User not found" }, 404);
+  if (!row) return c.json({ error: "user_not_found" }, 404);
 
   if (row.password_hash) {
-    if (!body.password) return c.json({ error: "password required" }, 400);
+    if (!body.password)
+      return c.json(
+        { error: "field_required", params: { field: "password" } },
+        400,
+      );
     const ok = await verifyPassword(body.password, row.password_hash);
-    if (!ok) return c.json({ error: "Invalid password" }, 401);
+    if (!ok) return c.json({ error: "wrong_password" }, 401);
   }
 
   // Before the delete — the membership rows this reads go with the user.
@@ -662,7 +694,7 @@ app.delete("/me", async (c) => {
   c.executionCtx.waitUntil(
     sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
   );
-  return c.json({ message: "Account deleted" });
+  return c.json({ ok: true });
 });
 
 async function safeUser(baseUrl: string, db: D1Database, row: UserRow) {
@@ -724,7 +756,7 @@ app.get("/me/emails", async (c) => {
   )
     .bind(user.id)
     .first<{ email: string; email_verified: number }>();
-  if (!row) return c.json({ error: "User not found" }, 404);
+  if (!row) return c.json({ error: "user_not_found" }, 404);
 
   const { results } = await c.env.DB.prepare(
     "SELECT id, email, verified, verified_via, created_at FROM user_emails WHERE user_id = ? ORDER BY created_at ASC",
@@ -753,7 +785,7 @@ app.post("/me/emails", async (c) => {
 
   const email = (body.email ?? "").toLowerCase().trim();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    return c.json({ error: "Invalid email address" }, 400);
+    return c.json({ error: "email_invalid" }, 400);
 
   // Check uniqueness against primary emails
   const existing = await c.env.DB.prepare(
@@ -761,7 +793,7 @@ app.post("/me/emails", async (c) => {
   )
     .bind(email)
     .first();
-  if (existing) return c.json({ error: "Email is already in use" }, 409);
+  if (existing) return c.json({ error: "email_taken" }, 409);
 
   // Check uniqueness against other alternate emails
   const altExisting = await c.env.DB.prepare(
@@ -769,7 +801,7 @@ app.post("/me/emails", async (c) => {
   )
     .bind(email)
     .first();
-  if (altExisting) return c.json({ error: "Email is already in use" }, 409);
+  if (altExisting) return c.json({ error: "email_taken" }, 409);
 
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
@@ -811,12 +843,12 @@ app.post("/me/emails/:id/resend", async (c) => {
   )
     .bind(c.req.param("id"), user.id)
     .first<Pick<UserEmailRow, "id" | "email" | "verified">>();
-  if (!emailRow) return c.json({ error: "Email not found" }, 404);
-  if (emailRow.verified) return c.json({ error: "Already verified" }, 400);
+  if (!emailRow) return c.json({ error: "email_not_found" }, 404);
+  if (emailRow.verified) return c.json({ error: "already_verified" }, 400);
 
   const config = await getConfig(c.env.DB);
   if (config.email_provider === "none")
-    return c.json({ error: "Email sending is not configured" }, 503);
+    return c.json({ error: "email_not_configured" }, 503);
 
   const verifyToken = randomBase64url(24);
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
@@ -836,7 +868,7 @@ app.post("/me/emails/:id/resend", async (c) => {
     emailConfigFromSite(config),
   );
 
-  return c.json({ message: "Verification email sent" });
+  return c.json({ ok: true });
 });
 
 // POST /api/user/me/emails/:id/set-primary — make an alternate email the primary
@@ -852,12 +884,9 @@ app.post("/me/emails/:id/set-primary", async (c) => {
         "id" | "email" | "verified" | "verified_via" | "verified_at"
       >
     >();
-  if (!emailRow) return c.json({ error: "Email not found" }, 404);
+  if (!emailRow) return c.json({ error: "email_not_found" }, 404);
   if (!emailRow.verified)
-    return c.json(
-      { error: "Email must be verified before setting as primary" },
-      400,
-    );
+    return c.json({ error: "email_unverified_primary" }, 400);
 
   const userRow = await c.env.DB.prepare(
     "SELECT email, email_verified, email_verified_via, email_verified_at, email_verify_token, email_verify_code FROM users WHERE id = ?",
@@ -871,7 +900,7 @@ app.post("/me/emails/:id/set-primary", async (c) => {
       email_verify_token: string | null;
       email_verify_code: string | null;
     }>();
-  if (!userRow) return c.json({ error: "User not found" }, 404);
+  if (!userRow) return c.json({ error: "user_not_found" }, 404);
 
   const now = Math.floor(Date.now() / 1000);
 
@@ -917,7 +946,7 @@ app.post("/me/emails/:id/set-primary", async (c) => {
     c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?").bind(emailRow.id),
   ]);
 
-  return c.json({ message: "Primary email updated" });
+  return c.json({ ok: true });
 });
 
 // ─── Lifting the invite-registration restriction ─────────────────────────────
@@ -937,7 +966,7 @@ app.get("/me/restriction", async (c) => {
       origin_join_completed: number;
       converted_at: number | null;
     }>();
-  if (!row) return c.json({ error: "User not found" }, 404);
+  if (!row) return c.json({ error: "user_not_found" }, 404);
 
   if (!isRestricted(row)) {
     return c.json({
@@ -1005,19 +1034,16 @@ app.post("/me/convert", async (c) => {
       origin_join_completed: number;
       converted_at: number | null;
     }>();
-  if (!row) return c.json({ error: "User not found" }, 404);
+  if (!row) return c.json({ error: "user_not_found" }, 404);
 
   if (!isRestricted(row))
-    return c.json({ error: "This account is not restricted" }, 400);
+    return c.json({ error: "account_not_restricted" }, 400);
   if (isPendingJoin(row))
-    return c.json({ error: "Finish joining your team before converting" }, 403);
+    return c.json({ error: "convert_finish_joining" }, 403);
 
   const grants = await getRestrictedCapabilities(c.env.DB);
   if (!(await resolveSelfConvert(c.env.DB, row.origin_team_id, grants)))
-    return c.json(
-      { error: "Converting to a full account is not enabled for your team" },
-      403,
-    );
+    return c.json({ error: "convert_disabled" }, 403);
 
   // The invite path may have skipped email verification to spare the instance
   // a mail send per registration. That deferral ends here: an account about
@@ -1027,16 +1053,12 @@ app.post("/me/convert", async (c) => {
   if (isSyntheticEmail(row.email))
     return c.json(
       {
-        error:
-          "Add and verify a real email address before converting this account",
+        error: "convert_needs_real_email",
       },
       403,
     );
   if (config.require_email_verification && row.email_verified !== 1)
-    return c.json(
-      { error: "Verify your email address before converting this account" },
-      403,
-    );
+    return c.json({ error: "convert_verify_email" }, 403);
 
   const now = Math.floor(Date.now() / 1000);
   // origin_team_id is deliberately left in place. It stops constraining
@@ -1075,7 +1097,7 @@ app.post("/me/convert", async (c) => {
     },
   ]);
 
-  return c.json({ message: "Account converted", converted_at: now });
+  return c.json({ converted_at: now });
 });
 
 // DELETE /api/user/me/emails/:id — remove an alternate email
@@ -1086,13 +1108,13 @@ app.delete("/me/emails/:id", async (c) => {
   )
     .bind(c.req.param("id"), user.id)
     .first();
-  if (!emailRow) return c.json({ error: "Email not found" }, 404);
+  if (!emailRow) return c.json({ error: "email_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?")
     .bind(c.req.param("id"))
     .run();
 
-  return c.json({ message: "Email removed" });
+  return c.json({ ok: true });
 });
 
 // ─── Personal Access Tokens ───────────────────────────────────────────────────
@@ -1161,13 +1183,16 @@ app.post("/tokens", async (c) => {
     expires_in_days?: number;
   }>();
 
-  if (!body.name?.trim()) return c.json({ error: "name is required" }, 400);
+  if (!body.name?.trim())
+    return c.json({ error: "field_required", params: { field: "name" } }, 400);
   if (!Array.isArray(body.scopes) || body.scopes.length === 0)
-    return c.json({ error: "scopes is required" }, 400);
+    return c.json(
+      { error: "field_required", params: { field: "scopes" } },
+      400,
+    );
 
   const scopes = body.scopes.filter((s) => VALID_PAT_SCOPES.has(s));
-  if (scopes.length === 0)
-    return c.json({ error: "No valid scopes provided" }, 400);
+  if (scopes.length === 0) return c.json({ error: "scopes_invalid" }, 400);
 
   const id = randomId();
   const token = `prism_pat_${randomBase64url(48)}`;
@@ -1234,7 +1259,7 @@ app.delete("/tokens/:id", async (c) => {
     .bind(id, user.id)
     .first<{ id: string; name: string }>();
 
-  if (!row) return c.json({ error: "Token not found" }, 404);
+  if (!row) return c.json({ error: "token_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM personal_access_tokens WHERE id = ?")
     .bind(id)
@@ -1253,7 +1278,7 @@ app.delete("/tokens/:id", async (c) => {
     ).catch(() => {}),
   );
 
-  return c.json({ message: "Token revoked" });
+  return c.json({ ok: true });
 });
 
 // ─── Notification Preferences ─────────────────────────────────────────────────
@@ -1435,21 +1460,28 @@ function sanitizeNotificationRules(input: unknown): NotificationRules | null {
 const RULESET_NAME_MAX = 64;
 const RULESET_NAME_RE = /^[\w][\w .,'\-()/]{0,63}$/u;
 
-function validateRulesetName(raw: unknown): { name: string; error?: string } {
+function validateRulesetName(
+  raw: unknown,
+): { name: string } & Partial<CodedError> {
   if (typeof raw !== "string")
-    return { name: "", error: "name must be a string" };
+    return {
+      name: "",
+      error: "field_must_be_string",
+      params: { field: "name" },
+    };
   const trimmed = raw.trim();
-  if (!trimmed) return { name: "", error: "name is required" };
+  if (!trimmed)
+    return { name: "", error: "field_required", params: { field: "name" } };
   if (trimmed.length > RULESET_NAME_MAX)
     return {
       name: trimmed,
-      error: `name must be ${RULESET_NAME_MAX} characters or fewer`,
+      error: "field_max_length",
+      params: { field: "name", max: RULESET_NAME_MAX },
     };
   if (!RULESET_NAME_RE.test(trimmed))
     return {
       name: trimmed,
-      error:
-        "name may only contain letters, digits, spaces and . , - _ ( ) / '",
+      error: "name_chars_invalid",
     };
   return { name: trimmed };
 }
@@ -1460,7 +1492,11 @@ app.put("/me/notifications", async (c) => {
   const body = await c.req.json<{ rules: NotificationRules }>();
 
   const valid = sanitizeNotificationRules(body.rules);
-  if (valid === null) return c.json({ error: "rules must be an object" }, 400);
+  if (valid === null)
+    return c.json(
+      { error: "field_must_be_object", params: { field: "rules" } },
+      400,
+    );
 
   await c.env.DB.prepare(
     "INSERT INTO user_notification_prefs (user_id, notification_rules) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET notification_rules = excluded.notification_rules",
@@ -1484,6 +1520,7 @@ import {
   sanitizeRulesArray,
   type NotificationRule,
 } from "../lib/notificationRules";
+import type { CodedError } from "../lib/apiError";
 
 interface RulesetRow {
   id: string;
@@ -1532,14 +1569,15 @@ app.post("/me/notification-rulesets", async (c) => {
     is_active?: unknown;
   }>();
 
-  const { name, error: nameErr } = validateRulesetName(body.name);
-  if (nameErr) return c.json({ error: nameErr }, 400);
+  const { name, ...nameErr } = validateRulesetName(body.name);
+  if (nameErr.error) return c.json(nameErr, 400);
 
   const validation = sanitizeRulesArray(
     body.rules,
     USER_NOTIFICATION_EVENTS as readonly string[],
   );
-  if (validation.error) return c.json({ error: validation.error }, 400);
+  if (validation.error)
+    return c.json({ error: validation.error, params: validation.params }, 400);
   const cleanedRules = validation.rules;
 
   const id = randomId();
@@ -1565,7 +1603,7 @@ app.post("/me/notification-rulesets", async (c) => {
     }
   } catch (err) {
     if (String(err).includes("UNIQUE"))
-      return c.json({ error: "A ruleset with that name already exists" }, 409);
+      return c.json({ error: "ruleset_name_taken" }, 409);
     throw err;
   }
   return c.json(
@@ -1599,14 +1637,14 @@ app.put("/me/notification-rulesets/:id", async (c) => {
   )
     .bind(id, user.id)
     .first<{ id: string }>();
-  if (!existing) return c.json({ error: "Not found" }, 404);
+  if (!existing) return c.json({ error: "not_found" }, 404);
 
   const sets: string[] = [];
   const values: unknown[] = [];
 
   if (body.name !== undefined) {
-    const { name, error: nameErr } = validateRulesetName(body.name);
-    if (nameErr) return c.json({ error: nameErr }, 400);
+    const { name, ...nameErr } = validateRulesetName(body.name);
+    if (nameErr.error) return c.json(nameErr, 400);
     sets.push("name = ?");
     values.push(name);
   }
@@ -1615,7 +1653,11 @@ app.put("/me/notification-rulesets/:id", async (c) => {
       body.rules,
       USER_NOTIFICATION_EVENTS as readonly string[],
     );
-    if (validation.error) return c.json({ error: validation.error }, 400);
+    if (validation.error)
+      return c.json(
+        { error: validation.error, params: validation.params },
+        400,
+      );
     sets.push("rules = ?");
     values.push(JSON.stringify(validation.rules));
   }
@@ -1624,7 +1666,7 @@ app.put("/me/notification-rulesets/:id", async (c) => {
     sets.push("is_active = ?");
     values.push(body.is_active ? 1 : 0);
   }
-  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
+  if (!sets.length) return c.json({ error: "nothing_to_update" }, 400);
 
   const now = Math.floor(Date.now() / 1000);
   sets.push("updated_at = ?");
@@ -1651,7 +1693,7 @@ app.put("/me/notification-rulesets/:id", async (c) => {
     }
   } catch (err) {
     if (String(err).includes("UNIQUE"))
-      return c.json({ error: "A ruleset with that name already exists" }, 409);
+      return c.json({ error: "ruleset_name_taken" }, 409);
     throw err;
   }
 
@@ -1672,8 +1714,8 @@ app.delete("/me/notification-rulesets/:id", async (c) => {
   )
     .bind(id, user.id)
     .run();
-  if (!result.meta?.changes) return c.json({ error: "Not found" }, 404);
-  return c.json({ message: "Deleted" });
+  if (!result.meta?.changes) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
 });
 
 export default app;
