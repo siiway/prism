@@ -3,7 +3,6 @@
 
 import {
   Button,
-  Checkbox,
   Field,
   Input,
   MessageBar,
@@ -21,6 +20,13 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
 import { FormPage } from "../components/FormPage";
+import { TokenScopePicker } from "../components/TokenScopePicker";
+import {
+  DEFAULT_SCOPE_LEVELS,
+  scopesFor,
+  type ScopeLevels,
+} from "../lib/tokenScopes";
+import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
   tokenRow: {
@@ -34,44 +40,10 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
     wordBreak: "break-all",
   },
-  scopeGrid: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "8px",
-    marginTop: "4px",
-  },
 });
 
-const ALL_SCOPES = [
-  "openid",
-  "profile",
-  "profile:write",
-  "email",
-  "apps:read",
-  "apps:write",
-  "teams:read",
-  "teams:write",
-  "teams:create",
-  "teams:delete",
-  "domains:read",
-  "domains:write",
-  "admin:users:read",
-  "admin:users:write",
-  "admin:users:delete",
-  "admin:config:read",
-  "admin:config:write",
-  "admin:invites:read",
-  "admin:invites:create",
-  "admin:invites:delete",
-];
-
-const EXPIRY_OPTIONS = [
-  { label: "No expiry", value: "" },
-  { label: "7 days", value: "7" },
-  { label: "30 days", value: "30" },
-  { label: "90 days", value: "90" },
-  { label: "365 days", value: "365" },
-];
+// Days until expiry; "" never expires.
+const EXPIRY_DAYS = ["", "7", "30", "90", "365"];
 
 export function TokenCreate() {
   const api = useApi();
@@ -81,11 +53,9 @@ export function TokenCreate() {
   const { t } = useTranslation();
 
   const [name, setName] = useState("");
-  const [scopes, setScopes] = useState<string[]>([
-    "openid",
-    "profile",
-    "email",
-  ]);
+  const isAdmin = useAuthStore((st) => st.user?.role === "admin");
+  const [levels, setLevels] = useState<ScopeLevels>(DEFAULT_SCOPE_LEVELS);
+  const scopes = scopesFor(levels);
   const [expiry, setExpiry] = useState("");
   const [creating, setCreating] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
@@ -176,29 +146,21 @@ export function TokenCreate() {
       </Field>
       <Field label={t("tokens.expiry")}>
         <Select value={expiry} onChange={(_, d) => setExpiry(d.value)}>
-          {EXPIRY_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
+          {EXPIRY_DAYS.map((days) => (
+            <option key={days} value={days}>
+              {days
+                ? t("tokens.expiryDays", { count: Number(days) })
+                : t("tokens.expiryNever")}
             </option>
           ))}
         </Select>
       </Field>
-      <Field label={t("tokens.scopes")}>
-        <div className={styles.scopeGrid}>
-          {ALL_SCOPES.map((s) => (
-            <Checkbox
-              key={s}
-              id={`token-scope-${s}`}
-              label={s}
-              checked={scopes.includes(s)}
-              onChange={(_, d) => {
-                setScopes(
-                  d.checked ? [...scopes, s] : scopes.filter((x) => x !== s),
-                );
-              }}
-            />
-          ))}
-        </div>
+      <Field label={t("tokens.permissions")} hint={t("tokens.permissionsHint")}>
+        <TokenScopePicker
+          value={levels}
+          onChange={setLevels}
+          isAdmin={isAdmin}
+        />
       </Field>
     </FormPage>
   );
