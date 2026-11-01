@@ -26,6 +26,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
+import { scopeLabel } from "../../lib/scopeLabels";
 import { AuthShell } from "../../components/AuthShell";
 import { OAuthConsentHeader } from "../../components/OAuthConsentHeader";
 import { useAuthStore } from "../../store/auth";
@@ -65,25 +66,6 @@ const useStyles = makeStyles({
     textAlign: "center",
   },
 });
-
-// Labels for the scopes the device flow can grant (site/team scopes are
-// refused upstream, so they never appear here). Unknown scopes fall back to
-// their raw identifier.
-const SCOPE_LABEL_KEYS: Record<string, string> = {
-  openid: "oauth.scopeIdentityLabel",
-  profile: "oauth.scopeProfileLabel",
-  email: "oauth.scopeEmailLabel",
-  "profile:write": "oauth.scopeProfileWriteLabel",
-  "apps:read": "oauth.scopeAppsLabel",
-  "apps:write": "oauth.scopeAppsWriteLabel",
-  "teams:read": "oauth.scopeTeamsLabel",
-  "teams:write": "oauth.scopeTeamsWriteLabel",
-  "teams:create": "oauth.scopeTeamsCreateLabel",
-  "teams:delete": "oauth.scopeTeamsDeleteLabel",
-  "domains:read": "oauth.scopeDomainsLabel",
-  "domains:write": "oauth.scopeDomainsWriteLabel",
-  offline_access: "oauth.scopeOfflineLabel",
-};
 
 export function DeviceVerify() {
   const api = useApi();
@@ -243,11 +225,7 @@ export function DeviceVerify() {
                 <CheckmarkRegular
                   style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }}
                 />
-                <Text size={300}>
-                  {SCOPE_LABEL_KEYS[scope]
-                    ? t(SCOPE_LABEL_KEYS[scope] as Parameters<typeof t>[0])
-                    : scope}
-                </Text>
+                <Text size={300}>{scopeLabel(t, scope).label}</Text>
               </div>
             ))}
           </div>

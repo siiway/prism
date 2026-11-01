@@ -30,6 +30,7 @@ import { useTranslation } from "react-i18next";
 import { useSiteName } from "../../lib/useSiteName";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
+import { scopeLabel } from "../../lib/scopeLabels";
 import { AuthShell } from "../../components/AuthShell";
 import { useAuthStore } from "../../store/auth";
 import { OAuthConsentHeader } from "../../components/OAuthConsentHeader";
@@ -463,129 +464,6 @@ export function Authorize() {
     );
   }
 
-  const SCOPE_INFO: Record<string, { label: string; desc: string }> = {
-    openid: {
-      label: t("oauth.scopeIdentityLabel"),
-      desc: t("oauth.scopeIdentityDesc"),
-    },
-    profile: {
-      label: t("oauth.scopeProfileLabel"),
-      desc: t("oauth.scopeProfileDesc"),
-    },
-    email: {
-      label: t("oauth.scopeEmailLabel"),
-      desc: t("oauth.scopeEmailDesc"),
-    },
-    "profile:write": {
-      label: t("oauth.scopeProfileWriteLabel"),
-      desc: t("oauth.scopeProfileWriteDesc"),
-    },
-    "apps:read": {
-      label: t("oauth.scopeAppsLabel"),
-      desc: t("oauth.scopeAppsDesc"),
-    },
-    "apps:write": {
-      label: t("oauth.scopeAppsWriteLabel"),
-      desc: t("oauth.scopeAppsWriteDesc"),
-    },
-    "teams:read": {
-      label: t("oauth.scopeTeamsLabel"),
-      desc: t("oauth.scopeTeamsDesc"),
-    },
-    "teams:write": {
-      label: t("oauth.scopeTeamsWriteLabel"),
-      desc: t("oauth.scopeTeamsWriteDesc"),
-    },
-    "teams:create": {
-      label: t("oauth.scopeTeamsCreateLabel"),
-      desc: t("oauth.scopeTeamsCreateDesc"),
-    },
-    "teams:delete": {
-      label: t("oauth.scopeTeamsDeleteLabel"),
-      desc: t("oauth.scopeTeamsDeleteDesc"),
-    },
-    "domains:read": {
-      label: t("oauth.scopeDomainsLabel"),
-      desc: t("oauth.scopeDomainsDesc"),
-    },
-    "domains:write": {
-      label: t("oauth.scopeDomainsWriteLabel"),
-      desc: t("oauth.scopeDomainsWriteDesc"),
-    },
-    "admin:users:read": {
-      label: t("oauth.scopeAdminUsersReadLabel"),
-      desc: t("oauth.scopeAdminUsersReadDesc"),
-    },
-    "admin:users:write": {
-      label: t("oauth.scopeAdminUsersWriteLabel"),
-      desc: t("oauth.scopeAdminUsersWriteDesc"),
-    },
-    "admin:users:delete": {
-      label: t("oauth.scopeAdminUsersDeleteLabel"),
-      desc: t("oauth.scopeAdminUsersDeleteDesc"),
-    },
-    "admin:config:read": {
-      label: t("oauth.scopeAdminConfigReadLabel"),
-      desc: t("oauth.scopeAdminConfigReadDesc"),
-    },
-    "admin:config:write": {
-      label: t("oauth.scopeAdminConfigWriteLabel"),
-      desc: t("oauth.scopeAdminConfigWriteDesc"),
-    },
-    "admin:invites:read": {
-      label: t("oauth.scopeAdminInvitesReadLabel"),
-      desc: t("oauth.scopeAdminInvitesReadDesc"),
-    },
-    "admin:invites:create": {
-      label: t("oauth.scopeAdminInvitesCreateLabel"),
-      desc: t("oauth.scopeAdminInvitesCreateDesc"),
-    },
-    "admin:invites:delete": {
-      label: t("oauth.scopeAdminInvitesDeleteLabel"),
-      desc: t("oauth.scopeAdminInvitesDeleteDesc"),
-    },
-    offline_access: {
-      label: t("oauth.scopeOfflineLabel"),
-      desc: t("oauth.scopeOfflineDesc"),
-    },
-    "site:user:read": {
-      label: t("oauth.scopeSiteUserReadLabel"),
-      desc: t("oauth.scopeSiteUserReadDesc"),
-    },
-    "site:user:write": {
-      label: t("oauth.scopeSiteUserWriteLabel"),
-      desc: t("oauth.scopeSiteUserWriteDesc"),
-    },
-    "site:user:delete": {
-      label: t("oauth.scopeSiteUserDeleteLabel"),
-      desc: t("oauth.scopeSiteUserDeleteDesc"),
-    },
-    "site:team:read": {
-      label: t("oauth.scopeSiteTeamReadLabel"),
-      desc: t("oauth.scopeSiteTeamReadDesc"),
-    },
-    "site:team:write": {
-      label: t("oauth.scopeSiteTeamWriteLabel"),
-      desc: t("oauth.scopeSiteTeamWriteDesc"),
-    },
-    "site:team:delete": {
-      label: t("oauth.scopeSiteTeamDeleteLabel"),
-      desc: t("oauth.scopeSiteTeamDeleteDesc"),
-    },
-    "site:config:read": {
-      label: t("oauth.scopeSiteConfigReadLabel"),
-      desc: t("oauth.scopeSiteConfigReadDesc"),
-    },
-    "site:config:write": {
-      label: t("oauth.scopeSiteConfigWriteLabel"),
-      desc: t("oauth.scopeSiteConfigWriteDesc"),
-    },
-    "site:token:revoke": {
-      label: t("oauth.scopeSiteTokenRevokeLabel"),
-      desc: t("oauth.scopeSiteTokenRevokeDesc"),
-    },
-  };
-
   return (
     <AuthShell maxWidth={440} cardGap={24}>
       <>
@@ -605,7 +483,7 @@ export function Authorize() {
             {data.scopes
               .filter((s) => !s.startsWith("app:") && !isSiteScope(s))
               .map((scope) => {
-                const info = SCOPE_INFO[scope];
+                const info = scopeLabel(t, scope);
                 const isOptional = (data.optional_scopes ?? []).includes(scope);
                 const isDeclined = declinedScopes.has(scope);
                 return (
@@ -689,7 +567,7 @@ export function Authorize() {
                 </Text>
                 <div className={styles.scopeList} style={{ marginTop: 4 }}>
                   {data.scopes.filter(isSiteScope).map((scope) => {
-                    const info = SCOPE_INFO[scope];
+                    const info = scopeLabel(t, scope);
                     const isDeclined = declinedScopes.has(scope);
                     return (
                       <div key={scope} className={styles.scopeItem}>
