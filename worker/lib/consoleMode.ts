@@ -6,6 +6,8 @@
 // share this parser so `D1_CONSOLE` and `KV_CONSOLE` can never drift into
 // accepting different spellings of "off".
 
+import type { Context } from "hono";
+
 export type ConsoleMode = "full" | "read-only" | "off";
 
 /** Parse a console availability variable.
@@ -43,4 +45,11 @@ export function d1ConsoleMode(env: Env): ConsoleMode {
  *  explicitly. With neither set, both are off. */
 export function kvConsoleMode(env: Env): ConsoleMode {
   return parseConsoleMode(env.KV_CONSOLE ?? env.D1_CONSOLE);
+}
+
+/** The 403 a mutating console request gets in read-only mode, or null when
+ *  writes are allowed. */
+export function readOnlyRefusal(c: Context, mode: ConsoleMode) {
+  if (mode !== "read-only") return null;
+  return c.json({ error: "read_only", read_only: true }, 403);
 }

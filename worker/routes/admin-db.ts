@@ -24,11 +24,11 @@
 //
 // Mounted under /api/admin, which already sits behind requireAdmin.
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { getIp } from "../lib/clientIp";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { readPage } from "../lib/pagination";
-import { d1ConsoleMode } from "../lib/consoleMode";
+import { d1ConsoleMode, readOnlyRefusal } from "../lib/consoleMode";
 import type { Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -60,16 +60,8 @@ app.use("*", async (c, next) => {
 });
 
 /** Refuse a mutating request when the console is in read-only mode. */
-function readOnlyRefusal(c: import("hono").Context<AppEnv>) {
-  if (d1ConsoleMode(c.env) !== "read-only") return null;
-  return c.json(
-    {
-      error: "read_only",
-      read_only: true,
-    },
-    403,
-  );
-}
+const refuseIfReadOnly = (c: Context<AppEnv>) =>
+  readOnlyRefusal(c, d1ConsoleMode(c.env));
 
 /** Hard cap on rows returned by any one call. The console is a browser tab,
  *  not a data pipeline — a SELECT over a large table should truncate rather
@@ -469,7 +461,7 @@ app.get("/tables/:table/rows", async (c) => {
 /** Insert one row. `values` is a column → value map; columns left out take
  *  their schema default. */
 app.post("/tables/:table/rows", async (c) => {
-  const refusal = readOnlyRefusal(c);
+  const refusal = refuseIfReadOnly(c);
   if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
   if (!table) return c.json({ error: "table_not_found" }, 404);
@@ -511,7 +503,7 @@ app.post("/tables/:table/rows", async (c) => {
 
 /** Update one row, addressed by its primary key (or rowid). */
 app.patch("/tables/:table/rows", async (c) => {
-  const refusal = readOnlyRefusal(c);
+  const refusal = refuseIfReadOnly(c);
   if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
   if (!table) return c.json({ error: "table_not_found" }, 404);
@@ -575,7 +567,7 @@ app.patch("/tables/:table/rows", async (c) => {
 
 /** Delete one row, addressed by its primary key (or rowid). */
 app.delete("/tables/:table/rows", async (c) => {
-  const refusal = readOnlyRefusal(c);
+  const refusal = refuseIfReadOnly(c);
   if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
   if (!table) return c.json({ error: "table_not_found" }, 404);
@@ -666,7 +658,7 @@ app.post("/query", async (c) => {
   // Read-only mode outranks `allow_write` — the caller cannot opt back into
   // something the operator turned off.
   if (writes.length) {
-    const refusal = readOnlyRefusal(c);
+    const refusal = refuseIfReadOnly(c);
     if (refusal) {
       auditDb(c, "admin.db.query.error", {
         sql: script.slice(0, 4000),

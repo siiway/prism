@@ -24,10 +24,10 @@
 //
 // Mounted under /api/admin, which already sits behind requireAdmin.
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { getIp } from "../lib/clientIp";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
-import { kvConsoleMode } from "../lib/consoleMode";
+import { kvConsoleMode, readOnlyRefusal } from "../lib/consoleMode";
 import type { Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -55,16 +55,8 @@ app.use("*", async (c, next) => {
   await next();
 });
 
-function readOnlyRefusal(c: import("hono").Context<AppEnv>) {
-  if (kvConsoleMode(c.env) !== "read-only") return null;
-  return c.json(
-    {
-      error: "read_only",
-      read_only: true,
-    },
-    403,
-  );
-}
+const refuseIfReadOnly = (c: Context<AppEnv>) =>
+  readOnlyRefusal(c, kvConsoleMode(c.env));
 
 // ─── Namespaces ───────────────────────────────────────────────────────────────
 
@@ -201,7 +193,7 @@ app.get("/:ns/keys/:key{.+}", async (c) => {
 
 /** Write one value. `expiration_ttl` is seconds; KV's own floor is 60. */
 app.put("/:ns/keys/:key{.+}", async (c) => {
-  const refusal = readOnlyRefusal(c);
+  const refusal = refuseIfReadOnly(c);
   if (refusal) return refusal;
 
   const ns = resolveNamespace(c.env, c.req.param("ns"));
@@ -246,7 +238,7 @@ app.put("/:ns/keys/:key{.+}", async (c) => {
 });
 
 app.delete("/:ns/keys/:key{.+}", async (c) => {
-  const refusal = readOnlyRefusal(c);
+  const refusal = refuseIfReadOnly(c);
   if (refusal) return refusal;
 
   const ns = resolveNamespace(c.env, c.req.param("ns"));
@@ -270,7 +262,7 @@ app.delete("/:ns/keys/:key{.+}", async (c) => {
  *  bulk delete over an unbounded namespace is not an operation with a sensible
  *  outcome — it is just a slower version of losing the data. */
 app.post("/:ns/purge", async (c) => {
-  const refusal = readOnlyRefusal(c);
+  const refusal = refuseIfReadOnly(c);
   if (refusal) return refusal;
 
   const ns = resolveNamespace(c.env, c.req.param("ns"));
