@@ -1,4 +1,4 @@
-// One OAuth source (/admin/connections/:id). Switches take effect at once;
+// One OAuth source (/admin/connections/:id). Sign-in choices take effect at once;
 // each form card (provider app, endpoints, sign-in button) saves on its own.
 
 import {
@@ -6,7 +6,6 @@ import {
   Button,
   MessageBar,
   Spinner,
-  Switch,
   Text,
   Title2,
   makeStyles,
@@ -30,6 +29,7 @@ import {
   SettingsRow,
   SettingsToast,
 } from "../../../components/Settings";
+import { Segmented } from "../../../components/Segmented";
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import {
   ButtonFields,
@@ -254,15 +254,19 @@ export function SourceDetail() {
           label={t("admin.oauthOfferLabel")}
           description={t("admin.oauthOfferDesc")}
         >
-          <Switch
-            aria-label={t("admin.oauthOfferLabel")}
-            checked={enabled}
+          <Segmented
+            label={t("admin.oauthOfferLabel")}
+            value={enabled ? "shown" : "hidden"}
             disabled={busy !== null}
-            onChange={(_, d) =>
+            options={[
+              { value: "hidden", label: t("admin.oauthOfferedNo") },
+              { value: "shown", label: t("admin.oauthOfferedYes") },
+            ]}
+            onChange={(v) =>
               void patch(
                 "enabled",
-                { enabled: d.checked },
-                d.checked
+                { enabled: v === "shown" },
+                v === "shown"
                   ? t("admin.oauthEnabledDone")
                   : t("admin.oauthDisabledDone"),
               )
@@ -270,17 +274,21 @@ export function SourceDetail() {
           />
         </SettingsRow>
         <SettingsRow
-          label={t("admin.oauthTrusted")}
-          description={t("admin.oauthTrustedHint")}
+          label={t("admin.oauthTwoStepLabel")}
+          description={t("admin.oauthTwoStepDesc")}
         >
-          <Switch
-            aria-label={t("admin.oauthTrusted")}
-            checked={source.trusted !== 0}
+          <Segmented
+            label={t("admin.oauthTwoStepLabel")}
+            value={source.trusted !== 0 ? "skipped" : "required"}
             disabled={busy !== null}
-            onChange={(_, d) =>
+            options={[
+              { value: "required", label: t("admin.oauthTrustedNo") },
+              { value: "skipped", label: t("admin.oauthTrustedYes") },
+            ]}
+            onChange={(v) =>
               void patch(
                 "trusted",
-                { trusted: d.checked },
+                { trusted: v === "skipped" },
                 t("admin.oauthSaved"),
               )
             }

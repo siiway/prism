@@ -5,11 +5,11 @@
 import {
   Badge,
   Button,
+  Checkbox,
   Field,
   Input,
   MessageBar,
   Spinner,
-  Switch,
   Text,
   makeStyles,
   tokens,
@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../lib/api";
 import { useApi } from "../../../lib/api-context";
 import { formatDate, formatDateTime } from "../../../lib/datetime";
+import { CheckboxField } from "../../../components/CheckboxField";
 import { PasswordInput } from "../../../components/PasswordInput";
 import { Select } from "../../../components/Select";
 import {
@@ -31,6 +32,7 @@ import {
   SettingsRow,
   SettingsSubhead,
 } from "../../../components/Settings";
+import { Segmented } from "../../../components/Segmented";
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import type { UserTabProps } from "./types";
 import { clientI18n } from "../../../i18n/init";
@@ -101,23 +103,31 @@ function AccountCard({ userId, user, isSelf, showMsg }: UserTabProps) {
         label={t("admin.accountActive")}
         description={t("admin.userPage.activeDesc")}
       >
-        <Switch
-          aria-label={t("admin.accountActive")}
-          checked={user.is_active}
+        <Segmented
+          label={t("admin.accountActive")}
+          value={user.is_active ? "active" : "disabled"}
           disabled={isSelf || busy !== null}
-          onChange={(_, d) => void update("active", { is_active: d.checked })}
+          options={[
+            { value: "active", label: t("admin.userPage.statusActive") },
+            { value: "disabled", label: t("admin.userPage.statusDisabled") },
+          ]}
+          onChange={(v) => void update("active", { is_active: v === "active" })}
         />
       </SettingsRow>
       <SettingsRow
         label={t("admin.emailVerifiedToggle")}
         description={t("admin.userPage.emailVerifiedDesc")}
       >
-        <Switch
-          aria-label={t("admin.emailVerifiedToggle")}
-          checked={user.email_verified}
+        <Segmented
+          label={t("admin.emailVerifiedToggle")}
+          value={user.email_verified ? "verified" : "unverified"}
           disabled={busy !== null}
-          onChange={(_, d) =>
-            void update("verified", { email_verified: d.checked })
+          options={[
+            { value: "unverified", label: t("admin.userPage.emailUnverified") },
+            { value: "verified", label: t("admin.userPage.emailVerified") },
+          ]}
+          onChange={(v) =>
+            void update("verified", { email_verified: v === "verified" })
           }
         />
       </SettingsRow>
@@ -280,9 +290,9 @@ function RestrictionCard({ userId, user, showMsg, confirm }: UserTabProps) {
           label={t("admin.liftRestriction")}
           description={t("admin.liftRestrictionBody")}
         >
-          <Switch
+          <Checkbox
             checked={waiveEmail}
-            onChange={(_, d) => setWaiveEmail(d.checked)}
+            onChange={(_, d) => setWaiveEmail(!!d.checked)}
             label={t("admin.userPage.waiveEmail")}
           />
           <Button size="small" disabled={busy} onClick={() => void lift()}>
@@ -447,10 +457,10 @@ function SecurityCard({ userId, showMsg, confirm }: UserTabProps) {
                 onChange={(_, d) => setPassword(d.value)}
               />
             </Field>
-            <Switch
-              checked={revokeSessions}
-              onChange={(_, d) => setRevokeSessions(d.checked)}
+            <CheckboxField
               label={t("admin.revokeSessionsLabel")}
+              checked={revokeSessions}
+              onChange={setRevokeSessions}
             />
           </SettingsBody>
           <SettingsFooter>

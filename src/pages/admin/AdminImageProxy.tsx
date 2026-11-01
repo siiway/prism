@@ -11,7 +11,6 @@ import {
   SkeletonItem,
   Spinner,
   Subtitle2,
-  Switch,
   Text,
   Tooltip,
   makeStyles,
@@ -29,6 +28,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
 import type { SiteConfig } from "../../types";
 import { useApi } from "../../lib/api-context";
+import { CheckboxField } from "../../components/CheckboxField";
 import { formatBytes } from "../../lib/bytes";
 import { formatDate } from "../../lib/datetime";
 import { useConfirm } from "../../lib/useConfirm";
@@ -280,14 +280,13 @@ function CacheCard() {
               />
             </Field>
           </div>
-          <Field hint={t("admin.imageProxyWebpHint")}>
-            <Switch
-              checked={form.webp}
-              disabled={!status?.images_binding}
-              label={t("admin.avatarProxyConvertWebp")}
-              onChange={(_, d) => set({ webp: d.checked })}
-            />
-          </Field>
+          <CheckboxField
+            label={t("admin.avatarProxyConvertWebp")}
+            hint={t("admin.imageProxyWebpHint")}
+            checked={form.webp}
+            disabled={!status?.images_binding}
+            onChange={(webp) => set({ webp })}
+          />
         </SettingsBody>
         <SettingsFooter>
           {dirty && !saving && (

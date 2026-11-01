@@ -8,7 +8,6 @@ import {
   Input,
   MessageBar,
   Spinner,
-  Switch,
   makeStyles,
 } from "@fluentui/react-components";
 import { useState } from "react";
@@ -17,6 +16,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
+import { CheckboxField } from "../../components/CheckboxField";
 import { FormPage } from "../../components/FormPage";
 
 const useStyles = makeStyles({
@@ -105,11 +105,11 @@ export function AdminInviteNew() {
           placeholder="user@example.com"
         />
       </Field>
-      <Switch
+      <CheckboxField
         label={t("admin.inviteSendEmail")}
         checked={form.send_email}
         disabled={!form.email.trim()}
-        onChange={(_, d) => setForm((f) => ({ ...f, send_email: d.checked }))}
+        onChange={(send_email) => setForm((f) => ({ ...f, send_email }))}
       />
       <Field label={t("admin.inviteNote")} hint={t("admin.inviteNoteHint")}>
         <Input value={form.note} onChange={set("note")} />

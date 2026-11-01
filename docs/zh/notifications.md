@@ -169,8 +169,8 @@ Telegram 登录与 Telegram 通知投递使用同一个 bot token。该 token �
 3. 执行 `/setdomain`，选择该 bot，填写 Prism 的公开域名，例如 `prism.example.com`。Telegram Login 会拒绝来自未注册域名的回调。
 4. 在 Prism 中进入 **Admin → OAuth Sources → Add Source**。
 5. 选择 **Telegram**，设置 slug（如 `telegram`），把 bot token 粘贴到 secret/token 字段，并保持启用。
-6. 进入 **Admin → Settings → Third-party**，启用 **Telegram 推送**。
-7. 在 **通知机器人** 中选择该 Telegram OAuth 源并保存。这会设置 `tg_notify_source_slug`。
+6. 进入 **Admin → Settings → 邮件与通知 → 聊天通知**。
+7. 在 **Telegram** 中选择该 Telegram OAuth 源并保存。这会设置 `tg_notify_source_slug`。
 8. 想接收 Telegram 通知的用户进入 **关联账号**，通过同一个 bot / 域名绑定 Telegram，然后在 **通知** 页面启用 Telegram 通道。
 
 投递细节：
@@ -190,7 +190,7 @@ Discord OAuth 登录和 Discord 机器人投递是两套不同凭据。OAuth 源
 3. 在 Prism 中进入 **Admin → OAuth Sources → Add Source**，选择 **Discord**，设置 slug（如 `discord`），填写 OAuth Client ID / Secret，并保持启用。
 4. 回到 Discord Developer Portal，打开同一个 Application 的 **Bot** 页面。
 5. 如果还没有 bot，先创建 bot；如需新 token，点击 **Reset Token**，然后复制 bot token。这个 token 不是 OAuth client secret。
-6. 在 Prism 中进入 **Admin → Settings → Third-party**，启用 **Discord 推送**，选择 Discord OAuth 源，把 bot token 粘贴到 **Discord bot token**，然后保存。这会设置 `discord_notify_source_slug` 与 `discord_bot_token`。
+6. 在 Prism 中进入 **Admin → Settings → 邮件与通知 → 聊天通知**，在 **Discord** 中选择 Discord OAuth 源，把 bot token 粘贴到 **Discord bot token**，然后保存。这会设置 `discord_notify_source_slug` 与 `discord_bot_token`。
 7. 想接收 Discord 通知的用户进入 **关联账号** 绑定 Discord，然后在 **通知** 页面启用 Discord 通道。
 
 投递细节：

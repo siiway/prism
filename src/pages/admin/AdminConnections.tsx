@@ -1,13 +1,12 @@
 // Admin OAuth sources: the sign-in providers (GitHub, Google, generic OIDC…)
-// people can use and link. Each row can be switched on or off in place and
-// opens the source's page; Add source opens /admin/connections/new.
+// people can use and link. Each row says whether the source is offered at
+// sign-in and opens its page, where that is changed; Add source opens
+// /admin/connections/new.
 
 import {
   Button,
   Skeleton,
   SkeletonItem,
-  Spinner,
-  Switch,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -16,7 +15,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type OAuthSource } from "../../lib/api";
+import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useToastMessage } from "../../lib/useToastMessage";
@@ -55,6 +54,7 @@ const useStyles = makeStyles({
     top: "16px",
     "@media (max-width: 1100px)": { position: "static" },
   },
+  muted: { color: tokens.colorNeutralForeground3 },
   name: {
     color: tokens.colorNeutralForeground1,
     textDecorationLine: "none",
@@ -89,22 +89,6 @@ export function AdminConnections() {
     await qc.invalidateQueries({ queryKey: ["admin-oauth-sources"] });
     await qc.invalidateQueries({ queryKey: ["admin-oauth-source"] });
     await qc.invalidateQueries({ queryKey: ["site"] });
-  };
-
-  const [busy, setBusy] = useState<string | null>(null);
-  const toggle = async (src: OAuthSource, enabled: boolean) => {
-    setBusy(src.id);
-    try {
-      await api.adminUpdateOAuthSource(src.id, { enabled });
-      await refresh();
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
-    } finally {
-      setBusy(null);
-    }
   };
 
   // Credentials still kept in site settings from before sources existed.
@@ -235,19 +219,13 @@ export function AdminConnections() {
                         src.trusted
                           ? t("admin.oauthTrustedYes")
                           : t("admin.oauthTrustedNo"),
-                        <span key="sw" onClick={(e) => e.stopPropagation()}>
-                          {busy === src.id ? (
-                            <Spinner size="tiny" />
-                          ) : (
-                            <Switch
-                              aria-label={t("admin.oauthOfferLabelFor", {
-                                name: src.name,
-                              })}
-                              checked={src.enabled === 1}
-                              onChange={(_, d) => void toggle(src, d.checked)}
-                            />
-                          )}
-                        </span>,
+                        src.enabled === 1 ? (
+                          t("admin.oauthOfferedYes")
+                        ) : (
+                          <span key="o" className={styles.muted}>
+                            {t("admin.oauthOfferedNo")}
+                          </span>
+                        ),
                       ]}
                     />
                   );

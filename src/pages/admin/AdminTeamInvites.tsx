@@ -10,7 +10,6 @@ import {
   Button,
   Skeleton,
   SkeletonItem,
-  Switch,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -36,6 +35,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
 import { Pagination } from "../../components/Pagination";
 import { RoleBadge } from "../../components/RoleBadge";
+import { Segmented } from "../../components/Segmented";
 import { SettingsToast } from "../../components/Settings";
 
 const PAGE_SIZE = 20;
@@ -142,13 +142,20 @@ export function AdminTeamInvites() {
         onChange={setQuery}
         placeholder={t("admin.teamInviteSearch")}
       >
-        <Switch
-          checked={registrationOnly}
-          onChange={(_, d) => {
-            setRegistrationOnly(d.checked);
+        <Segmented
+          label={t("admin.teamInviteFilter")}
+          value={registrationOnly ? "registration" : "all"}
+          options={[
+            { value: "all", label: t("admin.teamInviteFilterAll") },
+            {
+              value: "registration",
+              label: t("admin.registrationInvitesOnly"),
+            },
+          ]}
+          onChange={(v) => {
+            setRegistrationOnly(v === "registration");
             setPage(1);
           }}
-          label={t("admin.registrationInvitesOnly")}
         />
       </ListSearch>
 

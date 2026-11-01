@@ -114,7 +114,11 @@ export function Segmented<T extends string>({
               selected && styles.active,
               selected && o.brand && styles.activeBrand,
             )}
-            onClick={() => onChange(o.value)}
+            // Re-picking the current value changes nothing, which matters
+            // where a pick saves at once.
+            onClick={() => {
+              if (!selected) onChange(o.value);
+            }}
           >
             {o.content ?? o.label}
           </button>

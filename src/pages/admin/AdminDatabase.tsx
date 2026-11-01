@@ -16,7 +16,6 @@ import {
   SkeletonItem,
   Spinner,
   Subtitle2,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -986,10 +985,14 @@ function SqlConsole({
         <SettingsFooter>
           {writable && (
             <div className={styles.footerStart}>
-              <Switch
-                checked={allowWrite}
-                onChange={(_, d) => setAllowWrite(d.checked)}
+              <Segmented
                 label={t("admin.dbWriteMode")}
+                value={allowWrite ? "write" : "read"}
+                options={[
+                  { value: "read", label: t("admin.dbModeRead") },
+                  { value: "write", label: t("admin.dbModeWrite") },
+                ]}
+                onChange={(v) => setAllowWrite(v === "write")}
               />
             </div>
           )}

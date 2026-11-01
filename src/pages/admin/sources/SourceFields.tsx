@@ -9,7 +9,6 @@ import {
   Input,
   MessageBar,
   Spinner,
-  Switch,
   Text,
   makeStyles,
   tokens,
@@ -79,13 +78,6 @@ const useStyles = makeStyles({
   issuer: { display: "flex", gap: "8px", alignItems: "flex-start" },
   grow: { flex: 1, minWidth: 0 },
   start: { justifySelf: "start", maxWidth: "100%" },
-  toggle: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: "16px",
-  },
-  toggleText: { display: "flex", flexDirection: "column", gap: "2px" },
   button: {
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) 280px",
@@ -143,41 +135,6 @@ export function FormGroup({
         )}
       </div>
       {children}
-    </div>
-  );
-}
-
-/** A switch with its label and explanation on the left. */
-export function ToggleField({
-  label,
-  hint,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  const styles = useStyles();
-  return (
-    <div className={styles.toggle}>
-      <div className={styles.toggleText}>
-        <Text>{label}</Text>
-        {hint && (
-          <Text size={200} className={styles.muted}>
-            {hint}
-          </Text>
-        )}
-      </div>
-      <Switch
-        aria-label={label}
-        checked={checked}
-        disabled={disabled}
-        onChange={(_, d) => onChange(d.checked)}
-      />
     </div>
   );
 }

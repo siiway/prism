@@ -47,8 +47,8 @@ Also under General:
 
 ### Sign-up
 
-- **Registration mode** — `open` (anyone can register), `invite-only` (requires an invite token), or `closed` (no new registrations)
-- **Require email verification** — users must click the verification link before logging in
+- **Who can sign up** — open (anyone can register), invite-only (requires an invite token), or closed (no new registrations)
+- **Email verification** — **Required** means new users must click the verification link before logging in
 
 ### Appearance
 
@@ -76,7 +76,7 @@ and its footer link. Each document is capped at 256 KiB. See
   for this many minutes. `0` disables sudo mode entirely. The action
   acknowledgement checkbox is still required on every confirmation. See
   [OAuth → Step-up 2FA](oauth.md#step-up-2fa).
-- **Require captcha for 2FA** — site-wide: every step-up confirmation must
+- **Captcha on 2FA step-up** — when **Required**, every step-up confirmation must
   solve a captcha. Apps can also opt in per challenge. No-op when no captcha
   providers are enabled.
 - **IPv6 rate-limit prefix** — how many bits of an IPv6 address are bucketed
@@ -173,10 +173,10 @@ The email settings are split into two sub-tabs: **Send** and **Receive**.
 
 ### Public profiles
 
-- **Enable public profiles** — master kill switch. When off, both
+- **Users can publish a profile** — the master setting. When **Not allowed**, both
   `/u/<username>` and `/t/<team-id>` always return 404 regardless of any
   individual user/team opt-in. See [Public Profiles](public-profile.md).
-- **User profile defaults / Team profile defaults** — the per-field defaults
+- **Shown on user profiles by default / Team profiles** — checkboxes for the per-field defaults
   applied to users (or teams) who haven't picked a value of their own. Changing
   a default propagates immediately to inheriting profiles; it never overrides
   an explicit user/team choice.
@@ -187,9 +187,9 @@ A site-wide floor that every team is forced to meet, regardless of the
 team-level flag. Owners can opt their team in further, never out below the
 floor.
 
-- **Default require 2FA** — every team requires at least one TOTP authenticator
+- **Two-factor authentication** — every team requires at least one TOTP authenticator
   or passkey enrolled.
-- **Default require verified email** — every team requires a verified primary
+- **Verified primary email** — every team requires a verified primary
   email.
 
 ::: warning
@@ -205,18 +205,19 @@ match how most operators want it; turn knobs off to scope the feature
 down. See [Teams → Sub-teams](teams.md#sub-teams-nested-teams) for the
 full semantics.
 
-- **Enable sub-teams** — master switch. Off = every sub-team API returns
+- **Team nesting** — the master setting. **Not allowed** = every sub-team API returns
   403, the **Sub-teams** tab is hidden in the UI, and `parent_team_id`
   rows in the database are ignored for inheritance (preserved but inert,
-  so you can re-enable without data loss).
+  so you can re-enable without data loss). The options below show only
+  while nesting is allowed.
 - **Maximum nesting depth** — hard cap, validated 1–20. The default of 5
   is enough for most orgs; raising it costs an extra DB round-trip per
   level on every authorization check.
-- **Inherit team membership** — when on (default), a member of a parent
+- **Passed down to sub-teams → Membership** — when checked (default), a member of a parent
   team is treated as a member of every descendant with at least the same
   role (`effective = max(direct, inherited)`). Off = direct memberships
   only — sub-team admins must be added explicitly.
-- **Inherit verified domains** — when on (default), ancestor-owned
+- **Passed down to sub-teams → Verified domains** — when checked (default), ancestor-owned
   domains appear on sub-team listings as read-only entries
   (`inherited_from = …`) and a sub-team adding a sub-domain of an
   ancestor's verified apex is auto-verified. Off = sub-teams must
@@ -620,10 +621,11 @@ still surfaces as a failure rather than as an empty board.
 
 Notices are drafts until published, so nothing half-written is ever on screen.
 **New notice** opens a page that saves either as a draft or published. Each
-notice then has its own page: switches for published, pinned and dismissible
-that apply at once, and separate cards for the content and for the audience
-and schedule, each saved on its own. The list can publish or take down a
-notice in place and searches by title. A team notice picks its team by name.
+notice then has its own page: its visibility (draft or published), position
+(by date or pinned) and whether readers can dismiss it apply at once, and
+separate cards for the content and for the audience and schedule are each
+saved on its own. The list shows whether each notice is published and
+searches by title. A team notice picks its team by name.
 
 The composer previews the rendered result with the board's own component and
 the same sanitizer — the body is markdown, treated as untrusted even though an administrator
@@ -702,7 +704,8 @@ routine task.
 session. The count is shown before you press it. Your own session is kept by
 default — an operator who signs themselves out mid-incident has to log back in
 through whatever they were trying to contain — and "include my own session" is
-there for when your session is the thing you are worried about.
+there for when your session is the thing you are worried about. It asks for
+confirmation before signing anyone out.
 
 OAuth tokens are not affected. Those are revoked per application or per
 account, below.
@@ -874,8 +877,9 @@ separated by semicolons run inside a single transaction, so a script that
 fails halfway leaves nothing behind. Result sets are capped at 500 rows and
 marked as truncated when they hit it.
 
-Write mode is a switch, and turning it on adds a confirmation step that shows
-the statement one more time before it runs. Ctrl/Cmd+Enter runs the query.
+The mode beside the Run button is **Read only** or **Read and write**;
+choosing read and write adds a confirmation step that shows the statement one
+more time before it runs. Ctrl/Cmd+Enter runs the query.
 
 ### Endpoints
 

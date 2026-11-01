@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../lib/api";
 import { useApi } from "../../../lib/api-context";
+import { CheckboxField } from "../../../components/CheckboxField";
 import { FormPage } from "../../../components/FormPage";
 import { Select } from "../../../components/Select";
 import {
@@ -26,7 +27,6 @@ import {
   EndpointFields,
   FormGroup,
   SetupField,
-  ToggleField,
 } from "./SourceFields";
 import {
   EMPTY_SOURCE,
@@ -168,7 +168,7 @@ export function SourceNew() {
       </FormGroup>
 
       <FormGroup title={t("admin.oauthSecurityTitle")}>
-        <ToggleField
+        <CheckboxField
           label={t("admin.oauthTrusted")}
           hint={t("admin.oauthTrustedHint")}
           checked={form.trusted}

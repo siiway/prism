@@ -7,7 +7,6 @@ import {
   Divider,
   MessageBar,
   Spinner,
-  Switch,
   makeStyles,
 } from "@fluentui/react-components";
 import { useState } from "react";
@@ -16,12 +15,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError, type NoticeInput } from "../../../lib/api";
 import { useApi } from "../../../lib/api-context";
+import { CheckboxField } from "../../../components/CheckboxField";
 import { FormPage } from "../../../components/FormPage";
 import { AudienceFields, ContentFields } from "./NoticeFields";
 import { BLANK, formErrors, payloadFor, type NoticeForm } from "./noticeForm";
 
 const useStyles = makeStyles({
-  switches: { display: "flex", flexDirection: "column", gap: "4px" },
+  switches: { display: "flex", flexDirection: "column", gap: "8px" },
 });
 
 export function NoticeNew() {
@@ -111,15 +111,17 @@ export function NoticeNew() {
       <Divider />
       <AudienceFields form={form} onChange={update} errors={shown} />
       <div className={styles.switches}>
-        <Switch
+        <CheckboxField
           label={t("admin.noticeDismissible")}
+          hint={t("admin.noticeDismissibleDesc")}
           checked={dismissible}
-          onChange={(_, d) => setDismissible(d.checked)}
+          onChange={setDismissible}
         />
-        <Switch
+        <CheckboxField
           label={t("admin.noticePinned")}
+          hint={t("admin.noticePinnedDesc")}
           checked={pinned}
-          onChange={(_, d) => setPinned(d.checked)}
+          onChange={setPinned}
         />
       </div>
     </FormPage>

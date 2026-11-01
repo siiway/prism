@@ -10,7 +10,6 @@ import {
   Input,
   MessageBar,
   Spinner,
-  Switch,
   Text,
   Title2,
   makeStyles,
@@ -36,6 +35,7 @@ import {
   SettingsRow,
   SettingsToast,
 } from "../../components/Settings";
+import { Segmented } from "../../components/Segmented";
 import { SkeletonSettingsCard } from "../../components/Skeletons";
 import { InviteModeBanner } from "./InviteModeBanner";
 
@@ -386,15 +386,19 @@ export function AdminInviteDetail() {
           label={t("admin.inviteActiveLabel")}
           description={t("admin.inviteActiveDesc")}
         >
-          <Switch
-            aria-label={t("admin.inviteActiveLabel")}
-            checked={invite.enabled}
+          <Segmented
+            label={t("admin.inviteActiveLabel")}
+            value={invite.enabled ? "active" : "paused"}
             disabled={busy !== null}
-            onChange={(_, d) =>
+            options={[
+              { value: "active", label: t("admin.inviteStatusActive") },
+              { value: "paused", label: t("admin.inviteStatusPaused") },
+            ]}
+            onChange={(v) =>
               void run(
                 "enabled",
-                () => api.adminUpdateInvite(id, { enabled: d.checked }),
-                d.checked
+                () => api.adminUpdateInvite(id, { enabled: v === "active" }),
+                v === "active"
                   ? t("admin.inviteEnabledDone")
                   : t("admin.inviteDisabledDone"),
               )

@@ -1,4 +1,4 @@
-// One notice (/admin/notices/:id). Switches take effect at once; the content
+// One notice (/admin/notices/:id). Status choices take effect at once; the content
 // and audience cards each save on their own, keeping edits typed while a
 // save is in flight.
 
@@ -9,7 +9,6 @@ import {
   MessageBarBody,
   MessageBarTitle,
   Spinner,
-  Switch,
   Text,
   Title2,
   makeStyles,
@@ -38,6 +37,7 @@ import {
   SettingsRow,
   SettingsToast,
 } from "../../../components/Settings";
+import { Segmented } from "../../../components/Segmented";
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import { AudienceFields, ContentFields } from "./NoticeFields";
 import {
@@ -306,18 +306,22 @@ export function NoticeDetail() {
         description={t("admin.noticeStatusDesc")}
       >
         <SettingsRow
-          label={t("admin.noticePublished")}
+          label={t("admin.noticeVisibilityLabel")}
           description={t("admin.noticePublishedDesc")}
         >
-          <Switch
-            aria-label={t("admin.noticePublished")}
-            checked={notice.is_published}
+          <Segmented
+            label={t("admin.noticeVisibilityLabel")}
+            value={notice.is_published ? "published" : "draft"}
             disabled={busy !== null}
-            onChange={(_, d) =>
+            options={[
+              { value: "draft", label: t("admin.noticeDraftBadge") },
+              { value: "published", label: t("admin.noticePublished") },
+            ]}
+            onChange={(v) =>
               void patch(
                 "published",
-                { is_published: d.checked },
-                d.checked
+                { is_published: v === "published" },
+                v === "published"
                   ? t("admin.noticePublishedDone")
                   : t("admin.noticeUnpublishedDone"),
               )
@@ -325,34 +329,42 @@ export function NoticeDetail() {
           />
         </SettingsRow>
         <SettingsRow
-          label={t("admin.noticePinned")}
+          label={t("admin.noticePositionLabel")}
           description={t("admin.noticePinnedDesc")}
         >
-          <Switch
-            aria-label={t("admin.noticePinned")}
-            checked={notice.pinned}
+          <Segmented
+            label={t("admin.noticePositionLabel")}
+            value={notice.pinned ? "pinned" : "date"}
             disabled={busy !== null}
-            onChange={(_, d) =>
+            options={[
+              { value: "date", label: t("admin.noticePositionByDate") },
+              { value: "pinned", label: t("admin.noticePinnedBadge") },
+            ]}
+            onChange={(v) =>
               void patch(
                 "pinned",
-                { pinned: d.checked },
+                { pinned: v === "pinned" },
                 t("admin.noticeUpdated"),
               )
             }
           />
         </SettingsRow>
         <SettingsRow
-          label={t("admin.noticeDismissible")}
+          label={t("admin.noticeDismissLabel")}
           description={t("admin.noticeDismissibleDesc")}
         >
-          <Switch
-            aria-label={t("admin.noticeDismissible")}
-            checked={notice.is_dismissible}
+          <Segmented
+            label={t("admin.noticeDismissLabel")}
+            value={notice.is_dismissible ? "yes" : "no"}
             disabled={busy !== null}
-            onChange={(_, d) =>
+            options={[
+              { value: "no", label: t("admin.choiceNotAllowed") },
+              { value: "yes", label: t("admin.choiceAllowed") },
+            ]}
+            onChange={(v) =>
               void patch(
                 "dismissible",
-                { is_dismissible: d.checked },
+                { is_dismissible: v === "yes" },
                 t("admin.noticeUpdated"),
               )
             }

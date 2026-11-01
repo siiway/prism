@@ -88,9 +88,9 @@ Members can always see the team's own public-profile page even when private — 
 
 ## Admin settings
 
-Admins configure the feature in **Admin → Settings → Public profiles** (in the General tab).
+Admins configure the feature in **Admin → Settings → Public profiles**.
 
-- **Enable public profiles** — master kill switch. Off = the feature is unavailable site-wide for both users _and_ teams.
+- **Users can publish a profile** — the master setting. **Not allowed** = the feature is unavailable site-wide for both users _and_ teams.
 - **Default visibility for each field** (user profiles) — applies to every user who hasn't set their own preference for that field.
 - **Default visibility for each section** (team profiles) — applies to every team that hasn't set its own preference. Edited by team owners/admins, not site admins.
 

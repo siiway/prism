@@ -1,30 +1,27 @@
-// Admin site settings — customization, integrations, captcha, etc.
+// Admin site settings, one section per page (/admin/settings/<section>).
+//
+// Laid out like the account settings pages: cards of rows, label on the
+// left and the control on the right. Every section but Legal and Danger
+// Zone edits one draft, saved from the bar that appears once something
+// changes. Because nothing applies until that save, there are no switches
+// here: a setting with named values gets a segmented choice, a set of
+// related options gets a group of checkboxes, and options that only matter
+// once something else is on stay hidden until it is.
 
 import {
   Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
-  Dropdown,
+  Checkbox,
   Field,
   Input,
-  MessageBar,
-  Option,
-  Spinner,
-  Switch,
-  Tab,
-  TabList,
   Link,
+  Spinner,
   Text,
   Textarea,
-  Subtitle2,
   makeStyles,
+  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
+import { ArrowDownRegular, ArrowUpRegular } from "@fluentui/react-icons";
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { isSettingsSection } from "./adminNav";
@@ -32,63 +29,94 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
+import { useConfirm } from "../../lib/useConfirm";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { useAuthStore } from "../../store/auth";
 import type { SiteConfig, CaptchaProvider } from "../../types";
 import { ImageUrlInput } from "../../components/ImageUrlInput";
 import { PasswordInput } from "../../components/PasswordInput";
+import { Segmented } from "../../components/Segmented";
+import { Select } from "../../components/Select";
 import { SkeletonSettingsPage } from "../../components/Skeletons";
 import { ColorPickerInput } from "../../components/ColorPickerInput";
+import {
+  SettingsBody,
+  SettingsCard,
+  SettingsFooter,
+  SettingsRow,
+  SettingsSubhead,
+  SettingsToast,
+} from "../../components/Settings";
 
 const useStyles = makeStyles({
-  card: {
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: tokens.borderRadiusXLarge,
-    padding: "20px 24px",
-    scrollMarginTop: "16px",
-    background: tokens.colorNeutralBackground1,
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-  },
-  form: { display: "flex", flexDirection: "column", gap: "12px" },
-  row: {
+  grid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: "12px",
+    gap: "16px",
     alignItems: "start",
-    "& > *": {
-      minWidth: 0,
-    },
-    "& input": {
-      width: "100%",
-      boxSizing: "border-box",
-    },
-    "@media (max-width: 600px)": {
-      gridTemplateColumns: "1fr",
-    },
+    "& > *": { minWidth: 0 },
+    "@media (max-width: 640px)": { gridTemplateColumns: "1fr" },
   },
-  actions: { display: "flex", gap: "8px", marginTop: "4px" },
+  // Checkboxes in columns; Fluent pads each box, so pull the first column
+  // back to the card's text edge.
+  checks: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+    columnGap: "16px",
+    marginLeft: "-8px",
+  },
+  // The captcha alternates: a tight list, boxes on the text edge.
+  alternates: {
+    display: "flex",
+    flexDirection: "column",
+    marginLeft: "-8px",
+  },
+  alternate: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    minHeight: "32px",
+  },
+  order: { marginLeft: "auto", display: "flex", gap: "2px" },
+  // Full width like the other admin pages, not the account pages' column.
+  page: { display: "flex", flexDirection: "column", gap: "20px" },
+  num: { width: "120px" },
+  select: { width: "260px", maxWidth: "100%" },
   unit: {
     color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
     whiteSpace: "nowrap",
   },
-  cardHead: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
+  muted: { color: tokens.colorNeutralForeground3 },
+  status: {
+    display: "block",
+    marginTop: "4px",
+    color: tokens.colorNeutralForeground2,
   },
-  cardDesc: {
-    color: tokens.colorNeutralForeground3,
-    maxWidth: "720px",
+  warn: { color: tokens.colorPaletteYellowForeground1 },
+  danger: {
+    background: tokens.colorPaletteRedBackground3,
+    ":hover": { background: tokens.colorPaletteRedForeground1 },
+    ":hover:active": { background: tokens.colorPaletteRedForeground1 },
   },
-  subGroup: {
+  saveBar: {
+    position: "sticky",
+    bottom: "16px",
+    zIndex: 2,
     display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    paddingLeft: "12px",
-    borderLeft: `2px solid ${tokens.colorNeutralStroke2}`,
-    marginLeft: "4px",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: "8px",
+    padding: "12px 16px 12px 24px",
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusXLarge,
+    background: tokens.colorNeutralBackground1,
+    boxShadow: tokens.shadow8,
+  },
+  saveBarText: {
+    marginRight: "auto",
+    color: tokens.colorNeutralForeground2,
   },
 });
 
@@ -114,34 +142,177 @@ const CAPTCHA_PROVIDERS: CaptchaProvider[] = [
   "cap",
 ];
 
-/** One titled group of related settings within a settings section. */
-function SettingsCard({
-  id,
-  title,
-  description,
+// Features an invite-registered (restricted) account may be granted.
+const RESTRICTED_CAPS = [
+  ["team:create", "admin.capTeamCreate"],
+  ["app:create", "admin.capAppCreate"],
+  ["domain:create", "admin.capDomainCreate"],
+  ["pat:create", "admin.capPatCreate"],
+  ["profile:public", "admin.capProfilePublic"],
+  ["gpg:manage", "admin.capGpgManage"],
+  ["self:convert", "admin.capSelfConvert"],
+] as const;
+
+// Public profile fields and whether each is shown when a user hasn't chosen.
+const PROFILE_FIELDS = [
+  [
+    "default_profile_show_display_name",
+    "admin.defaultProfileShowDisplayName",
+    true,
+  ],
+  ["default_profile_show_avatar", "admin.defaultProfileShowAvatar", true],
+  ["default_profile_show_email", "admin.defaultProfileShowEmail", false],
+  ["default_profile_show_joined_at", "admin.defaultProfileShowJoinedAt", true],
+  ["default_profile_show_gpg_keys", "admin.defaultProfileShowGpgKeys", true],
+  [
+    "default_profile_show_authorized_apps",
+    "admin.defaultProfileShowAuthorizedApps",
+    false,
+  ],
+  [
+    "default_profile_show_owned_apps",
+    "admin.defaultProfileShowOwnedApps",
+    true,
+  ],
+  ["default_profile_show_domains", "admin.defaultProfileShowDomains", true],
+  [
+    "default_profile_show_joined_teams",
+    "admin.defaultProfileShowJoinedTeams",
+    false,
+  ],
+  ["default_profile_show_readme", "admin.defaultProfileShowReadme", true],
+] as const;
+
+const TEAM_PROFILE_FIELDS = [
+  [
+    "default_team_profile_show_description",
+    "admin.defaultTeamProfileShowDescription",
+    true,
+  ],
+  [
+    "default_team_profile_show_avatar",
+    "admin.defaultTeamProfileShowAvatar",
+    true,
+  ],
+  [
+    "default_team_profile_show_owner",
+    "admin.defaultTeamProfileShowOwner",
+    false,
+  ],
+  [
+    "default_team_profile_show_member_count",
+    "admin.defaultTeamProfileShowMemberCount",
+    true,
+  ],
+  ["default_team_profile_show_apps", "admin.defaultTeamProfileShowApps", true],
+  [
+    "default_team_profile_show_domains",
+    "admin.defaultTeamProfileShowDomains",
+    true,
+  ],
+  [
+    "default_team_profile_show_members",
+    "admin.defaultTeamProfileShowMembers",
+    false,
+  ],
+] as const;
+
+// Login rate limits: attempts allowed per window, with their defaults.
+const LOGIN_RATE_LIMITS = [
+  [
+    "login_dos_rate_limit",
+    "login_dos_rate_window_seconds",
+    "admin.loginDosRateLimit",
+    120,
+    60,
+  ],
+  [
+    "login_ip_rate_limit",
+    "login_ip_rate_window_seconds",
+    "admin.loginIpRateLimit",
+    60,
+    60,
+  ],
+  [
+    "login_identifier_rate_limit",
+    "login_identifier_rate_window_seconds",
+    "admin.loginIdentifierRateLimit",
+    30,
+    300,
+  ],
+  [
+    "login_totp_rate_limit",
+    "login_totp_rate_window_seconds",
+    "admin.loginTotpRateLimit",
+    15,
+    300,
+  ],
+] as const;
+
+/** A copy of `obj` without `key`. */
+function dropKey<T extends object>(obj: T, key: string): T {
+  const next = { ...obj };
+  delete next[key as keyof T];
+  return next;
+}
+
+/** A number input that may be empty while typing.
+ *
+ *  `Number("")` is 0, which for a usage cap or a TTL is a live setting, not
+ *  a blank; so the draft only takes finite numbers, and what's typed stays
+ *  on screen until the field loses focus. */
+function NumberInput({
+  label,
+  value,
+  onChange,
+  unit,
+  min,
+  max,
+  disabled,
+}: {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+  unit?: string;
+  min?: number;
+  max?: number;
+  disabled?: boolean;
+}) {
+  const styles = useStyles();
+  const [text, setText] = useState<string | null>(null);
+  return (
+    <Input
+      type="number"
+      className={styles.num}
+      aria-label={label}
+      min={min}
+      max={max}
+      disabled={disabled}
+      value={text ?? String(value)}
+      contentAfter={unit ? <span className={styles.unit}>{unit}</span> : null}
+      onChange={(_, d) => {
+        setText(d.value);
+        const n = Number(d.value);
+        if (d.value.trim() !== "" && Number.isFinite(n)) onChange(n);
+      }}
+      onBlur={() => setText(null)}
+    />
+  );
+}
+
+/** Checkboxes in columns, for a set of related on/off options. */
+function CheckGrid({
+  label,
   children,
 }: {
-  /** Anchor for search deep links; the card's title key. */
-  id?: string;
-  title?: string;
-  description?: string;
+  label: string;
   children: ReactNode;
 }) {
   const styles = useStyles();
   return (
-    <section id={id} className={styles.card}>
-      {(title || description) && (
-        <div className={styles.cardHead}>
-          {title && <Subtitle2 as="h2">{title}</Subtitle2>}
-          {description && (
-            <Text size={200} className={styles.cardDesc}>
-              {description}
-            </Text>
-          )}
-        </div>
-      )}
-      <div className={styles.form}>{children}</div>
-    </section>
+    <div role="group" aria-label={label} className={styles.checks}>
+      {children}
+    </div>
   );
 }
 
@@ -152,6 +323,7 @@ export function AdminSettings() {
   const navigate = useNavigate();
   const { clearAuth } = useAuthStore();
   const { t } = useTranslation();
+  const { confirm, confirmDialog } = useConfirm();
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-config"],
@@ -228,7 +400,7 @@ export function AdminSettings() {
   const config = data?.config as SiteConfig | undefined;
 
   // Legal pages live in their own table (not site_config), so they have their
-  // own query, draft state, and Save button rather than riding the shared
+  // own query, draft state, and Save buttons rather than riding the shared
   // config flow below.
   const { data: legalData } = useQuery({
     queryKey: ["admin-legal"],
@@ -237,7 +409,7 @@ export function AdminSettings() {
   const [legalDraft, setLegalDraft] = useState<Partial<Record<string, string>>>(
     {},
   );
-  const [savingLegal, setSavingLegal] = useState(false);
+  const [savingLegal, setSavingLegal] = useState<string | null>(null);
   const legalDoc = (slug: string) =>
     legalData?.documents.find((d) => d.slug === slug);
   const getLegal = (slug: string) =>
@@ -246,9 +418,8 @@ export function AdminSettings() {
       : (legalDoc(slug)?.content ?? "");
   const setLegal = (slug: string, value: string) =>
     setLegalDraft((d) => ({ ...d, [slug]: value }));
-  const legalDirty = Object.keys(legalDraft).some(
-    (slug) => legalDraft[slug] !== (legalDoc(slug)?.content ?? ""),
-  );
+  const legalDirty = (slug: string) =>
+    slug in legalDraft && legalDraft[slug] !== (legalDoc(slug)?.content ?? "");
 
   const [localConfig, setLocalConfig] = useState<Partial<SiteConfig>>({});
   const [saving, setSaving] = useState(false);
@@ -258,18 +429,14 @@ export function AdminSettings() {
   const tab = isSettingsSection(tabParam) ? tabParam : "general";
   const [testingEmail, setTestingEmail] = useState(false);
   const [testingEmailReceiving, setTestingEmailReceiving] = useState(false);
-  const [emailSubTab, setEmailSubTab] = useState("send");
   const [resetting, setResetting] = useState(false);
   const [resetTotpCode, setResetTotpCode] = useState("");
-  const [resetRequestOpen, setResetRequestOpen] = useState(false);
-  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  // The reset's TOTP step opens inline in its card, not in a dialog.
+  const [resetStep, setResetStep] = useState<"request" | "confirm" | null>(
+    null,
+  );
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
-  const [migratingCodes, setMigratingCodes] = useState(false);
-  const [migratingSecrets, setMigratingSecrets] = useState(false);
-  const [migratingWebhooks, setMigratingWebhooks] = useState(false);
-  const [migratingD1Secrets, setMigratingD1Secrets] = useState(false);
-  const [migratingTeamsAsUsers, setMigratingTeamsAsUsers] = useState(false);
-  const [migratingImageProxy, setMigratingImageProxy] = useState(false);
+  const [migrating, setMigrating] = useState<string | null>(null);
 
   const { data: secretsStatus, refetch: refetchSecretsStatus } = useQuery({
     queryKey: ["admin-secrets-status"],
@@ -324,9 +491,22 @@ export function AdminSettings() {
   const set = (key: keyof SiteConfig, value: unknown) =>
     setLocalConfig((c) => ({ ...c, [key]: value }));
 
+  /** A boolean setting, with the default for a config row that predates it. */
+  const flag = (key: keyof SiteConfig, fallback = false): boolean =>
+    (get(key) as boolean | null | undefined) ?? fallback;
+
+  /** A numeric setting, with the default for a config row that predates it. */
+  const num = (key: keyof SiteConfig, fallback: number): number =>
+    (get(key) as number | null | undefined) ?? fallback;
+
   // Read once — both the dropdown label and its selection need it, and a
   // config row written before the setting existed has no value at all.
   const turnstileMode = get("turnstile_endpoint_mode") ?? "global";
+  const capMode = get("cap_mode") ?? "embedded";
+  const emailProvider = get("email_provider") ?? "none";
+  const receiveProvider = get("email_receive_provider") ?? "cloudflare";
+  const subTeams = flag("enable_sub_teams", true);
+  const publicProfiles = flag("enable_public_profiles", true);
 
   // ─── Captcha provider set ──────────────────────────────────────────────────
   // The enabled set is an ordered list: element 0 is the default rendered
@@ -372,17 +552,8 @@ export function AdminSettings() {
     setProviderList(copy);
   };
 
-  /** Numeric config setter that refuses to store a non-number.
-   *
-   *  `type="number"` does not prevent the field being momentarily empty, and
-   *  `Number("")` is 0 — which for a usage cap or a TTL is a live setting,
-   *  not a blank. Leave the previous value in place instead. */
-  const setNumber = (key: keyof SiteConfig, raw: string) => {
-    if (raw.trim() === "") return;
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return;
-    set(key, n);
-  };
+  const fail = (err: unknown, fallback: string) =>
+    showMsg("error", err instanceof ApiError ? err.message : t(fallback));
 
   const handleTestEmail = async () => {
     setTestingEmail(true);
@@ -390,10 +561,7 @@ export function AdminSettings() {
       await api.adminTestEmail();
       showMsg("success", t("admin.testEmailSentDone"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
+      fail(err, "common.error");
     } finally {
       setTestingEmail(false);
     }
@@ -408,144 +576,112 @@ export function AdminSettings() {
         t("admin.testEmailSentToDone", { address: result.address }),
       );
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
+      fail(err, "common.error");
     } finally {
       setTestingEmailReceiving(false);
     }
   };
 
-  const handleMigrateSecrets = async () => {
-    setMigratingSecrets(true);
+  /** Run one migration: its call, its success text, and its status refresh. */
+  const migrate = async (
+    key: string,
+    run: () => Promise<string>,
+    failKey: string,
+    refetch: () => Promise<unknown>,
+  ) => {
+    setMigrating(key);
     try {
-      const res = await api.adminMigrateSecrets();
-      const total =
-        res.encrypted.oauth_apps +
-        res.encrypted.oauth_sources +
-        res.encrypted.user_github_pats +
-        res.encrypted.config_keys.length;
-      showMsg("success", t("admin.secretsMigrateSuccess", { count: total }));
-      await refetchSecretsStatus();
+      showMsg("success", await run());
+      await refetch();
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.secretsMigrateFailed"),
-      );
+      fail(err, failKey);
     } finally {
-      setMigratingSecrets(false);
+      setMigrating(null);
     }
   };
 
-  const handleMigrateWebhooks = async () => {
-    setMigratingWebhooks(true);
-    try {
-      const res = await api.migrateLegacyWebhooks();
-      showMsg(
-        "success",
-        t("admin.webhooksMigrateSuccess", {
+  const handleMigrateSecrets = () =>
+    migrate(
+      "secrets",
+      async () => {
+        const res = await api.adminMigrateSecrets();
+        const total =
+          res.encrypted.oauth_apps +
+          res.encrypted.oauth_sources +
+          res.encrypted.user_github_pats +
+          res.encrypted.config_keys.length;
+        return t("admin.secretsMigrateSuccess", { count: total });
+      },
+      "admin.secretsMigrateFailed",
+      refetchSecretsStatus,
+    );
+
+  const handleMigrateWebhooks = () =>
+    migrate(
+      "webhooks",
+      async () => {
+        const res = await api.migrateLegacyWebhooks();
+        return t("admin.webhooksMigrateSuccess", {
           count: res.migrated,
           total: res.total,
-        }),
-      );
-      await refetchWebhooksStatus();
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("admin.webhooksMigrateFailed"),
-      );
-    } finally {
-      setMigratingWebhooks(false);
-    }
-  };
+        });
+      },
+      "admin.webhooksMigrateFailed",
+      refetchWebhooksStatus,
+    );
 
-  const handleMigrateD1Secrets = async () => {
-    setMigratingD1Secrets(true);
-    try {
-      const res = await api.adminMigrateD1Secrets();
-      const total = Object.values(res.migrated).reduce((a, b) => a + b, 0);
-      showMsg("success", t("admin.d1SecretsMigrateSuccess", { count: total }));
-      await refetchD1SecretsStatus();
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("admin.d1SecretsMigrateFailed"),
-      );
-    } finally {
-      setMigratingD1Secrets(false);
-    }
-  };
+  const handleMigrateD1Secrets = () =>
+    migrate(
+      "d1",
+      async () => {
+        const res = await api.adminMigrateD1Secrets();
+        const total = Object.values(res.migrated).reduce((a, b) => a + b, 0);
+        return t("admin.d1SecretsMigrateSuccess", { count: total });
+      },
+      "admin.d1SecretsMigrateFailed",
+      refetchD1SecretsStatus,
+    );
 
-  const handleMigrateRecoveryCodes = async () => {
-    setMigratingCodes(true);
-    try {
-      const res = await api.adminMigrateRecoveryCodes();
-      showMsg(
-        "success",
-        t("admin.migrateRecoveryCodesSuccess", { count: res.migrated }),
-      );
-      await refetchRecoveryCodesStatus();
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("admin.migrateRecoveryCodesFailed"),
-      );
-    } finally {
-      setMigratingCodes(false);
-    }
-  };
+  const handleMigrateRecoveryCodes = () =>
+    migrate(
+      "codes",
+      async () => {
+        const res = await api.adminMigrateRecoveryCodes();
+        return t("admin.migrateRecoveryCodesSuccess", { count: res.migrated });
+      },
+      "admin.migrateRecoveryCodesFailed",
+      refetchRecoveryCodesStatus,
+    );
 
-  const handleMigrateImageProxy = async () => {
-    setMigratingImageProxy(true);
-    try {
-      const res = await api.adminMigrateImageProxy();
-      showMsg(
-        "success",
-        t("admin.migrateImageProxySuccess", { count: res.registered }),
-      );
-      await refetchImageProxyStatus();
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("admin.migrateImageProxyFailed"),
-      );
-    } finally {
-      setMigratingImageProxy(false);
-    }
-  };
+  const handleMigrateImageProxy = () =>
+    migrate(
+      "images",
+      async () => {
+        const res = await api.adminMigrateImageProxy();
+        return t("admin.migrateImageProxySuccess", { count: res.registered });
+      },
+      "admin.migrateImageProxyFailed",
+      refetchImageProxyStatus,
+    );
 
-  const handleMigrateTeamsAsUsers = async () => {
-    setMigratingTeamsAsUsers(true);
-    try {
-      const res = await api.adminMigrateTeamsAsUsers();
-      showMsg(
-        "success",
-        t("admin.migrateTeamsAsUsersSuccess", {
+  const handleMigrateTeamsAsUsers = () =>
+    migrate(
+      "teams",
+      async () => {
+        const res = await api.adminMigrateTeamsAsUsers();
+        await qc.invalidateQueries({ queryKey: ["admin-apps"] });
+        return t("admin.migrateTeamsAsUsersSuccess", {
           teams: res.teams_mirrored,
           apps: res.apps_realigned,
-        }),
-      );
-      await refetchTeamsAsUsersStatus();
-      await qc.invalidateQueries({ queryKey: ["admin-apps"] });
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("admin.migrateTeamsAsUsersFailed"),
-      );
-    } finally {
-      setMigratingTeamsAsUsers(false);
-    }
+        });
+      },
+      "admin.migrateTeamsAsUsersFailed",
+      refetchTeamsAsUsersStatus,
+    );
+
+  const closeResetStep = () => {
+    setResetStep(null);
+    setResetTotpCode("");
   };
 
   const handleResetRequest = async () => {
@@ -554,15 +690,11 @@ export function AdminSettings() {
       await api.adminResetRequest({
         totp_code: resetTotpCode.trim() || undefined,
       });
-      setResetRequestOpen(false);
-      setResetTotpCode("");
+      closeResetStep();
       await refetchResetStatus();
       showMsg("success", t("admin.resetRequested"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.resetFailed"),
-      );
+      fail(err, "admin.resetFailed");
     } finally {
       setResetting(false);
     }
@@ -571,13 +703,11 @@ export function AdminSettings() {
   const handleResetCancel = async () => {
     try {
       await api.adminResetCancel();
+      closeResetStep();
       await refetchResetStatus();
       showMsg("success", t("admin.resetCancelled"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.resetFailed"),
-      );
+      fail(err, "admin.resetFailed");
     }
   };
 
@@ -590,12 +720,20 @@ export function AdminSettings() {
       clearAuth();
       navigate("/init", { replace: true });
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.resetFailed"),
-      );
+      fail(err, "admin.resetFailed");
       setResetting(false);
     }
+  };
+
+  const handleRevokeSessions = async () => {
+    const ok = await confirm({
+      title: t("admin.revokeSessionsConfirmTitle"),
+      body: revokeIncludeSelf
+        ? t("admin.revokeSessionsConfirmBodySelf")
+        : t("admin.revokeSessionsConfirmBody"),
+      confirmLabel: t("admin.revokeSessionsButton"),
+    });
+    if (ok) revokeSessions.mutate();
   };
 
   useEffect(() => {
@@ -607,6 +745,8 @@ export function AdminSettings() {
     return () => clearInterval(id);
   }, [tab]);
 
+  const dirty = Object.keys(localConfig).length > 0;
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -616,143 +756,356 @@ export function AdminSettings() {
       setLocalConfig({});
       showMsg("success", t("admin.settingsSaved"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.saveFailed"),
-      );
+      fail(err, "admin.saveFailed");
     } finally {
       setSaving(false);
     }
   };
 
-  // Save a single config key immediately (used by the per-platform save
-  // buttons on the third-party notifications tab). Keeps its own pending
-  // flag so one platform's spinner doesn't block the other.
-  const [savingThirdParty, setSavingThirdParty] = useState<string | null>(null);
-  const saveConfigKeys = async (label: string, keys: (keyof SiteConfig)[]) => {
-    setSavingThirdParty(label);
+  // Persist one document, so saving one policy doesn't bump the other's
+  // "last updated" date.
+  const handleSaveLegal = async (slug: "privacy" | "terms") => {
+    setSavingLegal(slug);
     try {
-      const updates: Record<string, unknown> = {};
-      for (const key of keys) {
-        if (key in localConfig) updates[key] = get(key);
-      }
-      await api.adminUpdateConfig(updates);
-      await qc.invalidateQueries({ queryKey: ["admin-config"] });
-      await qc.invalidateQueries({ queryKey: ["site"] });
-      setLocalConfig((c) => {
-        const next = { ...c };
-        for (const key of keys) delete next[key];
-        return next;
-      });
-      showMsg("success", t("admin.thirdPartySaved"));
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.thirdPartySaveFailed"),
-      );
-    } finally {
-      setSavingThirdParty(null);
-    }
-  };
-  const saveConfigKey = async (key: keyof SiteConfig) =>
-    saveConfigKeys(key as string, [key]);
-
-  // Persist only the documents whose draft differs from the stored value, so
-  // saving one policy doesn't bump the other's "last updated" date.
-  const handleSaveLegal = async () => {
-    setSavingLegal(true);
-    try {
-      const changed = Object.keys(legalDraft).filter(
-        (slug) => legalDraft[slug] !== (legalDoc(slug)?.content ?? ""),
-      );
-      for (const slug of changed) {
-        await api.adminUpdateLegal(
-          slug as "privacy" | "terms",
-          legalDraft[slug] ?? "",
-        );
-      }
+      await api.adminUpdateLegal(slug, legalDraft[slug] ?? "");
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["admin-legal"] }),
         qc.invalidateQueries({ queryKey: ["site"] }),
         qc.invalidateQueries({ queryKey: ["legal"] }),
       ]);
-      setLegalDraft({});
+      setLegalDraft((d) => dropKey(d, slug));
       showMsg("success", t("admin.settingsSaved"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.saveFailed"),
-      );
+      fail(err, "admin.saveFailed");
     } finally {
-      setSavingLegal(false);
+      setSavingLegal(null);
     }
   };
 
   if (isLoading) return <SkeletonSettingsPage cards={[3, 2]} form />;
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {message && (
-        <MessageBar intent={message.type === "success" ? "success" : "error"}>
-          {message.text}
-        </MessageBar>
+  // ─── Shared pieces ─────────────────────────────────────────────────────────
+
+  /** A row holding one number setting. */
+  const numberRow = (
+    key: keyof SiteConfig,
+    fallback: number,
+    labelKey: string,
+    opts: {
+      descKey?: string;
+      unit?: string;
+      min?: number;
+      max?: number;
+    } = {},
+  ) => (
+    <SettingsRow
+      label={t(labelKey)}
+      description={opts.descKey ? t(opts.descKey) : undefined}
+    >
+      <NumberInput
+        label={t(labelKey)}
+        value={num(key, fallback)}
+        onChange={(n) => set(key, n)}
+        unit={opts.unit}
+        min={opts.min}
+        max={opts.max}
+      />
+    </SettingsRow>
+  );
+
+  /** One checkbox bound to a boolean setting. */
+  const check = (
+    key: keyof SiteConfig,
+    labelKey: string,
+    fallback: boolean,
+  ) => (
+    <Checkbox
+      key={key}
+      label={t(labelKey)}
+      checked={flag(key, fallback)}
+      onChange={(_, d) => set(key, !!d.checked)}
+    />
+  );
+
+  const unit = {
+    days: t("admin.unitDays"),
+    hours: t("admin.unitHours"),
+    minutes: t("admin.unitMinutes"),
+    seconds: t("admin.unitSeconds"),
+    bytes: t("admin.unitBytes"),
+  };
+
+  const required = (
+    key: keyof SiteConfig,
+    labelKey: string,
+    descKey: string,
+  ) => (
+    <SettingsRow label={t(labelKey)} description={t(descKey)}>
+      <Segmented
+        label={t(labelKey)}
+        value={flag(key) ? "on" : "off"}
+        options={[
+          { value: "off", label: t("admin.choiceNotRequired") },
+          { value: "on", label: t("admin.choiceRequired") },
+        ]}
+        onChange={(v) => set(key, v === "on")}
+      />
+    </SettingsRow>
+  );
+
+  /** Pick which sign-in source's bot sends a platform's notifications. */
+  const notifySource = (
+    key: "tg_notify_source_slug" | "discord_notify_source_slug",
+    labelKey: string,
+    descKey: string,
+    noSourcesKey: string,
+    sources: { slug: string; name: string }[],
+  ) => (
+    <SettingsRow
+      label={t(labelKey)}
+      description={
+        sources.length === 0 ? (
+          <>
+            {t(noSourcesKey)}{" "}
+            <Link onClick={() => navigate("/admin/connections")}>
+              {t("admin.addOAuthSource")}
+            </Link>
+          </>
+        ) : (
+          t(descKey)
+        )
+      }
+    >
+      {sources.length > 0 && (
+        <Select
+          aria-label={t(labelKey)}
+          className={styles.select}
+          value={get(key) ?? ""}
+          onChange={(_, d) => set(key, d.value)}
+        >
+          <option value="">{t("admin.notifyOff")}</option>
+          {sources.map((s) => (
+            <option key={s.slug} value={s.slug}>
+              {s.name}
+            </option>
+          ))}
+        </Select>
       )}
+    </SettingsRow>
+  );
+
+  const d1Plaintext = d1SecretsStatus
+    ? d1SecretsStatus.pat_plaintext +
+      d1SecretsStatus.oauth_tokens_access_plaintext +
+      d1SecretsStatus.oauth_tokens_refresh_plaintext +
+      d1SecretsStatus.oauth_codes_plaintext +
+      d1SecretsStatus.site_invites_plaintext +
+      d1SecretsStatus.team_invites_plaintext +
+      d1SecretsStatus.email_verify_users_plaintext +
+      d1SecretsStatus.user_emails_verify_plaintext +
+      d1SecretsStatus.oauth_2fa_codes_plaintext +
+      d1SecretsStatus.totp_authenticators_plaintext +
+      d1SecretsStatus.webhooks_plaintext +
+      d1SecretsStatus.app_webhooks_plaintext +
+      d1SecretsStatus.social_connections_access_plaintext +
+      d1SecretsStatus.social_connections_refresh_plaintext
+    : 0;
+
+  /** One migration: what it does, where it stands, and its button. */
+  const migrationRow = (
+    key: string,
+    titleKey: string,
+    descKey: string,
+    status: ReactNode,
+    buttonKey: string,
+    onRun: () => void,
+    done: boolean,
+  ) => (
+    <SettingsRow
+      label={t(titleKey)}
+      description={
+        <>
+          {t(descKey)}
+          {status}
+        </>
+      }
+    >
+      <Button
+        disabled={migrating !== null || done}
+        icon={migrating === key ? <Spinner size="tiny" /> : undefined}
+        onClick={onRun}
+      >
+        {t(buttonKey)}
+      </Button>
+    </SettingsRow>
+  );
+
+  const statusLine = (text: string, warn = false) => (
+    <span className={mergeClasses(styles.status, warn && styles.warn)}>
+      {text}
+    </span>
+  );
+
+  /** The TOTP step of a reset, inline in the reset card. */
+  const resetForm = (
+    descKey: string,
+    submitKey: string,
+    onSubmit: () => void,
+  ) => (
+    <>
+      <SettingsBody>
+        <Text>{t(descKey)}</Text>
+        {resetStatus?.sudo_active && (
+          <Text size={200} className={styles.muted}>
+            {t("admin.resetSudoActiveNote")}
+          </Text>
+        )}
+        <Field label={t("admin.totpCode")}>
+          <Input
+            autoFocus
+            value={resetTotpCode}
+            onChange={(e) => setResetTotpCode(e.target.value)}
+            placeholder={t("admin.totpCodePlaceholder")}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            className={styles.select}
+          />
+        </Field>
+      </SettingsBody>
+      <SettingsFooter>
+        <Button disabled={resetting} onClick={closeResetStep}>
+          {t("common.cancel")}
+        </Button>
+        <Button
+          appearance="primary"
+          className={styles.danger}
+          disabled={resetting}
+          icon={resetting ? <Spinner size="tiny" /> : undefined}
+          onClick={onSubmit}
+        >
+          {t(submitKey)}
+        </Button>
+      </SettingsFooter>
+    </>
+  );
+
+  /** One legal document's editor, with its own save. */
+  const legalEditor = (
+    slug: "privacy" | "terms",
+    labelKey: string,
+    placeholderKey: string,
+    path: string,
+  ) => (
+    <>
+      <SettingsBody>
+        <Field hint={t("admin.legalMarkdownHint")}>
+          <Textarea
+            aria-label={t(labelKey)}
+            value={getLegal(slug)}
+            onChange={(e) => setLegal(slug, e.target.value)}
+            rows={14}
+            resize="vertical"
+            placeholder={t(placeholderKey)}
+          />
+        </Field>
+      </SettingsBody>
+      <SettingsFooter
+        start={
+          getLegal(slug)
+            ? t("admin.legalPublishedAt", { path })
+            : t("admin.legalHiddenWhenEmpty")
+        }
+      >
+        {legalDirty(slug) && savingLegal !== slug && (
+          <Button
+            appearance="subtle"
+            onClick={() => setLegalDraft((d) => dropKey(d, slug))}
+          >
+            {t("common.discard")}
+          </Button>
+        )}
+        <Button
+          appearance="primary"
+          onClick={() => void handleSaveLegal(slug)}
+          disabled={savingLegal !== null || !legalDirty(slug)}
+          icon={savingLegal === slug ? <Spinner size="tiny" /> : undefined}
+        >
+          {t("common.saveChanges")}
+        </Button>
+      </SettingsFooter>
+    </>
+  );
+
+  return (
+    <div className={styles.page}>
+      <SettingsToast message={message} />
 
       {tab === "general" && (
         <>
           <SettingsCard id="admin.cardSite" title={t("admin.cardSite")}>
-            <Field label={t("admin.siteName")}>
-              <Input
-                value={get("site_name") ?? ""}
-                onChange={(e) => set("site_name", e.target.value)}
+            <SettingsBody>
+              <Field label={t("admin.siteName")}>
+                <Input
+                  value={get("site_name") ?? ""}
+                  onChange={(e) => set("site_name", e.target.value)}
+                />
+              </Field>
+              <Field label={t("admin.siteDescription")}>
+                <Input
+                  value={get("site_description") ?? ""}
+                  onChange={(e) => set("site_description", e.target.value)}
+                />
+              </Field>
+              <ImageUrlInput
+                label={t("admin.siteIconUrl")}
+                value={get("site_icon_url") ?? ""}
+                onChange={(v) => set("site_icon_url", v || null)}
               />
-            </Field>
-            <Field label={t("admin.siteDescription")}>
-              <Input
-                value={get("site_description") ?? ""}
-                onChange={(e) => set("site_description", e.target.value)}
-              />
-            </Field>
-            <ImageUrlInput
-              label={t("admin.siteIconUrl")}
-              value={get("site_icon_url") ?? ""}
-              onChange={(v) => set("site_icon_url", v || null)}
-            />
+            </SettingsBody>
           </SettingsCard>
           <SettingsCard
             id="admin.securityTxtTitle"
             title={t("admin.securityTxtTitle")}
             description={t("admin.securityTxtDesc")}
           >
-            <Field
-              label={t("admin.securityContact")}
-              hint={t("admin.securityContactHint")}
-            >
-              <Input
-                value={get("security_contact") ?? ""}
-                onChange={(e) => set("security_contact", e.target.value)}
-                placeholder="mailto:security@example.com"
-              />
-            </Field>
-            <Field
-              label={t("admin.securityPolicyUrl")}
-              hint={t("admin.securityPolicyUrlHint")}
-            >
-              <Input
-                value={get("security_policy_url") ?? ""}
-                onChange={(e) => set("security_policy_url", e.target.value)}
-                placeholder="https://example.com/security-policy"
-              />
-            </Field>
+            <SettingsBody>
+              <Field
+                label={t("admin.securityContact")}
+                hint={t("admin.securityContactHint")}
+              >
+                <Input
+                  value={get("security_contact") ?? ""}
+                  onChange={(e) => set("security_contact", e.target.value)}
+                  placeholder="mailto:security@example.com"
+                />
+              </Field>
+              <Field
+                label={t("admin.securityPolicyUrl")}
+                hint={t("admin.securityPolicyUrlHint")}
+              >
+                <Input
+                  value={get("security_policy_url") ?? ""}
+                  onChange={(e) => set("security_policy_url", e.target.value)}
+                  placeholder="https://example.com/security-policy"
+                />
+              </Field>
+            </SettingsBody>
           </SettingsCard>
           <SettingsCard id="admin.cardAdvanced" title={t("admin.cardAdvanced")}>
-            <Field hint={t("admin.disableSsrHint")}>
-              <Switch
+            <SettingsRow
+              label={t("admin.disableSsr")}
+              description={t("admin.disableSsrHint")}
+            >
+              <Segmented
                 label={t("admin.disableSsr")}
-                checked={!!get("disable_ssr")}
-                onChange={(_, d) => set("disable_ssr", d.checked)}
+                value={flag("disable_ssr") ? "browser" : "server"}
+                options={[
+                  { value: "server", label: t("admin.renderServer") },
+                  { value: "browser", label: t("admin.renderBrowser") },
+                ]}
+                onChange={(v) => set("disable_ssr", v === "browser")}
               />
-            </Field>
+            </SettingsRow>
           </SettingsCard>
         </>
       )}
@@ -763,178 +1116,125 @@ export function AdminSettings() {
             id="admin.cardRegistration"
             title={t("admin.cardRegistration")}
           >
-            <Field label={t("admin.registrationMode")}>
-              <Dropdown
+            <SettingsRow label={t("admin.registrationMode")}>
+              <Select
+                aria-label={t("admin.registrationMode")}
+                className={styles.select}
                 value={
-                  get("allow_registration")
-                    ? get("invite_only")
-                      ? t("admin.regModeInviteOnly")
-                      : t("admin.regModeOpen")
-                    : t("admin.regModeClosed")
-                }
-                selectedOptions={[
                   get("allow_registration")
                     ? get("invite_only")
                       ? "invite_only"
                       : "open"
-                    : "closed",
-                ]}
-                onOptionSelect={(_, d) => {
-                  if (d.optionValue === "open") {
-                    set("allow_registration", true);
-                    set("invite_only", false);
-                  } else if (d.optionValue === "invite_only") {
-                    set("allow_registration", true);
-                    set("invite_only", true);
-                  } else {
-                    set("allow_registration", false);
-                    set("invite_only", false);
-                  }
+                    : "closed"
+                }
+                onChange={(_, d) => {
+                  set("allow_registration", d.value !== "closed");
+                  set("invite_only", d.value === "invite_only");
                 }}
               >
-                <Option value="open">{t("admin.regModeOpen")}</Option>
-                <Option value="invite_only">
+                <option value="open">{t("admin.regModeOpen")}</option>
+                <option value="invite_only">
                   {t("admin.regModeInviteOnly")}
-                </Option>
-                <Option value="closed">{t("admin.regModeClosed")}</Option>
-              </Dropdown>
-            </Field>
-            <Switch
-              label={t("admin.requireEmailVerification")}
-              checked={!!get("require_email_verification")}
-              onChange={(_, d) => set("require_email_verification", d.checked)}
-            />
-            <Field
-              label={t("admin.socialVerifyTtl")}
-              hint={t("admin.socialVerifyTtlHint")}
-            >
-              <Input
-                type="number"
-                min={0}
-                value={String(get("social_verify_ttl_days") ?? 0)}
-                onChange={(_, d) =>
-                  set("social_verify_ttl_days", parseInt(d.value) || 0)
-                }
-              />
-            </Field>
-            <Switch
+                </option>
+                <option value="closed">{t("admin.regModeClosed")}</option>
+              </Select>
+            </SettingsRow>
+            {required(
+              "require_email_verification",
+              "admin.requireEmailVerification",
+              "admin.requireEmailVerificationDesc",
+            )}
+            {numberRow("social_verify_ttl_days", 0, "admin.socialVerifyTtl", {
+              descKey: "admin.socialVerifyTtlHint",
+              unit: unit.days,
+              min: 0,
+            })}
+            <SettingsRow
               label={t("admin.allowAltEmailLogin")}
-              checked={get("allow_alt_email_login") ?? true}
-              onChange={(_, d) => set("allow_alt_email_login", d.checked)}
-            />
+              description={t("admin.allowAltEmailLoginDesc")}
+            >
+              <Segmented
+                label={t("admin.allowAltEmailLogin")}
+                value={flag("allow_alt_email_login", true) ? "any" : "primary"}
+                options={[
+                  { value: "primary", label: t("admin.altEmailPrimaryOnly") },
+                  { value: "any", label: t("admin.altEmailAny") },
+                ]}
+                onChange={(v) => set("allow_alt_email_login", v === "any")}
+              />
+            </SettingsRow>
           </SettingsCard>
           <SettingsCard
             id="admin.cardInviteSignup"
             title={t("admin.cardInviteSignup")}
             description={t("admin.inviteSignupDesc")}
           >
-            <div className={styles.row}>
-              <Field
-                label={t("admin.inviteRegMaxUsesCap")}
-                hint={t("admin.inviteRegMaxUsesCapHint")}
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  value={String(
-                    get("team_invite_registration_max_uses_cap") ?? 1000,
-                  )}
-                  onChange={(e) =>
-                    setNumber(
-                      "team_invite_registration_max_uses_cap",
-                      e.target.value,
-                    )
-                  }
-                  style={{ width: 120 }}
-                />
-              </Field>
-              <Field
-                label={t("admin.inviteRegRatePerHour")}
-                hint={t("admin.inviteRegRatePerHourHint")}
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  value={String(
-                    get("team_invite_registration_rate_per_hour") ?? 200,
-                  )}
-                  onChange={(e) =>
-                    setNumber(
-                      "team_invite_registration_rate_per_hour",
-                      e.target.value,
-                    )
-                  }
-                  style={{ width: 120 }}
-                />
-              </Field>
-            </div>
+            {numberRow(
+              "team_invite_registration_max_uses_cap",
+              1000,
+              "admin.inviteRegMaxUsesCap",
+              { descKey: "admin.inviteRegMaxUsesCapHint", min: 1 },
+            )}
+            {numberRow(
+              "team_invite_registration_rate_per_hour",
+              200,
+              "admin.inviteRegRatePerHour",
+              { descKey: "admin.inviteRegRatePerHourHint", min: 1 },
+            )}
           </SettingsCard>
           <SettingsCard
             id="admin.cardRestricted"
             title={t("admin.cardRestricted")}
             description={t("admin.cardRestrictedDesc")}
           >
-            <Field
-              label={t("admin.pendingTtlHours")}
-              hint={t("admin.pendingTtlHoursHint")}
-            >
-              <Input
-                type="number"
-                min={1}
-                value={String(get("restricted_pending_ttl_hours") ?? 72)}
-                onChange={(e) =>
-                  setNumber("restricted_pending_ttl_hours", e.target.value)
-                }
-                style={{ width: 120 }}
-              />
-            </Field>
-            <Field
-              label={t("admin.dissolveGraceHours")}
-              hint={t("admin.dissolveGraceHoursHint")}
-            >
-              <Input
-                type="number"
-                min={1}
-                value={String(get("restricted_dissolve_grace_hours") ?? 168)}
-                onChange={(e) =>
-                  setNumber("restricted_dissolve_grace_hours", e.target.value)
-                }
-                style={{ width: 120 }}
-              />
-            </Field>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.restrictedCapsLabel")}
-            </Text>
-            {(
-              [
-                ["team:create", "admin.capTeamCreate"],
-                ["app:create", "admin.capAppCreate"],
-                ["domain:create", "admin.capDomainCreate"],
-                ["pat:create", "admin.capPatCreate"],
-                ["profile:public", "admin.capProfilePublic"],
-                ["gpg:manage", "admin.capGpgManage"],
-                ["self:convert", "admin.capSelfConvert"],
-              ] as const
-            ).map(([key, label]) => {
-              const caps =
-                (get("restricted_user_capabilities") as Record<
-                  string,
-                  boolean
-                > | null) ?? {};
-              return (
-                <Switch
-                  key={key}
-                  label={t(label)}
-                  checked={caps[key] ?? false}
-                  onChange={(_, d) =>
-                    set("restricted_user_capabilities", {
-                      ...caps,
-                      [key]: d.checked,
-                    })
-                  }
-                />
-              );
-            })}
+            {numberRow(
+              "restricted_pending_ttl_hours",
+              72,
+              "admin.pendingTtlHours",
+              {
+                descKey: "admin.pendingTtlHoursHint",
+                unit: unit.hours,
+                min: 1,
+              },
+            )}
+            {numberRow(
+              "restricted_dissolve_grace_hours",
+              168,
+              "admin.dissolveGraceHours",
+              {
+                descKey: "admin.dissolveGraceHoursHint",
+                unit: unit.hours,
+                min: 1,
+              },
+            )}
+            <SettingsSubhead>{t("admin.restrictedCapsLabel")}</SettingsSubhead>
+            <SettingsBody>
+              <CheckGrid label={t("admin.restrictedCapsLabel")}>
+                {RESTRICTED_CAPS.map(([key, label]) => {
+                  const caps =
+                    (get("restricted_user_capabilities") as Record<
+                      string,
+                      boolean
+                    > | null) ?? {};
+                  return (
+                    <Checkbox
+                      key={key}
+                      label={t(label)}
+                      checked={caps[key] ?? false}
+                      onChange={(_, d) =>
+                        set("restricted_user_capabilities", {
+                          ...caps,
+                          [key]: !!d.checked,
+                        })
+                      }
+                    />
+                  );
+                })}
+              </CheckGrid>
+              <Text size={200} className={styles.muted}>
+                {t("admin.restrictedCapsNote")}
+              </Text>
+            </SettingsBody>
           </SettingsCard>
         </>
       )}
@@ -942,258 +1242,189 @@ export function AdminSettings() {
       {tab === "auth" && (
         <>
           <SettingsCard id="admin.cardSessions" title={t("admin.cardSessions")}>
-            <div className={styles.row}>
-              <Field label={t("admin.sessionTtl")}>
-                <Input
-                  type="number"
-                  value={String(get("session_ttl_days") ?? 30)}
-                  onChange={(e) =>
-                    set("session_ttl_days", parseInt(e.target.value))
-                  }
-                />
-              </Field>
-              <Field label={t("admin.accessTokenTtl")}>
-                <Input
-                  type="number"
-                  value={String(get("access_token_ttl_minutes") ?? 60)}
-                  onChange={(e) =>
-                    set("access_token_ttl_minutes", parseInt(e.target.value))
-                  }
-                />
-              </Field>
-            </div>
-            <div className={styles.row}>
-              <Field label={t("admin.refreshTokenTtl")}>
-                <Input
-                  type="number"
-                  value={String(get("refresh_token_ttl_days") ?? 30)}
-                  onChange={(e) =>
-                    set("refresh_token_ttl_days", parseInt(e.target.value))
-                  }
-                />
-              </Field>
-              <Field
-                label={t("admin.sudoModeTtl")}
-                hint={t("admin.sudoModeTtlHint")}
-              >
-                <Input
-                  type="number"
-                  value={String(get("sudo_mode_ttl_minutes") ?? 5)}
-                  onChange={(e) =>
-                    set(
-                      "sudo_mode_ttl_minutes",
-                      Math.max(0, parseInt(e.target.value) || 0),
-                    )
-                  }
-                />
-              </Field>
-            </div>
+            {numberRow("session_ttl_days", 30, "admin.sessionTtl", {
+              unit: unit.days,
+              min: 1,
+            })}
+            {numberRow("access_token_ttl_minutes", 60, "admin.accessTokenTtl", {
+              unit: unit.minutes,
+              min: 1,
+            })}
+            {numberRow("refresh_token_ttl_days", 30, "admin.refreshTokenTtl", {
+              unit: unit.days,
+              min: 1,
+            })}
+            {numberRow("sudo_mode_ttl_minutes", 5, "admin.sudoModeTtl", {
+              descKey: "admin.sudoModeTtlHint",
+              unit: unit.minutes,
+              min: 0,
+            })}
           </SettingsCard>
           <SettingsCard
             id="admin.cardSignInProtection"
             title={t("admin.cardSignInProtection")}
             description={t("admin.loginRateLimitsHint")}
           >
-            {(
-              [
-                [
-                  "login_dos_rate_limit",
-                  "login_dos_rate_window_seconds",
-                  "admin.loginDosRateLimit",
-                  120,
-                  60,
-                ],
-                [
-                  "login_ip_rate_limit",
-                  "login_ip_rate_window_seconds",
-                  "admin.loginIpRateLimit",
-                  60,
-                  60,
-                ],
-                [
-                  "login_identifier_rate_limit",
-                  "login_identifier_rate_window_seconds",
-                  "admin.loginIdentifierRateLimit",
-                  30,
-                  300,
-                ],
-                [
-                  "login_totp_rate_limit",
-                  "login_totp_rate_window_seconds",
-                  "admin.loginTotpRateLimit",
-                  15,
-                  300,
-                ],
-              ] as const
-            ).map(
+            {LOGIN_RATE_LIMITS.map(
               ([limitKey, windowKey, label, defaultLimit, defaultWindow]) => (
-                <Field key={limitKey} label={t(label)}>
-                  <div className={styles.row}>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={86400}
-                      aria-label={t("admin.loginRateLimitAttempts")}
-                      contentAfter={
-                        <Text size={200} className={styles.unit}>
-                          {t("admin.loginRateLimitAttempts")}
-                        </Text>
-                      }
-                      value={String(get(limitKey) ?? defaultLimit)}
-                      onChange={(e) => setNumber(limitKey, e.target.value)}
-                    />
-                    <Input
-                      type="number"
-                      min={1}
-                      max={86400}
-                      aria-label={t("admin.loginRateLimitWindow")}
-                      contentAfter={
-                        <Text size={200} className={styles.unit}>
-                          {t("admin.loginRateLimitWindow")}
-                        </Text>
-                      }
-                      value={String(get(windowKey) ?? defaultWindow)}
-                      onChange={(e) => setNumber(windowKey, e.target.value)}
-                    />
-                  </div>
-                </Field>
+                <SettingsRow key={limitKey} label={t(label)}>
+                  <NumberInput
+                    label={t("admin.loginRateLimitAttempts")}
+                    value={num(limitKey, defaultLimit)}
+                    onChange={(n) => set(limitKey, n)}
+                    unit={t("admin.unitAttempts")}
+                    min={1}
+                    max={86400}
+                  />
+                  <span className={styles.unit}>{t("admin.ratePer")}</span>
+                  <NumberInput
+                    label={t("admin.loginRateLimitWindow")}
+                    value={num(windowKey, defaultWindow)}
+                    onChange={(n) => set(windowKey, n)}
+                    unit={unit.seconds}
+                    min={1}
+                    max={86400}
+                  />
+                </SettingsRow>
               ),
             )}
-            <Field
-              label={t("admin.ipv6RateLimitPrefix")}
-              hint={t("admin.ipv6RateLimitPrefixHint")}
-            >
-              <Input
-                type="number"
-                min={1}
-                max={128}
-                value={String(get("ipv6_rate_limit_prefix") ?? 64)}
-                onChange={(e) =>
-                  set("ipv6_rate_limit_prefix", Number(e.target.value))
-                }
-                style={{ width: 100 }}
-              />
-            </Field>
-            <Field hint={t("admin.requireCaptchaFor2faHint")}>
-              <Switch
-                label={t("admin.requireCaptchaFor2fa")}
-                checked={!!get("require_captcha_for_2fa")}
-                onChange={(_, d) => set("require_captcha_for_2fa", d.checked)}
-              />
-            </Field>
-            <Field
-              label={t("admin.loginErrorRetentionDays")}
-              hint={t("admin.loginErrorRetentionDaysHint")}
-            >
-              <Input
-                type="number"
-                value={String(get("login_error_retention_days") ?? 30)}
-                onChange={(e) =>
-                  set("login_error_retention_days", parseInt(e.target.value))
-                }
-              />
-            </Field>
+            {numberRow(
+              "ipv6_rate_limit_prefix",
+              64,
+              "admin.ipv6RateLimitPrefix",
+              {
+                descKey: "admin.ipv6RateLimitPrefixHint",
+                min: 1,
+                max: 128,
+              },
+            )}
+            {required(
+              "require_captcha_for_2fa",
+              "admin.requireCaptchaFor2fa",
+              "admin.requireCaptchaFor2faHint",
+            )}
+            {numberRow(
+              "login_error_retention_days",
+              30,
+              "admin.loginErrorRetentionDays",
+              {
+                descKey: "admin.loginErrorRetentionDaysHint",
+                unit: unit.days,
+                min: 0,
+              },
+            )}
           </SettingsCard>
           <SettingsCard
             id="admin.cardVerification"
             title={t("admin.cardVerification")}
           >
-            <Field
-              label={t("admin.gpgChallengePrefix")}
-              hint={t("admin.gpgChallengePrefixHint")}
-            >
-              <Textarea
-                value={(get("gpg_challenge_prefix") as string) ?? ""}
-                onChange={(e) => set("gpg_challenge_prefix", e.target.value)}
-                placeholder={t("admin.gpgChallengePrefixPlaceholder")}
-                rows={3}
-              />
-            </Field>
-            <Field label={t("admin.domainReverify")}>
-              <Input
-                type="number"
-                value={String(get("domain_reverify_days") ?? 30)}
-                onChange={(e) =>
-                  set("domain_reverify_days", parseInt(e.target.value))
-                }
-              />
-            </Field>
+            {numberRow("domain_reverify_days", 30, "admin.domainReverify", {
+              unit: unit.days,
+              min: 1,
+            })}
+            <SettingsBody>
+              <Field
+                label={t("admin.gpgChallengePrefix")}
+                hint={t("admin.gpgChallengePrefixHint")}
+              >
+                <Textarea
+                  value={(get("gpg_challenge_prefix") as string) ?? ""}
+                  onChange={(e) => set("gpg_challenge_prefix", e.target.value)}
+                  placeholder={t("admin.gpgChallengePrefixPlaceholder")}
+                  rows={3}
+                />
+              </Field>
+            </SettingsBody>
           </SettingsCard>
         </>
       )}
 
       {tab === "teams" && (
         <>
-          <SettingsCard id="admin.cardCreation" title={t("admin.cardCreation")}>
-            <Switch
-              label={t("admin.disableUserCreateTeam")}
-              checked={!!get("disable_user_create_team")}
-              onChange={(_, d) => set("disable_user_create_team", d.checked)}
-            />
-            <Switch
-              label={t("admin.disableUserCreateApp")}
-              checked={!!get("disable_user_create_app")}
-              onChange={(_, d) => set("disable_user_create_app", d.checked)}
-            />
+          <SettingsCard
+            id="admin.cardCreation"
+            title={t("admin.cardCreation")}
+            description={t("admin.cardCreationDesc")}
+          >
+            {(
+              [
+                ["disable_user_create_team", "admin.disableUserCreateTeam"],
+                ["disable_user_create_app", "admin.disableUserCreateApp"],
+              ] as const
+            ).map(([key, label]) => (
+              <SettingsRow key={key} label={t(label)}>
+                <Segmented
+                  label={t(label)}
+                  value={flag(key) ? "admins" : "everyone"}
+                  options={[
+                    { value: "everyone", label: t("admin.createEveryone") },
+                    { value: "admins", label: t("admin.createAdminsOnly") },
+                  ]}
+                  onChange={(v) => set(key, v === "admins")}
+                />
+              </SettingsRow>
+            ))}
           </SettingsCard>
           <SettingsCard
             id="admin.cardTeamRequirements"
             title={t("admin.cardTeamRequirements")}
             description={t("admin.teamJoinRequirementsHint")}
           >
-            <Switch
-              label={t("admin.defaultTeamRequireVerifiedEmail")}
-              checked={!!get("default_team_require_verified_email")}
-              onChange={(_, d) =>
-                set("default_team_require_verified_email", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultTeamRequire2FA")}
-              checked={!!get("default_team_require_2fa")}
-              onChange={(_, d) => set("default_team_require_2fa", d.checked)}
-            />
+            <SettingsBody>
+              <CheckGrid label={t("admin.cardTeamRequirements")}>
+                {check(
+                  "default_team_require_verified_email",
+                  "admin.defaultTeamRequireVerifiedEmail",
+                  false,
+                )}
+                {check(
+                  "default_team_require_2fa",
+                  "admin.defaultTeamRequire2FA",
+                  false,
+                )}
+              </CheckGrid>
+            </SettingsBody>
           </SettingsCard>
           <SettingsCard
             id="admin.cardSubTeams"
             title={t("admin.cardSubTeams")}
             description={t("admin.subTeamConfigHint")}
           >
-            <Switch
-              label={t("admin.enableSubTeams")}
-              checked={get("enable_sub_teams") ?? true}
-              onChange={(_, d) => set("enable_sub_teams", d.checked)}
-            />
-            <div className={styles.subGroup}>
-              <Field
-                label={t("admin.maxTeamDepth")}
-                hint={t("admin.maxTeamDepthHint")}
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={String(get("max_team_depth") ?? 5)}
-                  onChange={(e) =>
-                    set("max_team_depth", Number(e.target.value))
-                  }
-                  disabled={!(get("enable_sub_teams") ?? true)}
-                  style={{ width: 100 }}
-                />
-              </Field>
-              <Switch
-                label={t("admin.inheritTeamMembership")}
-                checked={get("inherit_team_membership") ?? true}
-                disabled={!(get("enable_sub_teams") ?? true)}
-                onChange={(_, d) => set("inherit_team_membership", d.checked)}
+            <SettingsRow label={t("admin.enableSubTeams")}>
+              <Segmented
+                label={t("admin.enableSubTeams")}
+                value={subTeams ? "on" : "off"}
+                options={[
+                  { value: "off", label: t("admin.choiceNotAllowed") },
+                  { value: "on", label: t("admin.choiceAllowed") },
+                ]}
+                onChange={(v) => set("enable_sub_teams", v === "on")}
               />
-              <Switch
-                label={t("admin.inheritTeamDomains")}
-                checked={get("inherit_team_domains") ?? true}
-                disabled={!(get("enable_sub_teams") ?? true)}
-                onChange={(_, d) => set("inherit_team_domains", d.checked)}
-              />
-            </div>
+            </SettingsRow>
+            {subTeams && (
+              <>
+                {numberRow("max_team_depth", 5, "admin.maxTeamDepth", {
+                  descKey: "admin.maxTeamDepthHint",
+                  min: 1,
+                  max: 20,
+                })}
+                <SettingsSubhead>{t("admin.inheritLabel")}</SettingsSubhead>
+                <SettingsBody>
+                  <CheckGrid label={t("admin.inheritLabel")}>
+                    {check(
+                      "inherit_team_membership",
+                      "admin.inheritTeamMembership",
+                      true,
+                    )}
+                    {check(
+                      "inherit_team_domains",
+                      "admin.inheritTeamDomains",
+                      true,
+                    )}
+                  </CheckGrid>
+                </SettingsBody>
+              </>
+            )}
           </SettingsCard>
         </>
       )}
@@ -1205,360 +1436,241 @@ export function AdminSettings() {
             title={t("admin.publicProfilesTitle")}
             description={t("admin.publicProfilesDesc")}
           >
-            <Switch
-              label={t("admin.enablePublicProfiles")}
-              checked={get("enable_public_profiles") ?? true}
-              onChange={(_, d) => set("enable_public_profiles", d.checked)}
-            />
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.publicProfilesFieldDefaultsHint")}
-            </Text>
-            <Switch
-              label={t("admin.defaultProfileShowDisplayName")}
-              checked={get("default_profile_show_display_name") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_profile_show_display_name", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultProfileShowAvatar")}
-              checked={get("default_profile_show_avatar") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) => set("default_profile_show_avatar", d.checked)}
-            />
-            <Switch
-              label={t("admin.defaultProfileShowEmail")}
-              checked={get("default_profile_show_email") ?? false}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) => set("default_profile_show_email", d.checked)}
-            />
-            <Switch
-              label={t("admin.defaultProfileShowJoinedAt")}
-              checked={get("default_profile_show_joined_at") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_profile_show_joined_at", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultProfileShowGpgKeys")}
-              checked={get("default_profile_show_gpg_keys") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_profile_show_gpg_keys", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultProfileShowAuthorizedApps")}
-              checked={get("default_profile_show_authorized_apps") ?? false}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_profile_show_authorized_apps", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultProfileShowOwnedApps")}
-              checked={get("default_profile_show_owned_apps") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_profile_show_owned_apps", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultProfileShowDomains")}
-              checked={get("default_profile_show_domains") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_profile_show_domains", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultProfileShowJoinedTeams")}
-              checked={get("default_profile_show_joined_teams") ?? false}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_profile_show_joined_teams", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultProfileShowReadme")}
-              checked={get("default_profile_show_readme") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) => set("default_profile_show_readme", d.checked)}
-            />
-            <Field
-              label={t("admin.profileReadmeMaxBytes")}
-              hint={t("admin.profileReadmeMaxBytesHint")}
-            >
-              <Input
-                type="number"
-                min={1024}
-                max={1024 * 1024}
-                value={String(get("profile_readme_max_bytes") ?? 64 * 1024)}
-                disabled={!(get("enable_public_profiles") ?? true)}
-                onChange={(_, d) => {
-                  const n = parseInt(d.value, 10);
-                  if (Number.isFinite(n)) set("profile_readme_max_bytes", n);
-                }}
+            <SettingsRow label={t("admin.enablePublicProfiles")}>
+              <Segmented
+                label={t("admin.enablePublicProfiles")}
+                value={publicProfiles ? "on" : "off"}
+                options={[
+                  { value: "off", label: t("admin.choiceNotAllowed") },
+                  { value: "on", label: t("admin.choiceAllowed") },
+                ]}
+                onChange={(v) => set("enable_public_profiles", v === "on")}
               />
-            </Field>
-            <Field
-              label={t("admin.githubReadmeToken")}
-              hint={t("admin.githubReadmeTokenHint")}
-            >
-              <PasswordInput
-                value={String(get("github_readme_token") ?? "")}
-                disabled={!(get("enable_public_profiles") ?? true)}
-                placeholder={t("admin.githubReadmeTokenPlaceholder")}
-                onChange={(_, d) => set("github_readme_token", d.value)}
-              />
-            </Field>
-            <Field
-              label={t("admin.githubReadmeCacheTtl")}
-              hint={t("admin.githubReadmeCacheTtlHint")}
-            >
-              <Input
-                type="number"
-                min={60}
-                max={7 * 86400}
-                value={String(get("github_readme_cache_ttl_seconds") ?? 3600)}
-                disabled={!(get("enable_public_profiles") ?? true)}
-                onChange={(_, d) => {
-                  const n = parseInt(d.value, 10);
-                  if (Number.isFinite(n))
-                    set("github_readme_cache_ttl_seconds", n);
-                }}
-              />
-            </Field>
+            </SettingsRow>
+            {publicProfiles && (
+              <>
+                <SettingsSubhead>
+                  {t("admin.publicProfilesFieldDefaultsHint")}
+                </SettingsSubhead>
+                <SettingsBody>
+                  <CheckGrid label={t("admin.publicProfilesFieldDefaultsHint")}>
+                    {PROFILE_FIELDS.map(([key, label, fallback]) =>
+                      check(key, label, fallback),
+                    )}
+                  </CheckGrid>
+                  <Text size={200} className={styles.muted}>
+                    {t("admin.profileFieldsNote")}
+                  </Text>
+                </SettingsBody>
+              </>
+            )}
           </SettingsCard>
-          <SettingsCard
-            id="admin.cardTeamProfiles"
-            title={t("admin.cardTeamProfiles")}
-            description={t("admin.teamProfileDefaultsHint")}
-          >
-            <Switch
-              label={t("admin.defaultTeamProfileShowDescription")}
-              checked={get("default_team_profile_show_description") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_team_profile_show_description", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultTeamProfileShowAvatar")}
-              checked={get("default_team_profile_show_avatar") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_team_profile_show_avatar", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultTeamProfileShowOwner")}
-              checked={get("default_team_profile_show_owner") ?? false}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_team_profile_show_owner", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultTeamProfileShowMemberCount")}
-              checked={get("default_team_profile_show_member_count") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_team_profile_show_member_count", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultTeamProfileShowApps")}
-              checked={get("default_team_profile_show_apps") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_team_profile_show_apps", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultTeamProfileShowDomains")}
-              checked={get("default_team_profile_show_domains") ?? true}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_team_profile_show_domains", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultTeamProfileShowMembers")}
-              checked={get("default_team_profile_show_members") ?? false}
-              disabled={!(get("enable_public_profiles") ?? true)}
-              onChange={(_, d) =>
-                set("default_team_profile_show_members", d.checked)
-              }
-            />
-            <Switch
-              label={t("admin.defaultTeamProfileShowSubTeams")}
-              checked={get("default_team_profile_show_sub_teams") ?? true}
-              disabled={
-                !(get("enable_public_profiles") ?? true) ||
-                !(get("enable_sub_teams") ?? true)
-              }
-              onChange={(_, d) =>
-                set("default_team_profile_show_sub_teams", d.checked)
-              }
-            />
-          </SettingsCard>
+          {publicProfiles && (
+            <SettingsCard
+              id="admin.cardProfileReadme"
+              title={t("admin.cardProfileReadme")}
+            >
+              {numberRow(
+                "profile_readme_max_bytes",
+                64 * 1024,
+                "admin.profileReadmeMaxBytes",
+                {
+                  descKey: "admin.profileReadmeMaxBytesHint",
+                  unit: unit.bytes,
+                  min: 1024,
+                  max: 1024 * 1024,
+                },
+              )}
+              {numberRow(
+                "github_readme_cache_ttl_seconds",
+                3600,
+                "admin.githubReadmeCacheTtl",
+                {
+                  descKey: "admin.githubReadmeCacheTtlHint",
+                  unit: unit.seconds,
+                  min: 60,
+                  max: 7 * 86400,
+                },
+              )}
+              <SettingsBody>
+                <Field
+                  label={t("admin.githubReadmeToken")}
+                  hint={t("admin.githubReadmeTokenHint")}
+                >
+                  <PasswordInput
+                    value={String(get("github_readme_token") ?? "")}
+                    placeholder={t("admin.githubReadmeTokenPlaceholder")}
+                    onChange={(_, d) => set("github_readme_token", d.value)}
+                  />
+                </Field>
+              </SettingsBody>
+            </SettingsCard>
+          )}
+          {publicProfiles && (
+            <SettingsCard
+              id="admin.cardTeamProfiles"
+              title={t("admin.cardTeamProfiles")}
+              description={t("admin.teamProfileDefaultsHint")}
+            >
+              <SettingsBody>
+                <CheckGrid label={t("admin.cardTeamProfiles")}>
+                  {TEAM_PROFILE_FIELDS.map(([key, label, fallback]) =>
+                    check(key, label, fallback),
+                  )}
+                  {subTeams &&
+                    check(
+                      "default_team_profile_show_sub_teams",
+                      "admin.defaultTeamProfileShowSubTeams",
+                      true,
+                    )}
+                </CheckGrid>
+                <Text size={200} className={styles.muted}>
+                  {t("admin.teamFieldsNote")}
+                </Text>
+              </SettingsBody>
+            </SettingsCard>
+          )}
         </>
       )}
 
       {tab === "captcha" && (
-        <div className={styles.card}>
-          <div className={styles.form}>
+        <>
+          <SettingsCard id="admin.cardCaptcha" title={t("admin.cardCaptcha")}>
             {/* Default provider — element 0 of the enabled set. "none" turns
                 captcha off entirely. */}
-            <Field
+            <SettingsRow
               label={t("admin.captchaDefaultProvider")}
-              hint={t("admin.captchaDefaultProviderHint")}
+              description={t("admin.captchaDefaultProviderHint")}
             >
-              <Dropdown
-                value={t(`admin.captcha_${defaultProvider}`)}
-                selectedOptions={[defaultProvider]}
-                onOptionSelect={(_, d) =>
-                  setDefaultProvider(d.optionValue as CaptchaProvider)
+              <Select
+                aria-label={t("admin.captchaDefaultProvider")}
+                className={styles.select}
+                value={defaultProvider}
+                onChange={(_, d) =>
+                  setDefaultProvider(d.value as CaptchaProvider)
                 }
               >
-                <Option value="none">{t("admin.captcha_none")}</Option>
+                <option value="none">{t("admin.captcha_none")}</option>
                 {CAPTCHA_PROVIDERS.map((p) => (
-                  <Option key={p} value={p}>
+                  <option key={p} value={p}>
                     {t(`admin.captcha_${p}`)}
-                  </Option>
+                  </option>
                 ))}
-              </Dropdown>
-            </Field>
-
-            {/* Alternates — the switchable set. Order is the order visitors are
+              </Select>
+            </SettingsRow>
+            {/* Switch-reveal timeout applies once ≥2 providers are enabled. */}
+            {providerList.length >= 2 &&
+              numberRow(
+                "captcha_switch_timeout_seconds",
+                15,
+                "admin.captchaSwitchTimeout",
+                {
+                  descKey: "admin.captchaSwitchTimeoutHint",
+                  unit: unit.seconds,
+                  min: 0,
+                },
+              )}
+            {/* Alternates — the switchable set, in the order visitors are
                 offered them. */}
             {defaultProvider !== "none" && (
-              <Field
-                label={t("admin.captchaAlternates")}
-                hint={t("admin.captchaAlternatesHint")}
-              >
+              <SettingsBody>
+                <Text size={200} className={styles.muted}>
+                  {t("admin.captchaAlternatesHint")}
+                </Text>
                 <div
-                  style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                  role="group"
+                  aria-label={t("admin.captchaAlternatesHint")}
+                  className={styles.alternates}
                 >
                   {alternateOptions.map((p) => {
                     const enabled = alternateProviders.includes(p);
                     const pos = alternateProviders.indexOf(p);
                     return (
-                      <div
-                        key={p}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <Switch
-                          checked={enabled}
+                      <div key={p} className={styles.alternate}>
+                        <Checkbox
                           label={t(`admin.captcha_${p}`)}
-                          onChange={(_, d) => toggleAlternate(p, d.checked)}
+                          checked={enabled}
+                          onChange={(_, d) => toggleAlternate(p, !!d.checked)}
                         />
                         {enabled && (
-                          <>
+                          <span className={styles.unit}>
+                            {t("admin.captchaAlternatePosition", {
+                              n: pos + 1,
+                            })}
+                          </span>
+                        )}
+                        {enabled && alternateProviders.length > 1 && (
+                          <span className={styles.order}>
                             <Button
                               size="small"
                               appearance="subtle"
+                              icon={<ArrowUpRegular />}
                               disabled={pos <= 0}
                               onClick={() => moveAlternate(p, -1)}
                               aria-label={t("admin.captchaMoveUp")}
-                            >
-                              ↑
-                            </Button>
+                            />
                             <Button
                               size="small"
                               appearance="subtle"
+                              icon={<ArrowDownRegular />}
                               disabled={pos >= alternateProviders.length - 1}
                               onClick={() => moveAlternate(p, 1)}
                               aria-label={t("admin.captchaMoveDown")}
-                            >
-                              ↓
-                            </Button>
-                          </>
+                            />
+                          </span>
                         )}
                       </div>
                     );
                   })}
                 </div>
-              </Field>
+              </SettingsBody>
             )}
+          </SettingsCard>
 
-            {/* Switch-reveal timeout applies once ≥2 providers are enabled. */}
-            {providerList.length >= 2 && (
-              <Field
-                label={t("admin.captchaSwitchTimeout")}
-                hint={t("admin.captchaSwitchTimeoutHint")}
-              >
-                <Input
-                  type="number"
-                  value={String(get("captcha_switch_timeout_seconds") ?? 15)}
-                  onChange={(e) =>
-                    setNumber("captcha_switch_timeout_seconds", e.target.value)
-                  }
-                />
-              </Field>
-            )}
-
-            {/* Per-provider credential panels for every enabled provider. */}
-            {providerList.map((p) => (
-              <div
-                key={p}
-                style={{
-                  border: "1px solid var(--colorNeutralStroke2)",
-                  borderRadius: 6,
-                  padding: 12,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                }}
-              >
-                <Text weight="semibold">{t(`admin.captcha_${p}`)}</Text>
-
+          {/* Credentials for every enabled provider, one card each. */}
+          {providerList.map((p) => (
+            <SettingsCard key={p} title={t(`admin.captcha_${p}`)}>
+              <SettingsBody>
                 {p === "turnstile" && (
                   <>
-                    <Field label={t("admin.captchaSiteKey")}>
-                      <Input
-                        value={get("turnstile_site_key") ?? ""}
-                        onChange={(e) =>
-                          set("turnstile_site_key", e.target.value)
-                        }
-                      />
-                    </Field>
-                    <Field label={t("admin.captchaSecretKey")}>
-                      <PasswordInput
-                        value={get("turnstile_secret_key") ?? ""}
-                        onChange={(e) =>
-                          set("turnstile_secret_key", e.target.value)
-                        }
-                      />
-                    </Field>
+                    <div className={styles.grid}>
+                      <Field label={t("admin.captchaSiteKey")}>
+                        <Input
+                          value={get("turnstile_site_key") ?? ""}
+                          onChange={(e) =>
+                            set("turnstile_site_key", e.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field label={t("admin.captchaSecretKey")}>
+                        <PasswordInput
+                          value={get("turnstile_secret_key") ?? ""}
+                          onChange={(e) =>
+                            set("turnstile_secret_key", e.target.value)
+                          }
+                        />
+                      </Field>
+                    </div>
                     <Field
                       label={t("admin.turnstileEndpoint")}
                       hint={t("admin.turnstileEndpointHint")}
                     >
-                      <Dropdown
-                        value={t(`admin.turnstileEndpoint_${turnstileMode}`)}
-                        selectedOptions={[turnstileMode]}
-                        onOptionSelect={(_, d) =>
-                          set("turnstile_endpoint_mode", d.optionValue)
+                      <Select
+                        value={turnstileMode}
+                        onChange={(_, d) =>
+                          set("turnstile_endpoint_mode", d.value)
                         }
                       >
                         {TURNSTILE_ENDPOINT_MODES.map((mode) => (
-                          <Option key={mode} value={mode}>
+                          <option key={mode} value={mode}>
                             {t(`admin.turnstileEndpoint_${mode}`)}
-                          </Option>
+                          </option>
                         ))}
-                      </Dropdown>
+                      </Select>
                     </Field>
                     {/* The China host needs its own region:"china" widget. */}
                     {turnstileMode !== "global" && (
-                      <>
+                      <div className={styles.grid}>
                         <Field
                           label={t("admin.turnstileChinaSiteKey")}
                           hint={t("admin.turnstileChinaSiteKeyHint")}
@@ -1578,87 +1690,67 @@ export function AdminSettings() {
                             }
                           />
                         </Field>
-                      </>
+                      </div>
                     )}
                   </>
                 )}
 
-                {p === "hcaptcha" && (
-                  <>
+                {(p === "hcaptcha" || p === "recaptcha") && (
+                  <div className={styles.grid}>
                     <Field label={t("admin.captchaSiteKey")}>
                       <Input
-                        value={get("hcaptcha_site_key") ?? ""}
-                        onChange={(e) =>
-                          set("hcaptcha_site_key", e.target.value)
-                        }
+                        value={get(`${p}_site_key` as const) ?? ""}
+                        onChange={(e) => set(`${p}_site_key`, e.target.value)}
                       />
                     </Field>
                     <Field label={t("admin.captchaSecretKey")}>
                       <PasswordInput
-                        value={get("hcaptcha_secret_key") ?? ""}
-                        onChange={(e) =>
-                          set("hcaptcha_secret_key", e.target.value)
-                        }
+                        value={get(`${p}_secret_key` as const) ?? ""}
+                        onChange={(e) => set(`${p}_secret_key`, e.target.value)}
                       />
                     </Field>
-                  </>
-                )}
-
-                {p === "recaptcha" && (
-                  <>
-                    <Field label={t("admin.captchaSiteKey")}>
-                      <Input
-                        value={get("recaptcha_site_key") ?? ""}
-                        onChange={(e) =>
-                          set("recaptcha_site_key", e.target.value)
-                        }
-                      />
-                    </Field>
-                    <Field label={t("admin.captchaSecretKey")}>
-                      <PasswordInput
-                        value={get("recaptcha_secret_key") ?? ""}
-                        onChange={(e) =>
-                          set("recaptcha_secret_key", e.target.value)
-                        }
-                      />
-                    </Field>
-                  </>
+                  </div>
                 )}
 
                 {p === "pow" && (
-                  <Field label={t("admin.powDifficulty")}>
-                    <Input
-                      type="number"
-                      value={String(get("pow_difficulty") ?? 20)}
-                      onChange={(e) =>
-                        setNumber("pow_difficulty", e.target.value)
-                      }
+                  <Field
+                    label={t("admin.powDifficulty")}
+                    hint={t("admin.powDifficultyHint")}
+                  >
+                    <NumberInput
+                      label={t("admin.powDifficulty")}
+                      value={num("pow_difficulty", 20)}
+                      onChange={(n) => set("pow_difficulty", n)}
+                      unit={t("admin.unitBits")}
+                      min={1}
                     />
                   </Field>
                 )}
 
                 {p === "geetest" && (
                   <>
-                    <Field label={t("admin.geetestCaptchaId")}>
-                      <Input
-                        value={get("geetest_captcha_id") ?? ""}
-                        onChange={(e) =>
-                          set("geetest_captcha_id", e.target.value)
-                        }
-                      />
-                    </Field>
-                    <Field label={t("admin.geetestCaptchaKey")}>
-                      <PasswordInput
-                        value={get("geetest_captcha_key") ?? ""}
-                        onChange={(e) =>
-                          set("geetest_captcha_key", e.target.value)
-                        }
-                      />
-                    </Field>
-                    <Switch
-                      checked={!!get("geetest_fail_open")}
+                    <div className={styles.grid}>
+                      <Field label={t("admin.geetestCaptchaId")}>
+                        <Input
+                          value={get("geetest_captcha_id") ?? ""}
+                          onChange={(e) =>
+                            set("geetest_captcha_id", e.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field label={t("admin.geetestCaptchaKey")}>
+                        <PasswordInput
+                          value={get("geetest_captcha_key") ?? ""}
+                          onChange={(e) =>
+                            set("geetest_captcha_key", e.target.value)
+                          }
+                        />
+                      </Field>
+                    </div>
+                    <Checkbox
                       label={t("admin.geetestFailOpen")}
-                      onChange={(_, d) => set("geetest_fail_open", d.checked)}
+                      checked={flag("geetest_fail_open")}
+                      onChange={(_, d) => set("geetest_fail_open", !!d.checked)}
                     />
                   </>
                 )}
@@ -1669,24 +1761,23 @@ export function AdminSettings() {
                       label={t("admin.capMode")}
                       hint={t("admin.capModeHint")}
                     >
-                      <Dropdown
-                        value={t(
-                          `admin.capMode_${get("cap_mode") ?? "embedded"}`,
-                        )}
-                        selectedOptions={[get("cap_mode") ?? "embedded"]}
-                        onOptionSelect={(_, d) =>
-                          set("cap_mode", d.optionValue)
-                        }
-                      >
-                        <Option value="embedded">
-                          {t("admin.capMode_embedded")}
-                        </Option>
-                        <Option value="external">
-                          {t("admin.capMode_external")}
-                        </Option>
-                      </Dropdown>
+                      <Segmented
+                        label={t("admin.capMode")}
+                        value={capMode}
+                        options={[
+                          {
+                            value: "embedded",
+                            label: t("admin.capMode_embedded"),
+                          },
+                          {
+                            value: "external",
+                            label: t("admin.capMode_external"),
+                          },
+                        ]}
+                        onChange={(v) => set("cap_mode", v)}
+                      />
                     </Field>
-                    {(get("cap_mode") ?? "embedded") === "external" ? (
+                    {capMode === "external" ? (
                       <>
                         <Field label={t("admin.capApiEndpoint")}>
                           <Input
@@ -1696,97 +1787,86 @@ export function AdminSettings() {
                             }
                           />
                         </Field>
-                        <Field label={t("admin.captchaSiteKey")}>
-                          <Input
-                            value={get("cap_site_key") ?? ""}
-                            onChange={(e) =>
-                              set("cap_site_key", e.target.value)
-                            }
-                          />
-                        </Field>
-                        <Field label={t("admin.captchaSecretKey")}>
-                          <PasswordInput
-                            value={get("cap_secret_key") ?? ""}
-                            onChange={(e) =>
-                              set("cap_secret_key", e.target.value)
-                            }
-                          />
-                        </Field>
+                        <div className={styles.grid}>
+                          <Field label={t("admin.captchaSiteKey")}>
+                            <Input
+                              value={get("cap_site_key") ?? ""}
+                              onChange={(e) =>
+                                set("cap_site_key", e.target.value)
+                              }
+                            />
+                          </Field>
+                          <Field label={t("admin.captchaSecretKey")}>
+                            <PasswordInput
+                              value={get("cap_secret_key") ?? ""}
+                              onChange={(e) =>
+                                set("cap_secret_key", e.target.value)
+                              }
+                            />
+                          </Field>
+                        </div>
                       </>
                     ) : (
                       <>
-                        <Field label={t("admin.capChallengeCount")}>
-                          <Input
-                            type="number"
-                            value={String(get("cap_challenge_count") ?? 50)}
-                            onChange={(e) =>
-                              setNumber("cap_challenge_count", e.target.value)
-                            }
-                          />
-                        </Field>
-                        <Field label={t("admin.capChallengeDifficulty")}>
-                          <Input
-                            type="number"
-                            value={String(get("cap_challenge_difficulty") ?? 4)}
-                            onChange={(e) =>
-                              setNumber(
-                                "cap_challenge_difficulty",
-                                e.target.value,
-                              )
-                            }
-                          />
-                        </Field>
-                        <Switch
-                          checked={get("cap_instrumentation") ?? true}
+                        <div className={styles.grid}>
+                          <Field label={t("admin.capChallengeCount")}>
+                            <NumberInput
+                              label={t("admin.capChallengeCount")}
+                              value={num("cap_challenge_count", 50)}
+                              onChange={(n) => set("cap_challenge_count", n)}
+                              min={1}
+                            />
+                          </Field>
+                          <Field label={t("admin.capChallengeDifficulty")}>
+                            <NumberInput
+                              label={t("admin.capChallengeDifficulty")}
+                              value={num("cap_challenge_difficulty", 4)}
+                              onChange={(n) =>
+                                set("cap_challenge_difficulty", n)
+                              }
+                              min={1}
+                            />
+                          </Field>
+                        </div>
+                        <Checkbox
                           label={t("admin.capInstrumentation")}
+                          checked={flag("cap_instrumentation", true)}
                           onChange={(_, d) =>
-                            set("cap_instrumentation", d.checked)
+                            set("cap_instrumentation", !!d.checked)
                           }
                         />
                       </>
                     )}
                   </>
                 )}
-              </div>
-            ))}
-          </div>
-        </div>
+              </SettingsBody>
+            </SettingsCard>
+          ))}
+        </>
       )}
 
       {tab === "email" && (
-        <div className={styles.card}>
-          <Subtitle2 as="h2">{t("admin.emailTitle")}</Subtitle2>
-          <TabList
-            size="small"
-            selectedValue={emailSubTab}
-            onTabSelect={(_, d) => setEmailSubTab(d.value as string)}
-            style={{ marginBottom: 4 }}
+        <>
+          <SettingsCard
+            id="admin.cardEmailSending"
+            title={t("admin.cardEmailSending")}
           >
-            <Tab value="send">{t("admin.emailSendTab")}</Tab>
-            <Tab value="receive">{t("admin.emailReceiveTab")}</Tab>
-            <Tab value="telegram">{t("admin.thirdPartyTab")}</Tab>
-          </TabList>
-
-          {emailSubTab === "send" && (
-            <div className={styles.form}>
+            <SettingsBody>
               <Field label={t("admin.emailProvider")}>
-                <Dropdown
-                  value={get("email_provider") ?? "none"}
-                  selectedOptions={[get("email_provider") ?? "none"]}
-                  onOptionSelect={(_, d) =>
-                    set("email_provider", d.optionValue)
-                  }
+                <Select
+                  value={emailProvider}
+                  onChange={(_, d) => set("email_provider", d.value)}
                 >
-                  <Option value="none">{t("admin.emailNone")}</Option>
-                  <Option value="resend">{t("admin.emailResend")}</Option>
-                  <Option value="mailchannels">
+                  <option value="none">{t("admin.emailNone")}</option>
+                  <option value="resend">{t("admin.emailResend")}</option>
+                  <option value="mailchannels">
                     {t("admin.emailMailchannels")}
-                  </Option>
-                  <Option value="smtp">{t("admin.emailSmtp")}</Option>
-                </Dropdown>
+                  </option>
+                  <option value="smtp">{t("admin.emailSmtp")}</option>
+                </Select>
               </Field>
-              {(get("email_provider") === "resend" ||
-                get("email_provider") === "mailchannels") && (
+              {(emailProvider === "resend" ||
+                emailProvider === "mailchannels") && (
                 <Field label={t("admin.emailApiKey")}>
                   <PasswordInput
                     value={get("email_api_key") ?? ""}
@@ -1795,52 +1875,55 @@ export function AdminSettings() {
                   />
                 </Field>
               )}
-              {get("email_provider") === "smtp" && (
+              {emailProvider === "smtp" && (
                 <>
-                  <Field label={t("admin.smtpHost")}>
-                    <Input
-                      value={get("smtp_host") ?? ""}
-                      onChange={(e) => set("smtp_host", e.target.value)}
-                      placeholder={t("admin.smtpHostPlaceholder")}
-                    />
-                  </Field>
+                  <div className={styles.grid}>
+                    <Field label={t("admin.smtpHost")}>
+                      <Input
+                        value={get("smtp_host") ?? ""}
+                        onChange={(e) => set("smtp_host", e.target.value)}
+                        placeholder={t("admin.smtpHostPlaceholder")}
+                      />
+                    </Field>
+                    <Field label={t("admin.smtpEncryption")}>
+                      <Select
+                        value={get("smtp_secure") ? "ssl" : "starttls"}
+                        onChange={(_, d) =>
+                          set("smtp_secure", d.value === "ssl")
+                        }
+                      >
+                        <option value="starttls">
+                          {t("admin.smtpStarttls")}
+                        </option>
+                        <option value="ssl">{t("admin.smtpSsl")}</option>
+                      </Select>
+                    </Field>
+                  </div>
                   <Field label={t("admin.smtpPort")}>
-                    <Input
-                      type="number"
-                      value={String(get("smtp_port") ?? 587)}
-                      onChange={(e) => set("smtp_port", Number(e.target.value))}
+                    <NumberInput
+                      label={t("admin.smtpPort")}
+                      value={num("smtp_port", 587)}
+                      onChange={(n) => set("smtp_port", n)}
+                      min={1}
+                      max={65535}
                     />
                   </Field>
-                  <Field label={t("admin.smtpEncryption")}>
-                    <Dropdown
-                      value={get("smtp_secure") ? "ssl" : "starttls"}
-                      selectedOptions={[
-                        get("smtp_secure") ? "ssl" : "starttls",
-                      ]}
-                      onOptionSelect={(_, d) =>
-                        set("smtp_secure", d.optionValue === "ssl")
-                      }
-                    >
-                      <Option value="starttls">
-                        {t("admin.smtpStarttls")}
-                      </Option>
-                      <Option value="ssl">{t("admin.smtpSsl")}</Option>
-                    </Dropdown>
-                  </Field>
-                  <Field label={t("admin.smtpUsername")}>
-                    <Input
-                      value={get("smtp_user") ?? ""}
-                      onChange={(e) => set("smtp_user", e.target.value)}
-                      placeholder="user@example.com"
-                    />
-                  </Field>
-                  <Field label={t("admin.smtpPassword")}>
-                    <PasswordInput
-                      value={get("smtp_password") ?? ""}
-                      onChange={(e) => set("smtp_password", e.target.value)}
-                      placeholder={t("admin.unchanged")}
-                    />
-                  </Field>
+                  <div className={styles.grid}>
+                    <Field label={t("admin.smtpUsername")}>
+                      <Input
+                        value={get("smtp_user") ?? ""}
+                        onChange={(e) => set("smtp_user", e.target.value)}
+                        placeholder="user@example.com"
+                      />
+                    </Field>
+                    <Field label={t("admin.smtpPassword")}>
+                      <PasswordInput
+                        value={get("smtp_password") ?? ""}
+                        onChange={(e) => set("smtp_password", e.target.value)}
+                        placeholder={t("admin.unchanged")}
+                      />
+                    </Field>
+                  </div>
                 </>
               )}
               <Field label={t("admin.emailFrom")}>
@@ -1850,73 +1933,49 @@ export function AdminSettings() {
                   placeholder={t("admin.emailFromPlaceholder")}
                 />
               </Field>
-              {get("email_provider") !== "none" && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Button onClick={handleTestEmail} disabled={testingEmail}>
-                    {testingEmail ? (
-                      <Spinner size="tiny" />
-                    ) : (
-                      t("admin.sendTestEmail")
-                    )}
-                  </Button>
-                  <Text
-                    size={200}
-                    style={{
-                      color: tokens.colorNeutralForeground3,
-                      alignSelf: "center",
-                    }}
-                  >
-                    {t("admin.testEmailDesc")}
-                  </Text>
-                </div>
-              )}
-            </div>
-          )}
+            </SettingsBody>
+            {emailProvider !== "none" && (
+              <SettingsFooter start={t("admin.testEmailDesc")}>
+                <Button
+                  onClick={handleTestEmail}
+                  disabled={testingEmail}
+                  icon={testingEmail ? <Spinner size="tiny" /> : undefined}
+                >
+                  {t("admin.sendTestEmail")}
+                </Button>
+              </SettingsFooter>
+            )}
+          </SettingsCard>
 
-          {emailSubTab === "receive" && (
-            <div className={styles.form}>
-              <Field label={t("admin.emailVerifyMethods")}>
-                <Dropdown
-                  value={
-                    get("email_verify_methods") === "link"
-                      ? t("admin.verifyMethodLink")
-                      : get("email_verify_methods") === "send"
-                        ? t("admin.verifyMethodSend")
-                        : t("admin.verifyMethodBoth")
-                  }
-                  selectedOptions={[get("email_verify_methods") ?? "both"]}
-                  onOptionSelect={(_, d) =>
-                    set("email_verify_methods", d.optionValue)
-                  }
-                >
-                  <Option value="both">{t("admin.verifyMethodBoth")}</Option>
-                  <Option value="link">{t("admin.verifyMethodLink")}</Option>
-                  <Option value="send">{t("admin.verifyMethodSend")}</Option>
-                </Dropdown>
-              </Field>
-              <Field label={t("admin.emailReceiveProvider")}>
-                <Dropdown
-                  value={
-                    get("email_receive_provider") === "imap"
-                      ? t("admin.receiveImap")
-                      : get("email_receive_provider") === "none"
-                        ? t("admin.receiveNone")
-                        : t("admin.receiveCloudflare")
-                  }
-                  selectedOptions={[
-                    get("email_receive_provider") ?? "cloudflare",
-                  ]}
-                  onOptionSelect={(_, d) =>
-                    set("email_receive_provider", d.optionValue)
-                  }
-                >
-                  <Option value="cloudflare">
-                    {t("admin.receiveCloudflare")}
-                  </Option>
-                  <Option value="imap">{t("admin.receiveImap")}</Option>
-                  <Option value="none">{t("admin.receiveNone")}</Option>
-                </Dropdown>
-              </Field>
+          <SettingsCard
+            id="admin.cardEmailReceiving"
+            title={t("admin.cardEmailReceiving")}
+          >
+            <SettingsBody>
+              <div className={styles.grid}>
+                <Field label={t("admin.emailVerifyMethods")}>
+                  <Select
+                    value={get("email_verify_methods") ?? "both"}
+                    onChange={(_, d) => set("email_verify_methods", d.value)}
+                  >
+                    <option value="both">{t("admin.verifyMethodBoth")}</option>
+                    <option value="link">{t("admin.verifyMethodLink")}</option>
+                    <option value="send">{t("admin.verifyMethodSend")}</option>
+                  </Select>
+                </Field>
+                <Field label={t("admin.emailReceiveProvider")}>
+                  <Select
+                    value={receiveProvider}
+                    onChange={(_, d) => set("email_receive_provider", d.value)}
+                  >
+                    <option value="cloudflare">
+                      {t("admin.receiveCloudflare")}
+                    </option>
+                    <option value="imap">{t("admin.receiveImap")}</option>
+                    <option value="none">{t("admin.receiveNone")}</option>
+                  </Select>
+                </Field>
+              </div>
               <Field
                 label={t("admin.emailReceiveHost")}
                 hint={t("admin.emailReceiveHostHint")}
@@ -1927,634 +1986,277 @@ export function AdminSettings() {
                   placeholder="mail.example.com"
                 />
               </Field>
-              {get("email_receive_provider") === "imap" && (
+              {receiveProvider === "imap" && (
                 <>
-                  <Field label={t("admin.imapHost")}>
-                    <Input
-                      value={get("imap_host") ?? ""}
-                      onChange={(e) => set("imap_host", e.target.value)}
-                      placeholder="imap.example.com"
-                    />
-                  </Field>
-                  <Field label={t("admin.imapPort")}>
-                    <Input
-                      type="number"
-                      value={String(get("imap_port") ?? 993)}
-                      onChange={(e) => set("imap_port", Number(e.target.value))}
-                    />
-                  </Field>
-                  <Field label={t("admin.imapEncryption")}>
-                    <Dropdown
-                      value={get("imap_secure") ? "ssl" : "starttls"}
-                      selectedOptions={[
-                        get("imap_secure") ? "ssl" : "starttls",
-                      ]}
-                      onOptionSelect={(_, d) =>
-                        set("imap_secure", d.optionValue === "ssl")
-                      }
-                    >
-                      <Option value="ssl">{t("admin.imapSsl")}</Option>
-                      <Option value="starttls">
-                        {t("admin.imapStarttls")}
-                      </Option>
-                    </Dropdown>
-                  </Field>
-                  <Field label={t("admin.imapUsername")}>
-                    <Input
-                      value={get("imap_user") ?? ""}
-                      onChange={(e) => set("imap_user", e.target.value)}
-                      placeholder="user@example.com"
-                    />
-                  </Field>
-                  <Field label={t("admin.imapPassword")}>
-                    <PasswordInput
-                      value={get("imap_password") ?? ""}
-                      onChange={(e) => set("imap_password", e.target.value)}
-                      placeholder={t("admin.unchanged")}
-                    />
-                  </Field>
-                </>
-              )}
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Button
-                  appearance="outline"
-                  onClick={handleTestEmailReceiving}
-                  disabled={testingEmailReceiving}
-                >
-                  {testingEmailReceiving ? (
-                    <Spinner size="tiny" />
-                  ) : (
-                    t("admin.testEmailReceiving")
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {emailSubTab === "telegram" && (
-            <div className={styles.form}>
-              <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                {t("admin.thirdPartyDesc")}
-              </Text>
-
-              {/* ── Telegram ── */}
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  paddingTop: 8,
-                  borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-                }}
-              >
-                <Switch
-                  checked={!!get("tg_notify_source_slug")}
-                  label={t("admin.tgNotifyToggle")}
-                  onChange={(_, d) =>
-                    set(
-                      "tg_notify_source_slug",
-                      d.checked ? (telegramSources[0]?.slug ?? "") : "",
-                    )
-                  }
-                  disabled={telegramSources.length === 0}
-                />
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {t("admin.tgNotifyDesc")}
-                </Text>
-                {!!get("tg_notify_source_slug") && (
-                  <Field label={t("admin.tgNotifyBot")}>
-                    <Dropdown
-                      value={
-                        telegramSources.find(
-                          (s) =>
-                            s.slug === (get("tg_notify_source_slug") ?? ""),
-                        )?.name ?? t("admin.tgNotifyNone")
-                      }
-                      selectedOptions={[get("tg_notify_source_slug") ?? ""]}
-                      onOptionSelect={(_, d) =>
-                        set("tg_notify_source_slug", d.optionValue)
-                      }
-                    >
-                      {telegramSources.map((s) => (
-                        <Option key={s.slug} value={s.slug}>
-                          {s.name}
-                        </Option>
-                      ))}
-                    </Dropdown>
-                  </Field>
-                )}
-                {telegramSources.length === 0 && (
-                  <Text
-                    size={200}
-                    style={{ color: tokens.colorNeutralForeground3 }}
-                  >
-                    {t("admin.tgNotifyNoSources")}{" "}
-                    <Link onClick={() => navigate("/admin/connections")}>
-                      {t("admin.addOAuthSource")}
-                    </Link>
-                  </Text>
-                )}
-                <div>
-                  <Button
-                    appearance="primary"
-                    disabled={
-                      savingThirdParty !== null ||
-                      !("tg_notify_source_slug" in localConfig)
-                    }
-                    onClick={() => saveConfigKey("tg_notify_source_slug")}
-                  >
-                    {savingThirdParty === "tg_notify_source_slug" ? (
-                      <Spinner size="tiny" />
-                    ) : (
-                      t("common.saveChanges")
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {/* ── Discord ── */}
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  paddingTop: 8,
-                  borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-                }}
-              >
-                <Switch
-                  checked={!!get("discord_notify_source_slug")}
-                  label={t("admin.discordNotifyToggle")}
-                  onChange={(_, d) =>
-                    set(
-                      "discord_notify_source_slug",
-                      d.checked ? (discordSources[0]?.slug ?? "") : "",
-                    )
-                  }
-                  disabled={discordSources.length === 0}
-                />
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {t("admin.discordNotifyDesc")}
-                </Text>
-                {!!get("discord_notify_source_slug") && (
-                  <>
-                    <Field label={t("admin.discordNotifySource")}>
-                      <Dropdown
-                        value={
-                          discordSources.find(
-                            (s) =>
-                              s.slug ===
-                              (get("discord_notify_source_slug") ?? ""),
-                          )?.name ?? t("admin.discordNotifyNone")
-                        }
-                        selectedOptions={[
-                          get("discord_notify_source_slug") ?? "",
-                        ]}
-                        onOptionSelect={(_, d) =>
-                          set("discord_notify_source_slug", d.optionValue)
+                  <div className={styles.grid}>
+                    <Field label={t("admin.imapHost")}>
+                      <Input
+                        value={get("imap_host") ?? ""}
+                        onChange={(e) => set("imap_host", e.target.value)}
+                        placeholder="imap.example.com"
+                      />
+                    </Field>
+                    <Field label={t("admin.imapEncryption")}>
+                      <Select
+                        value={get("imap_secure") ? "ssl" : "starttls"}
+                        onChange={(_, d) =>
+                          set("imap_secure", d.value === "ssl")
                         }
                       >
-                        {discordSources.map((s) => (
-                          <Option key={s.slug} value={s.slug}>
-                            {s.name}
-                          </Option>
-                        ))}
-                      </Dropdown>
+                        <option value="ssl">{t("admin.imapSsl")}</option>
+                        <option value="starttls">
+                          {t("admin.imapStarttls")}
+                        </option>
+                      </Select>
                     </Field>
-                    <Field label={t("admin.discordBotToken")}>
+                  </div>
+                  <Field label={t("admin.imapPort")}>
+                    <NumberInput
+                      label={t("admin.imapPort")}
+                      value={num("imap_port", 993)}
+                      onChange={(n) => set("imap_port", n)}
+                      min={1}
+                      max={65535}
+                    />
+                  </Field>
+                  <div className={styles.grid}>
+                    <Field label={t("admin.imapUsername")}>
+                      <Input
+                        value={get("imap_user") ?? ""}
+                        onChange={(e) => set("imap_user", e.target.value)}
+                        placeholder="user@example.com"
+                      />
+                    </Field>
+                    <Field label={t("admin.imapPassword")}>
                       <PasswordInput
-                        value={get("discord_bot_token") ?? ""}
-                        onChange={(e) =>
-                          set("discord_bot_token", e.target.value)
-                        }
+                        value={get("imap_password") ?? ""}
+                        onChange={(e) => set("imap_password", e.target.value)}
                         placeholder={t("admin.unchanged")}
                       />
                     </Field>
-                  </>
-                )}
-                {discordSources.length === 0 && (
-                  <Text
-                    size={200}
-                    style={{ color: tokens.colorNeutralForeground3 }}
-                  >
-                    {t("admin.discordNotifyNoSources")}{" "}
-                    <Link onClick={() => navigate("/admin/connections")}>
-                      {t("admin.addOAuthSource")}
-                    </Link>
-                  </Text>
-                )}
-                <div>
-                  <Button
-                    appearance="primary"
-                    disabled={
-                      savingThirdParty !== null ||
-                      (!("discord_notify_source_slug" in localConfig) &&
-                        !("discord_bot_token" in localConfig))
-                    }
-                    onClick={() =>
-                      saveConfigKeys("discord", [
-                        "discord_notify_source_slug",
-                        "discord_bot_token",
-                      ])
-                    }
-                  >
-                    {savingThirdParty === "discord" ? (
-                      <Spinner size="tiny" />
-                    ) : (
-                      t("common.saveChanges")
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+                  </div>
+                </>
+              )}
+            </SettingsBody>
+            <SettingsFooter>
+              <Button
+                onClick={handleTestEmailReceiving}
+                disabled={testingEmailReceiving}
+                icon={
+                  testingEmailReceiving ? <Spinner size="tiny" /> : undefined
+                }
+              >
+                {t("admin.testEmailReceiving")}
+              </Button>
+            </SettingsFooter>
+          </SettingsCard>
+
+          <SettingsCard
+            id="admin.cardChatNotify"
+            title={t("admin.cardChatNotify")}
+            description={t("admin.thirdPartyDesc")}
+          >
+            {notifySource(
+              "tg_notify_source_slug",
+              "admin.tgNotifyBot",
+              "admin.tgNotifyDesc",
+              "admin.tgNotifyNoSources",
+              telegramSources,
+            )}
+            {notifySource(
+              "discord_notify_source_slug",
+              "admin.discordNotifySource",
+              "admin.discordNotifyDesc",
+              "admin.discordNotifyNoSources",
+              discordSources,
+            )}
+            {!!get("discord_notify_source_slug") && (
+              <SettingsBody>
+                <Field label={t("admin.discordBotToken")}>
+                  <PasswordInput
+                    value={get("discord_bot_token") ?? ""}
+                    onChange={(e) => set("discord_bot_token", e.target.value)}
+                    placeholder={t("admin.unchanged")}
+                  />
+                </Field>
+              </SettingsBody>
+            )}
+          </SettingsCard>
+        </>
       )}
 
       {tab === "appearance" && (
-        <div className={styles.card}>
-          <div className={styles.form}>
-            <Field label={t("admin.accentColor")}>
-              <ColorPickerInput
-                value={get("accent_color") ?? "#0078d4"}
-                onChange={(color) => set("accent_color", color ?? "#0078d4")}
-              />
-            </Field>
+        <SettingsCard id="admin.cardTheme" title={t("admin.cardTheme")}>
+          <SettingsRow label={t("admin.accentColor")}>
+            <ColorPickerInput
+              value={get("accent_color") ?? "#0078d4"}
+              onChange={(color) => set("accent_color", color ?? "#0078d4")}
+            />
+          </SettingsRow>
+          <SettingsBody>
             <Field label={t("admin.customCss")} hint={t("admin.customCssHint")}>
               <Textarea
                 value={get("custom_css") ?? ""}
                 onChange={(e) => set("custom_css", e.target.value)}
-                rows={8}
+                rows={10}
                 placeholder={t("admin.customCssPlaceholder")}
               />
             </Field>
-          </div>
-        </div>
+          </SettingsBody>
+        </SettingsCard>
       )}
 
       {tab === "legal" && (
-        <div className={styles.card}>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("admin.legalDesc")}
-          </Text>
-          <div className={styles.form}>
-            {(
-              [
-                [
-                  "privacy",
-                  "admin.privacyPolicy",
-                  "admin.privacyPolicyPlaceholder",
-                  "/privacy",
-                ],
-                [
-                  "terms",
-                  "admin.termsOfService",
-                  "admin.termsOfServicePlaceholder",
-                  "/terms",
-                ],
-              ] as const
-            ).map(([slug, labelKey, placeholderKey, path]) => (
-              <div
-                key={slug}
-                style={{ display: "flex", flexDirection: "column", gap: 8 }}
-              >
-                <Field label={t(labelKey)} hint={t("admin.legalMarkdownHint")}>
-                  <Textarea
-                    value={getLegal(slug)}
-                    onChange={(e) => setLegal(slug, e.target.value)}
-                    rows={14}
-                    resize="vertical"
-                    placeholder={t(placeholderKey)}
-                  />
-                </Field>
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {getLegal(slug)
-                    ? t("admin.legalPublishedAt", { path })
-                    : t("admin.legalHiddenWhenEmpty")}
-                </Text>
-              </div>
-            ))}
-            <div>
-              <Button
-                appearance="primary"
-                onClick={handleSaveLegal}
-                disabled={savingLegal || !legalDirty}
-              >
-                {savingLegal ? (
-                  <Spinner size="tiny" />
-                ) : (
-                  t("admin.saveSettings")
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <>
+          <SettingsCard
+            id="admin.privacyPolicy"
+            title={t("admin.privacyPolicy")}
+            description={t("admin.legalDesc")}
+          >
+            {legalEditor(
+              "privacy",
+              "admin.privacyPolicy",
+              "admin.privacyPolicyPlaceholder",
+              "/privacy",
+            )}
+          </SettingsCard>
+          <SettingsCard
+            id="admin.termsOfService"
+            title={t("admin.termsOfService")}
+            description={t("admin.legalDesc")}
+          >
+            {legalEditor(
+              "terms",
+              "admin.termsOfService",
+              "admin.termsOfServicePlaceholder",
+              "/terms",
+            )}
+          </SettingsCard>
+        </>
       )}
 
       {tab === "danger" && (
-        <div
-          className={styles.card}
-          style={{ borderColor: tokens.colorPaletteRedBorder2 }}
-        >
-          <Text>{t("admin.dangerDesc")}</Text>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
+        <>
+          <SettingsCard
+            id="admin.cardMigrations"
+            title={t("admin.cardMigrations")}
+            description={t("admin.cardMigrationsDesc")}
           >
-            <Text weight="semibold">{t("admin.secretsMigrateTitle")}</Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.secretsMigrateDesc")}
-            </Text>
-            {secretsStatus && (
-              <Text
-                size={200}
-                style={{
-                  color: secretsStatus.binding_configured
-                    ? tokens.colorNeutralForeground2
-                    : tokens.colorPaletteYellowForeground1,
-                  fontFamily: "monospace",
-                }}
-              >
-                {secretsStatus.binding_configured
-                  ? t("admin.secretsMigrateStatusBound", {
-                      apps: secretsStatus.oauth_apps_plaintext,
-                      sources: secretsStatus.oauth_sources_plaintext,
-                      pats: secretsStatus.user_github_pats_plaintext,
-                      cfg: secretsStatus.config_sensitive_plaintext,
-                    })
-                  : t("admin.secretsMigrateStatusUnbound")}
-              </Text>
+            {migrationRow(
+              "secrets",
+              "admin.secretsMigrateTitle",
+              "admin.secretsMigrateDesc",
+              secretsStatus &&
+                statusLine(
+                  secretsStatus.binding_configured
+                    ? t("admin.secretsMigrateStatusBound", {
+                        apps: secretsStatus.oauth_apps_plaintext,
+                        sources: secretsStatus.oauth_sources_plaintext,
+                        pats: secretsStatus.user_github_pats_plaintext,
+                        cfg: secretsStatus.config_sensitive_plaintext,
+                      })
+                    : t("admin.secretsMigrateStatusUnbound"),
+                  !secretsStatus.binding_configured,
+                ),
+              "admin.secretsMigrateButton",
+              handleMigrateSecrets,
+              !secretsStatus?.binding_configured ||
+                secretsStatus.oauth_apps_plaintext +
+                  secretsStatus.oauth_sources_plaintext +
+                  secretsStatus.user_github_pats_plaintext +
+                  secretsStatus.config_sensitive_plaintext ===
+                  0,
             )}
-            <Button
-              appearance="outline"
-              onClick={handleMigrateSecrets}
-              disabled={
-                migratingSecrets ||
-                !secretsStatus?.binding_configured ||
-                (secretsStatus.oauth_apps_plaintext === 0 &&
-                  secretsStatus.oauth_sources_plaintext === 0 &&
-                  secretsStatus.user_github_pats_plaintext === 0 &&
-                  secretsStatus.config_sensitive_plaintext === 0)
-              }
-              icon={migratingSecrets ? <Spinner size="tiny" /> : undefined}
-            >
-              {t("admin.secretsMigrateButton")}
-            </Button>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
-          >
-            <Text weight="semibold">{t("admin.webhooksMigrateTitle")}</Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.webhooksMigrateDesc")}
-            </Text>
-            <Button
-              appearance="outline"
-              onClick={handleMigrateWebhooks}
-              disabled={
-                migratingWebhooks ||
-                (!!webhooksStatus && webhooksStatus.unmigrated === 0)
-              }
-              icon={migratingWebhooks ? <Spinner size="tiny" /> : undefined}
-            >
-              {t("admin.webhooksMigrateButton")}
-            </Button>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
-          >
-            <Text weight="semibold">{t("admin.d1SecretsMigrateTitle")}</Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.d1SecretsMigrateDesc")}
-            </Text>
-            {d1SecretsStatus &&
-              (() => {
-                const totalPlain =
-                  d1SecretsStatus.pat_plaintext +
-                  d1SecretsStatus.oauth_tokens_access_plaintext +
-                  d1SecretsStatus.oauth_tokens_refresh_plaintext +
-                  d1SecretsStatus.oauth_codes_plaintext +
-                  d1SecretsStatus.site_invites_plaintext +
-                  d1SecretsStatus.team_invites_plaintext +
-                  d1SecretsStatus.email_verify_users_plaintext +
-                  d1SecretsStatus.user_emails_verify_plaintext +
-                  d1SecretsStatus.oauth_2fa_codes_plaintext +
-                  d1SecretsStatus.totp_authenticators_plaintext +
-                  d1SecretsStatus.webhooks_plaintext +
-                  d1SecretsStatus.app_webhooks_plaintext +
-                  d1SecretsStatus.social_connections_access_plaintext +
-                  d1SecretsStatus.social_connections_refresh_plaintext;
-                return (
-                  <Text
-                    size={200}
-                    style={{
-                      color: d1SecretsStatus.binding_configured
-                        ? tokens.colorNeutralForeground2
-                        : tokens.colorPaletteYellowForeground1,
-                      fontFamily: "monospace",
-                    }}
-                  >
-                    {d1SecretsStatus.binding_configured
-                      ? t("admin.d1SecretsMigrateStatusBound", {
-                          total: totalPlain,
-                          pat: d1SecretsStatus.pat_plaintext,
-                          oauth: d1SecretsStatus.oauth_tokens_access_plaintext,
-                          codes: d1SecretsStatus.oauth_codes_plaintext,
-                          invites:
-                            d1SecretsStatus.site_invites_plaintext +
-                            d1SecretsStatus.team_invites_plaintext,
-                          email:
-                            d1SecretsStatus.email_verify_users_plaintext +
-                            d1SecretsStatus.user_emails_verify_plaintext,
-                          totp: d1SecretsStatus.totp_authenticators_plaintext,
-                          webhooks:
-                            d1SecretsStatus.webhooks_plaintext +
-                            d1SecretsStatus.app_webhooks_plaintext,
-                          social:
-                            d1SecretsStatus.social_connections_access_plaintext +
-                            d1SecretsStatus.social_connections_refresh_plaintext,
-                        })
-                      : t("admin.secretsMigrateStatusUnbound")}
-                  </Text>
-                );
-              })()}
-            <Button
-              appearance="outline"
-              onClick={handleMigrateD1Secrets}
-              disabled={
-                migratingD1Secrets ||
-                !d1SecretsStatus?.binding_configured ||
-                d1SecretsStatus.pat_plaintext +
-                  d1SecretsStatus.oauth_tokens_access_plaintext +
-                  d1SecretsStatus.oauth_tokens_refresh_plaintext +
-                  d1SecretsStatus.oauth_codes_plaintext +
-                  d1SecretsStatus.site_invites_plaintext +
-                  d1SecretsStatus.team_invites_plaintext +
-                  d1SecretsStatus.email_verify_users_plaintext +
-                  d1SecretsStatus.user_emails_verify_plaintext +
-                  d1SecretsStatus.oauth_2fa_codes_plaintext +
-                  d1SecretsStatus.totp_authenticators_plaintext +
-                  d1SecretsStatus.webhooks_plaintext +
-                  d1SecretsStatus.app_webhooks_plaintext +
-                  d1SecretsStatus.social_connections_access_plaintext +
-                  d1SecretsStatus.social_connections_refresh_plaintext ===
-                  0
-              }
-              icon={migratingD1Secrets ? <Spinner size="tiny" /> : undefined}
-            >
-              {t("admin.d1SecretsMigrateButton")}
-            </Button>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
-          >
-            <Text weight="semibold">
-              {t("admin.migrateRecoveryCodesTitle")}
-            </Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.migrateRecoveryCodesDesc")}
-            </Text>
-            <Button
-              appearance="outline"
-              onClick={handleMigrateRecoveryCodes}
-              disabled={
-                migratingCodes ||
-                (!!recoveryCodesStatus && recoveryCodesStatus.unmigrated === 0)
-              }
-              icon={migratingCodes ? <Spinner size="tiny" /> : undefined}
-            >
-              {t("admin.migrateRecoveryCodes")}
-            </Button>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
-          >
-            <Text weight="semibold">{t("admin.migrateTeamsAsUsersTitle")}</Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.migrateTeamsAsUsersDesc")}
-            </Text>
-            {teamsAsUsersStatus && (
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground3 }}
-              >
-                {t("admin.migrateTeamsAsUsersStatus", {
-                  mirrored: teamsAsUsersStatus.teams_mirrored,
-                  teamsTotal: teamsAsUsersStatus.teams_total,
-                  aligned: teamsAsUsersStatus.team_apps_aligned,
-                  appsTotal: teamsAsUsersStatus.team_apps_total,
-                })}
-              </Text>
+            {migrationRow(
+              "d1",
+              "admin.d1SecretsMigrateTitle",
+              "admin.d1SecretsMigrateDesc",
+              d1SecretsStatus &&
+                statusLine(
+                  d1SecretsStatus.binding_configured
+                    ? t("admin.d1SecretsMigrateStatusBound", {
+                        total: d1Plaintext,
+                      })
+                    : t("admin.secretsMigrateStatusUnbound"),
+                  !d1SecretsStatus.binding_configured,
+                ),
+              "admin.d1SecretsMigrateButton",
+              handleMigrateD1Secrets,
+              !d1SecretsStatus?.binding_configured || d1Plaintext === 0,
             )}
-            <Button
-              appearance="outline"
-              onClick={handleMigrateTeamsAsUsers}
-              disabled={
-                migratingTeamsAsUsers ||
-                (!!teamsAsUsersStatus &&
-                  teamsAsUsersStatus.teams_mirrored ===
-                    teamsAsUsersStatus.teams_total &&
-                  teamsAsUsersStatus.team_apps_aligned ===
-                    teamsAsUsersStatus.team_apps_total)
-              }
-              icon={migratingTeamsAsUsers ? <Spinner size="tiny" /> : undefined}
-            >
-              {t("admin.migrateTeamsAsUsersButton")}
-            </Button>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
-          >
-            <Text weight="semibold">{t("admin.migrateImageProxyTitle")}</Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.migrateImageProxyDesc")}
-            </Text>
-            {imageProxyStatus && (
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground3 }}
-              >
-                {t("admin.migrateImageProxyStatus", {
-                  mapped: imageProxyStatus.mapped,
-                  discovered: imageProxyStatus.discovered,
-                })}
-              </Text>
+            {migrationRow(
+              "codes",
+              "admin.migrateRecoveryCodesTitle",
+              "admin.migrateRecoveryCodesDesc",
+              null,
+              "admin.migrateRecoveryCodes",
+              handleMigrateRecoveryCodes,
+              !!recoveryCodesStatus && recoveryCodesStatus.unmigrated === 0,
             )}
-            <Button
-              appearance="outline"
-              onClick={handleMigrateImageProxy}
-              disabled={
-                migratingImageProxy ||
-                (!!imageProxyStatus &&
-                  imageProxyStatus.discovered > 0 &&
-                  imageProxyStatus.mapped >= imageProxyStatus.discovered)
-              }
-              icon={migratingImageProxy ? <Spinner size="tiny" /> : undefined}
-            >
-              {t("admin.migrateImageProxyButton")}
-            </Button>
-          </div>
-          {/* The scheduled jobs, on demand. Not destructive in the way the
-              controls below are — these are the same tasks cron runs every
-              six hours — so they sit above the red line. */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              alignItems: "flex-start",
-            }}
+            {migrationRow(
+              "webhooks",
+              "admin.webhooksMigrateTitle",
+              "admin.webhooksMigrateDesc",
+              null,
+              "admin.webhooksMigrateButton",
+              handleMigrateWebhooks,
+              !!webhooksStatus && webhooksStatus.unmigrated === 0,
+            )}
+            {migrationRow(
+              "teams",
+              "admin.migrateTeamsAsUsersTitle",
+              "admin.migrateTeamsAsUsersDesc",
+              teamsAsUsersStatus &&
+                statusLine(
+                  t("admin.migrateTeamsAsUsersStatus", {
+                    mirrored: teamsAsUsersStatus.teams_mirrored,
+                    teamsTotal: teamsAsUsersStatus.teams_total,
+                    aligned: teamsAsUsersStatus.team_apps_aligned,
+                    appsTotal: teamsAsUsersStatus.team_apps_total,
+                  }),
+                ),
+              "admin.migrateTeamsAsUsersButton",
+              handleMigrateTeamsAsUsers,
+              !!teamsAsUsersStatus &&
+                teamsAsUsersStatus.teams_mirrored ===
+                  teamsAsUsersStatus.teams_total &&
+                teamsAsUsersStatus.team_apps_aligned ===
+                  teamsAsUsersStatus.team_apps_total,
+            )}
+            {migrationRow(
+              "images",
+              "admin.migrateImageProxyTitle",
+              "admin.migrateImageProxyDesc",
+              imageProxyStatus &&
+                statusLine(
+                  t("admin.migrateImageProxyStatus", {
+                    mapped: imageProxyStatus.mapped,
+                    discovered: imageProxyStatus.discovered,
+                  }),
+                ),
+              "admin.migrateImageProxyButton",
+              handleMigrateImageProxy,
+              !!imageProxyStatus &&
+                imageProxyStatus.discovered > 0 &&
+                imageProxyStatus.mapped >= imageProxyStatus.discovered,
+            )}
+          </SettingsCard>
+
+          {/* The scheduled jobs, on demand: the same tasks cron runs. */}
+          <SettingsCard
+            id="admin.maintenanceTitle"
+            title={t("admin.maintenanceTitle")}
+            description={t("admin.maintenanceDesc", {
+              schedule: maintenanceJobs.data?.schedule ?? "0 */6 * * *",
+            })}
           >
-            <Text weight="semibold">{t("admin.maintenanceTitle")}</Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.maintenanceDesc", {
-                schedule: maintenanceJobs.data?.schedule ?? "0 */6 * * *",
-              })}
-            </Text>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {maintenanceJobs.data?.jobs.map((job) => (
+            {maintenanceJobs.data?.jobs.map((job) => (
+              <SettingsRow
+                key={job.key}
+                label={t(`admin.job_${job.key.replace(/-/g, "_")}`)}
+              >
                 <Button
-                  key={job.key}
                   size="small"
-                  appearance="outline"
                   disabled={runJob.isPending}
                   icon={
                     runJob.isPending && runningJob === job.key ? (
@@ -2566,301 +2268,148 @@ export function AdminSettings() {
                     runJob.mutate(job.key);
                   }}
                 >
-                  {t(`admin.job_${job.key.replace(/-/g, "_")}`)}
+                  {t("admin.jobRun")}
                 </Button>
-              ))}
-            </div>
-          </div>
-          {/* Sign everyone out. Sits above the site reset because it is the
-              one destructive control an operator reaches for during an
-              incident rather than at the end of one. */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              alignItems: "flex-start",
-              borderTop: `1px solid ${tokens.colorPaletteRedBorder2}`,
-              paddingTop: 16,
-            }}
+              </SettingsRow>
+            ))}
+          </SettingsCard>
+
+          {/* Sign everyone out. Above the site reset because it is the one
+              destructive control an operator reaches for during an incident
+              rather than at the end of one. */}
+          <SettingsCard
+            id="admin.revokeSessionsTitle"
+            title={t("admin.revokeSessionsTitle")}
+            description={t("admin.revokeSessionsDesc", {
+              count: revokePreview.data?.sessions ?? 0,
+            })}
           >
-            <Text weight="semibold">{t("admin.revokeSessionsTitle")}</Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.revokeSessionsDesc", {
-                count: revokePreview.data?.sessions ?? 0,
-              })}
-            </Text>
-            <Switch
-              checked={revokeIncludeSelf}
-              onChange={(_, d) => setRevokeIncludeSelf(d.checked)}
-              label={t("admin.revokeIncludeSelf")}
-            />
-            <Button
-              appearance="outline"
-              disabled={revokeSessions.isPending}
-              icon={
-                revokeSessions.isPending ? <Spinner size="tiny" /> : undefined
+            <SettingsFooter
+              start={
+                <Checkbox
+                  checked={revokeIncludeSelf}
+                  onChange={(_, d) => setRevokeIncludeSelf(!!d.checked)}
+                  label={t("admin.revokeIncludeSelf")}
+                />
               }
-              onClick={() => revokeSessions.mutate()}
             >
-              {t("admin.revokeSessionsButton")}
-            </Button>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              alignItems: "flex-start",
-              borderTop: `1px solid ${tokens.colorPaletteRedBorder2}`,
-              paddingTop: 16,
-            }}
+              <Button
+                disabled={revokeSessions.isPending}
+                icon={
+                  revokeSessions.isPending ? <Spinner size="tiny" /> : undefined
+                }
+                onClick={() => void handleRevokeSessions()}
+              >
+                {t("admin.revokeSessionsButton")}
+              </Button>
+            </SettingsFooter>
+          </SettingsCard>
+
+          <SettingsCard
+            id="admin.resetSectionTitle"
+            title={t("admin.resetSectionTitle")}
+            description={t("admin.resetSectionDesc")}
           >
-            <Text weight="semibold">{t("admin.resetSectionTitle")}</Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("admin.resetSectionDesc")}
-            </Text>
             {!resetStatus ? null : !resetStatus.enabled ? (
-              <>
-                <Text
-                  size={200}
-                  weight="semibold"
-                  style={{ color: tokens.colorPaletteYellowForeground1 }}
-                >
-                  {t("admin.resetDisabledTitle")}
-                </Text>
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {t("admin.resetDisabledDesc")}
-                </Text>
-              </>
+              <SettingsRow
+                label={t("admin.resetDisabledTitle")}
+                description={t("admin.resetDisabledDesc")}
+              />
             ) : resetStatus.pending ? (
-              <>
-                <Text
-                  size={200}
-                  weight="semibold"
-                  style={{ color: tokens.colorPaletteRedForeground1 }}
+              resetStep === "confirm" ? (
+                resetForm(
+                  "admin.resetConfirmDialogDesc",
+                  "admin.yesResetEverything",
+                  () => void handleResetConfirm(),
+                )
+              ) : (
+                <SettingsRow
+                  label={t("admin.resetPendingTitle")}
+                  description={
+                    <>
+                      {resetStatus.pending.requested_by_self
+                        ? t("admin.resetPendingByYou")
+                        : t("admin.resetPendingBy")}{" "}
+                      {nowSec >= resetStatus.pending.eligible_at
+                        ? t("admin.resetReadyToConfirm")
+                        : t("admin.resetEligibleAt", {
+                            when: new Date(
+                              resetStatus.pending.eligible_at * 1000,
+                            ).toLocaleString(),
+                          })}
+                    </>
+                  }
                 >
-                  {t("admin.resetPendingTitle")}
-                </Text>
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {resetStatus.pending.requested_by_self
-                    ? t("admin.resetPendingByYou")
-                    : t("admin.resetPendingBy")}
-                </Text>
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground2 }}
-                >
-                  {nowSec >= resetStatus.pending.eligible_at
-                    ? t("admin.resetReadyToConfirm")
-                    : t("admin.resetEligibleAt", {
-                        when: new Date(
-                          resetStatus.pending.eligible_at * 1000,
-                        ).toLocaleString(),
-                      })}
-                </Text>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Dialog
-                    open={resetConfirmOpen}
-                    onOpenChange={(_, d) => {
-                      setResetConfirmOpen(d.open);
-                      if (!d.open) setResetTotpCode("");
-                    }}
-                  >
-                    <DialogTrigger disableButtonEnhancement>
-                      <Button
-                        appearance="primary"
-                        style={{
-                          background: tokens.colorPaletteRedBackground3,
-                        }}
-                        disabled={
-                          nowSec < resetStatus.pending.eligible_at || resetting
-                        }
-                      >
-                        {t("admin.resetConfirm")}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogSurface>
-                      <DialogBody>
-                        <DialogTitle>
-                          {t("admin.resetConfirmDialogTitle")}
-                        </DialogTitle>
-                        <DialogContent>
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 12,
-                            }}
-                          >
-                            <Text>{t("admin.resetConfirmDialogDesc")}</Text>
-                            {resetStatus.sudo_active && (
-                              <Text
-                                size={200}
-                                style={{
-                                  color: tokens.colorNeutralForeground3,
-                                }}
-                              >
-                                {t("admin.resetSudoActiveNote")}
-                              </Text>
-                            )}
-                            <Field label={t("admin.totpCode")}>
-                              <Input
-                                value={resetTotpCode}
-                                onChange={(e) =>
-                                  setResetTotpCode(e.target.value)
-                                }
-                                placeholder={t("admin.totpCodePlaceholder")}
-                                inputMode="numeric"
-                                autoComplete="one-time-code"
-                              />
-                            </Field>
-                          </div>
-                        </DialogContent>
-                        <DialogActions>
-                          <DialogTrigger disableButtonEnhancement>
-                            <Button appearance="secondary">
-                              {t("common.cancel")}
-                            </Button>
-                          </DialogTrigger>
-                          <Button
-                            appearance="primary"
-                            style={{
-                              background: tokens.colorPaletteRedBackground3,
-                            }}
-                            onClick={handleResetConfirm}
-                            disabled={resetting}
-                          >
-                            {resetting ? (
-                              <Spinner size="tiny" />
-                            ) : (
-                              t("admin.yesResetEverything")
-                            )}
-                          </Button>
-                        </DialogActions>
-                      </DialogBody>
-                    </DialogSurface>
-                  </Dialog>
                   <Button
-                    appearance="outline"
-                    onClick={handleResetCancel}
                     disabled={resetting}
+                    onClick={() => void handleResetCancel()}
                   >
                     {t("admin.resetCancel")}
                   </Button>
-                </div>
-              </>
+                  <Button
+                    appearance="primary"
+                    className={styles.danger}
+                    disabled={
+                      nowSec < resetStatus.pending.eligible_at || resetting
+                    }
+                    onClick={() => setResetStep("confirm")}
+                  >
+                    {t("admin.resetConfirm")}
+                  </Button>
+                </SettingsRow>
+              )
+            ) : resetStep === "request" ? (
+              resetForm(
+                "admin.resetRequestDialogDesc",
+                "admin.resetRequest",
+                () => void handleResetRequest(),
+              )
             ) : (
-              <>
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {resetStatus.cooldown_required
+              <SettingsFooter
+                start={
+                  resetStatus.cooldown_required
                     ? t("admin.resetCooldownNote")
-                    : t("admin.resetNoCooldownNote")}
-                </Text>
-                <Dialog
-                  open={resetRequestOpen}
-                  onOpenChange={(_, d) => {
-                    setResetRequestOpen(d.open);
-                    if (!d.open) setResetTotpCode("");
-                  }}
+                    : t("admin.resetNoCooldownNote")
+                }
+              >
+                <Button
+                  appearance="primary"
+                  className={styles.danger}
+                  onClick={() => setResetStep("request")}
                 >
-                  <DialogTrigger disableButtonEnhancement>
-                    <Button
-                      appearance="primary"
-                      style={{ background: tokens.colorPaletteRedBackground3 }}
-                    >
-                      {t("admin.resetRequest")}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogSurface>
-                    <DialogBody>
-                      <DialogTitle>
-                        {t("admin.resetRequestDialogTitle")}
-                      </DialogTitle>
-                      <DialogContent>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 12,
-                          }}
-                        >
-                          <Text>{t("admin.resetRequestDialogDesc")}</Text>
-                          {resetStatus.sudo_active && (
-                            <Text
-                              size={200}
-                              style={{ color: tokens.colorNeutralForeground3 }}
-                            >
-                              {t("admin.resetSudoActiveNote")}
-                            </Text>
-                          )}
-                          <Field label={t("admin.totpCode")}>
-                            <Input
-                              value={resetTotpCode}
-                              onChange={(e) => setResetTotpCode(e.target.value)}
-                              placeholder={t("admin.totpCodePlaceholder")}
-                              inputMode="numeric"
-                              autoComplete="one-time-code"
-                            />
-                          </Field>
-                        </div>
-                      </DialogContent>
-                      <DialogActions>
-                        <DialogTrigger disableButtonEnhancement>
-                          <Button appearance="secondary">
-                            {t("common.cancel")}
-                          </Button>
-                        </DialogTrigger>
-                        <Button
-                          appearance="primary"
-                          style={{
-                            background: tokens.colorPaletteRedBackground3,
-                          }}
-                          onClick={handleResetRequest}
-                          disabled={resetting}
-                        >
-                          {resetting ? (
-                            <Spinner size="tiny" />
-                          ) : (
-                            t("admin.resetRequest")
-                          )}
-                        </Button>
-                      </DialogActions>
-                    </DialogBody>
-                  </DialogSurface>
-                </Dialog>
-              </>
+                  {t("admin.resetRequest")}
+                </Button>
+              </SettingsFooter>
             )}
-          </div>
-        </div>
+          </SettingsCard>
+        </>
       )}
 
       {/* Legal saves its own drafts; Danger Zone only runs actions. */}
-      {tab !== "legal" && tab !== "danger" && (
-        <div className={styles.actions}>
+      {tab !== "legal" && tab !== "danger" && dirty && (
+        <div
+          className={styles.saveBar}
+          role="region"
+          aria-label={t("admin.unsavedChanges")}
+        >
+          <Text className={styles.saveBarText}>
+            {t("admin.unsavedChanges")}
+          </Text>
+          <Button disabled={saving} onClick={() => setLocalConfig({})}>
+            {t("common.discard")}
+          </Button>
           <Button
             appearance="primary"
-            onClick={handleSave}
-            disabled={saving || Object.keys(localConfig).length === 0}
+            onClick={() => void handleSave()}
+            disabled={saving}
+            icon={saving ? <Spinner size="tiny" /> : undefined}
           >
-            {saving ? <Spinner size="tiny" /> : t("admin.saveSettings")}
+            {t("admin.saveSettings")}
           </Button>
-          {Object.keys(localConfig).length > 0 && (
-            <Button onClick={() => setLocalConfig({})}>
-              {t("common.discard")}
-            </Button>
-          )}
         </div>
       )}
+
+      {confirmDialog}
     </div>
   );
 }

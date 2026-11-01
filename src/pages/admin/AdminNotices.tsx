@@ -1,6 +1,6 @@
-// Admin notices: announcements shown at the top of every page. Each row can
-// be published or taken down in place and opens the notice's page; New
-// notice opens /admin/notices/new.
+// Admin notices: announcements shown at the top of every page. Each row
+// shows whether the notice is live and opens its page, where it is
+// published or taken down; New notice opens /admin/notices/new.
 
 import {
   Badge,
@@ -10,8 +10,6 @@ import {
   MessageBarTitle,
   Skeleton,
   SkeletonItem,
-  Spinner,
-  Switch,
   Tooltip,
   makeStyles,
   tokens,
@@ -23,13 +21,12 @@ import {
 } from "@fluentui/react-icons";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type AdminNotice } from "../../lib/api";
+import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { usePageClamp } from "../../lib/usePageClamp";
-import { useToastMessage } from "../../lib/useToastMessage";
 import {
   DataList,
   DataListName,
@@ -41,16 +38,15 @@ import { GetStartedPanel } from "../../components/GetStartedPanel";
 import { NoticeArt } from "../../components/Illustrations";
 import { ListSearch } from "../../components/ListSearch";
 import { Pagination } from "../../components/Pagination";
-import { SettingsToast } from "../../components/Settings";
 import { levelColor, noticeWindow } from "./notices/noticeForm";
 
 const PAGE_SIZE = 20;
 
 const useStyles = makeStyles({
-  toast: { position: "sticky", top: "8px", zIndex: 2, marginBottom: "12px" },
   banner: { marginBottom: "12px" },
   badges: { display: "flex", gap: "4px", flexWrap: "wrap" },
   pin: { color: tokens.colorNeutralForeground3, flexShrink: 0 },
+  muted: { color: tokens.colorNeutralForeground3 },
   name: {
     color: tokens.colorNeutralForeground1,
     textDecorationLine: "none",
@@ -62,9 +58,7 @@ export function AdminNotices() {
   const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const { t } = useTranslation();
-  const { message, showMsg } = useToastMessage();
 
   const [page, setPage] = useState(1);
   const { query, setQuery, search } = useDebouncedSearch(() => setPage(1));
@@ -79,32 +73,6 @@ export function AdminNotices() {
   const total = data?.total ?? 0;
   usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
-  const [busy, setBusy] = useState<string | null>(null);
-  const togglePublished = async (n: AdminNotice, published: boolean) => {
-    if (busy) return;
-    setBusy(n.id);
-    try {
-      await api.adminUpdateNotice(n.id, { is_published: published });
-      await qc.invalidateQueries({ queryKey: ["admin-notices"] });
-      await qc.invalidateQueries({ queryKey: ["admin-notice", n.id] });
-      // The board the admin sees is its own query.
-      await qc.invalidateQueries({ queryKey: ["notices"] });
-      showMsg(
-        "success",
-        published
-          ? t("admin.noticePublishedDone")
-          : t("admin.noticeUnpublishedDone"),
-      );
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const columns: DataListColumn[] = [
     { label: t("admin.noticeTitle"), width: "minmax(0, 2fr)" },
     {
@@ -113,7 +81,7 @@ export function AdminNotices() {
       secondary: true,
     },
     { label: t("admin.noticeDismissedCol"), width: "90px", secondary: true },
-    { label: t("admin.noticePublished"), width: "84px", end: true },
+    { label: t("admin.noticeStatusCol"), width: "84px", end: true },
   ];
 
   const create = (
@@ -133,12 +101,6 @@ export function AdminNotices() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-      {message && (
-        <div className={styles.toast}>
-          <SettingsToast message={message} />
-        </div>
-      )}
-
       {error && (
         <MessageBar intent="warning" className={styles.banner}>
           <MessageBarBody>
@@ -245,22 +207,13 @@ export function AdminNotices() {
                     />,
                     noticeWindow(t, n),
                     String(n.dismissal_count ?? 0),
-                    <span key="sw" onClick={(e) => e.stopPropagation()}>
-                      {busy === n.id ? (
-                        <Spinner size="tiny" />
-                      ) : (
-                        <Switch
-                          aria-label={t("admin.noticePublishLabelFor", {
-                            title: n.title,
-                          })}
-                          checked={n.is_published}
-                          disabled={busy !== null}
-                          onChange={(_, d) =>
-                            void togglePublished(n, d.checked)
-                          }
-                        />
-                      )}
-                    </span>,
+                    n.is_published ? (
+                      t("admin.noticePublished")
+                    ) : (
+                      <span key="s" className={styles.muted}>
+                        {t("admin.noticeDraftBadge")}
+                      </span>
+                    ),
                   ]}
                 />
               );
