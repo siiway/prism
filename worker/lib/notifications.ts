@@ -94,8 +94,11 @@ export function notificationActorMetaFromHeaders(
 ): Record<string, string> {
   const ip = headers.get("CF-Connecting-IP");
   const userAgent = headers.get("user-agent") ?? null;
+  // Two-letter country from Cloudflare's IP geolocation; "XX" is unknown.
+  const country = headers.get("CF-IPCountry");
   const meta: Record<string, string> = {};
   if (ip) meta.operator_ip = ip;
+  if (country && country !== "XX") meta.operator_country = country;
   if (userAgent) meta.operator_user_agent = userAgent;
   return meta;
 }
@@ -1057,6 +1060,7 @@ function withDiscordOperatorMeta(
 
 import type { NotificationRules } from "../types";
 import { evaluateRuleset, type NotificationRule } from "./notificationRules";
+import { buildRuleContext } from "../../shared/ruleExpression";
 
 /**
  * Parse notification_rules JSON, falling back to migrating the legacy
@@ -1259,6 +1263,9 @@ export async function deliverUserEmailNotifications(
   appUrl: string,
 ): Promise<void> {
   const db = env.DB;
+  // When the event happened, for the rules' time fields; taken before any
+  // query so a slow lookup can't move it across an hour boundary.
+  const occurredAt = new Date();
   // Active ruleset takes precedence over the per-event prefs. Users who
   // never activate one keep the legacy behaviour.
   const activeRuleset = await db
@@ -1281,7 +1288,10 @@ export async function deliverUserEmailNotifications(
       // Corrupted ruleset — silently fall back to no delivery rather than
       // throwing, since this code runs from waitUntil at write paths.
     }
-    const resolved = evaluateRuleset(parsedRules, event);
+    const resolved = evaluateRuleset(
+      parsedRules,
+      buildRuleContext(event, data, occurredAt),
+    );
     emailRules = resolved.emails;
     tgRules = resolved.tgs;
     discordRules = resolved.discords;

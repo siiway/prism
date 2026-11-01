@@ -1,187 +1,48 @@
-// Rule engine for notification_rulesets.
-//
-// A ruleset is an ordered array of NotificationRule. When an event fires
-// the engine walks the rules top-to-bottom, applies actions for every
-// match, and returns the deduped channel list to actually deliver to.
-//
-//   • match.event is a glob: "*", "app.*", "security.totp_enabled".
-//     Matching is anchored — "app" matches "app", not "appx". "*" matches
-//     everything; "?" matches a single character. No regex syntax beyond
-//     these two wildcards.
-//
-//   • match.accounts is an optional list of account keys ("email:<id>",
-//     "tg:<id>" or "discord:<id>"). When non-empty, the rule's *effect* is filtered to
-//     those accounts only — `send` channels not in the list are ignored,
-//     `drop` only clears those accounts. Other accounts pass through as
-//     if this rule didn't fire. When empty/missing the rule applies to
-//     every account uniformly.
-//
-//   • action.type === "send" appends each channel to a running set,
-//     keyed by (kind, id). Re-encountering the same channel at a higher
-//     level upgrades it (full > brief).
-//
-//   • action.type === "drop" empties the channel set. Used to mute a
-//     specific event after a broader rule above already enrolled it.
-//
-//   • stop: true halts evaluation after this rule fires.
-//
-// Disabled rules are skipped without affecting state.
+// Validation for notification rulesets users save. The rule shapes and the
+// evaluator live in shared/notificationRules.ts (the frontend's trace runs
+// the same code); expressions are in shared/ruleExpression.ts.
 
 import type { CodedError } from "./apiError";
+import {
+  type NotificationRule,
+  type RuleAction,
+  type RuleMatch,
+  type RuleSendChannel,
+} from "../../shared/notificationRules";
+import {
+  parseRuleExpression,
+  printRuleExpression,
+  type ExprErrorCode,
+} from "../../shared/ruleExpression";
 
-export type NotificationLevel = "brief" | "full";
-
-export interface RuleMatch {
-  event?: string;
-  /**
-   * Account-key filter. Each entry is "email:<email_id>",
-   * "tg:<connection_id>" or "discord:<connection_id>". Empty/missing means
-   * the rule's effect is not scoped to any particular account.
-   */
-  accounts?: string[];
-}
-
-/** Helper: render a channel as the account key the rule's match uses. */
-export function channelKey(c: RuleSendChannel): string {
-  if (c.kind === "email") return `email:${c.email_id}`;
-  if (c.kind === "discord") return `discord:${c.connection_id}`;
-  return `tg:${c.connection_id}`;
-}
-
-export interface RuleSendChannelEmail {
-  kind: "email";
-  email_id: string;
-  level: NotificationLevel;
-}
-
-export interface RuleSendChannelTg {
-  kind: "tg";
-  connection_id: string;
-  level: NotificationLevel;
-}
-
-export interface RuleSendChannelDiscord {
-  kind: "discord";
-  connection_id: string;
-  level: NotificationLevel;
-}
-
-export type RuleSendChannel =
-  RuleSendChannelEmail | RuleSendChannelTg | RuleSendChannelDiscord;
-
-export type RuleAction =
-  { type: "drop" } | { type: "send"; channels: RuleSendChannel[] };
-
-export interface NotificationRule {
-  id: string;
-  name?: string;
-  enabled?: boolean;
-  match: RuleMatch;
-  action: RuleAction;
-  stop?: boolean;
-}
-
-export interface ResolvedDelivery {
-  emails: Array<{ email_id: string; level: NotificationLevel }>;
-  tgs: Array<{ connection_id: string; level: NotificationLevel }>;
-  discords: Array<{ connection_id: string; level: NotificationLevel }>;
-}
+export {
+  channelKey,
+  evaluateRuleset,
+  traceRuleset,
+  type NotificationLevel,
+  type NotificationRule,
+  type ResolvedDelivery,
+  type RuleAction,
+  type RuleMatch,
+  type RuleSendChannel,
+} from "../../shared/notificationRules";
 
 const RULE_NAME_MAX = 64;
 
-function compileGlob(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  const expanded = escaped.replace(/\*/g, ".*").replace(/\?/g, ".");
-  return new RegExp(`^${expanded}$`);
-}
-
-function matchEvent(pattern: string | undefined, event: string): boolean {
-  if (!pattern || pattern === "*") return true;
-  return compileGlob(pattern).test(event);
-}
-
-function upgradeLevel(
-  prev: NotificationLevel | undefined,
-  next: NotificationLevel,
-): NotificationLevel {
-  if (prev === "full" || next === "full") return "full";
-  return "brief";
-}
-
-/** Walk the ruleset for one event; returns the deduped delivery list. */
-export function evaluateRuleset(
-  rules: NotificationRule[],
-  event: string,
-): ResolvedDelivery {
-  const emailMap = new Map<string, NotificationLevel>();
-  const tgMap = new Map<string, NotificationLevel>();
-  const discordMap = new Map<string, NotificationLevel>();
-
-  for (const rule of rules) {
-    if (rule.enabled === false) continue;
-    if (!matchEvent(rule.match?.event, event)) continue;
-
-    const scopedAccounts =
-      rule.match.accounts && rule.match.accounts.length > 0
-        ? new Set(rule.match.accounts)
-        : null;
-
-    if (rule.action.type === "drop") {
-      if (scopedAccounts) {
-        // Per-account drop: only clear the listed accounts; others stay.
-        for (const key of scopedAccounts) {
-          if (key.startsWith("email:")) emailMap.delete(key.slice(6));
-          else if (key.startsWith("discord:")) discordMap.delete(key.slice(8));
-          else if (key.startsWith("tg:")) tgMap.delete(key.slice(3));
-        }
-      } else {
-        emailMap.clear();
-        tgMap.clear();
-        discordMap.clear();
-      }
-    } else {
-      for (const ch of rule.action.channels) {
-        // Per-account send: silently skip channels that don't belong to
-        // the scoped accounts. The rule's send list is treated as the
-        // *candidate* set; the match.accounts filter culls it.
-        if (scopedAccounts && !scopedAccounts.has(channelKey(ch))) continue;
-        if (ch.kind === "email") {
-          emailMap.set(
-            ch.email_id,
-            upgradeLevel(emailMap.get(ch.email_id), ch.level),
-          );
-        } else if (ch.kind === "tg") {
-          tgMap.set(
-            ch.connection_id,
-            upgradeLevel(tgMap.get(ch.connection_id), ch.level),
-          );
-        } else if (ch.kind === "discord") {
-          discordMap.set(
-            ch.connection_id,
-            upgradeLevel(discordMap.get(ch.connection_id), ch.level),
-          );
-        }
-      }
-    }
-
-    if (rule.stop) break;
-  }
-
-  return {
-    emails: [...emailMap].map(([email_id, level]) => ({ email_id, level })),
-    tgs: [...tgMap].map(([connection_id, level]) => ({
-      connection_id,
-      level,
-    })),
-    discords: [...discordMap].map(([connection_id, level]) => ({
-      connection_id,
-      level,
-    })),
-  };
-}
+// One literal per reason, so every code the API can send is greppable.
+const EXPR_ERRORS: Record<ExprErrorCode, CodedError> = {
+  unexpected_end: { error: "rule_expression_unexpected_end" },
+  unexpected_token: { error: "rule_expression_unexpected_token" },
+  unterminated_string: { error: "rule_expression_unterminated_string" },
+  unknown_field: { error: "rule_expression_unknown_field" },
+  bad_operator: { error: "rule_expression_bad_operator" },
+  bad_value: { error: "rule_expression_bad_value" },
+  too_long: { error: "rule_expression_too_long" },
+  too_deep: { error: "rule_expression_too_deep" },
+  too_many_items: { error: "rule_expression_too_many_items" },
+};
 
 /**
- * Validate + normalize a value the user POSTed as the `rules` array.
  * Returns either a sanitized rules list or a rejection reason. Strict
  * about every field — anything we don't recognize is dropped silently
  * (forward-compat) but anything malformed is a 400.
@@ -198,6 +59,7 @@ export function sanitizeRulesArray(
     return { error: "too_many_rules", params: { max: 200 } };
 
   const out: NotificationRule[] = [];
+  const ids = new Set<string>();
   for (let i = 0; i < input.length; i++) {
     const raw = input[i];
     if (!raw || typeof raw !== "object")
@@ -209,6 +71,14 @@ export function sanitizeRulesArray(
 
     if (typeof r.id !== "string" || !r.id)
       return { error: "field_required", params: { field: `rules[${i}].id` } };
+    // Editors find a rule by its id; two rules sharing one would be edited
+    // (and saved) as one.
+    if (ids.has(r.id))
+      return {
+        error: "rule_duplicate_id",
+        params: { field: `rules[${i}].id`, id: r.id },
+      };
+    ids.add(r.id);
 
     let name: string | undefined;
     if (r.name !== undefined) {
@@ -260,6 +130,26 @@ export function sanitizeRulesArray(
           params: { field: `rules[${i}].match.event`, event: ev },
         };
       match.event = ev;
+    }
+    if (matchRaw.expression !== undefined) {
+      if (typeof matchRaw.expression !== "string")
+        return {
+          error: "field_must_be_string",
+          params: { field: `rules[${i}].match.expression` },
+        };
+      const parsed = parseRuleExpression(matchRaw.expression);
+      if (parsed.error)
+        return {
+          ...EXPR_ERRORS[parsed.error.code],
+          params: {
+            field: `rules[${i}].match.expression`,
+            at: parsed.error.at,
+            token: parsed.error.token ?? "",
+          },
+        };
+      // Stored in canonical form; empty means every event.
+      const canonical = printRuleExpression(parsed.expr);
+      if (canonical) match.expression = canonical;
     }
     if (matchRaw.accounts !== undefined) {
       if (!Array.isArray(matchRaw.accounts))
