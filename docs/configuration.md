@@ -293,14 +293,12 @@ every team fall through to the built-ins.
 
 ### Invite-link registration
 
-Master switch and bounds for [invite-link registration](teams.md#invite-link-registration).
-Off by default — turning it on is what makes a team owner able to mint
-accounts at all, and even then each team still needs its own grant from
-**Admin → Teams**.
+Bounds for [invite-link registration](teams.md#invite-link-registration).
+Whether a team may use it at all is a per-team grant from a site admin, and
+nothing creates accounts while `allow_registration` is `false`.
 
 | Key                                      | Type    | Default | Description                                                                               |
 | ---------------------------------------- | ------- | ------- | ----------------------------------------------------------------------------------------- |
-| `enable_team_invite_registration`        | boolean | `false` | Master switch. While false every related endpoint 403s.                                   |
 | `team_invite_registration_max_uses_cap`  | integer | `1000`  | Ceiling on the `max_uses` a team may set on a registration-capable invite.                |
 | `team_invite_registration_rate_per_hour` | integer | `200`   | Registrations per hour per invite. Per-IP limiting can't bound a widely shared link.      |
 | `restricted_user_capabilities`           | object  | `{}`    | Features granted to restricted accounts, e.g. `{"app:create": true}`. Empty = all denied. |

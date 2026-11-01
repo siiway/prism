@@ -324,10 +324,6 @@ export function AdminSettings() {
   const set = (key: keyof SiteConfig, value: unknown) =>
     setLocalConfig((c) => ({ ...c, [key]: value }));
 
-  // Read once — the whole invite-registration block keys its disabled state
-  // off this flag.
-  const inviteRegOn = get("enable_team_invite_registration") ?? false;
-
   // Read once — both the dropdown label and its selection need it, and a
   // config row written before the setting existed has no value at all.
   const turnstileMode = get("turnstile_endpoint_mode") ?? "global";
@@ -827,16 +823,9 @@ export function AdminSettings() {
           <SettingsCard
             id="admin.cardInviteSignup"
             title={t("admin.cardInviteSignup")}
-            description={t("admin.enableInviteRegistrationHint")}
+            description={t("admin.inviteSignupDesc")}
           >
-            <Switch
-              label={t("admin.enableInviteRegistration")}
-              checked={inviteRegOn}
-              onChange={(_, d) =>
-                set("enable_team_invite_registration", d.checked)
-              }
-            />
-            <div className={styles.subGroup}>
+            <div className={styles.row}>
               <Field
                 label={t("admin.inviteRegMaxUsesCap")}
                 hint={t("admin.inviteRegMaxUsesCapHint")}
@@ -853,7 +842,6 @@ export function AdminSettings() {
                       e.target.value,
                     )
                   }
-                  disabled={!inviteRegOn}
                   style={{ width: 120 }}
                 />
               </Field>
@@ -873,7 +861,6 @@ export function AdminSettings() {
                       e.target.value,
                     )
                   }
-                  disabled={!inviteRegOn}
                   style={{ width: 120 }}
                 />
               </Field>
@@ -895,7 +882,6 @@ export function AdminSettings() {
                 onChange={(e) =>
                   setNumber("restricted_pending_ttl_hours", e.target.value)
                 }
-                disabled={!inviteRegOn}
                 style={{ width: 120 }}
               />
             </Field>
@@ -910,7 +896,6 @@ export function AdminSettings() {
                 onChange={(e) =>
                   setNumber("restricted_dissolve_grace_hours", e.target.value)
                 }
-                disabled={!inviteRegOn}
                 style={{ width: 120 }}
               />
             </Field>
@@ -938,7 +923,6 @@ export function AdminSettings() {
                   key={key}
                   label={t(label)}
                   checked={caps[key] ?? false}
-                  disabled={!(get("enable_team_invite_registration") ?? false)}
                   onChange={(_, d) =>
                     set("restricted_user_capabilities", {
                       ...caps,

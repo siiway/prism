@@ -210,11 +210,10 @@ Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆主
 
 ### 邀请链接注册
 
-[邀请链接注册](teams.md#邀请链接注册)的总开关与各项上限。默认关闭 —— 打开它才使团队所有者具备创建账号的能力，且即便打开，每个团队仍需在 **Admin → Teams** 单独获得授权。
+[邀请链接注册](teams.md#邀请链接注册)的各项上限。团队能否使用该功能由站点管理员按团队授权；`allow_registration` 为 `false` 时不会创建任何账号。
 
 | 键                                       | 类型   | 默认值  | 说明                                                              |
 | ---------------------------------------- | ------ | ------- | ----------------------------------------------------------------- |
-| `enable_team_invite_registration`        | bool   | `false` | 总开关。关闭时所有相关端点返回 403。                              |
 | `team_invite_registration_max_uses_cap`  | int    | `1000`  | 团队为可注册邀请设置 `max_uses` 的上限。                          |
 | `team_invite_registration_rate_per_hour` | int    | `200`   | 单个邀请码每小时注册次数。按 IP 限流约束不了被广传的链接。        |
 | `restricted_user_capabilities`           | object | `{}`    | 放开给受限账号的功能，如 `{"app:create": true}`。留空即全部拒绝。 |

@@ -257,7 +257,6 @@ app.patch("/config", async (c) => {
     "inherit_team_domains",
     "default_team_profile_show_sub_teams",
     "default_team_role_permissions",
-    "enable_team_invite_registration",
     "team_invite_registration_max_uses_cap",
     "team_invite_registration_rate_per_hour",
     "restricted_user_capabilities",
@@ -2290,8 +2289,8 @@ app.delete("/teams/:id", async (c) => {
 
 // Grant or revoke a team's permission to mint accounts through invite links,
 // and set which site-level registration requirements its invite path may
-// skip. Deliberately admin-only: this is the second of the two doors, and a
-// team owner able to open it for themselves would reduce the design to one.
+// skip. Deliberately admin-only: the grant is the one switch, and a team
+// owner able to set it for themselves would make every owner a registrar.
 app.patch("/teams/:id/invite-registration", async (c) => {
   const admin = c.get("user");
   const id = c.req.param("id");
@@ -2312,9 +2311,6 @@ app.patch("/teams/:id/invite-registration", async (c) => {
   if (body.granted !== undefined) {
     updates.push("invite_registration_granted = ?");
     values.push(body.granted ? 1 : 0);
-    // Revoking the grant closes the owner's switch too, so the channel shuts
-    // immediately instead of reopening if the grant is ever restored.
-    if (!body.granted) updates.push("invite_registration_enabled = 0");
   }
   if (body.exemptions !== undefined) {
     // Only email verification is exemptible. Captcha, proof-of-work and every
@@ -2349,7 +2345,6 @@ app.patch("/teams/:id/invite-registration", async (c) => {
     .first<TeamRow>();
   return c.json({
     invite_registration_granted: updated?.invite_registration_granted === 1,
-    invite_registration_enabled: updated?.invite_registration_enabled === 1,
     invite_registration_exemptions: parseInviteRegistrationExemptions(
       updated?.invite_registration_exemptions ?? null,
     ),
@@ -2780,6 +2775,11 @@ app.post("/invites", async (c) => {
   );
 
   return c.json(
+    { invite: { id, token, invite_url: inviteUrl, enabled: true } },
+    201,
+  );
+});
+
 app.get("/invites/:id", async (c) => {
   const invite = await c.env.DB.prepare(
     `SELECT i.*, u.username AS created_by_username
@@ -2797,11 +2797,6 @@ app.get("/invites/:id", async (c) => {
       token_available: !isHashedSecret(invite.token),
     },
   });
-});
-
-    { invite: { id, token, invite_url: inviteUrl, enabled: true } },
-    201,
-  );
 });
 
 app.patch("/invites/:id", async (c) => {

@@ -1040,8 +1040,6 @@
     "capabilityDeny": "不允许",
     "inviteRegTitle": "邀请链接注册",
     "inviteRegDesc": "允许没有 {{siteName}} 账号的人通过链接注册并加入本团队。这些账号初始时大部分功能处于关闭状态。",
-    "inviteRegNotGranted": "需要先由站点管理员开启此功能。",
-    "inviteRegEnable": "接受通过邀请链接注册",
     "inviteRegPageLink": "注册页面",
     "inviteRegExemptEmail": "本团队的邀请注册路径已跳过邮箱验证（由站点管理员设置）。",
     "allowNormalJoin": "允许已有 {{siteName}} 账号通过邀请链接加入",
@@ -1116,7 +1114,7 @@
       "tab": "管理",
       "saved": "已保存。",
       "inviteTitle": "邀请注册",
-      "inviteDesc": "此团队的邀请链接是否可以创建新账号。还需开启“注册”中的全站开关。",
+      "inviteDesc": "此团队的邀请链接是否可以创建新账号。关闭注册时，任何途径都无法创建账号。",
       "inviteColumn": "邀请注册",
       "grantLabel": "允许邀请注册",
       "grantDesc": "以此方式创建的账号会绑定该团队，直到管理员解除限制。",
@@ -1132,7 +1130,9 @@
       "dissolveNotGranted": "此团队不能创建账号，因此解散不会删除任何账号。",
       "dissolveStarted_one": "已开始解散，停用了 {{count}} 个账号。",
       "dissolveStarted": "已开始解散，停用了 {{count}} 个账号。"
-    }
+    },
+    "inviteRegOn": "本团队的邀请可以创建账号",
+    "inviteRegPaused": "{{siteName}} 已关闭注册，暂时停用。"
   },
   "connections": {
     "title": "关联账号",
@@ -1534,7 +1534,7 @@
     "cardRegistration": "注册方式",
     "cardInviteSignup": "通过团队邀请注册",
     "cardRestricted": "通过邀请注册的账户",
-    "cardRestrictedDesc": "通过团队邀请链接创建的账户初始为受限状态。仅在开启团队邀请注册时生效。",
+    "cardRestrictedDesc": "通过团队邀请链接创建的账户初始为受限状态。",
     "cardSessions": "会话与令牌",
     "cardSignInProtection": "登录防护",
     "cardVerification": "验证",
@@ -1653,9 +1653,9 @@
     "siteDescription": "站点描述",
     "siteIconUrl": "站点图标 URL",
     "registrationMode": "注册模式",
-    "regModeOpen": "开放 (任何人均可注册)",
-    "regModeInviteOnly": "仅限邀请 (需邀请链接)",
-    "regModeClosed": "关闭 (禁止新注册)",
+    "regModeOpen": "开放（任何人均可注册）",
+    "regModeInviteOnly": "仅限邀请（需要站点或团队邀请）",
+    "regModeClosed": "关闭（不再创建新账号，邀请也不行）",
     "allowRegistration": "允许注册",
     "requireEmailVerification": "需要邮箱验证",
     "socialVerifyTtl": "社交验证有效期（天）",
@@ -2031,8 +2031,6 @@
     "stagedDissolveBody": "通过 {{name}} 的邀请链接创建的账号将立即停用，并在宽限期后删除。使用自己 {{siteName}} 账号的成员不受影响。",
     "stagedDissolveConfirmLabel": "输入团队名称（{{name}}）以确认",
     "stagedDissolveStart": "开始解散",
-    "enableInviteRegistration": "启用团队邀请链接注册",
-    "enableInviteRegistrationHint": "允许已授权的团队发放可创建账号的链接。每个团队仍需在「管理 → 团队」中单独获得授权。",
     "inviteRegMaxUsesCap": "单个注册邀请的次数上限",
     "inviteRegMaxUsesCapHint": "团队可设置的使用次数天花板。这是注册总量唯一的硬边界。",
     "inviteRegRatePerHour": "单个邀请每小时注册次数",
@@ -2422,8 +2420,9 @@
     "inviteDangerTitle": "危险区域",
     "inviteRevokeLabel": "撤销此邀请",
     "inviteModeOpen": "当前开放注册，无需站点邀请即可注册。团队邀请不受影响。",
-    "inviteModeClosed": "当前已关闭注册，站点邀请链接暂时无法使用。团队邀请不受影响。",
-    "inviteModeAction": "注册设置"
+    "inviteModeClosed": "当前已关闭注册，站点邀请和团队邀请链接都暂时无法创建账号。",
+    "inviteModeAction": "注册设置",
+    "inviteSignupDesc": "你在团队「管理」标签页中允许的团队，可以发放能创建账号的邀请链接。以下限制适用于所有此类邀请。关闭注册时，任何途径都无法创建账号。"
   },
   "webhooks": {
     "title": "Webhooks",

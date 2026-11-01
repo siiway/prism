@@ -260,10 +260,6 @@ export interface SiteConfig {
    *  shift the default posture for every team that hasn't customised it.
    *  Keys absent here fall through to the built-ins. */
   default_team_role_permissions: TeamRolePermissions;
-  /** Master switch for the team-invite registration channel. Off by default:
-   *  turning it on is what makes team owners able to mint accounts at all,
-   *  and even then each team still needs its own site-admin grant. */
-  enable_team_invite_registration: boolean;
   /** Ceiling on the `max_uses` a team may set on a registration-capable
    *  invite. Without it a team owner could type a million and walk straight
    *  past the only hard bound on registration volume. */

@@ -1136,7 +1136,6 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   ) =>
     request<{
       invite_registration_granted: boolean;
-      invite_registration_enabled: boolean;
       invite_registration_exemptions: { email_verification?: boolean };
     }>(
       "PATCH",
@@ -1464,9 +1463,6 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       require_verified_email?: boolean;
       /** Owner-only. */
       enable_groups?: boolean;
-      /** Owner-only, and only meaningful once a site admin has granted the
-       *  team permission to mint accounts. */
-      invite_registration_enabled?: boolean;
       /** Team management setting: may unrestricted accounts join via invite
        *  link? Direct adds by an admin are never subject to it. */
       allow_normal_user_join?: boolean;
@@ -2427,15 +2423,15 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   }) =>
     request<{ invite: { id: string; token: string; invite_url: string } }>(
       "POST",
+      "/admin/invites",
+      body,
+      getToken(),
+    ),
   adminGetInvite: (id: string) =>
     request<{ invite: SiteInvite }>(
       "GET",
       `/admin/invites/${encodeURIComponent(id)}`,
       undefined,
-      getToken(),
-    ),
-      "/admin/invites",
-      body,
       getToken(),
     ),
   adminUpdateInvite: (
@@ -2721,10 +2717,6 @@ export interface SitePublicConfig {
    *  effectively requires the factor regardless of the per-team flag. */
   default_team_require_2fa: boolean;
   default_team_require_verified_email: boolean;
-  /** Master switch for team-invite registration. Off by default: turning it
-   *  on is what lets a team owner mint accounts at all, and even then each
-   *  team needs its own site-admin grant. */
-  enable_team_invite_registration: boolean;
   /** Ceiling on the usage limit a team may set on a registration-capable
    *  invite — the only hard bound on registration volume. */
   team_invite_registration_max_uses_cap: number;
@@ -3101,10 +3093,9 @@ export interface Team {
   require_2fa: boolean;
   require_verified_email: boolean;
   /** Site-admin grant: may this team mint accounts through invite links?
-   *  Read-only to the team; only an instance admin can change it. */
+   *  The only switch for it (closed sign-up also stops it). Read-only to
+   *  the team; only an instance admin can change it. */
   invite_registration_granted: boolean;
-  /** The team owner's own switch, meaningful only while granted. */
-  invite_registration_enabled: boolean;
   /** Site-level registration checks this team's invite path may skip.
    *  Set by a site admin; captcha, proof-of-work and rate limits are never
    *  exemptible and never appear here. */
@@ -3307,7 +3298,6 @@ export interface AdminTeam {
   /** Site-admin grant allowing this team to mint accounts through invite
    *  links. The admin list surfaces it so the grant can be toggled inline. */
   invite_registration_granted: number;
-  invite_registration_enabled: number;
   /** Site-level registration checks this team's invite path may skip.
    *  Only email verification is exemptible. */
   invite_registration_exemptions: { email_verification?: boolean };

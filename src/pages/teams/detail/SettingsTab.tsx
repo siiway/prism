@@ -52,7 +52,6 @@ type TeamFlag =
   | "require_verified_email"
   | "restrict_member_list_for_members"
   | "enable_groups"
-  | "invite_registration_enabled"
   | "allow_normal_user_join"
   | "profile_is_public"
   | "profile_show_description"
@@ -352,56 +351,45 @@ export function SettingsTab({
         </SettingsCard>
       )}
 
-      {/* Only once a site admin has authorised the team, or while it is
-          already on: otherwise an owner can do nothing about it. */}
-      {isOwner &&
-        (team.invite_registration_granted ||
-          team.invite_registration_enabled) && (
-          <SettingsCard
-            id="invite-registration"
-            title={t("teams.inviteRegTitle")}
-            description={t("teams.inviteRegDesc", { siteName })}
+      {/* Only once a site admin has authorised the team: until then there's
+          nothing here for an owner to see or change. */}
+      {isOwner && team.invite_registration_granted && (
+        <SettingsCard
+          id="invite-registration"
+          title={t("teams.inviteRegTitle")}
+          description={t("teams.inviteRegDesc", { siteName })}
+        >
+          <SettingsRow
+            label={t("teams.inviteRegOn")}
+            description={
+              site && !site.allow_registration ? (
+                t("teams.inviteRegPaused", { siteName })
+              ) : (
+                <Link href={joinUrl} target="_blank">
+                  {joinUrl}
+                </Link>
+              )
+            }
+          />
+          {team.invite_registration_exemptions?.email_verification && (
+            <SettingsBody>
+              <MessageBar intent="warning">
+                {t("teams.inviteRegExemptEmail")}
+              </MessageBar>
+            </SettingsBody>
+          )}
+          <SettingsRow
+            label={t("teams.allowNormalJoin", { siteName })}
+            description={t("teams.allowNormalJoinHint")}
           >
-            <SettingsRow
-              label={t("teams.inviteRegEnable")}
-              description={
-                !team.invite_registration_granted ? (
-                  t("teams.inviteRegNotGranted")
-                ) : team.invite_registration_enabled ? (
-                  <Link href={joinUrl} target="_blank">
-                    {joinUrl}
-                  </Link>
-                ) : undefined
-              }
-            >
-              {flagSwitch(
-                "invite_registration_enabled",
-                t("teams.inviteRegEnable"),
-                team.invite_registration_granted &&
-                  team.invite_registration_enabled,
-                !team.invite_registration_granted,
-              )}
-            </SettingsRow>
-            {team.invite_registration_granted &&
-              team.invite_registration_exemptions?.email_verification && (
-                <SettingsBody>
-                  <MessageBar intent="warning">
-                    {t("teams.inviteRegExemptEmail")}
-                  </MessageBar>
-                </SettingsBody>
-              )}
-            <SettingsRow
-              label={t("teams.allowNormalJoin", { siteName })}
-              description={t("teams.allowNormalJoinHint")}
-            >
-              {flagSwitch(
-                "allow_normal_user_join",
-                t("teams.allowNormalJoin", { siteName }),
-                team.allow_normal_user_join,
-              )}
-            </SettingsRow>
-          </SettingsCard>
-        )}
+            {flagSwitch(
+              "allow_normal_user_join",
+              t("teams.allowNormalJoin", { siteName }),
+              team.allow_normal_user_join,
+            )}
+          </SettingsRow>
+        </SettingsCard>
+      )}
 
       {(site?.enable_public_profiles ?? true) && (
         <SettingsCard

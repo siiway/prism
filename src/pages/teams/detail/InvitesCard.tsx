@@ -84,6 +84,13 @@ export function InvitesCard({ team, showMsg, confirm }: Props) {
   const qc = useQueryClient();
   const { t } = useTranslation();
   const teamId = team.id;
+  // Invites can create accounts when a site admin has allowed this team and
+  // sign-up isn't closed.
+  const { data: site } = useQuery({
+    queryKey: ["site"],
+    queryFn: api.site,
+    staleTime: 60_000,
+  });
 
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
@@ -217,7 +224,7 @@ export function InvitesCard({ team, showMsg, confirm }: Props) {
         <InviteDialog
           teamId={teamId}
           canRegister={
-            team.invite_registration_granted && team.invite_registration_enabled
+            team.invite_registration_granted && !!site?.allow_registration
           }
           showMsg={showMsg}
         />

@@ -506,13 +506,14 @@ retried without reloading the panel.
 
 ## Invite-link registration
 
-**Admin → Teams** carries two extra controls once
-`enable_team_invite_registration` is on.
+A team's page has a **Moderation** tab for site admins with these controls.
 
-**Authorise / revoke** — grants a team permission to hand out account-creating
-invite links. This is the second of two doors; without it the team owner's own
-switch does nothing. Revoking also closes that switch, so the channel shuts
-immediately rather than reopening if the grant is later restored.
+**Allow invite sign-up** — grants a team permission to hand out
+account-creating invite links. It is the only switch: once it's on, the
+team's admins can tick **Usable for creating new accounts** on an invite.
+Turning it off stops existing links from creating accounts straight away.
+While sign-up is closed (**Settings → Sign-up**), no team's invites create
+accounts.
 
 Exemptions are set through the same endpoint. Only email verification can be
 exempted, and only by an administrator — it is the one check whose cost scales

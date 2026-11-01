@@ -53,23 +53,22 @@ const app = new Hono<AppEnv>();
 /**
  * Load a team that is currently able to mint accounts, or null.
  *
- * Both doors must be open: the site master switch, and this team's own
- * grant plus its owner's switch. A team mid-dissolution is excluded — the
- * accounts it holds are already being wound down.
+ * Needs a site admin's grant to the team, and sign-up not closed: closed
+ * means no new accounts from anywhere. A team mid-dissolution is excluded —
+ * the accounts it holds are already being wound down.
  */
 async function loadRegistrationTeam(
   db: D1Database,
   teamId: string,
 ): Promise<TeamRow | null> {
-  const enabled = await getConfigValue(db, "enable_team_invite_registration");
-  if (!enabled) return null;
+  const signUpOpen = await getConfigValue(db, "allow_registration");
+  if (!signUpOpen) return null;
   const team = await db
     .prepare("SELECT * FROM teams WHERE id = ?")
     .bind(teamId)
     .first<TeamRow>();
   if (!team) return null;
   if (team.invite_registration_granted !== 1) return null;
-  if (team.invite_registration_enabled !== 1) return null;
   if (team.dissolving_at !== null) return null;
   return team;
 }

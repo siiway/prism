@@ -335,17 +335,16 @@ authentication traffic — a user who only ever signs in to one application
 still goes through the full `/authorize` → `/token` → refresh cycle.
 :::
 
-### Two doors
+### Who can turn it on
 
-The channel is closed twice over, and both must be open:
+One switch: a **per-team grant** from a site administrator, on the team's
+**Moderation** tab. The team owner cannot grant it to themselves; otherwise
+every team owner on the instance would be a registrar. Once granted, the
+team's admins can create registration invites.
 
-1. **Site master switch** — `enable_team_invite_registration`, off by default.
-2. **Per-team grant** — given by a site administrator in **Admin → Teams**. The
-   team owner cannot grant it to themselves.
-
-Only then does the team owner's own switch, under **Settings → Invite-link
-registration**, do anything. Without the second door, turning on the first
-would make every team owner on the instance a registrar.
+Closing sign-up (`allow_registration` off) stops it too: while sign-up is
+closed, no invite creates accounts. Invite-only sign-up doesn't affect it —
+a team invite is an invite.
 
 ### Creating a registration invite
 
@@ -516,7 +515,7 @@ The registration page states this before anyone signs up.
 
 ::: warning Protection is keyed on accounts, not on the switch
 A team is protected while it still has live restricted accounts — _not_ while
-its invite registration switch is on. Otherwise the switch could be turned off
+its invite registration grant is on. Otherwise the grant could be turned off
 and the team dissolved by its owner with thousands of accounts still anchored
 to it. Protection lapses by itself once those accounts are gone.
 :::

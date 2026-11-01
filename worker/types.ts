@@ -194,11 +194,9 @@ export interface TeamRow {
    *  could edit would be no constraint at all. */
   role_permissions: string | null;
   /** 1 = a site admin has authorised this team to mint accounts through
-   *  invite links. Team owners cannot set this; it is the second of the two
-   *  doors guarding the channel. */
+   *  invite links. The only switch for it (besides closed sign-up); team
+   *  owners cannot set it. */
   invite_registration_granted: number;
-  /** The team owner's own switch. Only meaningful while granted = 1. */
-  invite_registration_enabled: number;
   /** JSON {@link InviteRegistrationExemptions} — site-level registration
    *  requirements this team's invite path may skip. Site-admin controlled.
    *  NULL = nothing exempted. Captcha, proof-of-work and rate limits are

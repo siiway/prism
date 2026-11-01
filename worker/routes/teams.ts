@@ -148,7 +148,6 @@ function serializeTeamRow(team: TeamRow) {
     require_verified_email: toBool(team.require_verified_email),
     enable_groups: toBool(team.enable_groups),
     invite_registration_granted: toBool(team.invite_registration_granted),
-    invite_registration_enabled: toBool(team.invite_registration_enabled),
     invite_registration_exemptions: team.invite_registration_exemptions
       ? (JSON.parse(team.invite_registration_exemptions) as unknown)
       : {},
@@ -1444,7 +1443,6 @@ app.patch("/:id", async (c) => {
     require_verified_email?: boolean;
     enable_groups?: boolean;
     role_permissions?: unknown;
-    invite_registration_enabled?: boolean;
     allow_normal_user_join?: boolean;
     restrict_member_list_for_members?: boolean;
   }>();
@@ -1555,29 +1553,6 @@ app.patch("/:id", async (c) => {
     values.push(
       Object.keys(cleaned).length === 0 ? null : JSON.stringify(cleaned),
     );
-  }
-  if (body.invite_registration_enabled !== undefined) {
-    if (!hasRole(member.role, "owner"))
-      return c.json(
-        { error: "Only the owner can toggle invite registration" },
-        403,
-      );
-    // The owner switch is meaningless without the site-admin grant, and
-    // silently accepting it would leave the settings UI showing an enabled
-    // channel that mints nothing.
-    if (
-      body.invite_registration_enabled &&
-      team.invite_registration_granted !== 1
-    )
-      return c.json(
-        {
-          error:
-            "A site administrator has not authorised this team for invite registration",
-        },
-        403,
-      );
-    updates.push("invite_registration_enabled = ?");
-    values.push(body.invite_registration_enabled ? 1 : 0);
   }
   if (body.allow_normal_user_join !== undefined) {
     if (!hasRole(member.role, "admin"))
@@ -2863,22 +2838,13 @@ app.post("/:id/invites", async (c) => {
   let allowsRegistration = 0;
   if (body.allows_registration) {
     const team = await c.env.DB.prepare(
-      "SELECT invite_registration_granted, invite_registration_enabled FROM teams WHERE id = ?",
+      "SELECT invite_registration_granted FROM teams WHERE id = ?",
     )
       .bind(id)
-      .first<{
-        invite_registration_granted: number;
-        invite_registration_enabled: number;
-      }>();
-    const siteEnabled = await getConfigValue(
-      c.env.DB,
-      "enable_team_invite_registration",
-    );
-    if (
-      !siteEnabled ||
-      team?.invite_registration_granted !== 1 ||
-      team?.invite_registration_enabled !== 1
-    )
+      .first<{ invite_registration_granted: number }>();
+    // The site admin's grant, and sign-up not closed.
+    const signUpOpen = await getConfigValue(c.env.DB, "allow_registration");
+    if (!signUpOpen || team?.invite_registration_granted !== 1)
       return c.json(
         { error: "This team is not accepting invite-link registrations" },
         403,

@@ -1040,8 +1040,6 @@
     "capabilityDeny": "Not allowed",
     "inviteRegTitle": "Invite-link registration",
     "inviteRegDesc": "Let people without a {{siteName}} account sign up from a link and join this team. Their accounts start with most features off.",
-    "inviteRegNotGranted": "A site admin has to allow this first.",
-    "inviteRegEnable": "Accept registrations through invite links",
     "inviteRegPageLink": "Registration page",
     "inviteRegExemptEmail": "This team's invite path skips email verification (set by a site administrator).",
     "allowNormalJoin": "Let existing {{siteName}} accounts join through invite links",
@@ -1116,7 +1114,7 @@
       "tab": "Moderation",
       "saved": "Saved.",
       "inviteTitle": "Invite sign-up",
-      "inviteDesc": "Whether this team's invite links may create new accounts. The site-wide switch under Sign-up must be on too.",
+      "inviteDesc": "Whether this team's invite links may create new accounts. Nothing creates accounts while sign-up is closed.",
       "inviteColumn": "Invite sign-up",
       "grantLabel": "Allow invite sign-up",
       "grantDesc": "Accounts created this way stay tied to the team until an admin lifts their restriction.",
@@ -1132,7 +1130,9 @@
       "dissolveNotGranted": "This team can't create accounts, so dissolving it removes none.",
       "dissolveStarted_one": "Dissolution started. {{count}} account deactivated.",
       "dissolveStarted": "Dissolution started. {{count}} accounts deactivated."
-    }
+    },
+    "inviteRegOn": "This team's invites can create accounts",
+    "inviteRegPaused": "Paused while sign-up on {{siteName}} is closed."
   },
   "connections": {
     "title": "Linked accounts",
@@ -1534,7 +1534,7 @@
     "cardRegistration": "Registration",
     "cardInviteSignup": "Sign-up through team invites",
     "cardRestricted": "Invite-registered accounts",
-    "cardRestrictedDesc": "Accounts created from a team invite link start restricted. These apply only while team-invite sign-up is on.",
+    "cardRestrictedDesc": "Accounts created from a team invite link start restricted.",
     "cardSessions": "Sessions & tokens",
     "cardSignInProtection": "Sign-in protection",
     "cardVerification": "Verification",
@@ -1653,9 +1653,9 @@
     "siteDescription": "Site Description",
     "siteIconUrl": "Site icon URL",
     "registrationMode": "Registration Mode",
-    "regModeOpen": "Open (Anyone can register)",
-    "regModeInviteOnly": "Invite-only (Requires invite link)",
-    "regModeClosed": "Closed (No new registrations)",
+    "regModeOpen": "Open (anyone can register)",
+    "regModeInviteOnly": "Invite-only (needs a site or team invite)",
+    "regModeClosed": "Closed (no new accounts, even from invites)",
     "allowRegistration": "Allow Registration",
     "requireEmailVerification": "Require Email Verification",
     "socialVerifyTtl": "Social verification TTL (days)",
@@ -2031,8 +2031,6 @@
     "stagedDissolveBody": "Accounts created from {{name}}'s invite links are deactivated now and deleted after the grace period. Members with their own {{siteName}} accounts aren't affected.",
     "stagedDissolveConfirmLabel": "Type the team name ({{name}}) to confirm",
     "stagedDissolveStart": "Start dissolution",
-    "enableInviteRegistration": "Enable team-invite registration",
-    "enableInviteRegistrationHint": "Lets authorised teams hand out links that create accounts. Each team still needs its own grant under Admin → Teams.",
     "inviteRegMaxUsesCap": "Max uses per registration invite",
     "inviteRegMaxUsesCapHint": "Ceiling on the usage limit a team may set. This is the only hard bound on registration volume.",
     "inviteRegRatePerHour": "Registrations per hour per invite",
@@ -2422,8 +2420,9 @@
     "inviteDangerTitle": "Danger zone",
     "inviteRevokeLabel": "Revoke this invite",
     "inviteModeOpen": "Sign-up is open, so people can register without a site invite. Team invites work either way.",
-    "inviteModeClosed": "Sign-up is closed, so site invite links don't work right now. Team invites aren't affected.",
-    "inviteModeAction": "Sign-up settings"
+    "inviteModeClosed": "Sign-up is closed, so no invite link creates accounts right now, site or team.",
+    "inviteModeAction": "Sign-up settings",
+    "inviteSignupDesc": "Teams you allow, on the team's Moderation tab, can hand out invite links that create accounts. These limits apply to all of them. Nothing creates accounts while sign-up is closed."
   },
   "webhooks": {
     "title": "Webhooks",

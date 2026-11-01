@@ -455,8 +455,7 @@ the semantics.
 
 `POST /api/teams/:id/invites` additionally accepts `allows_registration`, which
 requires a finite `max_uses` under the site cap and forces the role to `member`.
-`PATCH /api/teams/:id` accepts `invite_registration_enabled` (owner-only, and
-only once granted) and `allow_normal_user_join`.
+`PATCH /api/teams/:id` accepts `allow_normal_user_join`.
 
 ## Domains
 

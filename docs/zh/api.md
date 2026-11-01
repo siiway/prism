@@ -389,7 +389,7 @@ OAuth 应用密钥为只写字段。`POST /api/apps`、`POST /api/teams/:id/apps
 | `GET`   | `/api/admin/restricted-users`              | 按 `?team_id=` 或 `?invite_token=` 反查产生的账号 —— 邀请码泄漏时用于定损 |
 
 `POST /api/teams/:id/invites` 额外接受 `allows_registration`，它要求 `max_uses` 为有限值且不超过站点上限，并强制角色为 `member`。
-`PATCH /api/teams/:id` 接受 `invite_registration_enabled`（仅 owner，且需已获授权）与 `allow_normal_user_join`。
+`PATCH /api/teams/:id` 接受 `allow_normal_user_join`。
 
 ## 域名
 

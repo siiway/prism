@@ -286,10 +286,10 @@ export async function checkAppAuthorizationAllowed(
 /**
  * Whether a team still has live restricted accounts anchored to it.
  *
- * This — not the `invite_registration_enabled` switch — is what guards
+ * This — not the `invite_registration_granted` switch — is what guards
  * dissolution and re-parenting. Keying those protections on the switch would
- * leave an obvious bypass: enable it, mint five thousand accounts, disable
- * it, and the team is no longer "restricted" so its owner may dissolve it
+ * leave an obvious bypass: mint five thousand accounts, have the grant
+ * revoked, and the team is no longer "restricted" so its owner may dissolve it
  * and delete every one of them without a site admin ever being involved.
  *
  * Protection therefore lapses only when the accounts themselves are gone

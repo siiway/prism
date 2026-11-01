@@ -1,7 +1,7 @@
-// Site invites only do something while sign-up is invite-only (team invites
-// have their own switch and ignore the sign-up mode). When it's open
-// the register page doesn't ask for one, and when it's closed no link works;
-// say so where invites are managed, with the way to the setting.
+// Site invites only do something while sign-up is invite-only. When it's
+// open the register page doesn't ask for one (team invites still work);
+// when it's closed no invite creates accounts. Say so where invites are
+// managed, with the way to the setting.
 
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
