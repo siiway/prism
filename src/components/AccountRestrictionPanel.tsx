@@ -23,6 +23,7 @@ import {
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useSiteName } from "../lib/useSiteName";
 import { ApiError, type RestrictedCapability } from "../lib/api";
 import { useApi } from "../lib/api-context";
 
@@ -57,6 +58,7 @@ export function AccountRestrictionPanel() {
   const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
+  const siteName = useSiteName();
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -104,8 +106,11 @@ export function AccountRestrictionPanel() {
           style={{ marginTop: 4 }}
         >
           {data.origin_team
-            ? t("restriction.descWithTeam", { team: data.origin_team.name })
-            : t("restriction.desc")}
+            ? t("restriction.descWithTeam", {
+                team: data.origin_team.name,
+                siteName,
+              })
+            : t("restriction.desc", { siteName })}
         </Text>
       </div>
 
@@ -138,7 +143,7 @@ export function AccountRestrictionPanel() {
       {conversion?.available ? (
         <div>
           <Text size={200} block className={styles.muted}>
-            {t("restriction.convertDesc")}
+            {t("restriction.convertDesc", { siteName })}
           </Text>
           {conversion.needs_real_email ? (
             <MessageBar intent="info" style={{ marginTop: 8 }}>
@@ -171,7 +176,7 @@ export function AccountRestrictionPanel() {
           <DialogBody>
             <DialogTitle>{t("restriction.confirmTitle")}</DialogTitle>
             <DialogContent>
-              <Text block>{t("restriction.confirmBody")}</Text>
+              <Text block>{t("restriction.confirmBody", { siteName })}</Text>
               <Text block style={{ marginTop: 8 }} className={styles.muted}>
                 {t("restriction.confirmIrreversible")}
               </Text>

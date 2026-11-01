@@ -38,17 +38,20 @@ app.post("/", async (c) => {
   const body = await c.req.json<{ public_key: string; name?: string }>();
 
   if (!body.public_key || typeof body.public_key !== "string") {
-    return c.json({ error: "public_key is required" }, 400);
+    return c.json(
+      { error: "field_required", params: { field: "public_key" } },
+      400,
+    );
   }
 
   let parsed: Awaited<ReturnType<typeof parseArmoredPublicKeys>>;
   try {
     parsed = await parseArmoredPublicKeys(body.public_key);
   } catch {
-    return c.json({ error: "Invalid PGP public key" }, 400);
+    return c.json({ error: "pgp_key_invalid" }, 400);
   }
   if (parsed.length === 0) {
-    return c.json({ error: "Invalid PGP public key" }, 400);
+    return c.json({ error: "pgp_key_invalid" }, 400);
   }
 
   // Dedupe within the submission by fingerprint
@@ -68,7 +71,7 @@ app.post("/", async (c) => {
 
   const toAdd = unique.filter((k) => !existing.has(k.fingerprint));
   const skipped = unique.length - toAdd.length;
-  if (toAdd.length === 0) return c.json({ error: "Key already added" }, 409);
+  if (toAdd.length === 0) return c.json({ error: "key_exists" }, 409);
 
   const now = Math.floor(Date.now() / 1000);
   const baseName = body.name?.trim();
@@ -118,8 +121,8 @@ app.delete("/:id", async (c) => {
   )
     .bind(id, user.id)
     .run();
-  if (!result.meta.changes) return c.json({ error: "Key not found" }, 404);
-  return c.json({ message: "Key removed" });
+  if (!result.meta.changes) return c.json({ error: "key_not_found" }, 404);
+  return c.json({ ok: true });
 });
 
 export default app;

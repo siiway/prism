@@ -11,6 +11,7 @@ import type { BrandVariants } from "@fluentui/react-components";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "../lib/api-context";
+import { setDocumentSiteName } from "../lib/documentTitle";
 import { useThemeStore } from "../store/theme";
 import { patchTheme } from "../theme";
 
@@ -84,8 +85,13 @@ function buildBrandVariants(accentHex: string): BrandVariants {
     10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160,
   ] as const;
   const variants: Record<number, string> = {};
+  // Fluent ramps run dark → light (brand[10] darkest, brand[160] lightest):
+  // light themes tint surfaces with the high shades and dark themes lift
+  // foregrounds with them. Anchor the configured accent at shade 80
+  // (index 7), which the light theme uses for primary buttons, links and
+  // focus, so those stay exactly the colour the admin picked.
   shades.forEach((shade, i) => {
-    const lightness = Math.max(5, Math.min(95, l + (8 - i) * 7));
+    const lightness = Math.max(5, Math.min(96, l + (i - 7) * 7));
     variants[shade] = hslToHex(h, s, lightness);
   });
   return variants as BrandVariants;
@@ -168,7 +174,7 @@ export function ThemeProvider({
   useEffect(() => {
     if (!siteConfig) return;
 
-    document.title = siteConfig.site_name;
+    setDocumentSiteName(siteConfig.site_name);
 
     if (siteConfig.site_icon_url) {
       let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
@@ -200,15 +206,19 @@ export function ThemeProvider({
       themeMeta.name = "theme-color";
       document.head.appendChild(themeMeta);
     }
-    themeMeta.content = theme.colorNeutralBackground1;
-  }, [theme]);
+    // Runs after the effect above has set data-theme, so the canvas variable
+    // already resolves for the current scheme.
+    themeMeta.content = getComputedStyle(document.documentElement)
+      .getPropertyValue("--prism-canvas")
+      .trim();
+  }, [resolvedDark]);
 
   return (
     <FluentProvider
       theme={theme}
       style={{
         minHeight: "100vh",
-        background: "var(--colorNeutralBackground1)",
+        background: "var(--prism-canvas)",
       }}
     >
       {children}

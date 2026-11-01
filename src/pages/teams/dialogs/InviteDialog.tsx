@@ -9,13 +9,13 @@ import {
   DialogTrigger,
   Field,
   Input,
-  Select,
   Spinner,
   Checkbox,
   Text,
   Tooltip,
   tokens,
 } from "@fluentui/react-components";
+import { Select } from "../../../components/Select";
 import {
   CheckmarkRegular,
   CopyRegular,
@@ -232,9 +232,9 @@ export function InviteDialog({
                       setForm((f) => ({ ...f, role: d.value }))
                     }
                   >
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
-                    <option value="co-owner">Co-owner</option>
+                    <option value="member">{t("teams.roleMember")}</option>
+                    <option value="admin">{t("teams.roleAdmin")}</option>
+                    <option value="co-owner">{t("teams.roleCoOwner")}</option>
                   </Select>
                 </Field>
                 <Field

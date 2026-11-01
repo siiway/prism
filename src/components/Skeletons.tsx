@@ -3,6 +3,8 @@
 import {
   Skeleton,
   SkeletonItem,
+  TableCell,
+  TableRow,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -10,9 +12,9 @@ import {
 const useStyles = makeStyles({
   card: {
     border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "8px",
+    borderRadius: "10px",
     padding: "24px",
-    background: tokens.colorNeutralBackground2,
+    background: tokens.colorNeutralBackground1,
     display: "flex",
     flexDirection: "column",
     gap: "16px",
@@ -36,37 +38,46 @@ const useStyles = makeStyles({
   },
   statCard: {
     border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "8px",
+    borderRadius: "10px",
     padding: "16px",
-    background: tokens.colorNeutralBackground2,
+    background: tokens.colorNeutralBackground1,
     display: "flex",
     flexDirection: "column",
     gap: "12px",
   },
-  appCard: {
+  // Shaped like components/Settings' SettingsCard.
+  settingsCard: {
     border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "8px",
-    padding: "16px",
-    background: tokens.colorNeutralBackground2,
+    borderRadius: tokens.borderRadiusXLarge,
+    background: tokens.colorNeutralBackground1,
+  },
+  settingsHead: {
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
+    gap: "8px",
+    padding: "20px 24px 18px",
   },
-  consentCard: {
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "8px",
-    padding: "16px 20px",
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-  },
-  toggleRow: {
+  settingsRow: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "10px 0",
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    gap: "16px",
+    minHeight: "60px",
+    padding: "0 24px",
+    boxSizing: "border-box",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  settingsForm: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "16px",
+    padding: "16px 24px 20px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  stack: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "20px",
   },
 });
 
@@ -100,6 +111,37 @@ export function SkeletonTableRows({
   );
 }
 
+/** Placeholder rows for inside a <TableBody>: real rows and cells, so each
+ *  bar sits under its column. (SkeletonTableRows draws divs, for use in
+ *  place of a whole table.) */
+export function SkeletonTableBodyRows({
+  rows = 5,
+  cols = 4,
+}: {
+  rows?: number;
+  cols?: number;
+}) {
+  const widths = ["60%", "80%", "45%", "70%", "55%", "35%", "75%"];
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <TableRow key={i} aria-hidden>
+          {Array.from({ length: cols }).map((_, j) => (
+            <TableCell key={j}>
+              <Skeleton>
+                <SkeletonItem
+                  size={12}
+                  style={{ width: widths[(i + j * 3) % widths.length] }}
+                />
+              </Skeleton>
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </>
+  );
+}
+
 export function SkeletonStatCards({ count = 4 }: { count?: number }) {
   const styles = useStyles();
   return (
@@ -120,35 +162,63 @@ export function SkeletonStatCards({ count = 4 }: { count?: number }) {
   );
 }
 
-export function SkeletonAppCards({ count = 6 }: { count?: number }) {
+/** One SettingsCard: title and description, then `rows` label/control
+ *  rows, or with `form`, `rows` stacked label-over-input fields. */
+export function SkeletonSettingsCard({
+  rows = 3,
+  form = false,
+}: {
+  rows?: number;
+  form?: boolean;
+}) {
+  const styles = useStyles();
+  const widths = ["30%", "22%", "36%", "26%", "40%", "18%"];
+  return (
+    <Skeleton aria-busy>
+      <div className={styles.settingsCard}>
+        <div className={styles.settingsHead}>
+          <SkeletonItem size={16} style={{ width: 160 }} />
+          <SkeletonItem size={12} style={{ width: 320, maxWidth: "70%" }} />
+        </div>
+        {form ? (
+          <div className={styles.settingsForm}>
+            {Array.from({ length: rows }).map((_, i) => (
+              <div
+                key={i}
+                style={{ display: "flex", flexDirection: "column", gap: 6 }}
+              >
+                <SkeletonItem size={12} style={{ width: widths[i % 6] }} />
+                <SkeletonItem size={32} style={{ width: "100%" }} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          Array.from({ length: rows }).map((_, i) => (
+            <div key={i} className={styles.settingsRow}>
+              <SkeletonItem size={12} style={{ width: widths[i % 6] }} />
+              <SkeletonItem size={24} style={{ width: 120 }} />
+            </div>
+          ))
+        )}
+      </div>
+    </Skeleton>
+  );
+}
+
+/** Several SettingsCard skeletons stacked like a settings page. */
+export function SkeletonSettingsPage({
+  cards,
+  form = false,
+}: {
+  /** Rows per card. */
+  cards: number[];
+  form?: boolean;
+}) {
   const styles = useStyles();
   return (
-    <div className={styles.grid}>
-      {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i}>
-          <div className={styles.appCard}>
-            <div className={styles.row}>
-              <SkeletonItem
-                shape="square"
-                size={40}
-                style={{ borderRadius: 8 }}
-              />
-              <div
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 6,
-                }}
-              >
-                <SkeletonItem style={{ width: "60%", height: 16 }} />
-                <SkeletonItem style={{ width: "40%", height: 12 }} />
-              </div>
-            </div>
-            <SkeletonItem style={{ width: "90%", height: 14 }} />
-            <SkeletonItem style={{ width: "75%", height: 14 }} />
-          </div>
-        </Skeleton>
+    <div className={styles.stack}>
+      {cards.map((rows, i) => (
+        <SkeletonSettingsCard key={i} rows={rows} form={form} />
       ))}
     </div>
   );
@@ -169,204 +239,6 @@ export function SkeletonFormCard({ rows = 4 }: { rows?: number }) {
           </div>
         ))}
         <SkeletonItem style={{ width: 100, height: 32 }} />
-      </div>
-    </Skeleton>
-  );
-}
-
-export function SkeletonConsentCards({ count = 3 }: { count?: number }) {
-  const styles = useStyles();
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i}>
-          <div className={styles.consentCard}>
-            <SkeletonItem
-              shape="square"
-              size={48}
-              style={{ borderRadius: 8, flexShrink: 0 }}
-            />
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <SkeletonItem style={{ width: "30%", height: 16 }} />
-                <SkeletonItem
-                  style={{ width: 60, height: 20, borderRadius: 10 }}
-                />
-              </div>
-              <SkeletonItem style={{ width: "55%", height: 13 }} />
-              <div style={{ display: "flex", gap: 6 }}>
-                <SkeletonItem
-                  style={{ width: 60, height: 20, borderRadius: 10 }}
-                />
-                <SkeletonItem
-                  style={{ width: 80, height: 20, borderRadius: 10 }}
-                />
-                <SkeletonItem
-                  style={{ width: 50, height: 20, borderRadius: 10 }}
-                />
-              </div>
-            </div>
-            <SkeletonItem style={{ width: 110, height: 30, flexShrink: 0 }} />
-          </div>
-        </Skeleton>
-      ))}
-    </div>
-  );
-}
-
-export function SkeletonToggleRows({ rows = 6 }: { rows?: number }) {
-  const styles = useStyles();
-  return (
-    <Skeleton>
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className={styles.toggleRow}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <SkeletonItem
-              style={{ width: `${120 + (i % 3) * 40}px`, height: 15 }}
-            />
-            <SkeletonItem
-              style={{ width: `${180 + (i % 2) * 60}px`, height: 13 }}
-            />
-          </div>
-          <SkeletonItem style={{ width: 40, height: 20, borderRadius: 10 }} />
-        </div>
-      ))}
-    </Skeleton>
-  );
-}
-
-export function SkeletonSecurityCard({
-  rows = 3,
-  withAvatar = false,
-}: {
-  rows?: number;
-  withAvatar?: boolean;
-}) {
-  const styles = useStyles();
-  return (
-    <Skeleton>
-      <div className={styles.card}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <SkeletonItem style={{ width: "35%", height: 18 }} />
-          <SkeletonItem style={{ width: 90, height: 32 }} />
-        </div>
-        {withAvatar ? (
-          <div className={styles.row}>
-            <SkeletonItem shape="circle" size={64} />
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              <SkeletonItem style={{ width: "40%", height: 16 }} />
-              <SkeletonItem style={{ width: "60%", height: 13 }} />
-            </div>
-          </div>
-        ) : null}
-        {Array.from({ length: rows }).map((_, i) => (
-          <div key={i} className={styles.tableRow}>
-            <SkeletonItem shape="circle" size={32} style={{ flexShrink: 0 }} />
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                gap: 4,
-              }}
-            >
-              <SkeletonItem
-                style={{ width: `${150 + (i % 2) * 80}px`, height: 15 }}
-              />
-              <SkeletonItem
-                style={{ width: `${100 + (i % 3) * 40}px`, height: 12 }}
-              />
-            </div>
-            <SkeletonItem style={{ width: 70, height: 28, flexShrink: 0 }} />
-          </div>
-        ))}
-      </div>
-    </Skeleton>
-  );
-}
-
-export function SkeletonProfileCard() {
-  const styles = useStyles();
-  return (
-    <Skeleton>
-      <div className={styles.card}>
-        <div className={styles.row}>
-          <SkeletonItem shape="circle" size={72} style={{ flexShrink: 0 }} />
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-            }}
-          >
-            <SkeletonItem style={{ width: "40%", height: 14 }} />
-            <SkeletonItem style={{ width: "100%", height: 32 }} />
-          </div>
-        </div>
-        <div
-          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
-        >
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              style={{ display: "flex", flexDirection: "column", gap: 6 }}
-            >
-              <SkeletonItem style={{ width: "40%", height: 13 }} />
-              <SkeletonItem style={{ width: "100%", height: 32 }} />
-            </div>
-          ))}
-        </div>
-        <SkeletonItem style={{ width: 100, height: 32 }} />
-      </div>
-    </Skeleton>
-  );
-}
-
-export function SkeletonEmailCard() {
-  const styles = useStyles();
-  return (
-    <Skeleton>
-      <div className={styles.card}>
-        <SkeletonItem style={{ width: "30%", height: 18 }} />
-        {[1, 2].map((i) => (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 12px",
-              border: `1px solid ${tokens.colorNeutralStroke1}`,
-              borderRadius: 6,
-            }}
-          >
-            <SkeletonItem style={{ flex: 1, height: 16 }} />
-            <SkeletonItem style={{ width: 60, height: 20, borderRadius: 10 }} />
-            <SkeletonItem style={{ width: 70, height: 28 }} />
-          </div>
-        ))}
-        <SkeletonItem style={{ width: 130, height: 32 }} />
       </div>
     </Skeleton>
   );

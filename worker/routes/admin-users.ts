@@ -30,6 +30,7 @@ import { readPage } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { isUserLocked } from "../lib/lockdown";
 import type { DomainRow, UserEmailRow, Variables } from "../types";
+import { parseScopeList } from "../lib/scopeGrants";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -115,7 +116,7 @@ async function revokeSessions(db: D1Database, userId: string): Promise<void> {
 app.post("/:id/password", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const body = await c.req.json<{
     password?: string | null;
@@ -134,14 +135,13 @@ app.post("/:id/password", async (c) => {
     if (!connections?.n)
       return c.json(
         {
-          error:
-            "Clearing the password would lock this account out — it has no social connection to sign in with",
+          error: "password_only_sign_in",
         },
         409,
       );
   } else {
     if (typeof body.password !== "string" || body.password.length < 8)
-      return c.json({ error: "Password must be at least 8 characters" }, 400);
+      return c.json({ error: "password_too_short" }, 400);
     hash = await hashPassword(body.password);
   }
 
@@ -157,9 +157,7 @@ app.post("/:id/password", async (c) => {
     cleared: hash === null,
     sessions_revoked: body.revoke_sessions !== false,
   });
-  return c.json({
-    message: hash === null ? "Password cleared" : "Password set",
-  });
+  return c.json({ ok: true });
 });
 
 // ─── Second factors ───────────────────────────────────────────────────────────
@@ -169,7 +167,7 @@ app.post("/:id/password", async (c) => {
 app.get("/:id/security", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const [totp, passkeys, recovery, user] = await Promise.all([
     c.env.DB.prepare(
@@ -230,7 +228,7 @@ app.get("/:id/security", async (c) => {
 app.delete("/:id/2fa", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const [totp, passkeys] = await Promise.all([
     c.env.DB.prepare(
@@ -257,39 +255,39 @@ app.delete("/:id/2fa", async (c) => {
     totp_removed: totp?.n ?? 0,
     passkeys_removed: passkeys?.n ?? 0,
   });
-  return c.json({ message: "Two-factor authentication reset" });
+  return c.json({ ok: true });
 });
 
 app.delete("/:id/totp/:totpId", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, name FROM totp_authenticators WHERE id = ? AND user_id = ?",
   )
     .bind(c.req.param("totpId"), id)
     .first<{ id: string; name: string }>();
-  if (!row) return c.json({ error: "Authenticator not found" }, 404);
+  if (!row) return c.json({ error: "authenticator_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM totp_authenticators WHERE id = ?")
     .bind(row.id)
     .run();
   auditUser(c, id, target.username, "user.totp_removed", { name: row.name });
-  return c.json({ message: "Authenticator removed" });
+  return c.json({ ok: true });
 });
 
 app.delete("/:id/passkeys/:passkeyId", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, name FROM passkeys WHERE id = ? AND user_id = ?",
   )
     .bind(c.req.param("passkeyId"), id)
     .first<{ id: string; name: string | null }>();
-  if (!row) return c.json({ error: "Passkey not found" }, 404);
+  if (!row) return c.json({ error: "passkey_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM passkeys WHERE id = ?")
     .bind(row.id)
@@ -297,7 +295,7 @@ app.delete("/:id/passkeys/:passkeyId", async (c) => {
   auditUser(c, id, target.username, "user.passkey_removed", {
     name: row.name,
   });
-  return c.json({ message: "Passkey removed" });
+  return c.json({ ok: true });
 });
 
 // ─── Personal access tokens ───────────────────────────────────────────────────
@@ -339,20 +337,20 @@ app.get("/:id/tokens", async (c) => {
 app.delete("/:id/tokens/:tokenId", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, name FROM personal_access_tokens WHERE id = ? AND user_id = ?",
   )
     .bind(c.req.param("tokenId"), id)
     .first<{ id: string; name: string }>();
-  if (!row) return c.json({ error: "Token not found" }, 404);
+  if (!row) return c.json({ error: "token_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM personal_access_tokens WHERE id = ?")
     .bind(row.id)
     .run();
   auditUser(c, id, target.username, "user.token_revoked", { name: row.name });
-  return c.json({ message: "Token revoked" });
+  return c.json({ ok: true });
 });
 
 // ─── Social connections ───────────────────────────────────────────────────────
@@ -377,14 +375,14 @@ app.get("/:id/connections", async (c) => {
 app.delete("/:id/connections/:connId", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, provider FROM social_connections WHERE id = ? AND user_id = ?",
   )
     .bind(c.req.param("connId"), id)
     .first<{ id: string; provider: string }>();
-  if (!row) return c.json({ error: "Connection not found" }, 404);
+  if (!row) return c.json({ error: "connection_not_found" }, 404);
 
   const [user, count] = await Promise.all([
     c.env.DB.prepare(
@@ -401,8 +399,7 @@ app.delete("/:id/connections/:connId", async (c) => {
   if (!user?.has_password && (count?.n ?? 0) <= 1)
     return c.json(
       {
-        error:
-          "This is the account's only way to sign in — set a password before unlinking it",
+        error: "last_sign_in_method",
       },
       409,
     );
@@ -413,7 +410,7 @@ app.delete("/:id/connections/:connId", async (c) => {
   auditUser(c, id, target.username, "user.connection_removed", {
     provider: row.provider,
   });
-  return c.json({ message: "Connection removed" });
+  return c.json({ ok: true });
 });
 
 // ─── GPG keys ─────────────────────────────────────────────────────────────────
@@ -431,14 +428,14 @@ app.get("/:id/gpg-keys", async (c) => {
 app.delete("/:id/gpg-keys/:keyId", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, fingerprint FROM user_gpg_keys WHERE id = ? AND user_id = ?",
   )
     .bind(c.req.param("keyId"), id)
     .first<{ id: string; fingerprint: string }>();
-  if (!row) return c.json({ error: "Key not found" }, 404);
+  if (!row) return c.json({ error: "key_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM user_gpg_keys WHERE id = ?")
     .bind(row.id)
@@ -446,7 +443,7 @@ app.delete("/:id/gpg-keys/:keyId", async (c) => {
   auditUser(c, id, target.username, "user.gpg_key_removed", {
     fingerprint: row.fingerprint,
   });
-  return c.json({ message: "Key removed" });
+  return c.json({ ok: true });
 });
 
 // ─── Email addresses ──────────────────────────────────────────────────────────
@@ -470,7 +467,7 @@ app.get("/:id/emails", async (c) => {
       .bind(id)
       .all<UserEmailRow>(),
   ]);
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
 
   return c.json({
     primary: {
@@ -493,7 +490,7 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
   const id = c.req.param("id");
   const emailId = c.req.param("emailId");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const now = Math.floor(Date.now() / 1000);
   if (emailId === "primary") {
@@ -508,7 +505,7 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
       email: target.email,
       primary: true,
     });
-    return c.json({ message: "Email marked as verified" });
+    return c.json({ ok: true });
   }
 
   const row = await c.env.DB.prepare(
@@ -516,7 +513,7 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
   )
     .bind(emailId, id)
     .first<{ id: string; email: string }>();
-  if (!row) return c.json({ error: "Email not found" }, 404);
+  if (!row) return c.json({ error: "email_not_found" }, 404);
 
   await c.env.DB.prepare(
     `UPDATE user_emails SET verified = 1, verified_via = 'admin',
@@ -528,7 +525,7 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
   auditUser(c, id, target.username, "user.email_verified", {
     email: row.email,
   });
-  return c.json({ message: "Email marked as verified" });
+  return c.json({ ok: true });
 });
 
 /** Promote an alternate address to primary, demoting the current one.
@@ -540,7 +537,7 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
 app.post("/:id/emails/:emailId/set-primary", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, email, verified, verified_via, verified_at FROM user_emails WHERE id = ? AND user_id = ?",
@@ -553,7 +550,7 @@ app.post("/:id/emails/:emailId/set-primary", async (c) => {
       verified_via: string | null;
       verified_at: number | null;
     }>();
-  if (!row) return c.json({ error: "Email not found" }, 404);
+  if (!row) return c.json({ error: "email_not_found" }, 404);
 
   const userRow = await c.env.DB.prepare(
     "SELECT email, email_verified, email_verified_via, email_verified_at FROM users WHERE id = ?",
@@ -565,7 +562,7 @@ app.post("/:id/emails/:emailId/set-primary", async (c) => {
       email_verified_via: string | null;
       email_verified_at: number | null;
     }>();
-  if (!userRow) return c.json({ error: "User not found" }, 404);
+  if (!userRow) return c.json({ error: "user_not_found" }, 404);
 
   const now = Math.floor(Date.now() / 1000);
   await c.env.DB.batch([
@@ -596,20 +593,20 @@ app.post("/:id/emails/:emailId/set-primary", async (c) => {
     from: userRow.email,
     to: row.email,
   });
-  return c.json({ message: "Primary email updated" });
+  return c.json({ ok: true });
 });
 
 app.delete("/:id/emails/:emailId", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, email FROM user_emails WHERE id = ? AND user_id = ?",
   )
     .bind(c.req.param("emailId"), id)
     .first<{ id: string; email: string }>();
-  if (!row) return c.json({ error: "Email not found" }, 404);
+  if (!row) return c.json({ error: "email_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?")
     .bind(row.id)
@@ -617,7 +614,7 @@ app.delete("/:id/emails/:emailId", async (c) => {
   auditUser(c, id, target.username, "user.email_removed", {
     email: row.email,
   });
-  return c.json({ message: "Email removed" });
+  return c.json({ ok: true });
 });
 
 // ─── Domains ──────────────────────────────────────────────────────────────────
@@ -636,20 +633,20 @@ app.get("/:id/domains", async (c) => {
 app.delete("/:id/domains/:domainId", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, domain FROM domains WHERE id = ? AND user_id = ? AND team_id IS NULL",
   )
     .bind(c.req.param("domainId"), id)
     .first<{ id: string; domain: string }>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM domains WHERE id = ?").bind(row.id).run();
   auditUser(c, id, target.username, "user.domain_removed", {
     domain: row.domain,
   });
-  return c.json({ message: "Domain removed" });
+  return c.json({ ok: true });
 });
 
 // ─── OAuth authorizations ─────────────────────────────────────────────────────
@@ -676,7 +673,7 @@ app.get("/:id/authorizations", async (c) => {
     authorizations: await Promise.all(
       results.map(async (row) => ({
         ...row,
-        scopes: row.scopes ? row.scopes.split(" ").filter(Boolean) : [],
+        scopes: parseScopeList(row.scopes),
         icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, row.icon_url),
       })),
     ),
@@ -688,14 +685,14 @@ app.get("/:id/authorizations", async (c) => {
 app.delete("/:id/authorizations/:consentId", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const row = await c.env.DB.prepare(
     "SELECT id, client_id FROM oauth_consents WHERE id = ? AND user_id = ?",
   )
     .bind(c.req.param("consentId"), id)
     .first<{ id: string; client_id: string }>();
-  if (!row) return c.json({ error: "Authorization not found" }, 404);
+  if (!row) return c.json({ error: "authorization_not_found" }, 404);
 
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM oauth_consents WHERE id = ?").bind(row.id),
@@ -710,7 +707,7 @@ app.delete("/:id/authorizations/:consentId", async (c) => {
   auditUser(c, id, target.username, "user.authorization_revoked", {
     client_id: row.client_id,
   });
-  return c.json({ message: "Authorization revoked" });
+  return c.json({ ok: true });
 });
 
 // ─── Notification routing ─────────────────────────────────────────────────────
@@ -765,7 +762,7 @@ app.get("/:id/notifications", async (c) => {
 app.delete("/:id/notification-rulesets", async (c) => {
   const id = c.req.param("id");
   const target = await loadTarget(c.env.DB, id);
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
 
   const count = await c.env.DB.prepare(
     "SELECT COUNT(*) AS n FROM notification_rulesets WHERE user_id = ?",
@@ -781,7 +778,6 @@ app.delete("/:id/notification-rulesets", async (c) => {
     removed: count?.n ?? 0,
   });
   return c.json({
-    message: "Notification rules reset",
     removed: count?.n ?? 0,
   });
 });
@@ -841,7 +837,7 @@ app.get("/:id/teams", async (c) => {
  *  can say why the delete button is missing. */
 app.get("/:id/lockdown", async (c) => {
   const target = await loadTarget(c.env.DB, c.req.param("id"));
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
   return c.json({ locked: isUserLocked(c.env, target.username) });
 });
 

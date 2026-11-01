@@ -13,6 +13,8 @@ import { unproxyImageUrl, useProxiedImage } from "../lib/api";
 
 interface Props {
   label: string;
+  /** Name the input for screen readers only, e.g. inside a labelled row. */
+  hideLabel?: boolean;
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
@@ -26,7 +28,13 @@ function isValidHttpsUrl(url: string): boolean {
   }
 }
 
-export function ImageUrlInput({ label, value, onChange, placeholder }: Props) {
+export function ImageUrlInput({
+  label,
+  hideLabel,
+  value,
+  onChange,
+  placeholder,
+}: Props) {
   const { t } = useTranslation();
   const [loadError, setLoadError] = useState(false);
   const normalizedValue = unproxyImageUrl(value);
@@ -45,12 +53,13 @@ export function ImageUrlInput({ label, value, onChange, placeholder }: Props) {
 
   return (
     <Field
-      label={label}
+      label={hideLabel ? undefined : label}
       validationState={httpsError ? "error" : undefined}
       validationMessage={httpsError ? t("imageUrl.httpsRequired") : undefined}
       style={{ width: "100%" }}
     >
       <Input
+        aria-label={hideLabel ? label : undefined}
         style={{ width: "100%" }}
         value={normalizedValue}
         onChange={(e) => {

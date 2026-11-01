@@ -204,8 +204,8 @@ token lives in the Telegram OAuth source as its `client_secret`.
 3. Run `/setdomain`, select the bot, and enter the public Prism domain, for example `prism.example.com`. Telegram Login will reject callbacks from domains not registered here.
 4. In Prism, go to **Admin → OAuth Sources → Add Source**.
 5. Select **Telegram**, set a slug such as `telegram`, paste the bot token into the secret/token field, and keep the source enabled.
-6. Go to **Admin → Settings → Third-party** and enable **Telegram push**.
-7. Select the Telegram OAuth source in **Notification bot** and save. This sets `tg_notify_source_slug`.
+6. Go to **Admin → Settings → Email & notifications → Chat notifications**.
+7. Pick the Telegram OAuth source under **Telegram** and save. This sets `tg_notify_source_slug`.
 8. Each user who wants Telegram delivery opens **Linked Accounts**, connects Telegram through the same bot/domain, then enables Telegram channels on **Notifications**.
 
 Delivery details:
@@ -229,7 +229,7 @@ as `discord_bot_token` in Prism.
 3. In Prism, go to **Admin → OAuth Sources → Add Source**, select **Discord**, set a slug such as `discord`, paste the OAuth Client ID/Secret, and keep the source enabled.
 4. Back in Discord Developer Portal, open **Bot** for the same application.
 5. Create a bot if one does not exist, click **Reset Token** if needed, and copy the bot token. This token is not the OAuth client secret.
-6. In Prism, go to **Admin → Settings → Third-party**, enable **Discord push**, select the Discord OAuth source, paste the bot token into **Discord bot token**, and save. This sets `discord_notify_source_slug` and `discord_bot_token`.
+6. In Prism, go to **Admin → Settings → Email & notifications → Chat notifications**, pick the Discord OAuth source under **Discord**, paste the bot token into **Discord bot token**, and save. This sets `discord_notify_source_slug` and `discord_bot_token`.
 7. Each user who wants Discord delivery opens **Linked Accounts**, connects Discord, then enables Discord channels on **Notifications**.
 
 Delivery details:

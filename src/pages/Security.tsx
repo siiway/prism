@@ -1,4 +1,6 @@
-// Security page: TOTP, Passkeys, Sessions
+// Security page: password, two-factor authenticators, passkeys, GPG keys,
+// active sessions and OAuth token preferences. Lists are rows with their
+// details inline; adding anything opens a dialog from the card's action.
 
 import { AccountRestrictionPanel } from "../components/AccountRestrictionPanel";
 
@@ -13,17 +15,12 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
+  MessageBar,
+  MessageBarBody,
   Input,
   Link as FluentLink,
-  MessageBar,
   Spinner,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
   Text,
   Textarea,
   Tooltip,
@@ -33,12 +30,12 @@ import {
 import {
   AddRegular,
   ArrowDownloadRegular,
-  ArrowSyncRegular,
   CopyRegular,
   DeleteRegular,
   DesktopRegular,
+  KeyMultipleRegular,
   KeyRegular,
-  SignOutRegular,
+  PhoneRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -47,28 +44,34 @@ import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
-import type {
-  GpgKeyInfo,
-  PasskeyInfo,
-  SessionInfo,
-  SessionIpInfo,
-} from "../lib/api";
+import type { SessionInfo, SessionIpInfo } from "../lib/api";
 import {
   formatIpGeo,
   formatNetwork,
   geoDetailRows,
   parseIpGeo,
 } from "../lib/geo";
+import { formatDate } from "../lib/datetime";
 import { useAuthStore } from "../store/auth";
-import { EmptyState } from "../components/EmptyState";
 import { PageHeader } from "../components/PageHeader";
-import { SkeletonSecurityCard } from "../components/Skeletons";
+import { PasswordInput } from "../components/PasswordInput";
+import { SkeletonSettingsPage } from "../components/Skeletons";
 import { DurationInput } from "../components/DurationInput";
 import { LabeledLine } from "../components/LabeledLine";
+import {
+  SettingsBody,
+  SettingsCard,
+  SettingsEmpty,
+  SettingsFooter,
+  SettingsPage,
+  SettingsRow,
+  SettingsToast,
+} from "../components/Settings";
 import { useToastMessage } from "../lib/useToastMessage";
+import { useConfirm } from "../lib/useConfirm";
 
 // Turn a raw User-Agent string into a friendly "Browser on OS" label for
-// the sessions table. Returns null when the UA is empty/unparseable so the
+// the sessions list. Returns null when the UA is empty/unparseable so the
 // caller can fall back to the localized "unknown" string.
 function describeDevice(userAgent: string | null): string | null {
   if (!userAgent) return null;
@@ -92,6 +95,9 @@ function describeDevice(userAgent: string | null): string | null {
   return browser || os || userAgent;
 }
 
+const isMobileUa = (ua: string | null) =>
+  !!ua && /iPhone|iPad|iPod|Android/.test(ua);
+
 // Absolute date+time down to the minute (issue #6). The stored timestamps are
 // already second-resolution; the old view only rendered the date, which is
 // why two sessions minutes apart looked identical.
@@ -105,68 +111,72 @@ function formatDateTime(epochSeconds: number): string {
   });
 }
 
-// Longest IPv6 addresses overflow the cell and collide with the next column
-// (issue #1). We render them in a fixed-width box that ellipsises the overflow
-// and show the full value on hover / focus via a Tooltip.
-const IP_CELL_MAX_WIDTH = 150;
-
 const useStyles = makeStyles({
-  page: { display: "flex", flexDirection: "column", gap: "20px" },
-  card: {
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "10px",
-    padding: "18px",
-    background: tokens.colorNeutralBackground1,
+  formNarrow: {
     display: "flex",
     flexDirection: "column",
-    gap: "14px",
+    gap: "12px",
+    maxWidth: "380px",
   },
-  cardHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
+  duration: { width: "220px", maxWidth: "100%" },
+  mono: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
   },
-  actions: { display: "flex", gap: "8px" },
-  tableScroll: { overflowX: "auto" },
+  // Long IPv6 addresses would push the rest of the line around (issue #1).
+  ip: {
+    display: "inline-block",
+    maxWidth: "180px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    verticalAlign: "bottom",
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
+  },
   qrSection: {
     display: "flex",
     flexDirection: "column",
     gap: "12px",
     alignItems: "center",
   },
+  qr: {
+    width: "200px",
+    height: "200px",
+    borderRadius: tokens.borderRadiusLarge,
+    background: "white",
+    padding: "8px",
+    boxSizing: "border-box",
+  },
+  secret: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
+    background: tokens.colorNeutralBackground3,
+    padding: "4px 8px",
+    borderRadius: tokens.borderRadiusMedium,
+    wordBreak: "break-all",
+  },
+  codeField: { width: "100%", maxWidth: "260px" },
   backupCodes: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: "8px",
     padding: "12px",
     background: tokens.colorNeutralBackground3,
-    borderRadius: "6px",
-    fontFamily: "monospace",
+    borderRadius: tokens.borderRadiusMedium,
+    fontFamily: tokens.fontFamilyMonospace,
     "@media (max-width: 600px)": {
       gridTemplateColumns: "1fr",
     },
   },
-  hiddenOnMobile: {
-    "@media (max-width: 768px)": { display: "none" },
-  },
-  row: {
-    cursor: "pointer",
-    ":hover": { background: tokens.colorNeutralBackground3 },
-  },
-  ipCell: {
-    display: "inline-block",
-    maxWidth: `${IP_CELL_MAX_WIDTH}px`,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    verticalAlign: "middle",
-    fontFamily: "monospace",
-    fontSize: tokens.fontSizeBase200,
-  },
-  sessionsFooter: {
+  dialogStack: {
     display: "flex",
-    justifyContent: "flex-end",
-    marginTop: "4px",
+    flexDirection: "column",
+    gap: "12px",
+  },
+  danger: {
+    background: tokens.colorPaletteRedBackground3,
+    ":hover": { background: tokens.colorPaletteRedForeground1 },
   },
   ipHistoryList: {
     display: "flex",
@@ -180,11 +190,12 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "2px",
     padding: "8px 10px",
-    borderRadius: "6px",
+    borderRadius: tokens.borderRadiusMedium,
     background: tokens.colorNeutralBackground2,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
   },
-  monoText: { fontFamily: "monospace", fontSize: tokens.fontSizeBase200 },
+  muted: { color: tokens.colorNeutralForeground3 },
+  detailTitle: { marginTop: "6px" },
 });
 
 export function Security() {
@@ -232,6 +243,50 @@ export function Security() {
   });
 
   const { message, showMsg } = useToastMessage(6000);
+  const { confirm, confirmDialog } = useConfirm();
+  // Errors from an action inside a dialog show in that dialog. Only one
+  // dialog is open at a time, so one slot serves them all; it is cleared
+  // when a dialog opens and when an action is retried.
+  const [dialogError, setDialogError] = useState<string | null>(null);
+  const openDialog = (open: () => void) => {
+    setDialogError(null);
+    open();
+  };
+  const dialogErrorBar = dialogError && (
+    <MessageBar intent="error">
+      <MessageBarBody>{dialogError}</MessageBarBody>
+    </MessageBar>
+  );
+  const errorText = (err: unknown, fallbackKey: string) =>
+    err instanceof ApiError ? err.message : t(fallbackKey);
+
+  // ─── Password ────────────────────────────────────────────────────────────
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [pwLoading, setPwLoading] = useState(false);
+
+  const closePassword = () => {
+    setPwOpen(false);
+    setPwForm({ current: "", next: "", confirm: "" });
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwForm.next !== pwForm.confirm) {
+      showMsg("error", t("profile.passwordMismatch"));
+      return;
+    }
+    setPwLoading(true);
+    try {
+      await api.changePassword(pwForm.current, pwForm.next);
+      closePassword();
+      showMsg("success", t("profile.passwordChanged"));
+    } catch (err) {
+      showMsg("error", errorText(err, "profile.passwordChangeFailed"));
+    } finally {
+      setPwLoading(false);
+    }
+  };
 
   // ─── OAuth settings (Token TTL prefs & auto authorization notify) ───────
   const [accessTtl, setAccessTtl] = useState<number | null>(null);
@@ -262,6 +317,11 @@ export function Security() {
       n: me.user.notify_on_auto_authorization,
     });
   }
+  const oauthDirty =
+    !!syncedOAuthSettingsSource &&
+    (accessTtl !== syncedOAuthSettingsSource.a ||
+      refreshTtl !== syncedOAuthSettingsSource.r ||
+      notifyOnAutoAuth !== syncedOAuthSettingsSource.n);
 
   const isValidTtl = (v: number | null): boolean =>
     v === null || (Number.isInteger(v) && v >= 1);
@@ -281,18 +341,14 @@ export function Security() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("security.oauthSettingsSaved"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("security.oauthSettingsSaveFailed"),
-      );
+      showMsg("error", errorText(err, "security.oauthSettingsSaveFailed"));
     } finally {
       setSavingOAuthSettings(false);
     }
   };
 
   // ─── TOTP ────────────────────────────────────────────────────────────────
+  const [totpOpen, setTotpOpen] = useState(false);
   const [totpSetup, setTotpSetup] = useState<{
     id: string;
     secret: string;
@@ -323,24 +379,25 @@ export function Security() {
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [removeCode, setRemoveCode] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
   const [resetBkCode, setResetBkCode] = useState("");
-  const [selectedTotp, setSelectedTotp] = useState<{
-    id: string;
-    name: string;
-    created_at: number;
-  } | null>(null);
+
+  const closeTotp = () => {
+    setTotpOpen(false);
+    setTotpSetup(null);
+    setTotpName("");
+    setTotpCode("");
+  };
 
   const handleSetupTotp = async () => {
+    setDialogError(null);
     setTotpLoading(true);
     try {
       const res = await api.totpSetup(totpName.trim() || undefined);
       setTotpSetup(res);
       setTotpCode("");
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("security.failedSetupTotp"),
-      );
+      setDialogError(errorText(err, "security.failedSetupTotp"));
     } finally {
       setTotpLoading(false);
     }
@@ -348,23 +405,19 @@ export function Security() {
 
   const handleVerifyTotp = async () => {
     if (!totpSetup) return;
+    setDialogError(null);
     setTotpLoading(true);
     try {
       const res = await api.totpVerify(totpSetup.id, totpCode);
       if (res.backup_codes) setBackupCodes(res.backup_codes);
-      setTotpSetup(null);
-      setTotpName("");
-      setTotpCode("");
+      closeTotp();
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["me"] }),
         refetchTotp(),
       ]);
       showMsg("success", t("security.authenticatorAdded"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("security.invalidCode"),
-      );
+      setDialogError(errorText(err, "security.invalidCode"));
     } finally {
       setTotpLoading(false);
     }
@@ -372,6 +425,7 @@ export function Security() {
 
   const handleRemoveTotp = async () => {
     if (!removeId) return;
+    setDialogError(null);
     try {
       await api.totpRemove(removeId, removeCode);
       setRemoveId(null);
@@ -382,36 +436,31 @@ export function Security() {
       ]);
       showMsg("success", t("security.authenticatorRemoved"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("security.invalidCode"),
-      );
+      setDialogError(errorText(err, "security.invalidCode"));
     }
   };
 
   const handleResetBackupCodes = async () => {
+    setDialogError(null);
     try {
       const res = await api.totpNewBackupCodes(resetBkCode);
       setBackupCodes(res.backup_codes);
       setResetBkCode("");
+      setResetOpen(false);
       await refetchTotp();
       showMsg("success", t("security.backupCodesRegenerated"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("security.invalidCode"),
-      );
+      setDialogError(errorText(err, "security.invalidCode"));
     }
   };
 
   // ─── Passkeys ────────────────────────────────────────────────────────────
+  const [passkeyOpen, setPasskeyOpen] = useState(false);
   const [passkeyName, setPasskeyName] = useState("");
   const [passkeyLoading, setPasskeyLoading] = useState(false);
-  const [selectedPasskey, setSelectedPasskey] = useState<PasskeyInfo | null>(
-    null,
-  );
 
   const handleAddPasskey = async () => {
+    setDialogError(null);
     setPasskeyLoading(true);
     try {
       const options = await api.passkeyRegBegin();
@@ -422,15 +471,11 @@ export function Security() {
       });
       await api.passkeyRegFinish(response, passkeyName.trim() || undefined);
       setPasskeyName("");
+      setPasskeyOpen(false);
       await refetchPasskeys();
       showMsg("success", t("security.passkeyRegistered"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("security.passkeyRegistrationFailed"),
-      );
+      setDialogError(errorText(err, "security.passkeyRegistrationFailed"));
     } finally {
       setPasskeyLoading(false);
     }
@@ -439,24 +484,18 @@ export function Security() {
   const handleDeletePasskey = async (id: string) => {
     try {
       await api.deletePasskey(id);
-      setSelectedPasskey(null);
       await refetchPasskeys();
       showMsg("success", t("security.passkeyRemoved"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("security.failedRemovePasskey"),
-      );
+      showMsg("error", errorText(err, "security.failedRemovePasskey"));
     }
   };
 
   // ─── GPG keys ────────────────────────────────────────────────────────────
+  const [gpgOpen, setGpgOpen] = useState(false);
   const [gpgKeyText, setGpgKeyText] = useState("");
   const [gpgKeyName, setGpgKeyName] = useState("");
   const [gpgLoading, setGpgLoading] = useState(false);
-  const [selectedGpg, setSelectedGpg] = useState<GpgKeyInfo | null>(null);
   const [gpgRequire2faSaving, setGpgRequire2faSaving] = useState(false);
 
   const handleToggleGpgRequire2fa = async (checked: boolean) => {
@@ -471,18 +510,14 @@ export function Security() {
           : t("security.gpgRequire2faDisabled"),
       );
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("security.gpgRequire2faSaveFailed"),
-      );
+      showMsg("error", errorText(err, "security.gpgRequire2faSaveFailed"));
     } finally {
       setGpgRequire2faSaving(false);
     }
   };
 
   const handleAddGpgKey = async () => {
+    setDialogError(null);
     setGpgLoading(true);
     try {
       const res = await api.addGpgKey(
@@ -491,6 +526,7 @@ export function Security() {
       );
       setGpgKeyText("");
       setGpgKeyName("");
+      setGpgOpen(false);
       await refetchGpg();
       const parts = [
         res.added > 1
@@ -502,10 +538,7 @@ export function Security() {
       }
       showMsg("success", parts.join(" "));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("security.gpgKeyAddFailed"),
-      );
+      setDialogError(errorText(err, "security.gpgKeyAddFailed"));
     } finally {
       setGpgLoading(false);
     }
@@ -514,16 +547,10 @@ export function Security() {
   const handleDeleteGpgKey = async (id: string) => {
     try {
       await api.deleteGpgKey(id);
-      setSelectedGpg(null);
       await refetchGpg();
       showMsg("success", t("security.gpgKeyRemoved"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("security.gpgKeyRemoveFailed"),
-      );
+      showMsg("error", errorText(err, "security.gpgKeyRemoveFailed"));
     }
   };
 
@@ -549,16 +576,12 @@ export function Security() {
       await refetchSessions();
       showMsg("success", t("security.sessionRevoked"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("security.failedRevokeSession"),
-      );
+      showMsg("error", errorText(err, "security.failedRevokeSession"));
     }
   };
 
   const handleRevokeAllSessions = async () => {
+    setDialogError(null);
     setRevokingAll(true);
     try {
       const res = await api.revokeAllOtherSessions();
@@ -570,18 +593,19 @@ export function Security() {
         t("security.sessionsRevokedCount", { n: res.revoked }),
       );
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("security.failedRevokeSession"),
-      );
+      setDialogError(errorText(err, "security.failedRevokeSession"));
     } finally {
       setRevokingAll(false);
     }
   };
 
   const backupCodesRemaining = totpData?.backup_codes_remaining ?? 0;
+  const authenticators = (totpData?.authenticators ?? []).filter(
+    (a) => a.enabled,
+  );
+  const passkeys = passkeysData?.passkeys ?? [];
+  const gpgKeys = gpgData?.keys ?? [];
+  const sessions = sessionsData?.sessions ?? [];
   const isPageLoading =
     meLoading ||
     totpQueryLoading ||
@@ -589,253 +613,580 @@ export function Security() {
     gpgQueryLoading ||
     sessionsLoading;
 
+  const usage = (created: number, lastUsed?: number | null) =>
+    [
+      t("security.addedOn", { date: formatDate(created) }),
+      lastUsed
+        ? t("security.lastUsedOn", { date: formatDate(lastUsed) })
+        : t("security.neverUsed"),
+    ].join(" · ");
+
+  const removeButton = (label: string, onClick: () => void) => (
+    <Tooltip content={label} relationship="label">
+      <Button
+        size="small"
+        appearance="subtle"
+        icon={<DeleteRegular />}
+        onClick={onClick}
+      />
+    </Tooltip>
+  );
+
   return (
-    <div className={styles.page}>
-      <PageHeader title={t("security.title")} style={{ marginBottom: 0 }} />
+    <SettingsPage>
+      <PageHeader
+        title={t("security.title")}
+        subtitle={t("security.subtitle")}
+        style={{ marginBottom: 4 }}
+      />
+      <SettingsToast message={message} />
 
-      {message && (
-        <MessageBar intent={message.type === "success" ? "success" : "error"}>
-          {message.text}
-        </MessageBar>
-      )}
-
-      {isPageLoading && (
+      {isPageLoading ? (
+        <SkeletonSettingsPage cards={[0, 1, 1, 2, 2]} />
+      ) : (
         <>
-          <SkeletonSecurityCard rows={2} />
-          <SkeletonSecurityCard rows={3} />
-          <SkeletonSecurityCard rows={2} />
-          <SkeletonSecurityCard rows={4} />
-        </>
-      )}
-
-      {/* TOTP */}
-      <div
-        className={styles.card}
-        style={isPageLoading ? { display: "none" } : {}}
-      >
-        <div className={styles.cardHeader}>
-          <div>
-            <Text weight="semibold" size={400} block>
-              {t("security.totpTitle")}
-            </Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("security.totpDesc")}
-            </Text>
-          </div>
-          <Badge
-            color={me?.totp_enabled ? "success" : "subtle"}
-            appearance="filled"
+          {/* ── Password ── */}
+          <SettingsCard
+            id="password"
+            title={t("security.passwordTitle")}
+            description={t("security.passwordDesc")}
+            action={
+              !pwOpen && (
+                <Button size="small" onClick={() => setPwOpen(true)}>
+                  {t("profile.changePassword")}
+                </Button>
+              )
+            }
           >
-            {me?.totp_enabled ? t("security.enabled") : t("security.disabled")}
-          </Badge>
-        </div>
-
-        {/* Authenticator list */}
-        <>
-          {(totpData?.authenticators.filter((a) => a.enabled).length ?? 0) >
-            0 && (
-            <div className={styles.tableScroll}>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHeaderCell>
-                      {t("security.nameHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile}>
-                      {t("security.addedHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile} />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {totpData!.authenticators
-                    .filter((a) => a.enabled)
-                    .map((a) => (
-                      <TableRow
-                        key={a.id}
-                        className={styles.row}
-                        onClick={() => setSelectedTotp(a)}
-                      >
-                        <TableCell>{a.name}</TableCell>
-                        <TableCell className={styles.hiddenOnMobile}>
-                          {new Date(a.created_at * 1000).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell className={styles.hiddenOnMobile}>
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              icon={<DeleteRegular />}
-                              appearance="subtle"
-                              onClick={() => {
-                                setRemoveId(a.id);
-                                setRemoveCode("");
-                              }}
-                            />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {/* TOTP detail dialog (mobile) */}
-          <Dialog
-            open={!!selectedTotp}
-            onOpenChange={(_, s) => {
-              if (!s.open) setSelectedTotp(null);
-            }}
-          >
-            <DialogSurface>
-              <DialogBody>
-                <DialogTitle>{selectedTotp?.name}</DialogTitle>
-                <DialogContent>
-                  <LabeledLine label={t("security.added")}>
-                    {selectedTotp
-                      ? new Date(
-                          selectedTotp.created_at * 1000,
-                        ).toLocaleDateString()
-                      : ""}
-                  </LabeledLine>
-                </DialogContent>
-                <DialogActions>
-                  <Button onClick={() => setSelectedTotp(null)}>
-                    {t("common.close")}
+            {pwOpen && (
+              <form onSubmit={handlePasswordChange}>
+                <SettingsBody>
+                  <div className={styles.formNarrow}>
+                    <Field label={t("profile.currentPassword")}>
+                      <PasswordInput
+                        autoFocus
+                        autoComplete="current-password"
+                        value={pwForm.current}
+                        onChange={(e) =>
+                          setPwForm((f) => ({ ...f, current: e.target.value }))
+                        }
+                      />
+                    </Field>
+                    <Field label={t("profile.newPassword")}>
+                      <PasswordInput
+                        autoComplete="new-password"
+                        value={pwForm.next}
+                        onChange={(e) =>
+                          setPwForm((f) => ({ ...f, next: e.target.value }))
+                        }
+                        placeholder={t("profile.newPasswordPlaceholder")}
+                      />
+                    </Field>
+                    <Field label={t("profile.confirmNewPassword")}>
+                      <PasswordInput
+                        autoComplete="new-password"
+                        value={pwForm.confirm}
+                        onChange={(e) =>
+                          setPwForm((f) => ({ ...f, confirm: e.target.value }))
+                        }
+                        placeholder={t("profile.confirmNewPasswordPlaceholder")}
+                      />
+                    </Field>
+                  </div>
+                </SettingsBody>
+                <SettingsFooter>
+                  <Button type="button" onClick={closePassword}>
+                    {t("common.cancel")}
                   </Button>
                   <Button
                     appearance="primary"
-                    style={{ background: tokens.colorPaletteRedBackground3 }}
-                    onClick={() => {
-                      if (!selectedTotp) return;
-                      setRemoveId(selectedTotp.id);
-                      setRemoveCode("");
-                      setSelectedTotp(null);
-                    }}
+                    type="submit"
+                    // No current-password requirement here: accounts created
+                    // through social sign-in have none and set their first
+                    // password with it left blank. The server asks for it
+                    // whenever the account already has a password.
+                    disabled={pwLoading || !pwForm.next || !pwForm.confirm}
                   >
-                    {t("common.remove")}
+                    {pwLoading ? (
+                      <Spinner size="tiny" />
+                    ) : (
+                      t("profile.updatePassword")
+                    )}
                   </Button>
-                </DialogActions>
-              </DialogBody>
-            </DialogSurface>
-          </Dialog>
-        </>
-
-        {/* Add authenticator flow */}
-        {!totpSetup && (
-          <div className={styles.actions}>
-            <Field label={t("security.nameOptional")} style={{ flex: 1 }}>
-              <Input
-                value={totpName}
-                onChange={(e) => setTotpName(e.target.value)}
-                placeholder={t("security.namePlaceholder")}
-              />
-            </Field>
-            <Button
-              appearance="primary"
-              icon={<AddRegular />}
-              onClick={handleSetupTotp}
-              disabled={totpLoading}
-              style={{ alignSelf: "flex-end" }}
-            >
-              {totpLoading ? (
-                <Spinner size="tiny" />
-              ) : (
-                t("security.addAuthenticator")
-              )}
-            </Button>
-          </div>
-        )}
-
-        {totpSetup && (
-          <div className={styles.qrSection}>
-            <Text>{t("security.scanQrCode")}</Text>
-            {totpQrSvg && (
-              <div
-                role="img"
-                aria-label="TOTP QR Code"
-                style={{
-                  width: 200,
-                  height: 200,
-                  borderRadius: 8,
-                  background: "white",
-                  padding: 8,
-                  boxSizing: "border-box",
-                }}
-                // Generated locally by the qrcode library — no untrusted
-                // markup, so safe to drop straight into the DOM.
-                dangerouslySetInnerHTML={{ __html: totpQrSvg }}
-              />
+                </SettingsFooter>
+              </form>
             )}
-            <Text
-              size={200}
-              style={{
-                fontFamily: "monospace",
-                background: tokens.colorNeutralBackground3,
-                padding: "4px 8px",
-                borderRadius: 4,
-              }}
-            >
-              {totpSetup.secret}
-            </Text>
-            <Field
-              label={t("security.enterCode")}
-              style={{ width: "100%", maxWidth: 260 }}
-            >
-              <Input
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value)}
-                placeholder={t("security.codePlaceholder")}
-                maxLength={6}
-                autoComplete="one-time-code"
-              />
-            </Field>
-            <div className={styles.actions}>
-              <Button
-                appearance="primary"
-                onClick={handleVerifyTotp}
-                disabled={totpLoading || totpCode.length < 6}
-              >
-                {totpLoading ? (
-                  <Spinner size="tiny" />
-                ) : (
-                  t("security.verifyEnable")
-                )}
-              </Button>
-              <Button onClick={() => setTotpSetup(null)}>
-                {t("common.cancel")}
-              </Button>
-            </div>
-          </div>
-        )}
+          </SettingsCard>
 
-        {/* Backup codes display after enabling or reset */}
-        {backupCodes && (
-          <div>
-            <Text weight="semibold" block>
-              {t("security.saveBackupCodes")}
-            </Text>
-            <div className={styles.backupCodes}>
-              {backupCodes.map((c) => (
-                <Text key={c} style={{ fontFamily: "monospace" }}>
-                  {c}
-                </Text>
-              ))}
-            </div>
-            <div className={styles.actions} style={{ marginTop: 8 }}>
+          {/* ── Authenticator apps ── */}
+          <SettingsCard
+            id="authenticators"
+            title={t("security.totpTitle")}
+            description={t("security.totpDesc")}
+            badge={
+              <Badge
+                color={me?.totp_enabled ? "success" : "subtle"}
+                appearance="tint"
+                size="small"
+              >
+                {me?.totp_enabled
+                  ? t("security.enabled")
+                  : t("security.disabled")}
+              </Badge>
+            }
+            action={
               <Button
                 size="small"
+                icon={<AddRegular />}
+                onClick={() => openDialog(() => setTotpOpen(true))}
+              >
+                {t("security.addAuthenticator")}
+              </Button>
+            }
+          >
+            {authenticators.length === 0 ? (
+              <SettingsEmpty>{t("security.noAuthenticators")}</SettingsEmpty>
+            ) : (
+              authenticators.map((a) => (
+                <SettingsRow
+                  key={a.id}
+                  icon={<PhoneRegular />}
+                  label={a.name}
+                  description={t("security.addedOn", {
+                    date: formatDate(a.created_at),
+                  })}
+                >
+                  {removeButton(t("security.removeAuthenticator"), () => {
+                    setDialogError(null);
+                    setRemoveId(a.id);
+                    setRemoveCode("");
+                  })}
+                </SettingsRow>
+              ))
+            )}
+            {me?.totp_enabled && (
+              <SettingsRow
+                icon={<KeyMultipleRegular />}
+                label={t("security.backupCodesTitle")}
+                description={
+                  backupCodesRemaining === 1
+                    ? t("security.backupCodesRemaining", {
+                        count: backupCodesRemaining,
+                      })
+                    : t("security.backupCodesRemainingPlural", {
+                        count: backupCodesRemaining,
+                      })
+                }
+              >
+                <Button
+                  size="small"
+                  onClick={() => openDialog(() => setResetOpen(true))}
+                >
+                  {t("security.resetBackupCodes")}
+                </Button>
+              </SettingsRow>
+            )}
+          </SettingsCard>
+
+          {/* ── Passkeys ── */}
+          <SettingsCard
+            id="passkeys"
+            title={t("security.passkeysTitle")}
+            description={t("security.passkeysDesc")}
+            action={
+              <Button
+                size="small"
+                icon={<AddRegular />}
+                onClick={() => openDialog(() => setPasskeyOpen(true))}
+              >
+                {t("security.addPasskey")}
+              </Button>
+            }
+          >
+            {passkeys.length === 0 ? (
+              <SettingsEmpty>{t("security.noPasskeys")}</SettingsEmpty>
+            ) : (
+              passkeys.map((p) => (
+                <SettingsRow
+                  key={p.id}
+                  icon={<KeyRegular />}
+                  label={p.name ?? t("security.passkeysTitle")}
+                  description={usage(p.created_at, p.last_used_at)}
+                >
+                  {removeButton(t("security.deletePasskey"), async () => {
+                    const ok = await confirm({
+                      title: t("security.removePasskeyTitle"),
+                      body: t("security.removePasskeyBody", {
+                        name: p.name ?? t("security.passkeysTitle"),
+                      }),
+                      confirmLabel: t("common.remove"),
+                    });
+                    if (ok) void handleDeletePasskey(p.id);
+                  })}
+                </SettingsRow>
+              ))
+            )}
+          </SettingsCard>
+
+          {/* ── GPG keys ── */}
+          <SettingsCard
+            id="gpg-keys"
+            title={t("security.gpgKeysTitle")}
+            description={
+              <>
+                {t("security.gpgKeysDesc")}
+                {gpgKeys.length > 0 && user?.username && (
+                  <>
+                    {" "}
+                    <FluentLink
+                      href={`/users/${encodeURIComponent(user.username)}.gpg`}
+                      target="_blank"
+                      rel="noopener"
+                    >
+                      {t("publicProfile.gpgKeysDownload")}
+                    </FluentLink>
+                  </>
+                )}
+              </>
+            }
+            action={
+              <Button
+                size="small"
+                icon={<AddRegular />}
+                onClick={() => openDialog(() => setGpgOpen(true))}
+              >
+                {t("security.addGpgKey")}
+              </Button>
+            }
+          >
+            {gpgKeys.length === 0 ? (
+              <SettingsEmpty>{t("security.noGpgKeys")}</SettingsEmpty>
+            ) : (
+              gpgKeys.map((k) => (
+                <SettingsRow
+                  key={k.id}
+                  icon={<KeyRegular />}
+                  label={k.name}
+                  description={
+                    <>
+                      <span
+                        className={styles.mono}
+                        title={k.fingerprint.toUpperCase()}
+                      >
+                        {k.fingerprint.slice(-16).toUpperCase()}
+                      </span>
+                      {" · "}
+                      {usage(k.created_at, k.last_used_at)}
+                    </>
+                  }
+                >
+                  {removeButton(t("security.deleteGpgKey"), async () => {
+                    const ok = await confirm({
+                      title: t("security.removeGpgKeyTitle"),
+                      body: t("security.removeGpgKeyBody", { name: k.name }),
+                      confirmLabel: t("common.remove"),
+                    });
+                    if (ok) void handleDeleteGpgKey(k.id);
+                  })}
+                </SettingsRow>
+              ))
+            )}
+            {/* Whether GPG sign-in still walks the TOTP gate. Always shown so
+                it can be set before an authenticator is enrolled. */}
+            <SettingsRow
+              label={t("security.gpgRequire2faLabel")}
+              description={t("security.gpgRequire2faHint")}
+            >
+              <Switch
+                aria-label={t("security.gpgRequire2faLabel")}
+                checked={me?.user.gpg_require_2fa ?? true}
+                disabled={gpgRequire2faSaving || !me?.user}
+                onChange={(_, d) => handleToggleGpgRequire2fa(d.checked)}
+              />
+            </SettingsRow>
+          </SettingsCard>
+
+          {/* ── Sessions ── */}
+          <SettingsCard
+            id="sessions"
+            title={t("security.sessionsTitle")}
+            description={t("security.sessionsDesc")}
+            action={
+              sessions.length > 1 && (
+                <Button
+                  size="small"
+                  onClick={() => openDialog(() => setRevokeAllOpen(true))}
+                >
+                  {t("security.revokeAllSessions")}
+                </Button>
+              )
+            }
+          >
+            {sessions.length === 0 ? (
+              <SettingsEmpty>{t("security.noActiveSessions")}</SettingsEmpty>
+            ) : (
+              sessions.map((s) => {
+                const device =
+                  describeDevice(s.user_agent) ?? t("security.unknown");
+                const location = formatIpGeo(s.ip_geo);
+                return (
+                  <SettingsRow
+                    key={s.id}
+                    icon={
+                      isMobileUa(s.user_agent) ? (
+                        <PhoneRegular />
+                      ) : (
+                        <DesktopRegular />
+                      )
+                    }
+                    label={
+                      <>
+                        {/* Hover reveals the full User-Agent — the label alone
+                            can't tell two of your own devices apart (issue #2).
+                            A plain title, not a Tooltip: a description
+                            Tooltip portals its content and breaks hydration. */}
+                        <span title={s.user_agent ?? undefined}>{device}</span>
+                        {s.is_current && (
+                          <Badge color="brand" appearance="tint" size="small">
+                            {t("security.currentSession")}
+                          </Badge>
+                        )}
+                      </>
+                    }
+                    description={
+                      <>
+                        {s.ip_address && (
+                          <>
+                            <span className={styles.ip} title={s.ip_address}>
+                              {s.ip_address}
+                            </span>
+                            {" · "}
+                          </>
+                        )}
+                        {location && `${location} · `}
+                        {t("security.signedInOn", {
+                          date: formatDateTime(s.created_at),
+                        })}
+                      </>
+                    }
+                  >
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      onClick={() => setSelectedSession(s)}
+                    >
+                      {t("security.details")}
+                    </Button>
+                    {!s.is_current &&
+                      removeButton(t("security.revokeSession"), () =>
+                        handleRevokeSession(s.id),
+                      )}
+                  </SettingsRow>
+                );
+              })
+            )}
+          </SettingsCard>
+
+          {/* ── OAuth settings ── */}
+          <SettingsCard
+            id="oauth"
+            title={t("security.oauthSettingsTitle")}
+            description={t("security.oauthSettingsDesc")}
+          >
+            <SettingsRow
+              label={t("security.accessTokenTtlLabel")}
+              description={t("security.accessTokenTtlHint", {
+                siteDefault: me?.site_access_token_ttl_minutes ?? 60,
+              })}
+            >
+              <div className={styles.duration}>
+                <DurationInput
+                  value={accessTtl}
+                  unit="minutes"
+                  onChange={setAccessTtl}
+                  placeholder={t("security.tokenTtlPlaceholder", {
+                    value: `${me?.site_access_token_ttl_minutes ?? 60} min`,
+                  })}
+                />
+              </div>
+            </SettingsRow>
+            <SettingsRow
+              label={t("security.refreshTokenTtlLabel")}
+              description={t("security.refreshTokenTtlHint", {
+                siteDefault: me?.site_refresh_token_ttl_days ?? 30,
+              })}
+            >
+              <div className={styles.duration}>
+                <DurationInput
+                  value={refreshTtl}
+                  unit="days"
+                  onChange={setRefreshTtl}
+                  placeholder={t("security.tokenTtlPlaceholder", {
+                    value: `${me?.site_refresh_token_ttl_days ?? 30} days`,
+                  })}
+                />
+              </div>
+            </SettingsRow>
+            <SettingsRow
+              label={t("security.notifyOnAutoAuthLabel")}
+              description={t("security.notifyOnAutoAuthDesc")}
+            >
+              <Switch
+                aria-label={t("security.notifyOnAutoAuthLabel")}
+                checked={notifyOnAutoAuth}
+                onChange={(_, d) => setNotifyOnAutoAuth(d.checked)}
+              />
+            </SettingsRow>
+            <SettingsFooter>
+              <Button
+                appearance="subtle"
+                disabled={
+                  savingOAuthSettings ||
+                  (accessTtl === null && refreshTtl === null)
+                }
+                onClick={() => {
+                  setAccessTtl(null);
+                  setRefreshTtl(null);
+                }}
+              >
+                {t("security.tokenTtlUseSiteDefault")}
+              </Button>
+              <Button
+                appearance="primary"
+                disabled={savingOAuthSettings || !oauthDirty}
+                onClick={handleSaveOAuthSettings}
+              >
+                {savingOAuthSettings ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("common.saveChanges")
+                )}
+              </Button>
+            </SettingsFooter>
+          </SettingsCard>
+        </>
+      )}
+
+      {/* Renders nothing for ordinary accounts. */}
+      <AccountRestrictionPanel />
+
+      {/* ── Dialogs ── */}
+
+      {/* Add authenticator: name, then scan and confirm a code. */}
+      <Dialog
+        open={totpOpen}
+        onOpenChange={(_, d) => {
+          if (!d.open) closeTotp();
+        }}
+      >
+        <DialogSurface>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (totpSetup) void handleVerifyTotp();
+              else void handleSetupTotp();
+            }}
+          >
+            <DialogBody>
+              <DialogTitle>{t("security.addAuthenticator")}</DialogTitle>
+              <DialogContent>
+                {dialogErrorBar}
+                {!totpSetup ? (
+                  <div className={styles.dialogStack}>
+                    <Text className={styles.muted}>
+                      {t("security.addAuthenticatorDesc")}
+                    </Text>
+                    <Field label={t("security.nameOptional")}>
+                      <Input
+                        autoFocus
+                        value={totpName}
+                        onChange={(e) => setTotpName(e.target.value)}
+                        placeholder={t("security.namePlaceholder")}
+                      />
+                    </Field>
+                  </div>
+                ) : (
+                  <div className={styles.qrSection}>
+                    <Text>{t("security.scanQrCode")}</Text>
+                    {totpQrSvg && (
+                      <div
+                        role="img"
+                        aria-label={t("security.totpQrLabel")}
+                        className={styles.qr}
+                        // Generated locally by the qrcode library — no
+                        // untrusted markup, so safe to drop into the DOM.
+                        dangerouslySetInnerHTML={{ __html: totpQrSvg }}
+                      />
+                    )}
+                    <span className={styles.secret}>{totpSetup.secret}</span>
+                    <Field
+                      label={t("security.enterCode")}
+                      className={styles.codeField}
+                    >
+                      <Input
+                        autoFocus
+                        value={totpCode}
+                        onChange={(e) => setTotpCode(e.target.value)}
+                        placeholder={t("security.codePlaceholder")}
+                        maxLength={6}
+                        autoComplete="one-time-code"
+                        inputMode="numeric"
+                      />
+                    </Field>
+                  </div>
+                )}
+              </DialogContent>
+              <DialogActions>
+                <Button type="button" onClick={closeTotp}>
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={totpLoading || (!!totpSetup && totpCode.length < 6)}
+                >
+                  {totpLoading ? (
+                    <Spinner size="tiny" />
+                  ) : totpSetup ? (
+                    t("security.verifyEnable")
+                  ) : (
+                    t("common.next")
+                  )}
+                </Button>
+              </DialogActions>
+            </DialogBody>
+          </form>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Backup codes, shown once after enabling or resetting. */}
+      <Dialog open={!!backupCodes} modalType="alert">
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("security.backupCodesTitle")}</DialogTitle>
+            <DialogContent>
+              <div className={styles.dialogStack}>
+                <Text>{t("security.saveBackupCodes")}</Text>
+                <div className={styles.backupCodes}>
+                  {backupCodes?.map((c) => (
+                    <span key={c}>{c}</span>
+                  ))}
+                </div>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button
                 icon={<CopyRegular />}
                 onClick={() =>
-                  navigator.clipboard.writeText(backupCodes.join("\n"))
+                  navigator.clipboard.writeText((backupCodes ?? []).join("\n"))
                 }
               >
                 {t("common.copy")}
               </Button>
               <Button
-                size="small"
                 icon={<ArrowDownloadRegular />}
                 onClick={() => {
-                  const blob = new Blob([backupCodes.join("\n")], {
+                  const blob = new Blob([(backupCodes ?? []).join("\n")], {
                     type: "text/plain",
                   });
                   const url = URL.createObjectURL(blob);
@@ -848,857 +1199,380 @@ export function Security() {
               >
                 {t("common.download")}
               </Button>
-              <Button size="small" onClick={() => setBackupCodes(null)}>
+              <Button appearance="primary" onClick={() => setBackupCodes(null)}>
                 {t("common.done")}
               </Button>
-            </div>
-          </div>
-        )}
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
-        {/* Backup codes status + reset */}
-        {me?.totp_enabled && !backupCodes && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {backupCodesRemaining === 1
-                ? t("security.backupCodesRemaining", {
-                    count: backupCodesRemaining,
-                  })
-                : t("security.backupCodesRemainingPlural", {
-                    count: backupCodesRemaining,
-                  })}
-            </Text>
-            <Dialog>
+      {/* Reset backup codes */}
+      <Dialog
+        open={resetOpen}
+        onOpenChange={(_, d) => {
+          if (!d.open) {
+            setResetOpen(false);
+            setResetBkCode("");
+          }
+        }}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("security.resetBackupCodesTitle")}</DialogTitle>
+            <DialogContent>
+              {dialogErrorBar}
+              <Field label={t("security.enterTotpToConfirm")}>
+                <Input
+                  autoFocus
+                  value={resetBkCode}
+                  onChange={(e) => setResetBkCode(e.target.value)}
+                  placeholder={t("security.codePlaceholder")}
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                />
+              </Field>
+            </DialogContent>
+            <DialogActions>
               <DialogTrigger disableButtonEnhancement>
-                <Button size="small" icon={<ArrowSyncRegular />}>
-                  {t("security.resetBackupCodes")}
-                </Button>
+                <Button>{t("common.cancel")}</Button>
               </DialogTrigger>
-              <DialogSurface>
-                <DialogBody>
-                  <DialogTitle>
-                    {t("security.resetBackupCodesTitle")}
-                  </DialogTitle>
-                  <DialogContent>
-                    <Field label={t("security.enterTotpToConfirm")}>
-                      <Input
-                        value={resetBkCode}
-                        onChange={(e) => setResetBkCode(e.target.value)}
-                        placeholder={t("security.codePlaceholder")}
-                        maxLength={6}
-                        autoComplete="one-time-code"
-                      />
-                    </Field>
-                  </DialogContent>
-                  <DialogActions>
-                    <DialogTrigger>
-                      <Button appearance="secondary">
-                        {t("common.cancel")}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogTrigger disableButtonEnhancement>
-                      <Button
-                        appearance="primary"
-                        disabled={resetBkCode.length < 6}
-                        onClick={handleResetBackupCodes}
-                      >
-                        {t("security.resetBackupCodes")}
-                      </Button>
-                    </DialogTrigger>
-                  </DialogActions>
-                </DialogBody>
-              </DialogSurface>
-            </Dialog>
-          </div>
-        )}
+              <Button
+                appearance="primary"
+                disabled={resetBkCode.length < 6}
+                onClick={handleResetBackupCodes}
+              >
+                {t("security.resetBackupCodes")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
-        {/* Remove authenticator dialog */}
-        <Dialog
-          open={!!removeId}
-          onOpenChange={(_, s) => {
-            if (!s.open) setRemoveId(null);
-          }}
-        >
-          <DialogSurface>
+      {/* Remove authenticator */}
+      <Dialog
+        open={!!removeId}
+        onOpenChange={(_, s) => {
+          if (!s.open) setRemoveId(null);
+        }}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("security.removeAuthenticator")}</DialogTitle>
+            <DialogContent>
+              {dialogErrorBar}
+              <Field label={t("security.enterTotpToConfirm")}>
+                <Input
+                  autoFocus
+                  value={removeCode}
+                  onChange={(e) => setRemoveCode(e.target.value)}
+                  placeholder={t("security.codePlaceholder")}
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
+                />
+              </Field>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setRemoveId(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                className={styles.danger}
+                disabled={removeCode.length < 6}
+                onClick={handleRemoveTotp}
+              >
+                {t("common.remove")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Add passkey: optional name, then the browser's own prompt. */}
+      <Dialog
+        open={passkeyOpen}
+        onOpenChange={(_, d) => {
+          if (!d.open && !passkeyLoading) setPasskeyOpen(false);
+        }}
+      >
+        <DialogSurface>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleAddPasskey();
+            }}
+          >
             <DialogBody>
-              <DialogTitle>{t("security.removeAuthenticator")}</DialogTitle>
+              <DialogTitle>{t("security.addPasskey")}</DialogTitle>
               <DialogContent>
-                <Field label={t("security.enterTotpToConfirm")}>
-                  <Input
-                    value={removeCode}
-                    onChange={(e) => setRemoveCode(e.target.value)}
-                    placeholder={t("security.codePlaceholder")}
-                    maxLength={6}
-                    autoComplete="one-time-code"
-                  />
-                </Field>
+                {dialogErrorBar}
+                <div className={styles.dialogStack}>
+                  <Text className={styles.muted}>
+                    {t("security.addPasskeyDesc")}
+                  </Text>
+                  <Field label={t("security.passkeyNameOptional")}>
+                    <Input
+                      autoFocus
+                      value={passkeyName}
+                      onChange={(e) => setPasskeyName(e.target.value)}
+                      placeholder={t("security.passkeyNamePlaceholder")}
+                    />
+                  </Field>
+                </div>
               </DialogContent>
               <DialogActions>
                 <Button
-                  appearance="secondary"
-                  onClick={() => setRemoveId(null)}
+                  type="button"
+                  disabled={passkeyLoading}
+                  onClick={() => setPasskeyOpen(false)}
                 >
                   {t("common.cancel")}
                 </Button>
                 <Button
+                  type="submit"
                   appearance="primary"
-                  style={{ background: tokens.colorPaletteRedBackground3 }}
-                  disabled={removeCode.length < 6}
-                  onClick={handleRemoveTotp}
+                  disabled={passkeyLoading}
                 >
-                  {t("common.remove")}
+                  {passkeyLoading ? (
+                    <Spinner size="tiny" />
+                  ) : (
+                    t("security.addPasskey")
+                  )}
                 </Button>
               </DialogActions>
             </DialogBody>
-          </DialogSurface>
-        </Dialog>
-      </div>
+          </form>
+        </DialogSurface>
+      </Dialog>
 
-      {/* Passkeys */}
-      <div
-        className={styles.card}
-        style={isPageLoading ? { display: "none" } : {}}
+      {/* Add GPG key(s) */}
+      <Dialog
+        open={gpgOpen}
+        onOpenChange={(_, d) => {
+          if (!d.open && !gpgLoading) setGpgOpen(false);
+        }}
       >
-        <div className={styles.cardHeader}>
-          <div>
-            <Text weight="semibold" size={400} block>
-              {t("security.passkeysTitle")}
-            </Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("security.passkeysDesc")}
-            </Text>
-          </div>
-        </div>
-
-        <>
-          {(passkeysData?.passkeys.length ?? 0) > 0 && (
-            <div className={styles.tableScroll}>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHeaderCell>
-                      {t("security.nameHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile}>
-                      {t("security.typeHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile}>
-                      {t("security.addedHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile}>
-                      {t("security.lastUsedHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile} />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {passkeysData!.passkeys.map((p) => (
-                    <TableRow
-                      key={p.id}
-                      className={styles.row}
-                      onClick={() => setSelectedPasskey(p)}
-                    >
-                      <TableCell>{p.name ?? "Passkey"}</TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        {p.device_type}
-                      </TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        {new Date(p.created_at * 1000).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        {p.last_used_at
-                          ? new Date(p.last_used_at * 1000).toLocaleDateString()
-                          : "—"}
-                      </TableCell>
-                      <TableCell className={styles.hiddenOnMobile}>
-                        <div onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            icon={<DeleteRegular />}
-                            appearance="subtle"
-                            onClick={() => handleDeletePasskey(p.id)}
-                          />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {/* Passkey detail dialog (mobile) */}
-          <Dialog
-            open={!!selectedPasskey}
-            onOpenChange={(_, s) => {
-              if (!s.open) setSelectedPasskey(null);
-            }}
-          >
-            <DialogSurface>
-              <DialogBody>
-                <DialogTitle>{selectedPasskey?.name ?? "Passkey"}</DialogTitle>
-                <DialogContent>
-                  <div
-                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                  >
-                    <LabeledLine label={t("security.typeHeader")}>
-                      {selectedPasskey?.device_type}
-                    </LabeledLine>
-                    <LabeledLine label={t("security.added")}>
-                      {selectedPasskey
-                        ? new Date(
-                            selectedPasskey.created_at * 1000,
-                          ).toLocaleDateString()
-                        : ""}
-                    </LabeledLine>
-                    <LabeledLine label={t("security.lastUsedHeader")}>
-                      {selectedPasskey?.last_used_at
-                        ? new Date(
-                            selectedPasskey.last_used_at * 1000,
-                          ).toLocaleDateString()
-                        : "—"}
-                    </LabeledLine>
-                  </div>
-                </DialogContent>
-                <DialogActions>
-                  <Button onClick={() => setSelectedPasskey(null)}>
-                    {t("common.close")}
-                  </Button>
-                  <Button
-                    appearance="primary"
-                    style={{ background: tokens.colorPaletteRedBackground3 }}
-                    onClick={() => {
-                      if (!selectedPasskey) return;
-                      handleDeletePasskey(selectedPasskey.id);
-                    }}
-                  >
-                    {t("security.deletePasskey")}
-                  </Button>
-                </DialogActions>
-              </DialogBody>
-            </DialogSurface>
-          </Dialog>
-        </>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          <Field label={t("security.passkeyNameOptional")} style={{ flex: 1 }}>
-            <Input
-              value={passkeyName}
-              onChange={(e) => setPasskeyName(e.target.value)}
-              placeholder={t("security.passkeyNamePlaceholder")}
-            />
-          </Field>
-          <Button
-            appearance="primary"
-            icon={<KeyRegular />}
-            onClick={handleAddPasskey}
-            disabled={passkeyLoading}
-          >
-            {passkeyLoading ? (
-              <Spinner size="tiny" />
-            ) : (
-              t("security.addPasskey")
-            )}
-          </Button>
-        </div>
-      </div>
-
-      {/* GPG Keys */}
-      <div
-        className={styles.card}
-        style={isPageLoading ? { display: "none" } : {}}
-      >
-        <div className={styles.cardHeader}>
-          <div>
-            <Text weight="semibold" size={400} block>
-              {t("security.gpgKeysTitle")}
-            </Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("security.gpgKeysDesc")}
-            </Text>
-            {(gpgData?.keys.length ?? 0) > 0 && user?.username && (
-              <Text
-                size={200}
-                block
-                style={{ color: tokens.colorNeutralForeground3 }}
-              >
-                <FluentLink
-                  href={`/users/${encodeURIComponent(user.username)}.gpg`}
-                  target="_blank"
-                  rel="noopener"
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("security.addGpgKey")}</DialogTitle>
+            <DialogContent>
+              {dialogErrorBar}
+              <div className={styles.dialogStack}>
+                <Field label={t("security.gpgKeyName")}>
+                  <Input
+                    autoFocus
+                    value={gpgKeyName}
+                    onChange={(e) => setGpgKeyName(e.target.value)}
+                    placeholder={t("security.gpgKeyNamePlaceholder")}
+                  />
+                </Field>
+                <Field
+                  label={t("security.gpgPublicKey")}
+                  hint={t("security.gpgMultiKeyHint")}
+                  required
                 >
-                  {t("publicProfile.gpgKeysDownload")}
-                </FluentLink>
-                {" · "}
-                <span style={{ fontFamily: "monospace" }}>
-                  /users/{user.username}.gpg
-                </span>
-              </Text>
-            )}
-          </div>
-        </div>
-
-        {(gpgData?.keys.length ?? 0) > 0 && (
-          <div className={styles.tableScroll}>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHeaderCell>{t("security.nameHeader")}</TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.gpgFingerprintHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.addedHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile}>
-                    {t("security.lastUsedHeader")}
-                  </TableHeaderCell>
-                  <TableHeaderCell className={styles.hiddenOnMobile} />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {gpgData!.keys.map((k) => (
-                  <TableRow
-                    key={k.id}
-                    className={styles.row}
-                    onClick={() => setSelectedGpg(k)}
-                  >
-                    <TableCell>{k.name}</TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      <Text font="monospace" size={200}>
-                        {k.fingerprint.slice(-16).toUpperCase()}
-                      </Text>
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      {new Date(k.created_at * 1000).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      {k.last_used_at
-                        ? new Date(k.last_used_at * 1000).toLocaleDateString()
-                        : "—"}
-                    </TableCell>
-                    <TableCell className={styles.hiddenOnMobile}>
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          icon={<DeleteRegular />}
-                          appearance="subtle"
-                          onClick={() => handleDeleteGpgKey(k.id)}
-                        />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-
-        {/* GPG key detail dialog (mobile) */}
-        <Dialog
-          open={!!selectedGpg}
-          onOpenChange={(_, s) => {
-            if (!s.open) setSelectedGpg(null);
-          }}
-        >
-          <DialogSurface>
-            <DialogBody>
-              <DialogTitle>{selectedGpg?.name}</DialogTitle>
-              <DialogContent>
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                >
-                  <LabeledLine label={t("security.gpgFingerprintHeader")} mono>
-                    {selectedGpg?.fingerprint.toUpperCase()}
-                  </LabeledLine>
-                  <LabeledLine label={t("security.added")}>
-                    {selectedGpg
-                      ? new Date(
-                          selectedGpg.created_at * 1000,
-                        ).toLocaleDateString()
-                      : ""}
-                  </LabeledLine>
-                  <LabeledLine label={t("security.lastUsedHeader")}>
-                    {selectedGpg?.last_used_at
-                      ? new Date(
-                          selectedGpg.last_used_at * 1000,
-                        ).toLocaleDateString()
-                      : "—"}
-                  </LabeledLine>
-                </div>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={() => setSelectedGpg(null)}>
-                  {t("common.close")}
-                </Button>
-                <Button
-                  appearance="primary"
-                  style={{ background: tokens.colorPaletteRedBackground3 }}
-                  onClick={() => {
-                    if (selectedGpg) handleDeleteGpgKey(selectedGpg.id);
-                  }}
-                >
-                  {t("security.deleteGpgKey")}
-                </Button>
-              </DialogActions>
-            </DialogBody>
-          </DialogSurface>
-        </Dialog>
-
-        {/* Per-account: whether gpg-login should still walk the TOTP gate.
-            Only meaningful when the account has an enrolled authenticator,
-            but the switch is always visible so users can pre-configure it
-            before enabling TOTP. */}
-        <Field
-          label={t("security.gpgRequire2faLabel")}
-          hint={t("security.gpgRequire2faHint")}
-        >
-          <Switch
-            checked={me?.user.gpg_require_2fa ?? true}
-            disabled={gpgRequire2faSaving || !me?.user}
-            onChange={(_, d) => handleToggleGpgRequire2fa(d.checked)}
-            label={
-              (me?.user.gpg_require_2fa ?? true)
-                ? t("security.gpgRequire2faOn")
-                : t("security.gpgRequire2faOff")
-            }
-          />
-        </Field>
-
-        {/* Add new GPG key */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <Field label={t("security.gpgKeyName")}>
-            <Input
-              value={gpgKeyName}
-              onChange={(e) => setGpgKeyName(e.target.value)}
-              placeholder={t("security.gpgKeyNamePlaceholder")}
-            />
-          </Field>
-          <Field
-            label={t("security.gpgPublicKey")}
-            hint={t("security.gpgMultiKeyHint")}
-          >
-            <Textarea
-              value={gpgKeyText}
-              onChange={(e) => setGpgKeyText(e.target.value)}
-              placeholder={t("security.gpgPublicKeyPlaceholder")}
-              rows={6}
-              style={{ fontFamily: "monospace", fontSize: 12 }}
-            />
-          </Field>
-          <Button
-            appearance="primary"
-            icon={gpgLoading ? <Spinner size="tiny" /> : <KeyRegular />}
-            disabled={gpgLoading || !gpgKeyText.trim()}
-            onClick={handleAddGpgKey}
-          >
-            {t("security.addGpgKey")}
-          </Button>
-        </div>
-      </div>
-
-      {/* Sessions */}
-      <div
-        className={styles.card}
-        style={isPageLoading ? { display: "none" } : {}}
-      >
-        <Text weight="semibold" size={400} block>
-          {t("security.sessionsTitle")}
-        </Text>
-        <>
-          {(sessionsData?.sessions.length ?? 0) === 0 ? (
-            <EmptyState
-              icon={<DesktopRegular />}
-              title={t("security.noActiveSessions")}
-            />
-          ) : (
-            <div className={styles.tableScroll}>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHeaderCell>
-                      {t("security.deviceHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile}>
-                      {t("security.ipHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile}>
-                      {t("security.locationHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile}>
-                      {t("security.createdHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile}>
-                      {t("security.expiresHeader")}
-                    </TableHeaderCell>
-                    <TableHeaderCell className={styles.hiddenOnMobile} />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sessionsData!.sessions.map((s) => {
-                    const device =
-                      describeDevice(s.user_agent) ?? t("security.unknown");
-                    const location = formatIpGeo(s.ip_geo);
-                    return (
-                      <TableRow
-                        key={s.id}
-                        className={styles.row}
-                        onClick={() => setSelectedSession(s)}
-                      >
-                        <TableCell
-                          style={{
-                            maxWidth: 200,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                            }}
-                          >
-                            {/* Hover reveals the full User-Agent — the
-                                "Firefox on Linux" label alone is too vague to
-                                tell two of your own devices apart (issue #2). */}
-                            <Tooltip
-                              content={s.user_agent ?? t("security.unknown")}
-                              relationship="label"
-                            >
-                              <span>{device}</span>
-                            </Tooltip>
-                            {s.is_current && (
-                              <Badge
-                                color="informative"
-                                appearance="filled"
-                                size="small"
-                              >
-                                {t("security.currentSession")}
-                              </Badge>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className={styles.hiddenOnMobile}>
-                          {s.ip_address ? (
-                            <Tooltip
-                              content={s.ip_address}
-                              relationship="label"
-                            >
-                              <span className={styles.ipCell}>
-                                {s.ip_address}
-                              </span>
-                            </Tooltip>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
-                        <TableCell className={styles.hiddenOnMobile}>
-                          {location || "—"}
-                        </TableCell>
-                        <TableCell className={styles.hiddenOnMobile}>
-                          {formatDateTime(s.created_at)}
-                        </TableCell>
-                        <TableCell className={styles.hiddenOnMobile}>
-                          {formatDateTime(s.expires_at)}
-                        </TableCell>
-                        <TableCell className={styles.hiddenOnMobile}>
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              icon={<DeleteRegular />}
-                              appearance="subtle"
-                              onClick={() => handleRevokeSession(s.id)}
-                            />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {/* Revoke-all: the panic button for "sign me out everywhere else".
-              Kept out of the empty state (nothing to revoke) and disabled while
-              only the current session exists. */}
-          {(sessionsData?.sessions.length ?? 0) > 1 && (
-            <div className={styles.sessionsFooter}>
+                  <Textarea
+                    value={gpgKeyText}
+                    onChange={(e) => setGpgKeyText(e.target.value)}
+                    placeholder={t("security.gpgPublicKeyPlaceholder")}
+                    rows={8}
+                    textarea={{ className: styles.mono }}
+                  />
+                </Field>
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button disabled={gpgLoading} onClick={() => setGpgOpen(false)}>
+                {t("common.cancel")}
+              </Button>
               <Button
                 appearance="primary"
-                icon={<SignOutRegular />}
-                style={{ background: tokens.colorPaletteRedBackground3 }}
-                onClick={() => setRevokeAllOpen(true)}
+                disabled={gpgLoading || !gpgKeyText.trim()}
+                onClick={handleAddGpgKey}
               >
-                {t("security.revokeAllSessions")}
+                {gpgLoading ? <Spinner size="tiny" /> : t("security.addGpgKey")}
               </Button>
-            </div>
-          )}
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
-          {/* Session detail dialog (mobile) */}
-          <Dialog
-            open={!!selectedSession}
-            onOpenChange={(_, s) => {
-              if (!s.open) setSelectedSession(null);
-            }}
-          >
-            <DialogSurface>
-              <DialogBody>
-                <DialogTitle>{t("security.sessionTitle")}</DialogTitle>
-                <DialogContent>
-                  <div
-                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                  >
-                    <LabeledLine label={t("security.deviceLabel")}>
-                      {describeDevice(selectedSession?.user_agent ?? null) ??
-                        t("security.unknown")}
-                    </LabeledLine>
-                    {/* Full User-Agent, so an unfamiliar session can be
-                        identified precisely (issue #2). */}
-                    <LabeledLine label={t("security.userAgentLabel")}>
-                      <span className={styles.monoText}>
-                        {selectedSession?.user_agent ?? t("security.unknown")}
-                      </span>
-                    </LabeledLine>
-                    <LabeledLine label={t("security.ipLabel")}>
-                      <span className={styles.monoText}>
-                        {selectedSession?.ip_address ?? "—"}
-                      </span>
-                    </LabeledLine>
-                    <LabeledLine label={t("security.locationLabel")}>
-                      {formatIpGeo(selectedSession?.ip_geo) || "—"}
-                    </LabeledLine>
-                    <LabeledLine label={t("security.createdLabel")}>
-                      {selectedSession
-                        ? formatDateTime(selectedSession.created_at)
-                        : ""}
-                    </LabeledLine>
-                    <LabeledLine label={t("security.expiresLabel")}>
-                      {selectedSession
-                        ? formatDateTime(selectedSession.expires_at)
-                        : ""}
-                    </LabeledLine>
-
-                    {/* Everything Cloudflare told us about the session's IP —
-                        continent, timezone, colo, ASN, coordinates, … — so an
-                        unfamiliar session can be scrutinised fully. Hidden when
-                        no geolocation was captured (local dev / non-CF). */}
-                    {(() => {
-                      const rows = geoDetailRows(
-                        parseIpGeo(selectedSession?.ip_geo),
-                        (k) => t(k),
-                      );
-                      if (rows.length === 0) return null;
-                      return (
-                        <>
-                          <Text
-                            weight="semibold"
-                            size={300}
-                            style={{ marginTop: 6 }}
-                          >
-                            {t("security.ipDetailsTitle")}
-                          </Text>
-                          {rows.map((r) => (
-                            <LabeledLine key={r.label} label={r.label}>
-                              {r.value}
-                            </LabeledLine>
-                          ))}
-                        </>
-                      );
-                    })()}
-
-                    {/* Every IP this session has been used from, most recent
-                        first — each with its location, network and last-seen
-                        time (issue #5). */}
-                    <Text weight="semibold" size={300} style={{ marginTop: 6 }}>
-                      {t("security.ipHistoryTitle")}
-                    </Text>
-                    {sessionIpsLoading ? (
-                      <Spinner size="tiny" />
-                    ) : (sessionIpsData?.ips.length ?? 0) === 0 ? (
-                      <Text
-                        size={200}
-                        style={{ color: tokens.colorNeutralForeground3 }}
-                      >
-                        {t("security.ipHistoryEmpty")}
-                      </Text>
-                    ) : (
-                      <div className={styles.ipHistoryList}>
-                        {sessionIpsData!.ips.map((ip: SessionIpInfo) => {
-                          const g = parseIpGeo(ip.geo);
-                          const loc = formatIpGeo(ip.geo);
-                          const net = formatNetwork(g?.asn, g?.org);
-                          return (
-                            <div
-                              key={ip.ip_address}
-                              className={styles.ipHistoryItem}
-                            >
-                              <span className={styles.monoText}>
-                                {ip.ip_address}
-                              </span>
-                              <Text
-                                size={200}
-                                style={{
-                                  color: tokens.colorNeutralForeground2,
-                                }}
-                              >
-                                {loc || t("security.unknownLocation")}
-                              </Text>
-                              {net && (
-                                <Text
-                                  size={200}
-                                  style={{
-                                    color: tokens.colorNeutralForeground3,
-                                  }}
-                                >
-                                  {net}
-                                </Text>
-                              )}
-                              <Text
-                                size={200}
-                                style={{
-                                  color: tokens.colorNeutralForeground3,
-                                }}
-                              >
-                                {t("security.lastSeenLabel", {
-                                  time: formatDateTime(ip.last_seen),
-                                })}
-                              </Text>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </DialogContent>
-                <DialogActions>
-                  <Button onClick={() => setSelectedSession(null)}>
-                    {t("common.close")}
-                  </Button>
-                  <Button
-                    appearance="primary"
-                    style={{ background: tokens.colorPaletteRedBackground3 }}
-                    onClick={() => {
-                      if (!selectedSession) return;
-                      handleRevokeSession(selectedSession.id);
-                    }}
-                  >
-                    {t("security.revokeSession")}
-                  </Button>
-                </DialogActions>
-              </DialogBody>
-            </DialogSurface>
-          </Dialog>
-
-          {/* Revoke-all confirmation */}
-          <Dialog
-            open={revokeAllOpen}
-            onOpenChange={(_, s) => {
-              if (!s.open) setRevokeAllOpen(false);
-            }}
-          >
-            <DialogSurface>
-              <DialogBody>
-                <DialogTitle>{t("security.revokeAllSessions")}</DialogTitle>
-                <DialogContent>{t("security.revokeAllConfirm")}</DialogContent>
-                <DialogActions>
-                  <Button
-                    disabled={revokingAll}
-                    onClick={() => setRevokeAllOpen(false)}
-                  >
-                    {t("common.cancel")}
-                  </Button>
-                  <Button
-                    appearance="primary"
-                    disabled={revokingAll}
-                    style={{ background: tokens.colorPaletteRedBackground3 }}
-                    onClick={handleRevokeAllSessions}
-                  >
-                    {revokingAll ? (
-                      <Spinner size="tiny" />
-                    ) : (
-                      t("security.revokeAllSessions")
-                    )}
-                  </Button>
-                </DialogActions>
-              </DialogBody>
-            </DialogSurface>
-          </Dialog>
-        </>
-      </div>
-
-      {/* OAuth settings */}
-      <div
-        className={styles.card}
-        style={isPageLoading ? { display: "none" } : {}}
+      {/* Session details */}
+      <Dialog
+        open={!!selectedSession}
+        onOpenChange={(_, s) => {
+          if (!s.open) setSelectedSession(null);
+        }}
       >
-        <div className={styles.cardHeader}>
-          <div>
-            <Text weight="semibold" size={400} block>
-              {t("security.oauthSettingsTitle")}
-            </Text>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("security.oauthSettingsDesc")}
-            </Text>
-          </div>
-        </div>
-        <Field
-          label={t("security.accessTokenTtlLabel")}
-          hint={t("security.accessTokenTtlHint", {
-            siteDefault: me?.site_access_token_ttl_minutes ?? 60,
-          })}
-        >
-          <DurationInput
-            value={accessTtl}
-            unit="minutes"
-            onChange={setAccessTtl}
-            placeholder={t("security.tokenTtlPlaceholder", {
-              value: `${me?.site_access_token_ttl_minutes ?? 60} min`,
-            })}
-          />
-        </Field>
-        <Field
-          label={t("security.refreshTokenTtlLabel")}
-          hint={t("security.refreshTokenTtlHint", {
-            siteDefault: me?.site_refresh_token_ttl_days ?? 30,
-          })}
-        >
-          <DurationInput
-            value={refreshTtl}
-            unit="days"
-            onChange={setRefreshTtl}
-            placeholder={t("security.tokenTtlPlaceholder", {
-              value: `${me?.site_refresh_token_ttl_days ?? 30} days`,
-            })}
-          />
-        </Field>
-        <Field hint={t("security.notifyOnAutoAuthDesc")}>
-          <Switch
-            label={t("security.notifyOnAutoAuthLabel")}
-            checked={notifyOnAutoAuth}
-            onChange={(_, d) => setNotifyOnAutoAuth(d.checked)}
-          />
-        </Field>
-        <div className={styles.actions}>
-          <Button
-            appearance="primary"
-            disabled={savingOAuthSettings}
-            onClick={handleSaveOAuthSettings}
-          >
-            {savingOAuthSettings ? <Spinner size="tiny" /> : t("common.save")}
-          </Button>
-          <Button
-            appearance="subtle"
-            disabled={savingOAuthSettings}
-            onClick={() => {
-              setAccessTtl(null);
-              setRefreshTtl(null);
-            }}
-          >
-            {t("security.tokenTtlUseSiteDefault")}
-          </Button>
-        </div>
-      </div>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("security.sessionTitle")}</DialogTitle>
+            <DialogContent>
+              <div className={styles.dialogStack}>
+                <LabeledLine label={t("security.deviceLabel")}>
+                  {describeDevice(selectedSession?.user_agent ?? null) ??
+                    t("security.unknown")}
+                </LabeledLine>
+                {/* Full User-Agent, so an unfamiliar session can be
+                    identified precisely (issue #2). */}
+                <LabeledLine label={t("security.userAgentLabel")}>
+                  <span className={styles.mono}>
+                    {selectedSession?.user_agent ?? t("security.unknown")}
+                  </span>
+                </LabeledLine>
+                <LabeledLine label={t("security.ipLabel")}>
+                  <span className={styles.mono}>
+                    {selectedSession?.ip_address ?? "—"}
+                  </span>
+                </LabeledLine>
+                <LabeledLine label={t("security.locationLabel")}>
+                  {formatIpGeo(selectedSession?.ip_geo) || "—"}
+                </LabeledLine>
+                <LabeledLine label={t("security.createdLabel")}>
+                  {selectedSession
+                    ? formatDateTime(selectedSession.created_at)
+                    : ""}
+                </LabeledLine>
+                <LabeledLine label={t("security.expiresLabel")}>
+                  {selectedSession
+                    ? formatDateTime(selectedSession.expires_at)
+                    : ""}
+                </LabeledLine>
 
-      {/* Renders nothing for ordinary accounts. */}
-      <AccountRestrictionPanel />
-    </div>
+                {/* Everything Cloudflare told us about the session's IP —
+                    continent, timezone, colo, ASN, coordinates, … Hidden when
+                    no geolocation was captured (local dev / non-CF). */}
+                {(() => {
+                  const rows = geoDetailRows(
+                    parseIpGeo(selectedSession?.ip_geo),
+                    (k) => t(k),
+                  );
+                  if (rows.length === 0) return null;
+                  return (
+                    <>
+                      <Text
+                        weight="semibold"
+                        size={300}
+                        className={styles.detailTitle}
+                      >
+                        {t("security.ipDetailsTitle")}
+                      </Text>
+                      {rows.map((r) => (
+                        <LabeledLine key={r.label} label={r.label}>
+                          {r.value}
+                        </LabeledLine>
+                      ))}
+                    </>
+                  );
+                })()}
+
+                {/* Every IP this session has been used from, most recent
+                    first (issue #5). */}
+                <Text
+                  weight="semibold"
+                  size={300}
+                  className={styles.detailTitle}
+                >
+                  {t("security.ipHistoryTitle")}
+                </Text>
+                {sessionIpsLoading ? (
+                  <Spinner size="tiny" />
+                ) : (sessionIpsData?.ips.length ?? 0) === 0 ? (
+                  <Text size={200} className={styles.muted}>
+                    {t("security.ipHistoryEmpty")}
+                  </Text>
+                ) : (
+                  <div className={styles.ipHistoryList}>
+                    {sessionIpsData!.ips.map((ip: SessionIpInfo) => {
+                      const g = parseIpGeo(ip.geo);
+                      const loc = formatIpGeo(ip.geo);
+                      const net = formatNetwork(g?.asn, g?.org);
+                      return (
+                        <div
+                          key={ip.ip_address}
+                          className={styles.ipHistoryItem}
+                        >
+                          <span className={styles.mono}>{ip.ip_address}</span>
+                          <Text size={200}>
+                            {loc || t("security.unknownLocation")}
+                          </Text>
+                          {net && (
+                            <Text size={200} className={styles.muted}>
+                              {net}
+                            </Text>
+                          )}
+                          <Text size={200} className={styles.muted}>
+                            {t("security.lastSeenLabel", {
+                              time: formatDateTime(ip.last_seen),
+                            })}
+                          </Text>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setSelectedSession(null)}>
+                {t("common.close")}
+              </Button>
+              {selectedSession && !selectedSession.is_current && (
+                <Button
+                  appearance="primary"
+                  className={styles.danger}
+                  onClick={() => handleRevokeSession(selectedSession.id)}
+                >
+                  {t("security.revokeSession")}
+                </Button>
+              )}
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {confirmDialog}
+
+      {/* Revoke-all confirmation */}
+      <Dialog
+        open={revokeAllOpen}
+        onOpenChange={(_, s) => {
+          if (!s.open) setRevokeAllOpen(false);
+        }}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>{t("security.revokeAllSessions")}</DialogTitle>
+            <DialogContent>
+              {dialogErrorBar}
+              {t("security.revokeAllConfirm")}
+            </DialogContent>
+            <DialogActions>
+              <Button
+                disabled={revokingAll}
+                onClick={() => setRevokeAllOpen(false)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                className={styles.danger}
+                disabled={revokingAll}
+                onClick={handleRevokeAllSessions}
+              >
+                {revokingAll ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("security.revokeAllSessions")
+                )}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+    </SettingsPage>
   );
 }

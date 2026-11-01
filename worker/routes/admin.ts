@@ -9,7 +9,6 @@ import {
 } from "../lib/config";
 import { invalidLoginRateLimitConfig } from "../lib/loginRateLimit";
 import { getIp } from "../lib/clientIp";
-import { formatGeoLabel } from "../lib/geo";
 import {
   SENSITIVE_CONFIG_KEYS,
   encryptSecret,
@@ -23,7 +22,6 @@ import {
   inviteEmailTemplate,
   sendEmail,
 } from "../lib/email";
-import { loggedFetch } from "../lib/logger";
 import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
 import { requireAdmin } from "../middleware/auth";
@@ -259,7 +257,6 @@ app.patch("/config", async (c) => {
     "inherit_team_domains",
     "default_team_profile_show_sub_teams",
     "default_team_role_permissions",
-    "enable_team_invite_registration",
     "team_invite_registration_max_uses_cap",
     "team_invite_registration_rate_per_hour",
     "restricted_user_capabilities",
@@ -276,7 +273,10 @@ app.patch("/config", async (c) => {
     updates.avatar_proxy_cache_mode !== undefined &&
     !["off", "kv", "d1"].includes(String(updates.avatar_proxy_cache_mode))
   ) {
-    return c.json({ error: "Invalid avatar proxy cache mode" }, 400);
+    return c.json(
+      { error: "field_invalid", params: { field: "avatar_proxy_cache" } },
+      400,
+    );
   }
   for (const key of [
     "avatar_proxy_max_source_bytes",
@@ -288,20 +288,26 @@ app.patch("/config", async (c) => {
       value !== undefined &&
       (typeof value !== "number" || !Number.isInteger(value) || value <= 0)
     )
-      return c.json({ error: `${key} must be a positive integer` }, 400);
+      return c.json(
+        { error: "field_must_be_positive_integer", params: { field: key } },
+        400,
+      );
   }
   if (
     updates.avatar_proxy_convert_to_webp !== undefined &&
     typeof updates.avatar_proxy_convert_to_webp !== "boolean"
   )
     return c.json(
-      { error: "avatar_proxy_convert_to_webp must be a boolean" },
+      {
+        error: "field_must_be_boolean",
+        params: { field: "avatar_proxy_convert_to_webp" },
+      },
       400,
     );
 
   if (updates.site_icon_url && typeof updates.site_icon_url === "string") {
     const imgErr = await validateImageUrl(updates.site_icon_url);
-    if (imgErr) return c.json({ error: `site_icon_url: ${imgErr}` }, 400);
+    if (imgErr) return c.json(imgErr, 400);
   }
 
   if (updates.profile_readme_max_bytes !== undefined) {
@@ -314,8 +320,12 @@ app.patch("/config", async (c) => {
     ) {
       return c.json(
         {
-          error:
-            "profile_readme_max_bytes must be an integer between 1024 and 1048576",
+          error: "field_int_range",
+          params: {
+            field: "profile_readme_max_bytes",
+            min: 1024,
+            max: 1048576,
+          },
         },
         400,
       );
@@ -334,8 +344,12 @@ app.patch("/config", async (c) => {
     ) {
       return c.json(
         {
-          error:
-            "github_readme_cache_ttl_seconds must be an integer between 60 and 604800",
+          error: "field_int_range",
+          params: {
+            field: "github_readme_cache_ttl_seconds",
+            min: 60,
+            max: 604800,
+          },
         },
         400,
       );
@@ -343,7 +357,7 @@ app.patch("/config", async (c) => {
   }
 
   const loginRateLimitError = invalidLoginRateLimitConfig(updates);
-  if (loginRateLimitError) return c.json({ error: loginRateLimitError }, 400);
+  if (loginRateLimitError) return c.json(loginRateLimitError, 400);
 
   // Rotating the site GitHub token always resets its failure counter so a
   // fresh paste isn't immediately auto-cleared by leftover bad-credential
@@ -372,7 +386,10 @@ app.patch("/config", async (c) => {
     const v = updates.max_team_depth;
     if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 20) {
       return c.json(
-        { error: "max_team_depth must be an integer between 1 and 20" },
+        {
+          error: "field_int_range",
+          params: { field: "max_team_depth", min: 1, max: 20 },
+        },
         400,
       );
     }
@@ -394,7 +411,7 @@ app.patch("/config", async (c) => {
     getIp(c),
     c.executionCtx,
   );
-  return c.json({ message: "Config updated", updated: Object.keys(updates) });
+  return c.json({ updated: Object.keys(updates) });
 });
 
 // ─── Secret Store migration ──────────────────────────────────────────────────
@@ -427,8 +444,7 @@ app.post("/secrets/migrate", async (c) => {
   if (!isSecretsKeyConfigured(c.env)) {
     return c.json(
       {
-        error:
-          "SECRETS_KEY binding is not configured. Add the secrets_store_secrets binding in wrangler.jsonc and redeploy first.",
+        error: "secrets_key_missing",
       },
       400,
     );
@@ -441,9 +457,8 @@ app.post("/secrets/migrate", async (c) => {
   } catch (err) {
     return c.json(
       {
-        error: `SECRETS_KEY rejected by Web Crypto: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        error: "secrets_key_rejected",
+        params: { detail: err instanceof Error ? err.message : String(err) },
       },
       400,
     );
@@ -812,8 +827,7 @@ app.post("/d1-secrets/migrate", async (c) => {
   if (!isSecretsKeyConfigured(c.env)) {
     return c.json(
       {
-        error:
-          "SECRETS_KEY binding is not configured. Add the secrets_store_secrets binding in wrangler.jsonc and redeploy first.",
+        error: "secrets_key_missing",
       },
       400,
     );
@@ -827,9 +841,8 @@ app.post("/d1-secrets/migrate", async (c) => {
   } catch (err) {
     return c.json(
       {
-        error: `SECRETS_KEY rejected by Web Crypto: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        error: "secrets_key_rejected",
+        params: { detail: err instanceof Error ? err.message : String(err) },
       },
       400,
     );
@@ -1045,7 +1058,7 @@ app.get("/users/:id", async (c) => {
   )
     .bind(id)
     .first<UserRow>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
 
   const [apps, connections, sessions] = await Promise.all([
     c.env.DB.prepare(
@@ -1113,14 +1126,14 @@ app.patch("/users/:id", async (c) => {
   )
     .bind(id)
     .first<{ id: string; username: string }>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
 
   if (body.role === "user" && id === admin.id) {
-    return c.json({ error: "You cannot demote yourself from admin" }, 403);
+    return c.json({ error: "cannot_demote_self" }, 403);
   }
 
   if (body.is_active === false && id === admin.id) {
-    return c.json({ error: "You cannot disable yourself" }, 403);
+    return c.json({ error: "cannot_disable_self" }, 403);
   }
 
   const updates: string[] = [];
@@ -1143,17 +1156,14 @@ app.patch("/users/:id", async (c) => {
     // that registration would have rejected is still a broken username.
     const username = body.username.toLowerCase().trim();
     if (!/^[a-z0-9_.-]{2,32}$/.test(username))
-      return c.json(
-        { error: "Username must be 2-32 characters of a-z, 0-9, _ . -" },
-        400,
-      );
+      return c.json({ error: "username_invalid" }, 400);
     updates.push("username = ?");
     values.push(username);
   }
   if (body.email !== undefined) {
     const email = body.email.toLowerCase().trim();
     if (!email.includes("@") || email.length > 254)
-      return c.json({ error: "A valid email address is required" }, 400);
+      return c.json({ error: "email_invalid" }, 400);
     updates.push("email = ?");
     values.push(email);
     // Changing the address invalidates whatever proved the old one. The
@@ -1168,19 +1178,25 @@ app.patch("/users/:id", async (c) => {
   }
   if (body.display_name !== undefined) {
     if (body.display_name.length < 1 || body.display_name.length > 64)
-      return c.json({ error: "display_name must be 1-64 characters" }, 400);
+      return c.json(
+        {
+          error: "field_length",
+          params: { field: "display_name", min: 1, max: 64 },
+        },
+        400,
+      );
     updates.push("display_name = ?");
     values.push(body.display_name);
   }
   if (body.avatar_url !== undefined) {
     if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
       const imgErr = await validateImageUrl(body.avatar_url);
-      if (imgErr) return c.json({ error: `avatar_url: ${imgErr}` }, 400);
+      if (imgErr) return c.json(imgErr, 400);
     }
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
   }
-  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+  if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
   updates.push("updated_at = ?");
   values.push(Math.floor(Date.now() / 1000), id);
@@ -1194,7 +1210,7 @@ app.patch("/users/:id", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
-      return c.json({ error: "Email or username already taken" }, 409);
+      return c.json({ error: "email_or_username_taken" }, 409);
     throw err;
   }
 
@@ -1209,24 +1225,24 @@ app.patch("/users/:id", async (c) => {
     c.executionCtx,
     { resourceName: user.username },
   );
-  return c.json({ message: "User updated" });
+  return c.json({ ok: true });
 });
 
 // Delete user
 app.delete("/users/:id", async (c) => {
   const admin = c.get("user");
   const id = c.req.param("id");
-  if (id === admin.id) return c.json({ error: "Cannot delete yourself" }, 400);
+  if (id === admin.id) return c.json({ error: "cannot_delete_self" }, 400);
 
   const user = await c.env.DB.prepare(
     "SELECT id, username FROM users WHERE id = ?",
   )
     .bind(id)
     .first<{ id: string; username: string }>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
 
   if (isUserLocked(c.env, user.username)) {
-    return c.json({ error: "This user is locked and cannot be deleted" }, 403);
+    return c.json({ error: "user_locked" }, 403);
   }
 
   // Before the delete, so the team fan-out can still read memberships.
@@ -1262,7 +1278,7 @@ app.delete("/users/:id", async (c) => {
     c.executionCtx,
     { resourceName: user.username },
   );
-  return c.json({ message: "User deleted" });
+  return c.json({ ok: true });
 });
 
 // Terminate all sessions for a user
@@ -1274,7 +1290,7 @@ app.delete("/users/:id/sessions", async (c) => {
   )
     .bind(id)
     .first<{ username: string }>();
-  if (!target) return c.json({ error: "User not found" }, 404);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
   const result = await c.env.DB.prepare(
     "DELETE FROM sessions WHERE user_id = ?",
   )
@@ -1299,7 +1315,7 @@ app.delete("/users/:id/sessions", async (c) => {
       { ...event, scope: "user", scopeId: id },
     ]),
   );
-  return c.json({ message: "Sessions terminated" });
+  return c.json({ ok: true });
 });
 
 // Per-account credential, factor, token and address management — the `/me`
@@ -1427,7 +1443,7 @@ app.patch("/apps/:id", async (c) => {
       owner_id: string;
       team_id: string | null;
     }>();
-  if (!app) return c.json({ error: "App not found" }, 404);
+  if (!app) return c.json({ error: "app_not_found" }, 404);
 
   const updates: string[] = [];
   const values: unknown[] = [];
@@ -1443,7 +1459,7 @@ app.patch("/apps/:id", async (c) => {
     updates.push("is_first_party = ?");
     values.push(body.is_first_party ? 1 : 0);
   }
-  if (updates.length === 0) return c.json({ error: "Nothing to update" }, 400);
+  if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
   updates.push("updated_at = ?");
   values.push(Math.floor(Date.now() / 1000), id);
@@ -1474,15 +1490,20 @@ app.patch("/apps/:id", async (c) => {
         : { ...auditBase, scope: "user", scopeId: app.owner_id },
     ]),
   );
-  return c.json({ message: "App updated" });
+  return c.json({ ok: true });
 });
 
 // ─── Test email ───────────────────────────────────────────────────────────────
 
+// The site name is admin-set but still goes into HTML.
+function escapeEmailHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 app.post("/test-email", async (c) => {
   const config = await getConfig(c.env.DB);
   if (config.email_provider === "none") {
-    return c.json({ error: "Email provider is not configured" }, 400);
+    return c.json({ error: "email_not_configured" }, 400);
   }
   const admin = c.get("user");
   try {
@@ -1490,9 +1511,9 @@ app.post("/test-email", async (c) => {
       c.env,
       {
         to: admin.email,
-        subject: "Prism — Test Email",
-        html: '<div style="font-family:sans-serif"><h2>Test Email</h2><p>This is a test email from your Prism instance. Email is working correctly!</p></div>',
-        text: "This is a test email from your Prism instance. Email is working correctly!",
+        subject: `${config.site_name} — Test Email`,
+        html: `<div style="font-family:sans-serif"><h2>Test Email</h2><p>This is a test email from ${escapeEmailHtml(config.site_name)}. Email is working correctly!</p></div>`,
+        text: `This is a test email from ${config.site_name}. Email is working correctly!`,
       },
       {
         provider: config.email_provider as "resend" | "mailchannels" | "smtp",
@@ -1505,10 +1526,13 @@ app.post("/test-email", async (c) => {
         smtpPassword: config.smtp_password,
       },
     );
-    return c.json({ message: `Test email sent to ${admin.email}` });
+    return c.json({ ok: true });
   } catch (err) {
     return c.json(
-      { error: err instanceof Error ? err.message : "Failed to send email" },
+      {
+        error: "email_send_failed",
+        params: { detail: err instanceof Error ? err.message : String(err) },
+      },
       500,
     );
   }
@@ -1520,13 +1544,10 @@ app.post("/test-email-receiving", async (c) => {
   const config = await getConfig(c.env.DB);
 
   if (config.email_receive_provider === "none") {
-    return c.json({ error: "Receive provider is not configured" }, 400);
+    return c.json({ error: "receive_not_configured" }, 400);
   }
   if (config.email_provider === "none") {
-    return c.json(
-      { error: "Email send provider is required to send the test email" },
-      400,
-    );
+    return c.json({ error: "email_not_configured" }, 400);
   }
 
   const testCode = randomId(12);
@@ -1537,7 +1558,7 @@ app.post("/test-email-receiving", async (c) => {
 
   if (config.email_receive_provider === "imap") {
     if (!config.imap_user) {
-      return c.json({ error: "IMAP username is not configured" }, 400);
+      return c.json({ error: "imap_not_configured" }, 400);
     }
     toAddress = config.imap_user;
     subject = testCode;
@@ -1546,7 +1567,7 @@ app.post("/test-email-receiving", async (c) => {
     const emailHost =
       config.email_receive_host || new URL(c.env.APP_URL).hostname;
     toAddress = `verify-${testCode}@${emailHost}`;
-    subject = `Prism — Email Receive Test`;
+    subject = `${config.site_name} — Email Receive Test`;
   }
 
   // Store in KV so the handler/poller can validate it
@@ -1576,13 +1597,13 @@ app.post("/test-email-receiving", async (c) => {
     );
 
     return c.json({
-      message: `Test email sent to ${toAddress}`,
       address: toAddress,
     });
   } catch (err) {
     return c.json(
       {
-        error: err instanceof Error ? err.message : "Failed to send test email",
+        error: "email_send_failed",
+        params: { detail: err instanceof Error ? err.message : String(err) },
       },
       500,
     );
@@ -1751,7 +1772,7 @@ app.post("/reset/confirm", async (c) => {
     .json<{ confirm?: string; totp_code?: string }>()
     .catch(() => ({}) as { confirm?: string; totp_code?: string });
   if (body.confirm !== "RESET_EVERYTHING") {
-    return c.json({ error: "Missing confirmation" }, 400);
+    return c.json({ error: "confirmation_required" }, 400);
   }
 
   const pending = await loadPendingReset(c.env.KV_CACHE);
@@ -1831,7 +1852,7 @@ app.post("/reset/confirm", async (c) => {
   };
   await Promise.all([flushKv(c.env.KV_SESSIONS), flushKv(c.env.KV_CACHE)]);
 
-  return c.json({ message: "Platform reset complete" });
+  return c.json({ ok: true });
 });
 
 // Back-compat: legacy single-shot endpoint. 308 preserves the POST body so
@@ -2100,14 +2121,14 @@ app.delete("/image-proxy/:id", async (c) => {
   const admin = c.get("user");
   const id = c.req.param("id");
   if (!/^[0-9a-f]{32}$/.test(id)) {
-    return c.json({ error: "Invalid id" }, 400);
+    return c.json({ error: "field_invalid", params: { field: "id" } }, 400);
   }
   const existing = await c.env.DB.prepare(
     "SELECT id, url FROM image_proxy_mappings WHERE id = ?",
   )
     .bind(id)
     .first<{ id: string; url: string }>();
-  if (!existing) return c.json({ error: "Mapping not found" }, 404);
+  if (!existing) return c.json({ error: "mapping_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM image_proxy_mappings WHERE id = ?")
     .bind(id)
@@ -2123,7 +2144,7 @@ app.delete("/image-proxy/:id", async (c) => {
     getIp(c),
     c.executionCtx,
   );
-  return c.json({ message: "Mapping deleted" });
+  return c.json({ ok: true });
 });
 
 // ─── Migrate recovery codes to hashed format ──────────────────────────────────
@@ -2186,11 +2207,26 @@ app.get("/teams", async (c) => {
   );
   const search = c.req.query("search") ?? "";
 
-  const whereClause = search
-    ? `WHERE t.name LIKE ? ESCAPE '\\' OR t.description LIKE ? ESCAPE '\\'`
+  // Teams with a site-admin setting for invite sign-up: the grant, or an
+  // override of the site default for converting.
+  const filter = c.req.query("filter");
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (search) {
+    conditions.push(
+      "(t.name LIKE ? ESCAPE '\\' OR t.description LIKE ? ESCAPE '\\')",
+    );
+    const searchParam = likePattern(search);
+    params.push(searchParam, searchParam);
+  }
+  if (filter === "invite_signup")
+    conditions.push("t.invite_registration_granted = 1");
+  else if (filter === "convert")
+    conditions.push("t.invite_registration_allow_convert IS NOT NULL");
+  const whereClause = conditions.length
+    ? `WHERE ${conditions.join(" AND ")}`
     : "";
-  const searchParam = likePattern(search);
-  const params = search ? [searchParam, searchParam] : [];
 
   const [teams, count] = await Promise.all([
     c.env.DB.prepare(
@@ -2241,10 +2277,10 @@ app.delete("/teams/:id", async (c) => {
   const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
     .bind(id)
     .first<{ id: string; name: string }>();
-  if (!team) return c.json({ error: "Team not found" }, 404);
+  if (!team) return c.json({ error: "team_not_found" }, 404);
 
   if (isTeamLocked(c.env, team.name)) {
-    return c.json({ error: "This team is locked and cannot be deleted" }, 403);
+    return c.json({ error: "team_locked" }, 403);
   }
 
   // A team that minted accounts cannot be torn down in one request: those
@@ -2254,8 +2290,7 @@ app.delete("/teams/:id", async (c) => {
   if (await hasLiveRestrictedAccounts(c.env.DB, id))
     return c.json(
       {
-        error:
-          "This team has invite-registered accounts. Use the staged dissolution endpoint instead.",
+        error: "team_needs_staged_dissolution",
         staged_endpoint: `/api/admin/teams/${id}/dissolve`,
       },
       409,
@@ -2280,15 +2315,15 @@ app.delete("/teams/:id", async (c) => {
     c.executionCtx,
     { resourceName: team.name },
   );
-  return c.json({ message: "Team deleted" });
+  return c.json({ ok: true });
 });
 
 // ─── Invite registration (site-admin controls) ───────────────────────────────
 
 // Grant or revoke a team's permission to mint accounts through invite links,
 // and set which site-level registration requirements its invite path may
-// skip. Deliberately admin-only: this is the second of the two doors, and a
-// team owner able to open it for themselves would reduce the design to one.
+// skip. Deliberately admin-only: the grant is the one switch, and a team
+// owner able to set it for themselves would make every owner a registrar.
 app.patch("/teams/:id/invite-registration", async (c) => {
   const admin = c.get("user");
   const id = c.req.param("id");
@@ -2296,11 +2331,13 @@ app.patch("/teams/:id/invite-registration", async (c) => {
   const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
     .bind(id)
     .first<{ id: string; name: string }>();
-  if (!team) return c.json({ error: "Team not found" }, 404);
+  if (!team) return c.json({ error: "team_not_found" }, 404);
 
   const body = await c.req.json<{
     granted?: boolean;
     exemptions?: { email_verification?: boolean };
+    /** true / false overrides the site default; null goes back to it. */
+    allow_convert?: boolean | null;
   }>();
 
   const updates: string[] = ["updated_at = ?"];
@@ -2309,9 +2346,6 @@ app.patch("/teams/:id/invite-registration", async (c) => {
   if (body.granted !== undefined) {
     updates.push("invite_registration_granted = ?");
     values.push(body.granted ? 1 : 0);
-    // Revoking the grant closes the owner's switch too, so the channel shuts
-    // immediately instead of reopening if the grant is ever restored.
-    if (!body.granted) updates.push("invite_registration_enabled = 0");
   }
   if (body.exemptions !== undefined) {
     // Only email verification is exemptible. Captcha, proof-of-work and every
@@ -2322,6 +2356,18 @@ app.patch("/teams/:id/invite-registration", async (c) => {
       cleaned.email_verification = body.exemptions.email_verification;
     updates.push("invite_registration_exemptions = ?");
     values.push(Object.keys(cleaned).length ? JSON.stringify(cleaned) : null);
+  }
+
+  if (body.allow_convert !== undefined) {
+    if (body.allow_convert !== null && typeof body.allow_convert !== "boolean")
+      return c.json(
+        { error: "field_must_be_boolean", params: { field: "allow_convert" } },
+        400,
+      );
+    updates.push("invite_registration_allow_convert = ?");
+    values.push(
+      body.allow_convert === null ? null : body.allow_convert ? 1 : 0,
+    );
   }
 
   values.push(id);
@@ -2335,7 +2381,11 @@ app.patch("/teams/:id/invite-registration", async (c) => {
     "admin.team.invite_registration",
     "team",
     id,
-    { granted: body.granted, exemptions: body.exemptions },
+    {
+      granted: body.granted,
+      exemptions: body.exemptions,
+      allow_convert: body.allow_convert,
+    },
     getIp(c),
     c.executionCtx,
     { resourceName: team.name },
@@ -2346,7 +2396,10 @@ app.patch("/teams/:id/invite-registration", async (c) => {
     .first<TeamRow>();
   return c.json({
     invite_registration_granted: updated?.invite_registration_granted === 1,
-    invite_registration_enabled: updated?.invite_registration_enabled === 1,
+    invite_registration_allow_convert:
+      updated?.invite_registration_allow_convert == null
+        ? null
+        : updated.invite_registration_allow_convert === 1,
     invite_registration_exemptions: parseInviteRegistrationExemptions(
       updated?.invite_registration_exemptions ?? null,
     ),
@@ -2366,18 +2419,15 @@ app.post("/teams/:id/dissolve", async (c) => {
   const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
     .bind(id)
     .first<{ id: string; name: string }>();
-  if (!team) return c.json({ error: "Team not found" }, 404);
+  if (!team) return c.json({ error: "team_not_found" }, 404);
   if (isTeamLocked(c.env, team.name))
-    return c.json({ error: "This team is locked and cannot be deleted" }, 403);
+    return c.json({ error: "team_locked" }, 403);
 
   const body = await c.req
     .json<{ confirm?: string }>()
     .catch(() => ({}) as { confirm?: string });
   if (body.confirm !== team.name)
-    return c.json(
-      { error: "Confirm by sending the team name in `confirm`" },
-      400,
-    );
+    return c.json({ error: "confirm_team_name" }, 400);
 
   const now = Math.floor(Date.now() / 1000);
   const doomed = await c.env.DB.prepare(
@@ -2411,7 +2461,6 @@ app.post("/teams/:id/dissolve", async (c) => {
   );
 
   return c.json({
-    message: "Dissolution started",
     deactivated_accounts: doomed?.n ?? 0,
   });
 });
@@ -2424,7 +2473,7 @@ app.post("/teams/:id/dissolve/cancel", async (c) => {
   const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
     .bind(id)
     .first<{ id: string; name: string }>();
-  if (!team) return c.json({ error: "Team not found" }, 404);
+  if (!team) return c.json({ error: "team_not_found" }, 404);
 
   const now = Math.floor(Date.now() / 1000);
   await c.env.DB.batch([
@@ -2447,7 +2496,7 @@ app.post("/teams/:id/dissolve/cancel", async (c) => {
     c.executionCtx,
     { resourceName: team.name },
   );
-  return c.json({ message: "Dissolution cancelled" });
+  return c.json({ ok: true });
 });
 
 // Accounts a given team (or a given invite) produced — the query an operator
@@ -2456,7 +2505,7 @@ app.get("/restricted-users", async (c) => {
   const teamId = c.req.query("team_id");
   const inviteToken = c.req.query("invite_token");
   if (!teamId && !inviteToken)
-    return c.json({ error: "team_id or invite_token is required" }, 400);
+    return c.json({ error: "team_or_invite_required" }, 400);
 
   const where: string[] = ["u.origin_team_id IS NOT NULL"];
   const args: unknown[] = [];
@@ -2621,304 +2670,6 @@ app.get("/login-errors", async (c) => {
   return c.json({ errors: rows.results, total: count?.n ?? 0, page, limit });
 });
 
-// ─── Request logs ─────────────────────────────────────────────────────────────
-
-app.get("/request-logs", async (c) => {
-  const { page, limit, offset } = readPage(
-    c.req.query("page"),
-    c.req.query("limit"),
-    50,
-    200,
-  );
-  const qMethod = c.req.query("method") ?? "";
-  const qPath = c.req.query("path") ?? "";
-  const qStatus = c.req.query("status") ?? "";
-  const qUserId = c.req.query("user_id") ?? "";
-
-  const conditions: string[] = [];
-  const params: (string | number)[] = [];
-  if (qMethod) {
-    conditions.push("method = ?");
-    params.push(qMethod.toUpperCase());
-  }
-  if (qPath) {
-    conditions.push("path LIKE ? ESCAPE '\\'");
-    params.push(likePattern(qPath));
-  }
-  if (qStatus) {
-    const s = parseInt(qStatus);
-    if (!isNaN(s)) {
-      if (s === 200) {
-        conditions.push("status >= 200 AND status < 300");
-      } else if (s === 400) {
-        conditions.push("status >= 400 AND status < 500");
-      } else if (s === 500) {
-        conditions.push("status >= 500");
-      } else {
-        conditions.push("status = ?");
-        params.push(s);
-      }
-    }
-  }
-  if (qUserId) {
-    conditions.push("user_id = ?");
-    params.push(qUserId);
-  }
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-
-  const [rows, count] = await Promise.all([
-    c.env.DB.prepare(
-      `SELECT id, method, path, status, duration_ms, ip_address, ip_geo, user_agent, user_id, created_at FROM request_logs ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-    )
-      .bind(...params, limit, offset)
-      .all<{
-        id: string;
-        method: string;
-        path: string;
-        status: number;
-        duration_ms: number;
-        ip_address: string | null;
-        ip_geo: string | null;
-        user_agent: string | null;
-        user_id: string | null;
-        created_at: number;
-      }>(),
-    c.env.DB.prepare(`SELECT COUNT(*) as n FROM request_logs ${where}`)
-      .bind(...params)
-      .first<{ n: number }>(),
-  ]);
-
-  return c.json({ logs: rows.results, total: count?.n ?? 0, page, limit });
-});
-
-app.get("/request-logs/export", async (c) => {
-  const format = c.req.query("format") === "csv" ? "csv" : "json";
-  const qMethod = c.req.query("method") ?? "";
-  const qPath = c.req.query("path") ?? "";
-  const qStatus = c.req.query("status") ?? "";
-  const qUserId = c.req.query("user_id") ?? "";
-
-  const conditions: string[] = [];
-  const params: (string | number)[] = [];
-  if (qMethod) {
-    conditions.push("method = ?");
-    params.push(qMethod.toUpperCase());
-  }
-  if (qPath) {
-    conditions.push("path LIKE ? ESCAPE '\\'");
-    params.push(likePattern(qPath));
-  }
-  if (qStatus) {
-    const s = parseInt(qStatus);
-    if (!isNaN(s)) {
-      if (s === 200) conditions.push("status >= 200 AND status < 300");
-      else if (s === 400) conditions.push("status >= 400 AND status < 500");
-      else if (s === 500) conditions.push("status >= 500");
-      else {
-        conditions.push("status = ?");
-        params.push(s);
-      }
-    }
-  }
-  if (qUserId) {
-    conditions.push("user_id = ?");
-    params.push(qUserId);
-  }
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-
-  const rows = await c.env.DB.prepare(
-    `SELECT id, method, path, status, duration_ms, ip_address, ip_geo, user_agent, user_id, details, created_at FROM request_logs ${where} ORDER BY created_at DESC LIMIT 5000`,
-  )
-    .bind(...params)
-    .all<{
-      id: string;
-      method: string;
-      path: string;
-      status: number;
-      duration_ms: number;
-      ip_address: string | null;
-      ip_geo: string | null;
-      user_agent: string | null;
-      user_id: string | null;
-      details: string | null;
-      created_at: number;
-    }>();
-
-  if (format === "csv") {
-    const escape = (v: unknown) => {
-      const s = v == null ? "" : String(v);
-      return s.includes(",") || s.includes('"') || s.includes("\n")
-        ? `"${s.replace(/"/g, '""')}"`
-        : s;
-    };
-    const header =
-      "id,time,method,path,status,duration_ms,ip_address,ip_location,user_id,user_agent,has_details\n";
-    const body = rows.results
-      .map((r) =>
-        [
-          r.id,
-          new Date(r.created_at * 1000).toISOString(),
-          r.method,
-          r.path,
-          r.status,
-          r.duration_ms,
-          r.ip_address ?? "",
-          formatGeoLabel(r.ip_geo),
-          r.user_id ?? "",
-          r.user_agent ?? "",
-          r.details ? "true" : "false",
-        ]
-          .map(escape)
-          .join(","),
-      )
-      .join("\n");
-    return new Response(header + body, {
-      headers: {
-        "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="request-logs-${Date.now()}.csv"`,
-      },
-    });
-  }
-
-  const data = rows.results.map((r) => ({
-    ...r,
-    time: new Date(r.created_at * 1000).toISOString(),
-    details: r.details
-      ? (() => {
-          try {
-            return JSON.parse(r.details!);
-          } catch {
-            return r.details;
-          }
-        })()
-      : null,
-  }));
-  return new Response(JSON.stringify(data, null, 2), {
-    headers: {
-      "Content-Type": "application/json",
-      "Content-Disposition": `attachment; filename="request-logs-${Date.now()}.json"`,
-    },
-  });
-});
-
-app.get("/request-logs/:id/details", async (c) => {
-  const row = await c.env.DB.prepare(
-    "SELECT details FROM request_logs WHERE id = ?",
-  )
-    .bind(c.req.param("id"))
-    .first<{ details: string | null }>();
-  if (!row) return c.json({ error: "Not found" }, 404);
-  try {
-    return c.json({ details: row.details ? JSON.parse(row.details) : null });
-  } catch {
-    return c.json({ details: null });
-  }
-});
-
-// ─── Debug config (logging toggle + spectate user) ────────────────────────────
-
-app.delete("/request-logs", async (c) => {
-  await c.env.DB.prepare("DELETE FROM request_logs").run();
-  return c.json({ ok: true });
-});
-
-app.delete("/request-logs/spectate", async (c) => {
-  await c.env.DB.prepare(
-    "DELETE FROM request_logs WHERE details IS NOT NULL",
-  ).run();
-  return c.json({ ok: true });
-});
-
-app.get("/debug", async (c) => {
-  const [
-    enabled,
-    forceAll,
-    spectateUserId,
-    spectatePath,
-    exceptPattern,
-    logIp,
-    outboundEnabled,
-  ] = await Promise.all([
-    c.env.KV_SESSIONS.get("system:request_logging_enabled"),
-    c.env.KV_SESSIONS.get("system:force_log_all"),
-    c.env.KV_SESSIONS.get("system:spectate_user_id"),
-    c.env.KV_SESSIONS.get("system:spectate_path"),
-    c.env.KV_SESSIONS.get("system:log_except_pattern"),
-    c.env.KV_SESSIONS.get("system:log_ip"),
-    c.env.KV_SESSIONS.get("system:outbound_request_logging_enabled"),
-  ]);
-  return c.json({
-    logging_enabled: enabled === "true",
-    force_log_all: forceAll === "true",
-    outbound_logging_enabled: outboundEnabled === "true",
-    spectate_user_id: spectateUserId ?? null,
-    spectate_path: spectatePath ?? null,
-    log_except_pattern: exceptPattern ?? null,
-    log_ip: logIp ?? null,
-  });
-});
-
-app.post("/debug", async (c) => {
-  const body = await c.req.json<{
-    logging_enabled?: boolean;
-    force_log_all?: boolean;
-    outbound_logging_enabled?: boolean;
-    spectate_user_id?: string | null;
-    spectate_path?: string | null;
-    log_except_pattern?: string | null;
-    log_ip?: string | null;
-  }>();
-
-  await Promise.all([
-    body.logging_enabled !== undefined
-      ? c.env.KV_SESSIONS.put(
-          "system:request_logging_enabled",
-          body.logging_enabled ? "true" : "false",
-        )
-      : Promise.resolve(),
-    body.force_log_all !== undefined
-      ? c.env.KV_SESSIONS.put(
-          "system:force_log_all",
-          body.force_log_all ? "true" : "false",
-        )
-      : Promise.resolve(),
-    body.outbound_logging_enabled !== undefined
-      ? c.env.KV_SESSIONS.put(
-          "system:outbound_request_logging_enabled",
-          body.outbound_logging_enabled ? "true" : "false",
-        )
-      : Promise.resolve(),
-    "spectate_user_id" in body
-      ? body.spectate_user_id
-        ? c.env.KV_SESSIONS.put(
-            "system:spectate_user_id",
-            body.spectate_user_id,
-          )
-        : c.env.KV_SESSIONS.delete("system:spectate_user_id")
-      : Promise.resolve(),
-    "spectate_path" in body
-      ? body.spectate_path
-        ? c.env.KV_SESSIONS.put("system:spectate_path", body.spectate_path)
-        : c.env.KV_SESSIONS.delete("system:spectate_path")
-      : Promise.resolve(),
-    "log_except_pattern" in body
-      ? body.log_except_pattern
-        ? c.env.KV_SESSIONS.put(
-            "system:log_except_pattern",
-            body.log_except_pattern,
-          )
-        : c.env.KV_SESSIONS.delete("system:log_except_pattern")
-      : Promise.resolve(),
-    "log_ip" in body
-      ? body.log_ip
-        ? c.env.KV_SESSIONS.put("system:log_ip", body.log_ip)
-        : c.env.KV_SESSIONS.delete("system:log_ip")
-      : Promise.resolve(),
-  ]);
-
-  return c.json({ ok: true });
-});
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // Platform-scope audit. Every admin action funnels through here, so it lands
@@ -3080,6 +2831,25 @@ app.post("/invites", async (c) => {
   );
 });
 
+app.get("/invites/:id", async (c) => {
+  const invite = await c.env.DB.prepare(
+    `SELECT i.*, u.username AS created_by_username
+     FROM site_invites i
+     LEFT JOIN users u ON u.id = i.created_by
+     WHERE i.id = ?`,
+  )
+    .bind(c.req.param("id"))
+    .first<SiteInviteRow & { created_by_username: string | null }>();
+  if (!invite) return c.json({ error: "invite_not_found" }, 404);
+  return c.json({
+    invite: {
+      ...invite,
+      enabled: isInviteEnabled(invite.enabled),
+      token_available: !isHashedSecret(invite.token),
+    },
+  });
+});
+
 app.patch("/invites/:id", async (c) => {
   const admin = c.get("user");
   const id = c.req.param("id");
@@ -3088,7 +2858,7 @@ app.patch("/invites/:id", async (c) => {
   )
     .bind(id)
     .first<SiteInviteRow>();
-  if (!invite) return c.json({ error: "Invite not found" }, 404);
+  if (!invite) return c.json({ error: "invite_not_found" }, 404);
   const body = await c.req.json<{
     email?: string | null;
     note?: string | null;
@@ -3114,11 +2884,7 @@ app.patch("/invites/:id", async (c) => {
     if (body.max_uses === null) maxUses = null;
     else {
       const valid = validateInviteMaxUses(body.max_uses, invite.use_count);
-      if (!valid.ok)
-        return c.json(
-          { error: "max_uses must be a safe integer no lower than use_count" },
-          400,
-        );
+      if (!valid.ok) return c.json({ error: "max_uses_below_used" }, 400);
       maxUses = valid.value;
     }
     changes.max_uses = maxUses;
@@ -3130,7 +2896,10 @@ app.patch("/invites/:id", async (c) => {
       body.expires_in_days < 1
     )
       return c.json(
-        { error: "expires_in_days must be a positive integer" },
+        {
+          error: "field_must_be_positive_integer",
+          params: { field: "expires_in_days" },
+        },
         400,
       );
     else
@@ -3139,12 +2908,15 @@ app.patch("/invites/:id", async (c) => {
   }
   if (body.enabled !== undefined) {
     if (typeof body.enabled !== "boolean")
-      return c.json({ error: "enabled must be a boolean" }, 400);
+      return c.json(
+        { error: "field_must_be_boolean", params: { field: "enabled" } },
+        400,
+      );
     enabled = body.enabled;
     changes.enabled = enabled;
   }
   if (!Object.keys(changes).length)
-    return c.json({ error: "No editable fields provided" }, 400);
+    return c.json({ error: "nothing_to_update" }, 400);
   const assignments: string[] = [];
   const values: unknown[] = [];
   if (body.email !== undefined) {
@@ -3171,17 +2943,14 @@ app.patch("/invites/:id", async (c) => {
     body.max_uses !== undefined && maxUses !== null
       ? " AND use_count <= ?"
       : "";
-  if (useGuard) values.push(maxUses);
+  // The guard's value binds after the id: it follows `id = ?` in the SQL.
   const updated = await c.env.DB.prepare(
     `UPDATE site_invites SET ${assignments.join(", ")} WHERE id = ?${useGuard}`,
   )
-    .bind(...values, id)
+    .bind(...values, id, ...(useGuard ? [maxUses] : []))
     .run();
   if (!updated.meta.changes)
-    return c.json(
-      { error: "Invite usage changed; refresh and try again" },
-      409,
-    );
+    return c.json({ error: "invite_usage_changed" }, 409);
   await logAudit(
     c.env,
     admin.id,
@@ -3218,7 +2987,7 @@ app.delete("/invites/:id", async (c) => {
   )
     .bind(id)
     .first<{ id: string }>();
-  if (!invite) return c.json({ error: "Invite not found" }, 404);
+  if (!invite) return c.json({ error: "invite_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM site_invites WHERE id = ?")
     .bind(id)
@@ -3235,7 +3004,7 @@ app.delete("/invites/:id", async (c) => {
     c.executionCtx,
   );
 
-  return c.json({ message: "Invite revoked" });
+  return c.json({ ok: true });
 });
 
 // ─── OAuth Sources ─────────────────────────────────────────────────────────────
@@ -3306,17 +3075,18 @@ app.get("/oauth-sources", async (c) => {
 
 app.get("/oauth-sources/discover", async (c) => {
   const issuer = c.req.query("issuer");
-  if (!issuer) return c.json({ error: "issuer query parameter required" }, 400);
+  if (!issuer)
+    return c.json(
+      { error: "field_required", params: { field: "issuer" } },
+      400,
+    );
 
   let issuerUrl: URL;
   try {
     issuerUrl = new URL(issuer);
     if (issuerUrl.protocol !== "https:") throw new Error("HTTPS required");
   } catch {
-    return c.json(
-      { error: "Invalid issuer URL — must be a valid HTTPS URL" },
-      400,
-    );
+    return c.json({ error: "issuer_url_invalid" }, 400);
   }
 
   // Canonical discovery document path per OpenID Connect Discovery 1.0
@@ -3325,20 +3095,21 @@ app.get("/oauth-sources/discover", async (c) => {
 
   let doc: Record<string, unknown>;
   try {
-    const res = await loggedFetch(c.env, discoveryUrl, {
+    const res = await fetch(discoveryUrl, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(8_000),
     });
     if (!res.ok)
       return c.json(
-        { error: `Discovery endpoint returned HTTP ${res.status}` },
+        { error: "discovery_http_error", params: { status: res.status } },
         502,
       );
     doc = (await res.json()) as Record<string, unknown>;
   } catch (err) {
     return c.json(
       {
-        error: `Failed to fetch discovery document: ${err instanceof Error ? err.message : String(err)}`,
+        error: "discovery_fetch_failed",
+        params: { detail: err instanceof Error ? err.message : String(err) },
       },
       502,
     );
@@ -3351,8 +3122,7 @@ app.get("/oauth-sources/discover", async (c) => {
   if (!auth_url || !token_url || !userinfo_url)
     return c.json(
       {
-        error:
-          "Discovery document missing required endpoints (authorization_endpoint, token_endpoint, userinfo_endpoint)",
+        error: "discovery_incomplete",
       },
       422,
     );
@@ -3361,6 +3131,19 @@ app.get("/oauth-sources/discover", async (c) => {
 });
 
 // ─── Migrate legacy site_config OAuth credentials to oauth_sources ─────────────
+
+// One source, without its credentials. Registered after /discover so that
+// path isn't read as an id.
+app.get("/oauth-sources/:id", async (c) => {
+  const row = await c.env.DB.prepare(
+    `SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only, trusted
+     FROM oauth_sources WHERE id = ?`,
+  )
+    .bind(c.req.param("id"))
+    .first<Omit<OAuthSourceRow, "client_id" | "client_secret">>();
+  if (!row) return c.json({ error: "source_not_found" }, 404);
+  return c.json({ source: row });
+});
 
 app.post("/oauth-sources/migrate", async (c) => {
   const config = await getConfig(c.env.DB);
@@ -3438,7 +3221,8 @@ app.post("/oauth-sources", async (c) => {
   )
     return c.json(
       {
-        error: "slug, provider, name, client_id and client_secret are required",
+        error: "fields_required",
+        params: { fields: "slug, provider, name, client_id, client_secret" },
       },
       400,
     );
@@ -3446,7 +3230,8 @@ app.post("/oauth-sources", async (c) => {
   if (!VALID_PROVIDERS.has(body.provider))
     return c.json(
       {
-        error: `Invalid provider. Must be one of: ${[...VALID_PROVIDERS].join(", ")}`,
+        error: "field_one_of",
+        params: { field: "provider", values: [...VALID_PROVIDERS].join(", ") },
       },
       400,
     );
@@ -3454,7 +3239,7 @@ app.post("/oauth-sources", async (c) => {
   if (!/^[a-z0-9-]{1,64}$/.test(body.slug))
     return c.json(
       {
-        error: "slug must be 1-64 lowercase alphanumeric characters or hyphens",
+        error: "slug_invalid",
       },
       400,
     );
@@ -3463,8 +3248,7 @@ app.post("/oauth-sources", async (c) => {
     if (!body.auth_url || !body.token_url || !body.userinfo_url)
       return c.json(
         {
-          error:
-            "auth_url, token_url and userinfo_url are required for generic providers",
+          error: "generic_provider_urls_required",
         },
         400,
       );
@@ -3503,7 +3287,7 @@ app.post("/oauth-sources", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
-      return c.json({ error: "A source with this slug already exists" }, 409);
+      return c.json({ error: "source_slug_taken" }, 409);
     throw err;
   }
 
@@ -3541,7 +3325,7 @@ app.patch("/oauth-sources/:id", async (c) => {
   )
     .bind(id)
     .first<{ id: string; slug: string }>();
-  if (!existing) return c.json({ error: "Source not found" }, 404);
+  if (!existing) return c.json({ error: "source_not_found" }, 404);
 
   const body = await c.req.json<{
     name?: string;
@@ -3616,7 +3400,7 @@ app.patch("/oauth-sources/:id", async (c) => {
     vals.push(body.trusted ? 1 : 0);
   }
 
-  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
+  if (!sets.length) return c.json({ error: "nothing_to_update" }, 400);
 
   vals.push(id);
   await c.env.DB.prepare(
@@ -3636,7 +3420,7 @@ app.patch("/oauth-sources/:id", async (c) => {
     c.executionCtx,
     { resourceName: existing.slug },
   );
-  return c.json({ message: "Updated" });
+  return c.json({ ok: true });
 });
 
 app.delete("/oauth-sources/:id", async (c) => {
@@ -3648,7 +3432,7 @@ app.delete("/oauth-sources/:id", async (c) => {
   )
     .bind(id)
     .first<{ slug: string }>();
-  if (!existing) return c.json({ error: "Source not found" }, 404);
+  if (!existing) return c.json({ error: "source_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM oauth_sources WHERE id = ?")
     .bind(id)
@@ -3664,7 +3448,7 @@ app.delete("/oauth-sources/:id", async (c) => {
     c.executionCtx,
     { resourceName: existing.slug },
   );
-  return c.json({ message: "Deleted" });
+  return c.json({ ok: true });
 });
 
 export default app;

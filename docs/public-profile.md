@@ -88,9 +88,9 @@ Members can always see the team's own public-profile page even when private — 
 
 ## Admin settings
 
-Admins configure the feature in **Admin → Settings → Public profiles** (in the General tab).
+Admins configure the feature in **Admin → Settings → Public profiles**.
 
-- **Enable public profiles** — master kill switch. Off = the feature is unavailable site-wide for both users _and_ teams.
+- **Users can publish a profile** — the master setting. **Not allowed** = the feature is unavailable site-wide for both users _and_ teams.
 - **Default visibility for each field** (user profiles) — applies to every user who hasn't set their own preference for that field.
 - **Default visibility for each section** (team profiles) — applies to every team that hasn't set its own preference. Edited by team owners/admins, not site admins.
 
@@ -190,7 +190,7 @@ When the team owner has opted into showing themselves but their _own_ user profi
 ### Behavior
 
 - Both endpoints accept an optional Bearer token. For user profiles, a token belonging to the profile's owner returns the profile even when private. For team profiles, **any team member's** token (not just the owner) returns the team page when private — useful for previewing.
-- All `404` responses share the same body (`{"error":"Not found"}`), so callers can't distinguish "doesn't exist" from "opted out."
+- All `404` responses share the same body (`{"error":"not_found"}`), so callers can't distinguish "doesn't exist" from "opted out."
 - Image URLs go through Prism's avatar proxy (`/api/proxy/image?...`); the original is also returned as `unproxied_avatar_url` for direct use.
 
 ### GPG keys

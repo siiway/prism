@@ -153,26 +153,29 @@ app.post("/register", requireAuth, async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Invalid JSON body" }, 400);
+    return c.json({ error: "invalid_request_body" }, 400);
   }
   if (typeof body.url !== "string" || !body.url) {
-    return c.json({ error: "url is required" }, 400);
+    return c.json({ error: "field_required", params: { field: "url" } }, 400);
   }
   const raw = body.url.trim();
   if (raw.length > 2048) {
-    return c.json({ error: "url exceeds the 2048-character limit" }, 400);
+    return c.json(
+      { error: "field_max_length", params: { field: "url", max: 2048 } },
+      400,
+    );
   }
   let parsed: URL;
   try {
     parsed = new URL(raw);
   } catch {
-    return c.json({ error: "Invalid URL" }, 400);
+    return c.json({ error: "url_invalid" }, 400);
   }
   if (parsed.protocol !== "https:") {
-    return c.json({ error: "Only HTTPS URLs are allowed" }, 400);
+    return c.json({ error: "https_required" }, 400);
   }
   if (isBlockedHost(parsed.hostname)) {
-    return c.json({ error: "Host not allowed" }, 400);
+    return c.json({ error: "host_not_allowed" }, 400);
   }
   const user = c.get("user");
   const id = await registerImageProxyMapping(c.env.DB, raw, user?.id ?? null);
@@ -182,7 +185,7 @@ app.post("/register", requireAuth, async (c) => {
 app.get("/:id", async (c) => {
   const id = c.req.param("id");
   if (!/^[0-9a-f]{32}$/.test(id)) {
-    return c.json({ error: "Invalid id" }, 400);
+    return c.json({ error: "field_invalid", params: { field: "id" } }, 400);
   }
 
   const row = await c.env.DB.prepare(
@@ -190,7 +193,7 @@ app.get("/:id", async (c) => {
   )
     .bind(id)
     .first<{ url: string }>();
-  if (!row) return c.json({ error: "Unknown image id" }, 404);
+  if (!row) return c.json({ error: "not_found" }, 404);
 
   const config = await getConfig(c.env.DB);
   const maxBytes = Math.min(
@@ -217,15 +220,15 @@ app.get("/:id", async (c) => {
   try {
     parsed = new URL(rawUrl);
   } catch {
-    return c.json({ error: "Invalid stored URL" }, 500);
+    return c.json({ error: "stored_url_invalid" }, 500);
   }
 
   if (parsed.protocol !== "https:") {
-    return c.json({ error: "Only HTTPS URLs are allowed" }, 400);
+    return c.json({ error: "https_required" }, 400);
   }
 
   if (isBlockedHost(parsed.hostname)) {
-    return c.json({ error: "Host not allowed" }, 400);
+    return c.json({ error: "host_not_allowed" }, 400);
   }
 
   let upstream: Response;
@@ -240,12 +243,15 @@ app.get("/:id", async (c) => {
       cf: { cacheTtl: 3600, cacheEverything: true },
     } as RequestInit);
   } catch {
-    return c.json({ error: "Could not reach upstream URL" }, 502);
+    return c.json({ error: "upstream_unreachable" }, 502);
   }
 
   if (!upstream.ok) {
     cancelStream(upstream.body);
-    return c.json({ error: `Upstream returned HTTP ${upstream.status}` }, 502);
+    return c.json(
+      { error: "upstream_http_error", params: { status: upstream.status } },
+      502,
+    );
   }
 
   const rawCt = upstream.headers.get("content-type") ?? "";
@@ -253,14 +259,14 @@ app.get("/:id", async (c) => {
 
   if (!ALLOWED_TYPES.has(ct)) {
     cancelStream(upstream.body);
-    return c.json({ error: "Upstream URL is not an image" }, 400);
+    return c.json({ error: "upstream_not_image" }, 400);
   }
 
   if (
     declaredLengthExceedsLimit(upstream.headers.get("content-length"), maxBytes)
   ) {
     cancelStream(upstream.body, new BodySizeLimitError(maxBytes));
-    return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
+    return c.json({ error: "avatar_too_large" }, 400);
   }
 
   const headers = responseHeaders(ct, ttl);
@@ -270,10 +276,10 @@ app.get("/:id", async (c) => {
     try {
       captured = await readStreamWithLimit(upstream.body, maxBytes);
     } catch {
-      return c.json({ error: "Could not read upstream image" }, 502);
+      return c.json({ error: "upstream_image_unreadable" }, 502);
     }
     if (captured.exceeded) {
-      return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
+      return c.json({ error: "avatar_too_large" }, 400);
     }
     const bytes = new TextEncoder().encode(
       sanitizeSvg(new TextDecoder().decode(captured.bytes)),
@@ -290,8 +296,7 @@ app.get("/:id", async (c) => {
     config.avatar_proxy_convert_to_webp
   ) {
     const captured = await readStreamWithLimit(upstream.body, maxBytes);
-    if (captured.exceeded)
-      return c.json({ error: "Avatar exceeds the configured size limit" }, 400);
+    if (captured.exceeded) return c.json({ error: "avatar_too_large" }, 400);
     let bytes = captured.bytes;
     let contentType = ct;
     if (config.avatar_proxy_convert_to_webp && c.env.IMAGES) {

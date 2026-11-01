@@ -8,7 +8,8 @@
 // the route-tree skeleton; each page's code arrives on demand (and is fetched
 // alongside the SSR HTML for first paint).
 
-import { redirect, type RouteObject } from "react-router-dom";
+import type { ComponentType } from "react";
+import { redirect, useParams, type RouteObject } from "react-router-dom";
 import type { QueryClient } from "@tanstack/react-query";
 import { Layout } from "./components/Layout";
 import type { AuthStore } from "./store/auth";
@@ -30,6 +31,19 @@ export interface RouteContext {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** A detail page that starts over when its record changes. React Router
+ *  reuses the component when only the params change (e.g. jumping from one
+ *  app to another from the command palette), which would carry one record's
+ *  unsaved edits onto the next and let a save send them there. */
+function perRecord(Page: ComponentType): ComponentType {
+  function PerRecord() {
+    const params = useParams();
+    return <Page key={JSON.stringify(params)} />;
+  }
+  PerRecord.displayName = `PerRecord(${Page.displayName ?? Page.name})`;
+  return PerRecord;
+}
 
 function getAuth(ctx: RouteContext) {
   return { user: ctx.authStore.getState().user };
@@ -337,6 +351,17 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
             })),
         },
         {
+          path: "apps/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/apps/AppCreate").then((m) => ({
+              Component: m.AppCreate,
+            })),
+        },
+        {
           path: "apps/:id",
           loader: ({ request }) => {
             requireAuthLoader(request);
@@ -344,7 +369,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           },
           lazy: () =>
             import("./pages/apps/AppDetail").then((m) => ({
-              Component: m.AppDetail,
+              Component: perRecord(m.AppDetail),
             })),
         },
         {
@@ -360,6 +385,17 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
             })),
         },
         {
+          path: "teams/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/teams/TeamCreate").then((m) => ({
+              Component: m.TeamCreate,
+            })),
+        },
+        {
           path: "teams/:id",
           loader: ({ request }) => {
             requireAuthLoader(request);
@@ -367,7 +403,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           },
           lazy: () =>
             import("./pages/teams/TeamDetail").then((m) => ({
-              Component: m.TeamDetail,
+              Component: perRecord(m.TeamDetail),
             })),
         },
         {
@@ -379,6 +415,50 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           },
           lazy: () =>
             import("./pages/Domains").then((m) => ({ Component: m.Domains })),
+        },
+        {
+          path: "domains/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/domains/DomainNew").then((m) => ({
+              Component: m.DomainNew,
+            })),
+        },
+        {
+          path: "domains/:id",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/domains/DomainDetail").then((m) => ({
+              Component: perRecord(m.DomainDetail),
+            })),
+        },
+        {
+          path: "teams/:teamId/domains/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/domains/DomainNew").then((m) => ({
+              Component: m.DomainNew,
+            })),
+        },
+        {
+          path: "teams/:teamId/domains/:id",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/domains/DomainDetail").then((m) => ({
+              Component: perRecord(m.DomainDetail),
+            })),
         },
         {
           path: "connections",
@@ -410,6 +490,17 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           },
           lazy: () =>
             import("./pages/Tokens").then((m) => ({ Component: m.Tokens })),
+        },
+        {
+          path: "tokens/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/TokenCreate").then((m) => ({
+              Component: m.TokenCreate,
+            })),
         },
         {
           path: "notifications",
@@ -464,7 +555,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
               path: "users/:id",
               lazy: () =>
                 import("./pages/admin/AdminUserDetail").then((m) => ({
-                  Component: m.AdminUserDetail,
+                  Component: perRecord(m.AdminUserDetail),
                 })),
             },
             {
@@ -481,8 +572,15 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                   Component: m.AdminTeams,
                 })),
             },
+            // Each settings section is its own sidebar entry and URL. One
+            // route (not one per section) so the page, and any unsaved
+            // edits it holds, survives moving between sections.
             {
               path: "settings",
+              loader: () => redirect("/admin/settings/general"),
+            },
+            {
+              path: "settings/:tab",
               lazy: () =>
                 import("./pages/admin/AdminSettings").then((m) => ({
                   Component: m.AdminSettings,
@@ -496,10 +594,38 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
+              path: "invites/new",
+              lazy: () =>
+                import("./pages/admin/AdminInviteNew").then((m) => ({
+                  Component: m.AdminInviteNew,
+                })),
+            },
+            {
+              path: "invites/:id",
+              lazy: () =>
+                import("./pages/admin/AdminInviteDetail").then((m) => ({
+                  Component: perRecord(m.AdminInviteDetail),
+                })),
+            },
+            {
               path: "connections",
               lazy: () =>
                 import("./pages/admin/AdminConnections").then((m) => ({
                   Component: m.AdminConnections,
+                })),
+            },
+            {
+              path: "connections/new",
+              lazy: () =>
+                import("./pages/admin/sources/SourceNew").then((m) => ({
+                  Component: m.SourceNew,
+                })),
+            },
+            {
+              path: "connections/:id",
+              lazy: () =>
+                import("./pages/admin/sources/SourceDetail").then((m) => ({
+                  Component: perRecord(m.SourceDetail),
                 })),
             },
             {
@@ -514,13 +640,6 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
               lazy: () =>
                 import("./pages/admin/AdminLoginErrors").then((m) => ({
                   Component: m.AdminLoginErrors,
-                })),
-            },
-            {
-              path: "logs",
-              lazy: () =>
-                import("./pages/admin/AdminLogs").then((m) => ({
-                  Component: m.AdminLogs,
                 })),
             },
             {
@@ -545,10 +664,31 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
+              path: "notices/new",
+              lazy: () =>
+                import("./pages/admin/notices/NoticeNew").then((m) => ({
+                  Component: m.NoticeNew,
+                })),
+            },
+            {
+              path: "notices/:id",
+              lazy: () =>
+                import("./pages/admin/notices/NoticeDetail").then((m) => ({
+                  Component: perRecord(m.NoticeDetail),
+                })),
+            },
+            {
               path: "scope-grants",
               lazy: () =>
                 import("./pages/admin/AdminScopeGrants").then((m) => ({
                   Component: m.AdminScopeGrants,
+                })),
+            },
+            {
+              path: "scope-grants/:kind/:id",
+              lazy: () =>
+                import("./pages/admin/AdminScopeGrantDetail").then((m) => ({
+                  Component: perRecord(m.AdminScopeGrantDetail),
                 })),
             },
             {

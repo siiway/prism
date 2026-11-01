@@ -6,7 +6,12 @@
 // navigating. The click is stopped so a surrounding card's navigate handler
 // doesn't fire too.
 
-import { Tooltip, makeStyles, tokens } from "@fluentui/react-components";
+import {
+  Tooltip,
+  makeStyles,
+  mergeClasses,
+  tokens,
+} from "@fluentui/react-components";
 import {
   useState,
   type ReactNode,
@@ -39,6 +44,8 @@ interface CopyIdTriggerProps {
    *  Callers should pass a specific label (e.g. "Copied team ID") so the
    *  confirmation says *what* landed on the clipboard. */
   copiedLabel?: string;
+  /** Extra styles for the trigger, e.g. left-aligned text in a table cell. */
+  className?: string;
   children: ReactNode;
 }
 
@@ -46,6 +53,7 @@ export function CopyIdTrigger({
   id,
   label,
   copiedLabel,
+  className,
   children,
 }: CopyIdTriggerProps) {
   const styles = useStyles();
@@ -94,7 +102,7 @@ export function CopyIdTrigger({
       relationship="label"
     >
       <div
-        className={styles.trigger}
+        className={mergeClasses(styles.trigger, className)}
         role="button"
         tabIndex={0}
         aria-label={label}

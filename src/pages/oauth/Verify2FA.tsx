@@ -180,13 +180,8 @@ export function Verify2FA() {
       window.location.href = res.redirect;
     } catch (err) {
       if (err instanceof ApiError) {
-        const errorCode = err.message;
-        const humanMsg =
-          typeof err.data === "object" &&
-          err.data !== null &&
-          "message" in (err.data as object)
-            ? String((err.data as Record<string, unknown>).message)
-            : err.message;
+        const errorCode = err.code;
+        const humanMsg = err.message; // already translated
         if (errorCode === "invalid_2fa" || errorCode === "captcha_failed") {
           setErrorMsg(humanMsg);
           // Both cases have spent the single-use captcha token (captcha is
@@ -203,7 +198,8 @@ export function Verify2FA() {
         if (data?.redirect_uri) {
           const url = new URL(data.redirect_uri);
           url.searchParams.set("error", "server_error");
-          url.searchParams.set("error_description", humanMsg);
+          // For the app's developers, not the person here: the stable code.
+          url.searchParams.set("error_description", errorCode);
           if (stateParam) url.searchParams.set("state", stateParam);
           window.location.href = url.toString();
         } else {
@@ -243,11 +239,7 @@ export function Verify2FA() {
     } catch (err) {
       const msg =
         err instanceof ApiError
-          ? typeof err.data === "object" &&
-            err.data !== null &&
-            "message" in (err.data as object)
-            ? String((err.data as Record<string, unknown>).message)
-            : err.message
+          ? err.message
           : t("oauth.siteScopePasskeyFailed");
       setErrorMsg(msg);
     } finally {

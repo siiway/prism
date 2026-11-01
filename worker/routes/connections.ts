@@ -41,7 +41,6 @@ import {
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
 import { proxyImageUrl } from "../lib/proxyImage";
-import { loggedFetch } from "../lib/logger";
 import { verifyAnyTotp } from "../lib/totp";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -399,7 +398,7 @@ app.get("/", requireAuth, async (c) => {
 app.post("/intent", requireAuth, async (c) => {
   const user = c.get("user");
   const sessionId = c.get("sessionId");
-  if (!user || !sessionId) return c.json({ error: "Unauthorized" }, 401);
+  if (!user || !sessionId) return c.json({ error: "unauthorized" }, 401);
   // The provider's top-level callback cannot carry an Authorization header.
   // Mirror a validated bearer session into the HttpOnly cookie so standard
   // OAuth and Telegram both return with the exact session recorded below.
@@ -426,17 +425,16 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
   );
   if (!rl.allowed) {
     c.header("Retry-After", String(rl.resetIn));
-    return c.json({ error: "Too many social login attempts" }, 429);
+    return c.json({ error: "social_login_rate_limited" }, 429);
   }
 
   const source = await resolveSource(c.env, slug);
-  if (!source)
-    return c.json({ error: "Unknown or unconfigured provider" }, 400);
+  if (!source) return c.json({ error: "provider_unavailable" }, 400);
 
   const nonce = randomBase64url(24);
   const requestedMode = c.req.query("mode") ?? "login";
   if (requestedMode !== "login" && requestedMode !== "connect")
-    return c.json({ error: "Invalid OAuth mode" }, 400);
+    return c.json({ error: "invalid_oauth_mode" }, 400);
   const mode: SocialOAuthMode = requestedMode;
 
   // Optional invite token, carried through the whole OAuth round-trip so that
@@ -444,7 +442,7 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
   // account. Ignored for connect mode and when invite-only mode is off.
   const inviteToken = mode === "login" ? (c.req.query("invite") ?? null) : null;
   if (inviteToken && inviteToken.length > 512)
-    return c.json({ error: "Invalid invite token" }, 400);
+    return c.json({ error: "invite_invalid" }, 400);
 
   // Connect mode is pinned to the exact live session authenticated on this
   // request. When the frontend supplies its pre-flight intent, it must name
@@ -453,12 +451,12 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
   const userId = mode === "connect" ? (c.get("user")?.id ?? null) : null;
   const sessionId = mode === "connect" ? (c.get("sessionId") ?? null) : null;
   if (mode === "connect" && (!userId || !sessionId))
-    return c.json({ error: "Authentication required for connect mode" }, 401);
+    return c.json({ error: "unauthorized" }, 401);
 
   const intentKey = mode === "connect" ? c.req.query("intent") : null;
   if (intentKey) {
     if (!/^connect:intent:[A-Za-z0-9_-]{32}$/.test(intentKey))
-      return c.json({ error: "Invalid connect intent" }, 401);
+      return c.json({ error: "invalid_connect_intent" }, 401);
     const stored = await c.env.KV_CACHE.get(intentKey);
     await c.env.KV_CACHE.delete(intentKey); // one-time use, valid or not
     let matchesSession = false;
@@ -475,7 +473,7 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
       }
     }
     if (!matchesSession)
-      return c.json({ error: "Invalid connect intent" }, 401);
+      return c.json({ error: "invalid_connect_intent" }, 401);
   }
   if (mode === "connect") await mirrorBearerSessionCookie(c);
 
@@ -506,8 +504,7 @@ app.get("/:provider/begin", optionalAuth, async (c) => {
     ),
     now,
   });
-  if (!stored)
-    return c.json({ error: "Too many active social login attempts" }, 503);
+  if (!stored) return c.json({ error: "social_login_rate_limited" }, 503);
   setSocialOAuthCookie(c, correlation, SOCIAL_OAUTH_STATE_TTL_SECONDS);
 
   // ── Telegram: redirect to oauth.telegram.org ───────────────────────────────
@@ -583,7 +580,7 @@ app.post("/:provider/tg-verify", optionalAuth, async (c) => {
     .json<{ nonce: string; tg_data: Record<string, string> }>()
     .catch(() => null);
   if (!body?.nonce || !body?.tg_data)
-    return c.json({ error: "Invalid request body" }, 400);
+    return c.json({ error: "invalid_request_body" }, 400);
 
   const config = await getConfig(c.env.DB);
   const source = await resolveSource(c.env, slug);
@@ -873,7 +870,7 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
   // Exchange code for token
   let tokenData: Record<string, unknown>;
   try {
-    const tokenRes = await loggedFetch(c.env, source.tokenUrl, {
+    const tokenRes = await fetch(source.tokenUrl, {
       method: "POST",
       headers: tokenHeaders,
       body: new URLSearchParams(tokenBody),
@@ -896,7 +893,7 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
   // Fetch user profile
   let profileData: Record<string, unknown>;
   try {
-    const userRes = await loggedFetch(c.env, source.userUrl, {
+    const userRes = await fetch(source.userUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
@@ -948,17 +945,13 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
   // the email unverified.
   if (provider === "github") {
     try {
-      const emailsRes = await loggedFetch(
-        c.env,
-        "https://api.github.com/user/emails",
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: "application/json",
-            "User-Agent": "Prism/1.0",
-          },
+      const emailsRes = await fetch("https://api.github.com/user/emails", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+          "User-Agent": "Prism/1.0",
         },
-      );
+      });
       if (emailsRes.ok) {
         const emails = (await emailsRes.json()) as Array<{
           email: string;
@@ -1209,7 +1202,7 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
 app.get("/pending/:key", async (c) => {
   const key = c.req.param("key");
   const raw = await c.env.KV_CACHE.get(key);
-  if (!raw) return c.json({ error: "Invalid or expired session" }, 404);
+  if (!raw) return c.json({ error: "session_invalid" }, 404);
 
   const state = JSON.parse(raw) as PendingState;
   // state.provider holds the slug; resolve the base provider type for helpers
@@ -1267,10 +1260,10 @@ app.post("/complete", async (c) => {
       display_name?: string;
     }>()
     .catch(() => null);
-  if (!body) return c.json({ error: "Invalid request body" }, 400);
+  if (!body) return c.json({ error: "invalid_request_body" }, 400);
 
   const raw = await c.env.KV_CACHE.get(body.key);
-  if (!raw) return c.json({ error: "Invalid or expired session" }, 400);
+  if (!raw) return c.json({ error: "session_invalid" }, 400);
 
   const state = JSON.parse(raw) as PendingState;
   await c.env.KV_CACHE.delete(body.key);
@@ -1283,14 +1276,14 @@ app.post("/complete", async (c) => {
 
   if (body.action === "login") {
     if (state.type !== "select")
-      return c.json({ error: "Invalid action for this session" }, 400);
+      return c.json({ error: "invalid_action" }, 400);
     if (!body.user_id || !state.users?.find((u) => u.id === body.user_id))
-      return c.json({ error: "Invalid user selection" }, 400);
+      return c.json({ error: "user_selection_invalid" }, 400);
 
     const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
       .bind(body.user_id)
       .first<UserRow>();
-    if (!user) return c.json({ error: "User not found" }, 404);
+    if (!user) return c.json({ error: "user_not_found" }, 404);
 
     const storedAccess = await encryptSecret(c.env, state.accessToken);
     const storedRefresh = await encryptSecret(c.env, state.refreshToken);
@@ -1356,12 +1349,12 @@ app.post("/complete", async (c) => {
 
   if (body.action === "register") {
     if (state.type !== "register")
-      return c.json({ error: "Invalid action for this session" }, 400);
+      return c.json({ error: "invalid_action" }, 400);
 
     const allowReg = await getConfig(c.env.DB).then(
       (cfg) => cfg.allow_registration,
     );
-    if (!allowReg) return c.json({ error: "Registration is disabled" }, 403);
+    if (!allowReg) return c.json({ error: "registration_disabled" }, 403);
 
     // Authoritative invite-only enforcement for the social/OAuth path. This is
     // the single point where the account is actually created, so it must be
@@ -1390,14 +1383,18 @@ app.post("/complete", async (c) => {
       .trim()
       .slice(0, 64);
 
-    if (!username) return c.json({ error: "Username is required" }, 400);
+    if (!username)
+      return c.json(
+        { error: "field_required", params: { field: "username" } },
+        400,
+      );
 
     const taken = await c.env.DB.prepare(
       "SELECT id FROM users WHERE username = ?",
     )
       .bind(username)
       .first();
-    if (taken) return c.json({ error: "Username is already taken" }, 409);
+    if (taken) return c.json({ error: "username_taken" }, 409);
 
     const newUserId = randomId();
     // email_verified is anchored to whether the SOCIAL provider asserted
@@ -1410,7 +1407,7 @@ app.post("/complete", async (c) => {
     // Take the invite use before the insert — see claimSiteInvite. Released
     // below if creating the account fails.
     if (usedInvite && !(await claimSiteInvite(c.env, usedInvite)))
-      return c.json({ error: "Invite token has reached its usage limit" }, 403);
+      return c.json({ error: "invite_used_up" }, 403);
     try {
       await c.env.DB.prepare(
         `INSERT INTO users (id, email, username, display_name, role, email_verified, is_active, created_at, updated_at)
@@ -1453,7 +1450,7 @@ app.post("/complete", async (c) => {
     const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
       .bind(newUserId)
       .first<UserRow>();
-    if (!user) return c.json({ error: "Failed to create user" }, 500);
+    if (!user) return c.json({ error: "user_create_failed" }, 500);
 
     await issueJWT(c, user);
     return c.json({
@@ -1461,7 +1458,7 @@ app.post("/complete", async (c) => {
     });
   }
 
-  return c.json({ error: "Invalid action" }, 400);
+  return c.json({ error: "invalid_action" }, 400);
 });
 
 // ─── Untrusted-provider 2FA step (post-social-login TOTP gate) ───────────────
@@ -1473,9 +1470,9 @@ app.post("/complete", async (c) => {
 app.get("/2fa/pending/:key", async (c) => {
   const key = c.req.param("key");
   if (!key.startsWith("social:2fa:"))
-    return c.json({ error: "Invalid or expired session" }, 404);
+    return c.json({ error: "session_invalid" }, 404);
   const raw = await c.env.KV_CACHE.get(key);
-  if (!raw) return c.json({ error: "Invalid or expired session" }, 404);
+  if (!raw) return c.json({ error: "session_invalid" }, 404);
   const state = JSON.parse(raw) as Pending2faState;
 
   const user = await c.env.DB.prepare(
@@ -1483,7 +1480,7 @@ app.get("/2fa/pending/:key", async (c) => {
   )
     .bind(state.userId)
     .first<Pick<UserRow, "id" | "username" | "display_name" | "avatar_url">>();
-  if (!user) return c.json({ error: "Invalid or expired session" }, 404);
+  if (!user) return c.json({ error: "session_invalid" }, 404);
 
   return c.json({
     provider_name: state.providerName,
@@ -1500,16 +1497,16 @@ app.post("/2fa/verify", async (c) => {
     .json<{ key: string; totp_code: string }>()
     .catch(() => null);
   if (!body?.key || !body?.totp_code)
-    return c.json({ error: "Invalid request body" }, 400);
+    return c.json({ error: "invalid_request_body" }, 400);
   if (!body.key.startsWith("social:2fa:"))
-    return c.json({ error: "Invalid or expired session" }, 400);
+    return c.json({ error: "session_invalid" }, 400);
 
   const raw = await c.env.KV_CACHE.get(body.key);
-  if (!raw) return c.json({ error: "Invalid or expired session" }, 400);
+  if (!raw) return c.json({ error: "session_invalid" }, 400);
   const state = JSON.parse(raw) as Pending2faState;
 
   const ok = await verifyAnyTotp(c.env, state.userId, body.totp_code);
-  if (!ok) return c.json({ error: "Invalid TOTP code" }, 401);
+  if (!ok) return c.json({ error: "totp_invalid" }, 401);
 
   // Consume the pending key only after a successful verification — a bad
   // code leaves the key alive so the user can retry within the 10 minute
@@ -1519,7 +1516,7 @@ app.post("/2fa/verify", async (c) => {
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(state.userId)
     .first<UserRow>();
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) return c.json({ error: "user_not_found" }, 404);
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
@@ -1561,14 +1558,14 @@ app.post("/:id/refresh", requireAuth, async (c) => {
         | "connected_at"
       >
     >();
-  if (!conn) return c.json({ error: "Connection not found" }, 404);
+  if (!conn) return c.json({ error: "connection_not_found" }, 404);
 
   const source = await resolveSource(c.env, conn.provider);
   if (!source) return c.json({ error: "provider_not_configured" }, 400);
   if (source.provider === "telegram")
     return c.json({ error: "unsupported_refresh" }, 400);
   const fetchProfile = async (accessToken: string) => {
-    const userRes = await loggedFetch(c.env, source.userUrl, {
+    const userRes = await fetch(source.userUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         Accept: "application/json",
@@ -1602,7 +1599,7 @@ app.post("/:id/refresh", requireAuth, async (c) => {
       refreshBody.client_secret = source.clientSecret;
     }
     try {
-      tokenRes = await loggedFetch(c.env, source.tokenUrl, {
+      tokenRes = await fetch(source.tokenUrl, {
         method: "POST",
         headers: refreshHeaders,
         body: new URLSearchParams(refreshBody),
@@ -1736,7 +1733,7 @@ app.delete("/:id", requireAuth, async (c) => {
   )
     .bind(id, user.id)
     .first<{ provider: string }>();
-  if (!conn) return c.json({ error: "Connection not found" }, 404);
+  if (!conn) return c.json({ error: "connection_not_found" }, 404);
 
   await c.env.DB.prepare(
     "DELETE FROM social_connections WHERE id = ? AND user_id = ?",
@@ -1759,7 +1756,7 @@ app.delete("/:id", requireAuth, async (c) => {
     ).catch(() => {}),
   );
 
-  return c.json({ message: "Disconnected" });
+  return c.json({ ok: true });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

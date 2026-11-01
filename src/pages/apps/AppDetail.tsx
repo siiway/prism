@@ -1,1080 +1,126 @@
-// OAuth App detail / settings page
+// OAuth app detail page: a header, four tabs of settings cards, and the
+// form state they share. Each card saves its own section (see detail/shared).
 
 import {
-  Badge,
   Avatar,
+  Badge,
   Button,
-  Checkbox,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
-  Dropdown,
-  Field,
-  Input,
-  Link,
-  MessageBar,
-  Option,
-  Spinner,
-  Switch,
   Tab,
   TabList,
   Text,
-  Textarea,
   Title2,
-  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import {
   ArrowLeftRegular,
-  ArrowImportRegular,
-  AddRegular,
-  CopyRegular,
-  DeleteRegular,
-  DismissRegular,
-  EyeOffRegular,
-  PeopleRegular,
-  ShieldRegular,
+  OpenRegular,
+  ShieldCheckmarkRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import {
-  ApiError,
-  type AppScopeDefinition,
-  type AppScopeAccessRule,
-  type RedirectUri,
-} from "../../lib/api";
-import { useApi, useAppOrigin } from "../../lib/api-context";
+import { ApiError } from "../../lib/api";
+import { useApi } from "../../lib/api-context";
+import { setDocumentPageTitle } from "../../lib/documentTitle";
 import { useToastMessage } from "../../lib/useToastMessage";
-import { ImageUrlInput } from "../../components/ImageUrlInput";
-import { RedirectUriEditor } from "../../components/RedirectUriEditor";
-import {
-  SkeletonFormCard,
-  SkeletonTableRows,
-} from "../../components/Skeletons";
-import { PLATFORM_SCOPES } from "../../../shared/scopes";
+import { SettingsPage, SettingsToast } from "../../components/Settings";
+import { ViewBanner } from "../../components/ViewBanner";
+import { SkeletonSettingsPage } from "../../components/Skeletons";
 import { useAuthStore } from "../../store/auth";
 import { useAdminViewStore } from "../../store/adminView";
+import {
+  formFromApp,
+  payloadFor,
+  sectionFields,
+  type AppForm,
+  type AppFormApi,
+  type Section,
+} from "./detail/form";
+import { OverviewTab } from "./detail/OverviewTab";
+import { SignInTab } from "./detail/SignInTab";
+import { PermissionsTab } from "./detail/PermissionsTab";
+import { AccessTab } from "./detail/AccessTab";
+import { ModerationTab } from "./detail/ModerationTab";
+
+const TABS = [
+  "overview",
+  "sign-in",
+  "permissions",
+  "access",
+  "moderation",
+] as const;
+type TabId = (typeof TABS)[number];
+
+// Card anchors, so /apps/:id#scopes opens the tab that holds the card.
+const CARD_TAB: Record<string, TabId> = {
+  credentials: "overview",
+  endpoints: "overview",
+  details: "overview",
+  ownership: "overview",
+  delete: "overview",
+  redirects: "sign-in",
+  "sign-out": "sign-in",
+  scopes: "sign-in",
+  "client-auth": "sign-in",
+  "scope-definitions": "permissions",
+  "scope-access": "permissions",
+  access: "access",
+};
 
 const useStyles = makeStyles({
+  back: {
+    alignSelf: "flex-start",
+    marginLeft: "-8px",
+    color: tokens.colorNeutralForeground3,
+  },
   header: {
     display: "flex",
     alignItems: "center",
-    gap: "12px",
-    marginBottom: "24px",
-  },
-  headerText: {
-    display: "flex",
-    flexDirection: "column",
-    minWidth: 0,
-  },
-  card: {
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "8px",
-    padding: "24px",
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    flexDirection: "column",
+    flexWrap: "wrap",
     gap: "16px",
   },
-  form: { display: "flex", flexDirection: "column", gap: "12px" },
-  secretRow: {
+  titles: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    flex: "1 1 240px",
+    minWidth: 0,
+  },
+  titleLine: {
     display: "flex",
     alignItems: "center",
+    flexWrap: "wrap",
     gap: "8px",
-    padding: "10px 12px",
-    background: tokens.colorNeutralBackground3,
-    borderRadius: "4px",
-    fontFamily: "monospace",
-    fontSize: tokens.fontSizeBase200,
   },
+  title: {
+    letterSpacing: "-0.015em",
+    overflowWrap: "anywhere",
+  },
+  muted: { color: tokens.colorNeutralForeground3 },
+  tabBar: {
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  // Line the first tab label up with the content edge.
+  tabs: { marginLeft: "-10px" },
 });
-
-// Keep SCOPES alias for the app-permissions field (needs all non-offline scopes)
-const SCOPES = PLATFORM_SCOPES;
-
-// ─── App-delegation permissions UI ───────────────────────────────────────────
-
-interface AppPermissionsFieldProps {
-  allowedScopes: string[];
-  onChange: (scopes: string[]) => void;
-}
-
-function AppPermissionsField({
-  allowedScopes,
-  onChange,
-}: AppPermissionsFieldProps) {
-  const { t } = useTranslation();
-  const [clientId, setClientId] = useState("");
-  const [innerScope, setInnerScope] = useState(SCOPES[0]);
-
-  const appScopes = allowedScopes.filter((s) => s.startsWith("app:"));
-
-  const add = () => {
-    const trimmed = clientId.trim();
-    if (!trimmed || !innerScope) return;
-    const scope = `app:${trimmed}:${innerScope}`;
-    if (allowedScopes.includes(scope)) return;
-    onChange([...allowedScopes, scope]);
-    setClientId("");
-  };
-
-  const remove = (scope: string) =>
-    onChange(allowedScopes.filter((s) => s !== scope));
-
-  return (
-    <Field
-      label={t("apps.appPermissionsField")}
-      hint={t("apps.appPermissionsHint")}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {appScopes.map((s) => {
-          const [, cid, ...rest] = s.split(":");
-          const inner = rest.join(":");
-          return (
-            <div
-              key={s}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "4px 8px",
-                background: tokens.colorNeutralBackground3,
-                borderRadius: 4,
-                fontFamily: "monospace",
-                fontSize: tokens.fontSizeBase200,
-              }}
-            >
-              <Text
-                size={200}
-                style={{
-                  flex: 1,
-                  fontFamily: "monospace",
-                  wordBreak: "break-all",
-                }}
-              >
-                {cid}
-                <Text
-                  size={200}
-                  style={{
-                    color: tokens.colorNeutralForeground3,
-                    marginLeft: 4,
-                  }}
-                >
-                  · {inner}
-                </Text>
-              </Text>
-              <Button
-                appearance="subtle"
-                icon={<DismissRegular />}
-                size="small"
-                onClick={() => remove(s)}
-              />
-            </div>
-          );
-        })}
-        <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
-          <Field label={t("apps.appPermissionsClientId")} style={{ flex: 1 }}>
-            <Input
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              placeholder="prism_..."
-              size="small"
-              onKeyDown={(e) => e.key === "Enter" && add()}
-            />
-          </Field>
-          <Field
-            label={t("apps.appPermissionsScope")}
-            style={{ minWidth: 160 }}
-          >
-            <Dropdown
-              value={innerScope}
-              selectedOptions={[innerScope]}
-              onOptionSelect={(_, d) =>
-                setInnerScope(d.optionValue ?? SCOPES[0])
-              }
-              size="small"
-            >
-              {SCOPES.filter((s) => s !== "offline_access").map((s) => (
-                <Option key={s} value={s}>
-                  {s}
-                </Option>
-              ))}
-            </Dropdown>
-          </Field>
-          <Button size="small" onClick={add} disabled={!clientId.trim()}>
-            {t("apps.appPermissionsAdd")}
-          </Button>
-        </div>
-      </div>
-    </Field>
-  );
-}
-
-// ─── Allowed-scopes importer ─────────────────────────────────────────────────
-
-function AllowedScopesImporter({
-  current,
-  onMerge,
-}: {
-  current: string[];
-  onMerge: (next: string[]) => void;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [result, setResult] = useState<{
-    added: number;
-    skipped: number;
-    invalid: string[];
-  } | null>(null);
-
-  const parsed = (() => {
-    if (!text.trim()) return null;
-    let raw: unknown;
-    try {
-      raw = JSON.parse(text);
-    } catch (e) {
-      return {
-        error: t("apps.scopeDefImportInvalidJson", {
-          error: e instanceof Error ? e.message : String(e),
-        }),
-      };
-    }
-    if (!Array.isArray(raw) || raw.some((s) => typeof s !== "string")) {
-      return { error: t("apps.allowedScopesImportInvalidShape") };
-    }
-    return { scopes: (raw as string[]).map((s) => s.trim()).filter(Boolean) };
-  })();
-
-  const runImport = () => {
-    if (!parsed || "error" in parsed) return;
-    const valid: string[] = [];
-    const invalid: string[] = [];
-    let skipped = 0;
-    for (const s of parsed.scopes) {
-      // Same shape rule used everywhere: a known platform scope or an app:* scope
-      const ok =
-        /^[a-zA-Z0-9:_.-]+$/.test(s) &&
-        (s.startsWith("app:") || !s.includes(" "));
-      if (!ok) {
-        invalid.push(s);
-        continue;
-      }
-      if (current.includes(s) || valid.includes(s)) {
-        skipped += 1;
-        continue;
-      }
-      valid.push(s);
-    }
-    onMerge([...current, ...valid]);
-    setResult({ added: valid.length, skipped, invalid });
-  };
-
-  return (
-    <>
-      <Button
-        size="small"
-        appearance="secondary"
-        icon={<ArrowImportRegular />}
-        onClick={() => {
-          setOpen(true);
-          setResult(null);
-        }}
-      >
-        {t("apps.allowedScopesImport")}
-      </Button>
-      <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t("apps.allowedScopesImportTitle")}</DialogTitle>
-            <DialogContent
-              style={{ display: "flex", flexDirection: "column", gap: 12 }}
-            >
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground3 }}
-              >
-                {t("apps.allowedScopesImportHint")}
-              </Text>
-              <Textarea
-                value={text}
-                onChange={(_, d) => {
-                  setText(d.value);
-                  setResult(null);
-                }}
-                placeholder={t("apps.allowedScopesImportPlaceholder")}
-                rows={10}
-                resize="vertical"
-                style={{ fontFamily: "monospace", fontSize: 12 }}
-              />
-              {parsed && "error" in parsed && (
-                <MessageBar intent="error">{parsed.error}</MessageBar>
-              )}
-              {result && (
-                <MessageBar
-                  intent={result.invalid.length === 0 ? "success" : "warning"}
-                >
-                  <div
-                    style={{ display: "flex", flexDirection: "column", gap: 4 }}
-                  >
-                    <Text size={200}>
-                      {t("apps.allowedScopesImportResult", {
-                        added: result.added,
-                        skipped: result.skipped,
-                      })}
-                    </Text>
-                    {result.invalid.length > 0 && (
-                      <div
-                        style={{
-                          marginTop: 4,
-                          paddingLeft: 18,
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 2,
-                        }}
-                      >
-                        {result.invalid.map((s, i) => (
-                          <Text key={i} size={200}>
-                            •{" "}
-                            <Text size={200} font="monospace">
-                              {s}
-                            </Text>
-                          </Text>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </MessageBar>
-              )}
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button appearance="secondary">{t("common.close")}</Button>
-              </DialogTrigger>
-              <Button
-                appearance="primary"
-                icon={<ArrowImportRegular />}
-                disabled={
-                  !parsed || "error" in parsed || parsed.scopes.length === 0
-                }
-                onClick={runImport}
-              >
-                {t("apps.allowedScopesImportButton", {
-                  count:
-                    parsed && !("error" in parsed) ? parsed.scopes.length : 0,
-                })}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
-    </>
-  );
-}
-
-// ─── Scope picker field ───────────────────────────────────────────────────────
-
-interface ScopePickerFieldProps {
-  label: string;
-  hint?: string;
-  scopes: string[];
-  availableScopes: string[];
-  onChange: (scopes: string[]) => void;
-}
-
-function ScopePickerField({
-  label,
-  hint,
-  scopes,
-  availableScopes,
-  onChange,
-}: ScopePickerFieldProps) {
-  const { t } = useTranslation();
-  const addScope = (s: string) => {
-    if (!scopes.includes(s)) onChange([...scopes, s]);
-  };
-  const removeScope = (s: string) => onChange(scopes.filter((x) => x !== s));
-  const platformOpts = availableScopes.filter((s) => !scopes.includes(s));
-
-  return (
-    <Field label={label} hint={hint}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {scopes
-          .filter((s) => !s.startsWith("app:"))
-          .map((s) => (
-            <div
-              key={s}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "4px 8px",
-                background: tokens.colorNeutralBackground3,
-                borderRadius: 4,
-              }}
-            >
-              <Text size={200} style={{ flex: 1, fontFamily: "monospace" }}>
-                {s}
-              </Text>
-              <Button
-                appearance="subtle"
-                icon={<DismissRegular />}
-                size="small"
-                onClick={() => removeScope(s)}
-              />
-            </div>
-          ))}
-        {platformOpts.length > 0 && (
-          <Dropdown
-            placeholder={t("apps.allowedScopesPlaceholder")}
-            onOptionSelect={(_, d) => {
-              if (d.optionValue) addScope(d.optionValue);
-            }}
-            size="small"
-            selectedOptions={[]}
-            value=""
-          >
-            {platformOpts.map((s) => (
-              <Option key={s} value={s}>
-                {s}
-              </Option>
-            ))}
-          </Dropdown>
-        )}
-      </div>
-    </Field>
-  );
-}
-
-// ─── Scope definitions panel ──────────────────────────────────────────────────
-
-function ScopeDefinitionsPanel({
-  appId,
-  clientId,
-}: {
-  appId: string;
-  clientId: string;
-}) {
-  const api = useApi();
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  const [newScope, setNewScope] = useState("");
-  const [newTitle, setNewTitle] = useState("");
-  const [newDesc, setNewDesc] = useState("");
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDesc, setEditDesc] = useState("");
-  const [err, setErr] = useState("");
-  const [copiedScope, setCopiedScope] = useState<string>("");
-  const [importOpen, setImportOpen] = useState(false);
-  const [importText, setImportText] = useState("");
-  const [importRunning, setImportRunning] = useState(false);
-  const [importResult, setImportResult] = useState<{
-    ok: number;
-    total: number;
-    failures: { scope: string; error: string }[];
-  } | null>(null);
-
-  const parsedImport = (() => {
-    if (!importText.trim()) return null;
-    let raw: unknown;
-    try {
-      raw = JSON.parse(importText);
-    } catch (e) {
-      return {
-        error: t("apps.scopeDefImportInvalidJson", {
-          error: e instanceof Error ? e.message : String(e),
-        }),
-      };
-    }
-    const arr = Array.isArray(raw) ? raw : [raw];
-    const defs: { scope: string; title: string; description?: string }[] = [];
-    for (const entry of arr) {
-      if (
-        !entry ||
-        typeof entry !== "object" ||
-        typeof (entry as { scope?: unknown }).scope !== "string" ||
-        typeof (entry as { title?: unknown }).title !== "string"
-      ) {
-        return { error: t("apps.scopeDefImportInvalidShape") };
-      }
-      const e = entry as {
-        scope: string;
-        title: string;
-        description?: unknown;
-      };
-      defs.push({
-        scope: e.scope.trim(),
-        title: e.title.trim(),
-        description:
-          typeof e.description === "string" ? e.description.trim() : undefined,
-      });
-    }
-    return { defs };
-  })();
-
-  const copyFullScope = (scope: string) => {
-    void navigator.clipboard.writeText(`app:${clientId}:${scope}`);
-    setCopiedScope(scope);
-    setTimeout(() => setCopiedScope((s) => (s === scope ? "" : s)), 2000);
-  };
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["app-scope-defs", appId],
-    queryFn: () => api.listScopeDefinitions(appId),
-  });
-
-  const createMut = useMutation({
-    mutationFn: () =>
-      api.createScopeDefinition(appId, {
-        scope: newScope.trim(),
-        title: newTitle.trim(),
-        description: newDesc.trim(),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["app-scope-defs", appId] });
-      setNewScope("");
-      setNewTitle("");
-      setNewDesc("");
-      setErr("");
-    },
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
-  });
-
-  const updateMut = useMutation({
-    mutationFn: (defId: string) =>
-      api.updateScopeDefinition(appId, defId, {
-        title: editTitle.trim(),
-        description: editDesc.trim(),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["app-scope-defs", appId] });
-      setEditId(null);
-    },
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: (defId: string) => api.deleteScopeDefinition(appId, defId),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["app-scope-defs", appId] }),
-  });
-
-  const startEdit = (def: AppScopeDefinition) => {
-    setEditId(def.id);
-    setEditTitle(def.title);
-    setEditDesc(def.description);
-  };
-
-  const runImport = async () => {
-    if (!parsedImport || "error" in parsedImport) return;
-    setImportRunning(true);
-    setImportResult(null);
-    const failures: { scope: string; error: string }[] = [];
-    let ok = 0;
-    for (const def of parsedImport.defs) {
-      try {
-        await api.createScopeDefinition(appId, def);
-        ok += 1;
-      } catch (e) {
-        failures.push({
-          scope: def.scope,
-          error: e instanceof ApiError ? e.message : "Failed",
-        });
-      }
-    }
-    setImportRunning(false);
-    setImportResult({ ok, total: parsedImport.defs.length, failures });
-    qc.invalidateQueries({ queryKey: ["app-scope-defs", appId] });
-    if (failures.length === 0) {
-      setImportText("");
-    }
-  };
-
-  if (isLoading) return <SkeletonTableRows rows={3} cols={2} />;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <Text weight="semibold">{t("apps.scopeDefsTitle")}</Text>
-        <Button
-          size="small"
-          appearance="secondary"
-          icon={<ArrowImportRegular />}
-          onClick={() => {
-            setImportOpen(true);
-            setImportResult(null);
-          }}
-        >
-          {t("apps.scopeDefImport")}
-        </Button>
-      </div>
-      <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-        {t("apps.scopeDefsHint")}
-      </Text>
-
-      {err && <MessageBar intent="error">{err}</MessageBar>}
-
-      {(data?.definitions ?? []).map((def) =>
-        editId === def.id ? (
-          <div
-            key={def.id}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              padding: "12px",
-              background: tokens.colorNeutralBackground3,
-              borderRadius: 6,
-            }}
-          >
-            <Field label={t("apps.scopeDefTitle")}>
-              <Input
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                size="small"
-              />
-            </Field>
-            <Field label={t("apps.scopeDefDescription")}>
-              <Input
-                value={editDesc}
-                onChange={(e) => setEditDesc(e.target.value)}
-                size="small"
-              />
-            </Field>
-            <div style={{ display: "flex", gap: 6 }}>
-              <Button
-                size="small"
-                appearance="primary"
-                onClick={() => updateMut.mutate(def.id)}
-                disabled={updateMut.isPending}
-              >
-                {t("common.save")}
-              </Button>
-              <Button size="small" onClick={() => setEditId(null)}>
-                {t("common.cancel")}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div
-            key={def.id}
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 12,
-              padding: "10px 12px",
-              background: tokens.colorNeutralBackground3,
-              borderRadius: 6,
-            }}
-          >
-            <div style={{ flex: 1 }}>
-              <Text
-                weight="semibold"
-                size={300}
-                style={{ fontFamily: "monospace" }}
-              >
-                {def.scope}
-              </Text>
-              <Text block size={300}>
-                {def.title}
-              </Text>
-              {def.description && (
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {def.description}
-                </Text>
-              )}
-            </div>
-            <Tooltip content={t("apps.copyFullScopeId")} relationship="label">
-              <Button
-                size="small"
-                appearance="subtle"
-                icon={<CopyRegular />}
-                onClick={() => copyFullScope(def.scope)}
-              >
-                {copiedScope === def.scope
-                  ? t("apps.copied")
-                  : t("apps.copyFullScopeId")}
-              </Button>
-            </Tooltip>
-            <Button
-              size="small"
-              appearance="subtle"
-              onClick={() => startEdit(def)}
-            >
-              {t("common.edit")}
-            </Button>
-            <Button
-              size="small"
-              appearance="subtle"
-              icon={<DeleteRegular />}
-              onClick={() => deleteMut.mutate(def.id)}
-            />
-          </div>
-        ),
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          padding: "12px",
-          border: `1px dashed ${tokens.colorNeutralStroke1}`,
-          borderRadius: 6,
-        }}
-      >
-        <Text size={200} weight="semibold">
-          {t("apps.scopeDefAdd")}
-        </Text>
-        <div style={{ display: "flex", gap: 6 }}>
-          <Field label={t("apps.scopeDefScopeId")} style={{ flex: 1 }}>
-            <Input
-              value={newScope}
-              onChange={(e) => setNewScope(e.target.value)}
-              placeholder="read_posts"
-              size="small"
-            />
-          </Field>
-          <Field label={t("apps.scopeDefTitle")} style={{ flex: 2 }}>
-            <Input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder={t("apps.scopeDefTitlePlaceholder")}
-              size="small"
-            />
-          </Field>
-        </div>
-        <Field label={t("apps.scopeDefDescription")}>
-          <Input
-            value={newDesc}
-            onChange={(e) => setNewDesc(e.target.value)}
-            placeholder={t("apps.scopeDefDescPlaceholder")}
-            size="small"
-          />
-        </Field>
-        <Button
-          size="small"
-          icon={<AddRegular />}
-          onClick={() => createMut.mutate()}
-          disabled={!newScope.trim() || !newTitle.trim() || createMut.isPending}
-        >
-          {t("apps.scopeDefAdd")}
-        </Button>
-      </div>
-
-      <Dialog open={importOpen} onOpenChange={(_, d) => setImportOpen(d.open)}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t("apps.scopeDefImportTitle")}</DialogTitle>
-            <DialogContent
-              style={{ display: "flex", flexDirection: "column", gap: 12 }}
-            >
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground3 }}
-              >
-                {t("apps.scopeDefImportHint")}
-              </Text>
-              <Textarea
-                value={importText}
-                onChange={(_, d) => {
-                  setImportText(d.value);
-                  setImportResult(null);
-                }}
-                placeholder={t("apps.scopeDefImportPlaceholder")}
-                rows={12}
-                resize="vertical"
-                style={{ fontFamily: "monospace", fontSize: 12 }}
-              />
-              {parsedImport && "error" in parsedImport && (
-                <MessageBar intent="error">{parsedImport.error}</MessageBar>
-              )}
-              {importResult && (
-                <MessageBar
-                  intent={
-                    importResult.failures.length === 0 ? "success" : "warning"
-                  }
-                >
-                  <div
-                    style={{ display: "flex", flexDirection: "column", gap: 4 }}
-                  >
-                    <Text size={200}>
-                      {importResult.failures.length === 0
-                        ? t("apps.scopeDefImportResultOk", {
-                            total: importResult.total,
-                          })
-                        : t("apps.scopeDefImportResultPartial", {
-                            ok: importResult.ok,
-                            total: importResult.total,
-                            failed: importResult.failures.length,
-                          })}
-                    </Text>
-                    {importResult.failures.length > 0 && (
-                      <div
-                        style={{
-                          marginTop: 4,
-                          paddingLeft: 18,
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 2,
-                        }}
-                      >
-                        {importResult.failures.map((f) => (
-                          <Text key={f.scope} size={200}>
-                            •{" "}
-                            <Text size={200} font="monospace">
-                              {f.scope}
-                            </Text>
-                            : {f.error}
-                          </Text>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </MessageBar>
-              )}
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button appearance="secondary">{t("common.close")}</Button>
-              </DialogTrigger>
-              <Button
-                appearance="primary"
-                icon={
-                  importRunning ? (
-                    <Spinner size="tiny" />
-                  ) : (
-                    <ArrowImportRegular />
-                  )
-                }
-                disabled={
-                  importRunning ||
-                  !parsedImport ||
-                  "error" in parsedImport ||
-                  parsedImport.defs.length === 0
-                }
-                onClick={runImport}
-              >
-                {importRunning
-                  ? t("apps.scopeDefImportRunning")
-                  : t("apps.scopeDefImportButton", {
-                      count:
-                        parsedImport && !("error" in parsedImport)
-                          ? parsedImport.defs.length
-                          : 0,
-                    })}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
-    </div>
-  );
-}
-
-// ─── Scope access rules panel ─────────────────────────────────────────────────
-
-const RULE_TYPE_LABELS: Record<string, string> = {
-  owner_allow: "owner_allow",
-  owner_deny: "owner_deny",
-  app_allow: "app_allow",
-  app_deny: "app_deny",
-};
-
-function ScopeAccessRulesPanel({ appId }: { appId: string }) {
-  const api = useApi();
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  const [ruleType, setRuleType] =
-    useState<AppScopeAccessRule["rule_type"]>("app_allow");
-  const [targetId, setTargetId] = useState("");
-  const [err, setErr] = useState("");
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["app-scope-rules", appId],
-    queryFn: () => api.listScopeAccessRules(appId),
-  });
-
-  const createMut = useMutation({
-    mutationFn: () =>
-      api.createScopeAccessRule(appId, {
-        rule_type: ruleType,
-        target_id: targetId.trim(),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["app-scope-rules", appId] });
-      setTargetId("");
-      setErr("");
-    },
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: (ruleId: string) => api.deleteScopeAccessRule(appId, ruleId),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["app-scope-rules", appId] }),
-  });
-
-  const rules = data?.rules ?? [];
-  const grouped = {
-    app_allow: rules.filter((r) => r.rule_type === "app_allow"),
-    app_deny: rules.filter((r) => r.rule_type === "app_deny"),
-    owner_allow: rules.filter((r) => r.rule_type === "owner_allow"),
-    owner_deny: rules.filter((r) => r.rule_type === "owner_deny"),
-  };
-
-  if (isLoading) return <SkeletonTableRows rows={4} cols={2} />;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Text weight="semibold">{t("apps.scopeAccessRulesTitle")}</Text>
-      <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-        {t("apps.scopeAccessRulesHint")}
-      </Text>
-
-      {err && <MessageBar intent="error">{err}</MessageBar>}
-
-      {(["app_allow", "app_deny", "owner_allow", "owner_deny"] as const).map(
-        (rt) => (
-          <div key={rt}>
-            <Text
-              block
-              weight="semibold"
-              size={200}
-              style={{
-                textTransform: "uppercase",
-                letterSpacing: 1,
-                color: tokens.colorNeutralForeground3,
-                marginBottom: 4,
-              }}
-            >
-              {t(`apps.ruleType_${rt}`)}
-            </Text>
-            {grouped[rt].length === 0 ? (
-              <Text
-                block
-                size={200}
-                style={{ color: tokens.colorNeutralForeground4 }}
-              >
-                {t("apps.noRules")}
-              </Text>
-            ) : (
-              grouped[rt].map((rule) => (
-                <div
-                  key={rule.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "4px 0",
-                  }}
-                >
-                  <Text size={200} style={{ flex: 1, fontFamily: "monospace" }}>
-                    {rule.target_id}
-                  </Text>
-                  <Button
-                    size="small"
-                    appearance="subtle"
-                    icon={<DismissRegular />}
-                    onClick={() => deleteMut.mutate(rule.id)}
-                  />
-                </div>
-              ))
-            )}
-          </div>
-        ),
-      )}
-
-      <div
-        style={{
-          display: "flex",
-          gap: 6,
-          alignItems: "flex-end",
-          padding: "12px",
-          border: `1px dashed ${tokens.colorNeutralStroke1}`,
-          borderRadius: 6,
-        }}
-      >
-        <Field label={t("apps.ruleType")} style={{ minWidth: 160 }}>
-          <Dropdown
-            value={t(`apps.ruleType_${ruleType}`)}
-            selectedOptions={[ruleType]}
-            onOptionSelect={(_, d) =>
-              setRuleType(
-                (d.optionValue ??
-                  "app_allow") as AppScopeAccessRule["rule_type"],
-              )
-            }
-            size="small"
-          >
-            {(
-              Object.keys(RULE_TYPE_LABELS) as Array<
-                keyof typeof RULE_TYPE_LABELS
-              >
-            ).map((rt) => (
-              <Option key={rt} value={rt}>
-                {t(`apps.ruleType_${rt}`)}
-              </Option>
-            ))}
-          </Dropdown>
-        </Field>
-        <Field label={t("apps.ruleTargetId")} style={{ flex: 1 }}>
-          <Input
-            value={targetId}
-            onChange={(e) => setTargetId(e.target.value)}
-            placeholder={
-              ruleType.startsWith("app_")
-                ? "prism_..."
-                : t("apps.ruleTargetUserIdPlaceholder")
-            }
-            size="small"
-            onKeyDown={(e) =>
-              e.key === "Enter" && targetId.trim() && createMut.mutate()
-            }
-          />
-        </Field>
-        <Button
-          size="small"
-          icon={<AddRegular />}
-          onClick={() => createMut.mutate()}
-          disabled={!targetId.trim() || createMut.isPending}
-        >
-          {t("apps.addRule")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function AppDetail() {
   const api = useApi();
-  const appOrigin = useAppOrigin();
   const styles = useStyles();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const [params] = useSearchParams();
   const qc = useQueryClient();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  const { message, showMsg } = useToastMessage();
   const isSiteAdmin = useAuthStore((state) => state.user?.role === "admin");
   const {
     normalView,
@@ -1093,1112 +139,281 @@ export function AppDetail() {
   const { data, isLoading } = useQuery({
     queryKey: ["app", id, normalView],
     queryFn: () => api.getApp(id!),
+    enabled: !!id,
   });
   const app = data?.app;
 
-  const { data: teamsData } = useQuery({
-    queryKey: ["teams"],
-    queryFn: () => api.listTeams(),
-  });
+  // ── Tabs ───────────────────────────────────────────────────────────────────
+  const hashTab = CARD_TAB[location.hash.slice(1)];
+  const paramTab = params.get("tab") as TabId | null;
+  // Opened from the admin app list: back leads there.
+  const fromAdmin =
+    (location.state as { from?: string } | null)?.from === "admin-apps";
+  // Moderation is for site admins in admin view only.
+  const canModerate = isSiteAdmin && !normalView;
+  const requested =
+    hashTab ?? (paramTab && TABS.includes(paramTab) ? paramTab : "overview");
+  const tab: TabId =
+    requested === "moderation" && !canModerate ? "overview" : requested;
+  const selectTab = (next: TabId) => {
+    const p = new URLSearchParams(params);
+    if (next === "overview") p.delete("tab");
+    else p.set("tab", next);
+    // Drop a card anchor from another tab, or it would pull the tab back.
+    // Keep router state (where the page was opened from) across tabs.
+    navigate(
+      { search: p.toString() ? `?${p}` : "" },
+      { replace: true, state: location.state },
+    );
+  };
 
-  const { data: accessRulesData, refetch: refetchAccessRules } = useQuery({
-    queryKey: ["app-access-rules", id],
-    queryFn: () => api.listAccessRules(id!),
-    enabled: !!id,
-  });
-  const accessRules = accessRulesData?.rules ?? [];
-
-  const [accessRuleTargetId, setAccessRuleTargetId] = useState("");
-  const [accessRuleType, setAccessRuleType] = useState<"team" | "user">("team");
-  const [accessRuleMinRole, setAccessRuleMinRole] = useState<
-    "owner" | "co-owner" | "admin" | "member"
-  >("member");
-
-  const addAccessRule = useMutation({
-    mutationFn: () =>
-      api.createAccessRule(id!, {
-        rule_type: accessRuleType,
-        target_id: accessRuleTargetId.trim(),
-        min_role: accessRuleType === "team" ? accessRuleMinRole : undefined,
-      }),
-    onSuccess: () => {
-      setAccessRuleTargetId("");
-      refetchAccessRules();
-    },
-  });
-
-  const deleteAccessRule = useMutation({
-    mutationFn: (ruleId: string) => api.deleteAccessRule(id!, ruleId),
-    onSuccess: () => refetchAccessRules(),
-  });
-
-  const toggleWhitelist = useMutation({
-    mutationFn: (enabled: boolean) =>
-      api.updateApp(id!, { access_whitelist_enabled: enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["app", id] }),
-  });
-
-  const [tab, setTab] = useState("settings");
-  const [form, setForm] = useState<{
-    name: string;
-    description: string;
-    icon_url: string;
-    website_url: string;
-    redirect_uris: RedirectUri[];
-    post_logout_redirect_uris: string[];
-    backchannel_logout_uri: string;
-    token_endpoint_auth_method: string;
-    jwks: string;
-    jwks_uri: string;
-    allowed_scopes: string[];
-    optional_scopes: string[];
-    is_public: boolean;
-    use_jwt_tokens: boolean;
-    allow_self_manage_exported_permissions: boolean;
-  } | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [secretRotating, setSecretRotating] = useState(false);
-  const createdClientSecret = (() => {
+  // ── One-time secret ────────────────────────────────────────────────────────
+  // Creation hands over the plaintext secret once through router state. Keep
+  // it in component state and wipe it from history so Back can't show it.
+  const createdSecret = (() => {
     const value = (location.state as { clientSecret?: unknown } | null)
       ?.clientSecret;
     return typeof value === "string" ? value : "";
   })();
-  const [newSecret, setNewSecret] = useState(createdClientSecret);
-  const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
-
-  // Creation responses disclose the plaintext once. After capturing it in
-  // component state, remove it from browser history so back/forward navigation
-  // cannot reveal it again.
+  const [newSecret, setNewSecret] = useState(createdSecret);
   useEffect(() => {
-    if (!createdClientSecret) return;
+    if (!createdSecret) return;
     navigate(`${location.pathname}${location.search}${location.hash}`, {
       replace: true,
       state: null,
     });
   }, [
-    createdClientSecret,
+    createdSecret,
     location.hash,
     location.pathname,
     location.search,
     navigate,
   ]);
-  const { message, showMsg } = useToastMessage();
-  const [copied, setCopied] = useState<string>("");
 
-  const copy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(key);
-    setTimeout(() => setCopied(""), 2000);
-  };
+  useEffect(() => {
+    if (!app?.name) return;
+    setDocumentPageTitle(app.name);
+    return () => setDocumentPageTitle(null);
+  }, [app?.name]);
 
-  const initForm = () => {
-    if (!app || form) return;
-    setForm({
-      name: app.name,
-      description: app.description,
-      icon_url: app.unproxied_icon_url ?? "",
-      website_url: app.website_url ?? "",
-      redirect_uris: app.redirect_uris,
-      post_logout_redirect_uris: app.post_logout_redirect_uris ?? [],
-      backchannel_logout_uri: app.backchannel_logout_uri ?? "",
-      token_endpoint_auth_method: app.token_endpoint_auth_method ?? "",
-      jwks: app.jwks ?? "",
-      jwks_uri: app.jwks_uri ?? "",
-      allowed_scopes: app.allowed_scopes,
-      optional_scopes: app.optional_scopes ?? [],
-      is_public: app.is_public,
-      use_jwt_tokens: app.use_jwt_tokens,
-      allow_self_manage_exported_permissions:
-        app.allow_self_manage_exported_permissions,
+  // ── Form: unsaved edits over the server copy ───────────────────────────────
+  const [edits, setEdits] = useState<Partial<AppForm>>({});
+  const [saving, setSaving] = useState<Section | "switch" | null>(null);
+
+  if (isLoading) return <SkeletonSettingsPage cards={[2, 5, 4]} />;
+
+  if (!app) {
+    // An admin who dropped the override sees a 404 for apps they don't own;
+    // offer the way back rather than a dead end.
+    if (isSiteAdmin && normalView)
+      return (
+        <ViewBanner
+          intent="info"
+          action={{
+            label: t("teams.normalViewSwitchBack"),
+            onClick: () => setView(false),
+          }}
+        >
+          {t("apps.normalViewNotOwner")}
+        </ViewBanner>
+      );
+    return <Text>{t("apps.appNotFound")}</Text>;
+  }
+
+  const base = formFromApp(app);
+  const form: AppForm = { ...base, ...edits };
+  const discard = (section: Section) =>
+    setEdits((e) => {
+      const next = { ...e };
+      for (const k of sectionFields(section)) delete next[k];
+      return next;
     });
-  };
-
-  const handleSave = async () => {
-    if (!form || !id) return;
-    setSaving(true);
-    try {
-      await api.updateApp(id, {
-        name: form.name,
-        description: form.description,
-        icon_url: form.icon_url || undefined,
-        website_url: form.website_url || undefined,
-        redirect_uris: form.redirect_uris,
-        post_logout_redirect_uris: form.post_logout_redirect_uris,
-        backchannel_logout_uri: form.backchannel_logout_uri || null,
-        token_endpoint_auth_method: form.token_endpoint_auth_method || null,
-        jwks: form.jwks.trim() || null,
-        jwks_uri: form.jwks_uri.trim() || null,
-        allowed_scopes: form.allowed_scopes,
-        optional_scopes: form.optional_scopes,
-        is_public: form.is_public,
-        use_jwt_tokens: form.use_jwt_tokens,
-        allow_self_manage_exported_permissions:
-          form.allow_self_manage_exported_permissions,
-      });
-      await qc.invalidateQueries({ queryKey: ["app", id] });
-      showMsg("success", t("apps.appUpdated"));
-    } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Update failed");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // First-time generation (no secret yet) is non-destructive, so rotate
-  // straight away. Once a secret already exists, rotating invalidates it and
-  // breaks existing integrations — confirm first.
-  const requestRotateSecret = () => {
-    if (app?.has_client_secret) {
-      setRotateConfirmOpen(true);
-    } else {
-      void doRotateSecret();
-    }
-  };
-
-  const doRotateSecret = async () => {
-    if (!id) return;
-    setRotateConfirmOpen(false);
-    setSecretRotating(true);
-    try {
-      const res = await api.rotateSecret(id);
-      setNewSecret(res.client_secret);
-      showMsg("success", t("apps.secretRotated"));
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : "Rotation failed",
+  const formApi: AppFormApi = {
+    form,
+    set: (key, value) => setEdits((e) => ({ ...e, [key]: value })),
+    dirty: (section) =>
+      JSON.stringify(payloadFor(section, form)) !==
+      JSON.stringify(payloadFor(section, base)),
+    saving,
+    save: async (section) => {
+      // One save at a time (every footer disables while one is in flight):
+      // the server rewrites the whole app row from what it read, so two
+      // overlapping saves could quietly undo each other.
+      if (saving) return;
+      setSaving(section);
+      // What was sent, so edits typed while the request is in flight
+      // survive it instead of being cleared along with the saved ones.
+      const sent = new Map(
+        sectionFields(section).map((k) => [k, JSON.stringify(form[k])]),
       );
-    } finally {
-      setSecretRotating(false);
-    }
+      try {
+        await api.updateApp(app.id, payloadFor(section, form));
+        await qc.invalidateQueries({ queryKey: ["app", app.id] });
+        await qc.invalidateQueries({ queryKey: ["apps"] });
+        setEdits((e) => {
+          const next = { ...e };
+          for (const [k, value] of sent)
+            if (k in next && JSON.stringify(next[k]) === value) delete next[k];
+          return next;
+        });
+        showMsg("success", t("apps.appUpdated"));
+      } catch (err) {
+        showMsg(
+          "error",
+          err instanceof ApiError ? err.message : t("common.saveFailed"),
+        );
+      } finally {
+        setSaving(null);
+      }
+    },
+    discard,
+    exclusive: async (run) => {
+      if (saving) return;
+      setSaving("switch");
+      try {
+        await run();
+      } finally {
+        setSaving(null);
+      }
+    },
   };
-
-  const handleDelete = async () => {
-    if (!id) return;
-    try {
-      await api.deleteApp(id);
-      await qc.invalidateQueries({ queryKey: ["apps"] });
-      navigate("/apps");
-    } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : "Delete failed");
-    }
-  };
-
-  // ── Team migration ──────────────────────────────────────────────────────────
-  const [migrateOpen, setMigrateOpen] = useState(false);
-  const [selectedTeamId, setSelectedTeamId] = useState("");
-  const [moving, setMoving] = useState(false);
-
-  // Teams where the user is admin or owner
-  const manageableTeams = (teamsData?.teams ?? []).filter(
-    (tm) => tm.role === "owner" || tm.role === "admin",
-  );
-
-  const handleMoveToTeam = async () => {
-    if (!id || !selectedTeamId) return;
-    setMoving(true);
-    try {
-      await api.transferAppToTeam(selectedTeamId, id);
-      await qc.invalidateQueries({ queryKey: ["app", id] });
-      await qc.invalidateQueries({ queryKey: ["apps"] });
-      setMigrateOpen(false);
-      setSelectedTeamId("");
-      showMsg("success", t("apps.appMovedToTeam"));
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("apps.failedMoveApp"),
-      );
-    } finally {
-      setMoving(false);
-    }
-  };
-
-  const handleRemoveFromTeam = async () => {
-    if (!id || !app?.team_id) return;
-    try {
-      await api.removeAppFromTeam(app.team_id, id);
-      await qc.invalidateQueries({ queryKey: ["app", id] });
-      await qc.invalidateQueries({ queryKey: ["apps"] });
-      showMsg("success", t("apps.appRemovedFromTeam"));
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("apps.failedRemoveFromTeam"),
-      );
-    }
-  };
-
-  if (isLoading) return <SkeletonFormCard rows={6} />;
-  if (!app) return <Text>{t("apps.appNotFound")}</Text>;
-
-  if (!form) initForm();
 
   return (
-    <div>
-      {isSiteAdmin && !normalView && !adminBannerDismissed && (
-        <MessageBar intent="warning" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span>{t("apps.siteAdminViewActive")}</span>
-            <Button size="small" onClick={() => setView(true)}>
-              {t("teams.siteAdminSwitchToNormal")}
-            </Button>
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<DismissRegular />}
-              aria-label={t("common.close")}
-              onClick={dismissAdminBanner}
-              style={{ marginLeft: "auto" }}
-            />
-          </div>
-        </MessageBar>
-      )}
-      {isSiteAdmin && normalView && !normalBannerDismissed && (
-        <MessageBar intent="info" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span>{t("apps.memberViewActive")}</span>
-            <Button size="small" onClick={() => setView(false)}>
-              {t("teams.normalViewSwitchBack")}
-            </Button>
-            <Button
-              appearance="subtle"
-              size="small"
-              icon={<DismissRegular />}
-              aria-label={t("common.close")}
-              onClick={dismissNormalBanner}
-              style={{ marginLeft: "auto" }}
-            />
-          </div>
-        </MessageBar>
-      )}
+    <SettingsPage>
+      <Button
+        appearance="subtle"
+        size="small"
+        icon={<ArrowLeftRegular />}
+        className={styles.back}
+        onClick={() =>
+          navigate(
+            fromAdmin
+              ? "/admin/apps"
+              : app.team_id
+                ? `/teams/${app.team_id}`
+                : "/apps",
+          )
+        }
+      >
+        {fromAdmin
+          ? t("admin.applicationsTab")
+          : app.team_id
+            ? (app.team_name ?? t("apps.team"))
+            : t("apps.myApplications")}
+      </Button>
+
       <div className={styles.header}>
-        <Button
-          appearance="subtle"
-          icon={<ArrowLeftRegular />}
-          onClick={() =>
-            app.team_id ? navigate(`/teams/${app.team_id}`) : navigate("/apps")
-          }
-        />
         <Avatar
           image={app.icon_url ? { src: app.icon_url } : undefined}
           name={app.name}
           size={48}
           shape="square"
         />
-        <div className={styles.headerText}>
-          <Title2>{app.name}</Title2>
+        <div className={styles.titles}>
+          <div className={styles.titleLine}>
+            <Title2 as="h1" className={styles.title}>
+              {app.name}
+            </Title2>
+            {app.is_verified && (
+              <Badge
+                appearance="tint"
+                color="success"
+                icon={<ShieldCheckmarkRegular />}
+              >
+                {t("apps.verified")}
+              </Badge>
+            )}
+            {!app.is_active && (
+              <Badge appearance="tint" color="danger">
+                {t("apps.disabled")}
+              </Badge>
+            )}
+            <Badge appearance="outline" color="informative">
+              {app.is_public
+                ? t("apps.typePublic")
+                : t("apps.typeConfidential")}
+            </Badge>
+          </div>
           {app.description && (
-            <Text block style={{ color: tokens.colorNeutralForeground3 }}>
-              {app.description}
-            </Text>
+            <Text className={styles.muted}>{app.description}</Text>
           )}
         </div>
-        {app.is_verified && (
-          <Badge color="success" appearance="filled">
-            <ShieldRegular /> {t("apps.verified")}
-          </Badge>
-        )}
-        {!app.is_active && (
-          <Badge color="subtle" appearance="filled">
-            {t("apps.disabled")}
-          </Badge>
+        {app.website_url && (
+          <Button
+            as="a"
+            href={app.website_url}
+            target="_blank"
+            rel="noreferrer"
+            size="small"
+            icon={<OpenRegular />}
+          >
+            {t("apps.openWebsite")}
+          </Button>
         )}
       </div>
 
-      {message && (
-        <MessageBar
-          intent={message.type === "success" ? "success" : "error"}
-          style={{ marginBottom: 16 }}
+      {isSiteAdmin && !normalView && !adminBannerDismissed && (
+        <ViewBanner
+          intent="warning"
+          onDismiss={dismissAdminBanner}
+          action={{
+            label: t("teams.siteAdminSwitchToNormal"),
+            onClick: () => setView(true),
+          }}
         >
-          {message.text}
-        </MessageBar>
+          {t("apps.siteAdminViewActive")}
+        </ViewBanner>
+      )}
+      {isSiteAdmin && normalView && !normalBannerDismissed && (
+        <ViewBanner
+          intent="info"
+          onDismiss={dismissNormalBanner}
+          action={{
+            label: t("teams.normalViewSwitchBack"),
+            onClick: () => setView(false),
+          }}
+        >
+          {t("apps.memberViewActive")}
+        </ViewBanner>
       )}
 
-      <TabList
-        selectedValue={tab}
-        onTabSelect={(_, d) => setTab(d.value as string)}
-        style={{ marginBottom: 24 }}
-      >
-        <Tab value="settings">{t("apps.settingsTab")}</Tab>
-        <Tab value="credentials">{t("apps.credentialsTab")}</Tab>
-        <Tab value="permissions">{t("apps.permissionsTab")}</Tab>
-        <Tab value="whitelist">{t("accessWhitelist.title")}</Tab>
-        <Tab value="danger">{t("apps.dangerTab")}</Tab>
-      </TabList>
+      <div className={styles.tabBar}>
+        <TabList
+          className={styles.tabs}
+          selectedValue={tab}
+          onTabSelect={(_, d) => selectTab(d.value as TabId)}
+        >
+          <Tab value="overview">{t("apps.tabOverview")}</Tab>
+          <Tab value="sign-in">{t("apps.tabSignIn")}</Tab>
+          <Tab value="permissions">{t("apps.permissionsTab")}</Tab>
+          <Tab value="access">{t("apps.tabAccess")}</Tab>
+          {canModerate && (
+            <Tab value="moderation">{t("apps.moderation.tab")}</Tab>
+          )}
+        </TabList>
+      </div>
 
-      {tab === "settings" && form && (
-        <div className={styles.card}>
-          <div className={styles.form}>
-            <Field label={t("apps.appNameField")}>
-              <Input
-                value={form.name}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f!, name: e.target.value }))
-                }
-              />
-            </Field>
-            <Field label={t("apps.description")}>
-              <Input
-                value={form.description}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f!, description: e.target.value }))
-                }
-              />
-            </Field>
-            <ImageUrlInput
-              label={t("apps.iconUrl")}
-              value={form.icon_url}
-              onChange={(v) => setForm((f) => ({ ...f!, icon_url: v }))}
-            />
-            <Field label={t("apps.websiteUrl")}>
-              <Input
-                value={form.website_url}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f!, website_url: e.target.value }))
-                }
-              />
-            </Field>
-            <RedirectUriEditor
-              label={t("apps.redirectUris")}
-              value={form.redirect_uris}
-              onChange={(v) => setForm((f) => ({ ...f!, redirect_uris: v }))}
-            />
-            <Field
-              label={t("apps.postLogoutRedirectUris")}
-              hint={t("apps.postLogoutRedirectUrisHint")}
-            >
-              <Textarea
-                value={form.post_logout_redirect_uris.join("\n")}
-                onChange={(_, d) =>
-                  setForm((f) => ({
-                    ...f!,
-                    post_logout_redirect_uris: d.value
-                      .split("\n")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  }))
-                }
-                placeholder="https://app.example.com/logged-out"
-                rows={3}
-                resize="vertical"
-                style={{ fontFamily: "monospace", fontSize: 12 }}
-              />
-            </Field>
-            <Field
-              label={t("apps.backchannelLogoutUri")}
-              hint={t("apps.backchannelLogoutUriHint")}
-            >
-              <Input
-                value={form.backchannel_logout_uri}
-                onChange={(_, d) =>
-                  setForm((f) => ({ ...f!, backchannel_logout_uri: d.value }))
-                }
-                placeholder="https://app.example.com/backchannel-logout"
-                style={{ fontFamily: "monospace", fontSize: 12 }}
-              />
-            </Field>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <ScopePickerField
-                label={t("apps.allowedScopes")}
-                hint={t("apps.allowedScopesHint")}
-                scopes={form.allowed_scopes.filter(
-                  (s) => !s.startsWith("app:"),
-                )}
-                availableScopes={PLATFORM_SCOPES}
-                onChange={(scopes) =>
-                  setForm((f) => ({
-                    ...f!,
-                    allowed_scopes: [
-                      ...scopes,
-                      ...f!.allowed_scopes.filter((s) => s.startsWith("app:")),
-                    ],
-                    optional_scopes: f!.optional_scopes.filter((s) =>
-                      scopes.includes(s),
-                    ),
-                  }))
-                }
-              />
-              <div style={{ alignSelf: "flex-start" }}>
-                <AllowedScopesImporter
-                  current={form.allowed_scopes}
-                  onMerge={(scopes) =>
-                    setForm((f) => ({ ...f!, allowed_scopes: scopes }))
-                  }
-                />
-              </div>
-            </div>
+      <SettingsToast message={message} />
 
-            <ScopePickerField
-              label={t("apps.optionalScopes")}
-              hint={t("apps.optionalScopesHint")}
-              scopes={form.optional_scopes}
-              availableScopes={form.allowed_scopes.filter(
-                (s) => !s.startsWith("app:"),
-              )}
-              onChange={(scopes) =>
-                setForm((f) => ({ ...f!, optional_scopes: scopes }))
-              }
-            />
-
-            <AppPermissionsField
-              allowedScopes={form.allowed_scopes}
-              onChange={(scopes) =>
-                setForm((f) => ({ ...f!, allowed_scopes: scopes }))
-              }
-            />
-            <Field
-              label={t("apps.tokenEndpointAuthMethod")}
-              hint={t("apps.tokenEndpointAuthMethodHint")}
-            >
-              <Dropdown
-                value={
-                  form.token_endpoint_auth_method === ""
-                    ? t("apps.authMethodDefault")
-                    : form.token_endpoint_auth_method
-                }
-                selectedOptions={[form.token_endpoint_auth_method]}
-                onOptionSelect={(_, d) =>
-                  setForm((f) => ({
-                    ...f!,
-                    token_endpoint_auth_method: (d.optionValue ?? "") as string,
-                  }))
-                }
-              >
-                <Option value="">{t("apps.authMethodDefault")}</Option>
-                <Option value="client_secret_basic">client_secret_basic</Option>
-                <Option value="client_secret_post">client_secret_post</Option>
-                <Option value="private_key_jwt">private_key_jwt</Option>
-                <Option value="none">none</Option>
-              </Dropdown>
-            </Field>
-            {form.token_endpoint_auth_method === "private_key_jwt" && (
-              <>
-                <Field label={t("apps.jwks")} hint={t("apps.jwksHint")}>
-                  <Textarea
-                    value={form.jwks}
-                    onChange={(_, d) =>
-                      setForm((f) => ({ ...f!, jwks: d.value }))
-                    }
-                    placeholder='{"keys":[{"kty":"RSA","kid":"…","n":"…","e":"AQAB"}]}'
-                    rows={5}
-                    resize="vertical"
-                    style={{ fontFamily: "monospace", fontSize: 12 }}
-                  />
-                </Field>
-                <Field label={t("apps.jwksUri")} hint={t("apps.jwksUriHint")}>
-                  <Input
-                    value={form.jwks_uri}
-                    onChange={(_, d) =>
-                      setForm((f) => ({ ...f!, jwks_uri: d.value }))
-                    }
-                    placeholder="https://app.example.com/.well-known/jwks.json"
-                    style={{ fontFamily: "monospace", fontSize: 12 }}
-                  />
-                </Field>
-              </>
-            )}
-            <Checkbox
-              id={"is-public"}
-              label={t("apps.publicClient")}
-              checked={form.is_public}
-              onChange={(_, d) =>
-                setForm((f) => ({ ...f!, is_public: !!d.checked }))
-              }
-            />
-            <Checkbox
-              id={"use-jwt-tokens"}
-              label={t("apps.useJwtTokens")}
-              checked={form.use_jwt_tokens}
-              onChange={(_, d) =>
-                setForm((f) => ({ ...f!, use_jwt_tokens: !!d.checked }))
-              }
-            />
-            <Checkbox
-              id={"allow-self-manage-exported-permissions"}
-              label={t("apps.allowSelfManageExportedPermissions")}
-              checked={form.allow_self_manage_exported_permissions}
-              onChange={(_, d) =>
-                setForm((f) => ({
-                  ...f!,
-                  allow_self_manage_exported_permissions: !!d.checked,
-                }))
-              }
-            />
-            <Button appearance="primary" onClick={handleSave} disabled={saving}>
-              {saving ? <Spinner size="tiny" /> : t("common.saveChanges")}
-            </Button>
-          </div>
-        </div>
+      {tab === "overview" && (
+        <OverviewTab
+          app={app}
+          formApi={formApi}
+          newSecret={newSecret}
+          setNewSecret={setNewSecret}
+          showMsg={showMsg}
+        />
       )}
-
+      {tab === "sign-in" && <SignInTab formApi={formApi} />}
       {tab === "permissions" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-          <div className={styles.card}>
-            <Field label={t("apps.scopeIdLabel")} hint={t("apps.scopeIdHint")}>
-              <div className={styles.secretRow}>
-                <Text style={{ flex: 1, fontFamily: "monospace" }}>
-                  {app.client_id}
-                </Text>
-                <Button
-                  icon={<CopyRegular />}
-                  size="small"
-                  appearance="subtle"
-                  onClick={() => copy(app.client_id, "scope-id")}
-                >
-                  {copied === "scope-id"
-                    ? t("apps.copied")
-                    : t("apps.copyScopeId")}
-                </Button>
-              </div>
-            </Field>
-          </div>
-          <div className={styles.card}>
-            <ScopeDefinitionsPanel appId={id!} clientId={app.client_id} />
-          </div>
-          <div className={styles.card}>
-            <ScopeAccessRulesPanel appId={id!} />
-          </div>
-        </div>
+        <PermissionsTab app={app} formApi={formApi} showMsg={showMsg} />
       )}
-
-      {tab === "credentials" && (
-        <div className={styles.card}>
-          <Text weight="semibold" block>
-            {t("apps.clientCredentials")}
-          </Text>
-
-          <Field label={t("apps.clientId")}>
-            <div className={styles.secretRow}>
-              <Text style={{ flex: 1, fontFamily: "monospace" }}>
-                {app.client_id}
-              </Text>
-              <Button
-                icon={<CopyRegular />}
-                size="small"
-                appearance="subtle"
-                onClick={() => copy(app.client_id, "id")}
-              >
-                {copied === "id" ? t("apps.copied") : ""}
-              </Button>
-            </div>
-          </Field>
-
-          {!app.is_public && (
-            <Field label={t("apps.clientSecret")}>
-              {newSecret ? (
-                <div>
-                  <div className={styles.secretRow}>
-                    <Text style={{ flex: 1, fontFamily: "monospace" }}>
-                      {newSecret}
-                    </Text>
-                    <Button
-                      icon={<CopyRegular />}
-                      size="small"
-                      appearance="subtle"
-                      onClick={() => copy(newSecret, "secret")}
-                    >
-                      {copied === "secret" ? t("apps.copied") : ""}
-                    </Button>
-                  </div>
-                  <MessageBar intent="warning" style={{ marginTop: 8 }}>
-                    {t("apps.saveSecretWarning")}
-                  </MessageBar>
-                  <Button
-                    icon={<EyeOffRegular />}
-                    size="small"
-                    appearance="subtle"
-                    onClick={() => setNewSecret("")}
-                    style={{ marginTop: 8, width: "fit-content" }}
-                  >
-                    {t("apps.hideSecret")}
-                  </Button>
-                </div>
-              ) : (
-                <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                  {app.has_client_secret
-                    ? "••••••••••••••••"
-                    : t("apps.noSecret")}
-                </Text>
-              )}
-              <Button
-                appearance="outline"
-                onClick={requestRotateSecret}
-                disabled={secretRotating}
-                style={{ marginTop: 8, width: "fit-content" }}
-              >
-                {secretRotating ? (
-                  <Spinner size="tiny" />
-                ) : app.has_client_secret ? (
-                  t("apps.rotateSecret")
-                ) : (
-                  t("apps.generateSecret")
-                )}
-              </Button>
-            </Field>
-          )}
-
-          <div>
-            <Text weight="semibold" block style={{ marginBottom: 8 }}>
-              {t("apps.oauthEndpoints")}
-            </Text>
-            {[
-              ["Well-known", `/.well-known/openid-configuration`],
-              ["Authorization", `/api/oauth/authorize`],
-              ["Token", `/api/oauth/token`],
-              ["UserInfo", `/api/oauth/userinfo`],
-            ].map(([label, path]) => (
-              <div
-                key={label}
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  marginBottom: 6,
-                  alignItems: "center",
-                }}
-              >
-                <Text
-                  size={200}
-                  style={{ width: 100, color: tokens.colorNeutralForeground3 }}
-                >
-                  {label}
-                </Text>
-                <Text size={200} style={{ fontFamily: "monospace", flex: 1 }}>
-                  {appOrigin}
-                  {path}
-                </Text>
-              </div>
-            ))}
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 16,
-                marginTop: 12,
-              }}
-            >
-              <Link
-                href={`${appOrigin}/.well-known/openid-configuration`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {t("apps.supportedClaims")}
-              </Link>
-              <Link
-                href={
-                  i18n.language.startsWith("zh")
-                    ? "https://prism.wss.moe/zh/oauth"
-                    : "https://prism.wss.moe/oauth"
-                }
-                target="_blank"
-                rel="noreferrer"
-              >
-                {t("apps.oauthOidcGuide")}
-              </Link>
-            </div>
-          </div>
-
-          <Dialog
-            open={rotateConfirmOpen}
-            onOpenChange={(_, d) => setRotateConfirmOpen(d.open)}
-          >
-            <DialogSurface>
-              <DialogBody>
-                <DialogTitle>{t("apps.rotateSecretConfirmTitle")}</DialogTitle>
-                <DialogContent>
-                  {t("apps.rotateSecretConfirmBody")}
-                </DialogContent>
-                <DialogActions>
-                  <Button onClick={() => setRotateConfirmOpen(false)}>
-                    {t("common.cancel")}
-                  </Button>
-                  <Button appearance="primary" onClick={() => doRotateSecret()}>
-                    {t("apps.rotateSecret")}
-                  </Button>
-                </DialogActions>
-              </DialogBody>
-            </DialogSurface>
-          </Dialog>
-        </div>
+      {tab === "access" && (
+        <AccessTab app={app} formApi={formApi} showMsg={showMsg} />
       )}
-
-      {tab === "whitelist" && app && (
-        <div className={styles.card}>
-          <Field
-            label={t("accessWhitelist.enabled")}
-            hint={t("accessWhitelist.description")}
-          >
-            <Switch
-              label={t("accessWhitelist.enabled")}
-              checked={app.access_whitelist_enabled}
-              onChange={(_, d) => toggleWhitelist.mutate(d.checked)}
-            />
-          </Field>
-
-          {app.access_whitelist_enabled && (
-            <>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "12px",
-                  paddingTop: "8px",
-                }}
-              >
-                <Text weight="semibold">{t("accessWhitelist.addRule")}</Text>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "12px",
-                  }}
-                >
-                  <Field label={t("accessWhitelist.ruleType")}>
-                    <Dropdown
-                      value={
-                        accessRuleType === "team"
-                          ? t("accessWhitelist.ruleTypeTeam")
-                          : t("accessWhitelist.ruleTypeUser")
-                      }
-                      selectedOptions={[accessRuleType]}
-                      onOptionSelect={(_, d) =>
-                        setAccessRuleType(d.optionValue as "team" | "user")
-                      }
-                    >
-                      <Option value="team">
-                        {t("accessWhitelist.ruleTypeTeam")}
-                      </Option>
-                      <Option value="user">
-                        {t("accessWhitelist.ruleTypeUser")}
-                      </Option>
-                    </Dropdown>
-                  </Field>
-                  <Field label={t("accessWhitelist.target")}>
-                    {accessRuleType === "team" ? (
-                      <Dropdown
-                        value={
-                          teamsData?.teams.find(
-                            (tm) => tm.id === accessRuleTargetId,
-                          )?.name ?? t("accessWhitelist.selectTeam")
-                        }
-                        selectedOptions={
-                          accessRuleTargetId ? [accessRuleTargetId] : []
-                        }
-                        onOptionSelect={(_, d) =>
-                          setAccessRuleTargetId(d.optionValue ?? "")
-                        }
-                      >
-                        {(teamsData?.teams ?? []).map((tm) => (
-                          <Option key={tm.id} value={tm.id}>
-                            {tm.name}
-                          </Option>
-                        ))}
-                      </Dropdown>
-                    ) : (
-                      <Input
-                        value={accessRuleTargetId}
-                        onChange={(e) => setAccessRuleTargetId(e.target.value)}
-                        placeholder="user-id"
-                      />
-                    )}
-                  </Field>
-                </div>
-                {accessRuleType === "team" && (
-                  <Field
-                    label={t("accessWhitelist.minRole")}
-                    hint={t("accessWhitelist.minRoleHint")}
-                  >
-                    <Dropdown
-                      value={t(
-                        `accessWhitelist.${
-                          (
-                            {
-                              owner: "roleOwner",
-                              "co-owner": "roleCoOwner",
-                              admin: "roleAdmin",
-                              member: "roleMember",
-                            } as Record<string, string>
-                          )[accessRuleMinRole]
-                        }`,
-                      )}
-                      selectedOptions={[accessRuleMinRole]}
-                      onOptionSelect={(_, d) =>
-                        setAccessRuleMinRole(
-                          (d.optionValue ?? "member") as
-                            | "owner"
-                            | "co-owner"
-                            | "admin"
-                            | "member",
-                        )
-                      }
-                    >
-                      <Option value="owner">
-                        {t("accessWhitelist.roleOwner")}
-                      </Option>
-                      <Option value="co-owner">
-                        {t("accessWhitelist.roleCoOwner")}
-                      </Option>
-                      <Option value="admin">
-                        {t("accessWhitelist.roleAdmin")}
-                      </Option>
-                      <Option value="member">
-                        {t("accessWhitelist.roleMember")}
-                      </Option>
-                    </Dropdown>
-                  </Field>
-                )}
-                <Button
-                  appearance="primary"
-                  disabled={
-                    !accessRuleTargetId.trim() ||
-                    (accessRuleType === "team" && !teamsData?.teams.length) ||
-                    addAccessRule.isPending
-                  }
-                  onClick={() => addAccessRule.mutate()}
-                  style={{ width: "fit-content" }}
-                >
-                  {addAccessRule.isPending ? (
-                    <Spinner size="tiny" />
-                  ) : (
-                    t("accessWhitelist.addRule")
-                  )}
-                </Button>
-              </div>
-
-              <div>
-                <Text weight="semibold" block style={{ marginBottom: 8 }}>
-                  {t("accessWhitelist.rules")}
-                </Text>
-                {accessRules.length === 0 ? (
-                  <Text
-                    size={200}
-                    style={{ color: tokens.colorNeutralForeground3 }}
-                  >
-                    {t("accessWhitelist.noRules")}
-                  </Text>
-                ) : (
-                  accessRules.map((rule) => (
-                    <div
-                      key={rule.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: "8px 0",
-                        borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
-                      }}
-                    >
-                      <Badge
-                        appearance="filled"
-                        color={
-                          rule.rule_type === "team" ? "brand" : "important"
-                        }
-                      >
-                        {rule.rule_type === "team"
-                          ? t("accessWhitelist.ruleTypeTeam")
-                          : t("accessWhitelist.ruleTypeUser")}
-                      </Badge>
-                      <Text size={300} style={{ flex: 1 }}>
-                        {rule.rule_type === "team"
-                          ? (teamsData?.teams.find(
-                              (tm) => tm.id === rule.target_id,
-                            )?.name ?? rule.target_id)
-                          : rule.target_id}
-                      </Text>
-                      {rule.min_role && (
-                        <Text
-                          size={200}
-                          style={{ color: tokens.colorNeutralForeground3 }}
-                        >
-                          {t(
-                            `accessWhitelist.${
-                              (
-                                {
-                                  owner: "roleOwner",
-                                  "co-owner": "roleCoOwner",
-                                  admin: "roleAdmin",
-                                  member: "roleMember",
-                                } as Record<string, string>
-                              )[rule.min_role]
-                            }`,
-                          )}
-                        </Text>
-                      )}
-                      <Button
-                        icon={<DeleteRegular />}
-                        appearance="subtle"
-                        size="small"
-                        onClick={() => deleteAccessRule.mutate(rule.id)}
-                      />
-                    </div>
-                  ))
-                )}
-              </div>
-            </>
-          )}
-        </div>
+      {tab === "moderation" && (
+        <ModerationTab app={app} formApi={formApi} showMsg={showMsg} />
       )}
-
-      {tab === "danger" && (
-        <div className={styles.card}>
-          {/* Team membership */}
-          <Text weight="semibold" size={400}>
-            {t("apps.team")}
-          </Text>
-          {app.team_id ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <PeopleRegular fontSize={20} />
-              <Text>{t("apps.appBelongsToTeam")}</Text>
-              <Button
-                appearance="outline"
-                size="small"
-                onClick={() => navigate(`/teams/${app.team_id}`)}
-              >
-                {t("apps.viewTeam")}
-              </Button>
-              <Button
-                appearance="outline"
-                size="small"
-                style={{ color: tokens.colorPaletteRedForeground1 }}
-                onClick={handleRemoveFromTeam}
-              >
-                {t("apps.removeFromTeam")}
-              </Button>
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <Text style={{ color: tokens.colorNeutralForeground3 }}>
-                {t("apps.personalApp")}
-              </Text>
-            </div>
-          )}
-
-          {/* Migrate app to team */}
-          {manageableTeams.filter((tm) => tm.id !== app.team_id).length > 0 && (
-            <Dialog
-              open={migrateOpen}
-              onOpenChange={(_, d) => {
-                setMigrateOpen(d.open);
-                if (!d.open) setSelectedTeamId("");
-              }}
-            >
-              <DialogTrigger disableButtonEnhancement>
-                <Button
-                  appearance="outline"
-                  icon={<PeopleRegular />}
-                  style={{ width: "fit-content" }}
-                >
-                  {t("apps.migrateToTeam")}
-                </Button>
-              </DialogTrigger>
-              <DialogSurface>
-                <DialogBody>
-                  <DialogTitle>{t("apps.migrateAppToTeam")}</DialogTitle>
-                  <DialogContent>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 12,
-                      }}
-                    >
-                      <Field label={t("apps.selectTeam")} required>
-                        <Dropdown
-                          placeholder={t("apps.chooseTeam")}
-                          value={
-                            manageableTeams.find(
-                              (tm) => tm.id === selectedTeamId,
-                            )?.name ?? ""
-                          }
-                          selectedOptions={
-                            selectedTeamId ? [selectedTeamId] : []
-                          }
-                          onOptionSelect={(_, d) =>
-                            setSelectedTeamId(d.optionValue ?? "")
-                          }
-                        >
-                          {manageableTeams
-                            .filter((tm) => tm.id !== app.team_id)
-                            .map((tm) => (
-                              <Option key={tm.id} value={tm.id}>
-                                {tm.name}
-                              </Option>
-                            ))}
-                        </Dropdown>
-                      </Field>
-                      <Text
-                        size={200}
-                        style={{ color: tokens.colorNeutralForeground3 }}
-                      >
-                        {t("apps.migrateAppDesc")}
-                      </Text>
-                    </div>
-                  </DialogContent>
-                  <DialogActions>
-                    <DialogTrigger>
-                      <Button>{t("common.cancel")}</Button>
-                    </DialogTrigger>
-                    <Button
-                      appearance="primary"
-                      onClick={handleMoveToTeam}
-                      disabled={moving || !selectedTeamId}
-                    >
-                      {moving ? (
-                        <Spinner size="tiny" />
-                      ) : (
-                        t("apps.migrateToTeam")
-                      )}
-                    </Button>
-                  </DialogActions>
-                </DialogBody>
-              </DialogSurface>
-            </Dialog>
-          )}
-
-          <Text
-            weight="semibold"
-            size={400}
-            style={{ color: tokens.colorPaletteRedForeground1 }}
-          >
-            {t("apps.dangerTab")}
-          </Text>
-
-          <Dialog>
-            <DialogTrigger disableButtonEnhancement>
-              <Button
-                appearance="outline"
-                icon={<DeleteRegular />}
-                style={{
-                  color: tokens.colorPaletteRedForeground1,
-                  width: "fit-content",
-                }}
-              >
-                {t("apps.deleteApplication")}
-              </Button>
-            </DialogTrigger>
-            <DialogSurface>
-              <DialogBody>
-                <DialogTitle>
-                  {t("apps.deleteAppTitle", { name: app.name })}
-                </DialogTitle>
-                <DialogContent>{t("apps.deleteAppDesc")}</DialogContent>
-                <DialogActions>
-                  <DialogTrigger>
-                    <Button>{t("common.cancel")}</Button>
-                  </DialogTrigger>
-                  <Button
-                    appearance="primary"
-                    style={{ background: tokens.colorPaletteRedBackground3 }}
-                    onClick={handleDelete}
-                  >
-                    {t("apps.deletePermanently")}
-                  </Button>
-                </DialogActions>
-              </DialogBody>
-            </DialogSurface>
-          </Dialog>
-        </div>
-      )}
-    </div>
+    </SettingsPage>
   );
 }

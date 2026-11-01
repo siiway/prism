@@ -1,6 +1,6 @@
 // Frontend rendering of the geo JSON snapshots the worker stores alongside
 // request IPs (session_ips.geo, and the *_geo columns on audit events, login
-// errors, request logs). Shape mirrors worker/lib/geo.ts GeoInfo.
+// errors). Shape mirrors worker/lib/geo.ts GeoInfo.
 
 export interface IpGeo {
   continent?: string | null;

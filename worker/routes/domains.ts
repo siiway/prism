@@ -38,8 +38,8 @@ app.get("/", async (c) => {
   const query = c.req.query("q")?.trim() ?? "";
 
   const where = query
-    ? "user_id = ? AND LOWER(domain) LIKE LOWER(?) ESCAPE '\\'"
-    : "user_id = ?";
+    ? "user_id = ? AND team_id IS NULL AND LOWER(domain) LIKE LOWER(?) ESCAPE '\\'"
+    : "user_id = ? AND team_id IS NULL";
   const args: unknown[] = query ? [user.id, likePattern(query)] : [user.id];
 
   const [rows, countRow] = await Promise.all([
@@ -60,6 +60,18 @@ app.get("/", async (c) => {
   });
 });
 
+// One of your domains
+app.get("/:id", async (c) => {
+  const user = c.get("user");
+  const row = await c.env.DB.prepare(
+    "SELECT * FROM domains WHERE id = ? AND user_id = ? AND team_id IS NULL",
+  )
+    .bind(c.req.param("id"), user.id)
+    .first<DomainRow>();
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
+  return c.json({ domain: row });
+});
+
 // Add domain
 app.post("/", async (c) => {
   const user = c.get("user");
@@ -69,20 +81,24 @@ app.post("/", async (c) => {
 
   const body = await c.req.json<{ domain: string; app_id?: string }>();
 
-  if (!body.domain) return c.json({ error: "domain is required" }, 400);
+  if (!body.domain)
+    return c.json(
+      { error: "field_required", params: { field: "domain" } },
+      400,
+    );
 
   // Tolerate pasted URLs / whitespace / trailing dots, then validate
   const domain = normalizeDomainInput(body.domain);
   const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
   if (!domainRegex.test(domain))
-    return c.json({ error: "Invalid domain format" }, 400);
+    return c.json({ error: "domain_invalid" }, 400);
 
   const existing = await c.env.DB.prepare(
-    "SELECT id FROM domains WHERE user_id = ? AND domain = ?",
+    "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
   )
     .bind(user.id, domain)
     .first();
-  if (existing) return c.json({ error: "Domain already added" }, 409);
+  if (existing) return c.json({ error: "domain_exists" }, 409);
 
   const verificationToken = randomBase64url(24);
   const id = randomId();
@@ -168,11 +184,11 @@ app.post("/:id/verify", async (c) => {
   const id = c.req.param("id");
 
   const row = await c.env.DB.prepare(
-    "SELECT * FROM domains WHERE id = ? AND user_id = ?",
+    "SELECT * FROM domains WHERE id = ? AND user_id = ? AND team_id IS NULL",
   )
     .bind(id, user.id)
     .first<DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   let requestedMethod: VerificationMethod | null = null;
   try {
@@ -183,7 +199,7 @@ app.post("/:id/verify", async (c) => {
     };
     if (body.method !== undefined) {
       if (!isVerificationMethod(body.method))
-        return c.json({ error: "Invalid verification method" }, 400);
+        return c.json({ error: "verification_method_invalid" }, 400);
       requestedMethod = body.method;
     }
   } catch {
@@ -280,16 +296,20 @@ app.post("/:id/transfer", async (c) => {
   )
     .bind(id, user.id)
     .first<DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   const body = await c.req.json<{ team_id: string }>();
-  if (!body.team_id) return c.json({ error: "team_id is required" }, 400);
+  if (!body.team_id)
+    return c.json(
+      { error: "field_required", params: { field: "team_id" } },
+      400,
+    );
 
   // Requester must be admin+ in the target team — or a site admin, who holds
   // that authority over every team without being a member of any.
   const member = await teamAuthority(c, body.team_id);
   if (!member || !hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden: must be team admin or owner" }, 403);
+    return c.json({ error: "team_admin_required" }, 403);
 
   // Team must not already have this domain
   const conflict = await c.env.DB.prepare(
@@ -297,13 +317,13 @@ app.post("/:id/transfer", async (c) => {
   )
     .bind(body.team_id, row.domain)
     .first();
-  if (conflict) return c.json({ error: "Team already has this domain" }, 409);
+  if (conflict) return c.json({ error: "team_has_domain" }, 409);
 
   await c.env.DB.prepare("UPDATE domains SET team_id = ? WHERE id = ?")
     .bind(body.team_id, id)
     .run();
 
-  return c.json({ message: "Domain transferred to team" });
+  return c.json({ ok: true });
 });
 
 // Share personal domain to a team (copy — source stays, target gets a new verified row)
@@ -316,16 +336,20 @@ app.post("/:id/share", async (c) => {
   )
     .bind(id, user.id)
     .first<DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   const body = await c.req.json<{ team_id: string }>();
-  if (!body.team_id) return c.json({ error: "team_id is required" }, 400);
+  if (!body.team_id)
+    return c.json(
+      { error: "field_required", params: { field: "team_id" } },
+      400,
+    );
 
   // Requester must be admin+ in the target team — or a site admin, who holds
   // that authority over every team without being a member of any.
   const member = await teamAuthority(c, body.team_id);
   if (!member || !hasRole(member.role, "admin"))
-    return c.json({ error: "Forbidden: must be team admin or owner" }, 403);
+    return c.json({ error: "team_admin_required" }, 403);
 
   // Target team must not already have this domain
   const conflict = await c.env.DB.prepare(
@@ -333,7 +357,7 @@ app.post("/:id/share", async (c) => {
   )
     .bind(body.team_id, row.domain)
     .first();
-  if (conflict) return c.json({ error: "Team already has this domain" }, 409);
+  if (conflict) return c.json({ error: "team_has_domain" }, 409);
 
   const newId = randomId();
   const newToken = randomBase64url(24);
@@ -367,11 +391,11 @@ app.delete("/:id", async (c) => {
   const user = c.get("user");
   const id = c.req.param("id");
   const row = await c.env.DB.prepare(
-    "SELECT * FROM domains WHERE id = ? AND user_id = ?",
+    "SELECT * FROM domains WHERE id = ? AND user_id = ? AND team_id IS NULL",
   )
     .bind(id, user.id)
     .first<DomainRow>();
-  if (!row) return c.json({ error: "Domain not found" }, 404);
+  if (!row) return c.json({ error: "domain_not_found" }, 404);
 
   await c.env.DB.prepare("DELETE FROM domains WHERE id = ?").bind(id).run();
   {
@@ -404,7 +428,7 @@ app.delete("/:id", async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ message: "Domain deleted" });
+  return c.json({ ok: true });
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

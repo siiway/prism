@@ -45,13 +45,13 @@ app.get("/status", (c) => {
     writable: mode === "full",
     namespaces: (Object.keys(NAMESPACES) as NamespaceKey[])
       .filter((key) => resolveNamespace(c.env, key) !== null)
-      .map((key) => ({ key, description: NAMESPACES[key].description })),
+      .map((key) => ({ key })),
   });
 });
 
 app.use("*", async (c, next) => {
   if (kvConsoleMode(c.env) === "off")
-    return c.json({ error: "Not found" }, 404);
+    return c.json({ error: "not_found" }, 404);
   await next();
 });
 
@@ -59,8 +59,7 @@ function readOnlyRefusal(c: import("hono").Context<AppEnv>) {
   if (kvConsoleMode(c.env) !== "read-only") return null;
   return c.json(
     {
-      error:
-        "The storage console is in read-only mode (KV_CONSOLE / D1_CONSOLE). Writes are disabled.",
+      error: "read_only",
       read_only: true,
     },
     403,
@@ -72,9 +71,8 @@ function readOnlyRefusal(c: import("hono").Context<AppEnv>) {
 const NAMESPACES = {
   sessions: {
     binding: "KV_SESSIONS",
-    description: "Sessions, system flags, signing keys",
   },
-  cache: { binding: "KV_CACHE", description: "Caches and short-lived state" },
+  cache: { binding: "KV_CACHE" },
 } as const;
 
 type NamespaceKey = keyof typeof NAMESPACES;
@@ -141,7 +139,7 @@ function auditKv(
  *  the cursor straight through instead of pretending to be page-numbered. */
 app.get("/:ns/keys", async (c) => {
   const ns = resolveNamespace(c.env, c.req.param("ns"));
-  if (!ns) return c.json({ error: "Namespace not found" }, 404);
+  if (!ns) return c.json({ error: "namespace_not_found" }, 404);
 
   const limit = Math.min(
     1000,
@@ -173,7 +171,7 @@ app.get("/:ns/keys", async (c) => {
  *  KV keys routinely contain `:` and `/`. */
 app.get("/:ns/keys/:key{.+}", async (c) => {
   const ns = resolveNamespace(c.env, c.req.param("ns"));
-  if (!ns) return c.json({ error: "Namespace not found" }, 404);
+  if (!ns) return c.json({ error: "namespace_not_found" }, 404);
 
   const key = decodeURIComponent(c.req.param("key"));
   if (isProtected(key)) {
@@ -185,13 +183,11 @@ app.get("/:ns/keys/:key{.+}", async (c) => {
       exists: present,
       value: null,
       metadata: null,
-      reason:
-        "This key holds signing material. Its value is withheld because reading it would allow minting a session for any account. It can be deleted, which rotates it.",
     });
   }
 
   const res = await ns.kv.getWithMetadata(key, { type: "text" });
-  if (res.value === null) return c.json({ error: "Key not found" }, 404);
+  if (res.value === null) return c.json({ error: "key_not_found" }, 404);
 
   auditKv(c, "admin.kv.read", { namespace: ns.key, key });
   return c.json({
@@ -209,14 +205,13 @@ app.put("/:ns/keys/:key{.+}", async (c) => {
   if (refusal) return refusal;
 
   const ns = resolveNamespace(c.env, c.req.param("ns"));
-  if (!ns) return c.json({ error: "Namespace not found" }, 404);
+  if (!ns) return c.json({ error: "namespace_not_found" }, 404);
 
   const key = decodeURIComponent(c.req.param("key"));
   if (isProtected(key))
     return c.json(
       {
-        error:
-          "This key holds signing material and cannot be set here — a chosen signing key is the same power as a stolen one. Delete it to rotate.",
+        error: "signing_key_protected",
       },
       403,
     );
@@ -226,13 +221,16 @@ app.put("/:ns/keys/:key{.+}", async (c) => {
     expiration_ttl?: number | null;
   }>();
   if (typeof body.value !== "string")
-    return c.json({ error: "value must be a string" }, 400);
+    return c.json(
+      { error: "field_must_be_string", params: { field: "value" } },
+      400,
+    );
 
   const ttl = body.expiration_ttl;
   if (ttl !== undefined && ttl !== null) {
     if (!Number.isInteger(ttl) || ttl < 60)
       return c.json(
-        { error: "expiration_ttl must be an integer of at least 60 seconds" },
+        { error: "field_min", params: { field: "expiration_ttl", min: 60 } },
         400,
       );
   }
@@ -244,7 +242,7 @@ app.put("/:ns/keys/:key{.+}", async (c) => {
     bytes: new TextEncoder().encode(body.value).byteLength,
     expiration_ttl: ttl ?? null,
   });
-  return c.json({ message: "Key written" });
+  return c.json({ ok: true });
 });
 
 app.delete("/:ns/keys/:key{.+}", async (c) => {
@@ -252,7 +250,7 @@ app.delete("/:ns/keys/:key{.+}", async (c) => {
   if (refusal) return refusal;
 
   const ns = resolveNamespace(c.env, c.req.param("ns"));
-  if (!ns) return c.json({ error: "Namespace not found" }, 404);
+  if (!ns) return c.json({ error: "namespace_not_found" }, 404);
 
   const key = decodeURIComponent(c.req.param("key"));
   await ns.kv.delete(key);
@@ -263,9 +261,7 @@ app.delete("/:ns/keys/:key{.+}", async (c) => {
     // invalidates every session or token that depended on it.
     rotated_key_material: isProtected(key),
   });
-  return c.json({
-    message: isProtected(key) ? "Key material rotated" : "Key deleted",
-  });
+  return c.json({ ok: true });
 });
 
 /** Delete everything under a prefix.
@@ -278,10 +274,14 @@ app.post("/:ns/purge", async (c) => {
   if (refusal) return refusal;
 
   const ns = resolveNamespace(c.env, c.req.param("ns"));
-  if (!ns) return c.json({ error: "Namespace not found" }, 404);
+  if (!ns) return c.json({ error: "namespace_not_found" }, 404);
 
   const prefix = c.req.query("prefix")?.trim();
-  if (!prefix) return c.json({ error: "prefix is required" }, 400);
+  if (!prefix)
+    return c.json(
+      { error: "field_required", params: { field: "prefix" } },
+      400,
+    );
 
   const listed = await ns.kv.list({ prefix, limit: 1000 });
   const deletable = listed.keys.filter((k) => !isProtected(k.name));
@@ -294,7 +294,6 @@ app.post("/:ns/purge", async (c) => {
     skipped_protected: listed.keys.length - deletable.length,
   });
   return c.json({
-    message: "Prefix purged",
     deleted: deletable.length,
     skipped_protected: listed.keys.length - deletable.length,
     // KV lists lazily; a namespace with more than one page under this prefix

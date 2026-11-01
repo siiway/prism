@@ -87,7 +87,7 @@ export function Init() {
       setAuth(res.user);
       navigate("/");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong");
+      setError(err instanceof ApiError ? err.message : t("common.error"));
     } finally {
       setLoading(false);
     }
@@ -109,7 +109,7 @@ export function Init() {
             <Input
               value={form.site_name}
               onChange={update("site_name")}
-              placeholder="My Identity Platform"
+              placeholder={t("init.siteNamePlaceholder")}
             />
           </Field>
 
@@ -133,7 +133,7 @@ export function Init() {
             <Input
               value={form.display_name}
               onChange={update("display_name")}
-              placeholder="Admin"
+              placeholder={t("init.displayNamePlaceholder")}
             />
           </Field>
 

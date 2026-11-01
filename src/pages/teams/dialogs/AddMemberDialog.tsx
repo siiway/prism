@@ -9,9 +9,9 @@ import {
   DialogTrigger,
   Field,
   Input,
-  Select,
   Spinner,
 } from "@fluentui/react-components";
+import { Select } from "../../../components/Select";
 import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -41,6 +41,7 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
         role: form.role,
       });
       await qc.invalidateQueries({ queryKey: ["team", teamId] });
+      await qc.invalidateQueries({ queryKey: ["team-members", teamId] });
       setOpen(false);
       setForm({ username: "", role: "member" });
       showMsg("success", t("teams.memberAdded"));
@@ -57,7 +58,7 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
       <DialogTrigger disableButtonEnhancement>
-        <Button appearance="primary" icon={<AddRegular />} size="small">
+        <Button icon={<AddRegular />} size="small">
           {t("teams.addMemberButton")}
         </Button>
       </DialogTrigger>
@@ -86,9 +87,9 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
                   value={form.role}
                   onChange={(_, d) => setForm((f) => ({ ...f, role: d.value }))}
                 >
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                  <option value="co-owner">Co-owner</option>
+                  <option value="member">{t("teams.roleMember")}</option>
+                  <option value="admin">{t("teams.roleAdmin")}</option>
+                  <option value="co-owner">{t("teams.roleCoOwner")}</option>
                 </Select>
               </Field>
             </div>

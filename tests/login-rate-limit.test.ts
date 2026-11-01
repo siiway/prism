@@ -238,12 +238,14 @@ describe("login rate limits", () => {
   });
 
   test("rejects unsafe platform setting values", () => {
-    expect(invalidLoginRateLimitConfig({ login_ip_rate_limit: 0 })).toContain(
-      "login_ip_rate_limit",
-    );
+    expect(invalidLoginRateLimitConfig({ login_ip_rate_limit: 0 })).toEqual({
+      error: "field_int_range",
+      params: { field: "login_ip_rate_limit", min: 1, max: 86400 },
+    });
     expect(
-      invalidLoginRateLimitConfig({ login_totp_rate_window_seconds: 1.5 }),
-    ).toContain("login_totp_rate_window_seconds");
+      invalidLoginRateLimitConfig({ login_totp_rate_window_seconds: 1.5 })
+        ?.params?.field,
+    ).toBe("login_totp_rate_window_seconds");
     expect(
       invalidLoginRateLimitConfig({ login_dos_rate_limit: 120 }),
     ).toBeNull();

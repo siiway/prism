@@ -1,6 +1,14 @@
-// Notification preference management — per-event email address and Telegram account routing
+// Notification preferences. Two parts:
+//
+// - Events: one table with a row per event and a column per destination
+//   (each verified email, linked Telegram and Discord account), each cell a
+//   compact Off / Brief / Full picker. Group rows and an "All events" row set
+//   a whole column at once.
+// - Rulesets: conditional rules ("if the event matches X, send to Y at level
+//   Z"). While one is active it replaces the per-event table at dispatch time.
 
 import {
+  Badge,
   Button,
   Checkbox,
   Combobox,
@@ -14,7 +22,13 @@ import {
   Dropdown,
   Field,
   Input,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   MessageBar,
+  MessageBarActions,
   MessageBarBody,
   Option,
   Radio,
@@ -22,21 +36,37 @@ import {
   Spinner,
   Text,
   Textarea,
+  ToggleButton,
   Tooltip,
   makeStyles,
+  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
+import {
+  AddRegular,
+  ArrowDownRegular,
+  ArrowUpRegular,
+  ChatRegular,
+  CheckmarkRegular,
+  CodeRegular,
+  DeleteRegular,
+  DismissRegular,
+  MailRegular,
+  MoreHorizontalRegular,
+  SendRegular,
+  type FluentIcon,
+} from "@fluentui/react-icons";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
 import { PageHeader } from "../components/PageHeader";
+import { Segmented, type SegmentedOption } from "../components/Segmented";
+import { SettingsCard } from "../components/Settings";
 import type {
   NotificationRules,
-  NotificationEmailRule,
-  NotificationTgRule,
-  NotificationDiscordRule,
   NotificationRuleset,
   NotificationRulesetRule,
   NotificationRuleSendChannel,
@@ -45,7 +75,7 @@ import type {
   NotifTgConnection,
   NotifDiscordConnection,
 } from "../lib/api";
-import { SkeletonToggleRows } from "../components/Skeletons";
+import { SkeletonSettingsPage } from "../components/Skeletons";
 
 // ─── Event catalogue ─────────────────────────────────────────────────────────
 
@@ -207,804 +237,409 @@ const ALL_EVENT_KEYS = EVENT_GROUPS.flatMap((g) =>
   g.events.map((e) => e.value),
 );
 
-// ─── Bulk-level helpers ───────────────────────────────────────────────────────
+// ─── Destinations ────────────────────────────────────────────────────────────
 
+type DestKind = "email" | "tg" | "discord";
+
+/** Somewhere a notification can be delivered: one table column. */
+interface Destination {
+  kind: DestKind;
+  id: string;
+  label: string;
+}
+
+const DEST_ICONS: Record<DestKind, FluentIcon> = {
+  email: MailRegular,
+  tg: SendRegular,
+  discord: ChatRegular,
+};
+
+const DEST_KIND_KEYS: Record<DestKind, string> = {
+  email: "notifications.emailChannel",
+  tg: "notifications.tgChannel",
+  discord: "notifications.discordChannel",
+};
+
+function connectionLabel(c: { username: string | null; name: string }) {
+  return c.username ? `@${c.username}` : c.name;
+}
+
+type LevelChoice = "off" | NotificationLevel;
+
+function getLevel(
+  rules: NotificationRules,
+  event: string,
+  dest: Destination,
+): LevelChoice {
+  const rule = rules[event];
+  if (!rule) return "off";
+  if (dest.kind === "email") {
+    return rule.email?.find((r) => r.email_id === dest.id)?.level ?? "off";
+  }
+  const list = dest.kind === "tg" ? rule.tg : rule.discord;
+  return list?.find((r) => r.connection_id === dest.id)?.level ?? "off";
+}
+
+/** The level shared by every event in `events`, or null when they differ. */
 function uniformLevel(
-  levels: Array<"brief" | "full" | null>,
-): "brief" | "full" | null | "mixed" {
-  if (levels.length === 0) return null;
-  const first = levels[0];
-  return levels.every((l) => l === first) ? first : "mixed";
+  rules: NotificationRules,
+  events: string[],
+  dest: Destination,
+): LevelChoice | null {
+  const first = getLevel(rules, events[0], dest);
+  return events.every((ev) => getLevel(rules, ev, dest) === first)
+    ? first
+    : null;
 }
 
-function getUniformEmailLevel(
-  eventKeys: string[],
+function withLevel(
   rules: NotificationRules,
-  emails: NotifEmail[],
-): "brief" | "full" | null | "mixed" {
-  if (!emails.length) return null;
-  const levels: Array<"brief" | "full" | null> = [];
-  for (const ev of eventKeys)
-    for (const email of emails) {
-      const entry = (rules[ev]?.email ?? []).find(
-        (r) => r.email_id === email.id,
-      );
-      levels.push(entry?.level ?? null);
+  events: string[],
+  dest: Destination,
+  choice: LevelChoice,
+): NotificationRules {
+  const level = choice === "off" ? null : choice;
+  const next = { ...rules };
+  for (const ev of events) {
+    const cur = next[ev] ?? {};
+    if (dest.kind === "email") {
+      const rest = (cur.email ?? []).filter((r) => r.email_id !== dest.id);
+      next[ev] = {
+        ...cur,
+        email: level ? [...rest, { email_id: dest.id, level }] : rest,
+      };
+    } else {
+      const key = dest.kind;
+      const rest = (cur[key] ?? []).filter((r) => r.connection_id !== dest.id);
+      next[ev] = {
+        ...cur,
+        [key]: level ? [...rest, { connection_id: dest.id, level }] : rest,
+      };
     }
-  return uniformLevel(levels);
-}
-
-function getUniformTgLevel(
-  eventKeys: string[],
-  rules: NotificationRules,
-  connections: NotifTgConnection[],
-): "brief" | "full" | null | "mixed" {
-  if (!connections.length) return null;
-  const levels: Array<"brief" | "full" | null> = [];
-  for (const ev of eventKeys)
-    for (const conn of connections) {
-      const entry = (rules[ev]?.tg ?? []).find(
-        (r) => r.connection_id === conn.id,
-      );
-      levels.push(entry?.level ?? null);
-    }
-  return uniformLevel(levels);
-}
-
-function getUniformDiscordLevel(
-  eventKeys: string[],
-  rules: NotificationRules,
-  connections: NotifDiscordConnection[],
-): "brief" | "full" | null | "mixed" {
-  if (!connections.length) return null;
-  const levels: Array<"brief" | "full" | null> = [];
-  for (const ev of eventKeys)
-    for (const conn of connections) {
-      const entry = (rules[ev]?.discord ?? []).find(
-        (r) => r.connection_id === conn.id,
-      );
-      levels.push(entry?.level ?? null);
-    }
-  return uniformLevel(levels);
-}
-
-function getUniformEmailAccountLevel(
-  eventKeys: string[],
-  rules: NotificationRules,
-  emailId: string,
-): "brief" | "full" | null | "mixed" {
-  const levels: Array<"brief" | "full" | null> = [];
-  for (const ev of eventKeys) {
-    const entry = (rules[ev]?.email ?? []).find((r) => r.email_id === emailId);
-    levels.push(entry?.level ?? null);
   }
-  return uniformLevel(levels);
+  return next;
 }
 
-function getUniformTgAccountLevel(
-  eventKeys: string[],
-  rules: NotificationRules,
-  connectionId: string,
-): "brief" | "full" | null | "mixed" {
-  const levels: Array<"brief" | "full" | null> = [];
-  for (const ev of eventKeys) {
-    const entry = (rules[ev]?.tg ?? []).find(
-      (r) => r.connection_id === connectionId,
-    );
-    levels.push(entry?.level ?? null);
-  }
-  return uniformLevel(levels);
-}
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
-function getUniformDiscordAccountLevel(
-  eventKeys: string[],
-  rules: NotificationRules,
-  connectionId: string,
-): "brief" | "full" | null | "mixed" {
-  const levels: Array<"brief" | "full" | null> = [];
-  for (const ev of eventKeys) {
-    const entry = (rules[ev]?.discord ?? []).find(
-      (r) => r.connection_id === connectionId,
-    );
-    levels.push(entry?.level ?? null);
-  }
-  return uniformLevel(levels);
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
+const DEST_WIDTH = "172px";
+const NARROW = "@media (max-width: 640px)";
 
 const useStyles = makeStyles({
   root: {
-    maxWidth: "700px",
+    maxWidth: "960px",
     display: "flex",
     flexDirection: "column",
-    gap: tokens.spacingVerticalL,
+    gap: "20px",
   },
-  group: {
-    display: "flex",
-    flexDirection: "column",
-    gap: tokens.spacingVerticalXS,
-  },
-  groupHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: tokens.spacingHorizontalS,
-  },
-  groupLabel: {
-    fontWeight: tokens.fontWeightSemibold,
+  muted: {
     color: tokens.colorNeutralForeground3,
-    fontSize: tokens.fontSizeBase200,
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
   },
-  selectAllRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: tokens.spacingHorizontalS,
-    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
-    borderRadius: tokens.borderRadiusMedium,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    background: tokens.colorNeutralBackground2,
+  cardNotice: {
+    padding: "0 var(--card-pad) 16px",
   },
-  rulesetBar: {
-    display: "flex",
-    flexDirection: "column",
-    gap: tokens.spacingVerticalXS,
-    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
-    borderRadius: tokens.borderRadiusMedium,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    background: tokens.colorNeutralBackground2,
-  },
-  rulesetRow: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: tokens.spacingHorizontalS,
-  },
-  selectAllLabel: {
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
+  cardEmpty: {
+    padding: "16px var(--card-pad) 20px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
     color: tokens.colorNeutralForeground3,
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
   },
-  jsonPanel: {
+
+  // Event table. Every destination cell has the same fixed width, so the
+  // columns line up without a real <table> and rows can still wrap on phones.
+  row: {
     display: "flex",
-    flexDirection: "column",
-    gap: tokens.spacingVerticalS,
-    padding: tokens.spacingHorizontalM,
-    borderRadius: tokens.borderRadiusMedium,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    alignItems: "center",
+    gap: "16px",
+    minHeight: "56px",
+    padding: "10px var(--card-pad)",
+    boxSizing: "border-box",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    [NARROW]: {
+      flexWrap: "wrap",
+      gap: "8px 12px",
+    },
+  },
+  headRow: {
+    minHeight: "36px",
+    padding: "6px var(--card-pad)",
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+    [NARROW]: { display: "none" },
+  },
+  groupRow: {
+    minHeight: "48px",
     background: tokens.colorNeutralBackground2,
   },
-  eventRow: {
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalM}`,
-    borderRadius: tokens.borderRadiusMedium,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    gap: tokens.spacingHorizontalL,
-    background: tokens.colorNeutralBackground1,
-  },
-  eventText: {
-    display: "flex",
-    flexDirection: "column",
-    gap: tokens.spacingVerticalXXS,
+  eventCell: {
     flex: 1,
     minWidth: 0,
-  },
-  channelStack: {
     display: "flex",
     flexDirection: "column",
-    gap: "6px",
-    flexShrink: 0,
-    alignItems: "flex-end",
+    gap: "2px",
+    [NARROW]: { flexBasis: "100%" },
   },
-  channelRow: {
+  destCell: {
+    width: DEST_WIDTH,
+    flexShrink: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    [NARROW]: {
+      width: "auto",
+      flex: `1 1 ${DEST_WIDTH}`,
+    },
+  },
+  destHead: {
     display: "flex",
     alignItems: "center",
     gap: "6px",
+    minWidth: 0,
+    "& svg": { fontSize: "14px", flexShrink: 0 },
   },
-  channelLabel: {
-    fontSize: tokens.fontSizeBase300,
-    color: tokens.colorNeutralForeground3,
-    width: "20px",
-    textAlign: "center",
-    flexShrink: 0,
-  },
-  accountLabel: {
+  // Repeats the column header inside each cell on phones, where the header
+  // row is hidden.
+  destCellLabel: {
+    display: "none",
     fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground2,
-    maxWidth: "160px",
+    color: tokens.colorNeutralForeground3,
+    [NARROW]: { display: "flex" },
+  },
+  truncate: {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  levelPicker: {
-    display: "flex",
-    flexShrink: 0,
-    borderRadius: tokens.borderRadiusMedium,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    overflow: "hidden",
-  },
-  levelBtn: {
-    borderRadius: "0",
-    border: "none",
-    borderRight: `1px solid ${tokens.colorNeutralStroke1}`,
-    minWidth: "46px",
-    ":last-child": { borderRight: "none" },
-  },
-  actions: {
+  footer: {
+    position: "sticky",
+    bottom: 0,
+    zIndex: 1,
     display: "flex",
     alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-    paddingTop: tokens.spacingVerticalXS,
+    justifyContent: "flex-end",
+    gap: "8px",
+    padding: "12px var(--card-pad)",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderBottomLeftRadius: tokens.borderRadiusXLarge,
+    borderBottomRightRadius: tokens.borderRadiusXLarge,
+    background: tokens.colorNeutralBackground1,
+  },
+  footerStatus: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    marginRight: "auto",
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground3,
+  },
+  footerStatusOk: {
+    color: tokens.colorStatusSuccessForeground1,
+  },
+
+  // Rulesets
+  rsRow: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "8px",
+    minHeight: "52px",
+    padding: "8px var(--card-pad)",
+    boxSizing: "border-box",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  rsName: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flex: 1,
+    minWidth: 0,
+  },
+  editor: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    padding: "16px var(--card-pad) 20px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: tokens.colorNeutralBackground2,
+  },
+  editorLast: {
+    borderBottomLeftRadius: tokens.borderRadiusXLarge,
+    borderBottomRightRadius: tokens.borderRadiusXLarge,
+  },
+  editorFooter: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "8px",
+  },
+  unsaved: {
+    marginLeft: "auto",
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  rule: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    padding: "12px 16px 14px",
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    background: tokens.colorNeutralBackground1,
+  },
+  ruleOff: {
+    "& > :not(:first-child)": { opacity: 0.55 },
+  },
+  ruleTop: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+  },
+  ruleIndex: {
+    minWidth: "24px",
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+    fontVariantNumeric: "tabular-nums",
+  },
+  ruleName: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: "4px",
+  },
+  ruleGrid: {
+    display: "grid",
+    gridTemplateColumns: "88px minmax(0, 1fr)",
+    alignItems: "center",
+    gap: "10px 12px",
+    [NARROW]: {
+      gridTemplateColumns: "minmax(0, 1fr)",
+      gap: "6px",
+    },
+  },
+  fieldLabel: {
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground3,
+  },
+  fieldLabelTop: {
+    alignSelf: "start",
+    paddingTop: "6px",
+  },
+  fill: {
+    width: "100%",
+    minWidth: 0,
+  },
+  chips: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "4px",
+  },
+  chip: {
+    maxWidth: "220px",
+    minWidth: "auto",
+    fontWeight: tokens.fontWeightRegular,
+  },
+  actionBox: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  },
+  channelRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    "& > svg": {
+      fontSize: "16px",
+      flexShrink: 0,
+      color: tokens.colorNeutralForeground3,
+    },
+  },
+  channelAccount: {
+    flex: 1,
+    minWidth: 0,
+  },
+  addChannels: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "4px",
+  },
+  jsonSurface: {
+    maxWidth: "720px",
+  },
+  jsonInput: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
   },
 });
 
-// ─── Shared per-account level row ────────────────────────────────────────────
+// ─── Events table ────────────────────────────────────────────────────────────
 
-function AccountLevelRow({
-  icon,
+function DestHead({ dest }: { dest: Destination }) {
+  const styles = useStyles();
+  const { t } = useTranslation();
+  const Icon = DEST_ICONS[dest.kind];
+  return (
+    <span
+      className={styles.destHead}
+      title={`${t(DEST_KIND_KEYS[dest.kind])} · ${dest.label}`}
+    >
+      <Icon aria-hidden />
+      <span className={styles.truncate}>{dest.label}</span>
+    </span>
+  );
+}
+
+function LevelCell({
+  dest,
   label,
-  level,
+  showLabel,
+  value,
   onChange,
 }: {
-  icon: string;
+  dest: Destination;
   label: string;
-  level: "brief" | "full" | null | "mixed";
-  onChange: (l: "brief" | "full" | null) => void;
+  /** Repeat the destination above the picker on phones (several columns). */
+  showLabel: boolean;
+  value: LevelChoice | null;
+  onChange: (value: LevelChoice) => void;
 }) {
   const styles = useStyles();
   const { t } = useTranslation();
+  const options: SegmentedOption<LevelChoice>[] = [
+    { value: "off", label: t("notifications.levelOff") },
+    { value: "brief", label: t("notifications.levelBrief"), brand: true },
+    { value: "full", label: t("notifications.levelFull"), brand: true },
+  ];
   return (
-    <div className={styles.channelRow}>
-      <Tooltip content={label} relationship="label">
-        <Text className={styles.channelLabel}>{icon}</Text>
-      </Tooltip>
-      <Text className={styles.accountLabel}>{label}</Text>
-      <div className={styles.levelPicker}>
-        <Button
-          className={styles.levelBtn}
-          size="small"
-          appearance={level === null ? "primary" : "subtle"}
-          onClick={() => onChange(null)}
-        >
-          {t("notifications.levelOff")}
-        </Button>
-        <Button
-          className={styles.levelBtn}
-          size="small"
-          appearance={level === "brief" ? "primary" : "subtle"}
-          onClick={() => onChange("brief")}
-        >
-          {t("notifications.levelBrief")}
-        </Button>
-        <Button
-          className={styles.levelBtn}
-          size="small"
-          appearance={level === "full" ? "primary" : "subtle"}
-          onClick={() => onChange("full")}
-        >
-          {t("notifications.levelFull")}
-        </Button>
-      </div>
+    <div className={styles.destCell}>
+      {showLabel && (
+        <span className={styles.destCellLabel}>
+          <DestHead dest={dest} />
+        </span>
+      )}
+      <Segmented<LevelChoice>
+        fill
+        label={`${label}: ${dest.label}`}
+        value={value}
+        options={options}
+        onChange={onChange}
+      />
     </div>
   );
 }
 
-// ─── Email channel picker ─────────────────────────────────────────────────────
-
-function EmailChannelPicker({
-  value,
-  emails,
-  onChange,
-}: {
-  value: NotificationEmailRule[];
-  emails: NotifEmail[];
-  onChange: (v: NotificationEmailRule[]) => void;
-}) {
-  if (emails.length === 0) return null;
-  return (
-    <>
-      {emails.map((email) => {
-        const rule = value.find((r) => r.email_id === email.id);
-        return (
-          <AccountLevelRow
-            key={email.id}
-            icon="✉"
-            label={email.email}
-            level={rule?.level ?? null}
-            onChange={(l) => {
-              const rest = value.filter((r) => r.email_id !== email.id);
-              onChange(l ? [...rest, { email_id: email.id, level: l }] : rest);
-            }}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-// ─── Telegram channel picker ──────────────────────────────────────────────────
-
-function TgChannelPicker({
-  value,
-  connections,
-  onChange,
-}: {
-  value: NotificationTgRule[];
-  connections: NotifTgConnection[];
-  onChange: (v: NotificationTgRule[]) => void;
-}) {
-  const { t } = useTranslation();
-  if (connections.length === 0) return null;
-  return (
-    <>
-      {connections.map((conn) => {
-        const handle = conn.username ? `@${conn.username}` : conn.name;
-        const label = t("notifications.tgAccountLabel", { account: handle });
-        const rule = value.find((r) => r.connection_id === conn.id);
-        return (
-          <AccountLevelRow
-            key={conn.id}
-            icon="✈"
-            label={label}
-            level={rule?.level ?? null}
-            onChange={(l) => {
-              const rest = value.filter((r) => r.connection_id !== conn.id);
-              onChange(
-                l ? [...rest, { connection_id: conn.id, level: l }] : rest,
-              );
-            }}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-// ─── Discord channel picker ───────────────────────────────────────────────────
-
-function DiscordChannelPicker({
-  value,
-  connections,
-  onChange,
-}: {
-  value: NotificationDiscordRule[];
-  connections: NotifDiscordConnection[];
-  onChange: (v: NotificationDiscordRule[]) => void;
-}) {
-  const { t } = useTranslation();
-  if (connections.length === 0) return null;
-  return (
-    <>
-      {connections.map((conn) => {
-        const handle = conn.username ? `@${conn.username}` : conn.name;
-        const label = t("notifications.discordAccountLabel", {
-          account: handle,
-        });
-        const rule = value.find((r) => r.connection_id === conn.id);
-        return (
-          <AccountLevelRow
-            key={conn.id}
-            icon="🎮"
-            label={label}
-            level={rule?.level ?? null}
-            onChange={(l) => {
-              const rest = value.filter((r) => r.connection_id !== conn.id);
-              onChange(
-                l ? [...rest, { connection_id: conn.id, level: l }] : rest,
-              );
-            }}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-// ─── Bulk level controls ─────────────────────────────────────────────────────
-
-const BULK_LEVELS = [
-  [null, "notifications.levelOff"],
-  ["brief", "notifications.levelBrief"],
-  ["full", "notifications.levelFull"],
-] as const;
-
-function BulkLevelControls({
-  eventKeys,
-  rules,
-  emailLevel,
-  tgLevel,
-  discordLevel,
-  emails,
-  connections,
-  discordConnections,
-  showTg,
-  showDiscord,
-  onEmail,
-  onTg,
-  onDiscord,
-  onEmailAccount,
-  onTgAccount,
-  onDiscordAccount,
-}: {
-  eventKeys: string[];
-  rules: NotificationRules;
-  emailLevel: "brief" | "full" | null | "mixed";
-  tgLevel: "brief" | "full" | null | "mixed";
-  discordLevel: "brief" | "full" | null | "mixed";
-  emails: NotifEmail[];
-  connections: NotifTgConnection[];
-  discordConnections: NotifDiscordConnection[];
-  showTg: boolean;
-  showDiscord: boolean;
-  onEmail: (level: "brief" | "full" | null) => void;
-  onTg: (level: "brief" | "full" | null) => void;
-  onDiscord: (level: "brief" | "full" | null) => void;
-  onEmailAccount: (emailId: string, level: "brief" | "full" | null) => void;
-  onTgAccount: (connectionId: string, level: "brief" | "full" | null) => void;
-  onDiscordAccount: (
-    connectionId: string,
-    level: "brief" | "full" | null,
-  ) => void;
-}) {
-  const { t } = useTranslation();
-  const styles = useStyles();
-  return (
-    <div className={styles.channelStack}>
-      {emails.length > 0 && (
-        <div className={styles.channelRow}>
-          <Tooltip
-            content={t("notifications.emailChannel")}
-            relationship="label"
-          >
-            <Text className={styles.channelLabel}>✉</Text>
-          </Tooltip>
-          <div className={styles.levelPicker}>
-            {BULK_LEVELS.map(([level, key]) => (
-              <Button
-                key={String(level)}
-                className={styles.levelBtn}
-                size="small"
-                appearance={
-                  emailLevel !== "mixed" && emailLevel === level
-                    ? "primary"
-                    : "subtle"
-                }
-                onClick={() => onEmail(level)}
-              >
-                {t(key)}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-      {showTg && connections.length > 0 && (
-        <div className={styles.channelRow}>
-          <Tooltip content={t("notifications.tgChannel")} relationship="label">
-            <Text className={styles.channelLabel}>✈</Text>
-          </Tooltip>
-          <div className={styles.levelPicker}>
-            {BULK_LEVELS.map(([level, key]) => (
-              <Button
-                key={String(level)}
-                className={styles.levelBtn}
-                size="small"
-                appearance={
-                  tgLevel !== "mixed" && tgLevel === level
-                    ? "primary"
-                    : "subtle"
-                }
-                onClick={() => onTg(level)}
-              >
-                {t(key)}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-      {showDiscord && discordConnections.length > 0 && (
-        <div className={styles.channelRow}>
-          <Tooltip
-            content={t("notifications.discordChannel")}
-            relationship="label"
-          >
-            <Text className={styles.channelLabel}>🎮</Text>
-          </Tooltip>
-          <div className={styles.levelPicker}>
-            {BULK_LEVELS.map(([level, key]) => (
-              <Button
-                key={String(level)}
-                className={styles.levelBtn}
-                size="small"
-                appearance={
-                  discordLevel !== "mixed" && discordLevel === level
-                    ? "primary"
-                    : "subtle"
-                }
-                onClick={() => onDiscord(level)}
-              >
-                {t(key)}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-      {emails.map((email) => {
-        const level = getUniformEmailAccountLevel(eventKeys, rules, email.id);
-        return (
-          <AccountLevelRow
-            key={`bulk-email-${email.id}`}
-            icon="✉"
-            label={email.email}
-            level={level}
-            onChange={(nextLevel) => onEmailAccount(email.id, nextLevel)}
-          />
-        );
-      })}
-      {showTg &&
-        connections.map((conn) => {
-          const handle = conn.username ? `@${conn.username}` : conn.name;
-          const label = t("notifications.tgAccountLabel", { account: handle });
-          const level = getUniformTgAccountLevel(eventKeys, rules, conn.id);
-          return (
-            <AccountLevelRow
-              key={`bulk-tg-${conn.id}`}
-              icon="✈"
-              label={label}
-              level={level}
-              onChange={(nextLevel) => onTgAccount(conn.id, nextLevel)}
-            />
-          );
-        })}
-      {showDiscord &&
-        discordConnections.map((conn) => {
-          const handle = conn.username ? `@${conn.username}` : conn.name;
-          const label = t("notifications.discordAccountLabel", {
-            account: handle,
-          });
-          const level = getUniformDiscordAccountLevel(
-            eventKeys,
-            rules,
-            conn.id,
-          );
-          return (
-            <AccountLevelRow
-              key={`bulk-discord-${conn.id}`}
-              icon="🎮"
-              label={label}
-              level={level}
-              onChange={(nextLevel) => onDiscordAccount(conn.id, nextLevel)}
-            />
-          );
-        })}
-    </div>
-  );
-}
-
-// ─── Ruleset section (rule engine) ───────────────────────────────────────────
+// ─── Ruleset editor ──────────────────────────────────────────────────────────
 //
-// A "ruleset" is an ordered list of conditional rules — each rule has a
-// match (currently an event glob: "*", "security.*", etc.) and an action
-// (drop, or send to one or more channels at brief/full level). Activating
-// a ruleset replaces the per-event prefs at dispatch time. Disabled rules
-// are skipped; "stop" halts further evaluation.
-
-function RulesetSection(props: {
-  rulesets: NotificationRuleset[];
-  editingRuleset: NotificationRuleset | null;
-  editingRulesetId: string | null;
-  setEditingRulesetId: (id: string | null) => void;
-  activeRuleset: NotificationRuleset | null;
-  draftRules: NotificationRulesetRule[];
-  draftDirty: boolean;
-  emails: NotifEmail[];
-  tgConnections: NotifTgConnection[];
-  discordConnections: NotifDiscordConnection[];
-  rulesetMessage: { intent: "success" | "error"; text: string } | null;
-  creating: boolean;
-  updating: boolean;
-  deleting: boolean;
-  knownEvents: string[];
-  onNew: () => void;
-  onRename: (rs: NotificationRuleset) => void;
-  onDelete: (rs: NotificationRuleset) => void;
-  onToggleActive: (rs: NotificationRuleset) => void;
-  onSaveDraft: () => void;
-  onDiscardDraft: () => void;
-  onPatchRule: (idx: number, patch: Partial<NotificationRulesetRule>) => void;
-  onMoveRule: (idx: number, delta: number) => void;
-  onDeleteRule: (idx: number) => void;
-  onAddRule: () => void;
-}) {
-  const styles = useStyles();
-  const { t } = useTranslation();
-  const {
-    rulesets,
-    editingRuleset,
-    editingRulesetId,
-    setEditingRulesetId,
-    draftRules,
-    draftDirty,
-    rulesetMessage,
-  } = props;
-
-  return (
-    <div className={styles.rulesetBar}>
-      <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-        <Text weight="semibold" size={200}>
-          {t("notifications.rulesetsLabel")}
-        </Text>
-        {" — "}
-        {t("notifications.rulesetsHint")}
-      </Text>
-
-      <div className={styles.rulesetRow}>
-        <Dropdown
-          placeholder={
-            rulesets.length === 0
-              ? t("notifications.rulesetsEmpty")
-              : t("notifications.rulesetsSelectPlaceholder")
-          }
-          disabled={rulesets.length === 0}
-          value={editingRuleset?.name ?? ""}
-          selectedOptions={editingRulesetId ? [editingRulesetId] : []}
-          onOptionSelect={(_, d) => setEditingRulesetId(d.optionValue ?? null)}
-          style={{ minWidth: 220 }}
-        >
-          {rulesets.map((r) => (
-            <Option key={r.id} value={r.id} text={r.name}>
-              {r.name}
-              {r.is_active ? " ⭐" : ""}
-            </Option>
-          ))}
-        </Dropdown>
-        <Button size="small" onClick={props.onNew} disabled={props.creating}>
-          {t("notifications.rulesetsNew")}
-        </Button>
-        {editingRuleset && (
-          <>
-            <Button
-              size="small"
-              appearance={editingRuleset.is_active ? "primary" : "outline"}
-              disabled={props.updating}
-              onClick={() => props.onToggleActive(editingRuleset)}
-            >
-              {editingRuleset.is_active
-                ? t("notifications.rulesetsDeactivate")
-                : t("notifications.rulesetsActivate")}
-            </Button>
-            <Button
-              size="small"
-              appearance="subtle"
-              disabled={props.updating}
-              onClick={() => props.onRename(editingRuleset)}
-            >
-              {t("notifications.rulesetsRename")}
-            </Button>
-            <Button
-              size="small"
-              appearance="subtle"
-              disabled={props.deleting}
-              onClick={() => props.onDelete(editingRuleset)}
-              style={{ color: tokens.colorPaletteRedForeground1 }}
-            >
-              {t("notifications.rulesetsDelete")}
-            </Button>
-          </>
-        )}
-      </div>
-
-      {rulesetMessage && (
-        <MessageBar intent={rulesetMessage.intent}>
-          <MessageBarBody>{rulesetMessage.text}</MessageBarBody>
-        </MessageBar>
-      )}
-
-      {editingRuleset && (
-        <>
-          {draftRules.length === 0 && (
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {t("notifications.rulesetsRulesEmpty")}
-            </Text>
-          )}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: tokens.spacingVerticalS,
-            }}
-          >
-            {draftRules.map((rule, idx) => (
-              <RuleEditorCard
-                key={rule.id}
-                index={idx}
-                rule={rule}
-                emails={props.emails}
-                tgConnections={props.tgConnections}
-                discordConnections={props.discordConnections}
-                knownEvents={props.knownEvents}
-                isFirst={idx === 0}
-                isLast={idx === draftRules.length - 1}
-                onPatch={(p) => props.onPatchRule(idx, p)}
-                onMove={(d) => props.onMoveRule(idx, d)}
-                onDelete={() => props.onDeleteRule(idx)}
-              />
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <Button size="small" onClick={props.onAddRule}>
-              {t("notifications.rulesetsAddRule")}
-            </Button>
-            <Text style={{ flex: 1 }} />
-            {draftDirty && (
-              <Text
-                size={200}
-                style={{ color: tokens.colorPaletteMarigoldForeground1 }}
-              >
-                {t("notifications.rulesetsUnsaved")}
-              </Text>
-            )}
-            <Button
-              size="small"
-              disabled={!draftDirty || props.updating}
-              onClick={props.onDiscardDraft}
-            >
-              {t("common.discard")}
-            </Button>
-            <Button
-              size="small"
-              appearance="primary"
-              disabled={!draftDirty || props.updating}
-              onClick={props.onSaveDraft}
-            >
-              {props.updating ? (
-                <Spinner size="tiny" />
-              ) : (
-                t("common.saveChanges")
-              )}
-            </Button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+// A ruleset is an ordered list of rules, each with a match (an event glob:
+// "*", "security.*", … and optionally a set of accounts) and an action (mute,
+// or send to one or more destinations at a level). Disabled rules are
+// skipped; "stop" halts evaluation after a match.
 
 function RuleAccountFilter(props: {
-  emails: NotifEmail[];
-  tgConnections: NotifTgConnection[];
-  discordConnections: NotifDiscordConnection[];
+  destinations: Destination[];
   value: string[];
   onChange: (next: string[]) => void;
 }) {
+  const styles = useStyles();
   const { t } = useTranslation();
-  const all: { key: string; label: string; icon: string }[] = [
-    ...props.emails.map((e) => ({
-      key: `email:${e.id}`,
-      label: e.email,
-      icon: "✉",
-    })),
-    ...props.tgConnections.map((c) => ({
-      key: `tg:${c.id}`,
-      label: c.username ? `@${c.username}` : c.name,
-      icon: "✈",
-    })),
-    ...props.discordConnections.map((c) => ({
-      key: `discord:${c.id}`,
-      label: c.username ? `@${c.username}` : c.name,
-      icon: "🎮",
-    })),
-  ];
   const selected = new Set(props.value);
-  const empty = props.value.length === 0;
 
   function toggle(key: string) {
     const next = new Set(selected);
@@ -1013,85 +648,117 @@ function RuleAccountFilter(props: {
     props.onChange([...next]);
   }
 
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 8,
-        flexWrap: "wrap",
-      }}
-    >
-      <Text size={200} style={{ paddingTop: 4 }}>
-        {t("notifications.rulesetsMatchAccounts")}
+  if (props.destinations.length === 0) {
+    return (
+      <Text size={200} className={styles.muted}>
+        {t("notifications.rulesetsMatchAccountsNone")}
       </Text>
-      <div
-        style={{
-          display: "flex",
-          gap: 4,
-          flexWrap: "wrap",
-          flex: 1,
-          minWidth: 0,
-        }}
+    );
+  }
+
+  return (
+    <div className={styles.chips}>
+      <Tooltip
+        content={t("notifications.rulesetsMatchAccountsAllHint")}
+        relationship="description"
       >
-        <Tooltip
-          content={t("notifications.rulesetsMatchAccountsAllHint")}
-          relationship="description"
+        <ToggleButton
+          size="small"
+          shape="circular"
+          className={styles.chip}
+          checked={props.value.length === 0}
+          onClick={() => props.onChange([])}
         >
-          <Button
+          {t("notifications.rulesetsMatchAccountsAll")}
+        </ToggleButton>
+      </Tooltip>
+      {props.destinations.map((d) => {
+        const key = `${d.kind}:${d.id}`;
+        const Icon = DEST_ICONS[d.kind];
+        return (
+          <ToggleButton
+            key={key}
             size="small"
             shape="circular"
-            appearance={empty ? "primary" : "outline"}
-            onClick={() => props.onChange([])}
-            style={{ fontSize: 11, minWidth: "auto" }}
+            className={styles.chip}
+            icon={<Icon />}
+            checked={selected.has(key)}
+            onClick={() => toggle(key)}
+            title={d.label}
           >
-            {t("notifications.rulesetsMatchAccountsAll")}
-          </Button>
-        </Tooltip>
-        {all.map((acc) => {
-          const on = selected.has(acc.key);
-          return (
-            <Tooltip
-              key={acc.key}
-              content={acc.label}
-              relationship="description"
-            >
-              <Button
-                size="small"
-                shape="circular"
-                icon={acc.icon}
-                appearance={on ? "primary" : "outline"}
-                onClick={() => toggle(acc.key)}
-                style={{
-                  fontSize: 11,
-                  minWidth: "auto",
-                  maxWidth: 200,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {acc.label}
-              </Button>
-            </Tooltip>
-          );
-        })}
-        {all.length === 0 && (
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("notifications.rulesetsMatchAccountsNone")}
-          </Text>
-        )}
-      </div>
+            <span className={styles.truncate}>{d.label}</span>
+          </ToggleButton>
+        );
+      })}
     </div>
   );
 }
 
-function RuleEditorCard(props: {
+function RuleChannelRow(props: {
+  channel: NotificationRuleSendChannel;
+  destinations: Destination[];
+  onChange: (next: NotificationRuleSendChannel) => void;
+  onDelete: () => void;
+}) {
+  const styles = useStyles();
+  const { t } = useTranslation();
+  const { channel } = props;
+  const accountId =
+    channel.kind === "email" ? channel.email_id : channel.connection_id;
+  const choices = props.destinations.filter((d) => d.kind === channel.kind);
+  const current = choices.find((d) => d.id === accountId);
+  const Icon = DEST_ICONS[channel.kind];
+  return (
+    <div className={styles.channelRow}>
+      <Icon aria-label={t(DEST_KIND_KEYS[channel.kind])} />
+      <Dropdown
+        size="small"
+        className={styles.channelAccount}
+        value={current?.label ?? ""}
+        selectedOptions={[accountId]}
+        onOptionSelect={(_, d) => {
+          const value = d.optionValue ?? "";
+          props.onChange(
+            channel.kind === "email"
+              ? { ...channel, email_id: value }
+              : { ...channel, connection_id: value },
+          );
+        }}
+      >
+        {choices.map((d) => (
+          <Option key={d.id} value={d.id} text={d.label}>
+            {d.label}
+          </Option>
+        ))}
+      </Dropdown>
+      <Segmented<NotificationLevel>
+        label={t("notifications.levelLabel")}
+        value={channel.level}
+        options={[
+          { value: "brief", label: t("notifications.levelBrief") },
+          { value: "full", label: t("notifications.levelFull") },
+        ]}
+        onChange={(level) => props.onChange({ ...channel, level })}
+      />
+      <Tooltip
+        content={t("notifications.rulesetsRemoveDestination")}
+        relationship="label"
+      >
+        <Button
+          size="small"
+          appearance="subtle"
+          icon={<DismissRegular />}
+          onClick={props.onDelete}
+        />
+      </Tooltip>
+    </div>
+  );
+}
+
+function RuleEditor(props: {
   index: number;
   rule: NotificationRulesetRule;
-  emails: NotifEmail[];
-  tgConnections: NotifTgConnection[];
-  discordConnections: NotifDiscordConnection[];
+  destinations: Destination[];
   knownEvents: string[];
   isFirst: boolean;
   isLast: boolean;
@@ -1099,6 +766,7 @@ function RuleEditorCard(props: {
   onMove: (delta: number) => void;
   onDelete: () => void;
 }) {
+  const styles = useStyles();
   const { t } = useTranslation();
   const { rule } = props;
   const enabled = rule.enabled !== false;
@@ -1108,60 +776,34 @@ function RuleEditorCard(props: {
     props.onPatch({ match: { ...rule.match, event: ev } });
   }
   function setActionType(type: "send" | "drop") {
-    if (type === "drop") {
-      props.onPatch({ action: { type: "drop" } });
-    } else {
-      props.onPatch({
-        action: { type: "send", channels: sendChannels },
-      });
-    }
+    props.onPatch({
+      action:
+        type === "drop"
+          ? { type: "drop" }
+          : { type: "send", channels: sendChannels },
+    });
   }
   function setChannels(channels: NotificationRuleSendChannel[]) {
     props.onPatch({ action: { type: "send", channels } });
   }
-  function addEmailChannel() {
-    const first = props.emails[0];
+  function addChannel(kind: DestKind) {
+    const first = props.destinations.find((d) => d.kind === kind);
     if (!first) return;
     setChannels([
       ...sendChannels,
-      { kind: "email", email_id: first.id, level: "full" },
+      kind === "email"
+        ? { kind, email_id: first.id, level: "full" }
+        : { kind, connection_id: first.id, level: "full" },
     ]);
   }
-  function addTgChannel() {
-    const first = props.tgConnections[0];
-    if (!first) return;
-    setChannels([
-      ...sendChannels,
-      { kind: "tg", connection_id: first.id, level: "full" },
-    ]);
-  }
-  function addDiscordChannel() {
-    const first = props.discordConnections[0];
-    if (!first) return;
-    setChannels([
-      ...sendChannels,
-      { kind: "discord", connection_id: first.id, level: "full" },
-    ]);
-  }
+  const kinds = (["email", "tg", "discord"] as const).filter((k) =>
+    props.destinations.some((d) => d.kind === k),
+  );
 
   return (
-    <div
-      style={{
-        border: `1px solid ${tokens.colorNeutralStroke2}`,
-        borderRadius: tokens.borderRadiusMedium,
-        padding: tokens.spacingHorizontalM,
-        background: enabled
-          ? tokens.colorNeutralBackground1
-          : tokens.colorNeutralBackground3,
-        display: "flex",
-        flexDirection: "column",
-        gap: tokens.spacingVerticalXS,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          #{props.index + 1}
-        </Text>
+    <div className={mergeClasses(styles.rule, !enabled && styles.ruleOff)}>
+      <div className={styles.ruleTop}>
+        <span className={styles.ruleIndex}>{props.index + 1}</span>
         <Checkbox
           checked={enabled}
           onChange={(_, d) => props.onPatch({ enabled: !!d.checked })}
@@ -1169,49 +811,62 @@ function RuleEditorCard(props: {
         />
         <Input
           size="small"
+          className={styles.ruleName}
           value={rule.name ?? ""}
           onChange={(_, d) => props.onPatch({ name: d.value })}
           placeholder={t("notifications.rulesetsRuleNamePlaceholder")}
-          style={{ flex: 1 }}
         />
-        <Button
-          size="small"
-          appearance="subtle"
-          disabled={props.isFirst}
-          onClick={() => props.onMove(-1)}
+        <Tooltip
+          content={t("notifications.rulesetsMoveUp")}
+          relationship="label"
         >
-          ↑
-        </Button>
-        <Button
-          size="small"
-          appearance="subtle"
-          disabled={props.isLast}
-          onClick={() => props.onMove(1)}
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<ArrowUpRegular />}
+            disabled={props.isFirst}
+            onClick={() => props.onMove(-1)}
+          />
+        </Tooltip>
+        <Tooltip
+          content={t("notifications.rulesetsMoveDown")}
+          relationship="label"
         >
-          ↓
-        </Button>
-        <Button
-          size="small"
-          appearance="subtle"
-          onClick={props.onDelete}
-          style={{ color: tokens.colorPaletteRedForeground1 }}
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<ArrowDownRegular />}
+            disabled={props.isLast}
+            onClick={() => props.onMove(1)}
+          />
+        </Tooltip>
+        <Tooltip
+          content={t("notifications.rulesetsRemoveRule")}
+          relationship="label"
         >
-          ×
-        </Button>
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<DeleteRegular />}
+            onClick={props.onDelete}
+          />
+        </Tooltip>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Text size={200}>{t("notifications.rulesetsMatchEvent")}</Text>
+      <div className={styles.ruleGrid}>
+        <Text className={styles.fieldLabel}>
+          {t("notifications.rulesetsFieldEvent")}
+        </Text>
         <Combobox
           freeform
           size="small"
+          className={styles.fill}
           value={rule.match.event ?? ""}
           selectedOptions={rule.match.event ? [rule.match.event] : []}
           onInput={(e) => setMatchEvent((e.target as HTMLInputElement).value)}
           onOptionSelect={(_, d) => setMatchEvent(d.optionValue ?? "")}
-          placeholder="*  or  security.*  or  app.created"
-          input={{ style: { fontFamily: "monospace", fontSize: 12 } }}
-          style={{ flex: 1 }}
+          placeholder="*  ·  security.*  ·  app.created"
+          input={{ className: styles.jsonInput }}
         >
           {props.knownEvents.map((ev) => (
             <Option key={ev} value={ev}>
@@ -1219,200 +874,89 @@ function RuleEditorCard(props: {
             </Option>
           ))}
         </Combobox>
-      </div>
 
-      <RuleAccountFilter
-        emails={props.emails}
-        tgConnections={props.tgConnections}
-        discordConnections={props.discordConnections}
-        value={rule.match.accounts ?? []}
-        onChange={(accounts) =>
-          props.onPatch({
-            match: {
-              ...rule.match,
-              accounts: accounts.length > 0 ? accounts : undefined,
-            },
-          })
-        }
-      />
+        <Text className={mergeClasses(styles.fieldLabel, styles.fieldLabelTop)}>
+          {t("notifications.rulesetsFieldAccounts")}
+        </Text>
+        <RuleAccountFilter
+          destinations={props.destinations}
+          value={rule.match.accounts ?? []}
+          onChange={(accounts) =>
+            props.onPatch({
+              match: {
+                ...rule.match,
+                accounts: accounts.length > 0 ? accounts : undefined,
+              },
+            })
+          }
+        />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Text size={200}>{t("notifications.rulesetsAction")}</Text>
-        <RadioGroup
-          layout="horizontal"
-          value={rule.action.type}
-          onChange={(_, d) => setActionType(d.value as "send" | "drop")}
-        >
-          <Radio value="send" label={t("notifications.rulesetsActionSend")} />
-          <Radio value="drop" label={t("notifications.rulesetsActionDrop")} />
-        </RadioGroup>
-      </div>
-
-      {rule.action.type === "send" && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-            paddingLeft: tokens.spacingHorizontalM,
-          }}
-        >
-          {sendChannels.map((ch, ci) => (
-            <RuleChannelRow
-              key={ci}
-              channel={ch}
-              emails={props.emails}
-              tgConnections={props.tgConnections}
-              discordConnections={props.discordConnections}
-              onChange={(next) => {
-                const copy = sendChannels.slice();
-                copy[ci] = next;
-                setChannels(copy);
-              }}
-              onDelete={() =>
-                setChannels(sendChannels.filter((_, i) => i !== ci))
-              }
-            />
-          ))}
-          <div style={{ display: "flex", gap: 6 }}>
-            <Button
-              size="small"
-              appearance="subtle"
-              onClick={addEmailChannel}
-              disabled={props.emails.length === 0}
-            >
-              + {t("notifications.emailChannel")}
-            </Button>
-            <Button
-              size="small"
-              appearance="subtle"
-              onClick={addTgChannel}
-              disabled={props.tgConnections.length === 0}
-            >
-              + {t("notifications.tgChannel")}
-            </Button>
-            <Button
-              size="small"
-              appearance="subtle"
-              onClick={addDiscordChannel}
-              disabled={props.discordConnections.length === 0}
-            >
-              + {t("notifications.discordChannel")}
-            </Button>
-          </div>
+        <Text className={mergeClasses(styles.fieldLabel, styles.fieldLabelTop)}>
+          {t("notifications.rulesetsFieldAction")}
+        </Text>
+        <div className={styles.actionBox}>
+          <RadioGroup
+            layout="horizontal"
+            value={rule.action.type}
+            onChange={(_, d) => setActionType(d.value as "send" | "drop")}
+          >
+            <Radio value="send" label={t("notifications.rulesetsActionSend")} />
+            <Radio value="drop" label={t("notifications.rulesetsActionDrop")} />
+          </RadioGroup>
+          {rule.action.type === "send" && (
+            <>
+              {sendChannels.map((ch, ci) => (
+                <RuleChannelRow
+                  key={ci}
+                  channel={ch}
+                  destinations={props.destinations}
+                  onChange={(next) => {
+                    const copy = sendChannels.slice();
+                    copy[ci] = next;
+                    setChannels(copy);
+                  }}
+                  onDelete={() =>
+                    setChannels(sendChannels.filter((_, i) => i !== ci))
+                  }
+                />
+              ))}
+              {kinds.length > 0 && (
+                <div className={styles.addChannels}>
+                  {kinds.map((kind) => (
+                    <Button
+                      key={kind}
+                      size="small"
+                      appearance="subtle"
+                      icon={<AddRegular />}
+                      onClick={() => addChannel(kind)}
+                    >
+                      {t(DEST_KIND_KEYS[kind])}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       <Checkbox
         checked={rule.stop === true}
         onChange={(_, d) => props.onPatch({ stop: !!d.checked })}
-        label={
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("notifications.rulesetsStop")}
-          </Text>
-        }
+        label={t("notifications.rulesetsStop")}
       />
     </div>
   );
 }
 
-function RuleChannelRow(props: {
-  channel: NotificationRuleSendChannel;
-  emails: NotifEmail[];
-  tgConnections: NotifTgConnection[];
-  discordConnections: NotifDiscordConnection[];
-  onChange: (next: NotificationRuleSendChannel) => void;
-  onDelete: () => void;
-}) {
-  const { t } = useTranslation();
-  const { channel } = props;
-  const setLevel = (level: NotificationLevel) =>
-    props.onChange({ ...channel, level });
-  const channelIcon =
-    channel.kind === "email" ? "✉" : channel.kind === "discord" ? "🎮" : "✈";
-  const accountConnections =
-    channel.kind === "discord" ? props.discordConnections : props.tgConnections;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <Text size={200}>{channelIcon}</Text>
-      <Dropdown
-        size="small"
-        value={
-          channel.kind === "email"
-            ? (props.emails.find((e) => e.id === channel.email_id)?.email ?? "")
-            : (() => {
-                const c = accountConnections.find(
-                  (c) => c.id === channel.connection_id,
-                );
-                return c ? (c.username ? `@${c.username}` : c.name) : "";
-              })()
-        }
-        selectedOptions={[
-          channel.kind === "email" ? channel.email_id : channel.connection_id,
-        ]}
-        onOptionSelect={(_, d) => {
-          const value = d.optionValue ?? "";
-          if (channel.kind === "email") {
-            props.onChange({ ...channel, email_id: value });
-          } else {
-            props.onChange({ ...channel, connection_id: value });
-          }
-        }}
-        style={{ flex: 1, minWidth: 0 }}
-      >
-        {channel.kind === "email"
-          ? props.emails.map((e) => (
-              <Option key={e.id} value={e.id} text={e.email}>
-                {e.email}
-              </Option>
-            ))
-          : accountConnections.map((c) => {
-              const label = c.username ? `@${c.username}` : c.name;
-              return (
-                <Option key={c.id} value={c.id} text={label}>
-                  {label}
-                </Option>
-              );
-            })}
-      </Dropdown>
-      <Dropdown
-        size="small"
-        value={
-          channel.level === "brief"
-            ? t("notifications.levelBrief")
-            : t("notifications.levelFull")
-        }
-        selectedOptions={[channel.level]}
-        onOptionSelect={(_, d) =>
-          setLevel((d.optionValue ?? "brief") as NotificationLevel)
-        }
-      >
-        <Option value="brief" text={t("notifications.levelBrief")}>
-          {t("notifications.levelBrief")}
-        </Option>
-        <Option value="full" text={t("notifications.levelFull")}>
-          {t("notifications.levelFull")}
-        </Option>
-      </Dropdown>
-      <Button
-        size="small"
-        appearance="subtle"
-        onClick={props.onDelete}
-        style={{ color: tokens.colorPaletteRedForeground1 }}
-      >
-        ×
-      </Button>
-    </div>
-  );
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
+// ─── Page ────────────────────────────────────────────────────────────────────
 
 export function Notifications() {
   const api = useApi();
   const { t } = useTranslation();
   const styles = useStyles();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["notification-prefs"],
@@ -1436,6 +980,24 @@ export function Notifications() {
   // AND the user has linked at least one Discord account.
   const showDiscord = hasDiscordBot && discordConnections.length > 0;
 
+  const destinations: Destination[] = [
+    ...emails.map((e) => ({
+      kind: "email" as const,
+      id: e.id,
+      label: e.email,
+    })),
+    ...(showTg ? tgConnections : []).map((c) => ({
+      kind: "tg" as const,
+      id: c.id,
+      label: connectionLabel(c),
+    })),
+    ...(showDiscord ? discordConnections : []).map((c) => ({
+      kind: "discord" as const,
+      id: c.id,
+      label: connectionLabel(c),
+    })),
+  ];
+
   const [rules, setRules] = useState<NotificationRules>({});
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1445,13 +1007,11 @@ export function Notifications() {
 
   // ─── Rulesets (rule engine) ─────────────────────────────────────────────
   // The server-side dispatch evaluates the active ruleset INSTEAD of the
-  // legacy per-event prefs. The editor below mutates a local draft per
-  // ruleset; saving PUTs the rule array. Activating one ruleset
-  // automatically deactivates any other.
+  // per-event prefs. The editor mutates a local draft of the open ruleset;
+  // saving PUTs the rule array. Activating one ruleset deactivates any
+  // other.
   const [editingRulesetId, setEditingRulesetId] = useState<string | null>(null);
   const [draftRules, setDraftRules] = useState<NotificationRulesetRule[]>([]);
-  // Dialog state for ruleset name input (replaces window.prompt) and
-  // delete confirmation (replaces window.confirm).
   const [nameDialog, setNameDialog] = useState<
     | { mode: "new"; value: string }
     | { mode: "rename"; ruleset: NotificationRuleset; value: string }
@@ -1482,9 +1042,6 @@ export function Notifications() {
     rulesets.find((r) => r.id === editingRulesetId) ?? null;
   const activeRuleset = rulesets.find((r) => r.is_active) ?? null;
 
-  // Render-time sync of the editor's draft to the server's authoritative
-  // rules whenever the user opens a different ruleset OR the server's
-  // copy of the open one changed (e.g. after save).
   const targetKey = editingRuleset
     ? `${editingRuleset.id}@${editingRuleset.updated_at}`
     : null;
@@ -1495,6 +1052,14 @@ export function Notifications() {
   const draftDirty =
     !!editingRuleset &&
     JSON.stringify(draftRules) !== JSON.stringify(editingRuleset.rules);
+
+  const rulesetError = (err: unknown) =>
+    showRulesetMsg(
+      "error",
+      err instanceof ApiError
+        ? err.message
+        : t("notifications.rulesetsSaveFailed"),
+    );
 
   const createRulesetMut = useMutation({
     mutationFn: (body: {
@@ -1508,14 +1073,7 @@ export function Notifications() {
       setDraftSourceKey(null);
       showRulesetMsg("success", t("notifications.rulesetsCreated"));
     },
-    onError: (err) => {
-      showRulesetMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("notifications.rulesetsSaveFailed"),
-      );
-    },
+    onError: rulesetError,
   });
   const updateRulesetMut = useMutation({
     mutationFn: ({
@@ -1534,14 +1092,7 @@ export function Notifications() {
       setDraftSourceKey(null);
       showRulesetMsg("success", t("notifications.rulesetsUpdated"));
     },
-    onError: (err) => {
-      showRulesetMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("notifications.rulesetsSaveFailed"),
-      );
-    },
+    onError: rulesetError,
   });
   const deleteRulesetMut = useMutation({
     mutationFn: (id: string) => api.deleteNotificationRuleset(id),
@@ -1551,27 +1102,8 @@ export function Notifications() {
       setDraftSourceKey(null);
       showRulesetMsg("success", t("notifications.rulesetsDeleted"));
     },
-    onError: (err) => {
-      showRulesetMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("notifications.rulesetsSaveFailed"),
-      );
-    },
+    onError: rulesetError,
   });
-
-  function handleNewRuleset() {
-    setNameDialog({ mode: "new", value: "" });
-  }
-
-  function handleRenameRuleset(rs: NotificationRuleset) {
-    setNameDialog({ mode: "rename", ruleset: rs, value: rs.name });
-  }
-
-  function handleDeleteRuleset(rs: NotificationRuleset) {
-    setDeleteDialog(rs);
-  }
 
   function submitNameDialog() {
     if (!nameDialog) return;
@@ -1580,42 +1112,9 @@ export function Notifications() {
     if (nameDialog.mode === "new") {
       createRulesetMut.mutate({ name, rules: [], is_active: false });
     } else if (name !== nameDialog.ruleset.name) {
-      updateRulesetMut.mutate({
-        id: nameDialog.ruleset.id,
-        body: { name },
-      });
+      updateRulesetMut.mutate({ id: nameDialog.ruleset.id, body: { name } });
     }
     setNameDialog(null);
-  }
-
-  function handleToggleActive(rs: NotificationRuleset) {
-    updateRulesetMut.mutate({
-      id: rs.id,
-      body: { is_active: !rs.is_active },
-    });
-  }
-
-  function handleSaveDraft() {
-    if (!editingRuleset) return;
-    updateRulesetMut.mutate({
-      id: editingRuleset.id,
-      body: { rules: draftRules },
-    });
-  }
-
-  function handleDiscardDraft() {
-    if (!editingRuleset) return;
-    setDraftRules(editingRuleset.rules);
-  }
-
-  // Rule-array editing helpers operate on draftRules.
-  function newRule(): NotificationRulesetRule {
-    return {
-      id: `r_${Math.random().toString(36).slice(2, 10)}`,
-      enabled: true,
-      match: { event: "*" },
-      action: { type: "send", channels: [] },
-    };
   }
 
   function patchDraftRule(
@@ -1637,17 +1136,21 @@ export function Notifications() {
     });
   }
 
-  function deleteDraftRule(idx: number) {
-    setDraftRules((prev) => prev.filter((_, i) => i !== idx));
-  }
-
   function addDraftRule() {
-    setDraftRules((prev) => [...prev, newRule()]);
+    setDraftRules((prev) => [
+      ...prev,
+      {
+        id: `r_${Math.random().toString(36).slice(2, 10)}`,
+        enabled: true,
+        match: { event: "*" },
+        action: { type: "send", channels: [] },
+      },
+    ]);
   }
 
   // Sync server data into the local draft when it changes. React 19's
   // strict rules want this expressed as a render-time set rather than an
-  // effect — guarded by an identity ref to avoid the infinite loop.
+  // effect — guarded by an identity check to avoid the infinite loop.
   const [syncedData, setSyncedData] = useState<typeof data>(undefined);
   if (data && data !== syncedData) {
     setSyncedData(data);
@@ -1665,122 +1168,15 @@ export function Notifications() {
     },
   });
 
-  function applyBulkEmail(eventKeys: string[], level: "brief" | "full" | null) {
-    setRules((prev) => {
-      const next = { ...prev };
-      for (const ev of eventKeys)
-        next[ev] = {
-          ...(next[ev] ?? {}),
-          email: level ? emails.map((e) => ({ email_id: e.id, level })) : [],
-        };
-      return next;
-    });
+  function updateRules(next: NotificationRules) {
+    setRules(next);
     setDirty(true);
     setSaved(false);
   }
 
-  function applyBulkTg(eventKeys: string[], level: "brief" | "full" | null) {
-    setRules((prev) => {
-      const next = { ...prev };
-      for (const ev of eventKeys)
-        next[ev] = {
-          ...(next[ev] ?? {}),
-          tg: level
-            ? tgConnections.map((c) => ({ connection_id: c.id, level }))
-            : [],
-        };
-      return next;
-    });
-    setDirty(true);
-    setSaved(false);
-  }
-
-  function applyBulkEmailAccount(
-    eventKeys: string[],
-    emailId: string,
-    level: "brief" | "full" | null,
-  ) {
-    setRules((prev) => {
-      const next = { ...prev };
-      for (const ev of eventKeys) {
-        const curr = next[ev] ?? {};
-        const rest = (curr.email ?? []).filter((r) => r.email_id !== emailId);
-        next[ev] = {
-          ...curr,
-          email: level ? [...rest, { email_id: emailId, level }] : rest,
-        };
-      }
-      return next;
-    });
-    setDirty(true);
-    setSaved(false);
-  }
-
-  function applyBulkTgAccount(
-    eventKeys: string[],
-    connectionId: string,
-    level: "brief" | "full" | null,
-  ) {
-    setRules((prev) => {
-      const next = { ...prev };
-      for (const ev of eventKeys) {
-        const curr = next[ev] ?? {};
-        const rest = (curr.tg ?? []).filter(
-          (r) => r.connection_id !== connectionId,
-        );
-        next[ev] = {
-          ...curr,
-          tg: level ? [...rest, { connection_id: connectionId, level }] : rest,
-        };
-      }
-      return next;
-    });
-    setDirty(true);
-    setSaved(false);
-  }
-
-  function applyBulkDiscord(
-    eventKeys: string[],
-    level: "brief" | "full" | null,
-  ) {
-    setRules((prev) => {
-      const next = { ...prev };
-      for (const ev of eventKeys)
-        next[ev] = {
-          ...(next[ev] ?? {}),
-          discord: level
-            ? discordConnections.map((c) => ({ connection_id: c.id, level }))
-            : [],
-        };
-      return next;
-    });
-    setDirty(true);
-    setSaved(false);
-  }
-
-  function applyBulkDiscordAccount(
-    eventKeys: string[],
-    connectionId: string,
-    level: "brief" | "full" | null,
-  ) {
-    setRules((prev) => {
-      const next = { ...prev };
-      for (const ev of eventKeys) {
-        const curr = next[ev] ?? {};
-        const rest = (curr.discord ?? []).filter(
-          (r) => r.connection_id !== connectionId,
-        );
-        next[ev] = {
-          ...curr,
-          discord: level
-            ? [...rest, { connection_id: connectionId, level }]
-            : rest,
-        };
-      }
-      return next;
-    });
-    setDirty(true);
-    setSaved(false);
+  function discardRules() {
+    setRules(data?.rules ?? {});
+    setDirty(false);
   }
 
   function openJson() {
@@ -1798,9 +1194,7 @@ export function Notifications() {
         Array.isArray(parsed)
       )
         throw new Error("root must be an object");
-      setRules(parsed);
-      setDirty(true);
-      setSaved(false);
+      updateRules(parsed);
       setJsonOpen(false);
       setJsonError(null);
     } catch (e) {
@@ -1808,334 +1202,430 @@ export function Notifications() {
     }
   }
 
-  function setEmailChannel(event: string, value: NotificationEmailRule[]) {
-    setRules((prev) => ({
-      ...prev,
-      [event]: { ...(prev[event] ?? {}), email: value },
-    }));
-    setDirty(true);
-    setSaved(false);
-  }
+  if (isLoading)
+    return (
+      <div className={styles.root}>
+        <PageHeader
+          title={t("notifications.title")}
+          subtitle={t("notifications.subtitle")}
+          style={{ marginBottom: 4 }}
+        />
+        <SkeletonSettingsPage cards={[8]} />
+      </div>
+    );
 
-  function setTgChannel(event: string, value: NotificationTgRule[]) {
-    setRules((prev) => ({
-      ...prev,
-      [event]: { ...(prev[event] ?? {}), tg: value },
-    }));
-    setDirty(true);
-    setSaved(false);
-  }
-
-  function setDiscordChannel(event: string, value: NotificationDiscordRule[]) {
-    setRules((prev) => ({
-      ...prev,
-      [event]: { ...(prev[event] ?? {}), discord: value },
-    }));
-    setDirty(true);
-    setSaved(false);
-  }
-
-  if (isLoading) return <SkeletonToggleRows rows={8} />;
+  const levelRow = (
+    key: string,
+    title: string,
+    description: string | null,
+    events: string[],
+    className?: string,
+  ) => (
+    <div key={key} className={mergeClasses(styles.row, className)}>
+      <div className={styles.eventCell}>
+        <Text weight={description === null ? "semibold" : "regular"}>
+          {title}
+        </Text>
+        {description && (
+          <Text size={200} className={styles.muted}>
+            {description}
+          </Text>
+        )}
+      </div>
+      {destinations.map((dest) => (
+        <LevelCell
+          key={`${dest.kind}:${dest.id}`}
+          dest={dest}
+          label={title}
+          showLabel={destinations.length > 1}
+          value={
+            events.length === 1
+              ? getLevel(rules, events[0], dest)
+              : uniformLevel(rules, events, dest)
+          }
+          onChange={(choice) =>
+            updateRules(withLevel(rules, events, dest, choice))
+          }
+        />
+      ))}
+    </div>
+  );
 
   return (
     <div className={styles.root}>
       <PageHeader
         title={t("notifications.title")}
         subtitle={t("notifications.subtitle")}
-        style={{ marginBottom: 0 }}
+        style={{ marginBottom: 4 }}
       />
-
-      {emails.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("notifications.levelLegend")}
-          </Text>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {(["off", "brief", "full"] as const).map((l) => (
-              <div
-                key={l}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  border: `1px solid ${tokens.colorNeutralStroke2}`,
-                  background: tokens.colorNeutralBackground2,
-                }}
-              >
-                <Text size={200} weight="semibold">
-                  {t(
-                    `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}`,
-                  )}
-                </Text>
-                <Text
-                  size={100}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  —{" "}
-                  {t(
-                    `notifications.level${l.charAt(0).toUpperCase() + l.slice(1)}Hint`,
-                  )}
-                </Text>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {emails.length === 0 && (
         <MessageBar intent="warning">
           <MessageBarBody>{t("notifications.noEmail")}</MessageBarBody>
         </MessageBar>
       )}
-
       {hasTgBot && !showTg && (
         <MessageBar intent="info">
           <MessageBarBody>{t("notifications.tgNoAccount")}</MessageBarBody>
+          <MessageBarActions>
+            <Button size="small" onClick={() => navigate("/connections")}>
+              {t("notifications.linkAccount")}
+            </Button>
+          </MessageBarActions>
         </MessageBar>
       )}
-
       {hasDiscordBot && discordConnections.length === 0 && (
         <MessageBar intent="info">
           <MessageBarBody>{t("notifications.discordNoAccount")}</MessageBarBody>
+          <MessageBarActions>
+            <Button size="small" onClick={() => navigate("/connections")}>
+              {t("notifications.linkAccount")}
+            </Button>
+          </MessageBarActions>
         </MessageBar>
       )}
 
-      {saved && (
-        <MessageBar intent="success">
-          <MessageBarBody>{t("notifications.saved")}</MessageBarBody>
-        </MessageBar>
-      )}
-
-      {mutation.isError && (
-        <MessageBar intent="error">
-          <MessageBarBody>{t("common.saveFailed")}</MessageBarBody>
-        </MessageBar>
-      )}
-
-      <RulesetSection
-        rulesets={rulesets}
-        editingRuleset={editingRuleset}
-        editingRulesetId={editingRulesetId}
-        setEditingRulesetId={setEditingRulesetId}
-        activeRuleset={activeRuleset}
-        draftRules={draftRules}
-        draftDirty={draftDirty}
-        emails={emails}
-        tgConnections={tgConnections}
-        discordConnections={showDiscord ? discordConnections : []}
-        rulesetMessage={rulesetMessage}
-        creating={createRulesetMut.isPending}
-        updating={updateRulesetMut.isPending}
-        deleting={deleteRulesetMut.isPending}
-        knownEvents={ALL_EVENT_KEYS}
-        onNew={handleNewRuleset}
-        onRename={handleRenameRuleset}
-        onDelete={handleDeleteRuleset}
-        onToggleActive={handleToggleActive}
-        onSaveDraft={handleSaveDraft}
-        onDiscardDraft={handleDiscardDraft}
-        onPatchRule={patchDraftRule}
-        onMoveRule={moveDraftRule}
-        onDeleteRule={deleteDraftRule}
-        onAddRule={addDraftRule}
-      />
-
-      {activeRuleset && (
-        <MessageBar intent="info">
-          <MessageBarBody>
-            {t("notifications.rulesetActiveOverride", {
-              name: activeRuleset.name,
-            })}
-          </MessageBarBody>
-        </MessageBar>
-      )}
-
-      {(emails.length > 0 || showTg || showDiscord) && (
-        <div className={styles.selectAllRow}>
-          <Text className={styles.selectAllLabel}>
-            {t("notifications.selectAll")}
-          </Text>
-          <BulkLevelControls
-            eventKeys={ALL_EVENT_KEYS}
-            rules={rules}
-            emailLevel={getUniformEmailLevel(ALL_EVENT_KEYS, rules, emails)}
-            tgLevel={getUniformTgLevel(ALL_EVENT_KEYS, rules, tgConnections)}
-            discordLevel={getUniformDiscordLevel(
-              ALL_EVENT_KEYS,
-              rules,
-              discordConnections,
-            )}
-            emails={emails}
-            connections={tgConnections}
-            discordConnections={discordConnections}
-            showTg={showTg}
-            showDiscord={showDiscord}
-            onEmail={(l) => applyBulkEmail(ALL_EVENT_KEYS, l)}
-            onTg={(l) => applyBulkTg(ALL_EVENT_KEYS, l)}
-            onDiscord={(l) => applyBulkDiscord(ALL_EVENT_KEYS, l)}
-            onEmailAccount={(emailId, l) =>
-              applyBulkEmailAccount(ALL_EVENT_KEYS, emailId, l)
-            }
-            onTgAccount={(connectionId, l) =>
-              applyBulkTgAccount(ALL_EVENT_KEYS, connectionId, l)
-            }
-            onDiscordAccount={(connectionId, l) =>
-              applyBulkDiscordAccount(ALL_EVENT_KEYS, connectionId, l)
-            }
-          />
-        </div>
-      )}
-
-      {EVENT_GROUPS.map((group) => {
-        const groupKeys = group.events.map((e) => e.value);
-        return (
-          <div key={group.groupKey} className={styles.group}>
-            <div className={styles.groupHeader}>
-              <Text className={styles.groupLabel}>{t(group.groupKey)}</Text>
-              <BulkLevelControls
-                eventKeys={groupKeys}
-                rules={rules}
-                emailLevel={getUniformEmailLevel(groupKeys, rules, emails)}
-                tgLevel={getUniformTgLevel(groupKeys, rules, tgConnections)}
-                discordLevel={getUniformDiscordLevel(
-                  groupKeys,
-                  rules,
-                  discordConnections,
-                )}
-                emails={emails}
-                connections={tgConnections}
-                discordConnections={discordConnections}
-                showTg={showTg}
-                showDiscord={showDiscord}
-                onEmail={(l) => applyBulkEmail(groupKeys, l)}
-                onTg={(l) => applyBulkTg(groupKeys, l)}
-                onDiscord={(l) => applyBulkDiscord(groupKeys, l)}
-                onEmailAccount={(emailId, l) =>
-                  applyBulkEmailAccount(groupKeys, emailId, l)
-                }
-                onTgAccount={(connectionId, l) =>
-                  applyBulkTgAccount(groupKeys, connectionId, l)
-                }
-                onDiscordAccount={(connectionId, l) =>
-                  applyBulkDiscordAccount(groupKeys, connectionId, l)
-                }
-              />
-            </div>
-            {group.events.map((entry) => {
-              const rule = rules[entry.value] ?? {};
-              return (
-                <div key={entry.value} className={styles.eventRow}>
-                  <div className={styles.eventText}>
-                    <Text weight="semibold" size={300}>
-                      {t(entry.labelKey)}
-                    </Text>
-                    <Text
-                      size={200}
-                      style={{ color: tokens.colorNeutralForeground3 }}
-                    >
-                      {t(entry.descKey)}
-                    </Text>
-                  </div>
-                  <div className={styles.channelStack}>
-                    <EmailChannelPicker
-                      value={rule.email ?? []}
-                      emails={emails}
-                      onChange={(v) => setEmailChannel(entry.value, v)}
-                    />
-                    {showTg && (
-                      <TgChannelPicker
-                        value={rule.tg ?? []}
-                        connections={tgConnections}
-                        onChange={(v) => setTgChannel(entry.value, v)}
-                      />
-                    )}
-                    {showDiscord && (
-                      <DiscordChannelPicker
-                        value={rule.discord ?? []}
-                        connections={discordConnections}
-                        onChange={(v) => setDiscordChannel(entry.value, v)}
-                      />
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+      {/* ── Events ── */}
+      <SettingsCard
+        id="events"
+        title={t("notifications.eventsTitle")}
+        description={t("notifications.eventsDesc")}
+        action={
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<CodeRegular />}
+            onClick={openJson}
+          >
+            {t("notifications.jsonEdit")}
+          </Button>
+        }
+      >
+        {activeRuleset && (
+          <div className={styles.cardNotice}>
+            <MessageBar intent="info">
+              <MessageBarBody>
+                {t("notifications.rulesetActiveOverride", {
+                  name: activeRuleset.name,
+                })}
+              </MessageBarBody>
+            </MessageBar>
           </div>
-        );
-      })}
+        )}
+        {mutation.isError && (
+          <div className={styles.cardNotice}>
+            <MessageBar intent="error">
+              <MessageBarBody>{t("common.saveFailed")}</MessageBarBody>
+            </MessageBar>
+          </div>
+        )}
 
-      {jsonOpen && (
-        <div className={styles.jsonPanel}>
-          <Textarea
-            value={jsonText}
-            onChange={(e) => {
-              setJsonText(e.target.value);
-              setJsonError(null);
-            }}
-            rows={20}
-            resize="vertical"
-            style={{ fontFamily: "monospace", fontSize: "12px" }}
-          />
-          {jsonError && (
-            <Text
-              size={200}
-              style={{ color: tokens.colorStatusDangerForeground1 }}
+        {destinations.length === 0 ? (
+          <div className={styles.cardEmpty}>
+            {t("notifications.noDestinations")}
+          </div>
+        ) : (
+          <>
+            <div className={mergeClasses(styles.row, styles.headRow)}>
+              <span className={styles.eventCell}>
+                {t("notifications.colEvent")}
+              </span>
+              {destinations.map((dest) => (
+                <span
+                  key={`${dest.kind}:${dest.id}`}
+                  className={styles.destCell}
+                >
+                  <DestHead dest={dest} />
+                </span>
+              ))}
+            </div>
+            {levelRow(
+              "all",
+              t("notifications.allEvents"),
+              null,
+              ALL_EVENT_KEYS,
+              styles.groupRow,
+            )}
+            {EVENT_GROUPS.map((group) => [
+              levelRow(
+                group.groupKey,
+                t(group.groupKey),
+                null,
+                group.events.map((e) => e.value),
+                styles.groupRow,
+              ),
+              ...group.events.map((entry) =>
+                levelRow(entry.value, t(entry.labelKey), t(entry.descKey), [
+                  entry.value,
+                ]),
+              ),
+            ])}
+          </>
+        )}
+
+        {/* Only while there is something to save or just saved; idle,
+            the table ends at its last row. */}
+        {(dirty || saved || mutation.isPending) && (
+          <div className={styles.footer}>
+            <span
+              className={mergeClasses(
+                styles.footerStatus,
+                saved && styles.footerStatusOk,
+              )}
+              role="status"
             >
-              {t("notifications.jsonError", { error: jsonError })}
-            </Text>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <Button appearance="primary" size="small" onClick={applyJson}>
-              {t("notifications.jsonApply")}
+              {saved ? (
+                <>
+                  <CheckmarkRegular />
+                  {t("notifications.saved")}
+                </>
+              ) : dirty ? (
+                t("notifications.unsaved")
+              ) : null}
+            </span>
+            <Button
+              disabled={!dirty || mutation.isPending}
+              onClick={discardRules}
+            >
+              {t("common.discard")}
             </Button>
             <Button
-              size="small"
-              onClick={() => {
-                setJsonOpen(false);
-                setJsonError(null);
-              }}
+              appearance="primary"
+              disabled={!dirty || mutation.isPending}
+              onClick={() => mutation.mutate(rules)}
             >
-              {t("common.close")}
+              {mutation.isPending ? (
+                <Spinner size="tiny" />
+              ) : (
+                t("common.saveChanges")
+              )}
             </Button>
           </div>
-        </div>
-      )}
+        )}
+      </SettingsCard>
 
-      <div className={styles.actions}>
-        <Button
-          appearance="primary"
-          disabled={!dirty || mutation.isPending}
-          onClick={() => mutation.mutate(rules)}
-        >
-          {mutation.isPending ? (
-            <Spinner size="tiny" />
-          ) : (
-            t("common.saveChanges")
-          )}
-        </Button>
-        <Button
-          appearance="subtle"
-          onClick={
-            jsonOpen
-              ? () => {
-                  setJsonOpen(false);
-                  setJsonError(null);
+      {/* ── Rulesets ── */}
+      <SettingsCard
+        id="rulesets"
+        title={t("notifications.rulesetsTitle")}
+        description={t("notifications.rulesetsDesc")}
+        action={
+          <Button
+            size="small"
+            icon={<AddRegular />}
+            disabled={createRulesetMut.isPending}
+            onClick={() => setNameDialog({ mode: "new", value: "" })}
+          >
+            {t("notifications.rulesetsNew")}
+          </Button>
+        }
+      >
+        {rulesetMessage && (
+          <div className={styles.cardNotice}>
+            <MessageBar intent={rulesetMessage.intent}>
+              <MessageBarBody>{rulesetMessage.text}</MessageBarBody>
+            </MessageBar>
+          </div>
+        )}
+
+        {rulesets.length === 0 && (
+          <div className={styles.cardEmpty}>
+            {t("notifications.rulesetsEmpty")}
+          </div>
+        )}
+
+        {rulesets.map((rs, i) => {
+          const open = rs.id === editingRulesetId;
+          return (
+            <div key={rs.id}>
+              <div className={styles.rsRow}>
+                <div className={styles.rsName}>
+                  <Text weight="semibold" truncate wrap={false}>
+                    {rs.name}
+                  </Text>
+                  {rs.is_active && (
+                    <Badge appearance="tint" color="success" size="small">
+                      {t("notifications.rulesetsActiveBadge")}
+                    </Badge>
+                  )}
+                  <Text size={200} className={styles.muted}>
+                    {t("notifications.rulesetsRuleCount", {
+                      count: rs.rules.length,
+                    })}
+                  </Text>
+                </div>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  onClick={() => setEditingRulesetId(open ? null : rs.id)}
+                >
+                  {open ? t("common.close") : t("common.edit")}
+                </Button>
+                <Button
+                  size="small"
+                  disabled={updateRulesetMut.isPending}
+                  onClick={() =>
+                    updateRulesetMut.mutate({
+                      id: rs.id,
+                      body: { is_active: !rs.is_active },
+                    })
+                  }
+                >
+                  {rs.is_active
+                    ? t("notifications.rulesetsDeactivate")
+                    : t("notifications.rulesetsActivate")}
+                </Button>
+                <Menu>
+                  <MenuTrigger disableButtonEnhancement>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<MoreHorizontalRegular />}
+                      aria-label={rs.name}
+                    />
+                  </MenuTrigger>
+                  <MenuPopover>
+                    <MenuList>
+                      <MenuItem
+                        onClick={() =>
+                          setNameDialog({
+                            mode: "rename",
+                            ruleset: rs,
+                            value: rs.name,
+                          })
+                        }
+                      >
+                        {t("notifications.rulesetsRename")}
+                      </MenuItem>
+                      <MenuItem
+                        disabled={deleteRulesetMut.isPending}
+                        onClick={() => setDeleteDialog(rs)}
+                      >
+                        {t("notifications.rulesetsDelete")}
+                      </MenuItem>
+                    </MenuList>
+                  </MenuPopover>
+                </Menu>
+              </div>
+
+              {open && editingRuleset && (
+                <div
+                  className={mergeClasses(
+                    styles.editor,
+                    i === rulesets.length - 1 && styles.editorLast,
+                  )}
+                >
+                  {draftRules.length === 0 && (
+                    <Text size={200} className={styles.muted}>
+                      {t("notifications.rulesetsRulesEmpty")}
+                    </Text>
+                  )}
+                  {draftRules.map((rule, idx) => (
+                    <RuleEditor
+                      key={rule.id}
+                      index={idx}
+                      rule={rule}
+                      destinations={destinations}
+                      knownEvents={ALL_EVENT_KEYS}
+                      isFirst={idx === 0}
+                      isLast={idx === draftRules.length - 1}
+                      onPatch={(p) => patchDraftRule(idx, p)}
+                      onMove={(d) => moveDraftRule(idx, d)}
+                      onDelete={() =>
+                        setDraftRules((prev) =>
+                          prev.filter((_, j) => j !== idx),
+                        )
+                      }
+                    />
+                  ))}
+                  <div className={styles.editorFooter}>
+                    <Button
+                      size="small"
+                      icon={<AddRegular />}
+                      onClick={addDraftRule}
+                    >
+                      {t("notifications.rulesetsAddRule")}
+                    </Button>
+                    {draftDirty && (
+                      <span className={styles.unsaved}>
+                        {t("notifications.rulesetsUnsaved")}
+                      </span>
+                    )}
+                    <Button
+                      size="small"
+                      style={draftDirty ? undefined : { marginLeft: "auto" }}
+                      disabled={!draftDirty || updateRulesetMut.isPending}
+                      onClick={() => setDraftRules(editingRuleset.rules)}
+                    >
+                      {t("common.discard")}
+                    </Button>
+                    <Button
+                      size="small"
+                      appearance="primary"
+                      disabled={!draftDirty || updateRulesetMut.isPending}
+                      onClick={() =>
+                        updateRulesetMut.mutate({
+                          id: editingRuleset.id,
+                          body: { rules: draftRules },
+                        })
+                      }
+                    >
+                      {updateRulesetMut.isPending ? (
+                        <Spinner size="tiny" />
+                      ) : (
+                        t("common.saveChanges")
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </SettingsCard>
+
+      {/* ── Dialogs ── */}
+      <Dialog
+        open={jsonOpen}
+        onOpenChange={(_, d) => {
+          if (!d.open) setJsonOpen(false);
+        }}
+      >
+        <DialogSurface className={styles.jsonSurface}>
+          <DialogBody>
+            <DialogTitle>{t("notifications.jsonTitle")}</DialogTitle>
+            <DialogContent>
+              <Field
+                hint={t("notifications.jsonHint")}
+                validationMessage={
+                  jsonError
+                    ? t("notifications.jsonError", { error: jsonError })
+                    : undefined
                 }
-              : openJson
-          }
-        >
-          {t("notifications.jsonEdit")}
-        </Button>
-      </div>
+              >
+                <Textarea
+                  value={jsonText}
+                  onChange={(e) => {
+                    setJsonText(e.target.value);
+                    setJsonError(null);
+                  }}
+                  rows={18}
+                  resize="vertical"
+                  textarea={{ className: styles.jsonInput }}
+                />
+              </Field>
+            </DialogContent>
+            <DialogActions>
+              <DialogTrigger disableButtonEnhancement>
+                <Button>{t("common.cancel")}</Button>
+              </DialogTrigger>
+              <Button appearance="primary" onClick={applyJson}>
+                {t("notifications.jsonApply")}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       <Dialog
         open={nameDialog !== null}

@@ -17,10 +17,10 @@ const app = new Hono<AppEnv>();
 
 app.get("/:username", optionalAuth, async (c) => {
   const username = (c.req.param("username") ?? "").toLowerCase();
-  if (!username) return c.json({ error: "Not found" }, 404);
+  if (!username) return c.json({ error: "not_found" }, 404);
   const config = await getConfig(c.env.DB);
   if (!config.enable_public_profiles) {
-    return c.json({ error: "Not found" }, 404);
+    return c.json({ error: "not_found" }, 404);
   }
 
   const row = await c.env.DB.prepare(
@@ -35,7 +35,7 @@ app.get("/:username", optionalAuth, async (c) => {
   const isOwner = viewer?.id === row?.id;
 
   if (!row || (!row.profile_is_public && !isOwner)) {
-    return c.json({ error: "Not found" }, 404);
+    return c.json({ error: "not_found" }, 404);
   }
 
   const resolve = (userValue: number | null, siteDefault: boolean): boolean =>

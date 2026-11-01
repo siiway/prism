@@ -44,8 +44,19 @@ export function createAuthStore(
   }));
 }
 
-/** The browser's long-lived in-memory store; server renders use a fresh store. */
-export const authStore = createAuthStore();
+/**
+ * The browser's long-lived in-memory store; server renders use a fresh store.
+ *
+ * Seeded from the server's hydration payload (an inline script that runs
+ * before this module) rather than filled in later with setAuth: during
+ * hydration React reads a Zustand store's *initial* state, so an empty
+ * initial user rendered a signed-out header against the server's signed-in
+ * one — a hydration mismatch that made React discard and redraw the page.
+ */
+export const authStore = createAuthStore({
+  initialAuth:
+    typeof window !== "undefined" ? window.__INITIAL__?.auth : undefined,
+});
 
 const AuthStoreContext = createContext<AuthStore | null>(null);
 

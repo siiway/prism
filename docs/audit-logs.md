@@ -108,6 +108,6 @@ deliver, or `*` for every event in the scope.
 
 The previous instance/user webhook feature has been removed in favour of this
 system. Admins can import old webhooks into the new one from **Admin panel →
-Settings → Danger Zone → Migrate legacy webhooks** — each legacy webhook becomes
+Maintenance → Danger zone → Migrate legacy webhooks** — each legacy webhook becomes
 a General Webhook in the matching scope. The action is idempotent and safe to
 run more than once.

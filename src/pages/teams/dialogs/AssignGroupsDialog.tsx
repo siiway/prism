@@ -79,6 +79,7 @@ export function AssignGroupsDialog({
     try {
       await api.setTeamMemberGroups(teamId, member.user_id, [...current]);
       await qc.invalidateQueries({ queryKey: ["team", teamId] });
+      await qc.invalidateQueries({ queryKey: ["team-members", teamId] });
       onClose();
       showMsg("success", t("teams.groupsAssigned"));
     } catch (err) {

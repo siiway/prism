@@ -21,6 +21,8 @@ export type {
 };
 
 import { useEffect, useState } from "react";
+import type { i18n as I18n } from "i18next";
+import { clientI18n } from "../i18n/init";
 import { authStore } from "../store/auth";
 import { isNormalView } from "../store/adminView";
 
@@ -130,20 +132,53 @@ export function unproxyImageUrl(url: string | null | undefined): string {
   return trimmed;
 }
 
-// Error messages the worker's auth middleware uses when it rejects a
+// Error codes the worker's auth middleware uses when it rejects a
 // request because the session/PAT itself is no good. Anything else
 // returning 401 is a business-logic failure (insufficient scope,
 // upstream provider auth dead, etc.) and must not log the user out.
-const SESSION_INVALID_ERRORS = new Set(["Unauthorized", "Token expired"]);
+const SESSION_INVALID_ERRORS = new Set(["unauthorized", "token_expired"]);
 
+export type ApiErrorParams = Record<string, string | number>;
+
+/** A failed request. The API answers with a stable code
+ *  (`{ error: "field_required", params: { field: "name" } }`), never with
+ *  English; `message` is that code translated into the reader's language,
+ *  so it can be shown as is. Compare against `code`, never `message`. */
 export class ApiError extends Error {
   status: number;
   data: unknown;
-  constructor(status: number, message: string, data?: unknown) {
+  code: string;
+  params: ApiErrorParams | undefined;
+  constructor(
+    status: number,
+    message: string,
+    data?: unknown,
+    code = message,
+    params?: ApiErrorParams,
+  ) {
     super(message);
     this.status = status;
     this.data = data;
+    this.code = code;
+    this.params = params;
   }
+}
+
+/** Translates an error code; see ApiClientOptions.translate. */
+export type ApiErrorTranslator = (
+  code: string,
+  params?: ApiErrorParams,
+) => string;
+
+/** A translator over an i18next instance: `apiErrors.<code>`, or a generic
+ *  "something went wrong (code)" when this build doesn't know the code. */
+export function i18nErrorTranslator(i18n: I18n): ApiErrorTranslator {
+  return (code, params) => {
+    const key = `apiErrors.${code}`;
+    return i18n.exists(key)
+      ? i18n.t(key, params)
+      : i18n.t("apiErrors.unknown", { code });
+  };
 }
 
 export type ApiFetcher = (
@@ -160,6 +195,9 @@ export interface ApiClientOptions {
   isNormalView?: () => boolean;
   /** Browser-only callback for an invalid Prism session. */
   onInvalidSession?: () => void;
+  /** Turns an error code into text for ApiError.message. Without one the
+   *  message is the bare code. */
+  translate?: ApiErrorTranslator;
 }
 
 async function performRequest<T>(
@@ -210,21 +248,30 @@ async function performRequest<T>(
     : await res.text();
 
   if (!res.ok) {
-    const message =
-      typeof data === "object" && data !== null && "error" in data
-        ? String((data as Record<string, unknown>).error)
-        : `HTTP ${res.status}`;
+    const body =
+      typeof data === "object" && data !== null
+        ? (data as Record<string, unknown>)
+        : null;
+    const sent = typeof body?.error === "string" ? body.error : null;
+    const code = sent ?? "http_error";
+    const params =
+      sent && typeof body?.params === "object" && body.params !== null
+        ? (body.params as ApiErrorParams)
+        : sent
+          ? undefined
+          : { status: res.status };
+    const message = options.translate?.(code, params) ?? code;
 
     // Only clear local session state for 401s that actually mean "your
     // Prism session is invalid". Other 401-shaped errors (OAuth scope
     // failures, dead upstream provider tokens on a connection refresh,
     // PAT scope rejections, etc.) carry a specific error code and must
     // NOT log the user out.
-    if (res.status === 401 && SESSION_INVALID_ERRORS.has(message)) {
+    if (res.status === 401 && SESSION_INVALID_ERRORS.has(code)) {
       options.onInvalidSession?.();
     }
 
-    throw new ApiError(res.status, message, data);
+    throw new ApiError(res.status, message, data, code, params);
   }
 
   return data as T;
@@ -257,7 +304,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
 
   // ─── Auth ────────────────────────────────────────────────────────────────
   register: (body: RegisterBody) =>
-    request<AuthResponse | { message: string }>("POST", "/auth/register", body),
+    request<AuthResponse | { ok: true }>("POST", "/auth/register", body),
 
   // ── Team-invite registration ────────────────────────────────────────────
   joinPageInfo: (teamId: string) =>
@@ -292,7 +339,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       synthetic_email: boolean;
     }>("GET", "/auth/invite-join/status", undefined, getToken()),
   completeInviteJoin: () =>
-    request<{ message: string; team_id: string }>(
+    request<{ team_id: string }>(
       "POST",
       "/auth/invite-join/complete",
       undefined,
@@ -306,7 +353,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   convertAccount: () =>
-    request<{ message: string; converted_at: number }>(
+    request<{ converted_at: number }>(
       "POST",
       "/user/me/convert",
       undefined,
@@ -316,9 +363,9 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     request<LoginResponse>("POST", "/auth/login", body),
   /** Revoke the cookie-authenticated session and clear its cookie. */
   logout: () =>
-    request<{ message: string }>("POST", "/auth/logout", undefined, getToken()),
+    request<{ ok: true }>("POST", "/auth/logout", undefined, getToken()),
   verifyEmail: (token: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "GET",
       `/auth/verify-email?token=${encodeURIComponent(token)}`,
     ),
@@ -331,7 +378,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     geetest?: GeetestOutput;
     cap_token?: string;
   }) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       "/auth/resend-verify-email",
       captcha ?? {},
@@ -381,19 +428,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   totpVerify: (id: string, code: string) =>
-    request<{ message: string; backup_codes?: string[] }>(
+    request<{ backup_codes?: string[] }>(
       "POST",
       "/auth/totp/verify",
       { id, code },
       getToken(),
     ),
   totpRemove: (id: string, code: string) =>
-    request<{ message: string }>(
-      "DELETE",
-      `/auth/totp/${id}`,
-      { code },
-      getToken(),
-    ),
+    request<{ ok: true }>("DELETE", `/auth/totp/${id}`, { code }, getToken()),
   totpNewBackupCodes: (code: string) =>
     request<{ backup_codes: string[] }>(
       "POST",
@@ -406,7 +448,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   passkeyRegBegin: () =>
     request<unknown>("POST", "/auth/passkey/register/begin", {}, getToken()),
   passkeyRegFinish: (response: unknown, name?: string) =>
-    request<{ message: string; id: string }>(
+    request<{ id: string }>(
       "POST",
       "/auth/passkey/register/finish",
       { response, name },
@@ -427,7 +469,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deletePasskey: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/auth/passkeys/${id}`,
       undefined,
@@ -445,12 +487,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteGpgKey: (id: string) =>
-    request<{ message: string }>(
-      "DELETE",
-      `/user/gpg/${id}`,
-      undefined,
-      getToken(),
-    ),
+    request<{ ok: true }>("DELETE", `/user/gpg/${id}`, undefined, getToken()),
   gpgChallenge: (identifier: string) =>
     request<{ challenge: string; text: string }>(
       "POST",
@@ -478,7 +515,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   revokeSession: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/auth/sessions/${id}`,
       undefined,
@@ -492,7 +529,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   revokeAllOtherSessions: () =>
-    request<{ message: string; revoked: number }>(
+    request<{ revoked: number }>(
       "DELETE",
       "/auth/sessions",
       undefined,
@@ -536,7 +573,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     }>,
   ) => request<{ user: UserProfile }>("PATCH", "/user/me", body, getToken()),
   changePassword: (current_password: string, new_password: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       "/user/me/change-password",
       { current_password, new_password },
@@ -569,7 +606,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteAccount: (password: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       "/user/me",
       { password, confirm: "DELETE" },
@@ -603,21 +640,21 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       created_at: number;
     }>("POST", "/user/me/emails", { email }, getToken()),
   resendEmailVerify: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/user/me/emails/${id}/resend`,
       {},
       getToken(),
     ),
   setEmailPrimary: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/user/me/emails/${id}/set-primary`,
       {},
       getToken(),
     ),
   removeEmail: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/user/me/emails/${id}`,
       undefined,
@@ -652,12 +689,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteApp: (id: string) =>
-    request<{ message: string }>(
-      "DELETE",
-      `/apps/${id}`,
-      undefined,
-      getToken(),
-    ),
+    request<{ ok: true }>("DELETE", `/apps/${id}`, undefined, getToken()),
 
   // ─── App scope definitions ───────────────────────────────────────────────
   listScopeDefinitions: (appId: string) =>
@@ -689,7 +721,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteScopeDefinition: (appId: string, defId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/apps/${appId}/scope-definitions/${defId}`,
       undefined,
@@ -715,7 +747,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteScopeAccessRule: (appId: string, ruleId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/apps/${appId}/scope-access-rules/${ruleId}`,
       undefined,
@@ -745,7 +777,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteAccessRule: (appId: string, ruleId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/apps/${appId}/access-rules/${ruleId}`,
       undefined,
@@ -766,6 +798,8 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       limit: number;
     }>("GET", `/domains${qs ? `?${qs}` : ""}`, undefined, getToken());
   },
+  getDomain: (id: string) =>
+    request<{ domain: Domain }>("GET", `/domains/${id}`, undefined, getToken()),
   addDomain: (domain: string, app_id?: string) =>
     request<DomainAddResponse>(
       "POST",
@@ -781,12 +815,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteDomain: (id: string) =>
-    request<{ message: string }>(
-      "DELETE",
-      `/domains/${id}`,
-      undefined,
-      getToken(),
-    ),
+    request<{ ok: true }>("DELETE", `/domains/${id}`, undefined, getToken()),
 
   // ─── Connections ─────────────────────────────────────────────────────────
   listConnections: () =>
@@ -848,7 +877,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   disconnectConnection: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/connections/${id}`,
       undefined,
@@ -872,21 +901,21 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     }>("GET", `/oauth/consents${qs ? `?${qs}` : ""}`, undefined, getToken());
   },
   revokeConsent: (clientId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/oauth/consents/${encodeURIComponent(clientId)}`,
       undefined,
       getToken(),
     ),
   updateConsent: (clientId: string, body: { auto_authorize?: boolean }) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "PATCH",
       `/oauth/consents/${encodeURIComponent(clientId)}`,
       body,
       getToken(),
     ),
   revokeToken: (tokenId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/oauth/me/tokens/${encodeURIComponent(tokenId)}`,
       undefined,
@@ -955,7 +984,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminUpdateConfig: (updates: Record<string, unknown>) =>
-    request<{ message: string }>("PATCH", "/admin/config", updates, getToken()),
+    request<{ ok: true }>("PATCH", "/admin/config", updates, getToken()),
   /** Both legal documents (Privacy Policy, Terms of Service), with full
    *  content, for the admin editor. Missing documents come back with empty
    *  content. 503 with `migrations_pending` if the table isn't there yet. */
@@ -1015,14 +1044,9 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminUpdateUser: (id: string, body: Record<string, unknown>) =>
-    request<{ message: string }>(
-      "PATCH",
-      `/admin/users/${id}`,
-      body,
-      getToken(),
-    ),
+    request<{ ok: true }>("PATCH", `/admin/users/${id}`, body, getToken()),
   adminDeleteUser: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}`,
       undefined,
@@ -1036,12 +1060,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminUpdateApp: (id: string, body: Record<string, unknown>) =>
-    request<{ message: string }>(
-      "PATCH",
-      `/admin/apps/${id}`,
-      body,
-      getToken(),
-    ),
+    request<{ ok: true }>("PATCH", `/admin/apps/${id}`, body, getToken()),
   adminLoginErrors: (
     page = 1,
     filters: { error_code?: string; identifier?: string; ip?: string } = {},
@@ -1057,97 +1076,10 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     );
   },
-  adminRequestLogs: (
-    page = 1,
-    filters: {
-      method?: string;
-      path?: string;
-      status?: string;
-      user_id?: string;
-    } = {},
-  ) => {
-    const qs = new URLSearchParams({ page: String(page) });
-    if (filters.method) qs.set("method", filters.method);
-    if (filters.path) qs.set("path", filters.path);
-    if (filters.status) qs.set("status", filters.status);
-    if (filters.user_id) qs.set("user_id", filters.user_id);
-    return request<{ logs: unknown[]; total: number }>(
-      "GET",
-      `/admin/request-logs?${qs}`,
-      undefined,
-      getToken(),
-    );
-  },
-  adminRequestLogDetails: (id: string) =>
-    request<{ details: unknown }>(
-      "GET",
-      `/admin/request-logs/${id}/details`,
-      undefined,
-      getToken(),
-    ),
-  adminExportRequestLogs: async (
-    format: "json" | "csv",
-    filters: {
-      method?: string;
-      path?: string;
-      status?: string;
-      user_id?: string;
-    } = {},
-  ): Promise<void> => {
-    const qs = new URLSearchParams({ format });
-    if (filters.method) qs.set("method", filters.method);
-    if (filters.path) qs.set("path", filters.path);
-    if (filters.status) qs.set("status", filters.status);
-    if (filters.user_id) qs.set("user_id", filters.user_id);
-    const res = await fetch(`${BASE}/admin/request-logs/export?${qs}`, {
-      credentials: "include",
-    });
-    if (!res.ok) throw new Error("Export failed");
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `request-logs-${Date.now()}.${format}`;
-    a.click();
-    URL.revokeObjectURL(url);
-  },
-  adminGetDebug: () =>
-    request<{
-      logging_enabled: boolean;
-      force_log_all: boolean;
-      outbound_logging_enabled: boolean;
-      spectate_user_id: string | null;
-      spectate_path: string | null;
-      log_except_pattern: string | null;
-      log_ip: string | null;
-    }>("GET", "/admin/debug", undefined, getToken()),
-  adminSetDebug: (body: {
-    logging_enabled?: boolean;
-    force_log_all?: boolean;
-    outbound_logging_enabled?: boolean;
-    spectate_user_id?: string | null;
-    spectate_path?: string | null;
-    log_except_pattern?: string | null;
-    log_ip?: string | null;
-  }) => request<{ ok: boolean }>("POST", "/admin/debug", body, getToken()),
-  adminClearRequestLogs: () =>
-    request<{ ok: boolean }>(
-      "DELETE",
-      "/admin/request-logs",
-      undefined,
-      getToken(),
-    ),
-  adminClearSpectrateLogs: () =>
-    request<{ ok: boolean }>(
-      "DELETE",
-      "/admin/request-logs/spectate",
-      undefined,
-      getToken(),
-    ),
   adminTestEmail: () =>
-    request<{ message: string }>("POST", "/admin/test-email", {}, getToken()),
+    request<{ ok: true }>("POST", "/admin/test-email", {}, getToken()),
   adminTestEmailReceiving: () =>
-    request<{ message: string; address: string }>(
+    request<{ address: string }>(
       "POST",
       "/admin/test-email-receiving",
       {},
@@ -1159,7 +1091,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   // routes to the confirmation endpoint, which will refuse without an
   // already-pending request and a passed cooldown.
   adminReset: () =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       "/admin/reset/confirm",
       { confirm: "RESET_EVERYTHING" },
@@ -1192,7 +1124,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminResetConfirm: (body: { totp_code?: string }) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       "/admin/reset/confirm",
       { confirm: "RESET_EVERYTHING", ...body },
@@ -1217,11 +1149,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     body: {
       granted?: boolean;
       exemptions?: { email_verification?: boolean };
+      /** Override the site default, or null to follow it again. */
+      allow_convert?: boolean | null;
     },
   ) =>
     request<{
       invite_registration_granted: boolean;
-      invite_registration_enabled: boolean;
+      invite_registration_allow_convert: boolean | null;
       invite_registration_exemptions: { email_verification?: boolean };
     }>(
       "PATCH",
@@ -1230,14 +1164,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminStartDissolve: (teamId: string, confirm: string) =>
-    request<{ message: string; deactivated_accounts: number }>(
+    request<{ deactivated_accounts: number }>(
       "POST",
       `/admin/teams/${encodeURIComponent(teamId)}/dissolve`,
       { confirm },
       getToken(),
     ),
   adminCancelDissolve: (teamId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/admin/teams/${encodeURIComponent(teamId)}/dissolve/cancel`,
       undefined,
@@ -1318,7 +1252,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     }>("GET", `/admin/image-proxy?${p.toString()}`, undefined, getToken());
   },
   adminDeleteImageProxy: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/image-proxy/${id}`,
       undefined,
@@ -1329,6 +1263,15 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       "POST",
       "/admin/sweep-image-proxy",
       {},
+      getToken(),
+    ),
+
+  // ─── Search (command palette) ──────────────────────────────────────────────
+  search: (q: string) =>
+    request<{ results: SearchHit[] }>(
+      "GET",
+      `/search?q=${encodeURIComponent(q)}`,
+      undefined,
       getToken(),
     ),
 
@@ -1373,7 +1316,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteAuditWebhook: (base: string, id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/audit/${base}/webhooks/${id}`,
       undefined,
@@ -1443,7 +1386,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteNotificationRuleset: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/user/me/notification-rulesets/${id}`,
       undefined,
@@ -1540,9 +1483,6 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       require_verified_email?: boolean;
       /** Owner-only. */
       enable_groups?: boolean;
-      /** Owner-only, and only meaningful once a site admin has granted the
-       *  team permission to mint accounts. */
-      invite_registration_enabled?: boolean;
       /** Team management setting: may unrestricted accounts join via invite
        *  link? Direct adds by an admin are never subject to it. */
       allow_normal_user_join?: boolean;
@@ -1602,7 +1542,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteTeamGroup: (teamId: string, groupId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/teams/${encodeURIComponent(teamId)}/groups/${encodeURIComponent(groupId)}`,
       undefined,
@@ -1630,12 +1570,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteTeam: (id: string) =>
-    request<{ message: string }>(
-      "DELETE",
-      `/teams/${id}`,
-      undefined,
-      getToken(),
-    ),
+    request<{ ok: true }>("DELETE", `/teams/${id}`, undefined, getToken()),
   listTeamMembers: (
     teamId: string,
     params: {
@@ -1667,28 +1602,23 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     teamId: string,
     body: { username?: string; user_id?: string; role?: string },
   ) =>
-    request<{ message: string }>(
-      "POST",
-      `/teams/${teamId}/members`,
-      body,
-      getToken(),
-    ),
+    request<{ ok: true }>("POST", `/teams/${teamId}/members`, body, getToken()),
   changeTeamMemberRole: (teamId: string, userId: string, role: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "PATCH",
       `/teams/${teamId}/members/${userId}`,
       { role },
       getToken(),
     ),
   removeTeamMember: (teamId: string, userId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/teams/${teamId}/members/${userId}`,
       undefined,
       getToken(),
     ),
   transferOwnership: (teamId: string, userId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/teams/${teamId}/transfer-ownership`,
       { user_id: userId },
@@ -1723,14 +1653,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   transferAppToTeam: (teamId: string, appId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/teams/${teamId}/apps/transfer`,
       { app_id: appId },
       getToken(),
     ),
   removeAppFromTeam: (teamId: string, appId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/teams/${teamId}/apps/${appId}/transfer`,
       undefined,
@@ -1748,7 +1678,9 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     if (params.q) search.set("q", params.q);
     const qs = search.toString();
     return request<{
-      domains: Domain[];
+      /** Ancestor teams' domains come along read-only, tagged with
+       *  `inherited_from`. */
+      domains: (Domain & { inherited_from?: string | null })[];
       total: number;
       page: number;
       limit: number;
@@ -1759,6 +1691,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     );
   },
+  getTeamDomain: (teamId: string, domainId: string) =>
+    request<{ domain: Domain }>(
+      "GET",
+      `/teams/${teamId}/domains/${domainId}`,
+      undefined,
+      getToken(),
+    ),
   addTeamDomain: (teamId: string, domain: string) =>
     request<DomainAddResponse>(
       "POST",
@@ -1778,21 +1717,21 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   deleteTeamDomain: (teamId: string, domainId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/teams/${teamId}/domains/${domainId}`,
       undefined,
       getToken(),
     ),
   transferDomainToTeam: (domainId: string, teamId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/domains/${domainId}/transfer`,
       { team_id: teamId },
       getToken(),
     ),
   returnDomainToPersonal: (teamId: string, domainId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/teams/${teamId}/domains/${domainId}/to-personal`,
       undefined,
@@ -1867,7 +1806,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   revokeTeamInvite: (teamId: string, token: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/teams/${teamId}/invites/${token}`,
       undefined,
@@ -1892,7 +1831,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   getTeamInvite: (token: string) =>
     request<TeamInviteInfo>("GET", `/teams/join/${token}`),
   acceptTeamInvite: (token: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/teams/join/${token}`,
       undefined,
@@ -1900,15 +1839,20 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
 
   // Admin teams
-  adminListTeams: (page = 1, search = "") =>
+  adminListTeams: (
+    page = 1,
+    search = "",
+    /** Only teams granted invite sign-up, or with a conversion override. */
+    filter?: "invite_signup" | "convert",
+  ) =>
     request<{ teams: AdminTeam[]; total: number }>(
       "GET",
-      `/admin/teams?page=${page}&search=${encodeURIComponent(search)}`,
+      `/admin/teams?page=${page}&search=${encodeURIComponent(search)}${filter ? `&filter=${filter}` : ""}`,
       undefined,
       getToken(),
     ),
   adminDeleteTeam: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/teams/${id}`,
       undefined,
@@ -1930,28 +1874,28 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     password: string | null,
     opts: { revokeSessions?: boolean } = {},
   ) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/admin/users/${id}/password`,
       { password, revoke_sessions: opts.revokeSessions ?? true },
       getToken(),
     ),
   adminReset2fa: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/2fa`,
       undefined,
       getToken(),
     ),
   adminDeleteUserTotp: (id: string, totpId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/totp/${totpId}`,
       undefined,
       getToken(),
     ),
   adminDeleteUserPasskey: (id: string, passkeyId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/passkeys/${passkeyId}`,
       undefined,
@@ -1965,7 +1909,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       limit: number;
     }>("GET", `/admin/users/${id}/tokens?page=${page}`, undefined, getToken()),
   adminRevokeUserToken: (id: string, tokenId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/tokens/${tokenId}`,
       undefined,
@@ -1979,7 +1923,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminRemoveUserConnection: (id: string, connId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/connections/${connId}`,
       undefined,
@@ -1993,7 +1937,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminRemoveUserGpgKey: (id: string, keyId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/gpg-keys/${keyId}`,
       undefined,
@@ -2008,21 +1952,21 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
   /** `emailId` is "primary" for the address on the users row itself. */
   adminVerifyUserEmail: (id: string, emailId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/admin/users/${id}/emails/${emailId}/verify`,
       {},
       getToken(),
     ),
   adminSetPrimaryUserEmail: (id: string, emailId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/admin/users/${id}/emails/${emailId}/set-primary`,
       {},
       getToken(),
     ),
   adminRemoveUserEmail: (id: string, emailId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/emails/${emailId}`,
       undefined,
@@ -2036,7 +1980,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminRemoveUserDomain: (id: string, domainId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/domains/${domainId}`,
       undefined,
@@ -2050,7 +1994,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminRevokeUserAuthorization: (id: string, consentId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/authorizations/${consentId}`,
       undefined,
@@ -2106,7 +2050,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     );
   },
   adminDbInsertRow: (table: string, values: Record<string, unknown>) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/admin/db/tables/${encodeURIComponent(table)}/rows`,
       { values },
@@ -2117,14 +2061,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     key: Record<string, unknown>,
     values: Record<string, unknown>,
   ) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "PATCH",
       `/admin/db/tables/${encodeURIComponent(table)}/rows`,
       { key, values },
       getToken(),
     ),
   adminDbDeleteRow: (table: string, key: Record<string, unknown>) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/db/tables/${encodeURIComponent(table)}/rows`,
       { key },
@@ -2143,7 +2087,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     request<{
       mode: "full" | "read-only" | "off";
       writable: boolean;
-      namespaces: Array<{ key: string; description: string }>;
+      namespaces: Array<{ key: string }>;
     }>("GET", "/admin/kv/status", undefined, getToken()),
   adminKvKeys: (
     ns: string,
@@ -2174,14 +2118,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     value: string,
     expirationTtl?: number | null,
   ) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "PUT",
       `/admin/kv/${ns}/keys/${encodeURIComponent(key)}`,
       { value, expiration_ttl: expirationTtl ?? null },
       getToken(),
     ),
   adminKvDelete: (ns: string, key: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/kv/${ns}/keys/${encodeURIComponent(key)}`,
       undefined,
@@ -2189,7 +2133,6 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
   adminKvPurge: (ns: string, prefix: string) =>
     request<{
-      message: string;
       deleted: number;
       skipped_protected: number;
       more: boolean;
@@ -2209,7 +2152,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       personal_access_tokens: number;
     }>("GET", "/admin/revoke/preview", undefined, getToken()),
   adminRevokeAllSessions: (includeSelf = false) =>
-    request<{ message: string; deleted: number; your_session_kept: boolean }>(
+    request<{ deleted: number; your_session_kept: boolean }>(
       "POST",
       "/admin/revoke/sessions",
       { include_self: includeSelf },
@@ -2217,14 +2160,12 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
   adminRevokeApp: (appId: string, deactivate = false) =>
     request<{
-      message: string;
       tokens_revoked: number;
       consents_revoked: number;
       deactivated: boolean;
     }>("POST", `/admin/revoke/app/${appId}`, { deactivate }, getToken()),
   adminRevokeUserGrants: (userId: string) =>
     request<{
-      message: string;
       tokens_revoked: number;
       consents_revoked: number;
     }>("POST", `/admin/revoke/user/${userId}/grants`, {}, getToken()),
@@ -2250,14 +2191,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     }>("GET", `/admin/domains${qs ? `?${qs}` : ""}`, undefined, getToken());
   },
   adminSetDomainVerified: (id: string, verified: boolean) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/admin/domains/${id}/verify`,
       { verified },
       getToken(),
     ),
   adminDeleteDomain: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/domains/${id}`,
       undefined,
@@ -2267,7 +2208,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     appId: string,
     target: { owner_id?: string; team_id?: string },
   ) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/admin/apps/${appId}/transfer`,
       target,
@@ -2327,7 +2268,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     );
   },
   adminRevokeTeamInvite: (token: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/team-invites/${encodeURIComponent(token)}`,
       undefined,
@@ -2338,7 +2279,6 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     action: "deactivate" | "activate" | "delete",
   ) =>
     request<{
-      message: string;
       action: string;
       affected: number;
       skipped: Array<{ id: string; username: string; reason: string }>;
@@ -2354,7 +2294,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       legacy_pref_count: number;
     }>("GET", `/admin/users/${id}/notifications`, undefined, getToken()),
   adminResetUserNotifications: (id: string) =>
-    request<{ message: string; removed: number }>(
+    request<{ removed: number }>(
       "DELETE",
       `/admin/users/${id}/notification-rulesets`,
       undefined,
@@ -2366,19 +2306,26 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   notices: () =>
     request<{ notices: Notice[] }>("GET", "/notices", undefined, getToken()),
   dismissNotice: (id: string) =>
-    request<{ message: string }>(
-      "POST",
-      `/notices/${id}/dismiss`,
-      {},
-      getToken(),
-    ),
-  adminListNotices: (page = 1) =>
+    request<{ ok: true }>("POST", `/notices/${id}/dismiss`, {}, getToken()),
+  adminListNotices: (page = 1, q = "") =>
     request<{
       notices: AdminNotice[];
       total: number;
       page: number;
       limit: number;
-    }>("GET", `/admin/notices?page=${page}`, undefined, getToken()),
+    }>(
+      "GET",
+      `/admin/notices?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`,
+      undefined,
+      getToken(),
+    ),
+  adminGetNotice: (id: string) =>
+    request<{ notice: AdminNotice }>(
+      "GET",
+      `/admin/notices/${id}`,
+      undefined,
+      getToken(),
+    ),
   adminCreateNotice: (body: NoticeInput) =>
     request<{ notice: AdminNotice }>(
       "POST",
@@ -2397,16 +2344,21 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminDeleteNotice: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/notices/${id}`,
       undefined,
       getToken(),
     ),
 
-  adminScopeGrants: (kind: "site" | "team", page = 1, teamId?: string) => {
+  adminScopeGrants: (
+    kind: ScopeGrantKind,
+    page = 1,
+    opts: { q?: string; teamId?: string } = {},
+  ) => {
     const search = new URLSearchParams({ page: String(page) });
-    if (teamId) search.set("team_id", teamId);
+    if (opts.q) search.set("q", opts.q);
+    if (opts.teamId) search.set("team_id", opts.teamId);
     return request<{
       grants: AdminScopeGrant[];
       total: number;
@@ -2419,8 +2371,17 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     );
   },
-  adminRevokeScopeGrant: (kind: "site" | "team", id: string) =>
-    request<{ message: string }>(
+  adminGetScopeGrant: (kind: ScopeGrantKind, id: string) =>
+    request<{ grant: AdminScopeGrantDetail }>(
+      "GET",
+      `/admin/scope-grants/${kind}/${id}`,
+      undefined,
+      getToken(),
+    ),
+  /** Takes the grant out of the app's approvals and deletes the tokens
+   *  that carry it. */
+  adminRevokeScopeGrant: (kind: ScopeGrantKind, id: string) =>
+    request<{ approvals: number; tokens: number }>(
       "DELETE",
       `/admin/scope-grants/${kind}/${id}`,
       undefined,
@@ -2428,7 +2389,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
   /** End every session for one account. */
   adminTerminateSessions: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/sessions`,
       undefined,
@@ -2442,7 +2403,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminRevokeSession: (id: string, sessionId: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/users/${id}/sessions/${sessionId}`,
       undefined,
@@ -2455,14 +2416,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     }>("GET", "/admin/maintenance/jobs", undefined, getToken()),
   adminRunMaintenanceJob: (key: string) =>
     request<{
-      message: string;
       job: string;
       /** null when the task keeps no count — not the same as zero. */
       processed: number | null;
       duration_ms: number;
     }>("POST", `/admin/maintenance/jobs/${key}/run`, {}, getToken()),
   adminConvertUser: (id: string, requireVerifiedEmail = true) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "POST",
       `/admin/users/${id}/convert`,
       { require_verified_email: requireVerifiedEmail },
@@ -2498,6 +2458,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       body,
       getToken(),
     ),
+  adminGetInvite: (id: string) =>
+    request<{ invite: SiteInvite }>(
+      "GET",
+      `/admin/invites/${encodeURIComponent(id)}`,
+      undefined,
+      getToken(),
+    ),
   adminUpdateInvite: (
     id: string,
     body: {
@@ -2515,7 +2482,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
   adminRevokeInvite: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/invites/${id}`,
       undefined,
@@ -2555,6 +2522,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     request<{ auth_url: string; token_url: string; userinfo_url: string }>(
       "GET",
       `/admin/oauth-sources/discover?issuer=${encodeURIComponent(issuer)}`,
+      undefined,
+      getToken(),
+    ),
+  adminGetOAuthSource: (id: string) =>
+    request<{ source: OAuthSource }>(
+      "GET",
+      `/admin/oauth-sources/${id}`,
       undefined,
       getToken(),
     ),
@@ -2598,14 +2572,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       trusted?: boolean;
     },
   ) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "PATCH",
       `/admin/oauth-sources/${id}`,
       body,
       getToken(),
     ),
   adminDeleteOAuthSource: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/admin/oauth-sources/${id}`,
       undefined,
@@ -2647,7 +2621,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       created_at: number;
     }>("POST", "/user/tokens", body, getToken()),
   revokePat: (id: string) =>
-    request<{ message: string }>(
+    request<{ ok: true }>(
       "DELETE",
       `/user/tokens/${id}`,
       undefined,
@@ -2674,6 +2648,7 @@ export type ApiClient = ReturnType<typeof createApiClient>;
 export const api = createApiClient({
   isNormalView,
   onInvalidSession: () => authStore.getState().clearAuth(),
+  translate: i18nErrorTranslator(clientI18n),
 });
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -2683,10 +2658,7 @@ export const api = createApiClient({
  *  concrete "global"/"china"; the client-side modes are resolved in the browser
  *  by the Captcha component. Absent on older servers → treated as "global". */
 export type TurnstileEndpointDirective =
-  | "global"
-  | "china"
-  | "client_language"
-  | "client_region";
+  "global" | "china" | "client_language" | "client_region";
 
 /** Which of the two configured Turnstile widgets minted a token. Sent back
  *  with the token so the server verifies it against the matching secret — the
@@ -2694,13 +2666,7 @@ export type TurnstileEndpointDirective =
 export type TurnstileVariant = "global" | "china";
 
 export type CaptchaProvider =
-  | "none"
-  | "turnstile"
-  | "hcaptcha"
-  | "recaptcha"
-  | "pow"
-  | "geetest"
-  | "cap";
+  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
 
 export type CapMode = "embedded" | "external";
 
@@ -2783,10 +2749,6 @@ export interface SitePublicConfig {
    *  effectively requires the factor regardless of the per-team flag. */
   default_team_require_2fa: boolean;
   default_team_require_verified_email: boolean;
-  /** Master switch for team-invite registration. Off by default: turning it
-   *  on is what lets a team owner mint accounts at all, and even then each
-   *  team needs its own site-admin grant. */
-  enable_team_invite_registration: boolean;
   /** Ceiling on the usage limit a team may set on a registration-capable
    *  invite — the only hard bound on registration volume. */
   team_invite_registration_max_uses_cap: number;
@@ -3051,6 +3013,8 @@ export interface OAuthToken {
   scopes: string[];
   created_at: number;
   expires_at: number;
+  /** When the sign-in ends: the refresh token's expiry for remembered ones. */
+  ends_at: number;
   is_persistent: boolean;
 }
 
@@ -3161,10 +3125,12 @@ export interface Team {
   require_2fa: boolean;
   require_verified_email: boolean;
   /** Site-admin grant: may this team mint accounts through invite links?
-   *  Read-only to the team; only an instance admin can change it. */
+   *  The only switch for it (closed sign-up also stops it). Read-only to
+   *  the team; only an instance admin can change it. */
   invite_registration_granted: boolean;
-  /** The team owner's own switch, meaningful only while granted. */
-  invite_registration_enabled: boolean;
+  /** May accounts this team's invites created convert themselves to full
+   *  accounts? A site admin's override; null = the site default. */
+  invite_registration_allow_convert: boolean | null;
   /** Site-level registration checks this team's invite path may skip.
    *  Set by a site admin; captcha, proof-of-work and rate limits are never
    *  exemptible and never appear here. */
@@ -3367,7 +3333,9 @@ export interface AdminTeam {
   /** Site-admin grant allowing this team to mint accounts through invite
    *  links. The admin list surfaces it so the grant can be toggled inline. */
   invite_registration_granted: number;
-  invite_registration_enabled: number;
+  /** 1 / 0 = a site admin's override for converting to a full account;
+   *  null = the site default. */
+  invite_registration_allow_convert: number | null;
   /** Site-level registration checks this team's invite path may skip.
    *  Only email verification is exemptible. */
   invite_registration_exemptions: { email_verification?: boolean };
@@ -3527,8 +3495,6 @@ export interface KvEntry {
   /** Always null for a protected key. */
   value: string | null;
   metadata: unknown;
-  /** Why the value was withheld, when it was. */
-  reason?: string;
 }
 
 export interface AdminDomain {
@@ -3544,23 +3510,40 @@ export interface AdminDomain {
   created_at: number;
 }
 
-/** A site- or team-level scope grant. The two tables differ enough that the
- *  fields specific to each are optional here rather than split into two
- *  types the UI would have to branch on twice. */
+export type ScopeGrantKind = "site" | "team";
+
+/** A site- or team-level scope grant still held by an app: one per app and
+ *  account (site) or app and team (team), from the latest approval. */
 export interface AdminScopeGrant {
   id: string;
   client_id: string;
   app_name: string | null;
   granted_at: number;
-  /** site grants */
+  /** site grants: the site:* scopes approved */
   scopes?: string[];
-  admin_username?: string | null;
+  grantee_user_id?: string | null;
   grantee_username?: string | null;
-  /** team grants */
+  /** team grants: the team permissions approved, e.g. "member:read" */
+  permissions?: string[];
   team_id?: string;
   team_name?: string | null;
+  grantor_user_id?: string | null;
   grantor_username?: string | null;
-  permissions?: unknown;
+}
+
+export interface AdminScopeGrantDetail extends AdminScopeGrant {
+  kind: ScopeGrantKind;
+  first_granted_at: number;
+  times_granted: number;
+  /** What the latest approval listed. */
+  listed: string[];
+  /** What the app holds now, across approvals and live tokens. Team
+   *  permissions come without the team:<id>: prefix. */
+  held_scopes: string[];
+  live_tokens: number;
+  accounts: number;
+  /** team grants: the grantor's current role, which caps the app's. */
+  grantor_role?: string | null;
 }
 
 // ─── Notice board ─────────────────────────────────────────────────────────────
@@ -3715,6 +3698,19 @@ export interface CreateAppBody {
 
 // ─── Audit logs (Transparent Control) ────────────────────────────────────────
 
+/** One match from GET /api/search. */
+export interface SearchHit {
+  kind:
+    "app" | "team" | "domain" | "token" | "consent" | "user" | "oauth_source";
+  /** Site-wide (admin) result rather than one of the user's own. */
+  admin: boolean;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  /** In-app path to open it. */
+  url: string;
+}
+
 export interface AuditEvent {
   id: string;
   scope: "user" | "team" | "platform";
@@ -3790,6 +3786,8 @@ export interface Domain {
   next_reverify_at: number | null;
   verification_method: VerificationMethod | null;
   created_at: number;
+  /** Who added it. A team domain moved out of the team goes back to them. */
+  user_id?: string;
 }
 
 export interface DomainAddResponse {
@@ -4112,7 +4110,8 @@ export interface AdminD1SecretsMigrateResult {
 }
 
 export interface AdminUserList {
-  users: (UserProfile & { app_count: number })[];
+  /** `is_active` is the raw 0/1 column here. */
+  users: (UserProfile & { app_count: number; is_active: number | boolean })[];
   total: number;
   page: number;
   limit: number;
@@ -4180,8 +4179,7 @@ export type NotificationRuleSendChannel =
   | { kind: "discord"; connection_id: string; level: NotificationLevel };
 
 export type NotificationRuleAction =
-  | { type: "drop" }
-  | { type: "send"; channels: NotificationRuleSendChannel[] };
+  { type: "drop" } | { type: "send"; channels: NotificationRuleSendChannel[] };
 
 export interface NotificationRulesetRule {
   id: string;

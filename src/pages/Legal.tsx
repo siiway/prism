@@ -27,6 +27,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { type LegalDocType } from "../lib/api";
 import { useApi } from "../lib/api-context";
+import { setDocumentPageTitle } from "../lib/documentTitle";
 import { renderMarkdown } from "../lib/markdown";
 
 const useStyles = makeStyles({
@@ -155,13 +156,9 @@ function LegalPage({ doc }: { doc: LegalDocType }) {
 
   // Retitle the tab so a bookmarked policy reads as itself, not "Prism".
   useEffect(() => {
-    if (typeof document === "undefined") return;
-    const prev = document.title;
-    document.title = `${title} · ${site?.site_name ?? "Prism"}`;
-    return () => {
-      document.title = prev;
-    };
-  }, [title, site?.site_name]);
+    setDocumentPageTitle(title);
+    return () => setDocumentPageTitle(null);
+  }, [title]);
 
   // Markdown → sanitized HTML. Done in an effect (not in render) because
   // renderMarkdown is async — it pre-registers any images with the proxy —

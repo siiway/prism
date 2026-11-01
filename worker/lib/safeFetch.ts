@@ -133,22 +133,21 @@ async function validateResolvedHost(
 /**
  * Validate a user-supplied URL we're about to issue an outbound HTTP
  * request to (webhook delivery, image proxy, image-icon HEAD, etc.).
- * Returns null if the URL is acceptable, otherwise a short rejection
- * reason. HTTPS-only and the SSRF blocklist are both required — a worker
+ * Returns null if the URL is acceptable, otherwise an error code
+ * (url_required, url_invalid, https_required, host_not_allowed). HTTPS-only and the SSRF blocklist are both required — a worker
  * fetch to an internal IP is just as dangerous from a webhook as it is
  * from the image proxy.
  */
 export function validateOutboundUrl(raw: string): string | null {
-  if (typeof raw !== "string" || !raw) return "url is required";
+  if (typeof raw !== "string" || !raw) return "url_required";
   let parsed: URL;
   try {
     parsed = new URL(raw);
   } catch {
-    return "Invalid URL";
+    return "url_invalid";
   }
-  if (parsed.protocol !== "https:") return "URL must use https://";
-  if (isBlockedHost(parsed.hostname))
-    return "URL host is not allowed (loopback / private / link-local)";
+  if (parsed.protocol !== "https:") return "https_required";
+  if (isBlockedHost(parsed.hostname)) return "host_not_allowed";
   return null;
 }
 

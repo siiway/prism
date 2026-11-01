@@ -22,6 +22,30 @@ Request bodies are capped at 5 MiB globally. Prism rejects an excessive declared
 with a missing or inaccurate length is consumed. Oversized requests return
 `413`.
 
+## Errors
+
+A failed request answers with a stable, machine-readable code, never with
+English text:
+
+```json
+{ "error": "field_required", "params": { "field": "name" } }
+```
+
+`error` is a lowercase code such as `team_not_found`, `forbidden` or
+`invite_used_up`; compare against it, since codes don't change when wording
+does. `params` is present when the message has blanks to fill (a field name,
+a limit, a URL). The web UI translates each code into the reader's language
+from its locale files (`apiErrors.<code>` in `src/i18n/`), so the text a
+person sees and the code a program sees never drift apart.
+
+Successful writes answer with data, or `{ "ok": true }` when there is nothing
+to return; there is no `message` field to display.
+
+OAuth and OpenID Connect protocol endpoints (`/api/oauth/token`,
+`/api/oauth/register`, `/api/oauth/userinfo`, the device flow and so on)
+follow their RFCs instead: `error` is the standard code and
+`error_description` is English text for client developers.
+
 ## Init
 
 ### `GET /api/init/status`
@@ -440,23 +464,22 @@ See [Teams](teams.md) for the full guide. Endpoint summary:
 See [Teams → Invite-link registration](teams.md#invite-link-registration) for
 the semantics.
 
-| Method  | Path                                       | Notes                                                                                                   |
-| ------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `GET`   | `/api/join/:teamId`                        | Unauthenticated. Team branding, effective requirements, captcha config. 404s when the channel is closed |
-| `POST`  | `/api/auth/register-with-invite`           | Creates a pending account and returns a session. Claims an invite seat atomically                       |
-| `GET`   | `/api/auth/invite-join/status`             | What the pending account still has to satisfy                                                           |
-| `POST`  | `/api/auth/invite-join/complete`           | Writes the membership row once requirements are met. Always joins as `member`                           |
-| `GET`   | `/api/user/me/restriction`                 | Whether the caller is restricted, its capabilities, and whether it may convert                          |
-| `POST`  | `/api/user/me/convert`                     | Lift the restriction. One-way; requires a verified real address                                         |
-| `PATCH` | `/api/admin/teams/:id/invite-registration` | Site admin: grant/revoke, and set exemptions (`email_verification` only)                                |
-| `POST`  | `/api/admin/teams/:id/dissolve`            | Site admin: stage one — deactivate the team's accounts. Confirm with the team name                      |
-| `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | Undo a staged dissolution during the grace period                                                       |
-| `GET`   | `/api/admin/restricted-users`              | Accounts produced by `?team_id=` or `?invite_token=` — the query for scoping a leaked link              |
+| Method  | Path                                       | Notes                                                                                                             |
+| ------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `GET`   | `/api/join/:teamId`                        | Unauthenticated. Team branding, effective requirements, captcha config. 404s when the channel is closed           |
+| `POST`  | `/api/auth/register-with-invite`           | Creates a pending account and returns a session. Claims an invite seat atomically                                 |
+| `GET`   | `/api/auth/invite-join/status`             | What the pending account still has to satisfy                                                                     |
+| `POST`  | `/api/auth/invite-join/complete`           | Writes the membership row once requirements are met. Always joins as `member`                                     |
+| `GET`   | `/api/user/me/restriction`                 | Whether the caller is restricted, its capabilities, and whether it may convert                                    |
+| `POST`  | `/api/user/me/convert`                     | Lift the restriction. One-way; requires a verified real address                                                   |
+| `PATCH` | `/api/admin/teams/:id/invite-registration` | Site admin: grant/revoke, set exemptions (`email_verification` only), and `allow_convert` (`null` = site default) |
+| `POST`  | `/api/admin/teams/:id/dissolve`            | Site admin: stage one — deactivate the team's accounts. Confirm with the team name                                |
+| `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | Undo a staged dissolution during the grace period                                                                 |
+| `GET`   | `/api/admin/restricted-users`              | Accounts produced by `?team_id=` or `?invite_token=` — the query for scoping a leaked link                        |
 
 `POST /api/teams/:id/invites` additionally accepts `allows_registration`, which
 requires a finite `max_uses` under the site cap and forces the role to `member`.
-`PATCH /api/teams/:id` accepts `invite_registration_enabled` (owner-only, and
-only once granted) and `allow_normal_user_join`.
+`PATCH /api/teams/:id` accepts `allow_normal_user_join`.
 
 ## Domains
 
@@ -560,6 +583,40 @@ PAT. The required scopes are listed in [OAuth → Scopes](oauth.md#scopes) and
 Manage which apps the current user has authorized. `DELETE` revokes the consent
 and all outstanding tokens for that app. `GET` accepts `?page=`, `?limit=`,
 `?q=` app-name search and returns `total`.
+
+## Search
+
+### `GET /api/search?q=<text>`
+
+Used by the command palette (Ctrl/⌘ K). Requires a session. Looks up every
+kind of item the caller can open whose name contains `q` (case-insensitive,
+at least 2 characters, at most 100 are used) in a single request, returning
+up to 5 matches per kind:
+
+- everyone: their OAuth apps (own and their teams'), teams, domains, personal
+  access tokens and the apps they have authorized;
+- admins: every user (by username, display name or email), team, OAuth app
+  (by name or client ID), domain and OAuth source, instead of the personal
+  app, team and domain lookups.
+
+```json
+{
+  "results": [
+    {
+      "kind": "app",
+      "admin": false,
+      "id": "…",
+      "title": "My app",
+      "subtitle": "prism_…",
+      "url": "/apps/…"
+    }
+  ]
+}
+```
+
+`kind` is one of `app`, `team`, `domain`, `token`, `consent`, `user`,
+`oauth_source`; `admin` marks site-wide results; `url` is the in-app path
+that opens the item. Shorter queries return an empty list.
 
 ## Public profiles
 
@@ -704,9 +761,10 @@ Same gating as the database console, via `KV_CONSOLE` (which follows
 | `DELETE` | `/api/admin/domains/:id`                     | Delete a domain                                                                                                                                                        |
 | `POST`   | `/api/admin/apps/:id/transfer`               | `{ owner_id }` or `{ team_id }`. Client ID and secret unchanged                                                                                                        |
 | `POST`   | `/api/admin/users/:id/convert`               | Lift an invite-registration restriction. `{ require_verified_email? }`                                                                                                 |
-| `GET`    | `/api/admin/scope-grants/site`               | Elevated site-level OAuth grants                                                                                                                                       |
-| `GET`    | `/api/admin/scope-grants/team`               | Team-level grants. `?team_id=` filters                                                                                                                                 |
-| `DELETE` | `/api/admin/scope-grants/:kind/:id`          | Withdraw one grant (`:kind` is `site` or `team`). Existing tokens are untouched — revoke the app for those                                                             |
+| `GET`    | `/api/admin/scope-grants/site`               | Site-level OAuth grants apps still hold, one per app and account. `?q=` searches                                                                                       |
+| `GET`    | `/api/admin/scope-grants/team`               | Team-level grants apps still hold, one per app and team. `?q=` searches, `?team_id=` filters                                                                           |
+| `GET`    | `/api/admin/scope-grants/:kind/:id`          | One grant: held scopes, live token count, approval history. Errors: `invalid_grant_kind`, `scope_grant_not_found`                                                      |
+| `DELETE` | `/api/admin/scope-grants/:kind/:id`          | Revoke: strips the scopes from approvals and deletes the tokens and codes that carry them. Returns `{ approvals, tokens }`                                             |
 | `GET`    | `/api/admin/users/:id/sessions`              | Live sessions with the IP/geo history behind each                                                                                                                      |
 | `DELETE` | `/api/admin/users/:id/sessions/:sessionId`   | End one session (`DELETE …/sessions` still ends all)                                                                                                                   |
 | `GET`    | `/api/admin/maintenance/jobs`                | The runnable scheduled jobs, and the cron they normally run on                                                                                                         |
@@ -726,7 +784,8 @@ in. Writing is admin-only. See [Admin → Notice board](admin.md#notice-board).
 | -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`    | `/api/notices`             | Notices for the current viewer: published, in window, matching their audience, not already dismissed. Signed out returns the `public` ones                |
 | `POST`   | `/api/notices/:id/dismiss` | Dismiss for the calling user. 401 signed out, 403 when the notice is not dismissible                                                                      |
-| `GET`    | `/api/admin/notices`       | Every notice, drafts included, with dismissal counts                                                                                                      |
+| `GET`    | `/api/admin/notices`       | Every notice, drafts included, with dismissal counts. `?q=` matches the title                                                                             |
+| `GET`    | `/api/admin/notices/:id`   | One notice, with its team name, author and dismissal count                                                                                                |
 | `POST`   | `/api/admin/notices`       | Create. `{ title, body, level?, audience?, team_id?, is_published?, starts_at?, ends_at?, is_dismissible?, pinned? }` — a draft unless `is_published`     |
 | `PATCH`  | `/api/admin/notices/:id`   | Update. Validated against the merged row, so moving one bound still checks the other. `{ reset_dismissals: true }` brings it back for everyone who hid it |
 | `DELETE` | `/api/admin/notices/:id`   | Delete, cascading to dismissals. Unpublish instead to keep it as a draft                                                                                  |
@@ -752,18 +811,13 @@ Writes to `audit_events`, `audit_log` and `sqlite_master` are refused with
 the console — reads are unaffected. See
 [Admin → The audit log is append-only here](admin.md#the-audit-log-is-append-only-here).
 
-### Audit / request logs / login errors
+### Audit / login errors
 
-| Method   | Path                                  | Notes                                                                                                       |
-| -------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/admin/audit-log?page=…`         | Audit events                                                                                                |
-| `GET`    | `/api/audit/:scope/export`            | Export any scope the caller can read. `?format=csv\|json` plus the table's filters. Capped at 10,000 events |
-| `GET`    | `/api/admin/login-errors`             | Failed-login table                                                                                          |
-| `GET`    | `/api/admin/request-logs`             | Filterable per-request log                                                                                  |
-| `GET`    | `/api/admin/request-logs/export`      | CSV export of the current filter                                                                            |
-| `GET`    | `/api/admin/request-logs/:id/details` | Single request detail                                                                                       |
-| `DELETE` | `/api/admin/request-logs`             | Purge all                                                                                                   |
-| `DELETE` | `/api/admin/request-logs/spectate`    | Clear the live spectate buffer                                                                              |
+| Method | Path                          | Notes                                                                                                       |
+| ------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/admin/audit-log?page=…` | Audit events                                                                                                |
+| `GET`  | `/api/audit/:scope/export`    | Export any scope the caller can read. `?format=csv\|json` plus the table's filters. Capped at 10,000 events |
+| `GET`  | `/api/admin/login-errors`     | Failed-login table                                                                                          |
 
 ### Secrets migration / Danger Zone
 
@@ -779,7 +833,6 @@ the console — reads are unaffected. See
 | `GET / DELETE` | `/api/admin/image-proxy[/:id]`                                  | Browse / clear proxy entries                                                            |
 | `POST`         | `/api/admin/migrate-recovery-codes`                             | Re-hash legacy plaintext backup codes                                                   |
 | `GET / POST`   | `/api/admin/reset/status` & `/request` & `/cancel` & `/confirm` | Site-reset workflow (email-signed)                                                      |
-| `GET / POST`   | `/api/admin/debug`                                              | Internal toggles for diagnosing deploys                                                 |
 
 ## Health
 

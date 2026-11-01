@@ -335,17 +335,16 @@ authentication traffic — a user who only ever signs in to one application
 still goes through the full `/authorize` → `/token` → refresh cycle.
 :::
 
-### Two doors
+### Who can turn it on
 
-The channel is closed twice over, and both must be open:
+One switch: a **per-team grant** from a site administrator, on the team's
+**Moderation** tab. The team owner cannot grant it to themselves; otherwise
+every team owner on the instance would be a registrar. Once granted, the
+team's admins can create registration invites.
 
-1. **Site master switch** — `enable_team_invite_registration`, off by default.
-2. **Per-team grant** — given by a site administrator in **Admin → Teams**. The
-   team owner cannot grant it to themselves.
-
-Only then does the team owner's own switch, under **Settings → Invite-link
-registration**, do anything. Without the second door, turning on the first
-would make every team owner on the instance a registrar.
+Closing sign-up (`allow_registration` off) stops it too: while sign-up is
+closed, no invite creates accounts. Invite-only sign-up doesn't affect it —
+a team invite is an invite.
 
 ### Creating a registration invite
 
@@ -483,8 +482,10 @@ transferring an app out of the team would silently invalidate live tokens.
 
 ### Converting to a full account
 
-Where enabled (`self:convert`), the holder converts from **Security → Account
-type**. Conversion:
+Where enabled, the holder converts from **Security → Account type**. The site
+default is `self:convert`; a site administrator can override it for one team
+on the team's **Moderation** tab (allow, don't allow, or follow the site
+default). Conversion:
 
 - unlocks every ordinary feature,
 - keeps their team membership,
@@ -516,7 +517,7 @@ The registration page states this before anyone signs up.
 
 ::: warning Protection is keyed on accounts, not on the switch
 A team is protected while it still has live restricted accounts — _not_ while
-its invite registration switch is on. Otherwise the switch could be turned off
+its invite registration grant is on. Otherwise the grant could be turned off
 and the team dissolved by its owner with thousands of accounts still anchored
 to it. Protection lapses by itself once those accounts are gone.
 :::
@@ -536,8 +537,8 @@ Only effective team administrators (or stronger roles) can create an app or
 rotate its secret. A generated `client_secret` is shown once in that create or
 rotation response; app reads available to other team members expose only
 `has_client_secret`. With `SECRETS_KEY` configured, team app secrets are
-encrypted at rest. After upgrading a legacy deployment, use **Admin → Settings
-→ Danger Zone → Migrate secrets to Secrets Store** and rotate existing team app
+encrypted at rest. After upgrading a legacy deployment, use **Admin → Maintenance
+→ Danger zone → Migrate secrets to Secrets Store** and rotate existing team app
 secrets, because encryption cannot revoke copies
 that may already have been disclosed.
 

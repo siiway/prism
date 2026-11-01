@@ -89,7 +89,7 @@ export function CreateSubTeamDialog({
   return (
     <Dialog open={open} onOpenChange={(_, d) => handleOpenChange(d.open)}>
       <DialogTrigger disableButtonEnhancement>
-        <Button appearance="primary" icon={<AddRegular />} size="small">
+        <Button icon={<AddRegular />} size="small">
           {t("teams.newSubTeam")}
         </Button>
       </DialogTrigger>

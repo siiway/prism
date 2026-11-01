@@ -30,6 +30,23 @@
 - Configuration keys, env vars, API endpoints, and architecture listings must
   stay in sync between English and Chinese translations.
 
+## No hardcoded English
+
+- API errors are codes: `c.json({ error: "team_not_found" }, 404)`, with
+  `params` for anything to fill in, as in
+  `{ error: "field_required", params: { field: "name" } }`. Add the code's
+  text to `apiErrors` in both `src/i18n/en.json` and `src/i18n/zh.json`.
+  Never send an English sentence
+  or a `message` field; `tests/api-error-codes.test.ts` fails if you do. The
+  exception is OAuth/OIDC protocol `error_description`, which the RFCs define
+  for client developers.
+- On the client, `ApiError.message` is already translated; compare against
+  `err.code`, never the message. Success toasts use the page's own `t()`
+  strings, not anything from the response.
+- UI text goes through `t()`, including labels, placeholders, `aria-label`s
+  and `<option>` text. Only technical examples (URLs, JSON, code) may be
+  literal.
+
 ## Contributing
 
 @CONTRIBUTING.md

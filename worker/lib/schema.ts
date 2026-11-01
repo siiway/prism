@@ -42,11 +42,9 @@ export function isMissingSchemaError(err: unknown): boolean {
   return false;
 }
 
-/** What to tell an operator who hit one. Names the command, because the
+/** The error code for one. Its translation names the command, because the
  *  question after "the feature is unavailable" is always "how do I fix it". */
-export const MIGRATIONS_PENDING =
-  "This feature's database tables are missing. Apply the pending migrations " +
-  "(`wrangler d1 migrations apply <database> --remote`) and try again.";
+export const MIGRATIONS_PENDING = "migrations_pending";
 
 /** Run a read whose storage came from a migration.
  *

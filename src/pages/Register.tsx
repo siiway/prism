@@ -19,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
+import { inviteCodeFrom } from "../lib/inviteCode";
 import { AuthShell } from "../components/AuthShell";
 import { Captcha } from "../components/Captcha";
 import { PasswordInput } from "../components/PasswordInput";
@@ -80,7 +81,7 @@ export function Register() {
         email: form.email.trim(),
         username: form.username.trim(),
         display_name: form.display_name.trim(),
-        invite_token: form.invite_token.trim(),
+        invite_token: inviteCodeFrom(form.invite_token),
         ...captcha,
       });
       if ("user" in res && res.user) {
@@ -115,7 +116,8 @@ export function Register() {
     );
   }
 
-  const showInviteField = site?.invite_only || !!form.invite_token;
+  // Only an invite-only site asks for one; an open site ignores invites.
+  const inviteOnly = !!site?.invite_only;
 
   return (
     <AuthShell maxWidth={420}>
@@ -125,15 +127,27 @@ export function Register() {
           {t("auth.join", { siteName: site?.site_name ?? "Prism" })}
         </Text>
 
-        {site?.invite_only && (
-          <MessageBar intent="info">{t("auth.inviteOnly")}</MessageBar>
-        )}
-
         {success ? (
           <MessageBar intent="success">{success}</MessageBar>
         ) : (
           <form onSubmit={handleSubmit} className={styles.form}>
-            <Field label="Email" required>
+            {/* First: without it nothing else on the form matters. */}
+            {inviteOnly && (
+              <Field
+                label={t("auth.inviteToken")}
+                required
+                hint={t("auth.inviteTokenHint")}
+              >
+                <Input
+                  value={form.invite_token}
+                  onChange={update("invite_token")}
+                  placeholder={t("auth.inviteTokenPlaceholder")}
+                  autoComplete="off"
+                />
+              </Field>
+            )}
+
+            <Field label={t("auth.email")} required>
               <Input
                 type="email"
                 value={form.email}
@@ -142,22 +156,22 @@ export function Register() {
               />
             </Field>
 
-            <Field label="Username" required>
+            <Field label={t("auth.username")} required>
               <Input
                 value={form.username}
                 onChange={update("username")}
                 placeholder="johndoe"
               />
             </Field>
-            <Field label="Display name">
+            <Field label={t("auth.displayName")}>
               <Input
                 value={form.display_name}
                 onChange={update("display_name")}
-                placeholder="John Doe"
+                placeholder={t("auth.displayNamePlaceholder")}
               />
             </Field>
 
-            <Field label="Password" required>
+            <Field label={t("auth.password")} required>
               <PasswordInput
                 value={form.password}
                 onChange={update("password")}
@@ -165,20 +179,6 @@ export function Register() {
                 autoComplete="new-password"
               />
             </Field>
-
-            {showInviteField && (
-              <Field
-                label={t("auth.inviteToken")}
-                required={!!site?.invite_only}
-                hint={t("auth.inviteTokenHint")}
-              >
-                <Input
-                  value={form.invite_token}
-                  onChange={update("invite_token")}
-                  placeholder={t("auth.inviteTokenPlaceholder")}
-                />
-              </Field>
-            )}
 
             {site.captcha.captcha_providers.length > 0 && (
               <Captcha
@@ -219,8 +219,8 @@ export function Register() {
                         // Carry the invite token through the OAuth round-trip so
                         // invite-only mode is enforced when a social login
                         // creates a new account.
-                        ...(form.invite_token
-                          ? { invite: form.invite_token }
+                        ...(inviteOnly && form.invite_token.trim()
+                          ? { invite: inviteCodeFrom(form.invite_token) }
                           : {}),
                       })
                       .then(({ redirect }) => (window.location.href = redirect))

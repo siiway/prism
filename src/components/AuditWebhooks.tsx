@@ -21,6 +21,7 @@ import {
   Spinner,
   Text,
   Textarea,
+  Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -43,6 +44,8 @@ import {
 } from "../lib/api";
 import { useApi } from "../lib/api-context";
 import { useToastMessage } from "../lib/useToastMessage";
+import { useConfirm } from "../lib/useConfirm";
+import { SettingsCard, SettingsEmpty, SettingsRow } from "./Settings";
 import {
   AUDIT_EVENT_CATALOG,
   isTypeFullySelected,
@@ -92,24 +95,7 @@ function formatTs(sec: number): string {
 
 const useStyles = makeStyles({
   root: { display: "flex", flexDirection: "column", gap: "16px" },
-  header: { display: "flex", alignItems: "center", gap: "12px" },
-  list: { display: "flex", flexDirection: "column", gap: "12px" },
-  card: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "12px",
-    padding: "12px 16px",
-    borderRadius: tokens.borderRadiusMedium,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-  },
-  cardInfo: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    minWidth: 0,
-    flex: 1,
-  },
+  events: { overflowWrap: "anywhere" },
   form: { display: "flex", flexDirection: "column", gap: "12px" },
   eventPicker: {
     display: "flex",
@@ -218,6 +204,7 @@ export function AuditWebhooks({
   const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
+  const { confirm, confirmDialog } = useConfirm();
   const qc = useQueryClient();
   const { message, showMsg } = useToastMessage();
   const scopeKey = scopeKeyFromBase(base);
@@ -404,7 +391,7 @@ export function AuditWebhooks({
           {formatTs(d.at)}
         </Text>
         <Text size={200} style={{ flexShrink: 0 }}>
-          |
+          ·
         </Text>
         {d.success ? (
           <CheckmarkCircleFilled className={styles.okIcon} />
@@ -417,7 +404,7 @@ export function AuditWebhooks({
         {body && (
           <>
             <Text size={200} style={{ flexShrink: 0 }}>
-              |
+              ·
             </Text>
             <Text size={200} className={styles.lastPushBody} title={d.body}>
               {body}
@@ -430,19 +417,14 @@ export function AuditWebhooks({
 
   return (
     <div className={styles.root}>
-      <div className={styles.header}>
+      <div>
         <Button
+          size="small"
           appearance="subtle"
           icon={<ArrowLeftRegular />}
           onClick={onBack}
         >
           {t("audit.backToLog")}
-        </Button>
-        <Text weight="semibold" style={{ flex: 1 }}>
-          {t("audit.webhooksTitle")}
-        </Text>
-        <Button appearance="primary" icon={<AddRegular />} onClick={openCreate}>
-          {t("audit.newWebhook")}
         </Button>
       </div>
 
@@ -452,56 +434,72 @@ export function AuditWebhooks({
         </MessageBar>
       )}
 
-      <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-        {t("audit.webhooksHint")}
-      </Text>
-
-      {isLoading ? (
-        <Spinner size="tiny" />
-      ) : webhooks.length === 0 ? (
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("audit.noWebhooks")}
-        </Text>
-      ) : (
-        <div className={styles.list}>
-          {webhooks.map((wh) => (
-            <div key={wh.id} className={styles.card}>
-              <div className={styles.cardInfo}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Text weight="semibold">{wh.name}</Text>
-                  <Badge appearance="outline">{kindLabel(wh.kind)}</Badge>
+      <SettingsCard
+        title={t("audit.webhooksTitle")}
+        description={t("audit.webhooksHint")}
+        action={
+          <Button size="small" icon={<AddRegular />} onClick={openCreate}>
+            {t("audit.newWebhook")}
+          </Button>
+        }
+      >
+        {isLoading ? (
+          <SettingsEmpty>
+            <Spinner size="tiny" />
+          </SettingsEmpty>
+        ) : webhooks.length === 0 ? (
+          <SettingsEmpty>{t("audit.noWebhooks")}</SettingsEmpty>
+        ) : (
+          webhooks.map((wh) => (
+            <SettingsRow
+              key={wh.id}
+              label={
+                <>
+                  <span>{wh.name}</span>
+                  <Badge appearance="outline" size="small">
+                    {kindLabel(wh.kind)}
+                  </Badge>
                   {!wh.is_active && (
-                    <Badge appearance="tint" color="warning">
+                    <Badge appearance="tint" color="warning" size="small">
                       {t("audit.inactive")}
                     </Badge>
                   )}
-                </div>
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  {wh.events.join(", ")}
-                </Text>
-                {renderLastPush(wh)}
-              </div>
-              <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                </>
+              }
+              description={
+                <>
+                  <div className={styles.events}>{wh.events.join(", ")}</div>
+                  {renderLastPush(wh)}
+                </>
+              }
+            >
+              <Tooltip content={t("common.edit")} relationship="label">
                 <Button
                   size="small"
                   appearance="subtle"
                   icon={<EditRegular />}
                   onClick={() => openEdit(wh)}
                 />
+              </Tooltip>
+              <Tooltip content={t("common.delete")} relationship="label">
                 <Button
                   size="small"
                   appearance="subtle"
                   icon={<DeleteRegular />}
-                  onClick={() => handleDelete(wh.id)}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: t("audit.deleteWebhookTitle"),
+                      body: t("audit.deleteWebhookBody", { name: wh.name }),
+                      confirmLabel: t("common.delete"),
+                    });
+                    if (ok) void handleDelete(wh.id);
+                  }}
                 />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+              </Tooltip>
+            </SettingsRow>
+          ))
+        )}
+      </SettingsCard>
 
       <Dialog open={dialogOpen} onOpenChange={(_, d) => setDialogOpen(d.open)}>
         <DialogSurface>
@@ -751,6 +749,7 @@ export function AuditWebhooks({
           </DialogBody>
         </DialogSurface>
       </Dialog>
+      {confirmDialog}
     </div>
   );
 }

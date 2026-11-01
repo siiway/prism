@@ -53,23 +53,22 @@ const app = new Hono<AppEnv>();
 /**
  * Load a team that is currently able to mint accounts, or null.
  *
- * Both doors must be open: the site master switch, and this team's own
- * grant plus its owner's switch. A team mid-dissolution is excluded — the
- * accounts it holds are already being wound down.
+ * Needs a site admin's grant to the team, and sign-up not closed: closed
+ * means no new accounts from anywhere. A team mid-dissolution is excluded —
+ * the accounts it holds are already being wound down.
  */
 async function loadRegistrationTeam(
   db: D1Database,
   teamId: string,
 ): Promise<TeamRow | null> {
-  const enabled = await getConfigValue(db, "enable_team_invite_registration");
-  if (!enabled) return null;
+  const signUpOpen = await getConfigValue(db, "allow_registration");
+  if (!signUpOpen) return null;
   const team = await db
     .prepare("SELECT * FROM teams WHERE id = ?")
     .bind(teamId)
     .first<TeamRow>();
   if (!team) return null;
   if (team.invite_registration_granted !== 1) return null;
-  if (team.invite_registration_enabled !== 1) return null;
   if (team.dissolving_at !== null) return null;
   return team;
 }
@@ -139,7 +138,7 @@ async function effectiveRequirements(
 app.get("/join/:teamId", async (c) => {
   const teamId = c.req.param("teamId");
   const team = await loadRegistrationTeam(c.env.DB, teamId);
-  if (!team) return c.json({ error: "Not found" }, 404);
+  if (!team) return c.json({ error: "not_found" }, 404);
 
   const requirements = await effectiveRequirements(c.env.DB, team);
   const config = await getConfig(c.env.DB);
@@ -191,7 +190,7 @@ app.post("/auth/register-with-invite", async (c) => {
     300,
     config.ipv6_rate_limit_prefix,
   );
-  if (!rl.allowed) return c.json({ error: "Too many requests" }, 429);
+  if (!rl.allowed) return c.json({ error: "too_many_requests" }, 429);
 
   const body = await c.req.json<{
     team_id?: string;
@@ -209,7 +208,7 @@ app.post("/auth/register-with-invite", async (c) => {
   const team = body.team_id
     ? await loadRegistrationTeam(c.env.DB, body.team_id)
     : null;
-  if (!team) return c.json({ error: "Not found" }, 404);
+  if (!team) return c.json({ error: "not_found" }, 404);
 
   // Unexemptible defence #2: captcha / proof-of-work. Explicitly never
   // exemptible — the whole point of the exemption mechanism is to cut
@@ -221,19 +220,22 @@ app.post("/auth/register-with-invite", async (c) => {
     c.env,
   );
   if (!captchaOk.success)
-    return c.json({ error: captchaOk.error ?? "Captcha failed" }, 400);
+    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 400);
 
   if (!body.invite_token)
-    return c.json({ error: "invite_token is required" }, 400);
-  if (!body.username || !body.password)
-    return c.json({ error: "username and password are required" }, 400);
-  if (body.password.length < 8)
-    return c.json({ error: "Password must be at least 8 characters" }, 400);
-  if (!/^[a-z0-9_.-]{2,32}$/i.test(body.username))
     return c.json(
-      { error: "Username must be 2-32 alphanumeric characters" },
+      { error: "field_required", params: { field: "invite_token" } },
       400,
     );
+  if (!body.username || !body.password)
+    return c.json(
+      { error: "fields_required", params: { fields: "username, password" } },
+      400,
+    );
+  if (body.password.length < 8)
+    return c.json({ error: "password_too_short" }, 400);
+  if (!/^[a-z0-9_.-]{2,32}$/i.test(body.username))
+    return c.json({ error: "username_invalid" }, 400);
 
   const invite = await findInvite(c.env, body.invite_token);
   const now = Math.floor(Date.now() / 1000);
@@ -243,7 +245,7 @@ app.post("/auth/register-with-invite", async (c) => {
     invite.allows_registration !== 1 ||
     invite.expires_at <= now
   )
-    return c.json({ error: "Invalid or expired invite" }, 403);
+    return c.json({ error: "invite_invalid_or_expired" }, 403);
 
   // Unexemptible defence #3: per-invite throttle. Per-IP limiting does
   // nothing against a link shared to thousands of people, each registering
@@ -260,11 +262,7 @@ app.post("/auth/register-with-invite", async (c) => {
     3600,
     config.ipv6_rate_limit_prefix,
   );
-  if (!inviteRl.allowed)
-    return c.json(
-      { error: "This invite is being used too quickly. Try again later." },
-      429,
-    );
+  if (!inviteRl.allowed) return c.json({ error: "invite_rate_limited" }, 429);
 
   const exemptions = parseInviteRegistrationExemptions(
     team.invite_registration_exemptions,
@@ -273,10 +271,14 @@ app.post("/auth/register-with-invite", async (c) => {
 
   let email: string;
   if (collectsEmail) {
-    if (!body.email) return c.json({ error: "email is required" }, 400);
+    if (!body.email)
+      return c.json(
+        { error: "field_required", params: { field: "email" } },
+        400,
+      );
     email = body.email.toLowerCase().trim();
     if (invite.email && invite.email.toLowerCase() !== email)
-      return c.json({ error: "This invite is for a different email" }, 403);
+      return c.json({ error: "invite_email_mismatch" }, 403);
   } else {
     // Placeholder for now; rewritten below once the id exists. The holder can
     // bind a real address whenever they like, and must before converting.
@@ -306,8 +308,7 @@ app.post("/auth/register-with-invite", async (c) => {
   )
     .bind(invite.token, now)
     .run();
-  if (!claim.meta.changes)
-    return c.json({ error: "This invite has reached its limit" }, 403);
+  if (!claim.meta.changes) return c.json({ error: "invite_used_up" }, 403);
 
   const inviteGroups = await c.env.DB.prepare(
     `SELECT ig.group_id
@@ -354,7 +355,7 @@ app.post("/auth/register-with-invite", async (c) => {
       .catch(() => {});
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
-      return c.json({ error: "Email or username already taken" }, 409);
+      return c.json({ error: "email_or_username_taken" }, 409);
     throw err;
   }
 
@@ -375,7 +376,7 @@ app.post("/auth/register-with-invite", async (c) => {
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(userId)
     .first<UserRow>();
-  if (!user) return c.json({ error: "User not found after creation" }, 500);
+  if (!user) return c.json({ error: "user_create_failed" }, 500);
 
   const { issueSession, safeUser } = await import("./auth");
   const ttl = config.session_ttl_days * 24 * 60 * 60;
@@ -413,10 +414,10 @@ async function pendingStatus(
     return {
       ok: false,
       status: 400,
-      error: "Not an invite-registered account",
+      error: "account_not_restricted",
     };
   if (user.origin_join_completed === 1)
-    return { ok: false, status: 409, error: "Already joined" };
+    return { ok: false, status: 409, error: "already_member" };
 
   if (user.origin_invite_token) {
     const invite = await env.DB.prepare(
@@ -429,15 +430,15 @@ async function pendingStatus(
       invite.enabled !== 1 ||
       invite.expires_at <= Math.floor(Date.now() / 1000)
     )
-      return { ok: false, status: 400, error: "Invalid or expired invite" };
+      return { ok: false, status: 400, error: "invite_invalid_or_expired" };
   }
 
   const team = await env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(user.origin_team_id)
     .first<TeamRow>();
-  if (!team) return { ok: false, status: 404, error: "Team no longer exists" };
+  if (!team) return { ok: false, status: 404, error: "team_not_found" };
   if (team.dissolving_at !== null)
-    return { ok: false, status: 409, error: "This team is being dissolved" };
+    return { ok: false, status: 409, error: "team_dissolving" };
 
   // Read requirements now rather than trusting a snapshot from registration
   // time — the owner may have turned one on while this account was pending.
@@ -454,7 +455,7 @@ app.get("/auth/invite-join/status", requireAuth, async (c) => {
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(authed.id)
     .first<UserRow>();
-  if (!user) return c.json({ error: "Not found" }, 404);
+  if (!user) return c.json({ error: "not_found" }, 404);
 
   const status = await pendingStatus(c.env, user);
   if (!status.ok) return c.json({ error: status.error }, status.status);
@@ -480,14 +481,14 @@ app.post("/auth/invite-join/complete", requireAuth, async (c) => {
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(authed.id)
     .first<UserRow>();
-  if (!user) return c.json({ error: "Not found" }, 404);
+  if (!user) return c.json({ error: "not_found" }, 404);
 
   const status = await pendingStatus(c.env, user);
   if (!status.ok) return c.json({ error: status.error }, status.status);
   if (status.unmet.length)
     return c.json(
       {
-        error: "Requirements not yet satisfied",
+        error: "requirements_unmet",
         unmet_requirements: status.unmet,
       },
       403,
@@ -538,7 +539,7 @@ app.post("/auth/invite-join/complete", requireAuth, async (c) => {
     }),
   );
 
-  return c.json({ message: "Joined", team_id: status.team.id });
+  return c.json({ team_id: status.team.id });
 });
 
 export default app;

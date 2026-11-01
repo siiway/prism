@@ -1,17 +1,16 @@
 // App shell layout with navigation
+//
+// Structure follows the Cloudflare dashboard: a flat sidebar (brand, nav,
+// and the account menu pinned to its bottom) beside the content column.
+// Sidebar and content share one page colour; hairlines separate them. On
+// mobile the sidebar becomes a drawer opened from a slim top bar.
 
 import {
   Avatar,
   Button,
-  Image,
-  Menu,
-  MenuButton,
-  MenuDivider,
-  MenuItem,
-  MenuItemRadio,
-  MenuList,
-  MenuPopover,
-  MenuTrigger,
+  Popover,
+  PopoverSurface,
+  PopoverTrigger,
   Spinner,
   Text,
   makeStyles,
@@ -21,6 +20,8 @@ import {
 import {
   AlertRegular,
   AppsRegular,
+  ArrowLeftRegular,
+  ChevronUpDownRegular,
   DesktopRegular,
   DismissRegular,
   GlobeRegular,
@@ -31,13 +32,14 @@ import {
   NavigationRegular,
   PeopleRegular,
   PersonRegular,
+  SearchRegular,
   SettingsRegular,
   ShieldPersonRegular,
   ShieldTaskRegular,
   SignOutRegular,
-  LocalLanguageRegular,
   WeatherMoonRegular,
   WeatherSunnyRegular,
+  type FluentIcon,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -46,24 +48,29 @@ import { useTranslation } from "react-i18next";
 import { useApi } from "../lib/api-context";
 import { useAuthStore } from "../store/auth";
 import { useThemeStore, type ThemeMode } from "../store/theme";
+import { useLanguageStore, type LanguageMode } from "../store/language";
+import { BrandMark } from "./BrandMark";
+import { Segmented } from "./Segmented";
 import { NoticeBoard } from "./NoticeBoard";
 import { LegalFooter } from "./LegalFooter";
+import { CommandPalette } from "./CommandPalette";
+import { useAdminNav } from "../pages/admin/adminNav";
+
+const HEADER_HEIGHT = "52px";
 
 const useStyles = makeStyles({
   shell: {
     display: "flex",
     height: "100vh",
     overflow: "hidden",
-    "@media (max-width: 768px)": {
-      flexDirection: "column",
-    },
+    background: "var(--prism-canvas)",
   },
   sidebar: {
     width: "240px",
     display: "flex",
     flexDirection: "column",
-    borderRight: `2px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground1,
+    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: "var(--prism-canvas)",
     flexShrink: 0,
     "@media (max-width: 768px)": {
       position: "fixed",
@@ -71,10 +78,10 @@ const useStyles = makeStyles({
       left: 0,
       bottom: 0,
       zIndex: 200,
-      transform: "translateX(-240px)",
+      transform: "translateX(-100%)",
       transitionProperty: "transform",
-      transitionDuration: "0.25s",
-      transitionTimingFunction: "ease",
+      transitionDuration: "0.2s",
+      transitionTimingFunction: "ease-out",
     },
   },
   sidebarOpen: {
@@ -88,105 +95,275 @@ const useStyles = makeStyles({
       display: "block",
       position: "fixed",
       inset: "0",
-      background: "rgba(0,0,0,0.4)",
+      background: "rgba(0,0,0,0.5)",
       zIndex: 199,
     },
   },
-  topBar: {
-    display: "none",
-    "@media (max-width: 768px)": {
-      display: "flex",
-      alignItems: "center",
-      gap: "8px",
-      padding: "8px 12px",
-      borderBottom: `2px solid ${tokens.colorNeutralStroke1}`,
-      background: tokens.colorNeutralBackground1,
-      flexShrink: 0,
-    },
-  },
   logo: {
-    padding: "16px",
-    borderBottom: `2px solid ${tokens.colorNeutralStroke1}`,
+    height: HEADER_HEIGHT,
+    flexShrink: 0,
+    padding: "0 12px 0 18px",
     display: "flex",
     alignItems: "center",
     gap: "10px",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  brandRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flex: 1,
+    minWidth: 0,
   },
   closeBtnHidden: {
     "@media (min-width: 769px)": {
       display: "none",
     },
   },
+  searchWrap: {
+    padding: "10px 10px 0",
+  },
+  // Looks like a field, acts as a button: opens the command palette.
+  searchBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "100%",
+    height: "32px",
+    padding: "0 8px 0 10px",
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+    background: tokens.colorNeutralBackground1,
+    color: tokens.colorNeutralForeground3,
+    fontFamily: "inherit",
+    fontSize: "13px",
+    cursor: "pointer",
+    "& > svg": { fontSize: "16px", flexShrink: 0 },
+    ":hover": {
+      borderTopColor: tokens.colorNeutralStroke1,
+      borderRightColor: tokens.colorNeutralStroke1,
+      borderBottomColor: tokens.colorNeutralStroke1,
+      borderLeftColor: tokens.colorNeutralStroke1,
+      color: tokens.colorNeutralForeground2,
+    },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "1px",
+    },
+  },
+  searchLabel: { flex: 1, textAlign: "left" },
+  kbd: {
+    padding: "0 5px",
+    borderRadius: tokens.borderRadiusSmall,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    fontSize: "11px",
+    lineHeight: "18px",
+    fontFamily: "inherit",
+  },
+  headerSearch: { marginLeft: "auto" },
   nav: {
     flex: 1,
     overflowY: "auto",
-    padding: "4px 6px",
+    padding: "10px",
     display: "flex",
     flexDirection: "column",
     gap: "1px",
   },
   navItem: {
-    position: "relative",
     display: "flex",
     alignItems: "center",
     gap: "10px",
-    padding: "6px 10px",
-    borderRadius: "6px",
+    minHeight: "32px",
+    padding: "0 10px",
+    borderRadius: tokens.borderRadiusMedium,
     textDecoration: "none",
     color: tokens.colorNeutralForeground2,
-    fontSize: tokens.fontSizeBase300,
-    transitionProperty: "background, color",
-    transitionDuration: "0.1s",
+    fontSize: "13px",
+    fontWeight: tokens.fontWeightMedium,
     ":hover": {
       background: tokens.colorNeutralBackground3,
       color: tokens.colorNeutralForeground1,
+    },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "-2px",
     },
   },
   navItemActive: {
     background: tokens.colorNeutralBackground3,
     color: tokens.colorNeutralForeground1,
-    fontWeight: tokens.fontWeightSemibold,
-    ":hover": {
-      background: tokens.colorNeutralBackground3Hover,
-    },
-    "::before": {
-      content: '""',
-      position: "absolute",
-      left: "0",
-      top: "6px",
-      bottom: "6px",
-      width: "3px",
-      borderRadius: "2px",
-      background: tokens.colorCompoundBrandForeground1,
-    },
+  },
+  navIcon: {
+    fontSize: "16px",
+    flexShrink: 0,
+    color: tokens.colorNeutralForeground3,
+  },
+  // Admin mode: a muted way back out, fixed above the scrolling admin nav
+  // so it stays reachable however far down the list you are. Which mode you
+  // are in is shown by modeTag in the brand row, not by a heading here.
+  backWrap: {
+    flexShrink: 0,
+    padding: "8px 10px",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  navBack: {
+    color: tokens.colorNeutralForeground3,
+    fontWeight: tokens.fontWeightRegular,
+  },
+  modeTag: {
+    flexShrink: 0,
+    padding: "0 6px",
+    lineHeight: "18px",
+    fontSize: "11px",
+    fontWeight: tokens.fontWeightMedium,
+    color: tokens.colorNeutralForeground3,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    borderRadius: tokens.borderRadiusMedium,
+  },
+  // Pushes the Admin Panel link to the bottom of the regular nav.
+  navSpacer: {
+    flex: 1,
+    minHeight: "16px",
   },
   navSection: {
-    padding: "10px 10px 4px",
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
+    padding: "16px 10px 6px",
+    fontSize: "12px",
     color: tokens.colorNeutralForeground3,
-    textTransform: "uppercase",
-    letterSpacing: "0.5px",
   },
+  // Account menu pinned to the sidebar's bottom edge.
   userArea: {
+    flexShrink: 0,
     padding: "10px",
-    borderTop: `2px solid ${tokens.colorNeutralStroke1}`,
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  userButton: {
+    width: "100%",
+    minWidth: 0,
+    justifyContent: "flex-start",
+    gap: "10px",
+    padding: "6px 8px",
+    fontWeight: tokens.fontWeightRegular,
+  },
+  userText: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    flex: 1,
+    minWidth: 0,
+    textAlign: "left",
+  },
+  userName: {
+    maxWidth: "100%",
+  },
+  userChevron: {
+    flexShrink: 0,
+    fontSize: "16px",
+    color: tokens.colorNeutralForeground3,
+  },
+  // Account panel: as wide as its trigger, with sidebar-sized type.
+  // PopoverSurface ships its own filter: drop-shadow() (sized for an
+  // arrow this panel doesn't use) and a transparent border. Replace both
+  // so there is exactly one soft shadow and a hairline edge, matching the
+  // rest of the app's floating surfaces.
+  accountPanel: {
+    padding: "4px",
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    filter: "none",
+    boxShadow: tokens.shadow8,
+    background: tokens.colorNeutralBackground1,
+    fontSize: "13px",
+  },
+  accountHead: {
+    display: "flex",
+    flexDirection: "column",
+    padding: "8px 8px 10px",
+    minWidth: 0,
+  },
+  accountSep: {
+    height: "1px",
+    margin: "0 -4px",
+    background: tokens.colorNeutralStroke2,
+  },
+  accountGroup: {
+    padding: "4px 0",
+  },
+  prefRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    minHeight: "36px",
+    padding: "0 4px 0 8px",
+    color: tokens.colorNeutralForeground2,
+  },
+  accountAction: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    minHeight: "34px",
+    padding: "0 8px",
+    border: "none",
+    borderRadius: tokens.borderRadiusMedium,
+    background: "transparent",
+    color: tokens.colorNeutralForeground2,
+    fontFamily: "inherit",
+    fontSize: "13px",
+    cursor: "pointer",
+    "& svg": { fontSize: "16px", color: tokens.colorNeutralForeground3 },
+    ":hover": {
+      background: tokens.colorNeutralBackground3,
+      color: tokens.colorNeutralForeground1,
+    },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "-2px",
+    },
+    ":disabled": { cursor: "default", opacity: 0.6 },
+  },
+  column: {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    minWidth: 0,
+  },
+  // Mobile-only top bar: opens the sidebar drawer.
+  header: {
+    height: HEADER_HEIGHT,
+    flexShrink: 0,
+    display: "none",
+    "@media (max-width: 768px)": {
+      display: "flex",
+    },
+    alignItems: "center",
+    gap: "8px",
+    padding: "0 16px",
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  muted: {
+    color: tokens.colorNeutralForeground3,
   },
   main: {
     flex: 1,
     overflowY: "auto",
     display: "flex",
     flexDirection: "column",
-    minWidth: 0,
   },
   content: {
     flex: 1,
     display: "flex",
     flexDirection: "column",
-    padding: "20px 24px",
     width: "100%",
+    maxWidth: "1200px",
+    margin: "0 auto",
+    padding: "32px 40px 48px",
     boxSizing: "border-box",
+    "@media (max-width: 1024px)": {
+      padding: "24px",
+    },
     "@media (max-width: 768px)": {
-      padding: "12px",
+      padding: "16px 12px 32px",
     },
   },
   // Full-viewport scrim shown while sign-out is in flight. The Fluent Menu
@@ -211,13 +388,21 @@ const useStyles = makeStyles({
 
 interface NavItemProps {
   to: string;
-  icon: React.ReactElement;
+  icon: FluentIcon;
   label: string;
   end?: boolean;
   onNavigate?: () => void;
+  className?: string;
 }
 
-function NavItem({ to, icon, label, end, onNavigate }: NavItemProps) {
+function NavItem({
+  to,
+  icon: Icon,
+  label,
+  end,
+  onNavigate,
+  className,
+}: NavItemProps) {
   const styles = useStyles();
   return (
     <NavLink
@@ -225,12 +410,48 @@ function NavItem({ to, icon, label, end, onNavigate }: NavItemProps) {
       end={end}
       onClick={onNavigate}
       className={({ isActive }) =>
-        `${styles.navItem}${isActive ? ` ${styles.navItemActive}` : ""}`
+        mergeClasses(
+          styles.navItem,
+          isActive && styles.navItemActive,
+          className,
+        )
       }
     >
-      {icon}
+      <Icon className={styles.navIcon} />
       {label}
     </NavLink>
+  );
+}
+
+/**
+ * Sidebar contents while inside /admin: like a Cloudflare zone, the section
+ * takes over the sidebar with its own grouped nav and a way back out.
+ * Its own component so the admin-only queries in useAdminNav never run for
+ * everyone else.
+ */
+function AdminSidebarNav({ onNavigate }: { onNavigate: () => void }) {
+  const styles = useStyles();
+  const groups = useAdminNav();
+  return (
+    <>
+      {groups.map((group, i) => (
+        <div key={group.label ?? i}>
+          {group.label && (
+            <div className={styles.navSection}>{group.label}</div>
+          )}
+          {group.items.map((item) => (
+            <NavItem
+              key={item.to}
+              to={item.to}
+              end={item.to === "/admin"}
+              icon={item.icon}
+              label={item.label}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -243,7 +464,7 @@ export function Layout() {
   const { user, clearAuth } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const themeMode = useThemeStore((s) => s.mode);
   const setThemeMode = useThemeStore((s) => s.setMode);
 
@@ -292,267 +513,50 @@ export function Layout() {
 
   const closeSidebar = () => setSidebarOpen(false);
 
-  const toggleLanguage = () => {
-    const nextLang = i18n.language.startsWith("zh") ? "en" : "zh";
-    i18n.changeLanguage(nextLang);
-  };
+  // Command palette: Ctrl/⌘ K anywhere, or the search field in the sidebar.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- platform is only known in the browser; SSR renders "Ctrl"
+    setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-  const langLabel = i18n.language.startsWith("zh")
-    ? t("language.switchToEn")
-    : t("language.switchToZh");
+  // Search results link to cards as /page#card-id. The router doesn't scroll
+  // to hashes, and the target may render only after its data loads, so look
+  // for it for a few seconds.
+  useEffect(() => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (!id) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ block: "start", behavior: "smooth" });
+        window.clearInterval(timer);
+      } else if (++tries > 100) window.clearInterval(timer); // ~5 s
+    }, 50);
+    return () => window.clearInterval(timer);
+  }, [location.pathname, location.hash, location.key]);
 
-  const sidebarContent = (
-    <>
-      <div className={styles.logo}>
-        <div
-          style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}
-        >
-          {site?.site_icon_url && (
-            <Image
-              src={site.site_icon_url}
-              alt="logo"
-              shape="rounded"
-              fit="cover"
-              width={28}
-              height={28}
-            />
-          )}
-          <Text weight="semibold" size={400}>
-            {site?.site_name ?? "Prism"}
-          </Text>
-        </div>
-        <Button
-          appearance="subtle"
-          icon={<DismissRegular />}
-          size="small"
-          onClick={closeSidebar}
-          className={styles.closeBtnHidden}
-          aria-label={t("nav.closeMenu")}
-        />
-      </div>
+  const [accountOpen, setAccountOpen] = useState(false);
+  const languageMode = useLanguageStore((s) => s.mode);
+  const setLanguageMode = useLanguageStore((s) => s.setMode);
 
-      <nav className={styles.nav}>
-        <NavItem
-          to="/"
-          icon={<HomeRegular />}
-          label={t("nav.dashboard")}
-          end
-          onNavigate={closeSidebar}
-        />
-        <NavItem
-          to="/profile"
-          icon={<PersonRegular />}
-          label={t("nav.profile")}
-          onNavigate={closeSidebar}
-        />
-        <NavItem
-          to="/security"
-          icon={<ShieldPersonRegular />}
-          label={t("nav.security")}
-          onNavigate={closeSidebar}
-        />
-        <NavItem
-          to="/notifications"
-          icon={<AlertRegular />}
-          label={t("nav.notifications")}
-          onNavigate={closeSidebar}
-        />
-        <NavItem
-          to="/audit-log"
-          icon={<ShieldTaskRegular />}
-          label={t("nav.auditLog")}
-          onNavigate={closeSidebar}
-        />
-
-        {/* Hidden for restricted accounts, whose server-side capability set
-            denies all of these. Hiding is presentation only — the refusal
-            lives in the API, this just avoids offering dead ends. Teams stays
-            visible because a restricted account still belongs to one. */}
-        {(showDeveloperNav || restrictedCaps?.["team:create"]) && (
-          <div className={styles.navSection}>{t("nav.developer")}</div>
-        )}
-        {showDeveloperNav && (
-          <NavItem
-            to="/apps"
-            icon={<AppsRegular />}
-            label={t("nav.myApps")}
-            onNavigate={closeSidebar}
-          />
-        )}
-        <NavItem
-          to="/teams"
-          icon={<PeopleRegular />}
-          label={t("nav.teams")}
-          onNavigate={closeSidebar}
-        />
-        {showDeveloperNav && (
-          <NavItem
-            to="/domains"
-            icon={<GlobeRegular />}
-            label={t("nav.domains")}
-            onNavigate={closeSidebar}
-          />
-        )}
-        {showDeveloperNav && (
-          <NavItem
-            to="/tokens"
-            icon={<KeyRegular />}
-            label={t("nav.tokens")}
-            onNavigate={closeSidebar}
-          />
-        )}
-
-        <div className={styles.navSection}>{t("nav.connections")}</div>
-        <NavItem
-          to="/connections"
-          icon={<LinkRegular />}
-          label={t("nav.linkedAccounts")}
-          onNavigate={closeSidebar}
-        />
-        <NavItem
-          to="/connected-apps"
-          icon={<LockClosedRegular />}
-          label={t("nav.connectedApps")}
-          onNavigate={closeSidebar}
-        />
-
-        {user?.role === "admin" && (
-          <>
-            <div className={styles.navSection}>{t("nav.admin")}</div>
-            <NavItem
-              to="/admin"
-              icon={<SettingsRegular />}
-              label={t("nav.adminPanel")}
-              onNavigate={closeSidebar}
-            />
-          </>
-        )}
-      </nav>
-
-      <div className={styles.userArea}>
-        {/* The Profile / Security entries this menu used to carry duplicated the
-            sidebar links above, so they were dropped. In their place the menu
-            now hosts the appearance controls (language + theme) that previously
-            sat in a separate button row, plus sign-out. */}
-        <Menu
-          checkedValues={{ theme: [themeMode] }}
-          onCheckedValueChange={(_, data) => {
-            const next = data.checkedItems[0] as ThemeMode | undefined;
-            if (next) setThemeMode(next);
-          }}
-        >
-          <MenuTrigger disableButtonEnhancement>
-            <MenuButton
-              appearance="subtle"
-              style={{ width: "100%", justifyContent: "flex-start", gap: 8 }}
-              icon={
-                <Avatar
-                  name={user?.display_name}
-                  image={
-                    user?.avatar_url ? { src: user.avatar_url } : undefined
-                  }
-                  size={28}
-                />
-              }
-            >
-              <div style={{ textAlign: "left", overflow: "hidden" }}>
-                <Text
-                  block
-                  size={200}
-                  weight="semibold"
-                  truncate
-                  style={{ maxWidth: 140 }}
-                >
-                  {user?.display_name}
-                </Text>
-                <Text
-                  block
-                  size={100}
-                  style={{
-                    color: tokens.colorNeutralForeground3,
-                    maxWidth: 140,
-                  }}
-                  truncate
-                >
-                  @{user?.username}
-                </Text>
-              </div>
-            </MenuButton>
-          </MenuTrigger>
-          <MenuPopover>
-            <MenuList>
-              {/* Language toggle */}
-              <MenuItem
-                icon={<LocalLanguageRegular />}
-                onClick={toggleLanguage}
-              >
-                {langLabel}
-              </MenuItem>
-              <MenuDivider />
-              {/* Theme */}
-              <MenuItemRadio
-                name="theme"
-                value="system"
-                icon={<DesktopRegular />}
-              >
-                {t("theme.system")}
-              </MenuItemRadio>
-              <MenuItemRadio
-                name="theme"
-                value="light"
-                icon={<WeatherSunnyRegular />}
-              >
-                {t("theme.light")}
-              </MenuItemRadio>
-              <MenuItemRadio
-                name="theme"
-                value="dark"
-                icon={<WeatherMoonRegular />}
-              >
-                {t("theme.dark")}
-              </MenuItemRadio>
-              <MenuDivider />
-              <MenuItem
-                icon={<SignOutRegular />}
-                onClick={() => void handleSignOut()}
-                disabled={busy !== null}
-              >
-                {t("nav.signOut")}
-              </MenuItem>
-            </MenuList>
-          </MenuPopover>
-        </Menu>
-      </div>
-    </>
-  );
+  const siteName = site?.site_name ?? "Prism";
+  const inAdmin =
+    user?.role === "admin" &&
+    (location.pathname === "/admin" || location.pathname.startsWith("/admin/"));
 
   return (
     <div className={styles.shell}>
-      {/* Mobile top bar */}
-      <div className={styles.topBar}>
-        <Button
-          appearance="subtle"
-          icon={<NavigationRegular />}
-          onClick={() => setSidebarOpen(true)}
-          aria-label={t("nav.openMenu")}
-        />
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {site?.site_icon_url && (
-            <Image
-              src={site.site_icon_url}
-              alt="logo"
-              shape="rounded"
-              fit="cover"
-              width={24}
-              height={24}
-            />
-          )}
-          <Text weight="semibold" size={400}>
-            {site?.site_name ?? "Prism"}
-          </Text>
-        </div>
-      </div>
-
       {/* Backdrop (mobile only) */}
       {sidebarOpen && (
         <div className={styles.backdrop} onClick={closeSidebar} />
@@ -564,18 +568,322 @@ export function Layout() {
           sidebarOpen && styles.sidebarOpen,
         )}
       >
-        {sidebarContent}
+        <div className={styles.logo}>
+          <div className={styles.brandRow}>
+            <BrandMark
+              name={site?.site_name}
+              iconUrl={site?.site_icon_url}
+              size={24}
+            />
+            <Text weight="semibold" size={300} truncate wrap={false}>
+              {siteName}
+            </Text>
+            {inAdmin && (
+              <span className={styles.modeTag}>{t("nav.admin")}</span>
+            )}
+          </div>
+          <Button
+            appearance="subtle"
+            icon={<DismissRegular />}
+            size="small"
+            onClick={closeSidebar}
+            className={styles.closeBtnHidden}
+            aria-label={t("nav.closeMenu")}
+          />
+        </div>
+
+        <div className={styles.searchWrap}>
+          <button
+            type="button"
+            className={styles.searchBtn}
+            onClick={() => {
+              closeSidebar();
+              setSearchOpen(true);
+            }}
+            aria-keyshortcuts="Control+K Meta+K"
+          >
+            <SearchRegular />
+            <span className={styles.searchLabel}>{t("search.button")}</span>
+            <kbd className={styles.kbd}>{isMac ? "⌘K" : "Ctrl K"}</kbd>
+          </button>
+        </div>
+
+        {inAdmin && (
+          <div className={styles.backWrap}>
+            <NavItem
+              to="/"
+              end
+              icon={ArrowLeftRegular}
+              label={t("admin.backToAccount")}
+              onNavigate={closeSidebar}
+              className={styles.navBack}
+            />
+          </div>
+        )}
+
+        <nav className={styles.nav}>
+          {inAdmin ? (
+            <AdminSidebarNav onNavigate={closeSidebar} />
+          ) : (
+            <>
+              <NavItem
+                to="/"
+                icon={HomeRegular}
+                label={t("nav.dashboard")}
+                end
+                onNavigate={closeSidebar}
+              />
+              <NavItem
+                to="/profile"
+                icon={PersonRegular}
+                label={t("nav.profile")}
+                onNavigate={closeSidebar}
+              />
+              <NavItem
+                to="/security"
+                icon={ShieldPersonRegular}
+                label={t("nav.security")}
+                onNavigate={closeSidebar}
+              />
+              <NavItem
+                to="/notifications"
+                icon={AlertRegular}
+                label={t("nav.notifications")}
+                onNavigate={closeSidebar}
+              />
+              <NavItem
+                to="/audit-log"
+                icon={ShieldTaskRegular}
+                label={t("nav.auditLog")}
+                onNavigate={closeSidebar}
+              />
+
+              {/* Hidden for restricted accounts, whose server-side capability set
+              denies all of these. Hiding is presentation only — the refusal
+              lives in the API, this just avoids offering dead ends. Teams
+              stays visible because a restricted account still belongs to
+              one. */}
+              {(showDeveloperNav || restrictedCaps?.["team:create"]) && (
+                <div className={styles.navSection}>{t("nav.developer")}</div>
+              )}
+              {showDeveloperNav && (
+                <NavItem
+                  to="/apps"
+                  icon={AppsRegular}
+                  label={t("nav.myApps")}
+                  onNavigate={closeSidebar}
+                />
+              )}
+              <NavItem
+                to="/teams"
+                icon={PeopleRegular}
+                label={t("nav.teams")}
+                onNavigate={closeSidebar}
+              />
+              {showDeveloperNav && (
+                <NavItem
+                  to="/domains"
+                  icon={GlobeRegular}
+                  label={t("nav.domains")}
+                  onNavigate={closeSidebar}
+                />
+              )}
+              {showDeveloperNav && (
+                <NavItem
+                  to="/tokens"
+                  icon={KeyRegular}
+                  label={t("nav.tokens")}
+                  onNavigate={closeSidebar}
+                />
+              )}
+
+              <div className={styles.navSection}>{t("nav.connections")}</div>
+              <NavItem
+                to="/connections"
+                icon={LinkRegular}
+                label={t("nav.linkedAccounts")}
+                onNavigate={closeSidebar}
+              />
+              <NavItem
+                to="/connected-apps"
+                icon={LockClosedRegular}
+                label={t("nav.connectedApps")}
+                onNavigate={closeSidebar}
+              />
+
+              {user?.role === "admin" && (
+                <>
+                  <div className={styles.navSpacer} />
+                  <NavItem
+                    to="/admin"
+                    icon={SettingsRegular}
+                    label={t("nav.adminPanel")}
+                    onNavigate={closeSidebar}
+                  />
+                </>
+              )}
+            </>
+          )}
+        </nav>
+
+        {/* Account menu: who you are, appearance (language + theme), and
+            sign-out. Profile and Security already live in the nav above. */}
+        <div className={styles.userArea}>
+          <Popover
+            open={accountOpen}
+            onOpenChange={(_, data) => setAccountOpen(data.open)}
+            positioning={{
+              position: "above",
+              align: "start",
+              matchTargetSize: "width",
+              offset: 6,
+            }}
+            trapFocus
+          >
+            <PopoverTrigger disableButtonEnhancement>
+              <Button appearance="subtle" className={styles.userButton}>
+                <Avatar
+                  name={user?.display_name}
+                  image={
+                    user?.avatar_url ? { src: user.avatar_url } : undefined
+                  }
+                  size={28}
+                />
+                <span className={styles.userText}>
+                  <Text
+                    size={200}
+                    weight="semibold"
+                    truncate
+                    wrap={false}
+                    className={styles.userName}
+                  >
+                    {user?.display_name}
+                  </Text>
+                  <Text
+                    size={100}
+                    truncate
+                    wrap={false}
+                    className={mergeClasses(styles.userName, styles.muted)}
+                  >
+                    @{user?.username}
+                  </Text>
+                </span>
+                <ChevronUpDownRegular className={styles.userChevron} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverSurface className={styles.accountPanel}>
+              <div className={styles.accountHead}>
+                <Text weight="semibold" size={200} truncate wrap={false}>
+                  {user?.display_name}
+                </Text>
+                <Text size={200} className={styles.muted} truncate wrap={false}>
+                  {user?.email}
+                </Text>
+              </div>
+              <div className={styles.accountSep} />
+              <div className={styles.accountGroup}>
+                <div className={styles.prefRow}>
+                  <span>{t("theme.label")}</span>
+                  <Segmented<ThemeMode>
+                    label={t("theme.label")}
+                    value={themeMode}
+                    onChange={setThemeMode}
+                    options={[
+                      {
+                        value: "system",
+                        label: t("theme.system"),
+                        content: <DesktopRegular />,
+                      },
+                      {
+                        value: "light",
+                        label: t("theme.light"),
+                        content: <WeatherSunnyRegular />,
+                      },
+                      {
+                        value: "dark",
+                        label: t("theme.dark"),
+                        content: <WeatherMoonRegular />,
+                      },
+                    ]}
+                  />
+                </div>
+                <div className={styles.prefRow}>
+                  <span>{t("language.label")}</span>
+                  <Segmented<LanguageMode>
+                    label={t("language.label")}
+                    value={languageMode}
+                    onChange={setLanguageMode}
+                    options={[
+                      {
+                        value: "system",
+                        label: t("language.system"),
+                        content: <DesktopRegular />,
+                      },
+                      { value: "en", label: "English", content: "EN" },
+                      { value: "zh", label: "中文", content: "中文" },
+                    ]}
+                  />
+                </div>
+              </div>
+              <div className={styles.accountSep} />
+              <div className={styles.accountGroup}>
+                <button
+                  type="button"
+                  className={styles.accountAction}
+                  onClick={() => {
+                    setAccountOpen(false);
+                    void handleSignOut();
+                  }}
+                  disabled={busy !== null}
+                >
+                  {t("nav.signOut")}
+                  <SignOutRegular />
+                </button>
+              </div>
+            </PopoverSurface>
+          </Popover>
+        </div>
       </aside>
 
-      <main className={styles.main}>
-        <div className={styles.content}>
-          {/* Above the page, not inside it — a notice about the instance is
-              not part of whatever the user came here to do. */}
-          <NoticeBoard />
-          <Outlet />
-        </div>
-        <LegalFooter />
-      </main>
+      <div className={styles.column}>
+        <header className={styles.header}>
+          <Button
+            appearance="subtle"
+            icon={<NavigationRegular />}
+            onClick={() => setSidebarOpen(true)}
+            aria-label={t("nav.openMenu")}
+          />
+          <div className={styles.brandRow}>
+            <BrandMark
+              name={site?.site_name}
+              iconUrl={site?.site_icon_url}
+              size={22}
+            />
+            <Text weight="semibold" size={300} truncate wrap={false}>
+              {siteName}
+            </Text>
+          </div>
+          <Button
+            appearance="subtle"
+            icon={<SearchRegular />}
+            className={styles.headerSearch}
+            onClick={() => setSearchOpen(true)}
+            aria-label={t("search.button")}
+          />
+        </header>
+
+        <main className={styles.main}>
+          <div className={styles.content}>
+            {/* Above the page, not inside it — a notice about the instance is
+                not part of whatever the user came here to do. */}
+            <NoticeBoard />
+            <Outlet />
+          </div>
+          <LegalFooter />
+        </main>
+      </div>
+
+      <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* Blocking feedback while sign-out is in flight. */}
       {busy && (

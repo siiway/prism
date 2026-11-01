@@ -13,6 +13,20 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 
 请求正文全局上限为 5 MiB。Prism 会在进入路由前拒绝声明过大的 `Content-Length`，并在读取未声明长度或长度不准确的流式正文时执行相同限制。超限请求返回 `413`。
 
+## 错误
+
+请求失败时返回稳定、可供程序识别的错误码，而不是英文文本：
+
+```json
+{ "error": "field_required", "params": { "field": "name" } }
+```
+
+`error` 是小写错误码，例如 `team_not_found`、`forbidden` 或 `invite_used_up`；请据此判断，错误码不会因措辞调整而改变。当提示需要填入内容（字段名、上限、URL 等）时会附带 `params`。Web 界面会根据语言文件（`src/i18n/` 中的 `apiErrors.<code>`）把错误码翻译成读者的语言，因此用户看到的文字与程序看到的错误码始终一致。
+
+成功的写操作返回数据，没有可返回的内容时返回 `{ "ok": true }`；不再提供用于显示的 `message` 字段。
+
+OAuth 与 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/register`、`/api/oauth/userinfo`、设备授权流程等）遵循各自的 RFC：`error` 为标准错误码，`error_description` 为面向客户端开发者的英文说明。
+
 ## 初始化
 
 ### `GET /api/init/status`
@@ -375,21 +389,21 @@ OAuth 应用密钥为只写字段。`POST /api/apps`、`POST /api/teams/:id/apps
 
 语义详见 [团队 → 邀请链接注册](teams.md#邀请链接注册)。
 
-| 方法    | 路径                                       | 说明                                                                      |
-| ------- | ------------------------------------------ | ------------------------------------------------------------------------- |
-| `GET`   | `/api/join/:teamId`                        | 未认证。团队品牌信息、生效门槛、captcha 配置。通道关闭时返回 404          |
-| `POST`  | `/api/auth/register-with-invite`           | 创建 pending 账号并返回会话，原子占用一个邀请名额                         |
-| `GET`   | `/api/auth/invite-join/status`             | 该 pending 账号还差哪些门槛                                               |
-| `POST`  | `/api/auth/invite-join/complete`           | 门槛满足后写入成员行，始终以 `member` 身份加入                            |
-| `GET`   | `/api/user/me/restriction`                 | 调用者是否受限、拥有哪些能力、能否转换                                    |
-| `POST`  | `/api/user/me/convert`                     | 解除受限。单向不可逆，需已绑定并验证真实邮箱                              |
-| `PATCH` | `/api/admin/teams/:id/invite-registration` | 站点管理员：授予/撤销，并设置豁免项（仅 `email_verification`）            |
-| `POST`  | `/api/admin/teams/:id/dissolve`            | 站点管理员：阶段一，停用该团队的账号。需输入团队名确认                    |
-| `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | 宽限期内撤销分段解散                                                      |
-| `GET`   | `/api/admin/restricted-users`              | 按 `?team_id=` 或 `?invite_token=` 反查产生的账号 —— 邀请码泄漏时用于定损 |
+| 方法    | 路径                                       | 说明                                                                                                  |
+| ------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `GET`   | `/api/join/:teamId`                        | 未认证。团队品牌信息、生效门槛、captcha 配置。通道关闭时返回 404                                      |
+| `POST`  | `/api/auth/register-with-invite`           | 创建 pending 账号并返回会话，原子占用一个邀请名额                                                     |
+| `GET`   | `/api/auth/invite-join/status`             | 该 pending 账号还差哪些门槛                                                                           |
+| `POST`  | `/api/auth/invite-join/complete`           | 门槛满足后写入成员行，始终以 `member` 身份加入                                                        |
+| `GET`   | `/api/user/me/restriction`                 | 调用者是否受限、拥有哪些能力、能否转换                                                                |
+| `POST`  | `/api/user/me/convert`                     | 解除受限。单向不可逆，需已绑定并验证真实邮箱                                                          |
+| `PATCH` | `/api/admin/teams/:id/invite-registration` | 站点管理员：授予/撤销，设置豁免项（仅 `email_verification`）以及 `allow_convert`（`null` = 站点默认） |
+| `POST`  | `/api/admin/teams/:id/dissolve`            | 站点管理员：阶段一，停用该团队的账号。需输入团队名确认                                                |
+| `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | 宽限期内撤销分段解散                                                                                  |
+| `GET`   | `/api/admin/restricted-users`              | 按 `?team_id=` 或 `?invite_token=` 反查产生的账号 —— 邀请码泄漏时用于定损                             |
 
 `POST /api/teams/:id/invites` 额外接受 `allows_registration`，它要求 `max_uses` 为有限值且不超过站点上限，并强制角色为 `member`。
-`PATCH /api/teams/:id` 接受 `invite_registration_enabled`（仅 owner，且需已获授权）与 `allow_normal_user_join`。
+`PATCH /api/teams/:id` 接受 `allow_normal_user_join`。
 
 ## 域名
 
@@ -484,6 +498,35 @@ OAuth scope 版本：
 ### `GET /api/oauth/consents` / `DELETE /api/oauth/consents/:client_id`
 
 管理当前用户已授权的应用。`DELETE` 同时撤销该应用的所有未过期 token。`GET` 支持 `?page=`、`?limit=`、`?q=` 应用名称搜索并返回 `total`。
+
+## 搜索
+
+### `GET /api/search?q=<文本>`
+
+供命令面板（Ctrl/⌘ K）使用，需要登录会话。在一次请求中查找调用者可以打开、且名称包含 `q`
+的各类条目（不区分大小写，至少 2 个字符，最多取前 100 个），每类最多返回 5 条：
+
+- 所有用户：自己的 OAuth 应用（含所在团队的应用）、团队、域名、个人访问令牌，以及已授权的应用；
+- 管理员：改为查找全站的用户（按用户名、显示名或邮箱）、团队、OAuth 应用（按名称或 Client ID）、
+  域名和 OAuth 来源，不再单独查找个人的应用、团队和域名。
+
+```json
+{
+  "results": [
+    {
+      "kind": "app",
+      "admin": false,
+      "id": "…",
+      "title": "My app",
+      "subtitle": "prism_…",
+      "url": "/apps/…"
+    }
+  ]
+}
+```
+
+`kind` 取值为 `app`、`team`、`domain`、`token`、`consent`、`user`、`oauth_source`；
+`admin` 表示全站范围的结果；`url` 是打开该条目的应用内路径。查询过短时返回空列表。
 
 ## 公开资料
 
@@ -597,9 +640,10 @@ OAuth scope 版本：
 | `DELETE` | `/api/admin/domains/:id`                     | 删除域名                                                                                                                                                |
 | `POST`   | `/api/admin/apps/:id/transfer`               | `{ owner_id }` 或 `{ team_id }`。client ID 与密钥保持不变                                                                                               |
 | `POST`   | `/api/admin/users/:id/convert`               | 解除邀请注册限制。`{ require_verified_email? }`                                                                                                         |
-| `GET`    | `/api/admin/scope-grants/site`               | 提升权限的站点级 OAuth 授权                                                                                                                             |
-| `GET`    | `/api/admin/scope-grants/team`               | 团队级授权。`?team_id=` 可筛选                                                                                                                          |
-| `DELETE` | `/api/admin/scope-grants/:kind/:id`          | 撤销单个授权（`:kind` 为 `site` 或 `team`）。已签发的令牌不受影响 —— 需要的话请另行撤销该应用                                                           |
+| `GET`    | `/api/admin/scope-grants/site`               | 应用仍持有的站点级 OAuth 授权，每个应用与账号一条。`?q=` 搜索                                                                                           |
+| `GET`    | `/api/admin/scope-grants/team`               | 应用仍持有的团队级授权，每个应用与团队一条。`?q=` 搜索，`?team_id=` 筛选                                                                                |
+| `GET`    | `/api/admin/scope-grants/:kind/:id`          | 单个授权：仍持有的作用域、有效令牌数、批准历史。错误码：`invalid_grant_kind`、`scope_grant_not_found`                                                   |
+| `DELETE` | `/api/admin/scope-grants/:kind/:id`          | 撤销：从授权中移除这些作用域，并删除带有它们的令牌和授权码。返回 `{ approvals, tokens }`                                                                |
 | `GET`    | `/api/admin/users/:id/sessions`              | 活跃会话及其 IP / 地理位置历史                                                                                                                          |
 | `DELETE` | `/api/admin/users/:id/sessions/:sessionId`   | 结束单个会话（`DELETE …/sessions` 仍然结束全部）                                                                                                        |
 | `GET`    | `/api/admin/maintenance/jobs`                | 可执行的定时任务，以及它们平时运行的 cron 表达式                                                                                                        |
@@ -618,7 +662,8 @@ OAuth scope 版本：
 | -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`    | `/api/notices`             | 当前查看者可见的公告：已发布、在展示窗口内、受众匹配、且未被关闭。未登录时返回 `public` 公告                                                        |
 | `POST`   | `/api/notices/:id/dismiss` | 为调用者关闭该公告。未登录返回 401，公告不可关闭时返回 403                                                                                          |
-| `GET`    | `/api/admin/notices`       | 全部公告（含草稿），带关闭次数统计                                                                                                                  |
+| `GET`    | `/api/admin/notices`       | 全部公告（含草稿），带关闭次数统计。`?q=` 按标题匹配                                                                                                |
+| `GET`    | `/api/admin/notices/:id`   | 单条公告，含团队名称、作者与关闭次数                                                                                                                |
 | `POST`   | `/api/admin/notices`       | 创建。`{ title, body, level?, audience?, team_id?, is_published?, starts_at?, ends_at?, is_dismissible?, pinned? }` —— 未设 `is_published` 时为草稿 |
 | `PATCH`  | `/api/admin/notices/:id`   | 更新。基于合并后的记录校验，因此只改一端时间也会与另一端比对。`{ reset_dismissals: true }` 会让它对所有关闭过的人重新出现                           |
 | `DELETE` | `/api/admin/notices/:id`   | 删除，并级联删除关闭记录。若只是想撤下，请改用取消发布                                                                                              |
@@ -638,18 +683,13 @@ OAuth scope 版本：
 
 对 `audit_events`、`audit_log` 与 `sqlite_master` 的写入，在任何设置下都会以 `403 { append_only: true }` 拒绝，行编辑端点与控制台皆然 —— 读取不受影响。详见 [管理员 → 审计日志在此处只追加](admin.md#审计日志在此处只追加)。
 
-### 审计 / 请求日志 / 登录错误
+### 审计 / 登录错误
 
-| Method   | Path                                  | 说明                                                                                |
-| -------- | ------------------------------------- | ----------------------------------------------------------------------------------- |
-| `GET`    | `/api/admin/audit-log?page=…`         | 审计事件                                                                            |
-| `GET`    | `/api/audit/:scope/export`            | 导出调用者有权读取的任意作用域。`?format=csv\|json` 及表格的筛选条件。上限 10000 条 |
-| `GET`    | `/api/admin/login-errors`             | 失败登录表                                                                          |
-| `GET`    | `/api/admin/request-logs`             | 可筛选的请求日志                                                                    |
-| `GET`    | `/api/admin/request-logs/export`      | 当前筛选导出 CSV                                                                    |
-| `GET`    | `/api/admin/request-logs/:id/details` | 单条请求详情                                                                        |
-| `DELETE` | `/api/admin/request-logs`             | 全部清空                                                                            |
-| `DELETE` | `/api/admin/request-logs/spectate`    | 清空 spectate 缓冲                                                                  |
+| Method | Path                          | 说明                                                                                |
+| ------ | ----------------------------- | ----------------------------------------------------------------------------------- |
+| `GET`  | `/api/admin/audit-log?page=…` | 审计事件                                                                            |
+| `GET`  | `/api/audit/:scope/export`    | 导出调用者有权读取的任意作用域。`?format=csv\|json` 及表格的筛选条件。上限 10000 条 |
+| `GET`  | `/api/admin/login-errors`     | 失败登录表                                                                          |
 
 ### 密钥迁移 / Danger Zone
 
@@ -665,7 +705,6 @@ OAuth scope 版本：
 | `GET / DELETE` | `/api/admin/image-proxy[/:id]`                                  | 浏览 / 删除代理映射                                           |
 | `POST`         | `/api/admin/migrate-recovery-codes`                             | 重新哈希历史明文备用码                                        |
 | `GET / POST`   | `/api/admin/reset/status` & `/request` & `/cancel` & `/confirm` | 邮件签署的站点重置流程                                        |
-| `GET / POST`   | `/api/admin/debug`                                              | 部署诊断的内部开关                                            |
 
 ## 健康检查
 

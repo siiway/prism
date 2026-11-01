@@ -1,407 +1,407 @@
-// Connected Apps — OAuth consents & token management
+// Connected apps: the OAuth apps you've approved. One bordered list, a row
+// per app; a row opens in place to show what the app can do, where it's
+// signed in, and the controls to cut it off.
 
 import {
-  Accordion,
-  AccordionHeader,
-  AccordionItem,
-  AccordionPanel,
   Avatar,
   Badge,
   Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
   Input,
-  MessageBar,
-  Spinner,
-  Text,
-  Tooltip,
+  Skeleton,
+  SkeletonItem,
   makeStyles,
+  mergeClasses,
+  shorthands,
   tokens,
 } from "@fluentui/react-components";
 import {
   ArrowSyncRegular,
+  CheckmarkRegular,
+  ChevronDownRegular,
   ClockRegular,
+  CopyRegular,
   DismissRegular,
+  FlashRegular,
   GlobeRegular,
-  KeyRegular,
+  OpenRegular,
   SearchRegular,
-  ShieldRegular,
+  WarningRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { ApiError, type OAuthConsent, type OAuthToken } from "../lib/api";
 import { useApi } from "../lib/api-context";
+import { formatDate } from "../lib/datetime";
+import { scopeLabel } from "../lib/scopeLabels";
+import { useConfirm } from "../lib/useConfirm";
+import { useToastMessage } from "../lib/useToastMessage";
 import { CopyIdTrigger } from "../components/CopyIdTrigger";
 import { EmptyState } from "../components/EmptyState";
+import { GetStartedPanel } from "../components/GetStartedPanel";
+import { ConnectedAppsArt } from "../components/Illustrations";
 import { PageHeader } from "../components/PageHeader";
 import { Pagination } from "../components/Pagination";
-import { SkeletonConsentCards } from "../components/Skeletons";
+import {
+  SettingsEmpty,
+  SettingsFooter,
+  SettingsRow,
+  SettingsSubhead,
+  SettingsToast,
+} from "../components/Settings";
+
+const PAGE_SIZE = 20;
+const COLUMNS = "minmax(0, 2.2fr) minmax(0, 2fr) 90px 110px 20px";
+const NARROW = "@media (max-width: 768px)";
 
 const useStyles = makeStyles({
-  list: {
+  toolbar: {
     display: "flex",
-    flexDirection: "column",
-    gap: "12px",
+    gap: "8px",
+    marginBottom: "12px",
+    flexWrap: "wrap",
   },
-  card: {
-    borderRadius: "8px",
+  list: {
+    "--card-pad": "16px",
+    borderRadius: tokens.borderRadiusXLarge,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     background: tokens.colorNeutralBackground1,
     overflow: "hidden",
   },
-  cardHeader: {
-    display: "flex",
-    alignItems: "center",
+  head: {
+    display: "grid",
+    gridTemplateColumns: COLUMNS,
     gap: "16px",
-    padding: "16px 20px",
+    padding: "10px 16px",
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground3,
+    [NARROW]: { display: "none" },
   },
-  appIcon: {
-    width: "48px",
-    height: "48px",
-    borderRadius: "8px",
-    background: tokens.colorNeutralBackground3,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  info: {
-    flex: 1,
-    minWidth: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-  },
-  nameRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
-  scopes: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "4px",
-    marginTop: "2px",
-  },
-  tokenPanel: {
+  item: {
     borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    padding: "0 20px 16px 20px",
   },
-  tokenRow: {
+  // The whole summary line is the expand button.
+  row: {
+    margin: 0,
+    ...shorthands.borderStyle("none"),
+    backgroundColor: "transparent",
+    fontFamily: "inherit",
+    fontSize: "inherit",
+    lineHeight: "inherit",
+    color: "inherit",
+    textAlign: "start",
+    boxSizing: "border-box",
+    width: "100%",
+    display: "grid",
+    gridTemplateColumns: COLUMNS,
+    gap: "16px",
+    alignItems: "center",
+    padding: "12px 16px",
+    cursor: "pointer",
+    ":hover": { background: tokens.colorNeutralBackground1Hover },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "-2px",
+    },
+    [NARROW]: { gridTemplateColumns: "minmax(0, 1fr) 20px" },
+  },
+  nameCell: {
     display: "flex",
     alignItems: "center",
     gap: "12px",
-    padding: "10px 0",
-    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
-    ":last-child": { borderBottom: "none" },
-  },
-  tokenIcon: {
-    width: "32px",
-    height: "32px",
-    borderRadius: "6px",
-    background: tokens.colorNeutralBackground3,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  tokenInfo: {
-    flex: 1,
     minWidth: 0,
+  },
+  nameText: {
     display: "flex",
     flexDirection: "column",
     gap: "2px",
+    minWidth: 0,
   },
+  nameLine: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    minWidth: 0,
+  },
+  name: {
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground1,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  sub: {
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground3,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  secondary: {
+    minWidth: 0,
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    fontSize: "13px",
+    color: tokens.colorNeutralForeground2,
+    [NARROW]: { display: "none" },
+  },
+  ellipsis: {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  muted: {
+    fontSize: "13px",
+    color: tokens.colorNeutralForeground3,
+  },
+  chevron: {
+    fontSize: "14px",
+    color: tokens.colorNeutralForeground3,
+    transitionProperty: "transform",
+    transitionDuration: tokens.durationFaster,
+  },
+  chevronOpen: { transform: "rotate(180deg)" },
+  panel: {
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    background: tokens.colorNeutralBackground1,
+  },
+  scopeGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+    gap: "12px 24px",
+    padding: "14px var(--card-pad)",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  scope: {
+    display: "flex",
+    gap: "8px",
+    minWidth: 0,
+  },
+  scopeIcon: {
+    flexShrink: 0,
+    marginTop: "2px",
+    fontSize: "16px",
+    color: tokens.colorBrandForeground1,
+  },
+  scopeIconSite: { color: tokens.colorPaletteRedForeground1 },
+  scopeText: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "1px",
+    minWidth: 0,
+    fontSize: tokens.fontSizeBase300,
+    overflowWrap: "anywhere",
+  },
+  scopeDesc: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  clientId: {
+    gap: "6px",
+    maxWidth: "100%",
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground2,
+  },
+  danger: {
+    color: tokens.colorPaletteRedForeground1,
+    ":hover": { color: tokens.colorPaletteRedForeground1 },
+    ":hover:active": { color: tokens.colorPaletteRedForeground1 },
+  },
+  // Sticky itself: the toast inside only sticks within this wrapper.
+  toast: { position: "sticky", top: "8px", zIndex: 2, marginBottom: "12px" },
 });
 
-function formatRelative(
-  ts: number,
-  t: (key: string, options?: Record<string, unknown>) => string,
-  locale?: string,
-): string {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const diffSec = ts - nowSec;
+/** "in 5m", "3h ago", or a date once it's more than a day away. */
+function formatRelative(ts: number, t: TFunction, locale?: string): string {
+  const diffSec = ts - Math.floor(Date.now() / 1000);
   const absSec = Math.abs(diffSec);
-
-  if (absSec < 60) {
-    return diffSec >= 0
+  const future = diffSec >= 0;
+  if (absSec < 60)
+    return future
       ? t("connectedApps.inLessThanMinute")
       : t("connectedApps.justNow");
-  }
-
-  const absMins = Math.floor(absSec / 60);
-  if (absMins < 60) {
-    return diffSec >= 0
-      ? t("connectedApps.inMinutes", { count: absMins })
-      : t("connectedApps.minutesAgo", { count: absMins });
-  }
-
-  const absHours = Math.floor(absMins / 60);
-  if (absHours < 24) {
-    return diffSec >= 0
-      ? t("connectedApps.inHours", { count: absHours })
-      : t("connectedApps.hoursAgo", { count: absHours });
-  }
-
+  const mins = Math.floor(absSec / 60);
+  if (mins < 60)
+    return future
+      ? t("connectedApps.inMinutes", { count: mins })
+      : t("connectedApps.minutesAgo", { count: mins });
+  const hours = Math.floor(mins / 60);
+  if (hours < 24)
+    return future
+      ? t("connectedApps.inHours", { count: hours })
+      : t("connectedApps.hoursAgo", { count: hours });
   return new Date(ts * 1000).toLocaleDateString(locale);
 }
 
-function TokenRow({
+/** Only link to web pages, never javascript: or other schemes. */
+function webUrl(url: string | null): URL | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:" ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+/** "Profile, Email address +2 more" */
+function accessSummary(t: TFunction, scopes: string[]): string {
+  const labels = scopes.map((s) => scopeLabel(t, s).label);
+  const shown = labels.slice(0, 2).join(", ");
+  return labels.length > 2
+    ? `${shown} ${t("connectedApps.accessMore", { count: labels.length - 2 })}`
+    : shown;
+}
+
+function SignInRow({
   token,
-  onRevoke,
-  revoking,
+  busy,
+  onSignOut,
 }: {
   token: OAuthToken;
-  onRevoke: (id: string) => void;
-  revoking: string | null;
+  busy: boolean;
+  onSignOut: () => void;
 }) {
-  const styles = useStyles();
   const { t, i18n } = useTranslation();
-
+  const locale = i18n.resolvedLanguage;
   return (
-    <div className={styles.tokenRow}>
-      <Tooltip
-        content={
-          token.is_persistent
-            ? t("connectedApps.persistent")
-            : t("connectedApps.session")
-        }
-        relationship="label"
-      >
-        <div className={styles.tokenIcon}>
-          {token.is_persistent ? (
-            <ArrowSyncRegular
-              fontSize={16}
-              style={{ color: tokens.colorBrandForeground1 }}
-            />
-          ) : (
-            <ClockRegular
-              fontSize={16}
-              style={{ color: tokens.colorNeutralForeground3 }}
-            />
-          )}
-        </div>
-      </Tooltip>
-
-      <div className={styles.tokenInfo}>
-        <Text size={300} weight="semibold">
-          {token.is_persistent
-            ? t("connectedApps.persistent")
-            : t("connectedApps.session")}
-        </Text>
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("connectedApps.issuedAgo", {
-            time: formatRelative(token.created_at, t, i18n.resolvedLanguage),
-          })}
-          {" · "}
-          {t("connectedApps.expiresAgo", {
-            time: formatRelative(token.expires_at, t, i18n.resolvedLanguage),
-          })}
-        </Text>
-      </div>
-
-      <Button
-        appearance="subtle"
-        icon={<DismissRegular />}
-        size="small"
-        disabled={revoking === token.id}
-        onClick={() => onRevoke(token.id)}
-        style={{ flexShrink: 0 }}
-      >
-        {revoking === token.id ? (
-          <Spinner size="tiny" />
-        ) : (
-          t("connectedApps.revokeToken")
-        )}
+    <SettingsRow
+      icon={token.is_persistent ? <ArrowSyncRegular /> : <ClockRegular />}
+      label={
+        token.is_persistent
+          ? t("connectedApps.rememberedSignIn")
+          : t("connectedApps.temporarySignIn")
+      }
+      description={`${t("connectedApps.signedInAt", {
+        time: formatRelative(token.created_at, t, locale),
+      })} · ${t("connectedApps.endsAt", {
+        time: formatRelative(token.ends_at, t, locale),
+      })}`}
+    >
+      <Button size="small" disabled={busy} onClick={onSignOut}>
+        {t("connectedApps.signOut")}
       </Button>
-    </div>
+    </SettingsRow>
   );
 }
 
-function ConsentCard({
-  consent,
-  onRevokeConsent,
-  onRevokeToken,
-  onDisableAutoAuthorize,
-  revokingConsent,
-  revokingToken,
-  disablingAutoAuthorize,
-}: {
+interface DetailsProps {
   consent: OAuthConsent;
-  onRevokeConsent: (c: OAuthConsent) => void;
-  onRevokeToken: (id: string) => void;
-  onDisableAutoAuthorize: (c: OAuthConsent) => void;
-  revokingConsent: string | null;
-  revokingToken: string | null;
-  disablingAutoAuthorize: string | null;
-}) {
+  busy: string | null;
+  onSignOut: (token: OAuthToken) => void;
+  onAutoAuthorizeOff: () => void;
+  onRevoke: () => void;
+}
+
+function ConsentDetails({
+  consent,
+  busy,
+  onSignOut,
+  onAutoAuthorizeOff,
+  onRevoke,
+}: DetailsProps) {
   const styles = useStyles();
   const { t } = useTranslation();
+  const name = consent.app.name;
+  const website = webUrl(consent.app.website_url);
 
   return (
-    <div className={styles.card}>
-      <div className={styles.cardHeader}>
-        <CopyIdTrigger
-          id={consent.client_id}
-          label={t("common.copyClientId")}
-          copiedLabel={t("common.copiedClientId")}
-        >
-          <Avatar
-            image={
-              consent.app.icon_url ? { src: consent.app.icon_url } : undefined
-            }
-            name={consent.app.name}
-            size={48}
-            shape="square"
-          />
-        </CopyIdTrigger>
-
-        <div className={styles.info}>
-          <div className={styles.nameRow}>
-            <Text weight="semibold" size={400}>
-              {consent.app.name}
-            </Text>
-            {consent.app.is_verified && (
-              <Badge
-                color="success"
-                appearance="filled"
-                size="small"
-                icon={<ShieldRegular />}
-              >
-                {t("connectedApps.verified")}
-              </Badge>
-            )}
-            <Badge
-              color="informative"
-              appearance="tint"
-              size="small"
-              icon={<KeyRegular />}
-            >
-              {t("connectedApps.tokenCount", { count: consent.tokens.length })}
-            </Badge>
-            {consent.auto_authorize && (
-              <Badge color="brand" appearance="tint" size="small">
-                {t("connectedApps.autoAuthorizeEnabled")}
-              </Badge>
-            )}
-          </div>
-
-          {consent.app.website_url && (
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              {consent.app.website_url}
-            </Text>
-          )}
-
-          <div className={styles.scopes}>
-            {consent.scopes.map((s) => (
-              <Badge key={s} appearance="tint" color="subtle" size="small">
-                {s}
-              </Badge>
-            ))}
-          </div>
-
-          <Text
-            size={100}
-            style={{ color: tokens.colorNeutralForeground3, marginTop: 2 }}
-          >
-            {t("connectedApps.authorized", {
-              date: new Date(consent.granted_at * 1000).toLocaleDateString(),
-            })}
-          </Text>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            flexShrink: 0,
-            alignItems: "center",
-          }}
-        >
-          {consent.auto_authorize && (
-            <Button
-              appearance="outline"
-              size="small"
-              disabled={disablingAutoAuthorize === consent.client_id}
-              onClick={() => onDisableAutoAuthorize(consent)}
-            >
-              {t("connectedApps.disableAutoAuthorize")}
-            </Button>
-          )}
-          <Dialog>
-            <DialogTrigger disableButtonEnhancement>
-              <Button
-                appearance="outline"
-                size="small"
-                style={{
-                  color: tokens.colorPaletteRedForeground1,
-                }}
-                disabled={revokingConsent === consent.client_id}
-              >
-                {t("connectedApps.revokeAll")}
-              </Button>
-            </DialogTrigger>
-            <DialogSurface>
-              <DialogBody>
-                <DialogTitle>
-                  {t("connectedApps.revokeTitle", { name: consent.app.name })}
-                </DialogTitle>
-                <DialogContent>
-                  {t("connectedApps.revokeDesc", { name: consent.app.name })}
-                </DialogContent>
-                <DialogActions>
-                  <DialogTrigger>
-                    <Button>{t("common.cancel")}</Button>
-                  </DialogTrigger>
-                  <Button
-                    appearance="primary"
-                    style={{ background: tokens.colorPaletteRedBackground3 }}
-                    onClick={() => onRevokeConsent(consent)}
-                  >
-                    {t("connectedApps.revokeAccess")}
-                  </Button>
-                </DialogActions>
-              </DialogBody>
-            </DialogSurface>
-          </Dialog>
-        </div>
+    <div className={styles.panel} id={`consent-${consent.client_id}`}>
+      <SettingsSubhead>{t("connectedApps.permissionsHeading")}</SettingsSubhead>
+      <div className={styles.scopeGrid}>
+        {consent.scopes.map((s) => {
+          const info = scopeLabel(t, s);
+          return (
+            <div key={s} className={styles.scope}>
+              {info.site ? (
+                <WarningRegular
+                  className={mergeClasses(
+                    styles.scopeIcon,
+                    styles.scopeIconSite,
+                  )}
+                />
+              ) : (
+                <CheckmarkRegular className={styles.scopeIcon} />
+              )}
+              <div className={styles.scopeText}>
+                <span>{info.label}</span>
+                {info.desc && (
+                  <span className={styles.scopeDesc}>{info.desc}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {consent.tokens.length > 0 && (
-        <Accordion collapsible>
-          <AccordionItem value="tokens">
-            <AccordionHeader size="small" style={{ padding: "0 20px" }}>
-              <Text
-                size={200}
-                style={{ color: tokens.colorNeutralForeground2 }}
-              >
-                {t("connectedApps.activeSessions", {
-                  count: consent.tokens.length,
-                })}
-              </Text>
-            </AccordionHeader>
-            <AccordionPanel>
-              <div className={styles.tokenPanel}>
-                {consent.tokens.map((token) => (
-                  <TokenRow
-                    key={token.id}
-                    token={token}
-                    onRevoke={onRevokeToken}
-                    revoking={revokingToken}
-                  />
-                ))}
-              </div>
-            </AccordionPanel>
-          </AccordionItem>
-        </Accordion>
+      <SettingsSubhead>{t("connectedApps.signInsHeading")}</SettingsSubhead>
+      {consent.tokens.length === 0 ? (
+        <SettingsEmpty>{t("connectedApps.noSignIns")}</SettingsEmpty>
+      ) : (
+        consent.tokens.map((token) => (
+          <SignInRow
+            key={token.id}
+            token={token}
+            busy={busy !== null}
+            onSignOut={() => onSignOut(token)}
+          />
+        ))
       )}
+
+      {consent.auto_authorize && (
+        <SettingsRow
+          icon={<FlashRegular />}
+          label={t("connectedApps.autoAuthorizeLabel")}
+          description={t("connectedApps.autoAuthorizeDesc", { name })}
+        >
+          <Button
+            size="small"
+            disabled={busy !== null}
+            onClick={onAutoAuthorizeOff}
+          >
+            {t("connectedApps.turnOff")}
+          </Button>
+        </SettingsRow>
+      )}
+
+      <SettingsFooter
+        start={
+          <CopyIdTrigger
+            id={consent.client_id}
+            label={t("common.copyClientId")}
+            copiedLabel={t("common.copiedClientId")}
+            className={styles.clientId}
+          >
+            <span>{consent.client_id}</span>
+            <CopyRegular />
+          </CopyIdTrigger>
+        }
+      >
+        {website && (
+          <Button
+            as="a"
+            href={website.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            size="small"
+            appearance="subtle"
+            icon={<OpenRegular />}
+          >
+            {t("connectedApps.visitWebsite")}
+          </Button>
+        )}
+        <Button
+          size="small"
+          className={styles.danger}
+          disabled={busy !== null}
+          onClick={onRevoke}
+        >
+          {t("connectedApps.revokeAccess")}
+        </Button>
+      </SettingsFooter>
     </div>
   );
 }
@@ -411,16 +411,21 @@ export function ConnectedApps() {
   const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();
-  const [revokingConsent, setRevokingConsent] = useState<string | null>(null);
-  const [revokingToken, setRevokingToken] = useState<string | null>(null);
-  const [disablingAutoAuthorize, setDisablingAutoAuthorize] = useState<
-    string | null
-  >(null);
-  const [error, setError] = useState("");
+  const { confirm, confirmDialog } = useConfirm();
+  const { message, showMsg } = useToastMessage();
+  const { data: site } = useQuery({
+    queryKey: ["site"],
+    queryFn: api.site,
+    staleTime: 60_000,
+  });
+  const siteName = site?.site_name ?? "Prism";
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  // One change at a time; holds what's being changed.
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -433,123 +438,268 @@ export function ConnectedApps() {
   const { data, isFetching } = useQuery({
     queryKey: ["consents", page, debouncedQuery],
     queryFn: () =>
-      api.listConsents({ page, limit: 20, q: debouncedQuery || undefined }),
+      api.listConsents({
+        page,
+        limit: PAGE_SIZE,
+        q: debouncedQuery || undefined,
+      }),
   });
 
-  const handleRevokeConsent = async (consent: OAuthConsent) => {
-    setRevokingConsent(consent.client_id);
+  const toggle = (clientId: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
+
+  const run = async (
+    key: string,
+    action: () => Promise<unknown>,
+    done: string,
+    failed: string,
+  ) => {
+    if (busy) return;
+    setBusy(key);
     try {
-      await api.revokeConsent(consent.client_id);
+      await action();
       await qc.invalidateQueries({ queryKey: ["consents"] });
+      showMsg("success", done);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : t("connectedApps.revokeFailed"),
-      );
+      showMsg("error", err instanceof ApiError ? err.message : failed);
     } finally {
-      setRevokingConsent(null);
+      setBusy(null);
     }
   };
 
-  const handleRevokeToken = async (tokenId: string) => {
-    setRevokingToken(tokenId);
-    try {
-      await api.revokeToken(tokenId);
-      await qc.invalidateQueries({ queryKey: ["consents"] });
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : t("connectedApps.revokeFailed"),
-      );
-    } finally {
-      setRevokingToken(null);
-    }
+  const signOut = (consent: OAuthConsent, token: OAuthToken) =>
+    run(
+      `token:${token.id}`,
+      () => api.revokeToken(token.id),
+      t("connectedApps.signedOut", { name: consent.app.name }),
+      t("connectedApps.revokeFailed"),
+    );
+
+  const autoAuthorizeOff = (consent: OAuthConsent) =>
+    run(
+      `auto:${consent.client_id}`,
+      () => api.updateConsent(consent.client_id, { auto_authorize: false }),
+      t("connectedApps.autoAuthorizeOff", { name: consent.app.name }),
+      t("connectedApps.disableAutoAuthorizeFailed"),
+    );
+
+  const revoke = async (consent: OAuthConsent) => {
+    const name = consent.app.name;
+    const ok = await confirm({
+      title: t("connectedApps.revokeTitle", { name }),
+      body: t("connectedApps.revokeDesc", { name }),
+      confirmLabel: t("connectedApps.revokeAccess"),
+    });
+    if (!ok) return;
+    await run(
+      `consent:${consent.client_id}`,
+      () => api.revokeConsent(consent.client_id),
+      t("connectedApps.revoked", { name }),
+      t("connectedApps.revokeFailed"),
+    );
   };
 
-  const handleDisableAutoAuthorize = async (consent: OAuthConsent) => {
-    setDisablingAutoAuthorize(consent.client_id);
-    try {
-      await api.updateConsent(consent.client_id, { auto_authorize: false });
-      await qc.invalidateQueries({ queryKey: ["consents"] });
-    } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : t("connectedApps.disableAutoAuthorizeFailed"),
-      );
-    } finally {
-      setDisablingAutoAuthorize(null);
-    }
-  };
+  const head = (
+    <div className={styles.head} aria-hidden>
+      <span>{t("connectedApps.colApp")}</span>
+      <span>{t("connectedApps.colAccess")}</span>
+      <span>{t("connectedApps.colSignIns")}</span>
+      <span>{t("connectedApps.colAuthorized")}</span>
+      <span />
+    </div>
+  );
 
   const consents = data?.consents ?? [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24, flex: 1 }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       <PageHeader
         title={t("connectedApps.title")}
         subtitle={t("connectedApps.description")}
-        style={{ marginBottom: 0 }}
       />
 
-      {error && <MessageBar intent="error">{error}</MessageBar>}
+      {message && (
+        <div className={styles.toast}>
+          <SettingsToast message={message} />
+        </div>
+      )}
 
-      {isFetching && !data ? (
-        <SkeletonConsentCards count={3} />
-      ) : !isFetching && data?.consents.length === 0 && !debouncedQuery ? (
-        <EmptyState icon={<GlobeRegular />} title={t("connectedApps.noApps")} />
-      ) : !isFetching && data?.consents.length === 0 && debouncedQuery ? (
-        <EmptyState icon={<GlobeRegular />} title={t("teams.noResultsMatch")} />
-      ) : data && data.consents.length > 0 ? (
-        <>
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              marginBottom: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("connectedApps.searchConsentsPlaceholder")}
-              contentBefore={<SearchRegular />}
-              contentAfter={
-                query ? (
-                  <Button
-                    appearance="transparent"
-                    size="small"
-                    icon={<DismissRegular />}
-                    aria-label={t("common.clear")}
-                    onClick={() => setQuery("")}
-                  />
-                ) : undefined
-              }
-              style={{ minWidth: 220, flex: "1 1 220px" }}
-            />
-          </div>
+      {isFetching && !data && (
+        <Skeleton aria-busy>
           <div className={styles.list}>
-            {consents.map((consent) => (
-              <ConsentCard
-                key={consent.client_id}
-                consent={consent}
-                onRevokeConsent={handleRevokeConsent}
-                onRevokeToken={handleRevokeToken}
-                onDisableAutoAuthorize={handleDisableAutoAuthorize}
-                revokingConsent={revokingConsent}
-                revokingToken={revokingToken}
-                disablingAutoAuthorize={disablingAutoAuthorize}
-              />
+            {head}
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className={mergeClasses(styles.item, styles.row)}>
+                <div className={styles.nameCell}>
+                  <SkeletonItem shape="square" size={32} />
+                  <SkeletonItem
+                    size={12}
+                    style={{ width: `${40 + (i % 3) * 12}%` }}
+                  />
+                </div>
+                <SkeletonItem size={12} style={{ width: "70%" }} />
+                <SkeletonItem size={12} style={{ width: 48 }} />
+                <SkeletonItem size={12} style={{ width: 72 }} />
+                <span />
+              </div>
             ))}
           </div>
-          <Pagination
-            page={page}
-            pageCount={Math.max(1, Math.ceil((data.total || 0) / 20))}
-            total={data.total}
-            onChange={setPage}
-            disabled={isFetching}
+        </Skeleton>
+      )}
+
+      {!isFetching && data?.consents.length === 0 && !debouncedQuery && (
+        <GetStartedPanel
+          art={<ConnectedAppsArt />}
+          title={t("connectedApps.getStarted.title")}
+          description={t("connectedApps.getStarted.desc", { siteName })}
+          steps={[
+            t("connectedApps.getStarted.step1", { siteName }),
+            t("connectedApps.getStarted.step2"),
+            t("connectedApps.getStarted.step3"),
+          ]}
+        />
+      )}
+
+      {/* Stays up while a search finds nothing, so it can be cleared. */}
+      {data && (data.consents.length > 0 || debouncedQuery) && (
+        <div className={styles.toolbar}>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("connectedApps.searchConsentsPlaceholder")}
+            contentBefore={<SearchRegular />}
+            contentAfter={
+              query ? (
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  icon={<DismissRegular />}
+                  aria-label={t("common.clear")}
+                  onClick={() => setQuery("")}
+                />
+              ) : undefined
+            }
+            style={{ minWidth: 220, flex: "1 1 220px" }}
           />
+        </div>
+      )}
+
+      {!isFetching && data?.consents.length === 0 && debouncedQuery && (
+        <EmptyState icon={<GlobeRegular />} title={t("teams.noResultsMatch")} />
+      )}
+
+      {data && consents.length > 0 && (
+        <>
+          <div className={styles.list}>
+            {head}
+            {consents.map((consent) => {
+              const isOpen = open.has(consent.client_id);
+              const website = webUrl(consent.app.website_url);
+              const hasSite = consent.scopes.some((s) => scopeLabel(t, s).site);
+              return (
+                <div key={consent.client_id} className={styles.item}>
+                  <button
+                    type="button"
+                    className={styles.row}
+                    aria-expanded={isOpen}
+                    aria-controls={`consent-${consent.client_id}`}
+                    onClick={() => toggle(consent.client_id)}
+                  >
+                    <div className={styles.nameCell}>
+                      <Avatar
+                        image={
+                          consent.app.icon_url
+                            ? { src: consent.app.icon_url }
+                            : undefined
+                        }
+                        name={consent.app.name}
+                        size={32}
+                        shape="square"
+                      />
+                      <div className={styles.nameText}>
+                        <div className={styles.nameLine}>
+                          <span className={styles.name}>
+                            {consent.app.name}
+                          </span>
+                          {consent.app.is_verified && (
+                            <Badge
+                              appearance="outline"
+                              color="success"
+                              size="small"
+                            >
+                              {t("connectedApps.verified")}
+                            </Badge>
+                          )}
+                        </div>
+                        {(website || consent.app.description) && (
+                          <span className={styles.sub}>
+                            {website?.host ?? consent.app.description}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className={styles.secondary}>
+                      {hasSite && (
+                        <Badge appearance="tint" color="danger" size="small">
+                          {t("connectedApps.siteAccess")}
+                        </Badge>
+                      )}
+                      <span className={styles.ellipsis}>
+                        {accessSummary(t, consent.scopes)}
+                      </span>
+                    </div>
+                    <div className={styles.secondary}>
+                      <span className={styles.muted}>
+                        {consent.tokens.length > 0
+                          ? t("connectedApps.signInsCount", {
+                              count: consent.tokens.length,
+                            })
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className={styles.secondary}>
+                      <span className={styles.muted}>
+                        {formatDate(consent.granted_at)}
+                      </span>
+                    </div>
+                    <ChevronDownRegular
+                      className={mergeClasses(
+                        styles.chevron,
+                        isOpen && styles.chevronOpen,
+                      )}
+                    />
+                  </button>
+                  {isOpen && (
+                    <ConsentDetails
+                      consent={consent}
+                      busy={busy}
+                      onSignOut={(token) => signOut(consent, token)}
+                      onAutoAuthorizeOff={() => autoAuthorizeOff(consent)}
+                      onRevoke={() => revoke(consent)}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {(data.total > PAGE_SIZE || page > 1) && (
+            <Pagination
+              page={page}
+              pageCount={Math.max(1, Math.ceil((data.total || 0) / PAGE_SIZE))}
+              total={data.total}
+              onChange={setPage}
+              disabled={isFetching}
+            />
+          )}
         </>
-      ) : null}
+      )}
+
+      {confirmDialog}
     </div>
   );
 }

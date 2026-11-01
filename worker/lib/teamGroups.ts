@@ -16,6 +16,7 @@ import type {
   TeamGroupRow,
   TeamRolePermissions,
 } from "../types";
+import type { CodedError } from "./apiError";
 
 // ─── Limits ──────────────────────────────────────────────────────────────────
 
@@ -32,22 +33,23 @@ export const MAX_GROUP_DESCRIPTION_LENGTH = 256;
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_SLUG_LENGTH = 32;
 
-/** Returns an error message, or null when the slug is acceptable. */
-export function validateGroupSlug(slug: string): string | null {
-  if (!slug) return "slug is required";
+/** Returns an error, or null when the slug is acceptable. */
+export function validateGroupSlug(slug: string): CodedError | null {
+  if (!slug) return { error: "field_required", params: { field: "slug" } };
   if (slug.length > MAX_SLUG_LENGTH)
-    return `slug must be at most ${MAX_SLUG_LENGTH} characters`;
-  if (!SLUG_RE.test(slug))
-    return "slug must be lowercase alphanumeric with single hyphens between segments";
+    return {
+      error: "field_max_length",
+      params: { field: "slug", max: MAX_SLUG_LENGTH },
+    };
+  if (!SLUG_RE.test(slug)) return { error: "group_slug_invalid" };
   return null;
 }
 
-/** Returns an error message, or null when the colour is acceptable.
+/** Returns an error, or null when the colour is acceptable.
  *  Empty / null means "no colour", which is valid. */
-export function validateGroupColor(color: string | null): string | null {
+export function validateGroupColor(color: string | null): CodedError | null {
   if (color === null || color === "") return null;
-  if (!/^#[0-9a-fA-F]{6}$/.test(color))
-    return "color must be a #rrggbb hex string";
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) return { error: "group_color_invalid" };
   return null;
 }
 
@@ -280,9 +282,7 @@ async function loadAssignments(
   db: D1Database,
   teamIds: string[],
   restrict:
-    | { userId: string }
-    | { userIds: string[] }
-    | { memberOfTeamId: string },
+    { userId: string } | { userIds: string[] } | { memberOfTeamId: string },
 ): Promise<AssignmentRow[]> {
   const out: AssignmentRow[] = [];
   for (const group of chunk([...new Set(teamIds)], BIND_CHUNK)) {

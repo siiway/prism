@@ -1,76 +1,62 @@
-// Every domain on the instance, personal and team-owned.
-//
-// Domains were previously reachable only through the account or team that
-// owned them, which is the wrong index for the question an operator actually
-// has: who claims example.com, and is that claim real?
-//
-// The verify toggle here is an override, not a check. It marks a domain
-// verified without proving anything about DNS — for split-horizon setups,
-// internal TLDs, or a registrar outage, where the alternative is the domain
-// never working. The audit entry records it as `admin_override` so the
-// difference survives.
+// Admin domain list: every verified-domain claim on the instance, personal
+// and team. An admin can force or withdraw verification (an audited
+// override) or remove a claim; each asks first.
 
 import {
   Avatar,
   Badge,
   Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
-  Dropdown,
-  Input,
-  MessageBar,
-  Option,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
-  Text,
-  Tooltip,
+  Menu,
+  MenuDivider,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  Skeleton,
+  SkeletonItem,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import {
-  CheckmarkCircleRegular,
   DeleteRegular,
-  DismissCircleRegular,
-  SearchRegular,
+  GlobeRegular,
+  MoreHorizontalRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
-import { ApiError } from "../../lib/api";
+import { ApiError, type AdminDomain } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
-import type { AdminDomain } from "../../lib/api";
-import { CopyIdButton } from "../../components/CopyIdButton";
-import { Pagination } from "../../components/Pagination";
-import { SkeletonTableRows } from "../../components/Skeletons";
-import { useToastMessage } from "../../lib/useToastMessage";
 import { formatDate } from "../../lib/datetime";
+import { useConfirm } from "../../lib/useConfirm";
+import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
+import { useToastMessage } from "../../lib/useToastMessage";
+import { usePageClamp } from "../../lib/usePageClamp";
+import {
+  DataList,
+  DataListName,
+  DataListRow,
+  type DataListColumn,
+} from "../../components/DataList";
+import { EmptyState } from "../../components/EmptyState";
+import { ListSearch } from "../../components/ListSearch";
+import { Pagination } from "../../components/Pagination";
+import { Segmented } from "../../components/Segmented";
+import { SettingsToast } from "../../components/Settings";
 
 const PAGE_SIZE = 20;
+type Filter = "all" | "1" | "0";
 
 const useStyles = makeStyles({
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-    minWidth: 0,
-    flex: 1,
-  },
-  toolbar: { display: "flex", gap: "8px", flexWrap: "wrap" },
-  search: { flexGrow: 1, minWidth: "200px" },
-  tableScroll: { overflowX: "auto" },
+  toast: { position: "sticky", top: "8px", zIndex: 2, marginBottom: "12px" },
   domain: { fontFamily: tokens.fontFamilyMonospace },
-  owner: { display: "flex", alignItems: "center", gap: "6px" },
-  muted: { color: tokens.colorNeutralForeground3 },
+  owner: {
+    color: tokens.colorNeutralForeground1,
+    textDecorationLine: "none",
+    ":hover": { textDecorationLine: "underline" },
+  },
+  danger: { color: tokens.colorPaletteRedForeground1 },
 });
 
 export function AdminDomains() {
@@ -78,17 +64,14 @@ export function AdminDomains() {
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const { message, showMsg } = useToastMessage();
+  const { confirm, confirmDialog } = useConfirm();
 
   const [page, setPage] = useState(1);
-  const [searchDraft, setSearchDraft] = useState("");
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "1" | "0">("all");
-  const [pendingDelete, setPendingDelete] = useState<AdminDomain | null>(null);
-  const [pendingVerify, setPendingVerify] = useState<AdminDomain | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const { query, setQuery, search } = useDebouncedSearch(() => setPage(1));
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isFetching } = useQuery({
     queryKey: ["admin-domains", page, search, filter],
     queryFn: () =>
       api.adminListDomains({
@@ -98,273 +81,232 @@ export function AdminDomains() {
         verified: filter === "all" ? undefined : filter,
       }),
   });
+  const domains = data?.domains ?? [];
+  const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
-  const invalidate = () =>
-    qc.invalidateQueries({ queryKey: ["admin-domains"] });
-
-  const setVerified = useMutation({
-    mutationFn: (v: { id: string; verified: boolean }) =>
-      api.adminSetDomainVerified(v.id, v.verified),
-    onSuccess: async (res) => {
-      await invalidate();
-      setPendingVerify(null);
-      showMsg("success", res.message);
-    },
-    onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string) => api.adminDeleteDomain(id),
-    onSuccess: async (res) => {
-      await invalidate();
-      setPendingDelete(null);
-      showMsg("success", res.message);
-    },
-    onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
-  });
-
-  const applySearch = () => {
-    setSearch(searchDraft.trim());
-    setPage(1);
+  const [busy, setBusy] = useState<string | null>(null);
+  const run = async (
+    id: string,
+    action: () => Promise<unknown>,
+    done: string,
+  ) => {
+    setBusy(id);
+    try {
+      await action();
+      await qc.invalidateQueries({ queryKey: ["admin-domains"] });
+      showMsg("success", done);
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.error"),
+      );
+    } finally {
+      setBusy(null);
+    }
   };
 
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const forceVerify = async (row: AdminDomain) => {
+    const ok = await confirm({
+      title: t("admin.domainForceVerifyTitle"),
+      body: t("admin.domainForceVerifyBody", { domain: row.domain }),
+      confirmLabel: t("admin.domainForceVerify"),
+    });
+    if (ok)
+      await run(
+        row.id,
+        () => api.adminSetDomainVerified(row.id, true),
+        t("admin.domainVerifiedDone"),
+      );
+  };
+  const unverify = async (row: AdminDomain) => {
+    const ok = await confirm({
+      title: t("admin.domainUnverifyTitle"),
+      body: t("admin.domainUnverifyBody", { domain: row.domain }),
+      confirmLabel: t("admin.domainUnverify"),
+    });
+    if (ok)
+      await run(
+        row.id,
+        () => api.adminSetDomainVerified(row.id, false),
+        t("admin.domainUnverifiedDone"),
+      );
+  };
+  const remove = async (row: AdminDomain) => {
+    const ok = await confirm({
+      title: t("admin.domainDeleteTitle"),
+      body: t("admin.domainDeleteBody", { domain: row.domain }),
+      confirmLabel: t("common.delete"),
+    });
+    if (ok)
+      await run(
+        row.id,
+        () => api.adminDeleteDomain(row.id),
+        t("common.deletedDone"),
+      );
+  };
+
+  const columns: DataListColumn[] = [
+    { label: t("admin.domainHeader"), width: "minmax(0, 2fr)" },
+    {
+      label: t("admin.ownerHeader"),
+      width: "minmax(0, 1.4fr)",
+      secondary: true,
+    },
+    { label: t("admin.statusHeader"), width: "100px" },
+    { label: t("admin.addedHeader"), width: "100px", secondary: true },
+    { label: "", width: "32px", end: true },
+  ];
+
+  const owner = (row: AdminDomain) =>
+    row.team_id ? (
+      <Link to={`/teams/${row.team_id}`} className={styles.owner}>
+        <DataListName
+          icon={
+            <Avatar
+              name={row.team_name ?? ""}
+              image={row.team_avatar ? { src: row.team_avatar } : undefined}
+              size={20}
+            />
+          }
+          name={row.team_name ?? row.team_id}
+        />
+      </Link>
+    ) : row.user_id ? (
+      <Link to={`/admin/users/${row.user_id}`} className={styles.owner}>
+        @{row.owner_username ?? row.user_id}
+      </Link>
+    ) : (
+      "—"
+    );
 
   return (
-    <div className={styles.root}>
-      {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
-
-      <div className={styles.toolbar}>
-        <Input
-          className={styles.search}
-          value={searchDraft}
-          placeholder={t("admin.domainSearch")}
-          contentBefore={<SearchRegular />}
-          onChange={(_, d) => setSearchDraft(d.value)}
-          onKeyDown={(e) => e.key === "Enter" && applySearch()}
-        />
-        <Dropdown
-          value={t(
-            filter === "all"
-              ? "admin.domainFilterAll"
-              : filter === "1"
-                ? "admin.verifiedStatus"
-                : "admin.unverifiedStatus",
-          )}
-          selectedOptions={[filter]}
-          onOptionSelect={(_, d) => {
-            setFilter((d.optionValue as "all" | "1" | "0") ?? "all");
-            setPage(1);
-          }}
-        >
-          <Option value="all" text={t("admin.domainFilterAll")}>
-            {t("admin.domainFilterAll")}
-          </Option>
-          <Option value="1" text={t("admin.verifiedStatus")}>
-            {t("admin.verifiedStatus")}
-          </Option>
-          <Option value="0" text={t("admin.unverifiedStatus")}>
-            {t("admin.unverifiedStatus")}
-          </Option>
-        </Dropdown>
-        <Button onClick={applySearch}>{t("common.search")}</Button>
-      </div>
-
-      <div className={styles.tableScroll}>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.domainHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.ownerHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.statusHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.addedHeader")}</TableHeaderCell>
-              <TableHeaderCell style={{ width: 1 }} />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <SkeletonTableRows rows={8} cols={5} />
-            ) : data?.domains.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5}>
-                  <Text className={styles.muted}>{t("admin.noDomains")}</Text>
-                </TableCell>
-              </TableRow>
-            ) : (
-              data?.domains.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <Text className={styles.domain}>{row.domain}</Text>
-                  </TableCell>
-                  <TableCell>
-                    {row.team_id ? (
-                      <Button
-                        appearance="subtle"
-                        size="small"
-                        onClick={() => navigate(`/teams/${row.team_id}`)}
-                      >
-                        <span className={styles.owner}>
-                          <Avatar
-                            name={row.team_name ?? ""}
-                            image={
-                              row.team_avatar
-                                ? { src: row.team_avatar }
-                                : undefined
-                            }
-                            size={20}
-                          />
-                          {row.team_name ?? row.team_id}
-                        </span>
-                      </Button>
-                    ) : row.user_id ? (
-                      <Button
-                        appearance="subtle"
-                        size="small"
-                        onClick={() => navigate(`/admin/users/${row.user_id}`)}
-                      >
-                        @{row.owner_username ?? row.user_id}
-                      </Button>
-                    ) : (
-                      <Text className={styles.muted}>—</Text>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      appearance="tint"
-                      color={row.verified ? "success" : "subtle"}
-                    >
-                      {row.verified
-                        ? t("admin.verifiedStatus")
-                        : t("admin.unverifiedStatus")}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Text size={200}>{formatDate(row.created_at)}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <CopyIdButton id={row.id} />
-                      {row.verified ? (
-                        <Tooltip
-                          relationship="label"
-                          content={t("admin.domainUnverify")}
-                        >
-                          <Button
-                            size="small"
-                            appearance="subtle"
-                            icon={<DismissCircleRegular />}
-                            onClick={() =>
-                              setVerified.mutate({
-                                id: row.id,
-                                verified: false,
-                              })
-                            }
-                          />
-                        </Tooltip>
-                      ) : (
-                        <Tooltip
-                          relationship="label"
-                          content={t("admin.domainForceVerify")}
-                        >
-                          <Button
-                            size="small"
-                            appearance="subtle"
-                            icon={<CheckmarkCircleRegular />}
-                            onClick={() => setPendingVerify(row)}
-                          />
-                        </Tooltip>
-                      )}
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        icon={<DeleteRegular />}
-                        aria-label={t("common.delete")}
-                        onClick={() => setPendingDelete(row)}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {totalPages > 1 && (
-        <Pagination
-          page={page}
-          pageCount={totalPages}
-          total={data?.total}
-          disabled={isLoading || isFetching}
-          onChange={setPage}
-        />
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+      {message && (
+        <div className={styles.toast}>
+          <SettingsToast message={message} />
+        </div>
       )}
 
-      <Dialog
-        open={pendingVerify !== null}
-        onOpenChange={(_, d) => !d.open && setPendingVerify(null)}
+      <ListSearch
+        value={query}
+        onChange={setQuery}
+        placeholder={t("admin.domainSearch")}
       >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t("admin.domainForceVerifyTitle")}</DialogTitle>
-            <DialogContent>
-              <Text block>
-                {t("admin.domainForceVerifyBody", {
-                  domain: pendingVerify?.domain ?? "",
-                })}
-              </Text>
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button>{t("common.cancel")}</Button>
-              </DialogTrigger>
-              <Button
-                appearance="primary"
-                disabled={setVerified.isPending}
-                onClick={() =>
-                  pendingVerify &&
-                  setVerified.mutate({ id: pendingVerify.id, verified: true })
-                }
-              >
-                {t("admin.domainForceVerify")}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+        <Segmented
+          label={t("admin.statusHeader")}
+          value={filter}
+          onChange={(v) => {
+            setFilter(v);
+            setPage(1);
+          }}
+          options={[
+            { value: "all", label: t("admin.domainFilterAll") },
+            { value: "1", label: t("admin.verifiedStatus") },
+            { value: "0", label: t("admin.unverifiedStatus") },
+          ]}
+        />
+      </ListSearch>
 
-      <Dialog
-        open={pendingDelete !== null}
-        onOpenChange={(_, d) => !d.open && setPendingDelete(null)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t("admin.domainDeleteTitle")}</DialogTitle>
-            <DialogContent>
-              <Text>
-                {t("admin.domainDeleteBody", {
-                  domain: pendingDelete?.domain ?? "",
-                })}
-              </Text>
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button>{t("common.cancel")}</Button>
-              </DialogTrigger>
-              <Button
-                appearance="primary"
-                style={{ background: tokens.colorPaletteRedBackground3 }}
-                disabled={remove.isPending}
-                onClick={() => pendingDelete && remove.mutate(pendingDelete.id)}
-              >
-                {t("common.delete")}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+      {isFetching && !data ? (
+        <Skeleton aria-busy>
+          <DataList columns={columns}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <DataListRow
+                key={i}
+                cells={columns.map((_, c) => (
+                  <SkeletonItem
+                    key={c}
+                    size={12}
+                    style={{ width: c === 0 ? `${35 + (i % 3) * 12}%` : 60 }}
+                  />
+                ))}
+              />
+            ))}
+          </DataList>
+        </Skeleton>
+      ) : domains.length === 0 ? (
+        <EmptyState
+          icon={<GlobeRegular />}
+          title={
+            search || filter !== "all"
+              ? t("teams.noResultsMatch")
+              : t("admin.noDomains")
+          }
+        />
+      ) : (
+        <>
+          <DataList columns={columns}>
+            {domains.map((row) => (
+              <DataListRow
+                key={row.id}
+                cells={[
+                  <span key="d" className={styles.domain}>
+                    {row.domain}
+                  </span>,
+                  owner(row),
+                  <Badge
+                    key="s"
+                    appearance="tint"
+                    size="small"
+                    color={row.verified ? "success" : "warning"}
+                  >
+                    {row.verified
+                      ? t("admin.verifiedStatus")
+                      : t("admin.unverifiedStatus")}
+                  </Badge>,
+                  formatDate(row.created_at),
+                  <Menu key="m">
+                    <MenuTrigger disableButtonEnhancement>
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<MoreHorizontalRegular />}
+                        disabled={busy === row.id}
+                        aria-label={t("admin.domainActions", {
+                          domain: row.domain,
+                        })}
+                      />
+                    </MenuTrigger>
+                    <MenuPopover>
+                      <MenuList>
+                        {row.verified ? (
+                          <MenuItem onClick={() => void unverify(row)}>
+                            {t("admin.domainUnverify")}
+                          </MenuItem>
+                        ) : (
+                          <MenuItem onClick={() => void forceVerify(row)}>
+                            {t("admin.domainForceVerify")}
+                          </MenuItem>
+                        )}
+                        <MenuDivider />
+                        <MenuItem
+                          icon={<DeleteRegular />}
+                          className={styles.danger}
+                          onClick={() => void remove(row)}
+                        >
+                          {t("common.delete")}
+                        </MenuItem>
+                      </MenuList>
+                    </MenuPopover>
+                  </Menu>,
+                ]}
+              />
+            ))}
+          </DataList>
+          {(total > PAGE_SIZE || page > 1) && (
+            <Pagination
+              page={page}
+              pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
+              total={total}
+              onChange={setPage}
+              disabled={isFetching}
+            />
+          )}
+        </>
+      )}
+
+      {confirmDialog}
     </div>
   );
 }

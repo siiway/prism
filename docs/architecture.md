@@ -105,8 +105,7 @@ worker/
 │   ├── redirectUri.ts      # OAuth redirect URI validation, registered-domain check
 │   ├── socialOAuthState.ts # Atomic, browser-bound social OAuth state
 │   ├── cookies.ts          # Session + social OAuth correlation cookie helpers
-│   ├── lockdown.ts         # User / team deletion lockdown (env-var driven)
-│   └── logger.ts           # Request logger middleware
+│   └── lockdown.ts         # User / team deletion lockdown (env-var driven)
 │
 ├── middleware/
 │   ├── auth.ts             # requireAuth / requireAdmin / optionalAuth
@@ -139,7 +138,7 @@ worker/
     ├── site.ts             # GET /api/site (public site config)
     ├── assets.ts           # /api/assets/* — uploaded avatars, app icons (R2 fallback to inline)
     ├── wellknown.ts        # /.well-known/openid-configuration, /.well-known/jwks.json
-    └── admin.ts            # Admin: config, users, apps, teams, audit log, request logs, secrets migration
+    └── admin.ts            # Admin: config, users, apps, teams, audit log, secrets migration
 ```
 
 Types that both tiers must agree on — `SiteConfig`, the capability
@@ -378,11 +377,10 @@ round-trip correctly. Sensitive keys (listed in `SENSITIVE_CONFIG_KEYS` in
 `secretCrypto.ts`) are AES-GCM encrypted on write and transparently decrypted
 on read via `getDecryptedConfig()`.
 
-### `audit_log` / `request_logs` / `login_errors`
+### `audit_log` / `login_errors`
 
-Three independent diagnostic tables. `audit_log` is the high-level "important
-state changed" log. `request_logs` is per-Worker-request operational telemetry
-(method, path, status, duration, IP, UA, optional user/audit linkage).
+Two independent diagnostic tables. `audit_log` is the high-level "important
+state changed" log.
 `login_errors` records failed authentication attempts with retention controlled
 by `login_error_retention_days`.
 

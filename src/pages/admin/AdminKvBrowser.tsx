@@ -1,7 +1,8 @@
 // Key-value browser — the KV half of Admin → Database.
 //
 // KV has no schema, so there is no table list to lean on: navigation is a
-// prefix box and a key list, which is what the data actually looks like.
+// namespace, a prefix box and a key list, which is what the data actually
+// looks like. A key opens in place of the list.
 //
 // Keys holding signing material come back flagged and without their value.
 // The UI says so plainly rather than rendering an empty box, because "this is
@@ -11,25 +12,12 @@
 import {
   Badge,
   Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
-  Dropdown,
   Field,
   Input,
   MessageBar,
-  Option,
+  Skeleton,
+  SkeletonItem,
   Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
   Text,
   Textarea,
   makeStyles,
@@ -38,127 +26,407 @@ import {
 import {
   AddRegular,
   ArrowClockwiseRegular,
+  ChevronLeftRegular,
+  ChevronRightRegular,
   DeleteRegular,
-  EyeRegular,
+  KeyRegular,
   LockClosedRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
-import type { KvEntry } from "../../lib/api";
 import { formatDateTime } from "../../lib/datetime";
+import { useConfirm } from "../../lib/useConfirm";
+import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
+import {
+  DataList,
+  DataListName,
+  DataListRow,
+  type DataListColumn,
+} from "../../components/DataList";
+import { EmptyState } from "../../components/EmptyState";
+import { ListSearch } from "../../components/ListSearch";
+import { Select } from "../../components/Select";
+import {
+  SettingsBody,
+  SettingsCard,
+  SettingsFooter,
+} from "../../components/Settings";
+import { SkeletonSettingsCard } from "../../components/Skeletons";
 
 const useStyles = makeStyles({
   pane: { display: "flex", flexDirection: "column", gap: "12px", minWidth: 0 },
-  toolbar: {
+  head: {
     display: "flex",
-    gap: "8px",
-    alignItems: "flex-end",
+    alignItems: "center",
+    gap: "12px",
     flexWrap: "wrap",
   },
-  grow: { flexGrow: 1, minWidth: "220px" },
-  tableScroll: { overflowX: "auto" },
+  ns: { width: "180px" },
+  muted: { color: tokens.colorNeutralForeground3 },
+  mono: { fontFamily: tokens.fontFamilyMonospace },
   key: {
     fontFamily: tokens.fontFamilyMonospace,
     fontSize: tokens.fontSizeBase200,
-    wordBreak: "break-all",
+    overflowWrap: "anywhere",
   },
-  value: {
+  value: { fontFamily: tokens.fontFamilyMonospace, minHeight: "220px" },
+  preview: {
     fontFamily: tokens.fontFamilyMonospace,
-    minHeight: "180px",
-    width: "100%",
+    fontSize: tokens.fontSizeBase200,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    maxHeight: "200px",
+    overflowY: "auto",
+    margin: "8px 0 0",
+    padding: "10px 12px",
+    borderRadius: tokens.borderRadiusMedium,
+    background: tokens.colorNeutralBackground2,
   },
-  muted: { color: tokens.colorNeutralForeground3 },
-  row: { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" },
+  pager: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: "4px",
+  },
+  footerStart: { marginRight: "auto" },
+  danger: { color: tokens.colorPaletteRedForeground1 },
 });
 
-export function AdminKvBrowser({
+type ShowMsg = (type: "success" | "error", text: string) => void;
+
+const errorText = (err: unknown, fallback: string) =>
+  err instanceof ApiError ? err.message : fallback;
+
+/** One key, opened in place of the list; `key` null writes a new one. */
+function KeyEditor({
+  ns,
+  initialKey,
+  writable,
+  onDone,
   showMsg,
 }: {
-  showMsg: (type: "success" | "error", text: string) => void;
+  ns: string;
+  /** null = a new key; the prefix being browsed seeds its name. */
+  initialKey: { key: string; isNew: boolean };
+  writable: boolean;
+  onDone: () => void;
+  showMsg: ShowMsg;
 }) {
+  const api = useApi();
+  const styles = useStyles();
+  const qc = useQueryClient();
+  const { t } = useTranslation();
+  const { confirm, confirmDialog } = useConfirm();
+  const { isNew } = initialKey;
+
+  const { data: entry, error } = useQuery({
+    queryKey: ["admin-kv-entry", ns, initialKey.key],
+    queryFn: () => api.adminKvGet(ns, initialKey.key),
+    enabled: !isNew,
+    retry: false,
+  });
+
+  const [key, setKey] = useState(initialKey.key);
+  const [value, setValue] = useState<string | null>(null);
+  const [ttl, setTtl] = useState("");
+  const [busy, setBusy] = useState<"save" | "delete" | null>(null);
+
+  const current = value ?? entry?.value ?? "";
+  const changed = value !== null && current !== (entry?.value ?? "");
+  // A new key may hold an empty value; an existing one saves when its value
+  // or expiry changes.
+  const canSave = isNew ? !!key.trim() : changed || !!ttl.trim();
+  const ttlValid = !ttl.trim() || (/^\d+$/.test(ttl) && Number(ttl) >= 60);
+
+  // Drop cached values rather than refetching them: the editor is about to
+  // close, and refetching a key that was just deleted would only 404.
+  const refresh = async () => {
+    qc.removeQueries({ queryKey: ["admin-kv-entry", ns], type: "inactive" });
+    await qc.invalidateQueries({ queryKey: ["admin-kv-keys", ns] });
+    await qc.invalidateQueries({
+      queryKey: ["admin-kv-entry", ns],
+      refetchType: "none",
+    });
+  };
+
+  const save = async () => {
+    if (busy || !key.trim()) return;
+    const preview =
+      current.length > 400 ? `${current.slice(0, 400)}…` : current;
+    const ok = await confirm({
+      title: isNew
+        ? t("admin.kvConfirmNewTitle")
+        : t("admin.kvConfirmSaveTitle"),
+      body: (
+        <>
+          <Text block className={styles.key}>
+            {key}
+          </Text>
+          <Text block style={{ marginTop: 8 }}>
+            {ttl.trim()
+              ? t("admin.kvConfirmSaveBodyTtl", {
+                  namespace: ns,
+                  seconds: Number(ttl),
+                })
+              : t("admin.kvConfirmSaveBody", { namespace: ns })}
+          </Text>
+          <pre className={styles.preview}>
+            {preview || t("admin.kvEmptyValue")}
+          </pre>
+        </>
+      ),
+      confirmLabel: t("common.save"),
+    });
+    if (!ok) return;
+    setBusy("save");
+    try {
+      await api.adminKvPut(ns, key, current, ttl.trim() ? Number(ttl) : null);
+      await refresh();
+      showMsg("success", t("admin.kvWrittenDone"));
+      onDone();
+    } catch (err) {
+      showMsg("error", errorText(err, t("common.saveFailed")));
+      setBusy(null);
+    }
+  };
+
+  const remove = async () => {
+    const ok = await confirm({
+      title: entry?.protected
+        ? t("admin.kvRotateTitle")
+        : t("admin.kvDeleteTitle"),
+      body: (
+        <>
+          <Text block className={styles.key}>
+            {key}
+          </Text>
+          <Text block style={{ marginTop: 8 }}>
+            {entry?.protected
+              ? t("admin.kvRotateBody")
+              : t("admin.kvDeleteBody", { namespace: ns })}
+          </Text>
+        </>
+      ),
+      confirmLabel: entry?.protected ? t("admin.kvRotate") : t("common.delete"),
+    });
+    if (!ok) return;
+    setBusy("delete");
+    try {
+      await api.adminKvDelete(ns, key);
+      await refresh();
+      showMsg("success", t("common.deletedDone"));
+      onDone();
+    } catch (err) {
+      showMsg("error", errorText(err, t("common.error")));
+      setBusy(null);
+    }
+  };
+
+  if (!isNew && !entry && !error) return <SkeletonSettingsCard rows={3} form />;
+
+  const editable = writable && !entry?.protected;
+
+  return (
+    <SettingsCard
+      title={isNew ? t("admin.kvNewKey") : key}
+      description={
+        isNew
+          ? t("admin.kvNewKeyDesc", { namespace: ns })
+          : t("admin.kvKeyIn", { namespace: ns })
+      }
+      badge={
+        entry?.protected ? (
+          <Badge
+            appearance="tint"
+            color="warning"
+            size="small"
+            icon={<LockClosedRegular />}
+          >
+            {t("admin.kvProtected")}
+          </Badge>
+        ) : undefined
+      }
+    >
+      <SettingsBody>
+        {error ? (
+          <MessageBar intent="error">
+            {errorText(error, t("common.error"))}
+          </MessageBar>
+        ) : entry?.protected ? (
+          <MessageBar intent="warning">
+            {t("admin.kvProtectedReason")}
+          </MessageBar>
+        ) : (
+          <>
+            {entry && !entry.exists && (
+              <MessageBar intent="info">{t("admin.kvGone")}</MessageBar>
+            )}
+            {isNew && (
+              <Field label={t("admin.kvKeyHeader")} required>
+                <Input
+                  className={styles.mono}
+                  autoFocus
+                  value={key}
+                  onChange={(_, d) => setKey(d.value)}
+                />
+              </Field>
+            )}
+            <Field label={t("admin.kvValueLabel")}>
+              <Textarea
+                className={styles.value}
+                resize="vertical"
+                readOnly={!editable}
+                value={current}
+                onChange={(_, d) => setValue(d.value)}
+              />
+            </Field>
+            {editable && (
+              <Field
+                label={t("admin.kvTtlLabel")}
+                {...(ttlValid
+                  ? { hint: t("admin.kvTtlHint") }
+                  : {
+                      validationState: "error" as const,
+                      validationMessage: t("admin.kvTtlInvalid"),
+                    })}
+              >
+                <Input
+                  type="number"
+                  min={60}
+                  value={ttl}
+                  onChange={(_, d) => setTtl(d.value)}
+                />
+              </Field>
+            )}
+          </>
+        )}
+      </SettingsBody>
+      <SettingsFooter>
+        {writable && !isNew && entry?.exists && (
+          <div className={styles.footerStart}>
+            <Button
+              icon={<DeleteRegular />}
+              className={styles.danger}
+              disabled={busy !== null}
+              onClick={() => void remove()}
+            >
+              {busy === "delete" ? (
+                <Spinner size="tiny" />
+              ) : entry.protected ? (
+                t("admin.kvRotate")
+              ) : (
+                t("common.delete")
+              )}
+            </Button>
+          </div>
+        )}
+        <Button disabled={busy !== null} onClick={onDone}>
+          {editable ? t("common.cancel") : t("common.close")}
+        </Button>
+        {editable && (
+          <Button
+            appearance="primary"
+            disabled={busy !== null || !canSave || !ttlValid}
+            onClick={() => void save()}
+          >
+            {busy === "save" ? <Spinner size="tiny" /> : t("common.save")}
+          </Button>
+        )}
+      </SettingsFooter>
+      {confirmDialog}
+    </SettingsCard>
+  );
+}
+
+export function AdminKvBrowser({ showMsg }: { showMsg: ShowMsg }) {
   const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const { confirm, confirmDialog } = useConfirm();
 
   const [ns, setNs] = useState("sessions");
-  const [prefixDraft, setPrefixDraft] = useState("");
-  const [prefix, setPrefix] = useState("");
   // KV pages with an opaque cursor rather than an offset, so "back" is a
   // stack of the cursors already seen rather than arithmetic.
   const [cursors, setCursors] = useState<string[]>([]);
-  const [viewing, setViewing] = useState<KvEntry | null>(null);
-  const [editing, setEditing] = useState<{ key: string; value: string } | null>(
+  const {
+    query,
+    setQuery,
+    search: prefix,
+  } = useDebouncedSearch(() => setCursors([]));
+  const [open, setOpen] = useState<{ key: string; isNew: boolean } | null>(
     null,
   );
-  const [ttl, setTtl] = useState("");
-  const [purging, setPurging] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   const status = useQuery({
     queryKey: ["admin-kv-status"],
     queryFn: () => api.adminKvStatus(),
   });
   // KV_CONSOLE is allowed to differ from D1_CONSOLE, so this reads its own
-  // mode rather than inheriting the database tab's. Assume writable until
+  // mode rather than inheriting the database view's. Assume writable until
   // told otherwise so the controls don't flicker in; the server refuses the
   // write either way.
   const writable = status.data?.writable ?? true;
+  const namespaces = status.data?.namespaces ?? [
+    { key: "sessions" },
+    { key: "cache" },
+  ];
 
   const cursor = cursors[cursors.length - 1];
   const queryKey = ["admin-kv-keys", ns, prefix, cursor ?? ""];
-  const { data, isLoading, isFetching, error } = useQuery({
+  const { data, isFetching, error } = useQuery({
     queryKey,
     queryFn: () => api.adminKvKeys(ns, { prefix: prefix || undefined, cursor }),
     retry: false,
   });
+  const keys = data?.keys ?? [];
 
   const refresh = () =>
     qc.invalidateQueries({ queryKey: ["admin-kv-keys", ns] });
 
-  const openKey = useMutation({
-    mutationFn: (key: string) => api.adminKvGet(ns, key),
-    onSuccess: (entry) => setViewing(entry),
-    onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
-  });
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.adminKvPut(
-        ns,
-        editing!.key,
-        editing!.value,
-        ttl.trim() ? Number(ttl) : null,
+  const remove = async (key: string) => {
+    const ok = await confirm({
+      title: t("admin.kvDeleteTitle"),
+      body: (
+        <>
+          <Text block className={styles.key}>
+            {key}
+          </Text>
+          <Text block style={{ marginTop: 8 }}>
+            {t("admin.kvDeleteBody", { namespace: ns })}
+          </Text>
+        </>
       ),
-    onSuccess: async (res) => {
+      confirmLabel: t("common.delete"),
+    });
+    if (!ok) return;
+    setBusy(key);
+    try {
+      await api.adminKvDelete(ns, key);
       await refresh();
-      setEditing(null);
-      setTtl("");
-      showMsg("success", res.message);
-    },
-    onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
-  });
+      showMsg("success", t("common.deletedDone"));
+    } catch (err) {
+      showMsg("error", errorText(err, t("common.error")));
+    } finally {
+      setBusy(null);
+    }
+  };
 
-  const remove = useMutation({
-    mutationFn: (key: string) => api.adminKvDelete(ns, key),
-    onSuccess: async (res) => {
+  const purge = async () => {
+    const ok = await confirm({
+      title: t("admin.kvPurgeTitle"),
+      body: t("admin.kvPurgeBody", { prefix, namespace: ns }),
+      confirmLabel: t("admin.kvPurgeConfirm"),
+    });
+    if (!ok) return;
+    setBusy("purge");
+    try {
+      const res = await api.adminKvPurge(ns, prefix);
       await refresh();
-      setViewing(null);
-      showMsg("success", res.message);
-    },
-    onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
-  });
-
-  const purge = useMutation({
-    mutationFn: () => api.adminKvPurge(ns, prefix),
-    onSuccess: async (res) => {
-      await refresh();
-      setPurging(false);
       showMsg(
         "success",
         t("admin.kvPurged", {
@@ -166,326 +434,200 @@ export function AdminKvBrowser({
           skipped: res.skipped_protected,
         }) + (res.more ? ` ${t("admin.kvPurgeMore")}` : ""),
       );
-    },
-    onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
-  });
+    } catch (err) {
+      showMsg("error", errorText(err, t("common.error")));
+    } finally {
+      setBusy(null);
+    }
+  };
 
-  const namespaces = status.data?.namespaces ?? [
-    { key: "sessions", description: "" },
-    { key: "cache", description: "" },
+  if (open)
+    return (
+      <div className={styles.pane}>
+        <KeyEditor
+          key={`${ns}:${open.key}:${open.isNew}`}
+          ns={ns}
+          initialKey={open}
+          writable={writable}
+          showMsg={showMsg}
+          onDone={() => setOpen(null)}
+        />
+      </div>
+    );
+
+  const columns: DataListColumn[] = [
+    { label: t("admin.kvKeyHeader"), width: "minmax(0, 3fr)" },
+    {
+      label: t("admin.kvExpiresHeader"),
+      width: "minmax(0, 1fr)",
+      secondary: true,
+    },
+    ...(writable ? [{ label: "", width: "32px", end: true }] : []),
   ];
 
   return (
     <div className={styles.pane}>
-      <div className={styles.toolbar}>
-        <Field label={t("admin.kvNamespace")}>
-          <Dropdown
+      <div className={styles.head}>
+        <div className={styles.ns}>
+          <Select
+            aria-label={t("admin.kvNamespace")}
             value={ns}
-            selectedOptions={[ns]}
-            onOptionSelect={(_, d) => {
-              setNs(d.optionValue ?? "sessions");
+            onChange={(_, d) => {
+              setNs(d.value);
               setCursors([]);
             }}
           >
             {namespaces.map((n) => (
-              <Option key={n.key} value={n.key} text={n.key}>
-                {n.description ? `${n.key} — ${n.description}` : n.key}
-              </Option>
+              <option key={n.key} value={n.key}>
+                {n.key}
+              </option>
             ))}
-          </Dropdown>
-        </Field>
-        <Field
-          className={styles.grow}
-          label={t("admin.kvPrefix")}
-          hint={t("admin.kvPrefixHint")}
-        >
-          <Input
-            value={prefixDraft}
-            placeholder="system:"
-            onChange={(_, d) => setPrefixDraft(d.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                setPrefix(prefixDraft.trim());
-                setCursors([]);
-              }
-            }}
-          />
-        </Field>
-        <Button
-          onClick={() => {
-            setPrefix(prefixDraft.trim());
-            setCursors([]);
-          }}
-        >
-          {t("admin.dbApplyFilter")}
-        </Button>
+          </Select>
+        </div>
+        <Text size={200} className={styles.muted}>
+          {t(`admin.kvNamespaceDesc.${ns}`, { defaultValue: "" })}
+        </Text>
+      </div>
+
+      <ListSearch
+        value={query}
+        onChange={setQuery}
+        placeholder={t("admin.kvPrefixPlaceholder")}
+      >
         <Button
           icon={<ArrowClockwiseRegular />}
+          aria-label={t("common.refresh")}
           onClick={() => void qc.invalidateQueries({ queryKey })}
-        >
-          {t("common.refresh")}
-        </Button>
-        {writable && (
-          <>
-            <Button
-              icon={<AddRegular />}
-              appearance="primary"
-              onClick={() => setEditing({ key: prefix, value: "" })}
-            >
-              {t("admin.kvNewKey")}
-            </Button>
-            <Button
-              icon={<DeleteRegular />}
-              disabled={!prefix}
-              onClick={() => setPurging(true)}
-            >
-              {t("admin.kvPurgePrefix")}
-            </Button>
-          </>
+        />
+        {writable && prefix && (
+          <Button
+            icon={<DeleteRegular />}
+            className={styles.danger}
+            disabled={busy !== null}
+            onClick={() => void purge()}
+          >
+            {busy === "purge" ? (
+              <Spinner size="tiny" />
+            ) : (
+              t("admin.kvPurgePrefix")
+            )}
+          </Button>
         )}
-      </div>
+        {writable && (
+          <Button
+            icon={<AddRegular />}
+            appearance="primary"
+            onClick={() => setOpen({ key: prefix, isNew: true })}
+          >
+            {t("admin.kvNewKey")}
+          </Button>
+        )}
+      </ListSearch>
 
-      {error && (
+      {error ? (
         <MessageBar intent="error">
-          {error instanceof ApiError ? error.message : String(error)}
+          {errorText(error, t("common.error"))}
         </MessageBar>
+      ) : isFetching && !data ? (
+        <Skeleton aria-busy>
+          <DataList columns={columns}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <DataListRow
+                key={i}
+                cells={columns.map((_, c) => (
+                  <SkeletonItem key={c} size={12} style={{ width: "60%" }} />
+                ))}
+              />
+            ))}
+          </DataList>
+        </Skeleton>
+      ) : keys.length === 0 ? (
+        <EmptyState
+          icon={<KeyRegular />}
+          title={prefix ? t("admin.kvNoKeys") : t("admin.kvEmpty")}
+        />
+      ) : (
+        <DataList columns={columns}>
+          {keys.map((row) => (
+            <DataListRow
+              key={row.name}
+              onClick={() => setOpen({ key: row.name, isNew: false })}
+              cells={[
+                <DataListName
+                  key="k"
+                  name={<span className={styles.key}>{row.name}</span>}
+                  badges={
+                    row.protected && (
+                      <Badge
+                        appearance="tint"
+                        color="warning"
+                        size="small"
+                        icon={<LockClosedRegular />}
+                      >
+                        {t("admin.kvProtected")}
+                      </Badge>
+                    )
+                  }
+                />,
+                row.expiration
+                  ? formatDateTime(row.expiration)
+                  : t("admin.kvNoExpiry"),
+                ...(writable
+                  ? [
+                      <span key="del" onClick={(e) => e.stopPropagation()}>
+                        {busy === row.name ? (
+                          <Spinner size="tiny" />
+                        ) : (
+                          !row.protected && (
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              icon={<DeleteRegular />}
+                              className={styles.danger}
+                              aria-label={t("admin.kvDeleteFor", {
+                                key: row.name,
+                              })}
+                              disabled={busy !== null}
+                              onClick={() => void remove(row.name)}
+                            />
+                          )
+                        )}
+                      </span>,
+                    ]
+                  : []),
+              ]}
+            />
+          ))}
+        </DataList>
       )}
 
-      <div className={styles.tableScroll}>
-        <Table size="small">
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.kvKeyHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.kvExpiresHeader")}</TableHeaderCell>
-              <TableHeaderCell>{t("admin.actionsHeader")}</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={3}>
-                  <Spinner size="tiny" />
-                </TableCell>
-              </TableRow>
-            ) : data?.keys.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={3}>
-                  <Text className={styles.muted}>{t("admin.kvNoKeys")}</Text>
-                </TableCell>
-              </TableRow>
-            ) : (
-              data?.keys.map((row) => (
-                <TableRow key={row.name}>
-                  <TableCell>
-                    <div className={styles.row}>
-                      <span className={styles.key}>{row.name}</span>
-                      {row.protected && (
-                        <Badge
-                          appearance="tint"
-                          color="warning"
-                          size="small"
-                          icon={<LockClosedRegular />}
-                        >
-                          {t("admin.kvProtected")}
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {row.expiration ? formatDateTime(row.expiration) : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      size="small"
-                      appearance="subtle"
-                      icon={<EyeRegular />}
-                      aria-label={t("admin.kvView")}
-                      onClick={() => openKey.mutate(row.name)}
-                    />
-                    {writable && (
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        icon={<DeleteRegular />}
-                        aria-label={t("common.delete")}
-                        onClick={() => remove.mutate(row.name)}
-                      />
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div className={styles.row}>
-        {isFetching && <Spinner size="tiny" />}
-        <Button
-          size="small"
-          appearance="subtle"
-          disabled={cursors.length === 0}
-          onClick={() => setCursors((prev) => prev.slice(0, -1))}
-        >
-          {t("common.previous")}
-        </Button>
-        <Button
-          size="small"
-          appearance="subtle"
-          disabled={!data?.cursor}
-          onClick={() =>
-            data?.cursor && setCursors((prev) => [...prev, data.cursor!])
-          }
-        >
-          {t("common.next")}
-        </Button>
-      </div>
-
-      {/* Value viewer */}
-      <Dialog
-        open={viewing !== null}
-        onOpenChange={(_, d) => !d.open && setViewing(null)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>
-              <span className={styles.key}>{viewing?.key}</span>
-            </DialogTitle>
-            <DialogContent>
-              {viewing?.protected ? (
-                <MessageBar intent="warning">
-                  {viewing.reason ?? t("admin.kvProtectedReason")}
-                </MessageBar>
-              ) : (
-                <Textarea
-                  className={styles.value}
-                  readOnly
-                  resize="vertical"
-                  value={viewing?.value ?? ""}
-                />
-              )}
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button>{t("common.close")}</Button>
-              </DialogTrigger>
-              {writable && viewing && !viewing.protected && (
-                <Button
-                  appearance="primary"
-                  onClick={() => {
-                    setEditing({
-                      key: viewing.key,
-                      value: viewing.value ?? "",
-                    });
-                    setViewing(null);
-                  }}
-                >
-                  {t("common.edit")}
-                </Button>
-              )}
-              {writable && viewing?.protected && (
-                <Button
-                  appearance="primary"
-                  onClick={() => remove.mutate(viewing.key)}
-                >
-                  {t("admin.kvRotate")}
-                </Button>
-              )}
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
-
-      {/* Editor */}
-      <Dialog
-        open={editing !== null}
-        onOpenChange={(_, d) => !d.open && setEditing(null)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t("admin.kvWriteTitle")}</DialogTitle>
-            <DialogContent>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12,
-                  paddingTop: 8,
-                }}
-              >
-                <Field label={t("admin.kvKeyHeader")}>
-                  <Input
-                    value={editing?.key ?? ""}
-                    onChange={(_, d) =>
-                      setEditing((prev) => prev && { ...prev, key: d.value })
-                    }
-                  />
-                </Field>
-                <Field label={t("admin.kvValueLabel")}>
-                  <Textarea
-                    className={styles.value}
-                    resize="vertical"
-                    value={editing?.value ?? ""}
-                    onChange={(_, d) =>
-                      setEditing((prev) => prev && { ...prev, value: d.value })
-                    }
-                  />
-                </Field>
-                <Field
-                  label={t("admin.kvTtlLabel")}
-                  hint={t("admin.kvTtlHint")}
-                >
-                  <Input
-                    type="number"
-                    value={ttl}
-                    onChange={(_, d) => setTtl(d.value)}
-                  />
-                </Field>
-              </div>
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button>{t("common.cancel")}</Button>
-              </DialogTrigger>
-              <Button
-                appearance="primary"
-                disabled={!editing?.key.trim() || save.isPending}
-                onClick={() => save.mutate()}
-              >
-                {t("common.save")}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
-
-      {/* Prefix purge */}
-      <Dialog
-        open={purging}
-        onOpenChange={(_, d) => !d.open && setPurging(false)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t("admin.kvPurgeTitle")}</DialogTitle>
-            <DialogContent>
-              <Text>{t("admin.kvPurgeBody", { prefix, namespace: ns })}</Text>
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button>{t("common.cancel")}</Button>
-              </DialogTrigger>
-              <Button
-                appearance="primary"
-                disabled={purge.isPending}
-                onClick={() => purge.mutate()}
-              >
-                {t("admin.kvPurgeConfirm")}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+      {(cursors.length > 0 || data?.cursor) && (
+        <div className={styles.pager}>
+          {isFetching && <Spinner size="tiny" />}
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<ChevronLeftRegular />}
+            disabled={cursors.length === 0 || isFetching}
+            onClick={() => setCursors((prev) => prev.slice(0, -1))}
+          >
+            {t("common.previous")}
+          </Button>
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<ChevronRightRegular />}
+            iconPosition="after"
+            disabled={!data?.cursor || isFetching}
+            onClick={() =>
+              data?.cursor && setCursors((prev) => [...prev, data.cursor!])
+            }
+          >
+            {t("common.next")}
+          </Button>
+        </div>
+      )}
+      {confirmDialog}
     </div>
   );
 }

@@ -125,7 +125,7 @@ app.get("/jobs", (c) =>
 app.post("/jobs/:key/run", async (c) => {
   const key = c.req.param("key");
   const job = JOBS.find((j) => j.key === key);
-  if (!job) return c.json({ error: "Unknown job" }, 404);
+  if (!job) return c.json({ error: "not_found" }, 404);
 
   const admin = c.get("user");
   const meta = auditRequestMeta(c);
@@ -161,9 +161,16 @@ app.post("/jobs/:key/run", async (c) => {
   );
 
   if (error)
-    return c.json({ error, job: job.key, duration_ms: durationMs }, 500);
+    return c.json(
+      {
+        error: "job_failed",
+        params: { detail: error },
+        job: job.key,
+        duration_ms: durationMs,
+      },
+      500,
+    );
   return c.json({
-    message: "Job finished",
     job: job.key,
     // null means the task keeps no count, not that it did nothing.
     processed,

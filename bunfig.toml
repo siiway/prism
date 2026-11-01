@@ -1,0 +1,3 @@
+[test]
+# Virtual modules that Vite provides at build time (see the file).
+preload = ["./tests/setup/search-index.ts"]

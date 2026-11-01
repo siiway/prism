@@ -91,7 +91,7 @@ under name `prism-secrets-key`, then add the binding to `wrangler.jsonc`:
 
 If you skip this binding, encryption/hashing degrades to a no-op and Prism stays
 fully functional with plaintext storage. You can opt in later — the migration
-endpoints in **Admin → Settings → Danger Zone** are idempotent.
+endpoints in **Admin → Maintenance → Danger zone** are idempotent.
 
 ## 3. Run migrations
 
@@ -223,7 +223,7 @@ automatically.
 ## 9. Post-deploy: encrypt secrets
 
 If you bound `SECRETS_KEY`, log in as the admin and visit
-**Admin → Settings → Danger Zone**. Run the two migrations once:
+**Admin → Maintenance → Danger zone**. Run the two migrations once:
 
 - **Migrate secrets to Secrets Store** — encrypts existing site_config secret
   values and OAuth-app/source `client_secret`s.

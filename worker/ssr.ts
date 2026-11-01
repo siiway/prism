@@ -182,9 +182,9 @@ export async function ssrHandler(
     console.error("SSR site prefetch failed:", err);
   }
 
-  // Pick a locale from the i18nextLng cookie (set by the browser-side
-  // detector) or fall back to Accept-Language. Phase 9 wires this through
-  // to a per-request i18next instance; for now we just pass it along.
+  // Locale: the prism_lang cookie (an explicit choice from the account
+  // menu; absent means "system"), else the first language in the browser's
+  // Accept-Language preference order that we support.
   const readCookie = (name: string): string | null => {
     const raw = c.req.header("Cookie");
     if (!raw) return null;
@@ -194,10 +194,25 @@ export async function ssrHandler(
     }
     return null;
   };
-  const cookieLocale = readCookie("i18nextLng");
-  const acceptLang = c.req.header("Accept-Language");
+  const supported = ["en", "zh"];
+  const cookieLocale = readCookie("prism_lang");
+  const preferred = (c.req.header("Accept-Language") ?? "")
+    .split(",")
+    .map((part) => {
+      const [tag, ...params] = part.trim().split(";");
+      const q = params.find((p) => p.trim().startsWith("q="));
+      return {
+        base: tag.toLowerCase().split("-")[0],
+        q: q ? Number(q.trim().slice(2)) || 0 : 1,
+      };
+    })
+    .filter((p) => p.q > 0)
+    .sort((a, b) => b.q - a.q)
+    .find((p) => supported.includes(p.base))?.base;
   const locale =
-    cookieLocale ?? acceptLang?.split(",")[0]?.split("-")[0] ?? "en";
+    cookieLocale && supported.includes(cookieLocale)
+      ? cookieLocale
+      : (preferred ?? "en");
 
   // Resolve color scheme so the SSR pass renders FluentProvider with the
   // same theme the client will hydrate to — otherwise users see a light→

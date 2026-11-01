@@ -1,7 +1,10 @@
-// Admin user management
+// Admin user list: one bordered list, a row per account opening its page
+// (/admin/users/:id), where every change to an account is made. Rows can be
+// selected across pages for bulk activate / deactivate / delete.
 
 import {
   Avatar,
+  Badge,
   Button,
   Checkbox,
   Dialog,
@@ -10,70 +13,139 @@ import {
   DialogContent,
   DialogSurface,
   DialogTitle,
-  DialogTrigger,
-  Dropdown,
   Field,
   Input,
-  MessageBar,
-  MessageBarActions,
-  MessageBarBody,
-  Option,
+  Skeleton,
+  SkeletonItem,
   Spinner,
-  Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
   Text,
-  Tooltip,
   makeStyles,
+  mergeClasses,
   tokens,
 } from "@fluentui/react-components";
 import {
-  DeleteRegular,
+  ChevronRightRegular,
   DismissRegular,
-  EditRegular,
+  PersonRegular,
   SearchRegular,
-  SettingsRegular,
 } from "@fluentui/react-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
+import { formatDate } from "../../lib/datetime";
 import { useToastMessage } from "../../lib/useToastMessage";
-import { CopyIdButton } from "../../components/CopyIdButton";
-import { Pagination } from "../../components/Pagination";
+import { usePageClamp } from "../../lib/usePageClamp";
 import { useAuthStore } from "../../store/auth";
-import type { UserProfile } from "../../lib/api";
-import { SkeletonTableRows } from "../../components/Skeletons";
+import { EmptyState } from "../../components/EmptyState";
+import { Pagination } from "../../components/Pagination";
+import { SettingsToast } from "../../components/Settings";
 
-type AdminUser = UserProfile & { app_count: number; is_active: boolean };
-
-/** Mirrors the server's own per-request cap so the UI can say why the buttons
+const PAGE_SIZE = 20;
+/** Mirrors the server's per-request cap so the UI can say why the buttons
  *  are disabled instead of letting the call fail. */
 const BULK_LIMIT = 50;
+const COLUMNS = "32px minmax(0, 2fr) minmax(0, 1.6fr) 80px 90px 100px 20px";
+const NARROW = "@media (max-width: 768px)";
 
 const useStyles = makeStyles({
-  toolbar: { display: "flex", gap: "8px", marginBottom: "16px" },
-  // Let the table scroll sideways on narrow screens instead of
-  // overflowing the page
-  tableScroll: { overflowX: "auto" },
-  pagination: {
+  toast: { position: "sticky", top: "8px", zIndex: 2, marginBottom: "12px" },
+  toolbar: {
     display: "flex",
     gap: "8px",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    marginTop: "16px",
+    marginBottom: "12px",
+    flexWrap: "wrap",
   },
-  detailGrid: {
+  list: {
+    borderRadius: tokens.borderRadiusXLarge,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    background: tokens.colorNeutralBackground1,
+    overflow: "hidden",
+  },
+  head: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: COLUMNS,
     gap: "12px",
-    "@media (max-width: 500px)": { gridTemplateColumns: "1fr" },
+    alignItems: "center",
+    padding: "6px 16px 6px 8px",
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground3,
+    [NARROW]: { gridTemplateColumns: "32px minmax(0, 1fr)" },
+  },
+  // Shown in place of the column headings while rows are selected.
+  bulk: {
+    display: "flex",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: "8px",
+    minWidth: 0,
+    gridColumn: "2 / -1",
+    color: tokens.colorNeutralForeground1,
+    fontSize: tokens.fontSizeBase300,
+  },
+  bulkWarn: { color: tokens.colorPaletteMarigoldForeground1 },
+  bulkActions: { display: "flex", gap: "6px", marginLeft: "auto" },
+  row: {
+    display: "grid",
+    gridTemplateColumns: COLUMNS,
+    gap: "12px",
+    alignItems: "center",
+    padding: "10px 16px 10px 8px",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    cursor: "pointer",
+    ":hover": { background: tokens.colorNeutralBackground1Hover },
+    [NARROW]: { gridTemplateColumns: "32px minmax(0, 1fr) 20px" },
+  },
+  selected: { background: tokens.colorNeutralBackground1Selected },
+  check: { display: "flex", justifyContent: "center" },
+  nameCell: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    minWidth: 0,
+  },
+  nameText: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+    minWidth: 0,
+  },
+  name: {
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground1,
+    textDecorationLine: "none",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      borderRadius: "2px",
+    },
+  },
+  sub: {
+    fontSize: "12px",
+    color: tokens.colorNeutralForeground3,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  cell: {
+    minWidth: 0,
+    fontSize: "13px",
+    color: tokens.colorNeutralForeground2,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    [NARROW]: { display: "none" },
+  },
+  muted: { color: tokens.colorNeutralForeground3 },
+  chevron: { fontSize: "14px", color: tokens.colorNeutralForeground3 },
+  dangerPrimary: {
+    background: tokens.colorPaletteRedBackground3,
+    ":hover": { background: tokens.colorPaletteRedForeground1 },
+    ":hover:active": { background: tokens.colorPaletteRedForeground1 },
   },
 });
 
@@ -82,13 +154,49 @@ export function AdminUsers() {
   const styles = useStyles();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const me = useAuthStore((s) => s.user?.id);
+  const { message, showMsg } = useToastMessage();
 
-  // Selection is by explicit id and survives paging, which is why the count
-  // in the bar is worth showing — it can exceed what is on screen.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setSearch(query.trim());
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ["admin-users", page, search],
+    queryFn: () => api.adminListUsers(page, PAGE_SIZE, search),
+  });
+  const users = data?.users ?? [];
+  const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
+
+  // ── Selection ──────────────────────────────────────────────────────────────
+  // By id, so it survives paging — which is why the count is shown: it can
+  // exceed what is on screen. Your own row is never selectable.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const pageIds = users.map((u) => u.id).filter((id) => id !== me);
+  const allOnPage =
+    pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const someOnPage = pageIds.some((id) => selected.has(id));
+  const toggle = (id: string, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [confirmingBulkDelete, setConfirmingBulkDelete] = useState(false);
-  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const overLimit = selected.size > BULK_LIMIT;
 
   const runBulk = async (action: "activate" | "deactivate" | "delete") => {
     setBulkBusy(true);
@@ -96,8 +204,8 @@ export function AdminUsers() {
       const res = await api.adminBulkUsers([...selected], action);
       await qc.invalidateQueries({ queryKey: ["admin-users"] });
       setSelected(new Set());
-      setConfirmingBulkDelete(false);
-      setBulkDeleteConfirm("");
+      setDeleting(false);
+      setDeleteConfirm("");
       showMsg(
         "success",
         res.skipped.length
@@ -116,172 +224,244 @@ export function AdminUsers() {
       setBulkBusy(false);
     }
   };
-  const { t } = useTranslation();
-  const { user } = useAuthStore();
 
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [searchInput, setSearchInput] = useState("");
-  const { message, showMsg } = useToastMessage();
-  const [editing, setEditing] = useState<AdminUser | null>(null);
-  const [editRole, setEditRole] = useState<string | null>(null);
-  const [editActive, setEditActive] = useState<boolean | null>(null);
-  const [editVerified, setEditVerified] = useState<boolean | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["admin-users", page, search],
-    queryFn: () => api.adminListUsers(page, 20, search),
-  });
-
-  // The caller's own row is never selectable, so it is excluded from the
-  // header checkbox's idea of "all" too — otherwise it reads as indeterminate
-  // forever on a page containing yourself.
-  const pageIds = (data?.users ?? [])
-    .map((u) => u.id)
-    .filter((id) => id !== user?.id);
-
-  const handleSearch = () => {
-    setSearch(searchInput);
-    setPage(1);
-  };
-
-  const openEdit = (u: AdminUser) => {
-    setEditing(u);
-    setEditRole(null);
-    setEditActive(null);
-    setEditVerified(null);
-  };
-
-  const handleSave = async () => {
-    if (!editing) return;
-    setSaving(true);
-    try {
-      const updates: Record<string, unknown> = {};
-      if (editRole !== null) updates.role = editRole;
-      if (editActive !== null) updates.is_active = editActive;
-      if (editVerified !== null) updates.email_verified = editVerified;
-
-      if (Object.keys(updates).length > 0) {
-        await api.adminUpdateUser(editing.id, updates);
-        await qc.invalidateQueries({ queryKey: ["admin-users"] });
-      }
-      showMsg("success", t("admin.userUpdated"));
-      setEditing(null);
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await api.adminDeleteUser(id);
-      await qc.invalidateQueries({ queryKey: ["admin-users"] });
-      showMsg("success", t("admin.userDeleted"));
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.deleteFailed"),
-      );
-    }
-  };
-
-  const totalPages = data ? Math.ceil(data.total / 20) : 1;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-      {message && (
-        <MessageBar
-          intent={message.type === "success" ? "success" : "error"}
-          style={{ marginBottom: 12 }}
-        >
-          {message.text}
-        </MessageBar>
-      )}
-
-      <div className={styles.toolbar}>
-        <Input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder={t("admin.searchUsers")}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          style={{ flex: 1 }}
-        />
-        <Button icon={<SearchRegular />} onClick={handleSearch}>
-          {t("common.search")}
-        </Button>
-      </div>
-
-      {/* The bulk bar only exists once something is selected, so the
-          destructive actions are never just sitting there. */}
-      {selected.size > 0 && (
-        <MessageBar
-          intent={selected.size > BULK_LIMIT ? "warning" : "info"}
-          // The intent icon doubles as the clear action: the bar only exists
-          // while a selection does, so the X that replaces the [i] is always
-          // the fastest way to drop it.
-          icon={
-            <span style={{ display: "flex" }}>
-              <Tooltip content={t("common.clear")} relationship="label">
-                <Button
-                  size="small"
-                  appearance="subtle"
-                  icon={<DismissRegular />}
-                  aria-label={t("common.clear")}
-                  disabled={bulkBusy}
-                  onClick={() => setSelected(new Set())}
-                />
-              </Tooltip>
-            </span>
+  const head = (
+    <div className={styles.head}>
+      <span className={styles.check}>
+        <Checkbox
+          checked={allOnPage ? true : someOnPage ? "mixed" : false}
+          disabled={pageIds.length === 0}
+          // Only this page's rows: a select-all reaching rows you haven't
+          // seen is how bulk actions become accidents.
+          onChange={(_, d) =>
+            setSelected((prev) => {
+              const next = new Set(prev);
+              for (const id of pageIds) {
+                if (d.checked) next.add(id);
+                else next.delete(id);
+              }
+              return next;
+            })
           }
-        >
-          <MessageBarBody>
-            {selected.size > BULK_LIMIT
+          aria-label={t("admin.selectAllOnPage")}
+        />
+      </span>
+      {selected.size > 0 ? (
+        <div className={styles.bulk}>
+          <span className={overLimit ? styles.bulkWarn : undefined}>
+            {overLimit
               ? t("admin.bulkOverLimit", {
                   count: selected.size,
                   limit: BULK_LIMIT,
                 })
               : t("admin.bulkSelected", { count: selected.size })}
-          </MessageBarBody>
-          <MessageBarActions>
+          </span>
+          <div className={styles.bulkActions}>
             <Button
               size="small"
-              disabled={bulkBusy || selected.size > BULK_LIMIT}
-              onClick={() => runBulk("activate")}
+              disabled={bulkBusy || overLimit}
+              onClick={() => void runBulk("activate")}
             >
               {t("admin.bulkActivate")}
             </Button>
             <Button
               size="small"
-              disabled={bulkBusy || selected.size > BULK_LIMIT}
-              onClick={() => runBulk("deactivate")}
+              disabled={bulkBusy || overLimit}
+              onClick={() => void runBulk("deactivate")}
             >
               {t("admin.bulkDeactivate")}
             </Button>
             <Button
               size="small"
-              disabled={bulkBusy || selected.size > BULK_LIMIT}
-              onClick={() => setConfirmingBulkDelete(true)}
+              disabled={bulkBusy || overLimit}
+              onClick={() => setDeleting(true)}
             >
               {t("admin.bulkDelete")}
             </Button>
-          </MessageBarActions>
-        </MessageBar>
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<DismissRegular />}
+              aria-label={t("common.clear")}
+              disabled={bulkBusy}
+              onClick={() => setSelected(new Set())}
+            />
+          </div>
+        </div>
+      ) : (
+        <>
+          <span>{t("admin.userHeader")}</span>
+          <span className={styles.cell}>{t("admin.emailHeader")}</span>
+          <span className={styles.cell}>{t("admin.roleHeader")}</span>
+          <span className={styles.cell}>{t("admin.statusHeader")}</span>
+          <span className={styles.cell}>{t("admin.joinedHeader")}</span>
+          <span className={styles.cell} />
+        </>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+      {message && (
+        <div className={styles.toast}>
+          <SettingsToast message={message} />
+        </div>
       )}
 
-      {/* Deleting accounts in bulk asks for the count to be typed back. The
-          number is the one thing a mis-click cannot supply. */}
+      <div className={styles.toolbar}>
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("admin.searchUsers")}
+          contentBefore={<SearchRegular />}
+          contentAfter={
+            query ? (
+              <Button
+                appearance="transparent"
+                size="small"
+                icon={<DismissRegular />}
+                aria-label={t("common.clear")}
+                onClick={() => setQuery("")}
+              />
+            ) : undefined
+          }
+          style={{ minWidth: 220, flex: "1 1 220px" }}
+        />
+      </div>
+
+      {isFetching && !data ? (
+        <Skeleton aria-busy>
+          <div className={styles.list}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className={styles.row}>
+                <span />
+                <div className={styles.nameCell}>
+                  <SkeletonItem shape="circle" size={32} />
+                  <SkeletonItem
+                    size={12}
+                    style={{ width: `${40 + (i % 3) * 12}%` }}
+                  />
+                </div>
+                <SkeletonItem size={12} style={{ width: "70%" }} />
+                <SkeletonItem size={12} style={{ width: 40 }} />
+                <SkeletonItem size={12} style={{ width: 48 }} />
+                <SkeletonItem size={12} style={{ width: 72 }} />
+                <span />
+              </div>
+            ))}
+          </div>
+        </Skeleton>
+      ) : users.length === 0 ? (
+        <EmptyState
+          icon={<PersonRegular />}
+          title={
+            search ? t("teams.noResultsMatch") : t("admin.userPage.noUsers")
+          }
+        />
+      ) : (
+        <>
+          <div className={styles.list}>
+            {head}
+            {users.map((u) => {
+              const isMe = u.id === me;
+              const path = `/admin/users/${u.id}`;
+              return (
+                <div
+                  key={u.id}
+                  className={mergeClasses(
+                    styles.row,
+                    selected.has(u.id) && styles.selected,
+                  )}
+                  onClick={() => navigate(path)}
+                >
+                  <span
+                    className={styles.check}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Checkbox
+                      checked={selected.has(u.id)}
+                      disabled={isMe}
+                      onChange={(_, d) => toggle(u.id, !!d.checked)}
+                      aria-label={u.username}
+                    />
+                  </span>
+                  <div className={styles.nameCell}>
+                    <Avatar
+                      image={u.avatar_url ? { src: u.avatar_url } : undefined}
+                      name={u.display_name || u.username}
+                      size={32}
+                    />
+                    <div className={styles.nameText}>
+                      {/* A real link: keyboard, middle-click, new tab. */}
+                      <Link
+                        to={path}
+                        className={styles.name}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {u.display_name || u.username}
+                      </Link>
+                      <span className={styles.sub}>
+                        @{u.username}
+                        {isMe && ` · ${t("admin.userPage.you")}`}
+                      </span>
+                    </div>
+                  </div>
+                  <span className={styles.cell}>
+                    {u.email}
+                    {!u.email_verified && (
+                      <Text size={200} className={styles.muted}>
+                        {" "}
+                        · {t("admin.unverifiedStatus")}
+                      </Text>
+                    )}
+                  </span>
+                  <span className={styles.cell}>
+                    {u.role === "admin" ? (
+                      <Badge appearance="tint" color="brand" size="small">
+                        {t("admin.userPage.roleAdmin")}
+                      </Badge>
+                    ) : (
+                      t("admin.userPage.roleUser")
+                    )}
+                  </span>
+                  <span className={styles.cell}>
+                    {u.is_active ? (
+                      t("admin.activeStatus")
+                    ) : (
+                      <Badge appearance="tint" color="danger" size="small">
+                        {t("admin.disabledStatus")}
+                      </Badge>
+                    )}
+                  </span>
+                  <span className={mergeClasses(styles.cell, styles.muted)}>
+                    {formatDate(u.created_at)}
+                  </span>
+                  <ChevronRightRegular className={styles.chevron} />
+                </div>
+              );
+            })}
+          </div>
+          {(total > PAGE_SIZE || page > 1) && (
+            <Pagination
+              page={page}
+              pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
+              total={total}
+              onChange={setPage}
+              disabled={isFetching}
+            />
+          )}
+        </>
+      )}
+
+      {/* Deleting accounts in bulk asks for the count to be typed back: the
+          number is the one thing a mis-click can't supply. */}
       <Dialog
-        open={confirmingBulkDelete}
+        open={deleting}
         onOpenChange={(_, d) => {
           if (!d.open) {
-            setConfirmingBulkDelete(false);
-            setBulkDeleteConfirm("");
+            setDeleting(false);
+            setDeleteConfirm("");
           }
         }}
       >
@@ -299,285 +479,24 @@ export function AdminUsers() {
                 style={{ marginTop: 12 }}
               >
                 <Input
-                  value={bulkDeleteConfirm}
-                  onChange={(_, d) => setBulkDeleteConfirm(d.value)}
+                  value={deleteConfirm}
+                  onChange={(_, d) => setDeleteConfirm(d.value)}
                 />
               </Field>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setConfirmingBulkDelete(false)}>
+              <Button onClick={() => setDeleting(false)}>
                 {t("common.cancel")}
               </Button>
               <Button
                 appearance="primary"
-                style={{ background: tokens.colorPaletteRedBackground3 }}
+                className={styles.dangerPrimary}
                 disabled={
-                  bulkBusy || bulkDeleteConfirm.trim() !== String(selected.size)
+                  bulkBusy || deleteConfirm.trim() !== String(selected.size)
                 }
-                onClick={() => runBulk("delete")}
+                onClick={() => void runBulk("delete")}
               >
-                {t("common.delete")}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
-
-      {isLoading ? (
-        <SkeletonTableRows rows={8} cols={3} />
-      ) : (
-        <div className={styles.tableScroll}>
-          <Table style={{ tableLayout: "auto" }}>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell style={{ width: 1 }}>
-                  <Checkbox
-                    checked={
-                      pageIds.length > 0 &&
-                      pageIds.every((id) => selected.has(id))
-                        ? true
-                        : pageIds.some((id) => selected.has(id))
-                          ? "mixed"
-                          : false
-                    }
-                    onChange={(_, d) =>
-                      setSelected((prev) => {
-                        const next = new Set(prev);
-                        // Only this page's rows — a select-all that silently
-                        // reached rows you have not seen is how bulk actions
-                        // become accidents.
-                        for (const id of pageIds) {
-                          if (d.checked) next.add(id);
-                          else next.delete(id);
-                        }
-                        return next;
-                      })
-                    }
-                    aria-label={t("admin.selectAllOnPage")}
-                  />
-                </TableHeaderCell>
-                <TableHeaderCell>{t("admin.userHeader")}</TableHeaderCell>
-                <TableHeaderCell>{t("admin.emailHeader")}</TableHeaderCell>
-                <TableHeaderCell style={{ width: 1 }} />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data?.users.map((u) => {
-                const au = u as unknown as AdminUser;
-                return (
-                  <TableRow key={u.id}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selected.has(u.id)}
-                        disabled={u.id === user?.id}
-                        onChange={(_, d) =>
-                          setSelected((prev) => {
-                            const next = new Set(prev);
-                            if (d.checked) next.add(u.id);
-                            else next.delete(u.id);
-                            return next;
-                          })
-                        }
-                        aria-label={u.username}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <Avatar
-                          image={
-                            u.avatar_url ? { src: u.avatar_url } : undefined
-                          }
-                          name={u.display_name || u.username}
-                          size={32}
-                        />
-                        <div>
-                          <Text weight="semibold" block>
-                            {u.display_name}
-                          </Text>
-                          <Text
-                            size={200}
-                            style={{ color: tokens.colorNeutralForeground3 }}
-                          >
-                            @{u.username}
-                          </Text>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Text size={200}>{u.email}</Text>
-                    </TableCell>
-                    <TableCell>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 4,
-                          justifyContent: "flex-end",
-                        }}
-                      >
-                        <CopyIdButton id={u.id} />
-                        {/* The inline dialog covers the three toggles; the
-                            detail page is where credentials, factors, tokens
-                            and the account's audit log live. */}
-                        <Tooltip
-                          relationship="label"
-                          content={t("admin.manageUser")}
-                        >
-                          <Button
-                            size="small"
-                            appearance="subtle"
-                            icon={<SettingsRegular />}
-                            onClick={() => navigate(`/admin/users/${u.id}`)}
-                          />
-                        </Tooltip>
-                        <Button
-                          size="small"
-                          appearance="subtle"
-                          icon={<EditRegular />}
-                          onClick={() => openEdit(au)}
-                        />
-                        <Dialog>
-                          <DialogTrigger disableButtonEnhancement>
-                            <Button
-                              size="small"
-                              appearance="subtle"
-                              icon={<DeleteRegular />}
-                              disabled={u.id === user?.id}
-                            />
-                          </DialogTrigger>
-                          <DialogSurface>
-                            <DialogBody>
-                              <DialogTitle>
-                                {t("admin.deleteUserTitle")}
-                              </DialogTitle>
-                              <DialogContent>
-                                {t("admin.deleteUserDesc", {
-                                  username: u.username,
-                                })}
-                              </DialogContent>
-                              <DialogActions>
-                                <DialogTrigger>
-                                  <Button>{t("common.cancel")}</Button>
-                                </DialogTrigger>
-                                <Button
-                                  appearance="primary"
-                                  style={{
-                                    background:
-                                      tokens.colorPaletteRedBackground3,
-                                  }}
-                                  onClick={() => handleDelete(u.id)}
-                                >
-                                  {t("common.delete")}
-                                </Button>
-                              </DialogActions>
-                            </DialogBody>
-                          </DialogSurface>
-                        </Dialog>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {totalPages > 1 && (
-        <Pagination
-          page={page}
-          pageCount={totalPages}
-          onChange={setPage}
-          disabled={isLoading || isFetching}
-        />
-      )}
-
-      {/* Edit user dialog */}
-      <Dialog
-        open={editing !== null}
-        onOpenChange={(_, d) => !d.open && setEditing(null)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>
-              {t("admin.editUser")} — @{editing?.username}
-            </DialogTitle>
-            <DialogContent>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 16,
-                  paddingTop: 8,
-                }}
-              >
-                <div className={styles.detailGrid}>
-                  <Field label={t("admin.emailHeader")}>
-                    <Input value={editing?.email ?? ""} readOnly />
-                  </Field>
-                  <Field label={t("admin.joinedHeader")}>
-                    <Input
-                      value={
-                        editing?.created_at
-                          ? new Date(
-                              editing.created_at * 1000,
-                            ).toLocaleDateString()
-                          : "—"
-                      }
-                      readOnly
-                    />
-                  </Field>
-                </div>
-
-                <div className={styles.detailGrid}>
-                  <Field label={t("admin.roleHeader")}>
-                    <Dropdown
-                      value={editRole ?? editing?.role ?? ""}
-                      selectedOptions={[editRole ?? editing?.role ?? ""]}
-                      disabled={editing?.id === user?.id}
-                      onOptionSelect={(_, d) =>
-                        setEditRole(d.optionValue as string)
-                      }
-                    >
-                      <Option value="user">User</Option>
-                      <Option value="admin">Admin</Option>
-                    </Dropdown>
-                  </Field>
-                  <Field label={t("admin.appsHeader")}>
-                    <Input value={String(editing?.app_count ?? 0)} readOnly />
-                  </Field>
-                </div>
-
-                <Switch
-                  checked={editActive ?? editing?.is_active ?? false}
-                  disabled={editing?.id === user?.id}
-                  onChange={(_, d) => setEditActive(d.checked)}
-                  label={t("admin.accountActive")}
-                />
-
-                <Switch
-                  checked={editVerified ?? editing?.email_verified ?? false}
-                  onChange={(_, d) => setEditVerified(d.checked)}
-                  label={t("admin.emailVerifiedToggle")}
-                />
-              </div>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setEditing(null)}>
-                {t("common.cancel")}
-              </Button>
-              <Button
-                appearance="primary"
-                onClick={handleSave}
-                disabled={saving}
-                icon={saving ? <Spinner size="tiny" /> : undefined}
-              >
-                {t("common.save")}
+                {bulkBusy ? <Spinner size="tiny" /> : t("common.delete")}
               </Button>
             </DialogActions>
           </DialogBody>

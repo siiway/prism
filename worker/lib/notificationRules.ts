@@ -27,6 +27,8 @@
 //
 // Disabled rules are skipped without affecting state.
 
+import type { CodedError } from "./apiError";
+
 export type NotificationLevel = "brief" | "full";
 
 export interface RuleMatch {
@@ -65,13 +67,10 @@ export interface RuleSendChannelDiscord {
 }
 
 export type RuleSendChannel =
-  | RuleSendChannelEmail
-  | RuleSendChannelTg
-  | RuleSendChannelDiscord;
+  RuleSendChannelEmail | RuleSendChannelTg | RuleSendChannelDiscord;
 
 export type RuleAction =
-  | { type: "drop" }
-  | { type: "send"; channels: RuleSendChannel[] };
+  { type: "drop" } | { type: "send"; channels: RuleSendChannel[] };
 
 export interface NotificationRule {
   id: string;
@@ -192,28 +191,37 @@ export function sanitizeRulesArray(
   knownEvents: readonly string[],
 ):
   | { rules: NotificationRule[]; error?: undefined }
-  | { rules?: undefined; error: string } {
-  if (!Array.isArray(input)) return { error: "rules must be an array" };
-  if (input.length > 200) return { error: "too many rules (max 200)" };
+  | ({ rules?: undefined } & CodedError) {
+  if (!Array.isArray(input))
+    return { error: "field_must_be_array", params: { field: "rules" } };
+  if (input.length > 200)
+    return { error: "too_many_rules", params: { max: 200 } };
 
   const out: NotificationRule[] = [];
   for (let i = 0; i < input.length; i++) {
     const raw = input[i];
     if (!raw || typeof raw !== "object")
-      return { error: `rules[${i}] must be an object` };
+      return {
+        error: "field_must_be_object",
+        params: { field: `rules[${i}]` },
+      };
     const r = raw as Record<string, unknown>;
 
     if (typeof r.id !== "string" || !r.id)
-      return { error: `rules[${i}].id is required` };
+      return { error: "field_required", params: { field: `rules[${i}].id` } };
 
     let name: string | undefined;
     if (r.name !== undefined) {
       if (typeof r.name !== "string")
-        return { error: `rules[${i}].name must be a string` };
+        return {
+          error: "field_must_be_string",
+          params: { field: `rules[${i}].name` },
+        };
       const trimmed = r.name.trim();
       if (trimmed.length > RULE_NAME_MAX)
         return {
-          error: `rules[${i}].name must be ${RULE_NAME_MAX} characters or fewer`,
+          error: "field_max_length",
+          params: { field: `rules[${i}].name`, max: RULE_NAME_MAX },
         };
       name = trimmed || undefined;
     }
@@ -227,30 +235,42 @@ export function sanitizeRulesArray(
       matchRaw === null ||
       Array.isArray(matchRaw)
     )
-      return { error: `rules[${i}].match must be an object` };
+      return {
+        error: "field_must_be_object",
+        params: { field: `rules[${i}].match` },
+      };
     const match: RuleMatch = {};
     if (matchRaw.event !== undefined) {
       if (typeof matchRaw.event !== "string")
-        return { error: `rules[${i}].match.event must be a string glob` };
+        return {
+          error: "field_must_be_string",
+          params: { field: `rules[${i}].match.event` },
+        };
       const ev = matchRaw.event.trim();
       if (ev.length > 128)
-        return { error: `rules[${i}].match.event is too long (max 128)` };
+        return {
+          error: "field_max_length",
+          params: { field: `rules[${i}].match.event`, max: 128 },
+        };
       // If the pattern has no wildcards it must match a known event so
       // typos surface fast. Wildcards (e.g. security.*) bypass this.
       if (!ev.includes("*") && !ev.includes("?") && !knownEvents.includes(ev))
         return {
-          error: `rules[${i}].match.event "${ev}" is not a known event type`,
+          error: "rule_unknown_event",
+          params: { field: `rules[${i}].match.event`, event: ev },
         };
       match.event = ev;
     }
     if (matchRaw.accounts !== undefined) {
       if (!Array.isArray(matchRaw.accounts))
         return {
-          error: `rules[${i}].match.accounts must be an array of "email:<id>" or "tg:<id>" strings`,
+          error: "field_must_be_array",
+          params: { field: `rules[${i}].match.accounts` },
         };
       if (matchRaw.accounts.length > 50)
         return {
-          error: `rules[${i}].match.accounts has too many entries (max 50)`,
+          error: "field_max_items",
+          params: { field: `rules[${i}].match.accounts`, max: 50 },
         };
       const accounts: string[] = [];
       for (let k = 0; k < matchRaw.accounts.length; k++) {
@@ -264,7 +284,11 @@ export function sanitizeRulesArray(
           key.length > 128
         ) {
           return {
-            error: `rules[${i}].match.accounts[${k}] must be "email:<id>", "tg:<id>" or "discord:<id>"`,
+            error: "field_one_of",
+            params: {
+              field: `rules[${i}].match.accounts[${k}]`,
+              values: "email:<id>, tg:<id>, discord:<id>",
+            },
           };
         }
         accounts.push(key);
@@ -274,33 +298,46 @@ export function sanitizeRulesArray(
 
     const actionRaw = r.action as Record<string, unknown> | undefined;
     if (!actionRaw || typeof actionRaw !== "object")
-      return { error: `rules[${i}].action is required` };
+      return {
+        error: "field_required",
+        params: { field: `rules[${i}].action` },
+      };
 
     let action: RuleAction;
     if (actionRaw.type === "drop") {
       action = { type: "drop" };
     } else if (actionRaw.type === "send") {
       if (!Array.isArray(actionRaw.channels))
-        return { error: `rules[${i}].action.channels must be an array` };
+        return {
+          error: "field_must_be_array",
+          params: { field: `rules[${i}].action.channels` },
+        };
       if (actionRaw.channels.length > 50)
         return {
-          error: `rules[${i}].action.channels has too many entries (max 50)`,
+          error: "field_max_items",
+          params: { field: `rules[${i}].action.channels`, max: 50 },
         };
       const channels: RuleSendChannel[] = [];
       for (let j = 0; j < actionRaw.channels.length; j++) {
         const c = actionRaw.channels[j] as Record<string, unknown>;
         if (!c || typeof c !== "object")
           return {
-            error: `rules[${i}].action.channels[${j}] must be an object`,
+            error: "field_must_be_object",
+            params: { field: `rules[${i}].action.channels[${j}]` },
           };
         if (c.level !== "brief" && c.level !== "full")
           return {
-            error: `rules[${i}].action.channels[${j}].level must be "brief" or "full"`,
+            error: "field_one_of",
+            params: {
+              field: `rules[${i}].action.channels[${j}].level`,
+              values: "brief, full",
+            },
           };
         if (c.kind === "email") {
           if (typeof c.email_id !== "string" || !c.email_id)
             return {
-              error: `rules[${i}].action.channels[${j}].email_id is required`,
+              error: "field_required",
+              params: { field: `rules[${i}].action.channels[${j}].email_id` },
             };
           channels.push({
             kind: "email",
@@ -310,7 +347,10 @@ export function sanitizeRulesArray(
         } else if (c.kind === "tg") {
           if (typeof c.connection_id !== "string" || !c.connection_id)
             return {
-              error: `rules[${i}].action.channels[${j}].connection_id is required`,
+              error: "field_required",
+              params: {
+                field: `rules[${i}].action.channels[${j}].connection_id`,
+              },
             };
           channels.push({
             kind: "tg",
@@ -320,7 +360,10 @@ export function sanitizeRulesArray(
         } else if (c.kind === "discord") {
           if (typeof c.connection_id !== "string" || !c.connection_id)
             return {
-              error: `rules[${i}].action.channels[${j}].connection_id is required`,
+              error: "field_required",
+              params: {
+                field: `rules[${i}].action.channels[${j}].connection_id`,
+              },
             };
           channels.push({
             kind: "discord",
@@ -329,13 +372,20 @@ export function sanitizeRulesArray(
           });
         } else {
           return {
-            error: `rules[${i}].action.channels[${j}].kind must be "email", "tg" or "discord"`,
+            error: "field_one_of",
+            params: {
+              field: `rules[${i}].action.channels[${j}].kind`,
+              values: "email, tg, discord",
+            },
           };
         }
       }
       action = { type: "send", channels };
     } else {
-      return { error: `rules[${i}].action.type must be "send" or "drop"` };
+      return {
+        error: "field_one_of",
+        params: { field: `rules[${i}].action.type`, values: "send, drop" },
+      };
     }
 
     out.push({ id: r.id, name, enabled, stop, match, action });

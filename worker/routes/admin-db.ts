@@ -55,7 +55,7 @@ app.get("/status", (c) =>
 // console here". This is now the default — direct storage access is opt-in.
 app.use("*", async (c, next) => {
   if (d1ConsoleMode(c.env) === "off")
-    return c.json({ error: "Not found" }, 404);
+    return c.json({ error: "not_found" }, 404);
   await next();
 });
 
@@ -64,8 +64,7 @@ function readOnlyRefusal(c: import("hono").Context<AppEnv>) {
   if (d1ConsoleMode(c.env) !== "read-only") return null;
   return c.json(
     {
-      error:
-        "The database console is in read-only mode (D1_CONSOLE). Writes are disabled.",
+      error: "read_only",
       read_only: true,
     },
     403,
@@ -130,7 +129,8 @@ function touchesAppendOnly(sql: string): string | null {
 function appendOnlyRefusal(c: import("hono").Context<AppEnv>, table: string) {
   return c.json(
     {
-      error: `${table} is append-only and cannot be modified from the console. The audit log is what makes every other admin action accountable; editing it here is not offered at any setting.`,
+      error: "table_append_only",
+      params: { table },
       append_only: true,
       table,
     },
@@ -161,8 +161,12 @@ function quoteIdent(name: string): string {
 async function listTableNames(db: D1Database): Promise<string[]> {
   const { results } = await db
     .prepare(
+      // D1 keeps its own bookkeeping in _cf_* tables and refuses to let
+      // queries read or describe them (SQLITE_AUTH), so listing one would
+      // fail the whole table list.
       `SELECT name FROM sqlite_master
         WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+          AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\'
         ORDER BY name`,
     )
     .all<{ name: string }>();
@@ -407,7 +411,7 @@ app.get("/tables", async (c) => {
  *  row I need to fix" case. */
 app.get("/tables/:table/rows", async (c) => {
   const table = await resolveTable(c.env.DB, c.req.param("table"));
-  if (!table) return c.json({ error: "Table not found" }, 404);
+  if (!table) return c.json({ error: "table_not_found" }, 404);
 
   const { page, limit, offset } = readPage(
     c.req.query("page"),
@@ -455,7 +459,10 @@ app.get("/tables/:table/rows", async (c) => {
       limit,
     });
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
+    return c.json(
+      { error: "sql_error", params: { detail: (err as Error).message } },
+      400,
+    );
   }
 });
 
@@ -465,7 +472,7 @@ app.post("/tables/:table/rows", async (c) => {
   const refusal = readOnlyRefusal(c);
   if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
-  if (!table) return c.json({ error: "Table not found" }, 404);
+  if (!table) return c.json({ error: "table_not_found" }, 404);
   if (isAppendOnly(table)) return appendOnlyRefusal(c, table);
 
   const body = await c.req.json<{ values: Record<string, unknown> }>();
@@ -475,8 +482,7 @@ app.post("/tables/:table/rows", async (c) => {
   const entries = Object.entries(body.values ?? {}).filter(([k]) =>
     known.has(k),
   );
-  if (!entries.length)
-    return c.json({ error: "No known columns in `values`" }, 400);
+  if (!entries.length) return c.json({ error: "no_known_columns" }, 400);
 
   const sql =
     `INSERT INTO ${quoteIdent(table)} ` +
@@ -489,7 +495,10 @@ app.post("/tables/:table/rows", async (c) => {
       .bind(...entries.map(([, v]) => v as never))
       .run();
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
+    return c.json(
+      { error: "sql_error", params: { detail: (err as Error).message } },
+      400,
+    );
   }
   auditDb(
     c,
@@ -497,7 +506,7 @@ app.post("/tables/:table/rows", async (c) => {
     { table, columns: entries.map(([k]) => k) },
     table,
   );
-  return c.json({ message: "Row inserted", meta: result.meta }, 201);
+  return c.json({ meta: result.meta }, 201);
 });
 
 /** Update one row, addressed by its primary key (or rowid). */
@@ -505,7 +514,7 @@ app.patch("/tables/:table/rows", async (c) => {
   const refusal = readOnlyRefusal(c);
   if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
-  if (!table) return c.json({ error: "Table not found" }, 404);
+  if (!table) return c.json({ error: "table_not_found" }, 404);
   if (isAppendOnly(table)) return appendOnlyRefusal(c, table);
 
   const body = await c.req.json<{
@@ -513,22 +522,21 @@ app.patch("/tables/:table/rows", async (c) => {
     values: Record<string, unknown>;
   }>();
   const keys = await rowKeyColumns(c.env.DB, table);
-  if (!keys)
-    return c.json(
-      { error: "This table has no primary key — edit it from the SQL console" },
-      400,
-    );
+  if (!keys) return c.json({ error: "table_no_primary_key" }, 400);
 
   const columns = await tableColumns(c.env.DB, table);
   const known = new Set(columns.map((col) => col.name));
 
   const sets = Object.entries(body.values ?? {}).filter(([k]) => known.has(k));
-  if (!sets.length) return c.json({ error: "No columns to update" }, 400);
+  if (!sets.length) return c.json({ error: "nothing_to_update" }, 400);
 
   const keyEntries = keys.columns.map((k) => [k, body.key?.[k]] as const);
   if (keyEntries.some(([, v]) => v === undefined))
     return c.json(
-      { error: `key must include: ${keys.columns.join(", ")}` },
+      {
+        error: "key_columns_required",
+        params: { columns: keys.columns.join(", ") },
+      },
       400,
     );
 
@@ -546,7 +554,10 @@ app.patch("/tables/:table/rows", async (c) => {
       )
       .run();
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
+    return c.json(
+      { error: "sql_error", params: { detail: (err as Error).message } },
+      400,
+    );
   }
   auditDb(
     c,
@@ -559,7 +570,7 @@ app.patch("/tables/:table/rows", async (c) => {
     },
     table,
   );
-  return c.json({ message: "Row updated", meta: result.meta });
+  return c.json({ meta: result.meta });
 });
 
 /** Delete one row, addressed by its primary key (or rowid). */
@@ -567,7 +578,7 @@ app.delete("/tables/:table/rows", async (c) => {
   const refusal = readOnlyRefusal(c);
   if (refusal) return refusal;
   const table = await resolveTable(c.env.DB, c.req.param("table"));
-  if (!table) return c.json({ error: "Table not found" }, 404);
+  if (!table) return c.json({ error: "table_not_found" }, 404);
   if (isAppendOnly(table)) return appendOnlyRefusal(c, table);
 
   const body = await c.req.json<{ key: Record<string, unknown> }>();
@@ -575,7 +586,7 @@ app.delete("/tables/:table/rows", async (c) => {
   if (!keys)
     return c.json(
       {
-        error: "This table has no primary key — delete it from the SQL console",
+        error: "table_no_primary_key",
       },
       400,
     );
@@ -583,7 +594,10 @@ app.delete("/tables/:table/rows", async (c) => {
   const keyEntries = keys.columns.map((k) => [k, body.key?.[k]] as const);
   if (keyEntries.some(([, v]) => v === undefined))
     return c.json(
-      { error: `key must include: ${keys.columns.join(", ")}` },
+      {
+        error: "key_columns_required",
+        params: { columns: keys.columns.join(", ") },
+      },
       400,
     );
 
@@ -597,7 +611,10 @@ app.delete("/tables/:table/rows", async (c) => {
       .bind(...keyEntries.map(([, v]) => v as never))
       .run();
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
+    return c.json(
+      { error: "sql_error", params: { detail: (err as Error).message } },
+      400,
+    );
   }
   auditDb(
     c,
@@ -605,7 +622,7 @@ app.delete("/tables/:table/rows", async (c) => {
     { table, key: body.key, rows_written: result.meta?.changes ?? null },
     table,
   );
-  return c.json({ message: "Row deleted", meta: result.meta });
+  return c.json({ meta: result.meta });
 });
 
 /** The console. Runs one or more statements against D1.
@@ -621,15 +638,12 @@ app.post("/query", async (c) => {
   }>();
 
   const script = (body.sql ?? "").trim();
-  if (!script) return c.json({ error: "sql is required" }, 400);
+  if (!script) return c.json({ error: "sql_empty" }, 400);
 
   const statements = splitStatements(script);
-  if (!statements.length) return c.json({ error: "No statement found" }, 400);
+  if (!statements.length) return c.json({ error: "sql_empty" }, 400);
   if (statements.length > 1 && body.params?.length)
-    return c.json(
-      { error: "Bound parameters only apply to a single statement" },
-      400,
-    );
+    return c.json({ error: "sql_params_single_statement" }, 400);
 
   const writes = statements.filter((s) => !isReadOnlyStatement(s));
 
@@ -641,7 +655,8 @@ app.post("/query", async (c) => {
     if (table) {
       auditDb(c, "admin.db.query.error", {
         sql: script.slice(0, 4000),
-        error: `refused: ${table} is append-only`,
+        error: "table_append_only",
+        params: { table },
         write: true,
       });
       return appendOnlyRefusal(c, table);
@@ -655,7 +670,7 @@ app.post("/query", async (c) => {
     if (refusal) {
       auditDb(c, "admin.db.query.error", {
         sql: script.slice(0, 4000),
-        error: "read-only mode",
+        error: "read_only",
         write: true,
       });
       return refusal;
@@ -664,8 +679,7 @@ app.post("/query", async (c) => {
   if (writes.length && !body.allow_write) {
     return c.json(
       {
-        error:
-          "This statement can modify data. Re-run it with write mode enabled.",
+        error: "sql_needs_write_mode",
         requires_write: true,
         statements: writes.length,
       },
@@ -716,7 +730,7 @@ app.post("/query", async (c) => {
       error: message,
       write: writes.length > 0,
     });
-    return c.json({ error: message }, 400);
+    return c.json({ error: "sql_error", params: { detail: message } }, 400);
   }
 });
 

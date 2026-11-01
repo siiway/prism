@@ -73,6 +73,27 @@ export function resolveRestrictedCapability(
   return RESTRICTED_CAPABILITY_DEFAULTS[capability];
 }
 
+/**
+ * Whether a restricted account may convert itself to a full account: its
+ * origin team's override when a site admin has set one, otherwise the site
+ * default. Read as optional so a database that hasn't applied the column's
+ * migration yet falls back to the site default.
+ */
+export async function resolveSelfConvert(
+  db: D1Database,
+  originTeamId: string | null,
+  siteGrants: RestrictedCapabilities,
+): Promise<boolean> {
+  const site = resolveRestrictedCapability("self:convert", siteGrants);
+  if (!originTeamId) return site;
+  const team = await db
+    .prepare("SELECT * FROM teams WHERE id = ?")
+    .bind(originTeamId)
+    .first<{ invite_registration_allow_convert?: number | null }>();
+  const own = team?.invite_registration_allow_convert;
+  return own === 0 || own === 1 ? own === 1 : site;
+}
+
 /** Strip an incoming grant payload to keys we recognise, so the config row
  *  cannot accumulate arbitrary JSON from a hand-rolled request. */
 export function sanitizeRestrictedCapabilities(
@@ -169,7 +190,7 @@ export async function checkUserCapability(
  * One-liner for route handlers: load the account's restriction state and
  * check a capability in a single call.
  *
- * Returns an error message when refused, or null when allowed. Handlers can
+ * Returns an error code when refused, or null when allowed. Handlers can
  * write `const err = await guardCapability(db, user.id, "app:create"); if
  * (err) return c.json({ error: err }, 403);` — short enough that adding the
  * check to a new endpoint is never the inconvenient option.
@@ -185,11 +206,10 @@ export async function guardCapability(
   return denial ? denialMessage(denial) : null;
 }
 
-/** Human-facing message for a denial. */
+/** The error code for a denial. */
 export function denialMessage(denial: CapabilityDenial): string {
-  if (denial.reason === "pending_join")
-    return "Finish joining your team before using this feature";
-  return "This feature is not available to accounts registered through a team invite";
+  if (denial.reason === "pending_join") return "restricted_pending_join";
+  return "restricted_feature";
 }
 
 // ─── Scope guards ────────────────────────────────────────────────────────────
@@ -231,7 +251,7 @@ export async function isWithinOriginSubtree(
 
 /**
  * Gate for "may this account join / be added to this team?".
- * Returns null when allowed, or an error message.
+ * Returns null when allowed, or an error code.
  */
 export async function checkTeamJoinAllowed(
   db: D1Database,
@@ -247,7 +267,7 @@ export async function checkTeamJoinAllowed(
     maxDepth,
   );
   if (inside) return null;
-  return "Accounts registered through a team invite can only join their own team";
+  return "restricted_join_own_team";
 }
 
 /**
@@ -263,8 +283,7 @@ export async function checkAppAuthorizationAllowed(
   app: { team_id: string | null; owner_id: string },
 ): Promise<string | null> {
   if (!isRestricted(user)) return null;
-  if (isPendingJoin(user))
-    return "Finish joining your team before signing in to applications";
+  if (isPendingJoin(user)) return "restricted_pending_join_apps";
 
   // Team ownership is recorded two ways depending on how the app was made:
   // `team_id`, or an `owner_id` pointing at the team-shaped user row whose id
@@ -278,7 +297,7 @@ export async function checkAppAuthorizationAllowed(
     maxDepth,
   );
   if (inside) return null;
-  return "Accounts registered through a team invite can only sign in to their own team's applications";
+  return "restricted_team_apps_only";
 }
 
 // ─── Team-side protections ───────────────────────────────────────────────────
@@ -286,10 +305,10 @@ export async function checkAppAuthorizationAllowed(
 /**
  * Whether a team still has live restricted accounts anchored to it.
  *
- * This — not the `invite_registration_enabled` switch — is what guards
+ * This — not the `invite_registration_granted` switch — is what guards
  * dissolution and re-parenting. Keying those protections on the switch would
- * leave an obvious bypass: enable it, mint five thousand accounts, disable
- * it, and the team is no longer "restricted" so its owner may dissolve it
+ * leave an obvious bypass: mint five thousand accounts, have the grant
+ * revoked, and the team is no longer "restricted" so its owner may dissolve it
  * and delete every one of them without a site admin ever being involved.
  *
  * Protection therefore lapses only when the accounts themselves are gone

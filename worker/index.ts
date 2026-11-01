@@ -7,7 +7,6 @@ import { secureHeaders } from "hono/secure-headers";
 import type { Variables } from "./types";
 
 import { BodySizeLimitError } from "./lib/bodyLimit";
-import { requestLogger } from "./lib/logger";
 import { requestBodyLimit } from "./middleware/bodyLimit";
 import { runReverification } from "./cron/reverify";
 import { runImapPoll } from "./cron/imap-poll";
@@ -42,6 +41,7 @@ import adminRoutes from "./routes/admin";
 import { readerRoutes as noticeRoutes } from "./routes/notices";
 import { readerRoutes as legalRoutes } from "./routes/legal";
 import auditRoutes from "./routes/audit";
+import searchRoutes from "./routes/search";
 import proxyRoutes from "./routes/proxy";
 import { ssrHandler } from "./ssr";
 
@@ -71,7 +71,6 @@ app.use(
     allowHeaders: ["Content-Type", "Authorization", "X-Session-Token"],
   }),
 );
-app.use("*", requestLogger);
 app.use("*", requestBodyLimit);
 
 app.route("/api", siteRoutes);
@@ -98,13 +97,14 @@ app.route("/api/notices", noticeRoutes);
 app.route("/api/legal", legalRoutes);
 app.route("/api/admin", adminRoutes);
 app.route("/api/audit", auditRoutes);
+app.route("/api/search", searchRoutes);
 app.route("/api/proxy/image", proxyRoutes);
 app.route("/.well-known", wellknownRoutes);
 app.route("/", publicRoutes);
 
 app.notFound(async (c) => {
   if (c.req.path.startsWith("/api/"))
-    return c.json({ error: "Not found" }, 404);
+    return c.json({ error: "not_found" }, 404);
   if (c.req.path.startsWith("/.well-known/"))
     return new Response(null, { status: 404 });
   // Anything that wasn't an API route and didn't match a static asset is a
@@ -117,10 +117,10 @@ app.notFound(async (c) => {
 
 app.onError((err, c) => {
   if (err instanceof BodySizeLimitError) {
-    return c.json({ error: "Request body too large" }, 413);
+    return c.json({ error: "request_too_large" }, 413);
   }
   console.error(err);
-  return c.json({ error: "Internal server error" }, 500);
+  return c.json({ error: "internal_error" }, 500);
 });
 
 export default {

@@ -27,6 +27,7 @@ import { useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useSiteName } from "../lib/useSiteName";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
 import { AuthShell } from "../components/AuthShell";
@@ -56,6 +57,7 @@ export function JoinRegister() {
   const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
+  const siteName = useSiteName();
   const { teamId } = useParams<{ teamId: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -206,7 +208,7 @@ export function JoinRegister() {
 
       {phase === "form" ? (
         <form className={styles.form} onSubmit={handleRegister}>
-          <Text className={styles.notice}>{t("join.intro")}</Text>
+          <Text className={styles.notice}>{t("join.intro", { siteName })}</Text>
 
           <Field label={t("join.inviteField")} required>
             <Input
@@ -243,7 +245,9 @@ export function JoinRegister() {
           </Field>
 
           {!info.collects_email && (
-            <Text className={styles.notice}>{t("join.noEmailNotice")}</Text>
+            <Text className={styles.notice}>
+              {t("join.noEmailNotice", { siteName })}
+            </Text>
           )}
 
           {info.captcha.captcha_providers.length > 0 && (
@@ -266,7 +270,7 @@ export function JoinRegister() {
           </Button>
 
           <Text className={styles.notice}>
-            {t("join.haveAccount")}{" "}
+            {t("join.haveAccount", { siteName })}{" "}
             <Link href={`/teams/join/${form.invite_token || ""}`}>
               {t("join.useExistingAccount")}
             </Link>

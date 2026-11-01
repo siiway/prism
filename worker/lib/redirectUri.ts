@@ -84,50 +84,64 @@ export function parseRedirectUris(
 
 /**
  * Returns null if the uri is acceptable as an `equals` registration value,
- * otherwise a short human-readable rejection reason.
+ * otherwise a rejection reason key (see RedirectUriReason).
  */
-export function validateRedirectUriForRegistration(uri: string): string | null {
+/** Why a redirect URI was refused. Routes answer with the error code
+ *  `redirect_uri_<reason>`; dynamic client registration puts the key in its
+ *  RFC 7591 error_description. */
+export type RedirectUriReason =
+  | "missing"
+  | "not_url"
+  | "userinfo"
+  | "fragment"
+  | "scheme"
+  | "whitespace"
+  | "regex"
+  | "match_type";
+
+export function validateRedirectUriForRegistration(
+  uri: string,
+): RedirectUriReason | null {
   if (typeof uri !== "string" || !uri) return "missing";
   const parsed = tryParse(uri);
-  if (!parsed) return "not a valid URL";
-  if (parsed.username || parsed.password)
-    return "must not contain userinfo (user:pass@…)";
-  if (parsed.hash) return "must not contain a fragment (#…)";
+  if (!parsed) return "not_url";
+  if (parsed.username || parsed.password) return "userinfo";
+  if (parsed.hash) return "fragment";
   const host = parsed.hostname.toLowerCase();
   if (parsed.protocol === "https:") return null;
   if (parsed.protocol === "http:" && LOOPBACK_HOSTS.has(host)) return null;
-  return "scheme must be https: (http:// is only allowed for loopback hosts)";
+  return "scheme";
 }
 
 /**
  * Validate a single registration entry by its match type. Returns null when
- * acceptable, otherwise a short human-readable rejection reason.
+ * acceptable, otherwise a rejection reason key.
  */
 export function validateRedirectUriEntry(
   entry: RedirectUriEntry,
-): string | null {
+): RedirectUriReason | null {
   if (!entry || typeof entry.value !== "string" || !entry.value)
-    return "missing value";
+    return "missing";
   switch (entry.type) {
     case "equals":
       return validateRedirectUriForRegistration(entry.value);
     case "wildcard": {
-      if (/\s/.test(entry.value)) return "must not contain whitespace";
-      if (entry.value.includes("#")) return "must not contain a fragment (#…)";
+      if (/\s/.test(entry.value)) return "whitespace";
+      if (entry.value.includes("#")) return "fragment";
       if (!/^https:\/\//i.test(entry.value) && !/^http:\/\//i.test(entry.value))
-        return "must start with https:// (http:// is only allowed for loopback hosts)";
+        return "scheme";
       return null;
     }
     case "regex": {
       try {
         new RegExp(entry.value);
       } catch {
-        return "invalid regular expression";
+        return "regex";
       }
       return null;
     }
     default:
-      return "unknown match type";
+      return "match_type";
   }
 }
 

@@ -293,14 +293,12 @@ every team fall through to the built-ins.
 
 ### Invite-link registration
 
-Master switch and bounds for [invite-link registration](teams.md#invite-link-registration).
-Off by default — turning it on is what makes a team owner able to mint
-accounts at all, and even then each team still needs its own grant from
-**Admin → Teams**.
+Bounds for [invite-link registration](teams.md#invite-link-registration).
+Whether a team may use it at all is a per-team grant from a site admin, and
+nothing creates accounts while `allow_registration` is `false`.
 
 | Key                                      | Type    | Default | Description                                                                               |
 | ---------------------------------------- | ------- | ------- | ----------------------------------------------------------------------------------------- |
-| `enable_team_invite_registration`        | boolean | `false` | Master switch. While false every related endpoint 403s.                                   |
 | `team_invite_registration_max_uses_cap`  | integer | `1000`  | Ceiling on the `max_uses` a team may set on a registration-capable invite.                |
 | `team_invite_registration_rate_per_hour` | integer | `200`   | Registrations per hour per invite. Per-IP limiting can't bound a widely shared link.      |
 | `restricted_user_capabilities`           | object  | `{}`    | Features granted to restricted accounts, e.g. `{"app:create": true}`. Empty = all denied. |
@@ -310,6 +308,8 @@ accounts at all, and even then each team still needs its own grant from
 Capability keys: `team:create`, `app:create`, `domain:create`, `pat:create`,
 `profile:public`, `gpg:manage`, `self:convert`. Anything absent falls back to
 the built-in defaults, which deny everything. Account security is never gated.
+`self:convert` is the site default; a team can override it (see
+[Teams → Converting to a full account](teams.md#converting-to-a-full-account)).
 
 ### Team join requirements (site floor)
 
@@ -450,7 +450,7 @@ These are configured in `wrangler.jsonc` and not editable from the admin panel.
 | `APP_URL`           | Yes      | Full origin of the deployment, e.g. `https://auth.example.com`                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `LOCKDOWN_USERS`    | No       | Comma / semicolon / whitespace separated list of usernames that cannot be deleted by anyone (including admins). Leave empty to disable.                                                                                                                                                                                                                                                                                                                                                                              |
 | `LOCKDOWN_TEAMS`    | No       | Comma / semicolon / whitespace separated list of team names that cannot be deleted by anyone (including admins). Leave empty to disable.                                                                                                                                                                                                                                                                                                                                                                             |
-| `ENABLE_RESET`      | No       | Set to `"true"` to enable the **Admin → Settings → Danger Zone → Site reset** button. When unset or anything else the button is hidden (destructive).                                                                                                                                                                                                                                                                                                                                                                |
+| `ENABLE_RESET`      | No       | Set to `"true"` to enable the **Admin → Maintenance → Danger zone → Site reset** button. When unset or anything else the button is hidden (destructive).                                                                                                                                                                                                                                                                                                                                                             |
 | `D1_CONSOLE`        | No       | Availability of **Admin → Database**. **Off unless set.** Unset, `"off"` (also `"false"` / `"0"` / `"no"` / `"disabled"` / `"none"`) and anything unrecognised all remove the surface: the endpoints 404 and the tab disappears. `"read-only"` (also `"readonly"` / `"read"`) allows browsing and `SELECT` but refuses every write, including one that sets `allow_write`. `"full"` (also `"on"` / `"true"` / `"1"`) is unrestricted — except the audit log, which is append-only from the console at every setting. |
 | `KV_CONSOLE`        | No       | Availability of the key–value browser in the same panel. Same values as `D1_CONSOLE`. **Unset follows `D1_CONSOLE`** — the two are windows onto the same instance's storage, so a setting for one is a statement about both unless this one says otherwise. With neither set, both are off.                                                                                                                                                                                                                          |
 | `NO_RESET_COOLDOWN` | No       | Set to `"true"` to skip the 30-minute cooldown between requesting a reset and being allowed to confirm it. 2FA is still required even when this is set.                                                                                                                                                                                                                                                                                                                                                              |
@@ -477,7 +477,7 @@ Create the Secrets Store, store the key under name `prism-secrets-key`, and add
 the `secrets_store_secrets` binding shown in `wrangler.jsonc`.
 
 After redeploying, run the migration once from
-**Admin → Settings → Danger Zone → "Migrate secrets to Secrets Store"** to
+**Admin → Maintenance → Danger zone → "Migrate secrets to Secrets Store"** to
 encrypt existing OAuth/source/SMTP/IMAP/captcha credentials in D1. Bearer-style
 secrets (PATs, OAuth codes, OAuth tokens, invite tokens, email-verify codes, 2FA
 codes, individual backup codes) are migrated to a keyed HMAC-SHA256 hash in a

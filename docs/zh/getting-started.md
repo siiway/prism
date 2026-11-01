@@ -80,7 +80,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ]
 ```
 
-不绑定也没问题：加密/哈希将退化为 no-op，Prism 会以明文存储继续运行。可以日后再启用 — **Admin → Settings → Danger Zone** 中的迁移按钮是幂等的。
+不绑定也没问题：加密/哈希将退化为 no-op，Prism 会以明文存储继续运行。可以日后再启用 — **管理面板 → 维护 → 危险区域** 中的迁移按钮是幂等的。
 
 ## 3. 运行迁移
 
@@ -180,7 +180,7 @@ GitHub Actions 在每次推送到 `main` 时执行同一套脚本（见下文「
 
 ## 9. 部署后：迁移密钥
 
-如果你绑定了 `SECRETS_KEY`，请以管理员身份登录，进入 **Admin → Settings → Danger Zone** 并依次执行：
+如果你绑定了 `SECRETS_KEY`，请以管理员身份登录，进入 **管理面板 → 维护 → 危险区域** 并依次执行：
 
 - **Migrate secrets to Secrets Store** — 加密历史 site_config 字段以及 OAuth 应用/源的 `client_secret`。
 - **Migrate D1 secrets** — 把 bearer 类明文（PAT、OAuth token/code、邀请 token、邮箱验证码、二次验证码、单条备用码）替换为 HMAC-SHA256 哈希。

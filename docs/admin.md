@@ -9,41 +9,46 @@ The admin panel is available at `/admin` and is visible only to users with `role
 The first admin is created during first-run setup. Additional admins are promoted via
 **Admin → Users → Edit User → Role → Admin**.
 
-## Dashboard
+## Overview
 
-Shows four summary stats:
+The admin panel opens on an overview:
 
-| Stat             | Description                      |
-| ---------------- | -------------------------------- |
-| Total users      | All registered accounts          |
-| OAuth apps       | All registered applications      |
-| Verified domains | Domains that passed verification |
-| Active tokens    | Non-expired OAuth access tokens  |
+- **Needs attention** — callouts for things to fix: email not set up, no
+  captcha on sign-up and sign-in, stored secrets not yet encrypted (once
+  [`SECRETS_KEY`](configuration.md#secrets_key-setup) is bound; the action
+  leads to **Maintenance → Danger zone**).
+- **Usage** — users, teams, OAuth apps, verified domains, active tokens and
+  proxied images, each linking to its page; the first four show a 30-day trend.
+- **Recent** — newest users, admin activity and failed sign-ins.
+- **Configuration** — the key settings at a glance, each linking to its
+  settings section.
 
-A panel under the stats surfaces operational warnings — most importantly, when
-[`SECRETS_KEY`](configuration.md#secrets_key-setup) is bound but the D1 data
-hasn't been migrated yet. Click through to **Settings → Danger Zone** to run the
-one-time encryption pass.
+While you are in `/admin` the sidebar shows the admin sections instead of
+your account's; **Back to account** returns to it. Press Ctrl/⌘ K anywhere to
+search pages, settings and data by name.
 
 ## Settings
 
-Settings are grouped into tabs. All changes take effect immediately — no redeployment needed.
+Settings are split into sections, each its own page in the admin sidebar: **General**, **Sign-up**, **Sign-in & security**, **Users & teams**, **Public profiles**, **Captcha**, **Email & notifications**, **Appearance** and **Legal**. **Danger zone** sits under **Maintenance**. All changes take effect immediately — no redeployment needed.
 
 ### General
 
 - **Site name** — shown in the browser tab and email templates
 - **Site description** — shown on the login page
 - **Site icon URL** — link to a PNG/SVG logo
-- **Registration mode** — `open` (anyone can register), `invite-only` (requires an invite token), or `closed` (no new registrations)
-- **Require email verification** — users must click the verification link before logging in
 
-Further down the General tab:
+Also under General:
 
 - **Security contact** (`security_contact`) — a `mailto:` address or an https URL
   where vulnerability reports should go. When set, Prism serves an RFC 9116
   `/.well-known/security.txt`; leave it empty to disable that file.
 - **Security policy URL** (`security_policy_url`) — optional link to your
   disclosure policy, added to `security.txt` as `Policy:`.
+
+### Sign-up
+
+- **Who can sign up** — open (anyone can register), invite-only (requires an invite token), or closed (no new registrations)
+- **Email verification** — **Required** means new users must click the verification link before logging in
 
 ### Appearance
 
@@ -61,7 +66,7 @@ appears in the footer of every page. Leaving a field empty hides both that page
 and its footer link. Each document is capped at 256 KiB. See
 [Configuration → Legal pages](configuration.md#legal-pages).
 
-### Security / Sessions
+### Sign-in & security
 
 - **Session TTL (days)** — how long a login session lasts
 - **Access token TTL (minutes)** — OAuth access token lifetime
@@ -71,7 +76,7 @@ and its footer link. Each document is capped at 256 KiB. See
   for this many minutes. `0` disables sudo mode entirely. The action
   acknowledgement checkbox is still required on every confirmation. See
   [OAuth → Step-up 2FA](oauth.md#step-up-2fa).
-- **Require captcha for 2FA** — site-wide: every step-up confirmation must
+- **Captcha on 2FA step-up** — when **Required**, every step-up confirmation must
   solve a captcha. Apps can also opt in per challenge. No-op when no captcha
   providers are enabled.
 - **IPv6 rate-limit prefix** — how many bits of an IPv6 address are bucketed
@@ -83,7 +88,7 @@ and its footer link. Each document is capped at 256 KiB. See
   user (`15/300s`). The password and TOTP steps are separate requests and both
   count toward the shared login limits.
 
-### Bot Protection
+### Captcha
 
 Prism runs an **ordered set of providers**. Pick a **default provider** (shown
 first) and, optionally, one or more **alternate providers** the visitor can
@@ -168,10 +173,10 @@ The email settings are split into two sub-tabs: **Send** and **Receive**.
 
 ### Public profiles
 
-- **Enable public profiles** — master kill switch. When off, both
+- **Users can publish a profile** — the master setting. When **Not allowed**, both
   `/u/<username>` and `/t/<team-id>` always return 404 regardless of any
   individual user/team opt-in. See [Public Profiles](public-profile.md).
-- **User profile defaults / Team profile defaults** — the per-field defaults
+- **Shown on user profiles by default / Team profiles** — checkboxes for the per-field defaults
   applied to users (or teams) who haven't picked a value of their own. Changing
   a default propagates immediately to inheriting profiles; it never overrides
   an explicit user/team choice.
@@ -182,9 +187,9 @@ A site-wide floor that every team is forced to meet, regardless of the
 team-level flag. Owners can opt their team in further, never out below the
 floor.
 
-- **Default require 2FA** — every team requires at least one TOTP authenticator
+- **Two-factor authentication** — every team requires at least one TOTP authenticator
   or passkey enrolled.
-- **Default require verified email** — every team requires a verified primary
+- **Verified primary email** — every team requires a verified primary
   email.
 
 ::: warning
@@ -200,18 +205,19 @@ match how most operators want it; turn knobs off to scope the feature
 down. See [Teams → Sub-teams](teams.md#sub-teams-nested-teams) for the
 full semantics.
 
-- **Enable sub-teams** — master switch. Off = every sub-team API returns
+- **Team nesting** — the master setting. **Not allowed** = every sub-team API returns
   403, the **Sub-teams** tab is hidden in the UI, and `parent_team_id`
   rows in the database are ignored for inheritance (preserved but inert,
-  so you can re-enable without data loss).
+  so you can re-enable without data loss). The options below show only
+  while nesting is allowed.
 - **Maximum nesting depth** — hard cap, validated 1–20. The default of 5
   is enough for most orgs; raising it costs an extra DB round-trip per
   level on every authorization check.
-- **Inherit team membership** — when on (default), a member of a parent
+- **Passed down to sub-teams → Membership** — when checked (default), a member of a parent
   team is treated as a member of every descendant with at least the same
   role (`effective = max(direct, inherited)`). Off = direct memberships
   only — sub-team admins must be added explicitly.
-- **Inherit verified domains** — when on (default), ancestor-owned
+- **Passed down to sub-teams → Verified domains** — when checked (default), ancestor-owned
   domains appear on sub-team listings as read-only entries
   (`inherited_from = …`) and a sub-team adding a sub-domain of an
   ancestor's verified apex is auto-verified. Off = sub-teams must
@@ -235,7 +241,7 @@ full semantics.
 
 ### Danger zone
 
-Tools that change the shape of the database. Each runs a single batched
+Under **Maintenance** in the admin sidebar. Tools that change the shape of the database. Each runs a single batched
 migration and is idempotent — re-running is safe.
 
 - **Migrate secrets to Secrets Store** — encrypts existing site-config secret
@@ -501,18 +507,26 @@ retried without reloading the panel.
 
 ## Invite-link registration
 
-**Admin → Teams** carries two extra controls once
-`enable_team_invite_registration` is on.
+A team's page has a **Moderation** tab for site admins with these controls.
+On **Admin → Teams**, the **Show** filter lists the teams with invite sign-up
+allowed, or with converting overridden.
 
-**Authorise / revoke** — grants a team permission to hand out account-creating
-invite links. This is the second of two doors; without it the team owner's own
-switch does nothing. Revoking also closes that switch, so the channel shuts
-immediately rather than reopening if the grant is later restored.
+**Allow invite sign-up** — grants a team permission to hand out
+account-creating invite links. It is the only switch: once it's on, the
+team's admins can tick **Usable for creating new accounts** on an invite.
+Turning it off stops existing links from creating accounts straight away.
+While sign-up is closed (**Settings → Sign-up**), no team's invites create
+accounts.
 
 Exemptions are set through the same endpoint. Only email verification can be
 exempted, and only by an administrator — it is the one check whose cost scales
 with the number of registrations. Captcha, proof-of-work and every rate limit
 are never exemptible.
+
+**Let these accounts become full accounts** — whether people who joined
+through this team's invites may convert themselves. Follows the site default
+(`self:convert`, under **Settings → Sign-up**) unless set to allow or don't
+allow for this team.
 
 **Dissolve (staged)** — dissolving a team that minted accounts deletes those
 accounts, so it does not go through the ordinary delete button (which returns
@@ -528,36 +542,6 @@ link produced — the query to run when one leaks.
 
 See [Teams → Restricted accounts](teams.md#restricted-accounts) for the full
 model.
-
-## Request Logs
-
-**Admin → Request Logs** is a paginated, filterable table of every Worker
-request — method, path, status, duration, IP, user agent, optional user ID
-(when authenticated), and the matching audit log row if any.
-
-- **Filter** by method, status range, path prefix, or user.
-- **Spectate** opens a tail-style live view that auto-refreshes.
-- **Export CSV** dumps the current filter to CSV.
-- **Details** for a single request shows the full request/response timing and
-  any audit-log linkage.
-- **Purge** drops the entire table (or just the spectate buffer).
-
-Request logs are independent of audit logs: a request hit may or may not result
-in an audit-worthy state change, and audit log entries for cron-driven actions
-have no associated request row. Prism checks the request-logging flags before it
-clones or reads a body. Body details are captured only for Force log all or a
-matching Spectate selection, and each request or response body recorded in
-Details is capped at 64 KiB. Larger bodies, and slow or long-lived streams that
-do not complete within the short capture window, are represented by an omission
-marker.
-
-**Log outbound requests** is a separate debug switch for external API calls made
-by the Worker, such as Telegram and Discord notification delivery. When enabled,
-Prism writes those calls into `request_logs` with the external URL as `path` and
-the redacted request/response bodies in Details. The same 64 KiB per-body log
-cap applies. Keep it off unless actively debugging third-party delivery failures
-because it records message payloads and performs an extra KV read per outbound
-call.
 
 ## Login Errors
 
@@ -636,8 +620,15 @@ still surfaces as a failure rather than as an empty board.
 ### Writing one
 
 Notices are drafts until published, so nothing half-written is ever on screen.
-The composer previews the rendered result through the same sanitizer the board
-uses — the body is markdown, treated as untrusted even though an administrator
+**New notice** opens a page that saves either as a draft or published. Each
+notice then has its own page: its visibility (draft or published), position
+(by date or pinned) and whether readers can dismiss it apply at once, and
+separate cards for the content and for the audience and schedule are each
+saved on its own. The list shows whether each notice is published and
+searches by title. A team notice picks its team by name.
+
+The composer previews the rendered result with the board's own component and
+the same sanitizer — the body is markdown, treated as untrusted even though an administrator
 wrote it, because the one place a stored-XSS bug would reach every signed-in
 user should not be the one place nothing checks.
 
@@ -647,7 +638,11 @@ user should not be the one place nothing checks.
 | Audience          | See below                                                                                                                 |
 | Show from / until | The window. Stored, not scheduled by a job: the read query filters on time, so a notice appears and disappears on its own |
 | Dismissible       | Off for something that must stay on screen, like an active incident                                                       |
-| Pinned            | Sorts above the rest regardless of age                                                                                    |
+| Pinned            | Sorts above the other notices of its level, regardless of age                                                             |
+
+Readers see the most urgent first (critical, then warning, then info; pinned
+then newest within a level). Two stay open; any more fold behind a "Show N
+more" link, so a busy board never pushes the page out of view.
 
 ### Audience
 
@@ -705,11 +700,12 @@ routine task.
 
 ### Sign everyone out
 
-**Admin → Settings → Danger Zone → Sign everyone out** deletes every active
+**Admin → Maintenance → Danger zone → Sign everyone out** deletes every active
 session. The count is shown before you press it. Your own session is kept by
 default — an operator who signs themselves out mid-incident has to log back in
 through whatever they were trying to contain — and "include my own session" is
-there for when your session is the thing you are worried about.
+there for when your session is the thing you are worried about. It asks for
+confirmation before signing anyone out.
 
 OAuth tokens are not affected. Those are revoked per application or per
 account, below.
@@ -747,19 +743,27 @@ other way can waive that, and the audit entry records that they did.
 
 ## Scope grants
 
-**Admin → Scope grants** lists the elevated OAuth grants: `site:*`, which lets
-an application act across the instance, and `site:team:*`, which reaches into
-a team without its owner's consent.
+**Admin → Scope grants** lists the elevated OAuth grants apps still hold:
+`site:*`, which lets an application act across the instance (including
+`site:team:*`, which reaches into any team without its owner's consent), and
+team grants (`team:<id>:*`), which let it act in one team.
 
-These were written at authorization time and then never surfaced again —
-nothing listed them and nothing revoked them, so the only way to find out what
-an application still held was to read the table. An authority nobody can
-enumerate is an authority nobody can withdraw.
+The **Site** and **Team** views show one row per app and account, or per app
+and team, with the scopes from the latest approval. Re-approving the same app
+doesn't add rows, and a grant drops off the list once the app no longer holds
+it, in a stored approval or a live token. Search by app, client ID, account or
+team.
 
-Revoking a grant stops that authority from being renewed. Tokens already
-issued under it keep working until they expire, because they are bound to the
-application rather than to this row — if you need them gone now, use
-[Cut off an application](#cut-off-an-application) as well.
+Each grant opens on its own page: the account it acts as (site) or the team
+and who approved it (team), every scope in plain words, when it was approved,
+and how many live tokens carry it. A team app can't do more than the person who
+approved it; if that person has left the team, the page says so.
+
+**Revoke this grant** takes the scopes out of the app's stored approvals and
+deletes the tokens and unused authorization codes that carry them, at once. The
+app keeps anything else it was approved for, such as sign-in, and has to ask
+again for the revoked scopes. An approval left with nothing in it is deleted.
+The audit log records the revoke with how many approvals and tokens it touched.
 
 ## Maintenance jobs
 
@@ -846,14 +850,21 @@ empty a table or hand out admin — so three things hold it in place:
 
 ### Browse tables
 
-Pick a table to page through its rows. The header marks primary-key columns,
-the DDL that created the table is shown above the grid, and the filter box
-takes a raw SQL `WHERE` fragment (without the keyword).
+Pick a table from the list (filterable, and a dropdown on narrow screens) to
+page through its rows; the view and table are kept in the URL. The header
+marks primary-key columns, the DDL that created the table is under
+**Schema**, and the filter box takes a raw SQL `WHERE` fragment (without the
+keyword). D1's own `_cf_*` bookkeeping tables are not listed: D1 refuses to
+let queries read them.
 
-Rows are edited, inserted and deleted in place. An update sends only the
-columns you actually changed. An empty input means `NULL`, which the grid also
-renders distinctly from an empty string — the two are not the same value and
-must not look alike in a table you are about to edit.
+Rows are edited and inserted in a form that takes the grid's place. Saving
+confirms first and shows exactly what will be written (each changed column as
+old → new, or every value being inserted), and deleting confirms with the
+row's key. An update sends only the columns you actually changed, and an
+empty input there means `NULL`. An insert leaves empty inputs out, so those
+columns take their defaults. The grid renders `NULL` distinctly from an empty
+string — the two are not the same value and must not look alike in a table
+you are about to edit.
 
 A table with no primary key is browsable but not row-editable: there is no way
 to address a single row. SQLite's `rowid` is used where one exists, so this
@@ -866,8 +877,9 @@ separated by semicolons run inside a single transaction, so a script that
 fails halfway leaves nothing behind. Result sets are capped at 500 rows and
 marked as truncated when they hit it.
 
-Write mode is a switch, and turning it on adds a confirmation step that shows
-the statement one more time before it runs.
+The mode beside the Run button is **Read only** or **Read and write**;
+choosing read and write adds a confirmation step that shows the statement one
+more time before it runs. Ctrl/Cmd+Enter runs the query.
 
 ### Endpoints
 
@@ -884,7 +896,7 @@ All of them sit behind `requireAdmin` and are session-only.
 
 ### Key–value browser
 
-The third tab in **Admin → Database**. KV holds most of what makes an instance
+The **Key–value** view of **Admin → Database**. KV holds most of what makes an instance
 behave the way it does on a given day — the debug switches, pending social
 confirmation and 2FA handoffs, sudo grants, the pending site reset — and
 nothing else renders any of it.
@@ -892,7 +904,10 @@ nothing else renders any of it.
 KV has no schema, so navigation is a namespace picker and a prefix box rather
 than a table list. Two namespaces are exposed: `sessions` (sessions, system
 flags, signing keys) and `cache`. Listing pages with KV's own opaque cursor,
-so it moves forward and back rather than jumping to a page number.
+so it moves forward and back rather than jumping to a page number. A key
+opens in place of the list to read, edit or delete it; saving or deleting one, like
+purging a prefix, confirms first; saving shows the key, its expiry and the
+value to be written.
 
 **Key material is withheld.** `system:jwt_secret` and the signing keypairs
 come back flagged, without their value, and cannot be written through this

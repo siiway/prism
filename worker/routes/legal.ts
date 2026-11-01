@@ -41,7 +41,7 @@ export const readerRoutes = new Hono<AppEnv>();
  *  the reader pays for it only when they open the page. */
 readerRoutes.get("/:doc", async (c) => {
   const doc = c.req.param("doc");
-  if (!isLegalSlug(doc)) return c.json({ error: "Unknown document" }, 404);
+  if (!isLegalSlug(doc)) return c.json({ error: "not_found" }, 404);
 
   // A missing table reads as "not published", not a 500 on a public page.
   const row = await readWithFallback(
@@ -87,15 +87,21 @@ adminRoutes.get("/", async (c) => {
 
 adminRoutes.put("/:doc", async (c) => {
   const doc = c.req.param("doc");
-  if (!isLegalSlug(doc)) return c.json({ error: "Unknown document" }, 404);
+  if (!isLegalSlug(doc)) return c.json({ error: "not_found" }, 404);
 
   const body = await c.req.json<{ content?: unknown }>();
   const content = body.content;
   if (typeof content !== "string")
-    return c.json({ error: "content must be a string" }, 400);
+    return c.json(
+      { error: "field_must_be_string", params: { field: "content" } },
+      400,
+    );
   if (new TextEncoder().encode(content).byteLength > LEGAL_MAX_BYTES)
     return c.json(
-      { error: `content exceeds the ${LEGAL_MAX_BYTES}-byte limit` },
+      {
+        error: "field_max_bytes",
+        params: { field: "content", max: LEGAL_MAX_BYTES },
+      },
       400,
     );
 

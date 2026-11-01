@@ -70,6 +70,10 @@ export function Login() {
   });
 
   const [identifier, setIdentifier] = useState("");
+  // Shown on the identifier field itself (not the form-level error) when
+  // GPG sign-in is started without one, and the field takes focus.
+  const [identifierError, setIdentifierError] = useState("");
+  const identifierRef = useRef<HTMLInputElement>(null);
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [totpRequired, setTotpRequired] = useState(false);
@@ -203,7 +207,8 @@ export function Login() {
 
   const handleGpgBegin = async () => {
     if (!identifier.trim()) {
-      setError(t("auth.emailOrUsernameRequired"));
+      setIdentifierError(t("auth.emailOrUsernameRequired"));
+      identifierRef.current?.focus();
       return;
     }
     setError("");
@@ -313,10 +318,17 @@ export function Login() {
         <form onSubmit={handleLogin} className={styles.form}>
           {!totpRequired ? (
             <>
-              <Field label={t("auth.emailOrUsername")}>
+              <Field
+                label={t("auth.emailOrUsername")}
+                validationMessage={identifierError || undefined}
+              >
                 <Input
+                  ref={identifierRef}
                   value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
+                  onChange={(e) => {
+                    setIdentifier(e.target.value);
+                    if (identifierError) setIdentifierError("");
+                  }}
                   placeholder="you@example.com"
                   autoComplete="username"
                   autoFocus
@@ -388,29 +400,31 @@ export function Login() {
 
         {!totpRequired && gpgStep === "idle" && (
           <>
-            <Button
-              appearance="outline"
-              icon={<KeyMultipleRegular />}
-              onClick={handlePasskeyLogin}
-              disabled={passkeyLoading}
-            >
-              {passkeyLoading
-                ? t("auth.authenticating")
-                : t("auth.signInWithPasskey")}
-            </Button>
+            <div className={styles.providers}>
+              <Button
+                appearance="outline"
+                icon={<KeyMultipleRegular />}
+                onClick={handlePasskeyLogin}
+                disabled={passkeyLoading}
+              >
+                {passkeyLoading
+                  ? t("auth.authenticating")
+                  : t("auth.signInWithPasskey")}
+              </Button>
 
-            <Button
-              appearance="outline"
-              icon={<LockClosedRegular />}
-              onClick={handleGpgBegin}
-              disabled={gpgLoading}
-            >
-              {gpgLoading ? (
-                <Spinner size="tiny" />
-              ) : (
-                t("security.signInWithGpg")
-              )}
-            </Button>
+              <Button
+                appearance="outline"
+                icon={<LockClosedRegular />}
+                onClick={handleGpgBegin}
+                disabled={gpgLoading}
+              >
+                {gpgLoading ? (
+                  <Spinner size="tiny" />
+                ) : (
+                  t("security.signInWithGpg")
+                )}
+              </Button>
+            </div>
 
             {(site?.enabled_providers?.length ?? 0) > 0 && (
               <>

@@ -197,7 +197,7 @@ describe("safeFetch DNS validation", () => {
 
     await expect(
       safeFetch("https://redirect.example.test/start"),
-    ).rejects.toThrow("URL host is not allowed");
+    ).rejects.toThrow("host_not_allowed");
     expect(targetFetchCount).toBe(1);
   });
 

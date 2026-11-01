@@ -12,23 +12,13 @@ body,
   height: 100%;
 }
 
-/* Match the FluentProvider's neutral background on the html/body so that
-   any area outside the rendered React tree (white margin while the bundle
-   loads, overscroll bounce, narrow viewports where the app doesn't fill
-   the viewport) paints in the right colour. Driven by the data-theme
-   attribute set synchronously by the FOUC shim before paint.
-   color-scheme also tells the UA to use the dark canvas + scrollbars. */
-html {
-  color-scheme: light;
-  background: #ffffff;
-}
-html[data-theme="dark"] {
-  color-scheme: dark;
-  background: #000000;
-}
+/* --prism-canvas (the app backdrop that cards sit on), the html background
+   and color-scheme are defined in an inline <style> in index.html, so they
+   apply before first paint instead of when this stylesheet arrives. */
 
 body {
   font-family:
+    "Segoe UI Variable Text",
     "Segoe UI",
     system-ui,
     -apple-system,
@@ -43,16 +33,19 @@ body {
     ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
 }
 
-.auth-grid {
-  background-image:
-    linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
-  background-size: 24px 24px;
+/* Edge adds a native reveal (eye) and clear button to password and text
+   inputs; PasswordInput already renders its own toggle, so the browser one
+   showed up as a duplicate icon. */
+/* The Cap widget's label is 15px semibold inside its shadow root; match the
+   body text of the form instead. The rest of its theme is set in Captcha.tsx. */
+cap-widget::part(label) {
+  font-size: var(--fontSizeBase300);
+  font-weight: var(--fontWeightRegular);
 }
-[data-theme="dark"] .auth-grid {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
 }
 
 /* Fluent Badge (pill/capsule) must never wrap its label or shrink inside
@@ -64,19 +57,23 @@ body {
   flex-shrink: 0;
 }
 
-/* Portalled Fluent surfaces sit outside most page containers. Give them the
-   same neutral boundary everywhere so menus and popups remain distinct in
-   both themes even though this design intentionally removes their shadows. */
+/* Portalled Fluent surfaces sit outside most page containers. A hairline
+   boundary on top of their shadow keeps them distinct in dark mode, where a
+   shadow on a near-black canvas barely registers. */
 .fui-DialogSurface,
 .fui-MenuPopover,
 .fui-PopoverSurface,
 .fui-Listbox {
-  border: 1px solid var(--colorNeutralStroke1);
+  border: 1px solid var(--colorNeutralStroke2);
 }
 
 a {
   color: inherit;
   text-decoration: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--colorBrandBackground) 22%, transparent);
 }
 
 /* Monochrome provider icons (X, GitHub) ship as a black silhouette and
@@ -99,22 +96,24 @@ button.provider-button--full-width {
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.4);
+  background-color: rgba(0, 0, 0, 0.32);
 }
 [data-theme="dark"] ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background-color: rgba(255, 255, 255, 0.14);
 }
 [data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background-color: rgba(255, 255, 255, 0.28);
 }

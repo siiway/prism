@@ -135,7 +135,10 @@ const OIDC_ISSUER_REL = "http://openid.net/specs/connect/1.0/issuer";
 app.get("/webfinger", (c) => {
   const resource = c.req.query("resource");
   if (!resource)
-    return c.json({ error: "the resource parameter is required" }, 400);
+    return c.json(
+      { error: "field_required", params: { field: "resource" } },
+      400,
+    );
   const rel = c.req.query("rel");
   const links =
     !rel || rel === OIDC_ISSUER_REL
@@ -166,7 +169,9 @@ app.get("/security.txt", async (c) => {
 
 // W3C well-known change-password: send password managers to the page where a
 // user changes their password.
-app.get("/change-password", (c) => c.redirect(`${c.env.APP_URL}/profile`, 302));
+app.get("/change-password", (c) =>
+  c.redirect(`${c.env.APP_URL}/security#password`, 302),
+);
 
 app.get("/jwks.json", async (c) => {
   const rsa = await getRsaKeyPair(c.env.KV_SESSIONS);

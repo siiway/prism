@@ -2,7 +2,6 @@
 
 import { getConfig } from "./config";
 import { emailConfigFromSite, sendEmail } from "./email";
-import { loggedFetch } from "./logger";
 import { decryptSecret } from "./secretCrypto";
 
 // ─── Event catalogue ─────────────────────────────────────────────────────────
@@ -1162,20 +1161,16 @@ async function sendTelegramNotification(
   if (!baseText) return;
   const text = withTelegramOperatorMeta(baseText, data);
 
-  await loggedFetch(
-    env,
-    `https://api.telegram.org/bot${botToken}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: conn.provider_user_id,
-        text,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }),
-    },
-  );
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: conn.provider_user_id,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
+  });
 }
 
 // ─── Discord delivery ─────────────────────────────────────────────────────────
@@ -1231,35 +1226,27 @@ async function sendDiscordNotification(
 
   // Discord bots cannot DM a user directly; first open (or reuse) a DM
   // channel with the recipient, then post the message into it.
-  const dmRes = await loggedFetch(
-    env,
-    "https://discord.com/api/v10/users/@me/channels",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bot ${botToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ recipient_id: conn.provider_user_id }),
+  const dmRes = await fetch("https://discord.com/api/v10/users/@me/channels", {
+    method: "POST",
+    headers: {
+      Authorization: `Bot ${botToken}`,
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify({ recipient_id: conn.provider_user_id }),
+  });
   if (!dmRes.ok) return;
   const dm = (await dmRes.json()) as { id?: string };
   if (!dm.id) return;
 
-  await loggedFetch(
-    env,
-    `https://discord.com/api/v10/channels/${dm.id}/messages`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bot ${botToken}`,
-        "Content-Type": "application/json",
-      },
-      // content is capped at 2000 chars by Discord; our messages stay well under.
-      body: JSON.stringify({ content: content.slice(0, 2000) }),
+  await fetch(`https://discord.com/api/v10/channels/${dm.id}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bot ${botToken}`,
+      "Content-Type": "application/json",
     },
-  );
+    // content is capped at 2000 chars by Discord; our messages stay well under.
+    body: JSON.stringify({ content: content.slice(0, 2000) }),
+  });
 }
 
 // ─── Main delivery function ───────────────────────────────────────────────────

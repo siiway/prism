@@ -1,260 +1,240 @@
-// Site- and team-level scope grants.
+// Site- and team-level scope grants that apps still hold.
 //
 // These are the highest-privilege grants the OAuth layer issues: `site:*` lets
 // an application act across the instance, and `site:team:*` deliberately
-// bypasses the team owner's consent. They were written at authorization time
-// and then never surfaced again — nothing listed them and nothing revoked
-// them, so the only way to find out what an application still held was to read
-// the table.
-//
-// An authority nobody can enumerate is an authority nobody can withdraw, which
-// is the whole reason this screen exists.
+// bypasses the team owner's consent. One row per app and account (site) or
+// app and team (team); each opens on its own page, where it can be revoked.
+// The kind lives in ?view= so coming back from a grant lands on the same list.
 
 import {
   Badge,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
-  MessageBar,
-  Tab,
-  TabList,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
-  Text,
+  Skeleton,
+  SkeletonItem,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { DeleteRegular } from "@fluentui/react-icons";
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { KeyMultipleRegular } from "@fluentui/react-icons";
+import { useEffect, useState } from "react";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
-import { ApiError } from "../../lib/api";
+import type { AdminScopeGrant, ScopeGrantKind } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
-import type { AdminScopeGrant } from "../../lib/api";
-import { CopyIdButton } from "../../components/CopyIdButton";
-import { MarkdownText } from "../../components/MarkdownText";
-import { Pagination } from "../../components/Pagination";
-import { SkeletonTableRows } from "../../components/Skeletons";
-import { useToastMessage } from "../../lib/useToastMessage";
 import { formatDate } from "../../lib/datetime";
+import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
+import { usePageClamp } from "../../lib/usePageClamp";
+import { useToastMessage } from "../../lib/useToastMessage";
+import {
+  DataList,
+  DataListName,
+  DataListRow,
+  type DataListColumn,
+} from "../../components/DataList";
+import { EmptyState } from "../../components/EmptyState";
+import { ListSearch } from "../../components/ListSearch";
+import { Pagination } from "../../components/Pagination";
+import { Segmented } from "../../components/Segmented";
+import { SettingsToast } from "../../components/Settings";
 
 const PAGE_SIZE = 20;
 
 const useStyles = makeStyles({
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-    minWidth: 0,
-    flex: 1,
-  },
-  tableScroll: { overflowX: "auto" },
-  mono: {
-    fontFamily: tokens.fontFamilyMonospace,
-    fontSize: tokens.fontSizeBase200,
-  },
+  toast: { marginBottom: "12px" },
+  views: { display: "flex", marginBottom: "12px" },
   scopes: { display: "flex", gap: "4px", flexWrap: "wrap" },
-  muted: { color: tokens.colorNeutralForeground3 },
+  name: {
+    color: tokens.colorNeutralForeground1,
+    textDecorationLine: "none",
+    ":hover": { textDecorationLine: "underline" },
+  },
 });
 
-export function AdminScopeGrants() {
+/** Where a grant opens. */
+const scopeGrantPath = (kind: ScopeGrantKind, id: string) =>
+  `/admin/scope-grants/${kind}/${id}`;
+
+function GrantList({ kind }: { kind: ScopeGrantKind }) {
   const api = useApi();
   const styles = useStyles();
-  const { t } = useTranslation();
-  const qc = useQueryClient();
   const navigate = useNavigate();
-  const { message, showMsg } = useToastMessage();
+  const { t } = useTranslation();
 
-  const [kind, setKind] = useState<"site" | "team">("site");
   const [page, setPage] = useState(1);
-  const [pendingRevoke, setPendingRevoke] = useState<AdminScopeGrant | null>(
-    null,
-  );
-
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["admin-scope-grants", kind, page],
-    queryFn: () => api.adminScopeGrants(kind, page),
+  const { query, setQuery, search } = useDebouncedSearch(() => setPage(1));
+  const { data, isFetching } = useQuery({
+    queryKey: ["admin-scope-grants", kind, page, search],
+    queryFn: () => api.adminScopeGrants(kind, page, { q: search || undefined }),
   });
+  const grants = data?.grants ?? [];
+  const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
-  const revoke = useMutation({
-    mutationFn: (id: string) => api.adminRevokeScopeGrant(kind, id),
-    onSuccess: async (res) => {
-      await qc.invalidateQueries({ queryKey: ["admin-scope-grants"] });
-      setPendingRevoke(null);
-      showMsg("success", res.message);
+  const columns: DataListColumn[] = [
+    { label: t("admin.grantAppHeader"), width: "minmax(0, 1.5fr)" },
+    {
+      label:
+        kind === "site"
+          ? t("admin.scopesHeader")
+          : t("admin.permissionsHeader"),
+      width: "minmax(0, 2fr)",
+      secondary: true,
     },
-    onError: (err) =>
-      showMsg("error", err instanceof ApiError ? err.message : String(err)),
-  });
+    {
+      label:
+        kind === "site" ? t("admin.grantAccountHeader") : t("admin.teamHeader"),
+      width: "minmax(0, 1fr)",
+      secondary: true,
+    },
+    { label: t("admin.grantedHeader"), width: "100px", secondary: true },
+  ];
 
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const scopesOf = (row: AdminScopeGrant) =>
+    (kind === "site" ? row.scopes : row.permissions) ?? [];
 
   return (
-    <div className={styles.root}>
-      {message && <MessageBar intent={message.type}>{message.text}</MessageBar>}
-      <MessageBar intent="info">
-        <MarkdownText source={t("admin.scopeGrantsNotice")} />
-      </MessageBar>
+    <>
+      <ListSearch
+        value={query}
+        onChange={setQuery}
+        placeholder={
+          kind === "site"
+            ? t("admin.searchSiteGrants")
+            : t("admin.searchTeamGrants")
+        }
+      />
 
-      <TabList
-        selectedValue={kind}
-        onTabSelect={(_, d) => {
-          setKind(d.value as "site" | "team");
-          setPage(1);
-        }}
-      >
-        <Tab value="site">{t("admin.siteGrantsTab")}</Tab>
-        <Tab value="team">{t("admin.teamGrantsTab")}</Tab>
-      </TabList>
-
-      <div className={styles.tableScroll}>
-        <Table size="small">
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>{t("admin.applicationsTab")}</TableHeaderCell>
-              <TableHeaderCell>
-                {kind === "site"
-                  ? t("admin.scopesHeader")
-                  : t("admin.permissionsHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>
-                {kind === "site"
-                  ? t("admin.grantedByHeader")
-                  : t("admin.teamHeader")}
-              </TableHeaderCell>
-              <TableHeaderCell>{t("admin.grantedHeader")}</TableHeaderCell>
-              <TableHeaderCell style={{ width: 1 }} />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <SkeletonTableRows rows={6} cols={5} />
-            ) : data?.grants.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5}>
-                  <Text className={styles.muted}>
-                    {t("admin.noScopeGrants")}
-                  </Text>
-                </TableCell>
-              </TableRow>
-            ) : (
-              data?.grants.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <div>
-                      <Text weight="semibold" block>
-                        {row.app_name ?? t("admin.unknownApp")}
-                      </Text>
-                      <Text size={200} className={styles.mono}>
-                        {row.client_id}
-                      </Text>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {kind === "site" ? (
-                      <div className={styles.scopes}>
-                        {(row.scopes ?? []).map((s) => (
-                          <Badge key={s} appearance="tint" size="small">
-                            {s}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <Text size={200} className={styles.mono}>
-                        {JSON.stringify(row.permissions)}
-                      </Text>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {kind === "site" ? (
-                      <Text size={200}>
-                        {row.admin_username ? `@${row.admin_username}` : "—"}
-                      </Text>
-                    ) : row.team_id ? (
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        onClick={() => navigate(`/teams/${row.team_id}`)}
-                      >
-                        {row.team_name ?? row.team_id}
-                      </Button>
-                    ) : (
-                      <Text className={styles.muted}>—</Text>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Text size={200}>{formatDate(row.granted_at)}</Text>
-                  </TableCell>
-                  <TableCell>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <CopyIdButton id={row.id} />
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        icon={<DeleteRegular />}
-                        aria-label={t("common.revoke")}
-                        onClick={() => setPendingRevoke(row)}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {totalPages > 1 && (
-        <Pagination
-          page={page}
-          pageCount={totalPages}
-          total={data?.total}
-          disabled={isLoading || isFetching}
-          onChange={setPage}
+      {isFetching && !data ? (
+        <Skeleton aria-busy>
+          <DataList columns={columns}>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <DataListRow
+                key={i}
+                cells={columns.map((_, c) => (
+                  <SkeletonItem key={c} size={12} style={{ width: "60%" }} />
+                ))}
+              />
+            ))}
+          </DataList>
+        </Skeleton>
+      ) : grants.length === 0 ? (
+        <EmptyState
+          icon={<KeyMultipleRegular />}
+          title={
+            search
+              ? t("teams.noResultsMatch")
+              : kind === "site"
+                ? t("admin.noSiteGrants")
+                : t("admin.noTeamGrants")
+          }
         />
+      ) : (
+        <>
+          <DataList columns={columns}>
+            {grants.map((row) => {
+              const path = scopeGrantPath(kind, row.id);
+              return (
+                <DataListRow
+                  key={row.id}
+                  onClick={() => navigate(path)}
+                  cells={[
+                    <DataListName
+                      key="app"
+                      name={
+                        // A real link: keyboard, middle-click, new tab.
+                        <Link
+                          to={path}
+                          className={styles.name}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {row.app_name ?? t("admin.unknownApp")}
+                        </Link>
+                      }
+                      sub={row.client_id}
+                    />,
+                    <div key="s" className={styles.scopes}>
+                      {scopesOf(row).map((s) => (
+                        <Badge
+                          key={s}
+                          appearance="tint"
+                          color={kind === "site" ? "danger" : "informative"}
+                          size="small"
+                        >
+                          {s}
+                        </Badge>
+                      ))}
+                    </div>,
+                    kind === "site"
+                      ? row.grantee_username
+                        ? `@${row.grantee_username}`
+                        : "—"
+                      : (row.team_name ?? row.team_id ?? "—"),
+                    formatDate(row.granted_at),
+                  ]}
+                />
+              );
+            })}
+          </DataList>
+          {(total > PAGE_SIZE || page > 1) && (
+            <Pagination
+              page={page}
+              pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
+              total={total}
+              onChange={setPage}
+              disabled={isFetching}
+            />
+          )}
+        </>
       )}
+    </>
+  );
+}
 
-      <Dialog
-        open={pendingRevoke !== null}
-        onOpenChange={(_, d) => !d.open && setPendingRevoke(null)}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t("admin.revokeGrantTitle")}</DialogTitle>
-            <DialogContent>
-              <Text block>
-                {t("admin.revokeGrantBody", {
-                  app:
-                    pendingRevoke?.app_name ?? pendingRevoke?.client_id ?? "",
-                })}
-              </Text>
-            </DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button>{t("common.cancel")}</Button>
-              </DialogTrigger>
-              <Button
-                appearance="primary"
-                style={{ background: tokens.colorPaletteRedBackground3 }}
-                disabled={revoke.isPending}
-                onClick={() => pendingRevoke && revoke.mutate(pendingRevoke.id)}
-              >
-                {t("common.revoke")}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+export function AdminScopeGrants() {
+  const styles = useStyles();
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const kind: ScopeGrantKind = params.get("view") === "team" ? "team" : "site";
+  const { message, showMsg } = useToastMessage();
+
+  // Back from revoking a grant: say so once, then drop the flag so a reload
+  // doesn't repeat it.
+  const revoked = (location.state as { revoked?: string } | null)?.revoked;
+  useEffect(() => {
+    if (!revoked) return;
+    showMsg("success", t("admin.grantRevokedToast", { app: revoked }));
+    navigate(location.pathname + location.search, {
+      replace: true,
+      state: null,
+    });
+  }, [revoked, showMsg, t, navigate, location.pathname, location.search]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+      {message && (
+        <div className={styles.toast}>
+          <SettingsToast message={message} />
+        </div>
+      )}
+      <div className={styles.views}>
+        <Segmented
+          label={t("admin.scopeGrantKind")}
+          value={kind}
+          onChange={(v) => setParams(v === "team" ? { view: "team" } : {})}
+          options={[
+            { value: "site", label: t("admin.siteGrantsTab") },
+            { value: "team", label: t("admin.teamGrantsTab") },
+          ]}
+        />
+      </div>
+      {/* Keyed so switching views starts a fresh search and page. */}
+      <GrantList key={kind} kind={kind} />
     </div>
   );
 }

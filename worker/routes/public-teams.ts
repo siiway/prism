@@ -14,12 +14,12 @@ const app = new Hono<AppEnv>();
 
 app.get("/:id", optionalAuth, async (c) => {
   const teamId = c.req.param("id") ?? "";
-  if (!teamId) return c.json({ error: "Not found" }, 404);
+  if (!teamId) return c.json({ error: "not_found" }, 404);
   const config = await getConfig(c.env.DB);
   // The user-public-profile master switch also gates team profiles, so an
   // admin can disable the whole feature with one toggle.
   if (!config.enable_public_profiles) {
-    return c.json({ error: "Not found" }, 404);
+    return c.json({ error: "not_found" }, 404);
   }
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
@@ -41,7 +41,7 @@ app.get("/:id", optionalAuth, async (c) => {
   }
 
   if (!team || (!team.profile_is_public && !viewerIsMember)) {
-    return c.json({ error: "Not found" }, 404);
+    return c.json({ error: "not_found" }, 404);
   }
 
   const resolve = (v: number | null, def: boolean): boolean =>

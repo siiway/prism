@@ -210,18 +210,17 @@ Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆主
 
 ### 邀请链接注册
 
-[邀请链接注册](teams.md#邀请链接注册)的总开关与各项上限。默认关闭 —— 打开它才使团队所有者具备创建账号的能力，且即便打开，每个团队仍需在 **Admin → Teams** 单独获得授权。
+[邀请链接注册](teams.md#邀请链接注册)的各项上限。团队能否使用该功能由站点管理员按团队授权；`allow_registration` 为 `false` 时不会创建任何账号。
 
 | 键                                       | 类型   | 默认值  | 说明                                                              |
 | ---------------------------------------- | ------ | ------- | ----------------------------------------------------------------- |
-| `enable_team_invite_registration`        | bool   | `false` | 总开关。关闭时所有相关端点返回 403。                              |
 | `team_invite_registration_max_uses_cap`  | int    | `1000`  | 团队为可注册邀请设置 `max_uses` 的上限。                          |
 | `team_invite_registration_rate_per_hour` | int    | `200`   | 单个邀请码每小时注册次数。按 IP 限流约束不了被广传的链接。        |
 | `restricted_user_capabilities`           | object | `{}`    | 放开给受限账号的功能，如 `{"app:create": true}`。留空即全部拒绝。 |
 | `restricted_pending_ttl_hours`           | int    | `72`    | 未完成的注册存活多久后被清理。                                    |
 | `restricted_dissolve_grace_hours`        | int    | `168`   | 解散停用账号到实际删除之间的宽限期。                              |
 
-能力键：`team:create`、`app:create`、`domain:create`、`pat:create`、`profile:public`、`gpg:manage`、`self:convert`。未列出的键落回内置默认值（全部拒绝）。账号安全永不受限。
+能力键：`team:create`、`app:create`、`domain:create`、`pat:create`、`profile:public`、`gpg:manage`、`self:convert`。未列出的键落回内置默认值（全部拒绝）。账号安全永不受限。`self:convert` 是站点默认值，各团队可单独覆盖（见 [团队 → 转换为完整账号](teams.md#转换为完整账号)）。
 
 ### 团队加入门槛（站点底线）
 
@@ -350,7 +349,7 @@ https://your-domain/api/connections/<slug>/callback
 | `APP_URL`           | 是   | 部署的完整 origin，例如 `https://auth.example.com`                                                                                                                                                                                                                                                                                                                                                                  |
 | `LOCKDOWN_USERS`    | 否   | 逗号/分号/空格分隔的用户名列表，列表中的用户无法被任何人（包括管理员）删除。留空即禁用。                                                                                                                                                                                                                                                                                                                            |
 | `LOCKDOWN_TEAMS`    | 否   | 逗号/分号/空格分隔的团队名称列表，列表中的团队无法被任何人（包括管理员）删除。留空即禁用。                                                                                                                                                                                                                                                                                                                          |
-| `ENABLE_RESET`      | 否   | 设为 `"true"` 以启用 **Admin → Settings → Danger Zone → Site reset** 按钮。未设置或为其他值时隐藏（具有破坏性）。                                                                                                                                                                                                                                                                                                   |
+| `ENABLE_RESET`      | 否   | 设为 `"true"` 以启用 **管理面板 → 维护 → 危险区域 → Site reset** 按钮。未设置或为其他值时隐藏（具有破坏性）。                                                                                                                                                                                                                                                                                                       |
 | `D1_CONSOLE`        | 否   | **Admin → Database** 的可用性。**默认关闭。** 未设置、`"off"`（也接受 `"false"` / `"0"` / `"no"` / `"disabled"` / `"none"`）以及任何无法识别的值都会移除整个界面：端点返回 404，标签页消失。`"read-only"`（也接受 `"readonly"` / `"read"`）允许浏览与 `SELECT`，但拒绝一切写入，包括显式带 `allow_write` 的请求。`"full"`（也接受 `"on"` / `"true"` / `"1"`）为完全访问 —— 但审计日志例外，在任何设置下都是只追加。 |
 | `KV_CONSOLE`        | 否   | 同一面板中键值浏览器的可用性。取值与 `D1_CONSOLE` 相同。**未设置时跟随 `D1_CONSOLE`** —— 两者是同一实例存储的两扇窗，因此对其中一个的设置也是对另一个的表态，除非这里另行指定。两者都未设置时，均为关闭。                                                                                                                                                                                                           |
 | `NO_RESET_COOLDOWN` | 否   | 设为 `"true"` 以跳过请求重置与确认之间的 30 分钟冷却期。即使设置此项，2FA 仍然要求。                                                                                                                                                                                                                                                                                                                                |
@@ -375,7 +374,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 在 Cloudflare 控制台创建 Secrets Store，把密钥以 `prism-secrets-key` 为名存入，然后在 `wrangler.jsonc` 中加入 `secrets_store_secrets` 绑定。
 
-重新部署后，在 **Admin → Settings → Danger Zone → "Migrate secrets to Secrets Store"** 中点击迁移一次，将 D1 中已有的 OAuth/源/SMTP/IMAP/验证码凭据加密。Bearer 类机密（PAT、OAuth code、OAuth token、邀请 token、邮箱验证码、二次验证码、单条备用码）通过姊妹按钮 **"Migrate D1 secrets"** 迁移成 HMAC-SHA256 哈希，可继续按值检索但无法从数据库还原。
+重新部署后，在 **管理面板 → 维护 → 危险区域 → "Migrate secrets to Secrets Store"** 中点击迁移一次，将 D1 中已有的 OAuth/源/SMTP/IMAP/验证码凭据加密。Bearer 类机密（PAT、OAuth code、OAuth token、邀请 token、邮箱验证码、二次验证码、单条备用码）通过姊妹按钮 **"Migrate D1 secrets"** 迁移成 HMAC-SHA256 哈希，可继续按值检索但无法从数据库还原。
 
 未绑定 `SECRETS_KEY` 时所有加密/哈希函数均退化为 no-op — 历史明文路径仍然可用，便于平滑升级。
 
