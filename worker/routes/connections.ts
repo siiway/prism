@@ -11,9 +11,8 @@ import {
   hmacSha256Hex,
   timingSafeStrEqual,
 } from "../lib/crypto";
-import { getConfig, getJwtSecret } from "../lib/config";
+import { getConfig } from "../lib/config";
 import { getIp } from "../lib/clientIp";
-import { geoJson, recordSessionIp } from "../lib/geo";
 import { decryptSecret, encryptSecret } from "../lib/secretCrypto";
 import {
   validateSiteInvite,
@@ -22,7 +21,6 @@ import {
 } from "../lib/siteInvite";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { rateLimitIp } from "../middleware/rateLimit";
-import { signJWT } from "../lib/jwt";
 import {
   clearSocialOAuthCookie,
   readSocialOAuthCookie,
@@ -45,6 +43,8 @@ import {
 } from "../lib/notifications";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { verifyAnyTotp } from "../lib/totp";
+import { issueSession } from "../lib/session";
+import { toSessionUser } from "../lib/sessionUser";
 import type {
   OAuthSourceRow,
   SiteInviteRow,
@@ -53,6 +53,9 @@ import type {
   UserRow,
   Variables,
 } from "../types";
+
+/** Social sign-in sessions last 30 days. */
+const SOCIAL_SESSION_TTL = 30 * 24 * 60 * 60;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -746,10 +749,10 @@ app.post("/:provider/tg-verify", optionalAuth, async (c) => {
         c.env.APP_URL,
       ).catch(() => {}),
     );
-    await issueJWT(c, user);
+    await issueSession(c, user, SOCIAL_SESSION_TTL, ["ext"]);
     return c.json({
       type: "login",
-      user: await userToProfile(c.env.APP_URL, c.env.DB, user),
+      user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
     });
   }
 
@@ -1148,7 +1151,7 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
         c.env.APP_URL,
       ).catch(() => {}),
     );
-    await issueJWT(c, user);
+    await issueSession(c, user, SOCIAL_SESSION_TTL, ["ext"]);
     return c.redirect(`${c.env.APP_URL}/auth/callback`);
   }
 
@@ -1323,9 +1326,9 @@ app.post("/complete", async (c) => {
       ).catch(() => {}),
     );
 
-    await issueJWT(c, user);
+    await issueSession(c, user, SOCIAL_SESSION_TTL, ["ext"]);
     return c.json({
-      user: await userToProfile(c.env.APP_URL, c.env.DB, user),
+      user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
     });
   }
 
@@ -1434,9 +1437,9 @@ app.post("/complete", async (c) => {
       .first<UserRow>();
     if (!user) return c.json({ error: "user_create_failed" }, 500);
 
-    await issueJWT(c, user);
+    await issueSession(c, user, SOCIAL_SESSION_TTL, ["ext"]);
     return c.json({
-      user: await userToProfile(c.env.APP_URL, c.env.DB, user),
+      user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
     });
   }
 
@@ -1513,9 +1516,9 @@ app.post("/2fa/verify", async (c) => {
     ).catch(() => {}),
   );
 
-  await issueJWT(c, user);
+  await issueSession(c, user, SOCIAL_SESSION_TTL, ["ext"]);
   return c.json({
-    user: await userToProfile(c.env.APP_URL, c.env.DB, user),
+    user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });
 });
 
@@ -2022,75 +2025,6 @@ function extractProviderAvatar(
         (profile.picture as string) ?? (profile.avatar_url as string) ?? null
       );
   }
-}
-
-async function issueJWT(
-  c: Context<AppEnv>,
-  user: UserRow,
-  ttlSeconds = 30 * 24 * 60 * 60,
-): Promise<void> {
-  const db = c.env.DB;
-  const sessionId = randomId(32);
-  const now = Math.floor(Date.now() / 1000);
-  const token = await signJWT(
-    {
-      sub: user.id,
-      role: user.role,
-      email: user.email,
-      username: user.username,
-      display_name: user.display_name,
-      avatar_url: await proxyImageUrl(c.env.APP_URL, db, user.avatar_url),
-      unproxied_avatar_url: user.avatar_url,
-      email_verified: user.email_verified === 1,
-      sessionId,
-    },
-    await getJwtSecret(c.env.KV_SESSIONS),
-    ttlSeconds,
-  );
-  const hash = await sha256Hex(token);
-  await db
-    .prepare(
-      "INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at, amr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(
-      sessionId,
-      user.id,
-      hash,
-      c.req.header("User-Agent") ?? null,
-      c.req.header("CF-Connecting-IP") ??
-        c.req.header("X-Forwarded-For") ??
-        "unknown",
-      now + ttlSeconds,
-      now,
-      // RFC 8176: federated / external identity provider.
-      JSON.stringify(["ext"]),
-    )
-    .run();
-  // Seed the session's IP history with the login IP + geolocation (same as the
-  // password-login path in issueSession) so the security page has a location
-  // immediately, not only after the next authenticated request.
-  c.executionCtx.waitUntil(
-    recordSessionIp(c.env.DB, sessionId, getIp(c), geoJson(c), now).catch(
-      () => undefined,
-    ),
-  );
-  // The browser session credential is only delivered in the HttpOnly cookie.
-  // On OAuth callback redirects the cookie authenticates the follow-up request
-  // without exposing the JWT in the redirect URL.
-  setSessionCookie(c, token, ttlSeconds);
-}
-
-async function userToProfile(baseUrl: string, db: D1Database, user: UserRow) {
-  return {
-    id: user.id,
-    email: user.email,
-    username: user.username,
-    display_name: user.display_name,
-    avatar_url: await proxyImageUrl(baseUrl, db, user.avatar_url),
-    unproxied_avatar_url: user.avatar_url,
-    role: user.role,
-    email_verified: user.email_verified === 1,
-  };
 }
 
 export default app;

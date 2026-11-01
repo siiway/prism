@@ -23,6 +23,7 @@ import { hashPassword, randomId } from "../lib/crypto";
 
 import { hashLookupCandidate } from "../lib/secretCrypto";
 import { requireAuth } from "../middleware/auth";
+import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import { getConfig, getConfigValue } from "../lib/config";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
@@ -379,7 +380,6 @@ app.post("/auth/register-with-invite", async (c) => {
     .first<UserRow>();
   if (!user) return c.json({ error: "user_create_failed" }, 500);
 
-  const { issueSession } = await import("./auth");
   const ttl = config.session_ttl_days * 24 * 60 * 60;
   await issueSession(c, user, ttl, ["pwd"]);
 

@@ -1,18 +1,15 @@
 // Auth routes: register, login, logout, 2FA, passkeys, email verify, social OAuth callback
 
 import { Hono } from "hono";
-import type { Context } from "hono";
-import { getConfig, getConfigValue, getJwtSecret } from "../lib/config";
+import { getConfig, getConfigValue } from "../lib/config";
 import { getIp } from "../lib/clientIp";
-import { geoJson, recordSessionIp } from "../lib/geo";
-import { recordAudit, auditRequestMeta } from "../lib/audit";
-import { clearSessionCookie, setSessionCookie } from "../lib/cookies";
+import { geoJson } from "../lib/geo";
+import { clearSessionCookie } from "../lib/cookies";
 import { deliverBackChannelLogout } from "../lib/backchannelLogout";
 import {
   hashPassword,
   randomId,
   randomBase64url,
-  sha256Hex,
   verifyPassword,
 } from "../lib/crypto";
 import {
@@ -27,7 +24,6 @@ import {
   decryptSecret,
   isHashedSecret,
 } from "../lib/secretCrypto";
-import { signJWT } from "../lib/jwt";
 import {
   claimEnrolmentCounter,
   generateBackupCodes,
@@ -59,7 +55,7 @@ import {
   checkLoginTotpLimit,
 } from "../lib/loginRateLimit";
 import { requireAuth } from "../middleware/auth";
-import { proxyImageUrl } from "../lib/proxyImage";
+import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import {
   deliverUserEmailNotifications,
@@ -110,83 +106,6 @@ async function logLoginError(
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
-
-/** Exported so the invite-registration flow can mint a session through the
- *  same path as ordinary login rather than re-implementing cookie handling,
- *  JWT signing and session-row bookkeeping. */
-export async function issueSession(
-  c: Context<AppEnv>,
-  user: UserRow,
-  ttlSeconds: number,
-  amr?: string[],
-): Promise<void> {
-  const db = c.env.DB;
-  const secret = await getJwtSecret(c.env.KV_SESSIONS);
-  const sessionId = randomId(32);
-  const now = Math.floor(Date.now() / 1000);
-  const token = await signJWT(
-    {
-      sub: user.id,
-      role: user.role,
-      email: user.email,
-      username: user.username,
-      display_name: user.display_name,
-      avatar_url: await proxyImageUrl(c.env.APP_URL, db, user.avatar_url),
-      unproxied_avatar_url: user.avatar_url,
-      email_verified: user.email_verified === 1,
-      sessionId,
-    },
-    secret,
-    ttlSeconds,
-  );
-  const hash = await sha256Hex(token);
-  await db
-    .prepare(
-      "INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at, amr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(
-      sessionId,
-      user.id,
-      hash,
-      c.req.header("User-Agent") ?? null,
-      getIp(c),
-      now + ttlSeconds,
-      now,
-      amr && amr.length ? JSON.stringify(amr) : null,
-    )
-    .run();
-  // Seed the session's IP history with the login IP + geolocation so the
-  // security page has a location for a session the moment it is created,
-  // rather than only after the next authenticated request.
-  c.executionCtx.waitUntil(
-    recordSessionIp(c.env.DB, sessionId, getIp(c), geoJson(c), now).catch(
-      () => undefined,
-    ),
-  );
-  // The browser session credential is only ever delivered in the HttpOnly
-  // cookie; API response bodies never expose it to JavaScript.
-  setSessionCookie(c, token, ttlSeconds);
-
-  // Transparent User Control: record every session issuance (login, social
-  // login, 2FA completion, GPG login, registration) in the user's own log.
-  const meta = auditRequestMeta(c);
-  c.executionCtx.waitUntil(
-    recordAudit(c.env, c.executionCtx, {
-      scope: "user",
-      scopeId: user.id,
-      action: "user.login",
-      actorId: user.id,
-      actorName: user.username,
-      resourceType: "session",
-      resourceId: sessionId,
-      resourceName: `@${user.username}`,
-      ip: meta.ip,
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata: {},
-    }),
-  );
-}
 
 // ─── Register ────────────────────────────────────────────────────────────────
 

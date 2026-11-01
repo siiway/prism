@@ -1,14 +1,13 @@
 // Init route: check if the platform is initialized, create first admin
 
 import { Hono } from "hono";
-import { isInitialized, setConfigValue, getJwtSecret } from "../lib/config";
-import { hashPassword, randomId, sha256Hex } from "../lib/crypto";
-import { getIp } from "../lib/clientIp";
-import { geoJson, recordSessionIp } from "../lib/geo";
-import { signJWT } from "../lib/jwt";
-import { setSessionCookie } from "../lib/cookies";
+import { isInitialized, setConfigValue } from "../lib/config";
+import { hashPassword, randomId } from "../lib/crypto";
+import { issueSession } from "../lib/session";
+import { toSessionUser } from "../lib/sessionUser";
+import type { UserRow, Variables } from "../types";
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 // GET /api/init/status — is the platform ready?
 app.get("/status", async (c) => {
@@ -89,66 +88,15 @@ app.post("/", async (c) => {
     await setConfigValue(c.env.DB, "site_name", body.site_name);
   }
 
-  // Issue a session in the HttpOnly cookie.
-  const sessionId = randomId(32);
-  const sessionTtl = 30 * 24 * 60 * 60;
-  const jwtSecret = await getJwtSecret(c.env.KV_SESSIONS);
-  const token = await signJWT(
-    {
-      sub: userId,
-      role: "admin",
-      email: body.email.toLowerCase().trim(),
-      username: body.username.toLowerCase().trim(),
-      display_name: body.display_name ?? body.username,
-      avatar_url: null,
-      email_verified: true,
-      sessionId,
-    },
-    jwtSecret,
-    sessionTtl,
-  );
+  const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
+    .bind(userId)
+    .first<UserRow>();
+  if (!user) return c.json({ error: "user_create_failed" }, 500);
 
-  // Store session record
-  const tokenHash = await sha256Hex(token);
-  await c.env.DB.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, user_agent, ip_address, expires_at, created_at, amr) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(
-      sessionId,
-      userId,
-      tokenHash,
-      c.req.header("User-Agent") ?? null,
-      c.req.header("CF-Connecting-IP") ??
-        c.req.header("X-Forwarded-For") ??
-        "unknown",
-      now + sessionTtl,
-      now,
-      JSON.stringify(["pwd"]),
-    )
-    .run();
-
-  // Seed IP history + geolocation for the bootstrap admin's first session.
-  c.executionCtx.waitUntil(
-    recordSessionIp(c.env.DB, sessionId, getIp(c), geoJson(c), now).catch(
-      () => undefined,
-    ),
-  );
-
-  setSessionCookie(c, token, sessionTtl);
-
+  // The bootstrap admin's first session (30 days).
+  await issueSession(c, user, 30 * 24 * 60 * 60, ["pwd"]);
   return c.json(
-    {
-      user: {
-        id: userId,
-        email: body.email.toLowerCase().trim(),
-        username: body.username.toLowerCase().trim(),
-        display_name: body.display_name ?? body.username,
-        avatar_url: null,
-        unproxied_avatar_url: null,
-        role: "admin",
-        email_verified: true,
-      },
-    },
+    { user: await toSessionUser(c.env.APP_URL, c.env.DB, user) },
     201,
   );
 });
