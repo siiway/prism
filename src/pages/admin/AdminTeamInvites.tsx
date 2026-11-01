@@ -25,6 +25,7 @@ import { formatDate } from "../../lib/datetime";
 import { useConfirm } from "../../lib/useConfirm";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useToastMessage } from "../../lib/useToastMessage";
+import { usePageClamp } from "../../lib/usePageClamp";
 import { CopyButton } from "../../components/CopyButton";
 import {
   DataList,
@@ -88,6 +89,7 @@ export function AdminTeamInvites() {
   });
   const invites = data?.invites ?? [];
   const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
   const revoke = async (row: AdminTeamInvite) => {
     const ok = await confirm({

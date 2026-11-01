@@ -32,6 +32,7 @@ import { formatDate } from "../../lib/datetime";
 import { useConfirm } from "../../lib/useConfirm";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useToastMessage } from "../../lib/useToastMessage";
+import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
   DataListName,
@@ -82,6 +83,7 @@ export function AdminDomains() {
   });
   const domains = data?.domains ?? [];
   const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
   const [busy, setBusy] = useState<string | null>(null);
   const run = async (

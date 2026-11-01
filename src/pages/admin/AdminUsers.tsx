@@ -37,6 +37,7 @@ import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { formatDate } from "../../lib/datetime";
 import { useToastMessage } from "../../lib/useToastMessage";
+import { usePageClamp } from "../../lib/usePageClamp";
 import { useAuthStore } from "../../store/auth";
 import { EmptyState } from "../../components/EmptyState";
 import { Pagination } from "../../components/Pagination";
@@ -174,6 +175,7 @@ export function AdminUsers() {
   });
   const users = data?.users ?? [];
   const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
   // ── Selection ──────────────────────────────────────────────────────────────
   // By id, so it survives paging — which is why the count is shown: it can

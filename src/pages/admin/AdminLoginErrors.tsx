@@ -21,6 +21,7 @@ import { useApi } from "../../lib/api-context";
 import { parseClient } from "../../lib/auditFormat";
 import { formatDateTime } from "../../lib/datetime";
 import { formatIpGeo } from "../../lib/geo";
+import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
   DataListRow,
@@ -119,6 +120,7 @@ export function AdminLoginErrors() {
   });
   const errors = (data?.errors as LoginError[]) ?? [];
   const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
   const filtered = !!(code || appliedIdentifier || appliedIp);
 
   const columns: DataListColumn[] = [

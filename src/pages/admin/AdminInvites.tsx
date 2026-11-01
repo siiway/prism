@@ -37,6 +37,7 @@ import { formatDate } from "../../lib/datetime";
 import { useConfirm } from "../../lib/useConfirm";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useToastMessage } from "../../lib/useToastMessage";
+import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
   DataListName,
@@ -104,6 +105,7 @@ function SiteInvites() {
   });
   const invites = data?.invites ?? [];
   const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
   // Expiry badges are relative to now; tick so they flip without a reload.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));

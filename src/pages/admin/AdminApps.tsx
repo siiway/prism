@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { useApi } from "../../lib/api-context";
 import { formatDate } from "../../lib/datetime";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
+import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
   DataListName,
@@ -39,6 +40,7 @@ export function AdminApps() {
   });
   const apps = data?.apps ?? [];
   const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
   const columns: DataListColumn[] = [
     { label: t("admin.appHeader"), width: "minmax(0, 2.2fr)" },

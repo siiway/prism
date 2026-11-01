@@ -20,6 +20,7 @@ import { ApiError, type OAuthSource } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useToastMessage } from "../../lib/useToastMessage";
+import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
   DataListName,
@@ -82,6 +83,7 @@ export function AdminConnections() {
   });
   const sources = data?.sources ?? [];
   const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: ["admin-oauth-sources"] });

@@ -24,6 +24,7 @@ import { useApi } from "../../lib/api-context";
 import { formatDate } from "../../lib/datetime";
 import { useConfirm } from "../../lib/useConfirm";
 import { useToastMessage } from "../../lib/useToastMessage";
+import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
   DataListName,
@@ -72,6 +73,7 @@ export function AdminScopeGrants() {
   });
   const grants = data?.grants ?? [];
   const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
 
   const revoke = async (row: AdminScopeGrant) => {
     const ok = await confirm({
