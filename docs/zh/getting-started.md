@@ -173,8 +173,8 @@ GitHub Actions 在每次推送到 `main` 时执行同一套脚本（见下文「
 
 安全强制类迁移会刻意失败关闭，不能当作可选功能。尤其是，部署依赖它的代码前必须先应用
 `0073_atomic_security_state.sql`；如果表尚不存在，受影响的认证与 OAuth 请求会失败，而不
-会回退到非原子的 KV 检查。生产与 CI 部署脚本已保证这个顺序。如果使用 `bun deploy`、
-`--skip-migrations` 或非生产环境的 `deploy:*` 脚本，请先运行对应的 `db:migrate:*` 命令。
+会回退到非原子的 KV 检查。生产与 CI 部署脚本已保证这个顺序。如果使用 `bun deploy` 或
+`--skip-migrations`，请先运行 `bun db:migrate:prod`。
 
 两种方式都会生成可直接部署的 `dist/prism/wrangler.json` — 生产部署必须使用它，否则 `wrangler deploy` 会重新打包源码并丢失 Vite 的 SSR 处理。提供的构建脚本会自动把生成的配置拷回原位。
 
@@ -187,73 +187,25 @@ GitHub Actions 在每次推送到 `main` 时执行同一套脚本（见下文「
 
 两者都是幂等的，重复执行安全。
 
-## 非生产环境（staging 与 preview）
+## CI（GitHub Actions）
 
-`wrangler.jsonc` 定义了两个非生产环境 —— `staging` 与 `preview`，每个都是独立的
-Worker，拥有各自隔离的 D1 数据库与 KV 命名空间，因此测试永远不会触及生产数据。它们
-与生产位于同一个 Cloudflare 账号，通过各自的 `*.workers.dev` 子域访问（不使用自定义
-域名，且关闭了域名重新核验的定时任务）。
+- **生产环境**（`.github/workflows/deploy.yml`）在推送到 `main` 时部署，也可从 `main`
+  手动运行。它先运行 lint、测试与翻译一致性检查，再运行 `scripts/build.sh` 与
+  `scripts/deploy.sh`——先应用待处理的 D1 迁移再发布。同一时间只有一个部署，且正在运行的
+  部署永不取消，因此不会在迁移与发布之间被中断。该任务在 `production` GitHub Environment
+  中运行，可在其中添加必需审核者来控制部署。如果仓库仍连接着 Cloudflare Workers Builds
+  （`prism` Worker 的 **Settings → Builds**），请断开连接，否则每次推送到 `main` 都会
+  部署两次。
+- **Pull Request**（`.github/workflows/pr.yml`）运行检查——类型检查（app + worker）、
+  lint、测试、翻译一致性、构建。PR 不会触发任何部署，该工作流也不使用任何 Secret，因此
+  来自 fork 的 PR 同样完整运行。
 
-| 任务 | staging                  | preview                  |
-| ---- | ------------------------ | ------------------------ |
-| 开发 | `bun dev:staging`        | `bun dev:preview`        |
-| 迁移 | `bun db:migrate:staging` | `bun db:migrate:preview` |
-| 部署 | `bun deploy:staging`     | `bun deploy:preview`     |
-
-环境在构建时通过 `CLOUDFLARE_ENV` 变量选择（`dev:*` / `deploy:*` 脚本会替你设置）。这
-也是部署走生成的 `dist/prism/wrangler.json` 而非 `wrangler deploy --env <name>` 的原因
-—— Vite 插件每次构建只解析一个环境，因此产出的配置本身就是环境专属的。与 `bun deploy`
-一样，`deploy:*` 脚本**不会**自动执行迁移，请先运行对应的 `db:migrate:*`。
-
-每个环境都有各自的 `SECRETS_KEY` —— 生产、staging、preview 分别指向三个不同的 Secret
-Store 条目（`prism-secrets-key`、`prism-staging-secrets-key`、`prism-preview-secrets-key`，
-都在同一个 store 中）。这样一来，某个一次性非生产环境的泄漏或失误，绝不会暴露由其他
-环境密钥加密的数据。请为每个环境生成一把独立的 32 字节 base64url 密钥（见步骤 2），并在
-`env` 块中通过 `secret_name` 引用它。
-
-要从零搭建另一个非生产环境，先创建资源，并把 ID 填入 `wrangler.jsonc` 中新的 `env` 块：
-
-```bash
-wrangler d1 create prism-staging-db
-wrangler kv namespace create prism-staging-sessions
-wrangler kv namespace create prism-staging-cache
-```
-
-……然后在首次 `bun deploy:staging` 之前运行 `bun db:migrate:staging`。
-
-### CI（GitHub Actions）
-
-所有部署（包括生产环境）都经由同一个可复用工作流 `.github/workflows/deploy.yml`，
-它接收目标环境（`production`、`staging` 或 `preview`），在同名的 GitHub
-Environment 中运行（可在其中添加必需审核者来控制部署），并保证每个 Worker 同一时间只有
-一个部署。非生产环境中较新的部署会取消较旧的；生产部署永不取消，因此不会在迁移与发布之间
-被中断。下面的工作流只负责决定何时调用它。
-
-- **生产环境**（`.github/workflows/deploy-prod.yml`）在推送到 `main` 时部署，也可从
-  `main` 手动运行。它先运行 lint、测试与翻译一致性检查，再运行 `scripts/build.sh` 与
-  `scripts/deploy.sh`——先应用待处理的 D1 迁移再发布。如果仓库仍连接着 Cloudflare
-  Workers Builds（`prism` Worker 的 **Settings → Builds**），请断开连接，否则每次推送
-  到 `main` 都会部署两次。
-- **Pull Request**（`.github/workflows/pr.yml`）先运行检查——类型检查（app +
-  worker）、lint、翻译一致性、构建——检查通过后把该 PR 的代码部署到共享的
-  **preview** Worker（`prism-preview`）。preview 是一个共享 Worker、使用独立数据库，
-  因此最近部署的那个 PR 就是当前线上的版本；工作流会把地址作为 PR 评论贴出。来自
-  fork 的 PR 只跑检查、不部署（fork 无法访问 Secret）。
-  - **用 PR 评论强制重新部署**（`.github/workflows/preview-comment.yml`）：在 PR 下
-    评论 `<!try_redeploy!>`，即使检查失败也会重新部署 preview——适合在偶发失败或刚
-    补上 Secret 后重跑。仅当评论者在允许名单中**且** PR 来自同仓库分支时才会运行
-    （绝不会检出 fork 的代码——评论触发带有仓库 Secret，因此严格限定在可信代码上）。
-    允许名单为仓库变量 `PREVIEW_DEPLOY_ALLOWLIST`（逗号分隔的 GitHub 用户名；未设置时
-    默认为仓库所有者）。普通的按提交部署不受影响——仍然只在检查通过时部署。
-- **Staging**（`.github/workflows/deploy-nonprod.yml`）在推送到 `staging` 分支时部署，
-  也可手动运行（可选择 staging 或 preview）。
-
-部署需要一个 Secret `CLOUDFLARE_API_TOKEN`（可设为仓库级，也可按 Environment 设置，
-从而让生产环境使用独立的 Token），其权限范围需覆盖该账号的 **Workers Scripts:Edit**、
-**D1:Edit**、**Workers KV Storage:Edit** 与 **Secrets Store:Read**（这些 Worker 绑定了
-Secrets Store 中的 `SECRETS_KEY`）。生产环境绑定了自定义域名，因此该 Token 还需要对应
-Zone 的 **Workers Routes:Edit** 与 **Zone:Read**。账号 ID 已固定写在 `wrangler.jsonc`
-中，因此无需再配置账号 ID 的 Secret。
+部署需要一个 Secret `CLOUDFLARE_API_TOKEN`（可设为仓库级，也可设在 `production`
+Environment 上），其权限范围需覆盖该账号的 **Workers Scripts:Edit**、**D1:Edit**、
+**Workers KV Storage:Edit** 与 **Secrets Store:Read**（该 Worker 绑定了 Secrets Store
+中的 `SECRETS_KEY`）。生产环境绑定了自定义域名，因此该 Token 还需要对应 Zone 的
+**Workers Routes:Edit** 与 **Zone:Read**。账号 ID 已固定写在 `wrangler.jsonc` 中，
+因此无需再配置账号 ID 的 Secret。
 
 ## 社交登录配置
 

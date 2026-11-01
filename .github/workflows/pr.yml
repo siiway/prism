@@ -1,29 +1,12 @@
 name: PR
 
-# Pull-request pipeline. Production lives on `main` and is deployed by
-# deploy-prod.yml; this workflow runs on pull requests ONLY and never touches
-# main.
+# Pull-request checks: typecheck (app + worker), lint, tests, translation
+# parity, and a build. Nothing is deployed from a pull request, and this
+# workflow references no secrets, so fork PRs run it the same as branch PRs.
+# Production is deployed by deploy.yml on push to main.
 #
-#   checks         - typecheck (app + worker), lint, translation parity, build
-#   deploy-preview - deploy the PR's code to the shared prism-preview Worker,
-#                    gated behind checks passing
-#
-# Security model — why this cannot leak CLOUDFLARE_API_TOKEN to a hostile PR:
-#   * This uses `pull_request`, NOT `pull_request_target`. GitHub withholds all
-#     repository secrets from fork-triggered pull_request runs, so the token is
-#     absent from the environment even if the PR edits this file. (Never switch
-#     this to pull_request_target with a checkout of the PR head.)
-#   * The deploy job additionally runs only for same-repo branches (the `if`
-#     below); forks get the checks job, which references no secrets.
-#   * The token is set on the deploy job only (deploy.yml, via secrets:
-#     inherit), never on checks, and no untrusted PR text is interpolated into
-#     run: scripts.
-# For same-repo PRs (write-access authors) the deploy runs their build with the
-# token, so the deploy job targets a `preview` Environment — add required
-# reviewers there, and/or store the token as an environment secret, to gate it.
-#
-# Requires CLOUDFLARE_API_TOKEN (Workers Scripts:Edit, D1:Edit, Workers KV
-# Storage:Edit, Secrets Store:Read); the account id is pinned in wrangler.jsonc.
+# Keep this on `pull_request`, never `pull_request_target`: the latter runs with
+# repository secrets, which PR code must never see.
 
 on:
   pull_request:
@@ -33,7 +16,6 @@ concurrency:
   group: pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-# Least privilege by default; the deploy job widens its own scope below.
 permissions:
   contents: read
 
@@ -66,31 +48,3 @@ jobs:
         run: bash scripts/check_translations.sh
       - name: Build
         run: bunx vite build
-
-  deploy-preview:
-    needs: checks
-    # Secrets are unavailable to forked pull_request runs, so the deploy can
-    # only work for same-repo branches. Skip it (cleanly) for forks. (A comment
-    # `<!try_redeploy!>` can force a redeploy past failing checks — see
-    # preview-comment.yml.) The shared deploy.yml targets the `preview`
-    # Environment and serialises deploys to the shared preview Worker.
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    uses: ./.github/workflows/deploy.yml
-    with:
-      environment: preview
-    secrets: inherit
-
-  comment-preview:
-    needs: deploy-preview
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Comment preview URL
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --edit-last --create-if-none \
-            --body "Preview deployed: https://prism-preview.siiway.workers.dev (shared preview Worker + database, so the newest PR deploy is what is live there)."

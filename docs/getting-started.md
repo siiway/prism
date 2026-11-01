@@ -212,8 +212,7 @@ optional. In particular, `0073_atomic_security_state.sql` must be applied before
 deploying the code that uses it; without those tables, affected authentication
 and OAuth requests fail instead of falling back to non-atomic KV checks. The
 provided production and CI deployment scripts already enforce this order. If
-you use `bun deploy`, `--skip-migrations`, or a `deploy:*` non-production script,
-run the matching `db:migrate:*` command first.
+you use `bun deploy` or `--skip-migrations`, run `bun db:migrate:prod` first.
 
 Either way the build emits a deploy-ready `dist/prism/wrangler.json` —
 production deploys must use that config so Vite's SSR pass is preserved (a
@@ -234,91 +233,29 @@ If you bound `SECRETS_KEY`, log in as the admin and visit
 
 Both are idempotent — re-running is safe.
 
-## Non-production environments (staging & preview)
+## CI (GitHub Actions)
 
-`wrangler.jsonc` defines two non-production environments — `staging` and
-`preview` — each a separate Worker with its own isolated D1 database and KV
-namespaces, so testing never touches production data. They live on the same
-Cloudflare account as production and are reached at their `*.workers.dev`
-subdomains (no custom domain, and the domain re-verify cron is disabled).
-
-| Task    | staging                  | preview                  |
-| ------- | ------------------------ | ------------------------ |
-| Dev     | `bun dev:staging`        | `bun dev:preview`        |
-| Migrate | `bun db:migrate:staging` | `bun db:migrate:preview` |
-| Deploy  | `bun deploy:staging`     | `bun deploy:preview`     |
-
-The environment is selected at build time through the `CLOUDFLARE_ENV`
-variable (the `dev:*` / `deploy:*` scripts set it for you). This is why deploys
-go through the generated `dist/prism/wrangler.json` rather than
-`wrangler deploy --env <name>` — the Vite plugin resolves exactly one
-environment per build, so the emitted config is already environment-specific.
-Like `bun deploy`, the `deploy:*` scripts do **not** apply migrations; run the
-matching `db:migrate:*` first.
-
-Each environment has its own `SECRETS_KEY` — prod, staging, and preview point
-at three distinct Secret Store entries (`prism-secrets-key`,
-`prism-staging-secrets-key`, `prism-preview-secrets-key`), all in the same
-store. A leak or mistake in a throwaway non-prod environment can never expose
-data encrypted under another environment's key. Create a fresh 32-byte
-base64url key per environment (see step 2) and reference it by `secret_name`
-in the `env` block.
-
-To stand up another non-prod environment from scratch, create its resources
-and paste the IDs into a new `env` block in `wrangler.jsonc`:
-
-```bash
-wrangler d1 create prism-staging-db
-wrangler kv namespace create prism-staging-sessions
-wrangler kv namespace create prism-staging-cache
-```
-
-…then run `bun db:migrate:staging` before the first `bun deploy:staging`.
-
-### CI (GitHub Actions)
-
-Every deploy, production included, runs through one shared reusable workflow,
-`.github/workflows/deploy.yml`, which takes the target environment
-(`production`, `staging` or `preview`). It runs the job in the GitHub
-Environment of the same name (add required reviewers there to gate deploys) and
-allows one deploy per Worker at a time. A newer non-production deploy cancels
-the older one; a production deploy is never cancelled, so it cannot be cut off
-between migrating and publishing. The workflows below only decide when to call
-it.
-
-- **Production** (`.github/workflows/deploy-prod.yml`) deploys on a push to
-  `main`, or a manual run from `main`. It runs lint, tests and translation
-  parity first, then `scripts/build.sh` and `scripts/deploy.sh`, which
-  applies pending D1 migrations before publishing. If the repository is still
+- **Production** (`.github/workflows/deploy.yml`) deploys on a push to `main`,
+  or a manual run from `main`. It runs lint, tests and translation parity
+  first, then `scripts/build.sh` and `scripts/deploy.sh`, which applies
+  pending D1 migrations before publishing. One deploy runs at a time and a
+  running deploy is never cancelled, so it cannot be cut off between migrating
+  and publishing. The job runs in the `production` GitHub Environment; add
+  required reviewers there to gate deploys. If the repository is still
   connected to Cloudflare Workers Builds (the `prism` Worker's
   **Settings → Builds**), disconnect it, or every push to `main` deploys
   twice.
 - **Pull requests** (`.github/workflows/pr.yml`) run the checks — typecheck
-  (app + worker), lint, translation parity, and a build — then deploy the PR's
-  code to the shared **preview** Worker (`prism-preview`) once the checks pass.
-  Preview is one shared Worker on its own database, so the most recently
-  deployed PR is what is live there; the workflow posts the URL as a PR comment.
-  Fork PRs get the checks but not the deploy (secrets are withheld from forks).
-  - **Force a redeploy with a PR comment** (`.github/workflows/preview-comment.yml`):
-    comment `<!try_redeploy!>` on the PR to redeploy preview even when the
-    checks failed — handy to re-run after a transient failure or right after
-    adding the secret. It runs only when the commenter is on the allowlist
-    **and** the PR is from a same-repo branch (a fork's code is never checked
-    out — the comment trigger has repository secrets, so this stays strictly on
-    trusted code). The allowlist is the repo variable `PREVIEW_DEPLOY_ALLOWLIST`
-    (comma-separated GitHub usernames; defaults to the repository owner when
-    unset). Ordinary on-commit deploys are unaffected — they still deploy only
-    when checks pass.
-- **Staging** (`.github/workflows/deploy-nonprod.yml`) deploys on a push to the
-  `staging` branch, or a manual run (which can target staging or preview).
+  (app + worker), lint, tests, translation parity, and a build. Nothing is
+  deployed from a pull request, and the workflow uses no secrets, so fork PRs
+  run it the same way.
 
-Deploys need one secret, `CLOUDFLARE_API_TOKEN` (repository-wide, or per
-Environment to give production its own token), scoped to the account with
-**Workers Scripts:Edit**, **D1:Edit**, **Workers KV Storage:Edit**, and
-**Secrets Store:Read** (the Workers bind a Secrets Store `SECRETS_KEY`).
-Production is on a custom domain, so the token also needs
-**Workers Routes:Edit** and **Zone:Read** on that zone. The account id is pinned
-in `wrangler.jsonc`, so no account-id secret is required.
+The deploy needs one secret, `CLOUDFLARE_API_TOKEN` (repository-wide, or on the
+`production` Environment), scoped to the account with **Workers Scripts:Edit**,
+**D1:Edit**, **Workers KV Storage:Edit**, and **Secrets Store:Read** (the Worker
+binds a Secrets Store `SECRETS_KEY`). Production is on a custom domain, so the
+token also needs **Workers Routes:Edit** and **Zone:Read** on that zone. The
+account id is pinned in `wrangler.jsonc`, so no account-id secret is required.
 
 ## Social login setup
 
