@@ -1117,7 +1117,7 @@
       "inviteDesc": "Whether this team's invite links may create new accounts. Nothing creates accounts while sign-up is closed.",
       "inviteColumn": "Invite sign-up",
       "grantLabel": "Allow invite sign-up",
-      "grantDesc": "Accounts created this way stay tied to the team until an admin lifts their restriction.",
+      "grantDesc": "Accounts created this way stay tied to the team until their restriction is lifted.",
       "skipEmailLabel": "Skip email verification",
       "skipEmailDesc": "Only this check can be waived. Captcha, proof of work and rate limits stay on.",
       "granted": "Allowed",
@@ -1129,7 +1129,15 @@
       "cancelDissolveBody": "The team's invite-created accounts are reactivated and won't be deleted.",
       "dissolveNotGranted": "This team can't create accounts, so dissolving it removes none.",
       "dissolveStarted_one": "Dissolution started. {{count}} account deactivated.",
-      "dissolveStarted": "Dissolution started. {{count}} accounts deactivated."
+      "dissolveStarted": "Dissolution started. {{count}} accounts deactivated.",
+      "convertLabel": "Let these accounts become full accounts",
+      "convertDesc": "People who joined through this team's invites can lift their own restriction from their Security page.",
+      "convertDefaultOn": "Site default (allowed)",
+      "convertDefaultOff": "Site default (not allowed)",
+      "convertAllow": "Allow",
+      "convertDeny": "Don't allow",
+      "convertBadgeOn": "Can convert",
+      "convertBadgeOff": "Can't convert"
     },
     "inviteRegOn": "This team's invites can create accounts",
     "inviteRegPaused": "Paused while sign-up on {{siteName}} is closed."
@@ -2039,7 +2047,7 @@
     "pendingTtlHoursHint": "Accounts that never finish joining are deleted after this.",
     "dissolveGraceHours": "Dissolution grace period (hours)",
     "dissolveGraceHoursHint": "Between deactivating a dissolved team’s accounts and deleting them.",
-    "restrictedCapsLabel": "Features granted to invite-registered accounts (all denied by default)",
+    "restrictedCapsLabel": "Features granted to invite-registered accounts (all denied by default). A team can override converting on its Moderation tab.",
     "capTeamCreate": "Create teams",
     "capAppCreate": "Create applications",
     "capDomainCreate": "Verify domains",
@@ -2422,7 +2430,11 @@
     "inviteModeOpen": "Sign-up is open, so people can register without a site invite. Team invites work either way.",
     "inviteModeClosed": "Sign-up is closed, so no invite link creates accounts right now, site or team.",
     "inviteModeAction": "Sign-up settings",
-    "inviteSignupDesc": "Teams you allow, on the team's Moderation tab, can hand out invite links that create accounts. These limits apply to all of them. Nothing creates accounts while sign-up is closed."
+    "inviteSignupDesc": "Teams you allow, on the team's Moderation tab, can hand out invite links that create accounts. These limits apply to all of them. Nothing creates accounts while sign-up is closed.",
+    "teamFilter": "Show",
+    "teamFilterAll": "All teams",
+    "teamFilterInviteSignup": "Invite sign-up allowed",
+    "teamFilterConvert": "Converting overridden"
   },
   "webhooks": {
     "title": "Webhooks",

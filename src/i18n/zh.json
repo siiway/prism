@@ -1117,7 +1117,7 @@
       "inviteDesc": "此团队的邀请链接是否可以创建新账号。关闭注册时，任何途径都无法创建账号。",
       "inviteColumn": "邀请注册",
       "grantLabel": "允许邀请注册",
-      "grantDesc": "以此方式创建的账号会绑定该团队，直到管理员解除限制。",
+      "grantDesc": "以这种方式创建的账号会一直与本团队绑定，直到解除限制。",
       "skipEmailLabel": "跳过邮箱验证",
       "skipEmailDesc": "只有这一项检查可以豁免。验证码、工作量证明和速率限制仍然有效。",
       "granted": "已允许",
@@ -1129,7 +1129,15 @@
       "cancelDissolveBody": "该团队通过邀请创建的账号将重新启用，且不会被删除。",
       "dissolveNotGranted": "此团队不能创建账号，因此解散不会删除任何账号。",
       "dissolveStarted_one": "已开始解散，停用了 {{count}} 个账号。",
-      "dissolveStarted": "已开始解散，停用了 {{count}} 个账号。"
+      "dissolveStarted": "已开始解散，停用了 {{count}} 个账号。",
+      "convertLabel": "允许这些账号转为正式账号",
+      "convertDesc": "通过本团队邀请加入的人可以在其「安全」页面自行解除限制。",
+      "convertDefaultOn": "站点默认（允许）",
+      "convertDefaultOff": "站点默认（不允许）",
+      "convertAllow": "允许",
+      "convertDeny": "不允许",
+      "convertBadgeOn": "可转换",
+      "convertBadgeOff": "不可转换"
     },
     "inviteRegOn": "本团队的邀请可以创建账号",
     "inviteRegPaused": "{{siteName}} 已关闭注册，暂时停用。"
@@ -2039,7 +2047,7 @@
     "pendingTtlHoursHint": "始终未完成加入的账号会在此之后被删除。",
     "dissolveGraceHours": "解散宽限期（小时）",
     "dissolveGraceHoursHint": "从停用被解散团队的账号到实际删除之间的间隔。",
-    "restrictedCapsLabel": "放开给邀请注册账号的功能（默认全部拒绝）",
+    "restrictedCapsLabel": "授予受邀注册账号的功能（默认全部关闭）。是否允许转为完整账号可在各团队的「管理」标签页单独设置。",
     "capTeamCreate": "创建团队",
     "capAppCreate": "创建应用",
     "capDomainCreate": "验证域名",
@@ -2422,7 +2430,11 @@
     "inviteModeOpen": "当前开放注册，无需站点邀请即可注册。团队邀请不受影响。",
     "inviteModeClosed": "当前已关闭注册，站点邀请和团队邀请链接都暂时无法创建账号。",
     "inviteModeAction": "注册设置",
-    "inviteSignupDesc": "你在团队「管理」标签页中允许的团队，可以发放能创建账号的邀请链接。以下限制适用于所有此类邀请。关闭注册时，任何途径都无法创建账号。"
+    "inviteSignupDesc": "你在团队「管理」标签页中允许的团队，可以发放能创建账号的邀请链接。以下限制适用于所有此类邀请。关闭注册时，任何途径都无法创建账号。",
+    "teamFilter": "显示",
+    "teamFilterAll": "所有团队",
+    "teamFilterInviteSignup": "已允许邀请注册",
+    "teamFilterConvert": "已单独设置转换"
   },
   "webhooks": {
     "title": "Webhooks",

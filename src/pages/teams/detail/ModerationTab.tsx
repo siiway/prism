@@ -14,7 +14,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../lib/api";
 import { useApi } from "../../../lib/api-context";
@@ -27,10 +27,12 @@ import {
   SettingsFooter,
   SettingsRow,
 } from "../../../components/Settings";
+import { Select } from "../../../components/Select";
 import type { TeamTabProps } from "./types";
 
 const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
+  select: { width: "200px" },
   danger: { color: tokens.colorPaletteRedForeground1 },
 });
 
@@ -64,6 +66,21 @@ export function ModerationTab({ team, showMsg }: TeamTabProps) {
 
   const granted = !!team.invite_registration_granted;
   const skipEmail = !!team.invite_registration_exemptions?.email_verification;
+
+  // Self-conversion: this team's override, or the site default under Sign-up.
+  const { data: config } = useQuery({
+    queryKey: ["admin-config"],
+    queryFn: api.adminConfig,
+  });
+  const siteConvert =
+    !!config?.config.restricted_user_capabilities?.["self:convert"];
+  const convert =
+    team.invite_registration_allow_convert === null ||
+    team.invite_registration_allow_convert === undefined
+      ? "default"
+      : team.invite_registration_allow_convert
+        ? "allow"
+        : "deny";
 
   const cancelDissolve = async () => {
     const ok = await confirm({
@@ -118,6 +135,35 @@ export function ModerationTab({ team, showMsg }: TeamTabProps) {
               })
             }
           />
+        </SettingsRow>
+        {/* Not tied to the grant: accounts created while it was on keep
+            needing an answer after it's turned off. */}
+        <SettingsRow
+          label={t("teams.moderation.convertLabel")}
+          description={t("teams.moderation.convertDesc")}
+        >
+          <Select
+            aria-label={t("teams.moderation.convertLabel")}
+            className={styles.select}
+            value={convert}
+            disabled={busy !== null}
+            onChange={(_, d) =>
+              void run("convert", async () => {
+                await api.adminSetInviteRegistration(team.id, {
+                  allow_convert:
+                    d.value === "default" ? null : d.value === "allow",
+                });
+              })
+            }
+          >
+            <option value="default">
+              {siteConvert
+                ? t("teams.moderation.convertDefaultOn")
+                : t("teams.moderation.convertDefaultOff")}
+            </option>
+            <option value="allow">{t("teams.moderation.convertAllow")}</option>
+            <option value="deny">{t("teams.moderation.convertDeny")}</option>
+          </Select>
         </SettingsRow>
       </SettingsCard>
 

@@ -448,7 +448,7 @@ the semantics.
 | `POST`  | `/api/auth/invite-join/complete`           | Writes the membership row once requirements are met. Always joins as `member`                           |
 | `GET`   | `/api/user/me/restriction`                 | Whether the caller is restricted, its capabilities, and whether it may convert                          |
 | `POST`  | `/api/user/me/convert`                     | Lift the restriction. One-way; requires a verified real address                                         |
-| `PATCH` | `/api/admin/teams/:id/invite-registration` | Site admin: grant/revoke, and set exemptions (`email_verification` only)                                |
+| `PATCH` | `/api/admin/teams/:id/invite-registration` | Site admin: grant/revoke, set exemptions (`email_verification` only), and `allow_convert` (`null` = site default) |
 | `POST`  | `/api/admin/teams/:id/dissolve`            | Site admin: stage one — deactivate the team's accounts. Confirm with the team name                      |
 | `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | Undo a staged dissolution during the grace period                                                       |
 | `GET`   | `/api/admin/restricted-users`              | Accounts produced by `?team_id=` or `?invite_token=` — the query for scoping a leaked link              |

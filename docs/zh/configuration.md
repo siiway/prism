@@ -220,7 +220,7 @@ Cloudflare 通过全球主机（`challenges.cloudflare.com`）和中国大陆主
 | `restricted_pending_ttl_hours`           | int    | `72`    | 未完成的注册存活多久后被清理。                                    |
 | `restricted_dissolve_grace_hours`        | int    | `168`   | 解散停用账号到实际删除之间的宽限期。                              |
 
-能力键：`team:create`、`app:create`、`domain:create`、`pat:create`、`profile:public`、`gpg:manage`、`self:convert`。未列出的键落回内置默认值（全部拒绝）。账号安全永不受限。
+能力键：`team:create`、`app:create`、`domain:create`、`pat:create`、`profile:public`、`gpg:manage`、`self:convert`。未列出的键落回内置默认值（全部拒绝）。账号安全永不受限。`self:convert` 是站点默认值，各团队可单独覆盖（见 [团队 → 转换为完整账号](teams.md#转换为完整账号)）。
 
 ### 团队加入门槛（站点底线）
 

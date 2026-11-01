@@ -482,8 +482,10 @@ transferring an app out of the team would silently invalidate live tokens.
 
 ### Converting to a full account
 
-Where enabled (`self:convert`), the holder converts from **Security → Account
-type**. Conversion:
+Where enabled, the holder converts from **Security → Account type**. The site
+default is `self:convert`; a site administrator can override it for one team
+on the team's **Moderation** tab (allow, don't allow, or follow the site
+default). Conversion:
 
 - unlocks every ordinary feature,
 - keeps their team membership,

@@ -1132,10 +1132,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     body: {
       granted?: boolean;
       exemptions?: { email_verification?: boolean };
+      /** Override the site default, or null to follow it again. */
+      allow_convert?: boolean | null;
     },
   ) =>
     request<{
       invite_registration_granted: boolean;
+      invite_registration_allow_convert: boolean | null;
       invite_registration_exemptions: { email_verification?: boolean };
     }>(
       "PATCH",
@@ -1829,10 +1832,15 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
 
   // Admin teams
-  adminListTeams: (page = 1, search = "") =>
+  adminListTeams: (
+    page = 1,
+    search = "",
+    /** Only teams granted invite sign-up, or with a conversion override. */
+    filter?: "invite_signup" | "convert",
+  ) =>
     request<{ teams: AdminTeam[]; total: number }>(
       "GET",
-      `/admin/teams?page=${page}&search=${encodeURIComponent(search)}`,
+      `/admin/teams?page=${page}&search=${encodeURIComponent(search)}${filter ? `&filter=${filter}` : ""}`,
       undefined,
       getToken(),
     ),
@@ -3096,6 +3104,9 @@ export interface Team {
    *  The only switch for it (closed sign-up also stops it). Read-only to
    *  the team; only an instance admin can change it. */
   invite_registration_granted: boolean;
+  /** May accounts this team's invites created convert themselves to full
+   *  accounts? A site admin's override; null = the site default. */
+  invite_registration_allow_convert: boolean | null;
   /** Site-level registration checks this team's invite path may skip.
    *  Set by a site admin; captcha, proof-of-work and rate limits are never
    *  exemptible and never appear here. */
@@ -3298,6 +3309,9 @@ export interface AdminTeam {
   /** Site-admin grant allowing this team to mint accounts through invite
    *  links. The admin list surfaces it so the grant can be toggled inline. */
   invite_registration_granted: number;
+  /** 1 / 0 = a site admin's override for converting to a full account;
+   *  null = the site default. */
+  invite_registration_allow_convert: number | null;
   /** Site-level registration checks this team's invite path may skip.
    *  Only email verification is exemptible. */
   invite_registration_exemptions: { email_verification?: boolean };

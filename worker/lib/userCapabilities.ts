@@ -73,6 +73,27 @@ export function resolveRestrictedCapability(
   return RESTRICTED_CAPABILITY_DEFAULTS[capability];
 }
 
+/**
+ * Whether a restricted account may convert itself to a full account: its
+ * origin team's override when a site admin has set one, otherwise the site
+ * default. Read as optional so a database that hasn't applied the column's
+ * migration yet falls back to the site default.
+ */
+export async function resolveSelfConvert(
+  db: D1Database,
+  originTeamId: string | null,
+  siteGrants: RestrictedCapabilities,
+): Promise<boolean> {
+  const site = resolveRestrictedCapability("self:convert", siteGrants);
+  if (!originTeamId) return site;
+  const team = await db
+    .prepare("SELECT * FROM teams WHERE id = ?")
+    .bind(originTeamId)
+    .first<{ invite_registration_allow_convert?: number | null }>();
+  const own = team?.invite_registration_allow_convert;
+  return own === 0 || own === 1 ? own === 1 : site;
+}
+
 /** Strip an incoming grant payload to keys we recognise, so the config row
  *  cannot accumulate arbitrary JSON from a hand-rolled request. */
 export function sanitizeRestrictedCapabilities(

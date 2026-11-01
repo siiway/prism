@@ -507,6 +507,8 @@ retried without reloading the panel.
 ## Invite-link registration
 
 A team's page has a **Moderation** tab for site admins with these controls.
+On **Admin → Teams**, the **Show** filter lists the teams with invite sign-up
+allowed, or with converting overridden.
 
 **Allow invite sign-up** — grants a team permission to hand out
 account-creating invite links. It is the only switch: once it's on, the
@@ -519,6 +521,11 @@ Exemptions are set through the same endpoint. Only email verification can be
 exempted, and only by an administrator — it is the one check whose cost scales
 with the number of registrations. Captcha, proof-of-work and every rate limit
 are never exemptible.
+
+**Let these accounts become full accounts** — whether people who joined
+through this team's invites may convert themselves. Follows the site default
+(`self:convert`, under **Settings → Sign-up**) unless set to allow or don't
+allow for this team.
 
 **Dissolve (staged)** — dissolving a team that minted accounts deletes those
 accounts, so it does not go through the ordinary delete button (which returns

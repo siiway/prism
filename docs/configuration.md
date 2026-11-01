@@ -308,6 +308,8 @@ nothing creates accounts while `allow_registration` is `false`.
 Capability keys: `team:create`, `app:create`, `domain:create`, `pat:create`,
 `profile:public`, `gpg:manage`, `self:convert`. Anything absent falls back to
 the built-in defaults, which deny everything. Account security is never gated.
+`self:convert` is the site default; a team can override it (see
+[Teams → Converting to a full account](teams.md#converting-to-a-full-account)).
 
 ### Team join requirements (site floor)
 

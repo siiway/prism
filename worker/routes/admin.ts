@@ -2188,11 +2188,26 @@ app.get("/teams", async (c) => {
   );
   const search = c.req.query("search") ?? "";
 
-  const whereClause = search
-    ? `WHERE t.name LIKE ? ESCAPE '\\' OR t.description LIKE ? ESCAPE '\\'`
+  // Teams with a site-admin setting for invite sign-up: the grant, or an
+  // override of the site default for converting.
+  const filter = c.req.query("filter");
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (search) {
+    conditions.push(
+      "(t.name LIKE ? ESCAPE '\\' OR t.description LIKE ? ESCAPE '\\')",
+    );
+    const searchParam = likePattern(search);
+    params.push(searchParam, searchParam);
+  }
+  if (filter === "invite_signup")
+    conditions.push("t.invite_registration_granted = 1");
+  else if (filter === "convert")
+    conditions.push("t.invite_registration_allow_convert IS NOT NULL");
+  const whereClause = conditions.length
+    ? `WHERE ${conditions.join(" AND ")}`
     : "";
-  const searchParam = likePattern(search);
-  const params = search ? [searchParam, searchParam] : [];
 
   const [teams, count] = await Promise.all([
     c.env.DB.prepare(
@@ -2303,6 +2318,8 @@ app.patch("/teams/:id/invite-registration", async (c) => {
   const body = await c.req.json<{
     granted?: boolean;
     exemptions?: { email_verification?: boolean };
+    /** true / false overrides the site default; null goes back to it. */
+    allow_convert?: boolean | null;
   }>();
 
   const updates: string[] = ["updated_at = ?"];
@@ -2323,6 +2340,15 @@ app.patch("/teams/:id/invite-registration", async (c) => {
     values.push(Object.keys(cleaned).length ? JSON.stringify(cleaned) : null);
   }
 
+  if (body.allow_convert !== undefined) {
+    if (body.allow_convert !== null && typeof body.allow_convert !== "boolean")
+      return c.json({ error: "allow_convert must be a boolean or null" }, 400);
+    updates.push("invite_registration_allow_convert = ?");
+    values.push(
+      body.allow_convert === null ? null : body.allow_convert ? 1 : 0,
+    );
+  }
+
   values.push(id);
   await c.env.DB.prepare(`UPDATE teams SET ${updates.join(", ")} WHERE id = ?`)
     .bind(...values)
@@ -2334,7 +2360,11 @@ app.patch("/teams/:id/invite-registration", async (c) => {
     "admin.team.invite_registration",
     "team",
     id,
-    { granted: body.granted, exemptions: body.exemptions },
+    {
+      granted: body.granted,
+      exemptions: body.exemptions,
+      allow_convert: body.allow_convert,
+    },
     getIp(c),
     c.executionCtx,
     { resourceName: team.name },
@@ -2345,6 +2375,10 @@ app.patch("/teams/:id/invite-registration", async (c) => {
     .first<TeamRow>();
   return c.json({
     invite_registration_granted: updated?.invite_registration_granted === 1,
+    invite_registration_allow_convert:
+      updated?.invite_registration_allow_convert == null
+        ? null
+        : updated.invite_registration_allow_convert === 1,
     invite_registration_exemptions: parseInviteRegistrationExemptions(
       updated?.invite_registration_exemptions ?? null,
     ),

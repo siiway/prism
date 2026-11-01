@@ -8,6 +8,7 @@ import {
   isRestricted,
   isSyntheticEmail,
   resolveRestrictedCapability,
+  resolveSelfConvert,
 } from "../lib/userCapabilities";
 import { Hono } from "hono";
 import {
@@ -956,6 +957,11 @@ app.get("/me/restriction", async (c) => {
   const needsEmail =
     isSyntheticEmail(row.email) ||
     (config.require_email_verification && row.email_verified !== 1);
+  const canConvert = await resolveSelfConvert(
+    c.env.DB,
+    row.origin_team_id,
+    grants,
+  );
 
   return c.json({
     restricted: true,
@@ -964,10 +970,15 @@ app.get("/me/restriction", async (c) => {
     capabilities: Object.fromEntries(
       (
         Object.keys(RESTRICTED_CAPABILITY_DEFAULTS) as RestrictedCapability[]
-      ).map((k) => [k, resolveRestrictedCapability(k, grants)]),
+      ).map((k) => [
+        k,
+        k === "self:convert"
+          ? canConvert
+          : resolveRestrictedCapability(k, grants),
+      ]),
     ),
     conversion: {
-      available: resolveRestrictedCapability("self:convert", grants),
+      available: canConvert,
       needs_real_email: needsEmail,
       synthetic_email: isSyntheticEmail(row.email),
     },
@@ -1002,9 +1013,9 @@ app.post("/me/convert", async (c) => {
     return c.json({ error: "Finish joining your team before converting" }, 403);
 
   const grants = await getRestrictedCapabilities(c.env.DB);
-  if (!resolveRestrictedCapability("self:convert", grants))
+  if (!(await resolveSelfConvert(c.env.DB, row.origin_team_id, grants)))
     return c.json(
-      { error: "Converting to a full account is not enabled on this instance" },
+      { error: "Converting to a full account is not enabled for your team" },
       403,
     );
 

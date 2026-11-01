@@ -148,6 +148,11 @@ function serializeTeamRow(team: TeamRow) {
     require_verified_email: toBool(team.require_verified_email),
     enable_groups: toBool(team.enable_groups),
     invite_registration_granted: toBool(team.invite_registration_granted),
+    // null = the site default. Optional: absent until migration 0082 runs.
+    invite_registration_allow_convert:
+      team.invite_registration_allow_convert == null
+        ? null
+        : team.invite_registration_allow_convert === 1,
     invite_registration_exemptions: team.invite_registration_exemptions
       ? (JSON.parse(team.invite_registration_exemptions) as unknown)
       : {},

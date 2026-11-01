@@ -383,7 +383,7 @@ OAuth 应用密钥为只写字段。`POST /api/apps`、`POST /api/teams/:id/apps
 | `POST`  | `/api/auth/invite-join/complete`           | 门槛满足后写入成员行，始终以 `member` 身份加入                            |
 | `GET`   | `/api/user/me/restriction`                 | 调用者是否受限、拥有哪些能力、能否转换                                    |
 | `POST`  | `/api/user/me/convert`                     | 解除受限。单向不可逆，需已绑定并验证真实邮箱                              |
-| `PATCH` | `/api/admin/teams/:id/invite-registration` | 站点管理员：授予/撤销，并设置豁免项（仅 `email_verification`）            |
+| `PATCH` | `/api/admin/teams/:id/invite-registration` | 站点管理员：授予/撤销，设置豁免项（仅 `email_verification`）以及 `allow_convert`（`null` = 站点默认） |
 | `POST`  | `/api/admin/teams/:id/dissolve`            | 站点管理员：阶段一，停用该团队的账号。需输入团队名确认                    |
 | `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | 宽限期内撤销分段解散                                                      |
 | `GET`   | `/api/admin/restricted-users`              | 按 `?team_id=` 或 `?invite_token=` 反查产生的账号 —— 邀请码泄漏时用于定损 |
