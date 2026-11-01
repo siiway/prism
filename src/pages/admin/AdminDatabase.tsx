@@ -23,6 +23,7 @@ import {
   TableRow,
   Text,
   Textarea,
+  ToggleButton,
   makeStyles,
   mergeClasses,
   tokens,
@@ -30,8 +31,11 @@ import {
 import {
   AddRegular,
   ArrowClockwiseRegular,
+  CodeRegular,
   DeleteRegular,
+  DismissRegular,
   EditRegular,
+  LockClosedRegular,
   PlayRegular,
   SearchRegular,
 } from "@fluentui/react-icons";
@@ -127,31 +131,41 @@ const useStyles = makeStyles({
   },
   navName: { overflow: "hidden", textOverflow: "ellipsis" },
   navCount: { color: tokens.colorNeutralForeground3, flexShrink: 0 },
+  // Fill the viewport below the sticky top rather than running off it.
+  navListTall: { maxHeight: "calc(100vh - 140px)" },
   navEmpty: { padding: "8px 10px", color: tokens.colorNeutralForeground3 },
   narrowPicker: { display: "none", [NARROW]: { display: "block" } },
   pane: { minWidth: 0, display: "flex", flexDirection: "column", gap: "12px" },
   paneHead: {
     display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px 16px",
+    flexWrap: "wrap",
+  },
+  titleLine: {
+    display: "flex",
     alignItems: "baseline",
     gap: "8px",
     flexWrap: "wrap",
+    minWidth: 0,
   },
+  headActions: { display: "flex", alignItems: "center", gap: "4px" },
+  whereLabel: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
+  navLock: { fontSize: "12px", color: tokens.colorNeutralForeground3 },
+  navNameLine: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    minWidth: 0,
+  },
+  navZero: { color: tokens.colorNeutralForeground4 },
   mono: { fontFamily: tokens.fontFamilyMonospace },
   muted: { color: tokens.colorNeutralForeground3 },
-  toolbar: {
-    display: "flex",
-    gap: "8px",
-    alignItems: "flex-end",
-    flexWrap: "wrap",
-  },
-  grow: { flexGrow: 1, minWidth: "200px" },
-  schema: {
-    "& summary": {
-      cursor: "pointer",
-      color: tokens.colorNeutralForeground3,
-      fontSize: tokens.fontSizeBase200,
-    },
-  },
   code: {
     fontFamily: tokens.fontFamilyMonospace,
     fontSize: tokens.fontSizeBase200,
@@ -398,7 +412,8 @@ function TableBrowser({
   table,
   rowCount,
   ddl,
-  writable,
+  writable: consoleWritable,
+  appendOnly,
   showMsg,
 }: {
   table: string;
@@ -406,8 +421,12 @@ function TableBrowser({
   ddl: string | null;
   /** False when D1_CONSOLE puts the instance in read-only mode. */
   writable: boolean;
+  /** The audit log: never changed from here, whatever the mode. */
+  appendOnly: boolean;
   showMsg: ShowMsg;
 }) {
+  const writable = consoleWritable && !appendOnly;
+  const [showSchema, setShowSchema] = useState(false);
   const api = useApi();
   const styles = useStyles();
   const { t } = useTranslation();
@@ -489,53 +508,85 @@ function TableBrowser({
   return (
     <div className={styles.pane}>
       <div className={styles.paneHead}>
-        <Subtitle2 as="h2" className={styles.mono}>
-          {table}
-        </Subtitle2>
-        <Text size={200} className={styles.muted}>
-          {t("admin.dbRowCount", { count: data?.total ?? rowCount ?? 0 })}
-          {where && ` · ${t("admin.dbFiltered")}`}
-        </Text>
-      </div>
-
-      <div className={styles.toolbar}>
-        <Field
-          className={styles.grow}
-          label={t("admin.dbWhereLabel")}
-          hint={t("admin.dbWhereHint")}
-        >
-          <Input
-            className={styles.mono}
-            value={whereDraft}
-            placeholder="is_active = 0"
-            onChange={(_, d) => setWhereDraft(d.value)}
-            onKeyDown={(e) => e.key === "Enter" && applyWhere()}
-          />
-        </Field>
-        <Button onClick={applyWhere}>{t("admin.dbApplyFilter")}</Button>
-        <Button
-          icon={<ArrowClockwiseRegular />}
-          aria-label={t("common.refresh")}
-          onClick={() => void qc.invalidateQueries({ queryKey })}
-        />
-        {writable && (
+        <div className={styles.titleLine}>
+          <Subtitle2 as="h2" className={styles.mono}>
+            {table}
+          </Subtitle2>
+          {appendOnly && (
+            <Badge appearance="tint" size="small" icon={<LockClosedRegular />}>
+              {t("admin.dbAppendOnlyBadge")}
+            </Badge>
+          )}
+          <Text size={200} className={styles.muted}>
+            {t("admin.dbRowCount", { count: data?.total ?? rowCount ?? 0 })}
+            {where && ` · ${t("admin.dbFiltered")}`}
+          </Text>
+        </div>
+        <div className={styles.headActions}>
+          {ddl && (
+            <ToggleButton
+              appearance="subtle"
+              icon={<CodeRegular />}
+              checked={showSchema}
+              onClick={() => setShowSchema((v) => !v)}
+            >
+              {t("admin.dbSchema")}
+            </ToggleButton>
+          )}
           <Button
-            icon={<AddRegular />}
-            appearance="primary"
-            disabled={!data}
-            onClick={() => setEditing({ row: null })}
-          >
-            {t("admin.dbInsertRow")}
-          </Button>
-        )}
+            appearance="subtle"
+            icon={<ArrowClockwiseRegular />}
+            aria-label={t("common.refresh")}
+            onClick={() => void qc.invalidateQueries({ queryKey })}
+          />
+          {writable && (
+            <Button
+              icon={<AddRegular />}
+              appearance="primary"
+              disabled={!data}
+              onClick={() => setEditing({ row: null })}
+            >
+              {t("admin.dbInsertRow")}
+            </Button>
+          )}
+        </div>
       </div>
 
-      {ddl && (
-        <details className={styles.schema}>
-          <summary>{t("admin.dbSchema")}</summary>
-          <pre className={styles.code}>{ddl}</pre>
-        </details>
+      {appendOnly && (
+        <Text size={200} className={styles.muted}>
+          {t("admin.dbAppendOnlyHint")}
+        </Text>
       )}
+      {showSchema && ddl && <pre className={styles.code}>{ddl}</pre>}
+
+      <Input
+        className={styles.mono}
+        aria-label={t("admin.dbWhereLabel")}
+        value={whereDraft}
+        placeholder={t("admin.dbWherePlaceholder")}
+        contentBefore={<span className={styles.whereLabel}>WHERE</span>}
+        contentAfter={
+          whereDraft.trim() !== where ? (
+            <Button size="small" appearance="transparent" onClick={applyWhere}>
+              {t("admin.dbApplyFilter")}
+            </Button>
+          ) : where ? (
+            <Button
+              size="small"
+              appearance="transparent"
+              icon={<DismissRegular />}
+              aria-label={t("common.clear")}
+              onClick={() => {
+                setWhereDraft("");
+                setWhere("");
+                setPage(1);
+              }}
+            />
+          ) : undefined
+        }
+        onChange={(_, d) => setWhereDraft(d.value)}
+        onKeyDown={(e) => e.key === "Enter" && applyWhere()}
+      />
 
       {error && (
         <MessageBar intent="error">
@@ -645,11 +696,14 @@ function TablePicker({
   active,
   onSelect,
   loading,
+  appendOnly,
 }: {
   tables: { name: string; row_count: number | null }[];
   active: string | null;
   onSelect: (name: string) => void;
   loading: boolean;
+  /** Tables marked with a lock: the audit log. */
+  appendOnly: string[];
 }) {
   const styles = useStyles();
   const { t } = useTranslation();
@@ -670,7 +724,7 @@ function TablePicker({
             contentBefore={<SearchRegular />}
           />
         </div>
-        <div className={styles.navList}>
+        <div className={mergeClasses(styles.navList, styles.navListTall)}>
           {loading && <Spinner size="tiny" />}
           {shown.map((tbl) => (
             <button
@@ -683,8 +737,23 @@ function TablePicker({
               )}
               onClick={() => onSelect(tbl.name)}
             >
-              <span className={styles.navName}>{tbl.name}</span>
-              <span className={styles.navCount}>{tbl.row_count ?? "?"}</span>
+              <span className={styles.navNameLine}>
+                <span className={styles.navName}>{tbl.name}</span>
+                {appendOnly.includes(tbl.name) && (
+                  <LockClosedRegular
+                    className={styles.navLock}
+                    aria-label={t("admin.dbAppendOnlyBadge")}
+                  />
+                )}
+              </span>
+              <span
+                className={mergeClasses(
+                  styles.navCount,
+                  tbl.row_count === 0 && styles.navZero,
+                )}
+              >
+                {tbl.row_count ?? "?"}
+              </span>
             </button>
           ))}
           {!loading && !shown.length && (
@@ -713,10 +782,13 @@ function TablePicker({
 
 function SqlConsole({
   tables,
+  appendOnly,
   writable,
   showMsg,
 }: {
   tables: string[];
+  /** Tables no statement here may change. */
+  appendOnly: string[];
   /** False when D1_CONSOLE puts the instance in read-only mode. */
   writable: boolean;
   showMsg: ShowMsg;
@@ -773,7 +845,20 @@ function SqlConsole({
     <div className={styles.pane}>
       <SettingsCard
         title={t("admin.dbSqlTitle")}
-        description={t("admin.dbSqlHint", { tables: tables.length })}
+        description={
+          <>
+            {t("admin.dbSqlHint", { tables: tables.length })}
+            {/* The one rule no setting relaxes, said where someone about
+                to write SQL will read it. */}
+            {writable &&
+              appendOnly.length > 0 &&
+              ` ${t("admin.dbAppendOnlyNotice", {
+                tables: appendOnly
+                  .filter((n) => !n.startsWith("sqlite_"))
+                  .join(", "),
+              })}`}
+          </>
+        }
       >
         <SettingsBody>
           <Field label={t("admin.dbSqlLabel")}>
@@ -922,6 +1007,7 @@ export function AdminDatabase() {
     setParams(next === "tables" ? {} : { view: next }, { replace: true });
 
   const tables = data?.tables ?? [];
+  const appendOnly = status?.append_only ?? [];
   const requestedTable = params.get("table");
   const active =
     tables.find((tbl) => tbl.name === requestedTable)?.name ??
@@ -946,13 +1032,6 @@ export function AdminDatabase() {
       {dbAvailable && view !== "kv" && (
         <MessageBar intent={writable ? "warning" : "info"}>
           {writable ? t("admin.dbDangerNotice") : t("admin.dbReadOnlyNotice")}
-          {/* The one rule no setting relaxes, said where someone about to
-              write SQL will read it. */}
-          {writable && status?.append_only?.length
-            ? ` ${t("admin.dbAppendOnlyNotice", {
-                tables: status.append_only.join(", "),
-              })}`
-            : null}
         </MessageBar>
       )}
       {message && (
@@ -977,6 +1056,7 @@ export function AdminDatabase() {
       ) : view === "sql" ? (
         <SqlConsole
           tables={tables.map((tbl) => tbl.name)}
+          appendOnly={appendOnly}
           writable={writable}
           showMsg={showMsg}
         />
@@ -991,6 +1071,7 @@ export function AdminDatabase() {
             active={active}
             onSelect={selectTable}
             loading={isLoading}
+            appendOnly={appendOnly}
           />
           {active ? (
             <TableBrowser
@@ -999,6 +1080,7 @@ export function AdminDatabase() {
               rowCount={activeTable?.row_count ?? null}
               ddl={activeTable?.sql ?? null}
               writable={writable}
+              appendOnly={appendOnly.includes(active)}
               showMsg={showMsg}
             />
           ) : (
