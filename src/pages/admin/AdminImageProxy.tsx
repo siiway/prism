@@ -1,491 +1,618 @@
-// Admin viewer for the image_proxy_mappings table.
-//
-// Lists every URL the worker is willing to fetch and stream as an image,
-// with the user (if any) who first caused it to be registered. Removing
-// a row immediately stops the proxy from serving that URL.
+// Admin image proxy: how proxied images are cached, and every URL the proxy
+// is willing to fetch and serve, with who added it and what uses it.
+// Removing one stops the proxy serving that URL until something adds it
+// again (e.g. someone pasted a tracking pixel into a README).
 
 import {
   Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
+  Field,
   Input,
+  Skeleton,
+  SkeletonItem,
+  Spinner,
+  Subtitle2,
   Switch,
-  Link,
-  MessageBar,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
   Text,
   Tooltip,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { Select } from "../../components/Select";
+import {
+  BroomRegular,
+  DeleteRegular,
+  ImageRegular,
+  OpenRegular,
+} from "@fluentui/react-icons";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
+import type { SiteConfig } from "../../types";
 import { useApi } from "../../lib/api-context";
+import { formatBytes } from "../../lib/bytes";
+import { formatDate } from "../../lib/datetime";
+import { useConfirm } from "../../lib/useConfirm";
+import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
+import { usePageClamp } from "../../lib/usePageClamp";
+import { useToastMessage } from "../../lib/useToastMessage";
+import {
+  DataList,
+  DataListName,
+  DataListRow,
+  type DataListColumn,
+} from "../../components/DataList";
+import { EmptyState } from "../../components/EmptyState";
+import { ListSearch } from "../../components/ListSearch";
 import { Pagination } from "../../components/Pagination";
-import { SkeletonTableRows } from "../../components/Skeletons";
+import { Select } from "../../components/Select";
+import {
+  SettingsBody,
+  SettingsCard,
+  SettingsFooter,
+  SettingsToast,
+} from "../../components/Settings";
+import { SkeletonSettingsCard } from "../../components/Skeletons";
 
 const PAGE_SIZE = 50;
 
 const useStyles = makeStyles({
-  // Let the table scroll sideways on narrow screens instead of
-  // overflowing the page
-  tableScroll: { overflowX: "auto" },
-  // Show the full id and let text-overflow truncate it only when the column
-  // is actually too narrow — a hard slice wastes space when it would fit.
-  idCell: {
-    fontFamily: "monospace",
-    fontSize: "11px",
-    color: tokens.colorNeutralForeground3,
-    display: "block",
-    maxWidth: "320px",
+  root: { display: "flex", flexDirection: "column", gap: "20px", flex: 1 },
+  toast: { position: "sticky", top: "8px", zIndex: 2 },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    alignItems: "start",
+    gap: "16px",
+    "@media (max-width: 600px)": { gridTemplateColumns: "1fr" },
+  },
+  listHead: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "8px",
+    flexWrap: "wrap",
+    marginBottom: "12px",
+  },
+  muted: { color: tokens.colorNeutralForeground3 },
+  filter: { flex: "0 1 220px", minWidth: "180px" },
+  url: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    maxWidth: "100%",
+    color: tokens.colorNeutralForeground1,
+    textDecorationLine: "none",
+    ":hover": { textDecorationLine: "underline" },
+  },
+  urlText: {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  creatorCell: {
-    display: "block",
-    maxWidth: "220px",
+  mono: { fontFamily: tokens.fontFamilyMonospace },
+  creator: {
+    padding: 0,
+    fontSize: tokens.fontSizeBase300,
+    minWidth: 0,
+    height: "auto",
+    fontWeight: tokens.fontWeightRegular,
+    color: tokens.colorNeutralForeground2,
+    maxWidth: "100%",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    justifyContent: "flex-start",
   },
+  danger: { color: tokens.colorPaletteRedForeground1 },
 });
 
-export function AdminImageProxy() {
+type CacheMode = SiteConfig["avatar_proxy_cache_mode"];
+
+interface CacheForm {
+  mode: CacheMode;
+  ttl: string;
+  source: string;
+  cache: string;
+  webp: boolean;
+}
+
+function formFromConfig(c: SiteConfig): CacheForm {
+  return {
+    mode: c.avatar_proxy_cache_mode,
+    ttl: String(c.avatar_proxy_cache_ttl_seconds),
+    source: String(c.avatar_proxy_max_source_bytes),
+    cache: String(c.avatar_proxy_max_cache_bytes),
+    webp: c.avatar_proxy_convert_to_webp,
+  };
+}
+
+const positive = (v: string) => /^\d+$/.test(v.trim()) && Number(v) > 0;
+
+/** The cache settings, saved together. */
+function CacheCard() {
   const api = useApi();
   const styles = useStyles();
-  const { t } = useTranslation();
   const qc = useQueryClient();
-  const [page, setPage] = useState(1);
-  const [searchUrl, setSearchUrl] = useState("");
-  const [filterCreator, setFilterCreator] = useState("");
-  const [appliedSearchUrl, setAppliedSearchUrl] = useState("");
-  const [appliedFilterCreator, setAppliedFilterCreator] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const { t } = useTranslation();
+  const { message, showMsg } = useToastMessage();
 
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: [
-      "admin-image-proxy",
-      page,
-      appliedSearchUrl,
-      appliedFilterCreator,
-    ],
-    queryFn: () =>
-      api.adminListImageProxy(page, {
-        q: appliedSearchUrl || undefined,
-        created_by: appliedFilterCreator || undefined,
-        limit: PAGE_SIZE,
-      }),
-  });
-  const { data: status } = useQuery({
-    queryKey: ["admin-avatar-proxy-status"],
-    queryFn: api.adminImageProxyStatus,
-  });
   const { data: configData } = useQuery({
     queryKey: ["admin-config"],
     queryFn: api.adminConfig,
   });
-  const config = configData?.config;
-  const updateConfig = useMutation({
-    mutationFn: (updates: Record<string, unknown>) =>
-      api.adminUpdateConfig(updates),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin-config"] });
-      qc.invalidateQueries({ queryKey: ["admin-avatar-proxy-status"] });
-    },
-    onError: (err) =>
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : t("admin.imageProxyDeleteFailed"),
-      ),
+  const { data: status } = useQuery({
+    queryKey: ["admin-image-proxy-status"],
+    queryFn: api.adminImageProxyStatus,
   });
 
-  const deleteMut = useMutation({
-    mutationFn: (id: string) => api.adminDeleteImageProxy(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin-image-proxy"] });
-      setError(null);
-    },
-    onError: (err) => {
-      setError(
+  const [edits, setEdits] = useState<Partial<CacheForm>>({});
+  const [saving, setSaving] = useState(false);
+
+  const config = configData?.config;
+  if (!config) return <SkeletonSettingsCard rows={4} form />;
+  const saved = formFromConfig(config);
+  const form: CacheForm = { ...saved, ...edits };
+  const set = (patch: Partial<CacheForm>) =>
+    setEdits((e) => ({ ...e, ...patch }));
+
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved);
+  const errors = {
+    ttl: positive(form.ttl) ? undefined : t("admin.imageProxyPositive"),
+    source: positive(form.source) ? undefined : t("admin.imageProxyPositive"),
+    cache: positive(form.cache) ? undefined : t("admin.imageProxyPositive"),
+  };
+  const valid = !errors.ttl && !errors.source && !errors.cache;
+  const sizeHint = (v: string, fallback: string) =>
+    positive(v) ? formatBytes(Number(v)) : fallback;
+
+  const save = async () => {
+    if (saving || !dirty || !valid) return;
+    setSaving(true);
+    // What was sent, so edits typed while the request is in flight survive.
+    const sent = { ...form };
+    try {
+      await api.adminUpdateConfig({
+        avatar_proxy_cache_mode: form.mode,
+        avatar_proxy_cache_ttl_seconds: Number(form.ttl),
+        avatar_proxy_max_source_bytes: Number(form.source),
+        avatar_proxy_max_cache_bytes: Number(form.cache),
+        avatar_proxy_convert_to_webp: form.webp,
+      });
+      await qc.invalidateQueries({ queryKey: ["admin-config"] });
+      await qc.invalidateQueries({ queryKey: ["admin-image-proxy-status"] });
+      setEdits((e) => {
+        const next = { ...e };
+        for (const k of Object.keys(sent) as (keyof CacheForm)[])
+          if (next[k] === sent[k]) delete next[k];
+        return next;
+      });
+      showMsg("success", t("admin.imageProxyCacheSaved"));
+    } catch (err) {
+      showMsg(
+        "error",
+        err instanceof ApiError ? err.message : t("common.saveFailed"),
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = (error: string | undefined, hint: string) =>
+    error
+      ? { validationState: "error" as const, validationMessage: error }
+      : { hint };
+
+  return (
+    <>
+      {message && (
+        <div className={styles.toast}>
+          <SettingsToast message={message} />
+        </div>
+      )}
+      <SettingsCard
+        id="cache"
+        title={t("admin.imageProxyCacheTitle")}
+        description={
+          !status
+            ? t("admin.imageProxyCacheDesc")
+            : status.cached
+              ? t("admin.imageProxyStats", {
+                  mapped: status.mapped,
+                  cached: status.cached,
+                  size: formatBytes(status.cached_bytes),
+                })
+              : t("admin.imageProxyStatsNoCache", { mapped: status.mapped })
+        }
+      >
+        <SettingsBody>
+          <div className={styles.grid}>
+            <Field
+              label={t("admin.avatarProxyCacheMode")}
+              hint={t(`admin.imageProxyCacheModeHint_${form.mode}`)}
+            >
+              <Select
+                value={form.mode}
+                onChange={(_, d) => set({ mode: d.value as CacheMode })}
+              >
+                <option value="off">{t("admin.avatarProxyCacheOff")}</option>
+                <option value="kv">KV</option>
+                <option value="d1">D1</option>
+              </Select>
+            </Field>
+            <Field
+              label={t("admin.avatarProxyTtl")}
+              {...field(errors.ttl, t("admin.imageProxyTtlHint"))}
+            >
+              <Input
+                type="number"
+                min={1}
+                value={form.ttl}
+                disabled={form.mode === "off"}
+                onChange={(_, d) => set({ ttl: d.value })}
+              />
+            </Field>
+            <Field
+              label={t("admin.avatarProxySourceLimit")}
+              {...field(
+                errors.source,
+                sizeHint(form.source, t("admin.imageProxySourceHint")),
+              )}
+            >
+              <Input
+                type="number"
+                min={1}
+                value={form.source}
+                onChange={(_, d) => set({ source: d.value })}
+              />
+            </Field>
+            <Field
+              label={t("admin.avatarProxyCacheLimit")}
+              {...field(
+                errors.cache,
+                sizeHint(form.cache, t("admin.imageProxyCacheLimitHint")),
+              )}
+            >
+              <Input
+                type="number"
+                min={1}
+                value={form.cache}
+                disabled={form.mode === "off"}
+                onChange={(_, d) => set({ cache: d.value })}
+              />
+            </Field>
+          </div>
+          <Field hint={t("admin.imageProxyWebpHint")}>
+            <Switch
+              checked={form.webp}
+              disabled={!status?.images_binding}
+              label={t("admin.avatarProxyConvertWebp")}
+              onChange={(_, d) => set({ webp: d.checked })}
+            />
+          </Field>
+        </SettingsBody>
+        <SettingsFooter>
+          {dirty && !saving && (
+            <Button appearance="subtle" onClick={() => setEdits({})}>
+              {t("common.discard")}
+            </Button>
+          )}
+          <Button
+            appearance="primary"
+            disabled={!dirty || !valid || saving}
+            onClick={() => void save()}
+          >
+            {saving ? <Spinner size="tiny" /> : t("common.saveChanges")}
+          </Button>
+        </SettingsFooter>
+      </SettingsCard>
+    </>
+  );
+}
+
+/** Who added a mapping, as the filter takes it. */
+interface Creator {
+  id: string;
+  label: string;
+}
+
+function Mappings() {
+  const api = useApi();
+  const styles = useStyles();
+  const qc = useQueryClient();
+  const { t } = useTranslation();
+  const { message, showMsg } = useToastMessage();
+  const { confirm, confirmDialog } = useConfirm();
+
+  const [page, setPage] = useState(1);
+  const { query, setQuery, search } = useDebouncedSearch(() => setPage(1));
+  // "" = anyone, "system" = added automatically, otherwise a user picked
+  // from a row.
+  const [creator, setCreator] = useState<Creator | null>(null);
+  const [systemOnly, setSystemOnly] = useState(false);
+  const createdBy = creator?.id ?? (systemOnly ? "system" : "");
+
+  const { data, isFetching } = useQuery({
+    queryKey: ["admin-image-proxy", page, search, createdBy],
+    queryFn: () =>
+      api.adminListImageProxy(page, {
+        q: search || undefined,
+        created_by: createdBy || undefined,
+        limit: PAGE_SIZE,
+      }),
+  });
+  const mappings = data?.mappings ?? [];
+  const total = data?.total ?? 0;
+  usePageClamp(page, data?.total, PAGE_SIZE, setPage);
+
+  const [busy, setBusy] = useState<string | null>(null);
+  const refresh = async () => {
+    await qc.invalidateQueries({ queryKey: ["admin-image-proxy"] });
+    await qc.invalidateQueries({ queryKey: ["admin-image-proxy-status"] });
+  };
+
+  const remove = async (id: string, url: string) => {
+    const ok = await confirm({
+      title: t("admin.imageProxyDeleteTitle"),
+      body: (
+        <>
+          <Text block className={styles.mono}>
+            {url}
+          </Text>
+          <Text block style={{ marginTop: 8 }}>
+            {t("admin.imageProxyDeleteConfirm")}
+          </Text>
+        </>
+      ),
+      confirmLabel: t("admin.imageProxyDelete"),
+    });
+    if (!ok) return;
+    setBusy(id);
+    try {
+      await api.adminDeleteImageProxy(id);
+      await refresh();
+      showMsg("success", t("admin.imageProxyDeleted"));
+    } catch (err) {
+      showMsg(
+        "error",
         err instanceof ApiError
           ? err.message
           : t("admin.imageProxyDeleteFailed"),
       );
-    },
-  });
+    } finally {
+      setBusy(null);
+    }
+  };
 
-  const [sweepMessage, setSweepMessage] = useState<string | null>(null);
-  const sweepMut = useMutation({
-    mutationFn: () => api.adminSweepImageProxy(),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ["admin-image-proxy"] });
-      setError(null);
-      setSweepMessage(
+  const sweep = async () => {
+    const ok = await confirm({
+      title: t("admin.imageProxySweepTitle"),
+      body: t("admin.imageProxySweepHint"),
+      confirmLabel: t("admin.imageProxySweepButton"),
+    });
+    if (!ok) return;
+    setBusy("sweep");
+    try {
+      const res = await api.adminSweepImageProxy();
+      await refresh();
+      showMsg(
+        "success",
         t("admin.imageProxySweepSuccess", { count: res.deleted }),
       );
-    },
-    onError: (err) => {
-      setSweepMessage(null);
-      setError(
+    } catch (err) {
+      showMsg(
+        "error",
         err instanceof ApiError
           ? err.message
           : t("admin.imageProxySweepFailed"),
       );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const filterValue = creator ? "user" : systemOnly ? "system" : "";
+  const filterBy = (next: Creator | null, system = false) => {
+    setCreator(next);
+    setSystemOnly(system);
+    setPage(1);
+  };
+
+  const columns: DataListColumn[] = [
+    { label: t("admin.imageProxyUrlHeader"), width: "minmax(0, 2.4fr)" },
+    {
+      label: t("admin.avatarProxyResourcesHeader"),
+      width: "minmax(0, 1.2fr)",
+      secondary: true,
     },
-  });
-
-  function applyFilters() {
-    setAppliedSearchUrl(searchUrl);
-    setAppliedFilterCreator(filterCreator);
-    setPage(1);
-  }
-
-  function clearFilters() {
-    setSearchUrl("");
-    setFilterCreator("");
-    setAppliedSearchUrl("");
-    setAppliedFilterCreator("");
-    setPage(1);
-  }
-
-  const hasFilters = !!(appliedSearchUrl || appliedFilterCreator);
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
-  const mappings = data?.mappings ?? [];
+    {
+      label: t("admin.imageProxyCreatorHeader"),
+      width: "minmax(0, 1fr)",
+      secondary: true,
+    },
+    {
+      label: t("admin.imageProxyCreatedAtHeader"),
+      width: "100px",
+      secondary: true,
+    },
+    { label: "", width: "32px", end: true },
+  ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
-      {config && (
-        <div
-          style={{
-            display: "flex",
-            gap: 16,
-            flexWrap: "wrap",
-            alignItems: "end",
-          }}
-        >
-          <div>
-            <Text block size={200}>
-              {t("admin.avatarProxyCacheMode")}
-            </Text>
-            <Select
-              value={config.avatar_proxy_cache_mode}
-              onChange={(_, d) =>
-                updateConfig.mutate({ avatar_proxy_cache_mode: d.value })
-              }
-            >
-              <option value="off">{t("admin.avatarProxyCacheOff")}</option>
-              <option value="kv">KV</option>
-              <option value="d1">D1</option>
-            </Select>
-          </div>
-          <div>
-            <Text block size={200}>
-              {t("admin.avatarProxyTtl")}
-            </Text>
-            <Input
-              key={`ttl-${config.avatar_proxy_cache_ttl_seconds}`}
-              type="number"
-              defaultValue={String(config.avatar_proxy_cache_ttl_seconds)}
-              onBlur={(e) =>
-                updateConfig.mutate({
-                  avatar_proxy_cache_ttl_seconds: Number(e.currentTarget.value),
-                })
-              }
-            />
-          </div>
-          <div>
-            <Text block size={200}>
-              {t("admin.avatarProxySourceLimit")}
-            </Text>
-            <Input
-              key={`source-${config.avatar_proxy_max_source_bytes}`}
-              type="number"
-              defaultValue={String(config.avatar_proxy_max_source_bytes)}
-              onBlur={(e) =>
-                updateConfig.mutate({
-                  avatar_proxy_max_source_bytes: Number(e.currentTarget.value),
-                })
-              }
-            />
-          </div>
-          <div>
-            <Text block size={200}>
-              {t("admin.avatarProxyCacheLimit")}
-            </Text>
-            <Input
-              key={`cache-${config.avatar_proxy_max_cache_bytes}`}
-              type="number"
-              defaultValue={String(config.avatar_proxy_max_cache_bytes)}
-              onBlur={(e) =>
-                updateConfig.mutate({
-                  avatar_proxy_max_cache_bytes: Number(e.currentTarget.value),
-                })
-              }
-            />
-          </div>
-          <Switch
-            checked={config.avatar_proxy_convert_to_webp}
-            disabled={!status?.images_binding}
-            label={t("admin.avatarProxyConvertWebp")}
-            onChange={(_, d) =>
-              updateConfig.mutate({ avatar_proxy_convert_to_webp: d.checked })
-            }
-          />
-          {status && (
-            <Text size={200}>
-              {t("admin.avatarProxyStats", {
-                mapped: status.mapped,
-                cached: status.cached,
-                bytes: status.cached_bytes,
-              })}
-            </Text>
-          )}
+    <section>
+      {message && (
+        <div className={styles.toast} style={{ marginBottom: 12 }}>
+          <SettingsToast message={message} />
         </div>
       )}
-
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          alignItems: "flex-end",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("admin.imageProxySearchUrl")}
+      <div className={styles.listHead}>
+        <Subtitle2 as="h2">{t("admin.imageProxyListTitle")}</Subtitle2>
+        {data && (
+          <Text size={200} className={styles.muted}>
+            {t("admin.imageProxyTotal", { count: total })}
           </Text>
-          <Input
-            value={searchUrl}
-            onChange={(e) => setSearchUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && applyFilters()}
-            placeholder="example.com"
-            style={{ minWidth: 280 }}
-          />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-            {t("admin.imageProxyFilterCreator")}
-          </Text>
-          <Input
-            value={filterCreator}
-            onChange={(e) => setFilterCreator(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && applyFilters()}
-            placeholder={t("admin.imageProxyCreatorPlaceholder")}
-            style={{ minWidth: 240 }}
-          />
-        </div>
-        <Button appearance="primary" onClick={applyFilters}>
-          {t("common.search")}
-        </Button>
-        {hasFilters && (
-          <Button appearance="subtle" onClick={clearFilters}>
-            {t("admin.loginErrors.clearFilters")}
-          </Button>
         )}
-        <Tooltip content={t("admin.imageProxySweepHint")} relationship="label">
-          <Button
-            appearance="outline"
-            disabled={sweepMut.isPending}
-            onClick={() => sweepMut.mutate()}
-          >
-            {t("admin.imageProxySweepButton")}
-          </Button>
-        </Tooltip>
       </div>
 
-      {sweepMessage && (
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          {sweepMessage}
-        </Text>
-      )}
+      <ListSearch
+        value={query}
+        onChange={setQuery}
+        placeholder={t("admin.imageProxySearchPlaceholder")}
+      >
+        <div className={styles.filter}>
+          <Select
+            aria-label={t("admin.imageProxyCreatorHeader")}
+            value={filterValue}
+            onChange={(_, d) => filterBy(null, d.value === "system")}
+          >
+            <option value="">{t("admin.imageProxyByAnyone")}</option>
+            <option value="system">{t("admin.imageProxyBySystem")}</option>
+            {creator && (
+              <option value="user">
+                {t("admin.imageProxyByUser", { name: creator.label })}
+              </option>
+            )}
+          </Select>
+        </div>
+        <Button
+          icon={<BroomRegular />}
+          disabled={busy !== null}
+          onClick={() => void sweep()}
+        >
+          {busy === "sweep" ? (
+            <Spinner size="tiny" />
+          ) : (
+            t("admin.imageProxySweepButton")
+          )}
+        </Button>
+      </ListSearch>
 
-      {error && <MessageBar intent="error">{error}</MessageBar>}
-
-      {data && (
-        <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("admin.imageProxyTotal", { total: data.total })}
-        </Text>
-      )}
-
-      {isLoading ? (
-        <SkeletonTableRows rows={8} cols={5} />
+      {isFetching && !data ? (
+        <Skeleton aria-busy>
+          <DataList columns={columns}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <DataListRow
+                key={i}
+                cells={columns.map((_, c) => (
+                  <SkeletonItem key={c} size={12} style={{ width: "60%" }} />
+                ))}
+              />
+            ))}
+          </DataList>
+        </Skeleton>
+      ) : mappings.length === 0 ? (
+        <EmptyState
+          icon={<ImageRegular />}
+          title={
+            search || createdBy
+              ? t("admin.imageProxyNoResults")
+              : t("admin.imageProxyEmpty")
+          }
+        />
       ) : (
-        <div className={styles.tableScroll}>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell>
-                  {t("admin.imageProxyIdHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.imageProxyUrlHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.imageProxyCreatorHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.avatarProxyResourcesHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.imageProxyCreatedAtHeader")}
-                </TableHeaderCell>
-                <TableHeaderCell>
-                  {t("admin.imageProxyActionsHeader")}
-                </TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {mappings.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    style={{
-                      textAlign: "center",
-                      color: tokens.colorNeutralForeground3,
-                    }}
-                  >
-                    {t("admin.imageProxyNoResults")}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                mappings.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell>
-                      <Tooltip content={m.id} relationship="description">
-                        <Text className={styles.idCell}>{m.id}</Text>
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell
-                      style={{
-                        fontSize: 12,
-                        maxWidth: 420,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      <Tooltip content={m.url} relationship="description">
-                        <Link
-                          href={`/api/proxy/image/${m.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {m.url}
-                        </Link>
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell style={{ fontSize: 12 }}>
-                      {m.created_by ? (
-                        <Tooltip
-                          content={m.created_by}
-                          relationship="description"
-                        >
-                          <Text font="monospace" className={styles.creatorCell}>
-                            {m.created_by_username ??
-                              m.created_by_display_name ??
-                              m.created_by}
-                          </Text>
+        <>
+          <DataList columns={columns}>
+            {mappings.map((m) => {
+              const who = m.created_by
+                ? m.created_by_username
+                  ? `@${m.created_by_username}`
+                  : (m.created_by_display_name ?? m.created_by)
+                : null;
+              return (
+                <DataListRow
+                  key={m.id}
+                  cells={[
+                    <DataListName
+                      key="url"
+                      name={
+                        <Tooltip content={m.url} relationship="label">
+                          <a
+                            href={`/api/proxy/image/${m.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={styles.url}
+                          >
+                            <span className={styles.urlText}>{m.url}</span>
+                            <OpenRegular aria-hidden />
+                          </a>
                         </Tooltip>
-                      ) : (
-                        <Text
-                          size={200}
-                          style={{
-                            color: tokens.colorNeutralForeground3,
-                            fontStyle: "italic",
-                          }}
+                      }
+                      sub={<span className={styles.mono}>{m.id}</span>}
+                    />,
+                    m.resources.length
+                      ? m.resources
+                          .map((r) =>
+                            t(`admin.imageProxyUsedBy_${r.type}`, {
+                              name: r.name,
+                              defaultValue: `${r.type}: ${r.name}`,
+                            }),
+                          )
+                          .join(", ")
+                      : t("admin.avatarProxyNoResources"),
+                    who ? (
+                      <Tooltip
+                        key="who"
+                        content={t("admin.imageProxyFilterBy", { name: who })}
+                        relationship="label"
+                      >
+                        <Button
+                          appearance="transparent"
+                          size="small"
+                          className={styles.creator}
+                          onClick={() =>
+                            filterBy({ id: m.created_by!, label: who })
+                          }
                         >
-                          {t("admin.imageProxySystemRow")}
-                        </Text>
-                      )}
-                    </TableCell>
-                    <TableCell style={{ fontSize: 12 }}>
-                      {m.resources.length
-                        ? m.resources
-                            .map(
-                              (resource) =>
-                                `${resource.type}: ${resource.name}`,
-                            )
-                            .join(", ")
-                        : t("admin.avatarProxyNoResources")}
-                    </TableCell>
-                    <TableCell style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                      {new Date(m.created_at * 1000).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
+                          {who}
+                        </Button>
+                      </Tooltip>
+                    ) : (
+                      <span key="who" className={styles.muted}>
+                        {t("admin.imageProxySystemRow")}
+                      </span>
+                    ),
+                    formatDate(m.created_at),
+                    busy === m.id ? (
+                      <Spinner key="del" size="tiny" />
+                    ) : (
                       <Button
+                        key="del"
                         size="small"
                         appearance="subtle"
-                        disabled={
-                          deleteMut.isPending && deleteMut.variables === m.id
-                        }
-                        onClick={() => setPendingDeleteId(m.id)}
-                        style={{ color: tokens.colorPaletteRedForeground1 }}
-                      >
-                        {t("admin.imageProxyDelete")}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                        icon={<DeleteRegular />}
+                        className={styles.danger}
+                        aria-label={t("admin.imageProxyDeleteFor", {
+                          url: m.url,
+                        })}
+                        disabled={busy !== null}
+                        onClick={() => void remove(m.id, m.url)}
+                      />
+                    ),
+                  ]}
+                />
+              );
+            })}
+          </DataList>
+          {(total > PAGE_SIZE || page > 1) && (
+            <Pagination
+              page={page}
+              pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
+              total={total}
+              onChange={setPage}
+              disabled={isFetching}
+            />
+          )}
+        </>
       )}
+      {confirmDialog}
+    </section>
+  );
+}
 
-      {totalPages > 1 && (
-        <Pagination
-          page={page}
-          pageCount={totalPages}
-          onChange={setPage}
-          disabled={isLoading || isFetching}
-        />
-      )}
-
-      <Dialog
-        open={pendingDeleteId !== null}
-        onOpenChange={(_, d) => {
-          if (!d.open) setPendingDeleteId(null);
-        }}
-      >
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>{t("admin.imageProxyDelete")}</DialogTitle>
-            <DialogContent>{t("admin.imageProxyDeleteConfirm")}</DialogContent>
-            <DialogActions>
-              <DialogTrigger disableButtonEnhancement>
-                <Button>{t("common.cancel")}</Button>
-              </DialogTrigger>
-              <Button
-                appearance="primary"
-                style={{ background: tokens.colorPaletteRedBackground3 }}
-                onClick={() => {
-                  if (pendingDeleteId) deleteMut.mutate(pendingDeleteId);
-                  setPendingDeleteId(null);
-                }}
-              >
-                {t("admin.imageProxyDelete")}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+export function AdminImageProxy() {
+  const styles = useStyles();
+  return (
+    <div className={styles.root}>
+      <CacheCard />
+      <Mappings />
     </div>
   );
 }
