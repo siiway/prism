@@ -54,15 +54,6 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "10px",
   },
-  consentCard: {
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    borderRadius: "10px",
-    padding: "16px 20px",
-    background: tokens.colorNeutralBackground1,
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-  },
   // Shaped like components/Settings' SettingsCard.
   settingsCard: {
     border: `1px solid ${tokens.colorNeutralStroke1}`,
@@ -293,52 +284,5 @@ export function SkeletonFormCard({ rows = 4 }: { rows?: number }) {
         <SkeletonItem style={{ width: 100, height: 32 }} />
       </div>
     </Skeleton>
-  );
-}
-
-export function SkeletonConsentCards({ count = 3 }: { count?: number }) {
-  const styles = useStyles();
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i}>
-          <div className={styles.consentCard}>
-            <SkeletonItem
-              shape="square"
-              size={48}
-              style={{ borderRadius: 8, flexShrink: 0 }}
-            />
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <SkeletonItem style={{ width: "30%", height: 16 }} />
-                <SkeletonItem
-                  style={{ width: 60, height: 20, borderRadius: 10 }}
-                />
-              </div>
-              <SkeletonItem style={{ width: "55%", height: 13 }} />
-              <div style={{ display: "flex", gap: 6 }}>
-                <SkeletonItem
-                  style={{ width: 60, height: 20, borderRadius: 10 }}
-                />
-                <SkeletonItem
-                  style={{ width: 80, height: 20, borderRadius: 10 }}
-                />
-                <SkeletonItem
-                  style={{ width: 50, height: 20, borderRadius: 10 }}
-                />
-              </div>
-            </div>
-            <SkeletonItem style={{ width: 110, height: 30, flexShrink: 0 }} />
-          </div>
-        </Skeleton>
-      ))}
-    </div>
   );
 }
