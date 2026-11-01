@@ -27,8 +27,10 @@
 - After making functional changes (new features, changed behavior, deprecated
   endpoints), update the corresponding documentation files under `docs/`
   and `docs/zh/` to reflect the latest state. Out-of-date docs are a bug.
-- Configuration keys, env vars, API endpoints, and architecture listings must
-  stay in sync between English and Chinese translations.
+- Configuration keys, env vars, and API endpoints must stay in sync between
+  English and Chinese translations.
+- `docs/` is for operators and app developers integrating with Prism. Don't
+  add pages describing the codebase's internals.
 
 ## No hardcoded English
 

@@ -87,7 +87,7 @@ bun run deploy   # 类型检查 + 构建前端 + wrangler 部署
 
 - [快速开始](https://prism.wss.moe/zh/getting-started) — 完整配置流程
 - [配置说明](https://prism.wss.moe/zh/configuration) — 所有站点配置项 + Wrangler 绑定
-- [架构说明](https://prism.wss.moe/zh/architecture) — 系统设计、数据模型、密钥存储策略
+
 - [管理员指南](https://prism.wss.moe/zh/admin) — 用户、应用、团队与配置管理
 - [API 参考](https://prism.wss.moe/zh/api) — REST API 文档
 - [OAuth / OIDC 指南](https://prism.wss.moe/zh/oauth) — 将 Prism 作为身份提供商集成

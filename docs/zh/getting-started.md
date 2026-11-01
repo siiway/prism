@@ -62,7 +62,7 @@ wrangler r2 bucket create prism-assets
 
 ### Secrets Store（强烈推荐）
 
-生成一把 32 字节主密钥，保存进 Cloudflare Secrets Store。所有敏感字段会因此在数据库中加密（OAuth `client_secret`、验证码 secret、SMTP/IMAP 密码、GitHub README PAT，以及 [架构 → 数据库中的密钥](architecture.md#数据库中的密钥) 列出的所有 bearer 类机密）。
+生成一把 32 字节主密钥，保存进 Cloudflare Secrets Store。所有敏感字段会因此在数据库中加密（OAuth `client_secret`、验证码 secret、SMTP/IMAP 密码、GitHub README PAT）；bearer 类机密（个人访问令牌、OAuth 令牌与授权码、邀请与验证令牌、备用码）则以带密钥的哈希形式存储。
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"

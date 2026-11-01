@@ -69,8 +69,9 @@ wrangler r2 bucket create prism-assets
 
 Generate a 32-byte master key and store it in a Cloudflare Secrets Store. This
 encrypts every sensitive value at rest (OAuth `client_secret`s, captcha secret,
-SMTP/IMAP passwords, GitHub README PAT, plus the bearer-style tokens listed in
-[Architecture → Secrets at rest](architecture.md#secrets-at-rest)).
+SMTP/IMAP passwords, GitHub README PAT), and bearer-style tokens (personal
+access tokens, OAuth tokens and codes, invite and verification tokens, backup
+codes) are stored as keyed hashes.
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"

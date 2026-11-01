@@ -87,7 +87,7 @@ bun run deploy   # type-checks + builds frontend + wrangler deploy
 
 - [Getting Started](https://prism.wss.moe/getting-started) — full setup walkthrough
 - [Configuration](https://prism.wss.moe/configuration) — all site config keys + Wrangler bindings
-- [Architecture](https://prism.wss.moe/architecture) — system design, data model, secret-storage strategy
+
 - [Admin Guide](https://prism.wss.moe/admin) — managing users, apps, teams, and settings
 - [API Reference](https://prism.wss.moe/api) — REST API documentation
 - [OAuth / OIDC Guide](https://prism.wss.moe/oauth) — integrating Prism as an identity provider
