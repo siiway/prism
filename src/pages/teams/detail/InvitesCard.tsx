@@ -368,11 +368,11 @@ export function InvitesCard({ team, showMsg, confirm }: Props) {
         </SettingsTable>
       )}
 
-      {total > PAGE_SIZE && (
+      {(total > PAGE_SIZE || page > 1) && (
         <SettingsFooter>
           <Pagination
             page={page}
-            pageCount={Math.ceil(total / PAGE_SIZE)}
+            pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
             onChange={setPage}
             disabled={isFetching}
           />

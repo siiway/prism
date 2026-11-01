@@ -447,7 +447,7 @@ export function MembersTable({
           </Table>
         </SettingsTable>
       )}
-      {pageCount > 1 && (
+      {(pageCount > 1 || page > 1) && (
         <SettingsFooter>
           <Pagination
             page={page}
