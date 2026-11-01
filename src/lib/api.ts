@@ -2491,6 +2491,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       undefined,
       getToken(),
     ),
+  adminGetOAuthSource: (id: string) =>
+    request<{ source: OAuthSource }>(
+      "GET",
+      `/admin/oauth-sources/${id}`,
+      undefined,
+      getToken(),
+    ),
   adminCreateOAuthSource: (body: {
     slug: string;
     provider: string;

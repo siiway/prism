@@ -594,6 +594,20 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
+              path: "connections/new",
+              lazy: () =>
+                import("./pages/admin/sources/SourceNew").then((m) => ({
+                  Component: m.SourceNew,
+                })),
+            },
+            {
+              path: "connections/:id",
+              lazy: () =>
+                import("./pages/admin/sources/SourceDetail").then((m) => ({
+                  Component: m.SourceDetail,
+                })),
+            },
+            {
               path: "audit",
               lazy: () =>
                 import("./pages/admin/AdminAudit").then((m) => ({

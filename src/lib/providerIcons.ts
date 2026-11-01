@@ -11,14 +11,16 @@ export const PROVIDER_COLORS: Record<string, string> = {
   cloudflare: "#F38020",
 };
 
+// Shipped with the app (public/provider-icons, from Simple Icons, CC0) so
+// the sign-in page never waits on, or breaks with, a third-party CDN.
 export const PROVIDER_ICON_URLS: Record<string, string> = {
-  github: "https://cdn.simpleicons.org/github/000000",
-  google: "https://cdn.simpleicons.org/google",
-  microsoft: "https://cdn.simpleicons.org/microsoft",
-  discord: "https://cdn.simpleicons.org/discord",
-  telegram: "https://cdn.simpleicons.org/telegram",
-  x: "https://cdn.simpleicons.org/x/000000",
-  cloudflare: "https://cdn.simpleicons.org/cloudflare",
+  github: "/provider-icons/github.svg",
+  google: "/provider-icons/google.svg",
+  microsoft: "/provider-icons/microsoft.svg",
+  discord: "/provider-icons/discord.svg",
+  telegram: "/provider-icons/telegram.svg",
+  x: "/provider-icons/x.svg",
+  cloudflare: "/provider-icons/cloudflare.svg",
 };
 
 /** Pick the icon URL for a provider entry on the login / connections page.

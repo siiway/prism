@@ -36,11 +36,10 @@ app.get("/site", async (c) => {
   const enabled_providers = await Promise.all(
     providerRows.map(async (p) => {
       const resolved = resolveProviderIconUrl(p);
-      const icon_proxied_url = await proxyImageUrl(
-        c.env.APP_URL,
-        c.env.DB,
-        resolved,
-      );
+      // Built-in icons ship with the app: same-origin paths, no proxy.
+      const icon_proxied_url = resolved?.startsWith("/")
+        ? resolved
+        : await proxyImageUrl(c.env.APP_URL, c.env.DB, resolved);
       // Only auto-invert when we're serving the built-in default for a
       // known-monochrome provider. If the admin pasted their own icon_url
       // override we have no idea what's in it — leave it alone.

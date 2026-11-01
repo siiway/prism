@@ -3067,6 +3067,19 @@ app.get("/oauth-sources/discover", async (c) => {
 
 // ─── Migrate legacy site_config OAuth credentials to oauth_sources ─────────────
 
+// One source, without its credentials. Registered after /discover so that
+// path isn't read as an id.
+app.get("/oauth-sources/:id", async (c) => {
+  const row = await c.env.DB.prepare(
+    `SELECT id, slug, provider, name, enabled, created_at, auth_url, token_url, userinfo_url, scopes, issuer_url, icon_url, show_icon, icon_only, trusted
+     FROM oauth_sources WHERE id = ?`,
+  )
+    .bind(c.req.param("id"))
+    .first<Omit<OAuthSourceRow, "client_id" | "client_secret">>();
+  if (!row) return c.json({ error: "Source not found" }, 404);
+  return c.json({ source: row });
+});
+
 app.post("/oauth-sources/migrate", async (c) => {
   const config = await getConfig(c.env.DB);
   const migrated: string[] = [];

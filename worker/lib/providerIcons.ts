@@ -5,14 +5,16 @@
 // mapping for anonymous viewers (the public /proxy/image/register endpoint
 // requires auth, which the Login page doesn't have yet).
 
+// Shipped with the app (public/provider-icons, from Simple Icons, CC0) so
+// the sign-in page never waits on, or breaks with, a third-party CDN.
 export const PROVIDER_ICON_URLS: Record<string, string> = {
-  github: "https://cdn.simpleicons.org/github",
-  google: "https://cdn.simpleicons.org/google",
-  microsoft: "https://cdn.simpleicons.org/microsoft",
-  discord: "https://cdn.simpleicons.org/discord",
-  telegram: "https://cdn.simpleicons.org/telegram",
-  x: "https://cdn.simpleicons.org/x",
-  cloudflare: "https://cdn.simpleicons.org/cloudflare",
+  github: "/provider-icons/github.svg",
+  google: "/provider-icons/google.svg",
+  microsoft: "/provider-icons/microsoft.svg",
+  discord: "/provider-icons/discord.svg",
+  telegram: "/provider-icons/telegram.svg",
+  x: "/provider-icons/x.svg",
+  cloudflare: "/provider-icons/cloudflare.svg",
 };
 
 // Providers whose built-in default icon is a near-pure-black silhouette

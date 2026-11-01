@@ -74,7 +74,9 @@ const useStyles = makeStyles({
   },
   first: { color: tokens.colorNeutralForeground1 },
   secondary: { [NARROW]: { display: "none" } },
-  end: { display: "flex", justifyContent: "flex-end", textAlign: "end" },
+  // Flex alone: a text-align here would leak into controls in the cell
+  // (it shoved a Switch knob out of its track).
+  end: { display: "flex", justifyContent: "flex-end" },
   chevron: { fontSize: "14px", color: tokens.colorNeutralForeground3 },
 });
 
