@@ -729,7 +729,9 @@ export function buildRuleContext(
         data.team_name ??
         data.provider_name,
     ),
-    "oauth.scopes": list(data.scopes),
+    // Only consent events: token.created also carries `scopes`, which are a
+    // personal access token's, not an OAuth grant's.
+    "oauth.scopes": event.startsWith("oauth.") ? list(data.scopes) : null,
     "profile.changed_fields": list(data.changed_fields),
     "time.hour": now.getUTCHours(),
     // ISO weekday: Monday 1 … Sunday 7.

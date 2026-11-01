@@ -43,6 +43,16 @@ describe("context", () => {
     ]);
   });
 
+  test("oauth.scopes only comes from OAuth events", () => {
+    const scopes = ["apps:write"];
+    expect(
+      buildRuleContext("token.created", { scopes }, at)["oauth.scopes"],
+    ).toBeNull();
+    expect(
+      buildRuleContext("oauth.consent_granted", { scopes }, at)["oauth.scopes"],
+    ).toEqual(scopes);
+  });
+
   test("header values are capped", () => {
     const ctx = buildRuleContext(
       "app.created",
