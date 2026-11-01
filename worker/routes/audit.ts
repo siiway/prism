@@ -10,7 +10,7 @@ import { requireAuth } from "../middleware/auth";
 import { randomId } from "../lib/crypto";
 import { encryptSecret, decryptSecret } from "../lib/secretCrypto";
 import { validateOutboundUrl } from "../lib/safeFetch";
-import { getEffectiveMember } from "./teams";
+import { getEffectiveMember } from "../lib/teams";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import type { AuditScope, AuditEventRow } from "../lib/audit";
 import type { Variables } from "../types";

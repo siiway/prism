@@ -16,7 +16,7 @@ import { Hono } from "hono";
 import { requireAuth } from "../middleware/auth";
 import { likePattern } from "../lib/pagination";
 import type { Variables } from "../types";
-import { listEffectiveTeamMemberships } from "./teams";
+import { listEffectiveTeamMemberships } from "../lib/teams";
 
 const RESULT_LIMIT = 5;
 const MIN_QUERY = 2;

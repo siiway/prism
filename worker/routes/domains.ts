@@ -20,7 +20,7 @@ import {
 } from "../lib/domainOwnership";
 import { normalizeDomainInput } from "../lib/domainVerify";
 import type { DomainRow, Variables } from "../types";
-import { hasRole, teamAuthority } from "./teams";
+import { hasRole, teamAuthority } from "../lib/teams";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();

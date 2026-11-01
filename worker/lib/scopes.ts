@@ -1,3 +1,18 @@
+import { PLATFORM_SCOPES } from "../../shared/scopes";
+
+const VALID_PLATFORM_SCOPES = new Set(PLATFORM_SCOPES);
+
+/** Whether `s` may appear in an app's allowed_scopes: a platform scope, or an
+ *  `app:<client_id>:<inner>` delegation scope with a non-empty inner scope.
+ *  Personal and team apps both validate with this one function — the two
+ *  drifted once already, and a five-entry hard-coded copy silently dropped
+ *  every team and delegation scope from apps created under a team. */
+export function isAllowedScope(s: string): boolean {
+  if (VALID_PLATFORM_SCOPES.has(s)) return true;
+  const parsed = parseAppScope(s);
+  return parsed !== null && parsed.innerScope.length > 0;
+}
+
 /**
  * Parses an app-delegation scope string: `app:<client_id>:<inner_scope>`
  * Returns null if the string is not in that format.

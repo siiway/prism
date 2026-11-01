@@ -78,7 +78,8 @@ worker/
 │   ├── config.ts           # getConfig(), setConfigValues(), JWT secret, RSA keypair (KV)
 │   ├── secretCrypto.ts     # AES-GCM envelope + keyed HMAC for D1 fields (SECRETS_KEY)
 │   ├── securityState.ts    # Atomic one-time OAuth claims + expired security-state cleanup
-│   ├── crypto.ts           # randomId, hashPassword/verifyPassword (PBKDF2)
+│   ├── crypto.ts           # randomId, PBKDF2 passwords, hex/base64url, SHA-256, HMAC
+│   ├── jwk.ts              # Public JWK import for DPoP / private_key_jwt verification
 │   ├── pow.ts              # Signed challenge issue/verify (HMAC + expiry + single-use)
 │   ├── geetest.ts          # GeeTest v4 server-side verification (HMAC sign + validate)
 │   ├── cap.ts              # Cap captcha — embedded (capjs-core, deterministic token) and external verify
@@ -101,7 +102,10 @@ worker/
 │   ├── domainVerify.ts     # Cron re-verify (lib/cron/reverify.ts entrypoint)
 │   ├── githubReadme.ts     # Pull + cache GitHub user-repo README, ETag-aware
 │   ├── sudo.ts             # Step-up grace window storage in KV
-│   ├── scopes.ts           # Scope ↔ claim mapping + cross-app scope parsing
+│   ├── scopes.ts           # Scope ↔ claim mapping, cross-app scope parsing, isAllowedScope
+│   ├── teams.ts            # Team roles, effective (inherited) membership, site-admin authority, dissolveTeam
+│   ├── sessionUser.ts      # The signed-in user's profile shape (login, /user/me, SSR)
+│   ├── consoleMode.ts      # D1_CONSOLE / KV_CONSOLE mode + read-only refusal
 │   ├── redirectUri.ts      # OAuth redirect URI validation, registered-domain check
 │   ├── socialOAuthState.ts # Atomic, browser-bound social OAuth state
 │   ├── cookies.ts          # Session + social OAuth correlation cookie helpers
@@ -126,7 +130,7 @@ worker/
     ├── auth.ts             # Register, login, TOTP, passkeys, GPG, sessions, PoW
     ├── oauth.ts            # Authorization server, token endpoint, OIDC, step-up 2FA, /me/* APIs
     ├── apps.ts             # OAuth app CRUD + scope definitions/access rules
-    ├── teams.ts            # Teams + sub-teams (parent_team_id), members, invites, transfers, team domains/apps; exports getEffectiveMember / dissolveTeam
+    ├── teams.ts            # Teams + sub-teams (parent_team_id), members, invites, transfers, team domains/apps
     ├── domains.ts          # Domain verification (TXT/meta/well-known)
     ├── connections.ts      # Social OAuth flows (incl. Telegram)
     ├── user.ts             # Profile, avatar, password, emails, notifications, PATs, webhooks
@@ -293,7 +297,7 @@ makes nesting work.
 of the user's master `profile_show_joined_teams` toggle).
 
 `team_members` records only **direct** memberships. Inherited access is
-computed on read by `getEffectiveMember` (in `routes/teams.ts`), which walks
+computed on read by `getEffectiveMember` (in `lib/teams.ts`), which walks
 `parent_team_id` from the team up to the root and picks the highest role
 the user holds anywhere on that chain. `listEffectiveTeamMemberships`
 does the inverse — direct memberships first, then expands each into its

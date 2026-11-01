@@ -62,7 +62,8 @@ worker/
 │   ├── config.ts           # getConfig()、setConfigValues()、JWT 密钥、RSA 密钥对（KV）
 │   ├── secretCrypto.ts     # AES-GCM 信封 + keyed HMAC（SECRETS_KEY）
 │   ├── securityState.ts    # OAuth 一次性声明的原子消费 + 过期安全状态清理
-│   ├── crypto.ts           # randomId、PBKDF2 哈希
+│   ├── crypto.ts           # randomId、PBKDF2 密码哈希、hex/base64url、SHA-256、HMAC
+│   ├── jwk.ts              # 导入公钥 JWK，用于校验 DPoP / private_key_jwt
 │   ├── pow.ts              # 签名挑战签发/校验（HMAC + 过期 + 单次）
 │   ├── geetest.ts          # 极验 v4 服务端校验（HMAC 签名 + validate）
 │   ├── cap.ts              # Cap 验证码 — 内嵌（capjs-core，确定性令牌）与外部校验
@@ -85,7 +86,10 @@ worker/
 │   ├── domainVerify.ts     # cron 重新核验（cron/reverify.ts 入口）
 │   ├── githubReadme.ts     # 拉取并缓存 GitHub 用户仓库 README，遵守 ETag
 │   ├── sudo.ts             # 步骤提升宽限期存储于 KV
-│   ├── scopes.ts           # scope ↔ claim 映射 + 跨应用 scope 解析
+│   ├── scopes.ts           # scope ↔ claim 映射、跨应用 scope 解析、isAllowedScope
+│   ├── teams.ts            # 团队角色、有效（继承）成员资格、站点管理员权限、dissolveTeam
+│   ├── sessionUser.ts      # 已登录用户的资料结构（登录、/user/me、SSR）
+│   ├── consoleMode.ts      # D1_CONSOLE / KV_CONSOLE 模式 + 只读拒绝
 │   ├── redirectUri.ts      # OAuth redirect URI 校验，已注册域名检查
 │   ├── socialOAuthState.ts # 原子消费且绑定浏览器的社交 OAuth state
 │   ├── cookies.ts          # Session 与社交 OAuth 关联 cookie 工具
@@ -110,7 +114,7 @@ worker/
     ├── auth.ts             # 注册、登录、TOTP、Passkey、GPG、会话、PoW
     ├── oauth.ts            # 授权服务器、token、OIDC、步骤提升 2FA、/me/* API
     ├── apps.ts             # OAuth 应用 CRUD + scope 定义/访问规则
-    ├── teams.ts            # 团队 + 子团队（parent_team_id）、成员、邀请、转让、团队的域名/应用；导出 getEffectiveMember / dissolveTeam
+    ├── teams.ts            # 团队 + 子团队（parent_team_id）、成员、邀请、转让、团队的域名/应用
     ├── domains.ts          # 域名验证（TXT/meta/well-known）
     ├── connections.ts      # 社交 OAuth 流（含 Telegram）
     ├── user.ts             # 资料、头像、改密、邮箱、通知、PAT、webhook
@@ -200,7 +204,7 @@ WebAuthn 凭据。`credential_id` 用 base64url。每次成功认证后更新 `c
 
 `team_members` 每个 `(team_id, user_id)` 一行，`role` ∈ `owner | co-owner | admin | member`，`show_on_profile` 是用户主开关 `profile_show_joined_teams` 的按团队覆写。
 
-`team_members` 只记录**直接**成员资格。继承访问在读时由 `getEffectiveMember`（位于 `routes/teams.ts`）计算：沿 `parent_team_id` 从团队向上走到根，挑用户在整条链上拥有的最高角色。`listEffectiveTeamMemberships` 反向操作 —— 先取直接成员资格，再把每条扩展成其后代子树，用以呈现“我通过继承能看到的团队”。两个 helper 都遵循 `inherit_team_membership` 站点配置；关闭时退化为仅看直接行。
+`team_members` 只记录**直接**成员资格。继承访问在读时由 `getEffectiveMember`（位于 `lib/teams.ts`）计算：沿 `parent_team_id` 从团队向上走到根，挑用户在整条链上拥有的最高角色。`listEffectiveTeamMemberships` 反向操作 —— 先取直接成员资格，再把每条扩展成其后代子树，用以呈现“我通过继承能看到的团队”。两个 helper 都遵循 `inherit_team_membership` 站点配置；关闭时退化为仅看直接行。
 
 `team_invites` 是标准的随机 token + 过期 + 最大次数表；token 在数据库里以 keyed-HMAC 哈希存储（`__HASH_v1__…`），单凭被盗数据库行无法伪造加入。签发 `role = co-owner` 的邀请要求签发者本人是 `owner`；admin/member 等级对 admin+ 开放。
 

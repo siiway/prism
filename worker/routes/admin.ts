@@ -12,6 +12,7 @@ import { getIp } from "../lib/clientIp";
 import {
   SENSITIVE_CONFIG_KEYS,
   encryptSecret,
+  hashLookupCandidate,
   hashSecret,
   isEncryptedSecret,
   isHashedSecret,
@@ -22,7 +23,7 @@ import {
   inviteEmailTemplate,
   sendEmail,
 } from "../lib/email";
-import { verifyAnyTotp } from "../lib/totp";
+import { hashBackupCodes, verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
 import { requireAdmin } from "../middleware/auth";
 import { validateImageUrl } from "../lib/imageValidation";
@@ -40,7 +41,7 @@ import {
   computeVerified,
 } from "../lib/domainVerify";
 import { randomBase64url, randomId } from "../lib/crypto";
-import { hashBackupCodes } from "../lib/totp";
+
 import {
   recordAudit,
   recordAccountDeletion,
@@ -51,7 +52,7 @@ import {
   dissolveTeam,
   teamUserSyntheticEmail,
   teamUserSyntheticUsername,
-} from "./teams";
+} from "../lib/teams";
 import type {
   LoginErrorRow,
   OAuthAppRow,
@@ -69,7 +70,7 @@ import {
   parseInviteRegistrationExemptions,
   sanitizeRestrictedCapabilities,
 } from "../lib/userCapabilities";
-import { hashLookupCandidate } from "../lib/secretCrypto";
+
 import {
   isInviteEnabled,
   validateInviteMaxUses,

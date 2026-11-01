@@ -24,7 +24,8 @@ import {
   validateRedirectUriEntry,
   type RedirectUriEntry,
 } from "../lib/redirectUri";
-import { parseAppScope } from "../lib/scopes";
+import { isAllowedScope, parseAppScope } from "../lib/scopes";
+import { getEffectiveMember, hasRole, wantsNormalView } from "../lib/teams";
 import { APP_EVENT_TYPES } from "../lib/app-events";
 import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
 import {
@@ -39,22 +40,7 @@ import type {
   Variables,
   WaitUntilCtx,
 } from "../types";
-import { PLATFORM_SCOPES } from "../../shared/scopes";
 import type { CodedError } from "../lib/apiError";
-
-// Mirror of the platform scope set in oauth.ts — used to validate app:* inner scopes
-const VALID_PLATFORM_SCOPES = new Set(PLATFORM_SCOPES);
-
-/** Exported so the team-app endpoint validates scopes with exactly this
- *  function rather than its own list — the two drifted once already, and a
- *  five-entry hard-coded copy silently dropped every team and delegation
- *  scope from apps created under a team. */
-export function isAllowedScope(s: string): boolean {
-  if (VALID_PLATFORM_SCOPES.has(s)) return true;
-  const parsed = parseAppScope(s);
-  // inner scope: either a platform scope or any non-empty identifier (app-defined)
-  return parsed !== null && parsed.innerScope.length > 0;
-}
 
 /** Check access rules for target app before adding an app:* scope to allowed_scopes.
  *  Returns null if allowed, or the error if denied. */
@@ -117,37 +103,13 @@ app.use("*", requireAuth);
 // a site admin's override; it never grants authority to another caller.
 app.use("*", async (c, next) => {
   const user = c.get("user");
-  if (
-    user?.role === "admin" &&
-    c.req.header("X-Prism-Team-View")?.toLowerCase() === "member"
-  ) {
+  if (user?.role === "admin" && wantsNormalView(c)) {
     c.set("user", { ...user, role: "user" });
   }
   await next();
 });
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
-
-const ROLE_RANK: Record<string, number> = {
-  owner: 4,
-  "co-owner": 3,
-  admin: 2,
-  member: 1,
-};
-
-/** Returns the user's *effective* role on the team, including any role
- *  inherited from an ancestor team.
- *  Backs the canAccess() team-app gate so sub-team-owned apps respect the
- *  same inheritance rules the session API uses. */
-async function getEffectiveTeamMember(
-  db: D1Database,
-  teamId: string,
-  userId: string,
-): Promise<{ role: "owner" | "co-owner" | "admin" | "member" } | null> {
-  const mod = await import("./teams");
-  const eff = await mod.getEffectiveMember(db, teamId, userId);
-  return eff ? { role: eff.role } : null;
-}
 
 /** Try to authenticate the request as the app itself via HTTP Basic.
  *
@@ -215,9 +177,11 @@ async function canAccess(
 ): Promise<boolean> {
   if (siteRole === "admin") return true;
   if (row.team_id) {
-    const m = await getEffectiveTeamMember(db, row.team_id, userId);
+    // Effective role, so sub-team-owned apps respect inherited membership the
+    // same way the team API does.
+    const m = await getEffectiveMember(db, row.team_id, userId);
     if (!m) return false;
-    return write ? (ROLE_RANK[m.role] ?? 0) >= ROLE_RANK["admin"] : true;
+    return write ? hasRole(m.role, "admin") : true;
   }
   return row.owner_id === userId;
 }

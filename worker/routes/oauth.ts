@@ -77,7 +77,7 @@ import {
   ROLE_RANK,
   listEffectiveTeamMemberships,
   dissolveTeam,
-} from "./teams";
+} from "../lib/teams";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,

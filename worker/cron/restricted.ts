@@ -15,6 +15,7 @@
 
 import { getConfigValue } from "../lib/config";
 import { recordAccountDeletion } from "../lib/audit";
+import { dissolveTeam } from "../lib/teams";
 
 /** Accounts deleted per tick, per job. Small enough that a tick stays well
  *  inside the Worker limits even when every row cascades widely. */
@@ -167,7 +168,6 @@ export async function reapDissolvedTeams(
 
     // Nothing left anchored to it. Hand over to the ordinary dissolution
     // path, which reassigns team-owned apps level by level before deleting.
-    const { dissolveTeam } = await import("../routes/teams");
     const owner = await env.DB.prepare(
       "SELECT user_id FROM team_members WHERE team_id = ? AND role = 'owner' LIMIT 1",
     )

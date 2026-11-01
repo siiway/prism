@@ -19,8 +19,8 @@
 // unverified account.
 
 import { Hono } from "hono";
-import { randomId } from "../lib/crypto";
-import { hashPassword } from "../lib/crypto";
+import { hashPassword, randomId } from "../lib/crypto";
+
 import { hashLookupCandidate } from "../lib/secretCrypto";
 import { requireAuth } from "../middleware/auth";
 import { toSessionUser } from "../lib/sessionUser";

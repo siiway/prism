@@ -23,8 +23,7 @@ import {
   MailRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
