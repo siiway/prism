@@ -8,10 +8,10 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
-  Input,
-  Select,
+  Input,
   Spinner,
 } from "@fluentui/react-components";
+import { Select } from "../../../components/Select";
 import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";

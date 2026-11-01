@@ -7,10 +7,10 @@ import {
   DialogSurface,
   DialogTitle,
   Field,
-  Select,
   Spinner,
   Text,
 } from "@fluentui/react-components";
+import { Select } from "../../../components/Select";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Domain, Team } from "../../../lib/api";

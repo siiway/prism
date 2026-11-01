@@ -14,7 +14,6 @@ import {
   DialogTitle,
   DialogTrigger,
   Input,
-  Select,
   Switch,
   Link,
   MessageBar,
@@ -29,6 +28,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { Select } from "../../components/Select";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";

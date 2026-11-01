@@ -14,7 +14,6 @@ import {
   Field,
   Input,
   MessageBar,
-  Select,
   Spinner,
   Table,
   TableBody,
@@ -27,6 +26,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { Select } from "../../components/Select";
 import { AddRegular, DeleteRegular, EditRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

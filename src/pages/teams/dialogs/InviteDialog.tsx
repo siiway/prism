@@ -8,14 +8,14 @@ import {
   DialogTitle,
   DialogTrigger,
   Field,
-  Input,
-  Select,
+  Input,
   Spinner,
   Checkbox,
   Text,
   Tooltip,
   tokens,
 } from "@fluentui/react-components";
+import { Select } from "../../../components/Select";
 import {
   CheckmarkRegular,
   CopyRegular,

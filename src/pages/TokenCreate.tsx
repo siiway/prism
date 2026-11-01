@@ -7,12 +7,12 @@ import {
   Field,
   Input,
   MessageBar,
-  Select,
   Spinner,
   Text,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { Select } from "../components/Select";
 import { CopyRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";

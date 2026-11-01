@@ -11,7 +11,6 @@ import {
   MenuPopover,
   MenuTrigger,
   MessageBar,
-  Select,
   Table,
   TableBody,
   TableCell,
@@ -23,6 +22,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
+import { Select } from "../../components/Select";
 import {
   DeleteRegular,
   DismissRegular,
