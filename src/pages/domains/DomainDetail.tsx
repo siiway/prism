@@ -25,6 +25,7 @@ import { useApi } from "../../lib/api-context";
 import { setDocumentPageTitle } from "../../lib/documentTitle";
 import { useConfirm } from "../../lib/useConfirm";
 import { useToastMessage } from "../../lib/useToastMessage";
+import { useAuthStore } from "../../store/auth";
 import { EmptyState } from "../../components/EmptyState";
 import { Select } from "../../components/Select";
 import {
@@ -107,6 +108,10 @@ export function DomainDetail() {
   }, [domain?.domain]);
 
   const listPath = isTeam ? `/teams/${teamId}?tab=domains` : "/domains";
+  // Moving a team domain out returns it to whoever added it, who may not be
+  // the person doing the move.
+  const myId = useAuthStore((s) => s.user?.id);
+  const addedByMe = !domain?.user_id || domain.user_id === myId;
   const fail = (err: unknown, fallback: string) =>
     showMsg("error", err instanceof ApiError ? err.message : fallback);
   const refresh = async () => {
@@ -177,7 +182,8 @@ export function DomainDetail() {
         await api.returnDomainToPersonal(teamId!, id);
         await qc.invalidateQueries({ queryKey: ["team-domains", teamId] });
         await qc.invalidateQueries({ queryKey: ["domains"] });
-        navigate(`/domains/${id}`, { replace: true });
+        // Only the member it went back to can open its personal page.
+        navigate(addedByMe ? `/domains/${id}` : listPath, { replace: true });
       } catch (err) {
         fail(err, t("domains.transferFailed"));
       }
@@ -342,8 +348,16 @@ export function DomainDetail() {
             </Button>
           </SettingsRow>
           <SettingsRow
-            label={t("domains.returnToPersonal")}
-            description={t("domains.moveToPersonalDesc")}
+            label={
+              addedByMe
+                ? t("domains.returnToPersonal")
+                : t("domains.returnToAdder")
+            }
+            description={
+              addedByMe
+                ? t("domains.moveToPersonalDesc")
+                : t("domains.returnToAdderDesc")
+            }
           >
             <Button
               size="small"

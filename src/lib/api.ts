@@ -3736,6 +3736,8 @@ export interface Domain {
   next_reverify_at: number | null;
   verification_method: VerificationMethod | null;
   created_at: number;
+  /** Who added it. A team domain moved out of the team goes back to them. */
+  user_id?: string;
 }
 
 export interface DomainAddResponse {

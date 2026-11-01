@@ -814,7 +814,9 @@
     "addAndVerify": "添加并验证",
     "bringYourOwn": "或者将你自己的一个域名移入团队，它会保留验证状态。",
     "moveIntoTeam": "移入团队",
-    "inheritedBadge": "来自上级团队"
+    "inheritedBadge": "来自上级团队",
+    "returnToAdder": "归还给添加者",
+    "returnToAdderDesc": "将该域名移出团队，并归还给添加它的成员。"
   },
   "teams": {
     "title": "团队",

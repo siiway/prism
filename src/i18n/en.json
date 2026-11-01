@@ -814,7 +814,9 @@
     "addAndVerify": "Add and verify",
     "bringYourOwn": "Or move one of your own domains into the team. It keeps its verification.",
     "moveIntoTeam": "Move into team",
-    "inheritedBadge": "From parent team"
+    "inheritedBadge": "From parent team",
+    "returnToAdder": "Return to who added it",
+    "returnToAdderDesc": "Takes the domain out of the team and gives it back to the member who added it."
   },
   "teams": {
     "title": "Teams",
