@@ -8,7 +8,8 @@
 // - Cards: any element with a literal id="…" and title={t("…")} in its
 //   opening tag (SettingsCard does this) becomes a deep link, /page#id.
 // - Sections: pages routed as "…/:tab" are split on {tab === "x" && …}
-//   blocks, giving /…/x for each.
+//   blocks, giving /…/x for each. A section written as its own component,
+//   {tab === "x" && <XSection …/>}, is read from the file it's imported from.
 // - Keywords: translation keys used inside a card, section or page, kept
 //   when their English text looks like a label (short, not a sentence).
 //
@@ -251,6 +252,22 @@ function localImports(file: string, root: string, src: string): string[] {
   return out;
 }
 
+/** The local file a component named `name` is imported from. */
+function importedFrom(
+  file: string,
+  src: string,
+  name: string,
+): string | undefined {
+  const m = src.match(
+    new RegExp(
+      `import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*"(\\.{1,2}/[^"]+)"`,
+    ),
+  );
+  if (!m) return undefined;
+  const base = path.resolve(path.dirname(file), m[1]);
+  return [".tsx", ".ts"].map((ext) => base + ext).find((f) => fs.existsSync(f));
+}
+
 const read = (file: string) =>
   fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
 
@@ -260,7 +277,15 @@ export function buildSearchIndex(root: string): IndexedPage[] {
   for (const route of readRoutes(root)) {
     const src = read(route.file);
     const indexed = indexFile(src, route.path, en);
-    if (!route.path.includes(":tab")) {
+    if (route.path.includes(":tab")) {
+      for (const m of src.matchAll(/\{tab === "([\w-]+)" && <(\w+)/g)) {
+        const file = importedFrom(route.file, src, m[2]);
+        if (file)
+          indexed.push(
+            ...indexFile(read(file), route.path.replace(":tab", m[1]), en),
+          );
+      }
+    } else {
       const page = indexed[0];
       const known = new Set([
         page.title ?? "",
