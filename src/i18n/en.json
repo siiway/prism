@@ -2971,7 +2971,10 @@
   "notices": {
     "region": "Announcements",
     "dismiss": "Dismiss this notice",
-    "forTeam": "For {{team}}"
+    "forTeam": "For members of {{team}}",
+    "showMore": "Show {{count}} more notice",
+    "showMore_other": "Show {{count}} more notices",
+    "showFewer": "Show fewer"
   },
   "legal": {
     "privacy": "Privacy Policy",

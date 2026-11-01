@@ -636,7 +636,11 @@ user should not be the one place nothing checks.
 | Audience          | See below                                                                                                                 |
 | Show from / until | The window. Stored, not scheduled by a job: the read query filters on time, so a notice appears and disappears on its own |
 | Dismissible       | Off for something that must stay on screen, like an active incident                                                       |
-| Pinned            | Sorts above the rest regardless of age                                                                                    |
+| Pinned            | Sorts above the other notices of its level, regardless of age                                                             |
+
+Readers see the most urgent first (critical, then warning, then info; pinned
+then newest within a level). Two stay open; any more fold behind a "Show N
+more" link, so a busy board never pushes the page out of view.
 
 ### Audience
 

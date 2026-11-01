@@ -2971,7 +2971,10 @@
   "notices": {
     "region": "公告",
     "dismiss": "关闭该公告",
-    "forTeam": "面向 {{team}}"
+    "forTeam": "面向 {{team}} 的成员",
+    "showMore": "再显示 {{count}} 条公告",
+    "showMore_other": "再显示 {{count}} 条公告",
+    "showFewer": "收起"
   },
   "legal": {
     "privacy": "隐私政策",
