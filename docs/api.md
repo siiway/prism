@@ -464,18 +464,18 @@ See [Teams](teams.md) for the full guide. Endpoint summary:
 See [Teams → Invite-link registration](teams.md#invite-link-registration) for
 the semantics.
 
-| Method  | Path                                       | Notes                                                                                                   |
-| ------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `GET`   | `/api/join/:teamId`                        | Unauthenticated. Team branding, effective requirements, captcha config. 404s when the channel is closed |
-| `POST`  | `/api/auth/register-with-invite`           | Creates a pending account and returns a session. Claims an invite seat atomically                       |
-| `GET`   | `/api/auth/invite-join/status`             | What the pending account still has to satisfy                                                           |
-| `POST`  | `/api/auth/invite-join/complete`           | Writes the membership row once requirements are met. Always joins as `member`                           |
-| `GET`   | `/api/user/me/restriction`                 | Whether the caller is restricted, its capabilities, and whether it may convert                          |
-| `POST`  | `/api/user/me/convert`                     | Lift the restriction. One-way; requires a verified real address                                         |
+| Method  | Path                                       | Notes                                                                                                             |
+| ------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `GET`   | `/api/join/:teamId`                        | Unauthenticated. Team branding, effective requirements, captcha config. 404s when the channel is closed           |
+| `POST`  | `/api/auth/register-with-invite`           | Creates a pending account and returns a session. Claims an invite seat atomically                                 |
+| `GET`   | `/api/auth/invite-join/status`             | What the pending account still has to satisfy                                                                     |
+| `POST`  | `/api/auth/invite-join/complete`           | Writes the membership row once requirements are met. Always joins as `member`                                     |
+| `GET`   | `/api/user/me/restriction`                 | Whether the caller is restricted, its capabilities, and whether it may convert                                    |
+| `POST`  | `/api/user/me/convert`                     | Lift the restriction. One-way; requires a verified real address                                                   |
 | `PATCH` | `/api/admin/teams/:id/invite-registration` | Site admin: grant/revoke, set exemptions (`email_verification` only), and `allow_convert` (`null` = site default) |
-| `POST`  | `/api/admin/teams/:id/dissolve`            | Site admin: stage one — deactivate the team's accounts. Confirm with the team name                      |
-| `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | Undo a staged dissolution during the grace period                                                       |
-| `GET`   | `/api/admin/restricted-users`              | Accounts produced by `?team_id=` or `?invite_token=` — the query for scoping a leaked link              |
+| `POST`  | `/api/admin/teams/:id/dissolve`            | Site admin: stage one — deactivate the team's accounts. Confirm with the team name                                |
+| `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | Undo a staged dissolution during the grace period                                                                 |
+| `GET`   | `/api/admin/restricted-users`              | Accounts produced by `?team_id=` or `?invite_token=` — the query for scoping a leaked link                        |
 
 `POST /api/teams/:id/invites` additionally accepts `allows_registration`, which
 requires a finite `max_uses` under the site cap and forces the role to `member`.
@@ -764,7 +764,7 @@ Same gating as the database console, via `KV_CONSOLE` (which follows
 | `GET`    | `/api/admin/scope-grants/site`               | Site-level OAuth grants apps still hold, one per app and account. `?q=` searches                                                                                       |
 | `GET`    | `/api/admin/scope-grants/team`               | Team-level grants apps still hold, one per app and team. `?q=` searches, `?team_id=` filters                                                                           |
 | `GET`    | `/api/admin/scope-grants/:kind/:id`          | One grant: held scopes, live token count, approval history. Errors: `invalid_grant_kind`, `scope_grant_not_found`                                                      |
-| `DELETE` | `/api/admin/scope-grants/:kind/:id`          | Revoke: strips the scopes from approvals and deletes the tokens and codes that carry them. Returns `{ approvals, tokens }`                                              |
+| `DELETE` | `/api/admin/scope-grants/:kind/:id`          | Revoke: strips the scopes from approvals and deletes the tokens and codes that carry them. Returns `{ approvals, tokens }`                                             |
 | `GET`    | `/api/admin/users/:id/sessions`              | Live sessions with the IP/geo history behind each                                                                                                                      |
 | `DELETE` | `/api/admin/users/:id/sessions/:sessionId`   | End one session (`DELETE …/sessions` still ends all)                                                                                                                   |
 | `GET`    | `/api/admin/maintenance/jobs`                | The runnable scheduled jobs, and the cron they normally run on                                                                                                         |
@@ -784,7 +784,8 @@ in. Writing is admin-only. See [Admin → Notice board](admin.md#notice-board).
 | -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`    | `/api/notices`             | Notices for the current viewer: published, in window, matching their audience, not already dismissed. Signed out returns the `public` ones                |
 | `POST`   | `/api/notices/:id/dismiss` | Dismiss for the calling user. 401 signed out, 403 when the notice is not dismissible                                                                      |
-| `GET`    | `/api/admin/notices`       | Every notice, drafts included, with dismissal counts                                                                                                      |
+| `GET`    | `/api/admin/notices`       | Every notice, drafts included, with dismissal counts. `?q=` matches the title                                                                             |
+| `GET`    | `/api/admin/notices/:id`   | One notice, with its team name, author and dismissal count                                                                                                |
 | `POST`   | `/api/admin/notices`       | Create. `{ title, body, level?, audience?, team_id?, is_published?, starts_at?, ends_at?, is_dismissible?, pinned? }` — a draft unless `is_published`     |
 | `PATCH`  | `/api/admin/notices/:id`   | Update. Validated against the merged row, so moving one bound still checks the other. `{ reset_dismissals: true }` brings it back for everyone who hid it |
 | `DELETE` | `/api/admin/notices/:id`   | Delete, cascading to dismissals. Unpublish instead to keep it as a draft                                                                                  |

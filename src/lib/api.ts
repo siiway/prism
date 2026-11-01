@@ -2307,13 +2307,25 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     request<{ notices: Notice[] }>("GET", "/notices", undefined, getToken()),
   dismissNotice: (id: string) =>
     request<{ ok: true }>("POST", `/notices/${id}/dismiss`, {}, getToken()),
-  adminListNotices: (page = 1) =>
+  adminListNotices: (page = 1, q = "") =>
     request<{
       notices: AdminNotice[];
       total: number;
       page: number;
       limit: number;
-    }>("GET", `/admin/notices?page=${page}`, undefined, getToken()),
+    }>(
+      "GET",
+      `/admin/notices?page=${page}${q ? `&q=${encodeURIComponent(q)}` : ""}`,
+      undefined,
+      getToken(),
+    ),
+  adminGetNotice: (id: string) =>
+    request<{ notice: AdminNotice }>(
+      "GET",
+      `/admin/notices/${id}`,
+      undefined,
+      getToken(),
+    ),
   adminCreateNotice: (body: NoticeInput) =>
     request<{ notice: AdminNotice }>(
       "POST",

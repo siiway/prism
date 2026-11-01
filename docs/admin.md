@@ -619,8 +619,14 @@ still surfaces as a failure rather than as an empty board.
 ### Writing one
 
 Notices are drafts until published, so nothing half-written is ever on screen.
-The composer previews the rendered result through the same sanitizer the board
-uses — the body is markdown, treated as untrusted even though an administrator
+**New notice** opens a page that saves either as a draft or published. Each
+notice then has its own page: switches for published, pinned and dismissible
+that apply at once, and separate cards for the content and for the audience
+and schedule, each saved on its own. The list can publish or take down a
+notice in place and searches by title. A team notice picks its team by name.
+
+The composer previews the rendered result with the board's own component and
+the same sanitizer — the body is markdown, treated as untrusted even though an administrator
 wrote it, because the one place a stored-XSS bug would reach every signed-in
 user should not be the one place nothing checks.
 

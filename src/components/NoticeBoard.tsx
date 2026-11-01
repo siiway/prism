@@ -80,6 +80,45 @@ function NoticeBody({ markdown }: { markdown: string }) {
   );
 }
 
+/** One notice as readers see it. Also the admin composer's preview, so the
+ *  two can't drift apart. */
+export function NoticeBar({
+  notice,
+  onDismiss,
+}: {
+  notice: Pick<Notice, "title" | "body" | "level" | "team_name">;
+  /** Shows the dismiss button. */
+  onDismiss?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <MessageBar intent={INTENT[notice.level] ?? "info"}>
+      <MessageBarBody>
+        <MessageBarTitle>{notice.title}</MessageBarTitle>
+        <NoticeBody markdown={notice.body} />
+        {notice.team_name && (
+          <>
+            {" "}
+            <Link as="span">
+              {t("notices.forTeam", { team: notice.team_name })}
+            </Link>
+          </>
+        )}
+      </MessageBarBody>
+      {onDismiss && (
+        <MessageBarActions>
+          <Button
+            appearance="transparent"
+            icon={<DismissRegular />}
+            aria-label={t("notices.dismiss")}
+            onClick={onDismiss}
+          />
+        </MessageBarActions>
+      )}
+    </MessageBar>
+  );
+}
+
 export function NoticeBoard() {
   const api = useApi();
   const styles = useStyles();
@@ -123,30 +162,13 @@ export function NoticeBoard() {
       aria-label={t("notices.region")}
     >
       {notices.map((notice) => (
-        <MessageBar key={notice.id} intent={INTENT[notice.level] ?? "info"}>
-          <MessageBarBody>
-            <MessageBarTitle>{notice.title}</MessageBarTitle>
-            <NoticeBody markdown={notice.body} />
-            {notice.team_name && (
-              <>
-                {" "}
-                <Link as="span">
-                  {t("notices.forTeam", { team: notice.team_name })}
-                </Link>
-              </>
-            )}
-          </MessageBarBody>
-          {notice.is_dismissible && (
-            <MessageBarActions>
-              <Button
-                appearance="transparent"
-                icon={<DismissRegular />}
-                aria-label={t("notices.dismiss")}
-                onClick={() => dismiss.mutate(notice.id)}
-              />
-            </MessageBarActions>
-          )}
-        </MessageBar>
+        <NoticeBar
+          key={notice.id}
+          notice={notice}
+          onDismiss={
+            notice.is_dismissible ? () => dismiss.mutate(notice.id) : undefined
+          }
+        />
       ))}
     </div>
   );

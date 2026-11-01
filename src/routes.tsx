@@ -664,6 +664,20 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
                 })),
             },
             {
+              path: "notices/new",
+              lazy: () =>
+                import("./pages/admin/notices/NoticeNew").then((m) => ({
+                  Component: m.NoticeNew,
+                })),
+            },
+            {
+              path: "notices/:id",
+              lazy: () =>
+                import("./pages/admin/notices/NoticeDetail").then((m) => ({
+                  Component: perRecord(m.NoticeDetail),
+                })),
+            },
+            {
               path: "scope-grants",
               lazy: () =>
                 import("./pages/admin/AdminScopeGrants").then((m) => ({

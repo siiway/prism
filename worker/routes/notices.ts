@@ -14,7 +14,7 @@ import { Hono } from "hono";
 import { randomId } from "../lib/crypto";
 import { getIp } from "../lib/clientIp";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
-import { readPage } from "../lib/pagination";
+import { likePattern, readPage } from "../lib/pagination";
 import { optionalAuth } from "../middleware/auth";
 import { MIGRATIONS_PENDING, readWithFallback } from "../lib/schema";
 import type { NoticeRow, Variables } from "../types";
@@ -262,7 +262,15 @@ async function validate(
   return null;
 }
 
-/** Every notice, drafts included. */
+/** A notice with what the admin screens show beside it. */
+const ADMIN_SELECT = `SELECT n.*, t.name AS team_name, u.username AS created_by_username,
+        (SELECT COUNT(*) FROM notice_dismissals d WHERE d.notice_id = n.id)
+          AS dismissal_count
+   FROM notices n
+   LEFT JOIN teams t ON t.id = n.team_id
+   LEFT JOIN users u ON u.id = n.created_by`;
+
+/** Every notice, drafts included. `q` matches the title. */
 adminRoutes.get("/", async (c) => {
   const { page, limit, offset } = readPage(
     c.req.query("page"),
@@ -270,23 +278,21 @@ adminRoutes.get("/", async (c) => {
     20,
     100,
   );
+  const q = c.req.query("q")?.trim();
+  const where = q ? "WHERE LOWER(n.title) LIKE LOWER(?) ESCAPE '\\'" : "";
+  const params = q ? [likePattern(q)] : [];
 
   const [rows, count] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT n.*, t.name AS team_name, u.username AS created_by_username,
-              (SELECT COUNT(*) FROM notice_dismissals d WHERE d.notice_id = n.id)
-                AS dismissal_count
-         FROM notices n
-         LEFT JOIN teams t ON t.id = n.team_id
-         LEFT JOIN users u ON u.id = n.created_by
+      `${ADMIN_SELECT} ${where}
         ORDER BY n.pinned DESC, n.created_at DESC
         LIMIT ? OFFSET ?`,
     )
-      .bind(limit, offset)
+      .bind(...params, limit, offset)
       .all<NoticeRow & Record<string, unknown>>(),
-    c.env.DB.prepare("SELECT COUNT(*) AS n FROM notices").first<{
-      n: number;
-    }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM notices n ${where}`)
+      .bind(...params)
+      .first<{ n: number }>(),
   ]);
 
   return c.json({
@@ -295,6 +301,14 @@ adminRoutes.get("/", async (c) => {
     page,
     limit,
   });
+});
+
+adminRoutes.get("/:id", async (c) => {
+  const row = await c.env.DB.prepare(`${ADMIN_SELECT} WHERE n.id = ?`)
+    .bind(c.req.param("id"))
+    .first<NoticeRow & Record<string, unknown>>();
+  if (!row) return c.json({ error: "notice_not_found" }, 404);
+  return c.json({ notice: serialize(row) });
 });
 
 adminRoutes.post("/", async (c) => {

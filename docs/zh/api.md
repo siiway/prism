@@ -389,18 +389,18 @@ OAuth 应用密钥为只写字段。`POST /api/apps`、`POST /api/teams/:id/apps
 
 语义详见 [团队 → 邀请链接注册](teams.md#邀请链接注册)。
 
-| 方法    | 路径                                       | 说明                                                                      |
-| ------- | ------------------------------------------ | ------------------------------------------------------------------------- |
-| `GET`   | `/api/join/:teamId`                        | 未认证。团队品牌信息、生效门槛、captcha 配置。通道关闭时返回 404          |
-| `POST`  | `/api/auth/register-with-invite`           | 创建 pending 账号并返回会话，原子占用一个邀请名额                         |
-| `GET`   | `/api/auth/invite-join/status`             | 该 pending 账号还差哪些门槛                                               |
-| `POST`  | `/api/auth/invite-join/complete`           | 门槛满足后写入成员行，始终以 `member` 身份加入                            |
-| `GET`   | `/api/user/me/restriction`                 | 调用者是否受限、拥有哪些能力、能否转换                                    |
-| `POST`  | `/api/user/me/convert`                     | 解除受限。单向不可逆，需已绑定并验证真实邮箱                              |
+| 方法    | 路径                                       | 说明                                                                                                  |
+| ------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `GET`   | `/api/join/:teamId`                        | 未认证。团队品牌信息、生效门槛、captcha 配置。通道关闭时返回 404                                      |
+| `POST`  | `/api/auth/register-with-invite`           | 创建 pending 账号并返回会话，原子占用一个邀请名额                                                     |
+| `GET`   | `/api/auth/invite-join/status`             | 该 pending 账号还差哪些门槛                                                                           |
+| `POST`  | `/api/auth/invite-join/complete`           | 门槛满足后写入成员行，始终以 `member` 身份加入                                                        |
+| `GET`   | `/api/user/me/restriction`                 | 调用者是否受限、拥有哪些能力、能否转换                                                                |
+| `POST`  | `/api/user/me/convert`                     | 解除受限。单向不可逆，需已绑定并验证真实邮箱                                                          |
 | `PATCH` | `/api/admin/teams/:id/invite-registration` | 站点管理员：授予/撤销，设置豁免项（仅 `email_verification`）以及 `allow_convert`（`null` = 站点默认） |
-| `POST`  | `/api/admin/teams/:id/dissolve`            | 站点管理员：阶段一，停用该团队的账号。需输入团队名确认                    |
-| `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | 宽限期内撤销分段解散                                                      |
-| `GET`   | `/api/admin/restricted-users`              | 按 `?team_id=` 或 `?invite_token=` 反查产生的账号 —— 邀请码泄漏时用于定损 |
+| `POST`  | `/api/admin/teams/:id/dissolve`            | 站点管理员：阶段一，停用该团队的账号。需输入团队名确认                                                |
+| `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | 宽限期内撤销分段解散                                                                                  |
+| `GET`   | `/api/admin/restricted-users`              | 按 `?team_id=` 或 `?invite_token=` 反查产生的账号 —— 邀请码泄漏时用于定损                             |
 
 `POST /api/teams/:id/invites` 额外接受 `allows_registration`，它要求 `max_uses` 为有限值且不超过站点上限，并强制角色为 `member`。
 `PATCH /api/teams/:id` 接受 `allow_normal_user_join`。
@@ -662,7 +662,8 @@ OAuth scope 版本：
 | -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`    | `/api/notices`             | 当前查看者可见的公告：已发布、在展示窗口内、受众匹配、且未被关闭。未登录时返回 `public` 公告                                                        |
 | `POST`   | `/api/notices/:id/dismiss` | 为调用者关闭该公告。未登录返回 401，公告不可关闭时返回 403                                                                                          |
-| `GET`    | `/api/admin/notices`       | 全部公告（含草稿），带关闭次数统计                                                                                                                  |
+| `GET`    | `/api/admin/notices`       | 全部公告（含草稿），带关闭次数统计。`?q=` 按标题匹配                                                                                                |
+| `GET`    | `/api/admin/notices/:id`   | 单条公告，含团队名称、作者与关闭次数                                                                                                                |
 | `POST`   | `/api/admin/notices`       | 创建。`{ title, body, level?, audience?, team_id?, is_published?, starts_at?, ends_at?, is_dismissible?, pinned? }` —— 未设 `is_published` 时为草稿 |
 | `PATCH`  | `/api/admin/notices/:id`   | 更新。基于合并后的记录校验，因此只改一端时间也会与另一端比对。`{ reset_dismissals: true }` 会让它对所有关闭过的人重新出现                           |
 | `DELETE` | `/api/admin/notices/:id`   | 删除，并级联删除关闭记录。若只是想撤下，请改用取消发布                                                                                              |
