@@ -161,8 +161,12 @@ function quoteIdent(name: string): string {
 async function listTableNames(db: D1Database): Promise<string[]> {
   const { results } = await db
     .prepare(
+      // D1 keeps its own bookkeeping in _cf_* tables and refuses to let
+      // queries read or describe them (SQLITE_AUTH), so listing one would
+      // fail the whole table list.
       `SELECT name FROM sqlite_master
         WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+          AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\'
         ORDER BY name`,
     )
     .all<{ name: string }>();
