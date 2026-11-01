@@ -1,9 +1,11 @@
 // Notification preferences. Two parts:
 //
-// - Events: one table with a row per event and a column per destination
-//   (each verified email, linked Telegram and Discord account), each cell a
-//   compact Off / Brief / Full picker. Group rows and an "All events" row set
-//   a whole column at once.
+// - Events: destination-first. A list of destinations (each verified email,
+//   linked Telegram and Discord account) on the left; picking one shows every
+//   event with a single Off / Brief / Full picker. Group rows and an "All
+//   events" row set many events at once, and "Copy from" clones another
+//   destination's levels. One column of pickers stays readable however many
+//   destinations there are, which a destination × event grid did not.
 // - Rulesets: conditional rules ("if the event matches X, send to Y at level
 //   Z"). While one is active it replaces the per-event table at dispatch time.
 
@@ -48,7 +50,9 @@ import {
   ArrowUpRegular,
   ChatRegular,
   CheckmarkRegular,
+  ChevronRightRegular,
   CodeRegular,
+  CopyRegular,
   DeleteRegular,
   DismissRegular,
   MailRegular,
@@ -320,10 +324,29 @@ function withLevel(
   return next;
 }
 
+/** Give `to` the same level as `from` for every event. */
+function copyLevels(
+  rules: NotificationRules,
+  from: Destination,
+  to: Destination,
+): NotificationRules {
+  let next = rules;
+  for (const ev of ALL_EVENT_KEYS) {
+    next = withLevel(next, [ev], to, getLevel(rules, ev, from));
+  }
+  return next;
+}
+
+function destKey(d: Destination) {
+  return `${d.kind}:${d.id}`;
+}
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-const DEST_WIDTH = "172px";
 const NARROW = "@media (max-width: 640px)";
+// Content is the window minus the app sidebar, so the two-pane events layout
+// needs a wider window than the phone breakpoint.
+const WIDE = "@media (max-width: 960px)";
 
 const useStyles = makeStyles({
   root: {
@@ -344,65 +367,165 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground3,
   },
 
-  // Event table. Every destination cell has the same fixed width, so the
-  // columns line up without a real <table> and rows can still wrap on phones.
+  // Events: destination list | event pane. Below WIDE the list sits on top
+  // and scrolls sideways.
+  events: {
+    display: "grid",
+    gridTemplateColumns: "232px minmax(0, 1fr)",
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    [WIDE]: { gridTemplateColumns: "minmax(0, 1fr)" },
+  },
+  destList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+    padding: "12px",
+    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
+    [WIDE]: {
+      flexDirection: "row",
+      overflowX: "auto",
+      padding: "8px var(--card-pad)",
+      borderRight: "none",
+      borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    },
+  },
+  destListLabel: {
+    padding: "4px 10px 8px",
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+    [WIDE]: { display: "none" },
+  },
+  destItem: {
+    display: "grid",
+    gridTemplateColumns: "16px minmax(0, 1fr)",
+    alignItems: "center",
+    columnGap: "10px",
+    rowGap: "1px",
+    padding: "7px 10px",
+    border: "none",
+    borderRadius: tokens.borderRadiusMedium,
+    background: "transparent",
+    color: tokens.colorNeutralForeground2,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeBase300,
+    textAlign: "left",
+    cursor: "pointer",
+    "& > svg": {
+      fontSize: "16px",
+      color: tokens.colorNeutralForeground3,
+    },
+    ":hover": {
+      background: tokens.colorSubtleBackgroundHover,
+      color: tokens.colorNeutralForeground1,
+    },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "-2px",
+    },
+    [WIDE]: {
+      flex: "0 0 auto",
+      maxWidth: "240px",
+    },
+  },
+  destItemActive: {
+    background: tokens.colorSubtleBackgroundSelected,
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+    ":hover": { background: tokens.colorSubtleBackgroundSelected },
+    "& > svg": { color: tokens.colorNeutralForeground1 },
+  },
+  destSummary: {
+    gridColumn: 2,
+    fontSize: tokens.fontSizeBase200,
+    fontWeight: tokens.fontWeightRegular,
+    color: tokens.colorNeutralForeground3,
+  },
+  destSummaryOn: {
+    color: tokens.colorBrandForeground2,
+  },
+  pane: {
+    minWidth: 0,
+  },
+  paneHead: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    minHeight: "52px",
+    padding: "8px var(--card-pad)",
+    boxSizing: "border-box",
+    "& > svg": {
+      fontSize: "16px",
+      flexShrink: 0,
+      color: tokens.colorNeutralForeground3,
+    },
+  },
+  paneTitle: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "8px",
+    flex: 1,
+    minWidth: 0,
+  },
   row: {
     display: "flex",
     alignItems: "center",
-    gap: "16px",
+    flexWrap: "wrap",
+    gap: "8px 24px",
     minHeight: "56px",
     padding: "10px var(--card-pad)",
     boxSizing: "border-box",
     borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    [NARROW]: {
-      flexWrap: "wrap",
-      gap: "8px 12px",
-    },
-  },
-  headRow: {
-    minHeight: "36px",
-    padding: "6px var(--card-pad)",
-    fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground3,
-    [NARROW]: { display: "none" },
   },
   groupRow: {
     minHeight: "48px",
     background: tokens.colorNeutralBackground2,
   },
   eventCell: {
-    flex: 1,
+    flex: "1 1 220px",
     minWidth: 0,
     display: "flex",
     flexDirection: "column",
     gap: "2px",
-    [NARROW]: { flexBasis: "100%" },
   },
-  destCell: {
-    width: DEST_WIDTH,
+  levelCell: {
+    width: "176px",
     flexShrink: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    [NARROW]: {
-      width: "auto",
-      flex: `1 1 ${DEST_WIDTH}`,
-    },
   },
-  destHead: {
+  // Lines an event's text up with its group title, past the chevron.
+  nestedRow: {
+    paddingLeft: "calc(var(--card-pad) + 26px)",
+  },
+  groupToggle: {
     display: "flex",
     alignItems: "center",
-    gap: "6px",
+    gap: "10px",
+    flex: "1 1 220px",
     minWidth: 0,
-    "& svg": { fontSize: "14px", flexShrink: 0 },
+    padding: 0,
+    border: "none",
+    background: "transparent",
+    color: "inherit",
+    fontFamily: "inherit",
+    textAlign: "left",
+    cursor: "pointer",
+    borderRadius: tokens.borderRadiusSmall,
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "2px",
+    },
   },
-  // Repeats the column header inside each cell on phones, where the header
-  // row is hidden.
-  destCellLabel: {
-    display: "none",
-    fontSize: tokens.fontSizeBase200,
+  chevron: {
+    flexShrink: 0,
+    fontSize: "16px",
     color: tokens.colorNeutralForeground3,
-    [NARROW]: { display: "flex" },
+    transitionProperty: "transform",
+    transitionDuration: tokens.durationFaster,
+  },
+  chevronOpen: {
+    transform: "rotate(90deg)",
+  },
+  copyItem: {
+    maxWidth: "320px",
   },
   truncate: {
     overflow: "hidden",
@@ -568,62 +691,6 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
   },
 });
-
-// ─── Events table ────────────────────────────────────────────────────────────
-
-function DestHead({ dest }: { dest: Destination }) {
-  const styles = useStyles();
-  const { t } = useTranslation();
-  const Icon = DEST_ICONS[dest.kind];
-  return (
-    <span
-      className={styles.destHead}
-      title={`${t(DEST_KIND_KEYS[dest.kind])} · ${dest.label}`}
-    >
-      <Icon aria-hidden />
-      <span className={styles.truncate}>{dest.label}</span>
-    </span>
-  );
-}
-
-function LevelCell({
-  dest,
-  label,
-  showLabel,
-  value,
-  onChange,
-}: {
-  dest: Destination;
-  label: string;
-  /** Repeat the destination above the picker on phones (several columns). */
-  showLabel: boolean;
-  value: LevelChoice | null;
-  onChange: (value: LevelChoice) => void;
-}) {
-  const styles = useStyles();
-  const { t } = useTranslation();
-  const options: SegmentedOption<LevelChoice>[] = [
-    { value: "off", label: t("notifications.levelOff") },
-    { value: "brief", label: t("notifications.levelBrief"), brand: true },
-    { value: "full", label: t("notifications.levelFull"), brand: true },
-  ];
-  return (
-    <div className={styles.destCell}>
-      {showLabel && (
-        <span className={styles.destCellLabel}>
-          <DestHead dest={dest} />
-        </span>
-      )}
-      <Segmented<LevelChoice>
-        fill
-        label={`${label}: ${dest.label}`}
-        value={value}
-        options={options}
-        onChange={onChange}
-      />
-    </div>
-  );
-}
 
 // ─── Ruleset editor ──────────────────────────────────────────────────────────
 //
@@ -998,6 +1065,12 @@ export function Notifications() {
     })),
   ];
 
+  const [selectedDest, setSelectedDest] = useState<string | null>(null);
+  // Expanded event groups; all collapsed at first so the list stays short.
+  // Shared across destinations, so switching keeps the same groups open.
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [rules, setRules] = useState<NotificationRules>({});
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1214,42 +1287,106 @@ export function Notifications() {
       </div>
     );
 
+  const current =
+    destinations.find((d) => destKey(d) === selectedDest) ?? destinations[0];
+
+  const levelOptions: SegmentedOption<LevelChoice>[] = [
+    { value: "off", label: t("notifications.levelOff") },
+    { value: "brief", label: t("notifications.levelBrief"), brand: true },
+    { value: "full", label: t("notifications.levelFull"), brand: true },
+  ];
+
+  const groupSummary = (dest: Destination, events: string[]) => {
+    const on = events.filter((ev) => getLevel(rules, ev, dest) !== "off");
+    return on.length > 0
+      ? t("notifications.groupSummaryOn", {
+          on: on.length,
+          count: events.length,
+        })
+      : t("notifications.groupSummary", { count: events.length });
+  };
+
+  function toggleGroup(key: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+  const allOpen = openGroups.size === EVENT_GROUPS.length;
+
+  /**
+   * One picker row. `group` makes the title a disclosure button for the
+   * group's events; `nested` indents an event under its group.
+   */
   const levelRow = (
+    dest: Destination,
     key: string,
     title: string,
     description: string | null,
     events: string[],
-    className?: string,
+    opts: { group?: boolean; nested?: boolean } = {},
   ) => (
-    <div key={key} className={mergeClasses(styles.row, className)}>
-      <div className={styles.eventCell}>
-        <Text weight={description === null ? "semibold" : "regular"}>
-          {title}
-        </Text>
-        {description && (
-          <Text size={200} className={styles.muted}>
-            {description}
+    <div
+      key={key}
+      className={mergeClasses(
+        styles.row,
+        description === null && styles.groupRow,
+        opts.nested && styles.nestedRow,
+      )}
+    >
+      {opts.group ? (
+        <button
+          type="button"
+          className={styles.groupToggle}
+          aria-expanded={openGroups.has(key)}
+          onClick={() => toggleGroup(key)}
+        >
+          <ChevronRightRegular
+            aria-hidden
+            className={mergeClasses(
+              styles.chevron,
+              openGroups.has(key) && styles.chevronOpen,
+            )}
+          />
+          <span className={styles.eventCell}>
+            <Text weight="semibold">{title}</Text>
+            <Text size={200} className={styles.muted}>
+              {groupSummary(dest, events)}
+            </Text>
+          </span>
+        </button>
+      ) : (
+        <div className={styles.eventCell}>
+          <Text weight={description === null ? "semibold" : "regular"}>
+            {title}
           </Text>
-        )}
-      </div>
-      {destinations.map((dest) => (
-        <LevelCell
-          key={`${dest.kind}:${dest.id}`}
-          dest={dest}
-          label={title}
-          showLabel={destinations.length > 1}
-          value={
-            events.length === 1
-              ? getLevel(rules, events[0], dest)
-              : uniformLevel(rules, events, dest)
-          }
-          onChange={(choice) =>
-            updateRules(withLevel(rules, events, dest, choice))
-          }
-        />
-      ))}
+          {description && (
+            <Text size={200} className={styles.muted}>
+              {description}
+            </Text>
+          )}
+        </div>
+      )}
+      <Segmented<LevelChoice>
+        fill
+        className={styles.levelCell}
+        label={`${title}: ${dest.label}`}
+        value={
+          events.length === 1
+            ? getLevel(rules, events[0], dest)
+            : uniformLevel(rules, events, dest)
+        }
+        options={levelOptions}
+        onChange={(choice) =>
+          updateRules(withLevel(rules, events, dest, choice))
+        }
+      />
     </div>
   );
+
+  const CurrentIcon = current ? DEST_ICONS[current.kind] : null;
 
   return (
     <div className={styles.root}>
@@ -1320,47 +1457,151 @@ export function Notifications() {
           </div>
         )}
 
-        {destinations.length === 0 ? (
+        {!current || !CurrentIcon ? (
           <div className={styles.cardEmpty}>
             {t("notifications.noDestinations")}
           </div>
         ) : (
-          <>
-            <div className={mergeClasses(styles.row, styles.headRow)}>
-              <span className={styles.eventCell}>
-                {t("notifications.colEvent")}
+          <div className={styles.events}>
+            <nav
+              className={styles.destList}
+              aria-label={t("notifications.destinationsLabel")}
+            >
+              <span className={styles.destListLabel}>
+                {t("notifications.destinationsLabel")}
               </span>
-              {destinations.map((dest) => (
-                <span
-                  key={`${dest.kind}:${dest.id}`}
-                  className={styles.destCell}
+              {destinations.map((dest) => {
+                const Icon = DEST_ICONS[dest.kind];
+                const on = ALL_EVENT_KEYS.filter(
+                  (ev) => getLevel(rules, ev, dest) !== "off",
+                ).length;
+                const active = dest === current;
+                return (
+                  <button
+                    key={destKey(dest)}
+                    type="button"
+                    aria-pressed={active}
+                    title={`${t(DEST_KIND_KEYS[dest.kind])} · ${dest.label}`}
+                    className={mergeClasses(
+                      styles.destItem,
+                      active && styles.destItemActive,
+                    )}
+                    onClick={() => setSelectedDest(destKey(dest))}
+                  >
+                    <Icon aria-hidden />
+                    <span className={styles.truncate}>{dest.label}</span>
+                    <span
+                      className={mergeClasses(
+                        styles.destSummary,
+                        on > 0 && styles.destSummaryOn,
+                      )}
+                    >
+                      {on > 0
+                        ? t("notifications.destSummary", { count: on })
+                        : t("notifications.destSummaryNone")}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+
+            <section className={styles.pane} aria-label={current.label}>
+              <div className={styles.paneHead}>
+                <CurrentIcon aria-hidden />
+                <div className={styles.paneTitle}>
+                  <Text
+                    weight="semibold"
+                    className={styles.truncate}
+                    title={current.label}
+                  >
+                    {current.label}
+                  </Text>
+                  <Text size={200} className={styles.muted}>
+                    {t(DEST_KIND_KEYS[current.kind])}
+                  </Text>
+                </div>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  onClick={() =>
+                    setOpenGroups(
+                      allOpen
+                        ? new Set()
+                        : new Set(EVENT_GROUPS.map((g) => g.groupKey)),
+                    )
+                  }
                 >
-                  <DestHead dest={dest} />
-                </span>
-              ))}
-            </div>
-            {levelRow(
-              "all",
-              t("notifications.allEvents"),
-              null,
-              ALL_EVENT_KEYS,
-              styles.groupRow,
-            )}
-            {EVENT_GROUPS.map((group) => [
-              levelRow(
-                group.groupKey,
-                t(group.groupKey),
+                  {allOpen
+                    ? t("notifications.collapseAll")
+                    : t("notifications.expandAll")}
+                </Button>
+                {destinations.length > 1 && (
+                  <Menu>
+                    <MenuTrigger disableButtonEnhancement>
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<CopyRegular />}
+                      >
+                        {t("notifications.copyFrom")}
+                      </Button>
+                    </MenuTrigger>
+                    <MenuPopover>
+                      <MenuList>
+                        {destinations
+                          .filter((d) => d !== current)
+                          .map((d) => {
+                            const Icon = DEST_ICONS[d.kind];
+                            return (
+                              <MenuItem
+                                key={destKey(d)}
+                                icon={<Icon />}
+                                title={d.label}
+                                className={styles.copyItem}
+                                content={{ className: styles.truncate }}
+                                onClick={() =>
+                                  updateRules(copyLevels(rules, d, current))
+                                }
+                              >
+                                {d.label}
+                              </MenuItem>
+                            );
+                          })}
+                      </MenuList>
+                    </MenuPopover>
+                  </Menu>
+                )}
+              </div>
+              {levelRow(
+                current,
+                "all",
+                t("notifications.allEvents"),
                 null,
-                group.events.map((e) => e.value),
-                styles.groupRow,
-              ),
-              ...group.events.map((entry) =>
-                levelRow(entry.value, t(entry.labelKey), t(entry.descKey), [
-                  entry.value,
-                ]),
-              ),
-            ])}
-          </>
+                ALL_EVENT_KEYS,
+              )}
+              {EVENT_GROUPS.map((group) => [
+                levelRow(
+                  current,
+                  group.groupKey,
+                  t(group.groupKey),
+                  null,
+                  group.events.map((e) => e.value),
+                  { group: true },
+                ),
+                ...(openGroups.has(group.groupKey) ? group.events : []).map(
+                  (entry) =>
+                    levelRow(
+                      current,
+                      entry.value,
+                      t(entry.labelKey),
+                      t(entry.descKey),
+                      [entry.value],
+                      { nested: true },
+                    ),
+                ),
+              ])}
+            </section>
+          </div>
         )}
 
         {/* Only while there is something to save or just saved; idle,
