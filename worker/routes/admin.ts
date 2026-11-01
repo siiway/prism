@@ -2876,11 +2876,11 @@ app.patch("/invites/:id", async (c) => {
     body.max_uses !== undefined && maxUses !== null
       ? " AND use_count <= ?"
       : "";
-  if (useGuard) values.push(maxUses);
+  // The guard's value binds after the id: it follows `id = ?` in the SQL.
   const updated = await c.env.DB.prepare(
     `UPDATE site_invites SET ${assignments.join(", ")} WHERE id = ?${useGuard}`,
   )
-    .bind(...values, id)
+    .bind(...values, id, ...(useGuard ? [maxUses] : []))
     .run();
   if (!updated.meta.changes)
     return c.json(
