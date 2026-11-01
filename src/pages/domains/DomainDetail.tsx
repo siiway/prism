@@ -1,6 +1,6 @@
 // One domain's page, for personal (/domains/:id) and team
 // (/teams/:teamId/domains/:id) domains: verification, where it's used, and
-// removal. Everything happens on the page; nothing opens a dialog.
+// removal. Everything happens on the page; only removal asks to confirm.
 
 import {
   Badge,
@@ -23,6 +23,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError, type VerificationMethod } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { setDocumentPageTitle } from "../../lib/documentTitle";
+import { useConfirm } from "../../lib/useConfirm";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { EmptyState } from "../../components/EmptyState";
 import { Select } from "../../components/Select";
@@ -56,11 +57,6 @@ const useStyles = makeStyles({
   },
   muted: { color: tokens.colorNeutralForeground3 },
   danger: { color: tokens.colorPaletteRedForeground1 },
-  dangerPrimary: {
-    background: tokens.colorPaletteRedBackground3,
-    ":hover": { background: tokens.colorPaletteRedForeground1 },
-    ":hover:active": { background: tokens.colorPaletteRedForeground1 },
-  },
 });
 
 export function DomainDetail() {
@@ -70,6 +66,7 @@ export function DomainDetail() {
   const qc = useQueryClient();
   const { t } = useTranslation();
   const { message, showMsg } = useToastMessage();
+  const { confirm, confirmDialog } = useConfirm();
   const { id = "", teamId } = useParams<{ id: string; teamId?: string }>();
   const isTeam = !!teamId;
 
@@ -197,9 +194,17 @@ export function DomainDetail() {
       }
     });
 
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const remove = () =>
-    run("remove", async () => {
+  const remove = async () => {
+    if (!domain || busy) return;
+    const ok = await confirm({
+      title: t("domains.removeConfirm", { domain: domain.domain }),
+      body: isTeam
+        ? t("domains.removeTeamDesc")
+        : t("domains.removePersonalDesc"),
+      confirmLabel: t("common.remove"),
+    });
+    if (!ok) return;
+    await run("remove", async () => {
       try {
         if (isTeam) await api.deleteTeamDomain(teamId, id);
         else await api.deleteDomain(id);
@@ -211,6 +216,7 @@ export function DomainDetail() {
         fail(err, t("domains.deleteFailed"));
       }
     });
+  };
 
   const back = (
     <Button
@@ -357,49 +363,21 @@ export function DomainDetail() {
       {canManage && (
         <SettingsCard
           id="remove"
-          title={
-            confirmRemove
-              ? t("domains.removeConfirm", { domain: domain.domain })
-              : t("domains.removeTitle")
-          }
+          title={t("domains.removeTitle")}
           description={
             isTeam
               ? t("domains.removeTeamDesc")
               : t("domains.removePersonalDesc")
           }
           action={
-            confirmRemove ? (
-              <>
-                <Button
-                  size="small"
-                  disabled={busy !== null}
-                  onClick={() => setConfirmRemove(false)}
-                >
-                  {t("common.cancel")}
-                </Button>
-                <Button
-                  size="small"
-                  appearance="primary"
-                  className={styles.dangerPrimary}
-                  disabled={busy !== null}
-                  onClick={() => void remove()}
-                >
-                  {busy === "remove" ? (
-                    <Spinner size="tiny" />
-                  ) : (
-                    t("common.remove")
-                  )}
-                </Button>
-              </>
-            ) : (
-              <Button
-                size="small"
-                className={styles.danger}
-                onClick={() => setConfirmRemove(true)}
-              >
-                {t("common.remove")}
-              </Button>
-            )
+            <Button
+              size="small"
+              className={styles.danger}
+              disabled={busy !== null}
+              onClick={() => void remove()}
+            >
+              {busy === "remove" ? <Spinner size="tiny" /> : t("common.remove")}
+            </Button>
           }
         />
       )}
@@ -409,6 +387,7 @@ export function DomainDetail() {
           {t("domains.readOnlyHint")}
         </Text>
       )}
+      {confirmDialog}
     </SettingsPage>
   );
 }
