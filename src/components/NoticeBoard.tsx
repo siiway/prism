@@ -4,9 +4,8 @@
 // signed-out auth pages. It is deliberately quiet when there is nothing to
 // say: no heading, no empty state, no reserved space — a board that occupies
 // the top of every page to announce that it is empty is worse than no board.
-// When there is something to say it stays quiet too: a plain card with the
-// level in a thin accent and the icon, rather than a slab of colour, and only
-// the two most urgent notices open, the rest a click away.
+// When there is something to say, only the two most urgent notices are open
+// and the rest are a click away.
 //
 // The body is markdown from an administrator, but it still goes through the
 // same sanitizer as profile READMEs. Trusting it because of who wrote it
@@ -17,7 +16,6 @@ import {
   Button,
   makeStyles,
   mergeClasses,
-  shorthands,
   tokens,
 } from "@fluentui/react-components";
 import {
@@ -43,53 +41,51 @@ const SEVERITY: Record<NoticeLevel, number> = {
   info: 2,
 };
 
+// Each notice is laid out like Cloudflare's Kumo Banner (packages/kumo/src/
+// components/banner/banner.tsx): a tint of the level's colour with no
+// border, the title and description in the level's text colour, a filled
+// icon, and the dismiss at the trailing end. The colours are Fluent's brand
+// and status tokens, so they follow the theme like everything else.
 const useStyles = makeStyles({
   board: {
     display: "flex",
     flexDirection: "column",
-    gap: "8px",
+    gap: "12px",
     marginBottom: "20px",
   },
   notice: {
-    position: "relative",
     display: "flex",
     alignItems: "flex-start",
     gap: "12px",
-    padding: "12px 12px 12px 16px",
-    borderRadius: tokens.borderRadiusLarge,
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    background: tokens.colorNeutralBackground1,
-    overflow: "hidden",
-    // The level, as a thin bar down the left edge.
-    "::before": {
-      content: '""',
-      position: "absolute",
-      insetBlock: 0,
-      insetInlineStart: 0,
-      width: "3px",
-      background: "var(--notice-accent)",
-    },
+    padding: "12px 16px",
+    borderRadius: tokens.borderRadiusXLarge,
+    background: "var(--notice-tint)",
+    color: "var(--notice-text)",
+    fontSize: "14px",
+    lineHeight: 1.375,
   },
   info: {
-    "--notice-accent": tokens.colorBrandBackground,
+    "--notice-tint": tokens.colorBrandBackground2,
+    "--notice-text": tokens.colorBrandForeground2,
     "--notice-icon": tokens.colorBrandForeground1,
   },
   warning: {
-    "--notice-accent": tokens.colorStatusWarningBorderActive,
-    "--notice-icon": tokens.colorStatusWarningForeground1,
+    "--notice-tint": tokens.colorStatusWarningBackground1,
+    "--notice-text": tokens.colorStatusWarningForeground2,
+    "--notice-icon": tokens.colorStatusWarningForeground3,
   },
-  // Something is wrong right now: a red border as well, but no fill — a
-  // red slab across every page reads as the product being broken.
   critical: {
-    "--notice-accent": tokens.colorStatusDangerBorderActive,
-    "--notice-icon": tokens.colorStatusDangerForeground1,
-    ...shorthands.borderColor(tokens.colorStatusDangerBorder2),
+    "--notice-tint": tokens.colorStatusDangerBackground1,
+    "--notice-text": tokens.colorStatusDangerForeground1,
+    "--notice-icon": tokens.colorStatusDangerForeground3,
   },
+  // As tall as the title's first line, so the icon centres on it.
   icon: {
+    display: "flex",
+    alignItems: "center",
     flexShrink: 0,
-    fontSize: "20px",
-    // Line the icon up with the title's first line.
-    marginTop: "1px",
+    height: "1.375em",
+    fontSize: "16px",
     color: "var(--notice-icon)",
   },
   content: {
@@ -99,34 +95,26 @@ const useStyles = makeStyles({
     flex: 1,
     minWidth: 0,
   },
-  title: {
-    fontSize: tokens.fontSizeBase300,
-    lineHeight: tokens.lineHeightBase300,
-    fontWeight: tokens.fontWeightSemibold,
-    color: tokens.colorNeutralForeground1,
-  },
+  title: { fontWeight: tokens.fontWeightMedium },
   body: {
-    fontSize: tokens.fontSizeBase300,
-    lineHeight: tokens.lineHeightBase300,
-    color: tokens.colorNeutralForeground2,
+    fontSize: "13px",
     overflowWrap: "anywhere",
     // The rendered markdown is a block of HTML.
     "& p": { margin: "4px 0" },
     "& p:first-child": { marginTop: 0 },
     "& p:last-child": { marginBottom: 0 },
     "& ul, & ol": { margin: "4px 0", paddingInlineStart: "20px" },
-    "& code": {
-      fontFamily: tokens.fontFamilyMonospace,
-      fontSize: tokens.fontSizeBase200,
-    },
-    "& a": { color: tokens.colorBrandForegroundLink },
+    "& code": { fontFamily: tokens.fontFamilyMonospace },
+    "& a": { color: "inherit", textDecoration: "underline" },
   },
-  meta: {
-    marginTop: "2px",
-    fontSize: tokens.fontSizeBase200,
-    color: tokens.colorNeutralForeground3,
+  meta: { fontSize: "13px", opacity: 0.8 },
+  dismiss: {
+    flexShrink: 0,
+    alignSelf: "center",
+    color: "inherit",
+    ":hover": { color: "inherit" },
+    ":hover:active": { color: "inherit" },
   },
-  dismiss: { flexShrink: 0, marginTop: "-4px", marginRight: "-4px" },
   more: { alignSelf: "flex-start" },
 });
 
@@ -179,7 +167,9 @@ export function NoticeBar({
       className={mergeClasses(styles.notice, styles[level])}
       aria-label={notice.title}
     >
-      <Icon className={styles.icon} aria-hidden />
+      <span className={styles.icon} aria-hidden>
+        <Icon />
+      </span>
       <div className={styles.content}>
         <div className={styles.title}>{notice.title}</div>
         {notice.body.trim() && <NoticeBody markdown={notice.body} />}
