@@ -25,7 +25,8 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ruleMatches } from "../../../shared/notificationRules";
-import { ApiError, type NotificationRulesetRule } from "../../lib/api";
+import { type NotificationRulesetRule } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { setDocumentPageTitle } from "../../lib/documentTitle";
 import { useConfirm } from "../../lib/useConfirm";
 import { useToastMessage } from "../../lib/useToastMessage";
@@ -174,12 +175,7 @@ export function RuleDetail() {
   }
 
   const fail = (err: unknown) =>
-    showMsg(
-      "error",
-      err instanceof ApiError
-        ? err.message
-        : t("notifications.rulesetsSaveFailed"),
-    );
+    showMsg("error", apiErrorText(err, t("notifications.rulesetsSaveFailed")));
 
   const save = async () => {
     if (saving) return;

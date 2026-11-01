@@ -18,7 +18,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { formatDate, formatDateTime } from "../../../lib/datetime";
 import { CheckboxField } from "../../../components/CheckboxField";
@@ -49,8 +49,7 @@ const useStyles = makeStyles({
 });
 
 // Event handlers only, so the browser's i18n instance is the right one.
-const fail = (err: unknown) =>
-  err instanceof ApiError ? err.message : clientI18n.t("common.error");
+const fail = (err: unknown) => apiErrorText(err, clientI18n.t("common.error"));
 
 // ─── Account: role and status ────────────────────────────────────────────────
 

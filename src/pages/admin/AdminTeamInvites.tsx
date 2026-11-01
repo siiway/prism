@@ -18,7 +18,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type AdminTeamInvite } from "../../lib/api";
+import { type AdminTeamInvite } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { formatDate } from "../../lib/datetime";
 import { useConfirm } from "../../lib/useConfirm";
@@ -107,10 +108,7 @@ export function AdminTeamInvites() {
       await qc.invalidateQueries({ queryKey: ["admin-team-invites"] });
       showMsg("success", t("common.revokedDone"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
+      showMsg("error", apiErrorText(err, t("common.error")));
     } finally {
       setBusy(null);
     }

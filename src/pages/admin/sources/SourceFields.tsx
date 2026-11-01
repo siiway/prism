@@ -15,7 +15,8 @@ import {
 } from "@fluentui/react-components";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ApiError, useProxiedImage } from "../../../lib/api";
+import { useProxiedImage } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi, useAppOrigin } from "../../../lib/api-context";
 import { CopyButton } from "../../../components/CopyButton";
 import { PasswordInput } from "../../../components/PasswordInput";
@@ -207,9 +208,7 @@ export function EndpointFields({ form, onChange }: FieldsProps) {
       const res = await api.adminDiscoverOIDC(form.issuer_url.trim());
       onChange({ ...form, ...res });
     } catch (err) {
-      setDiscoverError(
-        err instanceof ApiError ? err.message : t("admin.oauthDiscoverFailed"),
-      );
+      setDiscoverError(apiErrorText(err, t("admin.oauthDiscoverFailed")));
     } finally {
       setDiscovering(false);
     }

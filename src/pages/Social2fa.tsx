@@ -21,7 +21,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { AuthShell } from "../components/AuthShell";
 import { useAuthStore } from "../store/auth";
@@ -90,7 +90,7 @@ export function Social2fa() {
       setAuth(res.user);
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("auth.loginFailed"));
+      setError(apiErrorText(err, t("auth.loginFailed")));
     } finally {
       setSubmitting(false);
     }

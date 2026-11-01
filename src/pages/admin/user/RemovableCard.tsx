@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import type { ConfirmOptions } from "../../../lib/useConfirm";
 import {
   SettingsCard,
@@ -91,10 +91,7 @@ export function RemovableCard({
       });
       showMsg("success", doneText);
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
+      showMsg("error", apiErrorText(err, t("common.error")));
     } finally {
       setBusy(null);
     }

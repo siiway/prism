@@ -13,7 +13,8 @@ import {
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type OAuthApp } from "../../../lib/api";
+import { type OAuthApp } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { Segmented } from "../../../components/Segmented";
@@ -47,7 +48,7 @@ export function ModerationTab({ app, formApi, showMsg }: Props) {
   const busy = formApi.saving !== null;
 
   const fail = (err: unknown) =>
-    showMsg("error", err instanceof ApiError ? err.message : t("common.error"));
+    showMsg("error", apiErrorText(err, t("common.error")));
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: ["app", app.id] });
     await qc.invalidateQueries({ queryKey: ["admin-apps"] });

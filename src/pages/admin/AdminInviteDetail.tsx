@@ -20,7 +20,8 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type SiteInvite } from "../../lib/api";
+import { type SiteInvite } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi, useAppOrigin } from "../../lib/api-context";
 import { formatDate } from "../../lib/datetime";
 import { setDocumentPageTitle } from "../../lib/documentTitle";
@@ -167,10 +168,7 @@ export function AdminInviteDetail() {
       showMsg("success", done);
       return true;
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.inviteUpdateFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("admin.inviteUpdateFailed")));
       return false;
     } finally {
       setBusy(null);
@@ -202,9 +200,7 @@ export function AdminInviteDetail() {
       <SettingsPage>
         {back}
         <MessageBar intent="error">
-          {error instanceof ApiError
-            ? error.message
-            : t("admin.inviteNotFound")}
+          {apiErrorText(error, t("admin.inviteNotFound"))}
         </MessageBar>
       </SettingsPage>
     );
@@ -282,10 +278,7 @@ export function AdminInviteDetail() {
       await qc.invalidateQueries({ queryKey: ["admin", "invites"] });
       navigate("/admin/invites", { replace: true });
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.inviteUpdateFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("admin.inviteUpdateFailed")));
       setBusy(null);
     }
   };

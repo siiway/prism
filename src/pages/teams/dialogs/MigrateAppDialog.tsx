@@ -16,7 +16,8 @@ import { Select } from "../../../components/Select";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type OAuthApp } from "../../../lib/api";
+import { type OAuthApp } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 
 interface MigrateAppDialogProps {
@@ -48,10 +49,7 @@ export function MigrateAppDialog({
       setSelectedAppId("");
       showMsg("success", t("teams.appMovedToTeam"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("teams.failedMigrateApp"),
-      );
+      showMsg("error", apiErrorText(err, t("teams.failedMigrateApp")));
     } finally {
       setMigrating(false);
     }

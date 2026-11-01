@@ -31,7 +31,8 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { ApiError, type OAuthConsent, type OAuthToken } from "../lib/api";
+import { type OAuthConsent, type OAuthToken } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { formatDate } from "../lib/datetime";
 import { scopeLabel } from "../lib/scopeLabels";
@@ -466,7 +467,7 @@ export function ConnectedApps() {
       await qc.invalidateQueries({ queryKey: ["consents"] });
       showMsg("success", done);
     } catch (err) {
-      showMsg("error", err instanceof ApiError ? err.message : failed);
+      showMsg("error", apiErrorText(err, failed));
     } finally {
       setBusy(null);
     }

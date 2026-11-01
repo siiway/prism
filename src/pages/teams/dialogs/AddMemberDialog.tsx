@@ -16,7 +16,7 @@ import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 
 interface AddMemberDialogProps {
@@ -46,10 +46,7 @@ export function AddMemberDialog({ teamId, showMsg }: AddMemberDialogProps) {
       setForm({ username: "", role: "member" });
       showMsg("success", t("teams.memberAdded"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("teams.failedAddMember"),
-      );
+      showMsg("error", apiErrorText(err, t("teams.failedAddMember")));
     } finally {
       setAdding(false);
     }

@@ -44,7 +44,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import type { DbColumn, DbQueryResult, DbRowPage } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { useConfirm } from "../../lib/useConfirm";
@@ -282,9 +282,6 @@ function toInputValue(value: unknown): string {
   return typeof value === "string" ? value : String(value);
 }
 
-const errorText = (err: unknown, fallback: string) =>
-  err instanceof ApiError ? err.message : fallback;
-
 // ─── Row editor ───────────────────────────────────────────────────────────────
 
 /** Inserting or editing one row, in place of the grid. */
@@ -382,7 +379,7 @@ function RowEditor({
       );
       onDone(true);
     } catch (err) {
-      setError(errorText(err, t("common.saveFailed")));
+      setError(apiErrorText(err, t("common.saveFailed")));
       setSaving(false);
     }
   };
@@ -540,7 +537,7 @@ function TableBrowser({
       await refresh();
       showMsg("success", t("admin.dbRowDeleted"));
     } catch (err) {
-      showMsg("error", errorText(err, t("common.error")));
+      showMsg("error", apiErrorText(err, t("common.error")));
     } finally {
       setDeleting(null);
     }
@@ -648,7 +645,7 @@ function TableBrowser({
 
       {error && (
         <MessageBar intent="error">
-          {errorText(error, t("common.error"))}
+          {apiErrorText(error, t("common.error"))}
         </MessageBar>
       )}
       {writable && data && !data.editable && (
@@ -936,7 +933,7 @@ function SqlConsole({
       }
     } catch (err) {
       setResults(null);
-      setError(errorText(err, t("common.error")));
+      setError(apiErrorText(err, t("common.error")));
     } finally {
       setRunning(false);
     }
@@ -1171,7 +1168,7 @@ export function AdminDatabase() {
         />
       ) : tablesError && dbAvailable ? (
         <MessageBar intent="error">
-          {errorText(tablesError, t("common.error"))}
+          {apiErrorText(tablesError, t("common.error"))}
         </MessageBar>
       ) : (
         <div className={styles.split}>

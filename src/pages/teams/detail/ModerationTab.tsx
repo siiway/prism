@@ -16,7 +16,7 @@ import {
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { formatDateTime } from "../../../lib/datetime";
 import { useConfirm } from "../../../lib/useConfirm";
@@ -55,10 +55,7 @@ export function ModerationTab({ team, showMsg }: TeamTabProps) {
       await qc.invalidateQueries({ queryKey: ["admin-teams"] });
       showMsg("success", done || t("teams.moderation.saved"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
+      showMsg("error", apiErrorText(err, t("common.error")));
     } finally {
       setBusy(null);
     }

@@ -26,7 +26,7 @@ import {
 } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { setDocumentPageTitle } from "../../lib/documentTitle";
 import { useToastMessage } from "../../lib/useToastMessage";
@@ -258,10 +258,7 @@ export function AppDetail() {
         });
         showMsg("success", t("apps.appUpdated"));
       } catch (err) {
-        showMsg(
-          "error",
-          err instanceof ApiError ? err.message : t("common.saveFailed"),
-        );
+        showMsg("error", apiErrorText(err, t("common.saveFailed")));
       } finally {
         setSaving(null);
       }

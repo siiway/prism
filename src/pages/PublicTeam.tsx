@@ -23,6 +23,7 @@ import { Link as RouterLink, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 
 const useStyles = makeStyles({
@@ -174,9 +175,7 @@ export function PublicTeam() {
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
             {isNotFound
               ? t("publicTeam.notFoundDesc")
-              : error instanceof ApiError
-                ? error.message
-                : t("publicTeam.errorDesc")}
+              : apiErrorText(error, t("publicTeam.errorDesc"))}
           </Text>
         </div>
       </div>

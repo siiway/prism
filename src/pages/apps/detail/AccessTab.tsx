@@ -28,7 +28,8 @@ import {
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type OAuthApp } from "../../../lib/api";
+import { type OAuthApp } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { Segmented } from "../../../components/Segmented";
 import {
@@ -61,8 +62,7 @@ export function AccessTab({ app, formApi, showMsg }: Props) {
   const { t } = useTranslation();
   const appId = app.id;
 
-  const errorText = (err: unknown) =>
-    err instanceof ApiError ? err.message : t("common.saveFailed");
+  const errorText = (err: unknown) => apiErrorText(err, t("common.saveFailed"));
 
   const { data: teamsData } = useQuery({
     queryKey: ["teams"],

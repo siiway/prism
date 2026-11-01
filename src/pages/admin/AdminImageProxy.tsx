@@ -25,7 +25,7 @@ import {
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import type { SiteConfig } from "../../types";
 import { useApi } from "../../lib/api-context";
 import { CheckboxField } from "../../components/CheckboxField";
@@ -187,10 +187,7 @@ function CacheCard() {
       });
       showMsg("success", t("admin.imageProxyCacheSaved"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
     } finally {
       setSaving(false);
     }
@@ -370,12 +367,7 @@ function Mappings() {
       await refresh();
       showMsg("success", t("admin.imageProxyDeleted"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("admin.imageProxyDeleteFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("admin.imageProxyDeleteFailed")));
     } finally {
       setBusy(null);
     }
@@ -397,12 +389,7 @@ function Mappings() {
         t("admin.imageProxySweepSuccess", { count: res.deleted }),
       );
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("admin.imageProxySweepFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("admin.imageProxySweepFailed")));
     } finally {
       setBusy(null);
     }

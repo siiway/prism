@@ -21,6 +21,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError, type VerificationMethod } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { setDocumentPageTitle } from "../../lib/documentTitle";
 import { useConfirm } from "../../lib/useConfirm";
@@ -113,7 +114,7 @@ export function DomainDetail() {
   const myId = useAuthStore((s) => s.user?.id);
   const addedByMe = !domain?.user_id || domain.user_id === myId;
   const fail = (err: unknown, fallback: string) =>
-    showMsg("error", err instanceof ApiError ? err.message : fallback);
+    showMsg("error", apiErrorText(err, fallback));
   const refresh = async () => {
     await qc.invalidateQueries({
       queryKey: isTeam ? ["team-domain", teamId, id] : ["domain", id],

@@ -17,7 +17,7 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { inviteCodeFrom } from "../lib/inviteCode";
 import { AuthShell } from "../components/AuthShell";
@@ -95,9 +95,7 @@ export function Register() {
         setSuccess(t("auth.registrationSuccessEmail"));
       }
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : t("auth.registrationFailed"),
-      );
+      setError(apiErrorText(err, t("auth.registrationFailed")));
       // Single-use captcha token was spent by this attempt — force a fresh solve.
       setCaptcha({});
       setCaptchaKey((v) => v + 1);

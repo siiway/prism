@@ -11,7 +11,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type RedirectUri } from "../../lib/api";
+import { type RedirectUri } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { FormPage } from "../../components/FormPage";
 import { RedirectUriEditor } from "../../components/RedirectUriEditor";
@@ -61,9 +62,7 @@ export function AppCreate() {
         state: { clientSecret: res.app.client_secret },
       });
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : t("apps.failedCreateApp"),
-      );
+      setError(apiErrorText(err, t("apps.failedCreateApp")));
       setCreating(false);
     }
   };

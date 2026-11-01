@@ -28,7 +28,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type OAuthApp } from "../../../lib/api";
+import { type OAuthApp } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi, useAppOrigin } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { ImageUrlInput } from "../../../components/ImageUrlInput";
@@ -90,9 +91,6 @@ export function OverviewTab({
       (tm.role === "owner" || tm.role === "admin") && tm.id !== app.team_id,
   );
 
-  const errorText = (err: unknown, fallback: string) =>
-    err instanceof ApiError ? err.message : fallback;
-
   // A first secret is harmless to create; replacing one breaks whatever
   // still uses it, so that asks first.
   const rotate = async () => {
@@ -111,7 +109,7 @@ export function OverviewTab({
       setNewSecret(res.client_secret);
       await qc.invalidateQueries({ queryKey: ["app", app.id] });
     } catch (err) {
-      showMsg("error", errorText(err, t("common.saveFailed")));
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
     } finally {
       setRotating(false);
     }
@@ -128,7 +126,7 @@ export function OverviewTab({
       setMoveTeamId("");
       showMsg("success", t("apps.appMovedToTeam"));
     } catch (err) {
-      showMsg("error", errorText(err, t("apps.failedMoveApp")));
+      showMsg("error", apiErrorText(err, t("apps.failedMoveApp")));
     } finally {
       setMoving(false);
     }
@@ -152,7 +150,7 @@ export function OverviewTab({
       await qc.invalidateQueries({ queryKey: ["apps"] });
       showMsg("success", t("apps.appRemovedFromTeam"));
     } catch (err) {
-      showMsg("error", errorText(err, t("apps.failedRemoveFromTeam")));
+      showMsg("error", apiErrorText(err, t("apps.failedRemoveFromTeam")));
     }
   };
 
@@ -170,7 +168,7 @@ export function OverviewTab({
       await qc.invalidateQueries({ queryKey: ["apps"] });
       navigate(app.team_id ? `/teams/${app.team_id}` : "/apps");
     } catch (err) {
-      showMsg("error", errorText(err, t("common.deleteFailed")));
+      showMsg("error", apiErrorText(err, t("common.deleteFailed")));
     }
   };
 

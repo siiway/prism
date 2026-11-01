@@ -24,7 +24,8 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useSiteName } from "../lib/useSiteName";
-import { ApiError, type RestrictedCapability } from "../lib/api";
+import { type RestrictedCapability } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 
 const useStyles = makeStyles({
@@ -85,9 +86,7 @@ export function AccountRestrictionPanel() {
       await qc.invalidateQueries();
       setConfirming(false);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : t("restriction.convertFailed"),
-      );
+      setError(apiErrorText(err, t("restriction.convertFailed")));
     } finally {
       setBusy(false);
     }

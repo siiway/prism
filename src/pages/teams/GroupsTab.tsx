@@ -33,7 +33,8 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useSiteName } from "../../lib/useSiteName";
-import { ApiError, type TeamGroup } from "../../lib/api";
+import { type TeamGroup } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import {
   SettingsBody,
@@ -124,10 +125,7 @@ export function GroupsTab({
       setDeleting(null);
       showMsg("success", t("teams.groupDeleted"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("teams.groupDeleteFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("teams.groupDeleteFailed")));
     } finally {
       setBusy(false);
     }
@@ -364,10 +362,7 @@ function AdminCapabilitiesPanel({
       ]);
       showMsg("success", t("teams.capabilitiesSaved"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("teams.capabilitiesFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("teams.capabilitiesFailed")));
     } finally {
       setSaving(null);
     }
@@ -489,10 +484,7 @@ function GroupFormDialog({
         isEdit ? t("teams.groupUpdated") : t("teams.groupCreated"),
       );
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("teams.groupSaveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("teams.groupSaveFailed")));
     } finally {
       setSaving(false);
     }

@@ -16,7 +16,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { CheckboxField } from "../../../components/CheckboxField";
 import { FormPage } from "../../../components/FormPage";
@@ -79,7 +79,7 @@ export function SourceNew() {
       await qc.invalidateQueries({ queryKey: ["site"] });
       navigate(`/admin/connections/${res.source.id}`, { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("common.saveFailed"));
+      setError(apiErrorText(err, t("common.saveFailed")));
       setCreating(false);
     }
   };

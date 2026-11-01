@@ -4,7 +4,7 @@
 import { Checkbox } from "@fluentui/react-components";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useToastMessage } from "../../../lib/useToastMessage";
 import { type SiteConfig } from "../../../types";
 import { Segmented } from "../../../components/Segmented";
@@ -64,7 +64,7 @@ export type LegalDraft = Partial<Record<string, string>>;
 export function useFail(showMsg: SectionProps["showMsg"]) {
   const { t } = useTranslation();
   return (err: unknown, fallback: string) =>
-    showMsg("error", err instanceof ApiError ? err.message : t(fallback));
+    showMsg("error", apiErrorText(err, t(fallback)));
 }
 
 /** Rows most sections are built from, bound to the draft. */

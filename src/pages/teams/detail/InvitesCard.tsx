@@ -38,7 +38,8 @@ import {
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type Team, type TeamInvite } from "../../../lib/api";
+import { type Team, type TeamInvite } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { formatDate } from "../../../lib/datetime";
 import { toLocalDateTimeInput } from "../../../lib/inviteExpiry";
@@ -118,10 +119,7 @@ export function InvitesCard({ team, showMsg, confirm }: Props) {
   const refresh = () =>
     qc.invalidateQueries({ queryKey: ["team-invites", teamId] });
   const fail = (err: unknown) =>
-    showMsg(
-      "error",
-      err instanceof ApiError ? err.message : t("teams.failedUpdateInvite"),
-    );
+    showMsg("error", apiErrorText(err, t("teams.failedUpdateInvite")));
 
   const [copied, setCopied] = useState<string | null>(null);
   const copyLink = async (inv: TeamInvite) => {
@@ -155,10 +153,7 @@ export function InvitesCard({ team, showMsg, confirm }: Props) {
       await refresh();
       showMsg("success", t("teams.inviteRevoked"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("teams.failedRevokeInvite"),
-      );
+      showMsg("error", apiErrorText(err, t("teams.failedRevokeInvite")));
     }
   };
 

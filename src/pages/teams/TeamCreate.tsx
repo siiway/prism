@@ -12,7 +12,7 @@ import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { FormPage } from "../../components/FormPage";
 import { useAuthStore } from "../../store/auth";
@@ -59,9 +59,7 @@ export function TeamCreate() {
       await qc.invalidateQueries({ queryKey: ["admin-teams"] });
       navigate(`/teams/${res.team.id}`, { replace: true });
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : t("teams.failedCreateTeam"),
-      );
+      setError(apiErrorText(err, t("teams.failedCreateTeam")));
       setCreating(false);
     }
   };

@@ -17,7 +17,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { setDocumentPageTitle } from "../../lib/documentTitle";
 import { useConfirm } from "../../lib/useConfirm";
@@ -80,12 +80,7 @@ export function RulesetDetail() {
   }
 
   const fail = (err: unknown) =>
-    showMsg(
-      "error",
-      err instanceof ApiError
-        ? err.message
-        : t("notifications.rulesetsSaveFailed"),
-    );
+    showMsg("error", apiErrorText(err, t("notifications.rulesetsSaveFailed")));
 
   // One change at a time.
   const [busy, setBusy] = useState<string | null>(null);

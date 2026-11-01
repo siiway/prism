@@ -18,7 +18,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { ImageUrlInput } from "../../../components/ImageUrlInput";
 
@@ -77,10 +77,7 @@ export function CreateSubTeamDialog({
       showMsg("success", t("teams.subTeamCreated"));
       navigate(`/teams/${res.team.id}`);
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("teams.failedCreateSubTeam"),
-      );
+      showMsg("error", apiErrorText(err, t("teams.failedCreateSubTeam")));
     } finally {
       setCreating(false);
     }

@@ -42,6 +42,7 @@ import {
   type AuditWebhookInput,
   type AuditWebhookKind,
 } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { useToastMessage } from "../lib/useToastMessage";
 import { useConfirm } from "../lib/useConfirm";
@@ -364,10 +365,7 @@ export function AuditWebhooks({
       await api.deleteAuditWebhook(base, id);
       await qc.invalidateQueries({ queryKey: ["audit-webhooks", base] });
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("audit.webhookDeleteFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("audit.webhookDeleteFailed")));
     }
   };
 

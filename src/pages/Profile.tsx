@@ -29,7 +29,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { useToastMessage } from "../lib/useToastMessage";
 import { useConfirm } from "../lib/useConfirm";
@@ -178,10 +178,7 @@ export function Profile() {
       await api.setTeamShowOnProfile(teamId, value);
       await qc.invalidateQueries({ queryKey: ["my-teams"] });
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
     } finally {
       setSavingVisibility(null);
     }
@@ -230,10 +227,7 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.profileUpdated"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
     } finally {
       setSaveLoading(false);
     }
@@ -249,10 +243,7 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.avatarUpdated"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.uploadFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.uploadFailed")));
     } finally {
       setAvatarLoading(false);
     }
@@ -279,10 +270,7 @@ export function Profile() {
       if (res.user) setAuth(res.user);
       await qc.invalidateQueries({ queryKey: ["me"] });
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
     } finally {
       setSavingVisibility(null);
     }
@@ -304,10 +292,7 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
     } finally {
       setReadmeSaving(false);
     }
@@ -332,10 +317,7 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.uploadFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.uploadFailed")));
     } finally {
       setReadmeSaving(false);
     }
@@ -360,10 +342,7 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
     } finally {
       setReadmeSaving(false);
     }
@@ -378,10 +357,7 @@ export function Profile() {
       setGhTokenInput("");
       showMsg("success", t("profile.readmeUpdated"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
     } finally {
       setReadmeSaving(false);
     }
@@ -394,10 +370,7 @@ export function Profile() {
       await qc.invalidateQueries({ queryKey: ["me"] });
       showMsg("success", t("profile.readmeSynced"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("profile.readmeSyncFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("profile.readmeSyncFailed")));
     } finally {
       setReadmeSyncing(false);
     }
@@ -411,10 +384,7 @@ export function Profile() {
       await refetchEmails();
       showMsg("success", t("profile.emailAdded"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
+      showMsg("error", apiErrorText(err, t("common.error")));
     } finally {
       setEmailLoading(false);
     }
@@ -433,10 +403,7 @@ export function Profile() {
       }
       showMsg("success", t(successKey));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
+      showMsg("error", apiErrorText(err, t("common.error")));
     }
   };
 
@@ -700,10 +667,7 @@ export function Profile() {
                   await api.updateMe({ alt_email_login: val });
                   await qc.invalidateQueries({ queryKey: ["me"] });
                 } catch (err) {
-                  showMsg(
-                    "error",
-                    err instanceof ApiError ? err.message : t("common.error"),
-                  );
+                  showMsg("error", apiErrorText(err, t("common.error")));
                 }
               }}
             >

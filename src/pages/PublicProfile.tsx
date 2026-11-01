@@ -29,6 +29,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { renderMarkdown } from "../lib/markdown";
 import { CopyIdButton } from "../components/CopyIdButton";
@@ -192,9 +193,7 @@ export function PublicProfile() {
           <Text style={{ color: tokens.colorNeutralForeground3 }}>
             {isNotFound
               ? t("publicProfile.notFoundDesc")
-              : error instanceof ApiError
-                ? error.message
-                : t("publicProfile.errorDesc")}
+              : apiErrorText(error, t("publicProfile.errorDesc"))}
           </Text>
         </div>
       </div>

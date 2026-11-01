@@ -42,7 +42,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startRegistration } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import type { SessionInfo, SessionIpInfo } from "../lib/api";
 import {
@@ -258,7 +258,7 @@ export function Security() {
     </MessageBar>
   );
   const errorText = (err: unknown, fallbackKey: string) =>
-    err instanceof ApiError ? err.message : t(fallbackKey);
+    apiErrorText(err, t(fallbackKey));
 
   // ─── Password ────────────────────────────────────────────────────────────
   const [pwOpen, setPwOpen] = useState(false);

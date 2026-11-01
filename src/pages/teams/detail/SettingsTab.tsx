@@ -18,7 +18,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type Team } from "../../../lib/api";
+import { type Team } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi, useAppOrigin } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { useSiteName } from "../../../lib/useSiteName";
@@ -132,10 +133,7 @@ export function SettingsTab({
   });
 
   const fail = (err: unknown) =>
-    showMsg(
-      "error",
-      err instanceof ApiError ? err.message : t("teams.failedUpdateTeam"),
-    );
+    showMsg("error", apiErrorText(err, t("teams.failedUpdateTeam")));
 
   // ── Profile form: unsaved edits over the server copy ───────────────────────
   const base = {
@@ -226,10 +224,7 @@ export function SettingsTab({
       await qc.invalidateQueries({ queryKey: ["teams"] });
       navigate("/teams");
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("teams.failedDeleteTeam"),
-      );
+      showMsg("error", apiErrorText(err, t("teams.failedDeleteTeam")));
     }
   };
 

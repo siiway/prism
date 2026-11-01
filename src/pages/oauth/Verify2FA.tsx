@@ -23,6 +23,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { AuthShell } from "../../components/AuthShell";
 import { useAuthStore } from "../../store/auth";
@@ -237,10 +238,7 @@ export function Verify2FA() {
       );
       setPasskeyVerifyToken(result.verify_token);
     } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : t("oauth.siteScopePasskeyFailed");
+      const msg = apiErrorText(err, t("oauth.siteScopePasskeyFailed"));
       setErrorMsg(msg);
     } finally {
       setPasskeyLoading(false);
@@ -289,9 +287,7 @@ export function Verify2FA() {
       <AuthShell maxWidth={440} cardGap={24}>
         <Title2>{t("oauth.authorizationError")}</Title2>
         <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-          {error instanceof ApiError
-            ? error.message
-            : t("oauth.invalidRequest")}
+          {apiErrorText(error, t("oauth.invalidRequest"))}
         </Text>
       </AuthShell>
     );

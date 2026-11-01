@@ -24,6 +24,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError, type NoticeInput } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { formatDate } from "../../../lib/datetime";
 import { setDocumentPageTitle } from "../../../lib/documentTitle";
@@ -130,10 +131,7 @@ export function NoticeDetail() {
       showMsg("success", done(result));
       return true;
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
       return false;
     } finally {
       setBusy(null);
@@ -180,9 +178,7 @@ export function NoticeDetail() {
             {error instanceof ApiError && error.status === 503 && (
               <MessageBarTitle>{t("admin.noticesUnavailable")}</MessageBarTitle>
             )}
-            {error instanceof ApiError
-              ? error.message
-              : t("admin.noticeNotFound")}
+            {apiErrorText(error, t("admin.noticeNotFound"))}
           </MessageBarBody>
         </MessageBar>
       </SettingsPage>
@@ -254,10 +250,7 @@ export function NoticeDetail() {
       await qc.invalidateQueries({ queryKey: ["notices"] });
       navigate("/admin/notices", { replace: true });
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.saveFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
       setBusy(null);
     }
   };

@@ -39,7 +39,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { AuthShell } from "../components/AuthShell";
 import { Captcha } from "../components/Captcha";
@@ -166,7 +166,7 @@ export function Login() {
 
       if (res.user) await completeLogin(res.user);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("auth.loginFailed"));
+      setError(apiErrorText(err, t("auth.loginFailed")));
       // Captcha tokens are single-use server-side: this attempt spent it (the
       // server verifies captcha before checking the password), so clear it and
       // remount the widget to force a fresh solve. Without this the stale token
@@ -194,7 +194,7 @@ export function Login() {
       );
       await completeLogin(res.user);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("auth.passkeyFailed"));
+      setError(apiErrorText(err, t("auth.passkeyFailed")));
     } finally {
       setPasskeyLoading(false);
     }
@@ -219,7 +219,7 @@ export function Login() {
       setGpgSignedMessage("");
       setGpgStep("challenge");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("auth.gpgFailed"));
+      setError(apiErrorText(err, t("auth.gpgFailed")));
     } finally {
       setGpgLoading(false);
     }
@@ -243,7 +243,7 @@ export function Login() {
       }
       if (res.user) await completeLogin(res.user);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("auth.gpgFailed"));
+      setError(apiErrorText(err, t("auth.gpgFailed")));
     } finally {
       setGpgLoading(false);
     }

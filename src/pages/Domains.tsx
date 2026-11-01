@@ -23,7 +23,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { formatDate } from "../lib/datetime";
 import { useToastMessage } from "../lib/useToastMessage";
@@ -146,10 +146,7 @@ export function Domains() {
         showMsg("error", t("domains.verificationCheckFailed"));
       }
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("domains.verificationFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("domains.verificationFailed")));
     } finally {
       setVerifying(null);
     }

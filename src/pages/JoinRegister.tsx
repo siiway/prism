@@ -28,7 +28,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useSiteName } from "../lib/useSiteName";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { AuthShell } from "../components/AuthShell";
 import { Captcha, type CaptchaValue } from "../components/Captcha";
@@ -135,9 +135,7 @@ export function JoinRegister() {
       setPhase("requirements");
       await refetchStatus();
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : t("join.registerFailed"),
-      );
+      setError(apiErrorText(err, t("join.registerFailed")));
       // Single-use captcha token was spent by this attempt — force a fresh solve.
       setCaptcha({});
       setCaptchaKey((v) => v + 1);
@@ -154,7 +152,7 @@ export function JoinRegister() {
       if (continueTo) window.location.href = continueTo;
       else navigate("/");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("join.joinFailed"));
+      setError(apiErrorText(err, t("join.joinFailed")));
       await refetchStatus();
     } finally {
       setBusy(false);

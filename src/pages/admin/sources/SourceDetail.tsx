@@ -16,7 +16,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { setDocumentPageTitle } from "../../../lib/documentTitle";
 import { useConfirm } from "../../../lib/useConfirm";
@@ -105,10 +105,7 @@ export function SourceDetail() {
     await qc.invalidateQueries({ queryKey: ["site"] });
   };
   const fail = (err: unknown) =>
-    showMsg(
-      "error",
-      err instanceof ApiError ? err.message : t("common.saveFailed"),
-    );
+    showMsg("error", apiErrorText(err, t("common.saveFailed")));
 
   const patch = async (
     key: string,
@@ -203,7 +200,7 @@ export function SourceDetail() {
       <SettingsPage>
         {back}
         <MessageBar intent="error">
-          {error instanceof ApiError ? error.message : t("admin.oauthNotFound")}
+          {apiErrorText(error, t("admin.oauthNotFound"))}
         </MessageBar>
       </SettingsPage>
     );

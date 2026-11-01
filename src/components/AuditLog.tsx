@@ -40,7 +40,8 @@ import {
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type AuditEvent } from "../lib/api";
+import { type AuditEvent } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { maskIp, parseClient } from "../lib/auditFormat";
 import { formatIpGeo } from "../lib/geo";
@@ -303,9 +304,7 @@ export function AuditLog({ base }: { base: string }) {
         resource_id: filters.resourceId,
       });
     } catch (err) {
-      setExportError(
-        err instanceof ApiError ? err.message : t("audit.exportFailed"),
-      );
+      setExportError(apiErrorText(err, t("audit.exportFailed")));
     } finally {
       setExporting(false);
     }

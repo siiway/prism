@@ -20,7 +20,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { useAuthStore } from "../store/auth";
 import { Captcha } from "../components/Captcha";
@@ -113,7 +113,7 @@ export function VerifyChoose() {
     } catch (err) {
       setMsg({
         type: "error",
-        text: err instanceof ApiError ? err.message : t("common.error"),
+        text: apiErrorText(err, t("common.error")),
       });
     } finally {
       setResendLoading(false);
@@ -130,7 +130,7 @@ export function VerifyChoose() {
     } catch (err) {
       setMsg({
         type: "error",
-        text: err instanceof ApiError ? err.message : t("common.error"),
+        text: apiErrorText(err, t("common.error")),
       });
     } finally {
       setCodeLoading(false);
@@ -152,7 +152,7 @@ export function VerifyChoose() {
     } catch (err) {
       setMsg({
         type: "error",
-        text: err instanceof ApiError ? err.message : t("common.error"),
+        text: apiErrorText(err, t("common.error")),
       });
     } finally {
       setCheckingStatus(false);

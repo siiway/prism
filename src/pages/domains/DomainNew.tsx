@@ -17,7 +17,7 @@ import { useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { FormPage } from "../../components/FormPage";
 import { Select } from "../../components/Select";
@@ -72,9 +72,7 @@ export function DomainNew() {
       });
       navigate(pagePath(res.id), { replace: true });
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : t("domains.failedAddDomain"),
-      );
+      setError(apiErrorText(err, t("domains.failedAddDomain")));
       setAdding(false);
     }
   };
@@ -100,9 +98,7 @@ export function DomainNew() {
       // Moving keeps the id, so the domain's page carries on in the team.
       navigate(pagePath(moveId), { replace: true });
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : t("domains.transferFailed"),
-      );
+      setError(apiErrorText(err, t("domains.transferFailed")));
       setMoving(false);
     }
   };

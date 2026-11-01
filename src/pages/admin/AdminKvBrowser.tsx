@@ -35,7 +35,7 @@ import {
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { formatDateTime } from "../../lib/datetime";
 import { useConfirm } from "../../lib/useConfirm";
@@ -96,9 +96,6 @@ const useStyles = makeStyles({
 });
 
 type ShowMsg = (type: "success" | "error", text: string) => void;
-
-const errorText = (err: unknown, fallback: string) =>
-  err instanceof ApiError ? err.message : fallback;
 
 /** One key, opened in place of the list; `key` null writes a new one. */
 function KeyEditor({
@@ -188,7 +185,7 @@ function KeyEditor({
       showMsg("success", t("admin.kvWrittenDone"));
       onDone();
     } catch (err) {
-      showMsg("error", errorText(err, t("common.saveFailed")));
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
       setBusy(null);
     }
   };
@@ -220,7 +217,7 @@ function KeyEditor({
       showMsg("success", t("common.deletedDone"));
       onDone();
     } catch (err) {
-      showMsg("error", errorText(err, t("common.error")));
+      showMsg("error", apiErrorText(err, t("common.error")));
       setBusy(null);
     }
   };
@@ -253,7 +250,7 @@ function KeyEditor({
       <SettingsBody>
         {error ? (
           <MessageBar intent="error">
-            {errorText(error, t("common.error"))}
+            {apiErrorText(error, t("common.error"))}
           </MessageBar>
         ) : entry?.protected ? (
           <MessageBar intent="warning">
@@ -410,7 +407,7 @@ export function AdminKvBrowser({ showMsg }: { showMsg: ShowMsg }) {
       await refresh();
       showMsg("success", t("common.deletedDone"));
     } catch (err) {
-      showMsg("error", errorText(err, t("common.error")));
+      showMsg("error", apiErrorText(err, t("common.error")));
     } finally {
       setBusy(null);
     }
@@ -435,7 +432,7 @@ export function AdminKvBrowser({ showMsg }: { showMsg: ShowMsg }) {
         }) + (res.more ? ` ${t("admin.kvPurgeMore")}` : ""),
       );
     } catch (err) {
-      showMsg("error", errorText(err, t("common.error")));
+      showMsg("error", apiErrorText(err, t("common.error")));
     } finally {
       setBusy(null);
     }
@@ -526,7 +523,7 @@ export function AdminKvBrowser({ showMsg }: { showMsg: ShowMsg }) {
 
       {error ? (
         <MessageBar intent="error">
-          {errorText(error, t("common.error"))}
+          {apiErrorText(error, t("common.error"))}
         </MessageBar>
       ) : isFetching && !data ? (
         <Skeleton aria-busy>

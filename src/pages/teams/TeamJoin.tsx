@@ -15,7 +15,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { EmptyState } from "../../components/EmptyState";
 import { useAuthStore } from "../../store/auth";
@@ -63,7 +63,7 @@ export function TeamJoin() {
     } catch (err) {
       setMessage({
         type: "error",
-        text: err instanceof ApiError ? err.message : t("teams.failedJoinTeam"),
+        text: apiErrorText(err, t("teams.failedJoinTeam")),
       });
     } finally {
       setAccepting(false);

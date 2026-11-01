@@ -16,7 +16,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type RedirectUri } from "../../../lib/api";
+import { type RedirectUri } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { RedirectUriEditor } from "../../../components/RedirectUriEditor";
 
@@ -72,10 +73,7 @@ export function NewTeamAppDialog({ teamId, showMsg }: NewTeamAppDialogProps) {
         state: { clientSecret: res.app.client_secret },
       });
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("teams.failedCreateApp"),
-      );
+      showMsg("error", apiErrorText(err, t("teams.failedCreateApp")));
     } finally {
       setCreating(false);
     }

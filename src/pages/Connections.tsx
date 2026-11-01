@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { formatDate } from "../lib/datetime";
 import { useConfirm } from "../lib/useConfirm";
@@ -229,9 +230,7 @@ export function Connections() {
     } catch (err) {
       showMsg(
         "error",
-        err instanceof ApiError
-          ? err.message
-          : t("connections.failedStartConnection"),
+        apiErrorText(err, t("connections.failedStartConnection")),
       );
       setBusy(null);
     }
@@ -261,12 +260,7 @@ export function Connections() {
         t("connections.disconnectedFrom", { provider: providerName }),
       );
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError
-          ? err.message
-          : t("connections.disconnectFailed"),
-      );
+      showMsg("error", apiErrorText(err, t("connections.disconnectFailed")));
     } finally {
       setBusy(null);
     }

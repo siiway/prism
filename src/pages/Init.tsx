@@ -14,7 +14,7 @@ import {
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { AuthShell } from "../components/AuthShell";
 import { PasswordInput } from "../components/PasswordInput";
@@ -87,7 +87,7 @@ export function Init() {
       setAuth(res.user);
       navigate("/");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("common.error"));
+      setError(apiErrorText(err, t("common.error")));
     } finally {
       setLoading(false);
     }

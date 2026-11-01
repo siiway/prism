@@ -13,7 +13,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type NoticeInput } from "../../../lib/api";
+import { type NoticeInput } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { CheckboxField } from "../../../components/CheckboxField";
 import { FormPage } from "../../../components/FormPage";
@@ -64,7 +65,7 @@ export function NoticeNew() {
         state: { created: publish ? "published" : "draft" },
       });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t("common.saveFailed"));
+      setError(apiErrorText(err, t("common.saveFailed")));
       setCreating(null);
     }
   };

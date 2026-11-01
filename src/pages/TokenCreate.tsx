@@ -17,7 +17,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../lib/api";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { FormPage } from "../components/FormPage";
 import { TokenScopePicker } from "../components/TokenScopePicker";
@@ -77,7 +77,7 @@ export function TokenCreate() {
       setNewToken(res.token);
       await qc.invalidateQueries({ queryKey: ["pat"] });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : t("common.error"));
+      setError(apiErrorText(e, t("common.error")));
     } finally {
       setCreating(false);
     }

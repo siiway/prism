@@ -29,6 +29,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useSiteName } from "../../lib/useSiteName";
 import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { scopeLabel } from "../../lib/scopeLabels";
 import { AuthShell } from "../../components/AuthShell";
@@ -321,10 +322,7 @@ export function Authorize() {
       );
       setPasskeyVerifyToken(result.verify_token);
     } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : t("oauth.siteScopePasskeyFailed");
+      const msg = apiErrorText(err, t("oauth.siteScopePasskeyFailed"));
       setSiteError(msg);
     } finally {
       setPasskeyLoading(false);
@@ -434,9 +432,7 @@ export function Authorize() {
       <AuthShell maxWidth={440} cardGap={24}>
         <Title2>{t("oauth.authorizationError")}</Title2>
         <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-          {error instanceof ApiError
-            ? error.message
-            : t("oauth.invalidRequest")}
+          {apiErrorText(error, t("oauth.invalidRequest"))}
         </Text>
       </AuthShell>
     );

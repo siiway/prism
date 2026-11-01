@@ -24,7 +24,7 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ApiError } from "../../lib/api";
+import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { setDocumentPageTitle } from "../../lib/documentTitle";
 import { useConfirm } from "../../lib/useConfirm";
@@ -138,7 +138,7 @@ export function AdminUserDetail() {
       <SettingsPage>
         {back}
         <MessageBar intent="error">
-          {error instanceof ApiError ? error.message : t("admin.userNotFound")}
+          {apiErrorText(error, t("admin.userNotFound"))}
         </MessageBar>
       </SettingsPage>
     );

@@ -6,7 +6,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type TeamMember } from "../../../lib/api";
+import { type TeamMember } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { useAuthStore } from "../../../store/auth";
@@ -50,7 +51,7 @@ export function MembersTab({
     await qc.invalidateQueries({ queryKey: ["team-members", teamId] });
   };
   const fail = (err: unknown, fallback: string) =>
-    showMsg("error", err instanceof ApiError ? err.message : fallback);
+    showMsg("error", apiErrorText(err, fallback));
 
   const changeRole = async (userId: string, role: string) => {
     try {

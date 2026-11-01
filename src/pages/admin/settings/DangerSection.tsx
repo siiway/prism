@@ -15,7 +15,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { useAuthStore } from "../../../store/auth";
@@ -70,10 +70,7 @@ export function DangerSection({ showMsg }: SectionProps) {
     },
     onError: (err) => {
       setRunningJob(null);
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
+      showMsg("error", apiErrorText(err, t("common.error")));
     },
   });
   const revokeSessions = useMutation({
@@ -88,11 +85,7 @@ export function DangerSection({ showMsg }: SectionProps) {
         navigate("/login");
       }
     },
-    onError: (err) =>
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      ),
+    onError: (err) => showMsg("error", apiErrorText(err, t("common.error"))),
   });
 
   const [resetting, setResetting] = useState(false);

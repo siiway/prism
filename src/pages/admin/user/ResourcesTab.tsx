@@ -5,7 +5,7 @@ import { Avatar, Badge, Button, Spinner } from "@fluentui/react-components";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { formatDate } from "../../../lib/datetime";
 import { RoleBadge } from "../../../components/RoleBadge";
@@ -61,10 +61,7 @@ export function ResourcesTab({ userId, apps, showMsg, confirm }: UserTabProps) {
       });
       showMsg("success", t("admin.notificationRulesResetDone"));
     } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("common.error"),
-      );
+      showMsg("error", apiErrorText(err, t("common.error")));
     } finally {
       setResetting(false);
     }
