@@ -132,14 +132,27 @@ export function SourceDetail() {
 
   const save = async (section: Section) => {
     if (!form || !saved) return;
+    const sent = {
+      client_id: form.client_id,
+      client_secret: form.client_secret,
+    };
     const ok = await patch(
       section,
       sectionPayload(section, form),
       t("admin.oauthSaved"),
     );
-    // Saved credentials are never shown again, so their fields clear.
+    // Saved credentials are never shown again, so their fields clear. One
+    // retyped while the request was in flight wasn't saved, so it stays.
     if (ok && section === "credentials")
-      setEdits((e) => e && { ...e, client_id: "", client_secret: "" });
+      setEdits(
+        (e) =>
+          e && {
+            ...e,
+            client_id: e.client_id === sent.client_id ? "" : e.client_id,
+            client_secret:
+              e.client_secret === sent.client_secret ? "" : e.client_secret,
+          },
+      );
   };
 
   const discard = (section: Section) =>

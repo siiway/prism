@@ -245,12 +245,20 @@ export function AdminInviteDetail() {
       if (k === "email" || k === "note") body[k] = v || null;
       else body[k] = v ? Number(v) : null;
     }
+    // What was sent, so edits typed while the request is in flight survive
+    // it instead of being cleared along with the saved ones.
+    const sent = new Map(SECTION_KEYS[section].map((k) => [k, form[k]]));
     const ok = await run(
       section,
       () => api.adminUpdateInvite(id, body),
       t("admin.inviteSaved"),
     );
-    if (ok) discard(section);
+    if (ok)
+      setEdits((e) => {
+        const next = { ...e };
+        for (const [k, value] of sent) if (next[k] === value) delete next[k];
+        return next;
+      });
   };
 
   function discard(section: Section) {
