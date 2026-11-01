@@ -1263,6 +1263,9 @@ export async function deliverUserEmailNotifications(
   appUrl: string,
 ): Promise<void> {
   const db = env.DB;
+  // When the event happened, for the rules' time fields; taken before any
+  // query so a slow lookup can't move it across an hour boundary.
+  const occurredAt = new Date();
   // Active ruleset takes precedence over the per-event prefs. Users who
   // never activate one keep the legacy behaviour.
   const activeRuleset = await db
@@ -1287,7 +1290,7 @@ export async function deliverUserEmailNotifications(
     }
     const resolved = evaluateRuleset(
       parsedRules,
-      buildRuleContext(event, data, new Date()),
+      buildRuleContext(event, data, occurredAt),
     );
     emailRules = resolved.emails;
     tgRules = resolved.tgs;

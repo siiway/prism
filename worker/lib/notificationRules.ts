@@ -59,6 +59,7 @@ export function sanitizeRulesArray(
     return { error: "too_many_rules", params: { max: 200 } };
 
   const out: NotificationRule[] = [];
+  const ids = new Set<string>();
   for (let i = 0; i < input.length; i++) {
     const raw = input[i];
     if (!raw || typeof raw !== "object")
@@ -70,6 +71,14 @@ export function sanitizeRulesArray(
 
     if (typeof r.id !== "string" || !r.id)
       return { error: "field_required", params: { field: `rules[${i}].id` } };
+    // Editors find a rule by its id; two rules sharing one would be edited
+    // (and saved) as one.
+    if (ids.has(r.id))
+      return {
+        error: "rule_duplicate_id",
+        params: { field: `rules[${i}].id`, id: r.id },
+      };
+    ids.add(r.id);
 
     let name: string | undefined;
     if (r.name !== undefined) {

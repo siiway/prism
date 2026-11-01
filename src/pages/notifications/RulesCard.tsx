@@ -218,8 +218,8 @@ export function RulesCard({
                       <MenuItem
                         onClick={() =>
                           void apply(
-                            rules.map((r) =>
-                              r.id === rule.id ? { ...r, enabled: !on } : r,
+                            rules.map((r, j) =>
+                              j === i ? { ...r, enabled: !on } : r,
                             ),
                           )
                         }
@@ -241,7 +241,7 @@ export function RulesCard({
                       <MenuItem
                         onClick={async () => {
                           if (await confirmDelete(label(rule, i)))
-                            void apply(rules.filter((r) => r.id !== rule.id));
+                            void apply(rules.filter((_, j) => j !== i));
                         }}
                       >
                         {t("common.delete")}

@@ -105,7 +105,9 @@ export function RuleDetail() {
   const rules = ruleset?.rules ?? [];
   const index = isNew ? -1 : rules.findIndex((r) => r.id === ruleId);
   const existing = index >= 0 ? rules[index] : undefined;
-  const others = rules.filter((r) => r.id !== ruleId);
+  // By position, so a ruleset that already has duplicate ids can't lose the
+  // rule's twin when this one is saved.
+  const others = rules.filter((_, i) => i !== index);
   const defaultPlacement: Placement =
     index > 0 ? `after:${rules[index - 1].id}` : index === 0 ? "first" : "last";
 

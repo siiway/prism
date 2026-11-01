@@ -402,7 +402,7 @@ class Parser {
   private field(): RuleField {
     const t = this.next();
     if (t.k !== "word") fail("unexpected_token", t.at, tokText(t));
-    if (!(t.v in RULE_FIELDS)) fail("unknown_field", t.at, t.v);
+    if (!Object.hasOwn(RULE_FIELDS, t.v)) fail("unknown_field", t.at, t.v);
     return t.v as RuleField;
   }
 
@@ -441,9 +441,13 @@ class Parser {
     }
     const op =
       opTok.k === "word"
-        ? WORD_OPS[opTok.v]
+        ? Object.hasOwn(WORD_OPS, opTok.v)
+          ? WORD_OPS[opTok.v]
+          : undefined
         : opTok.k === "op"
-          ? SYMBOL_CMP[opTok.v]
+          ? Object.hasOwn(SYMBOL_CMP, opTok.v)
+            ? SYMBOL_CMP[opTok.v]
+            : undefined
           : undefined;
     if (!op || !OPS_BY_TYPE[type].includes(op))
       fail("bad_operator", opTok.at, tokText(opTok));
@@ -554,30 +558,30 @@ export type FieldValue = string | number | string[] | null;
 /** What an expression is evaluated against: one event's field values. */
 export type RuleContext = Partial<Record<RuleField, FieldValue>>;
 
-/** `*` matches any run of characters; case-insensitive. O(n·m), no regex. */
+/**
+ * `*` matches any run of characters; case-insensitive. The literal pieces
+ * between stars are found left to right with indexOf; with `*` as the only
+ * metacharacter the leftmost match of each piece never needs revisiting, so
+ * there is no backtracking.
+ */
 export function wildcardMatch(pattern: string, text: string): boolean {
-  const p = pattern.toLowerCase();
+  const pieces = pattern.toLowerCase().split("*");
   const s = text.toLowerCase();
-  let pi = 0;
-  let si = 0;
-  let star = -1;
-  let mark = 0;
-  while (si < s.length) {
-    if (pi < p.length && p[pi] === "*") {
-      star = pi++;
-      mark = si;
-    } else if (pi < p.length && p[pi] === s[si]) {
-      pi++;
-      si++;
-    } else if (star >= 0) {
-      pi = star + 1;
-      si = ++mark;
-    } else {
-      return false;
-    }
+  if (pieces.length === 1) return s === pieces[0];
+  const first = pieces[0];
+  const last = pieces[pieces.length - 1];
+  if (s.length < first.length + last.length) return false;
+  if (!s.startsWith(first) || !s.endsWith(last)) return false;
+  let at = first.length;
+  const end = s.length - last.length;
+  for (let i = 1; i < pieces.length - 1; i++) {
+    const piece = pieces[i];
+    if (!piece) continue;
+    const found = s.indexOf(piece, at);
+    if (found < 0 || found + piece.length > end) return false;
+    at = found + piece.length;
   }
-  while (pi < p.length && p[pi] === "*") pi++;
-  return pi === p.length;
+  return true;
 }
 
 function cmp(op: CmpOp, value: FieldValue, lit: Literal): boolean {
@@ -684,14 +688,21 @@ export function evaluateRuleExpression(
 
 // ─── Context ─────────────────────────────────────────────────────────────────
 
+/** Longest value a field keeps; longer header values are cut. */
+const MAX_VALUE = 1024;
+
 function str(v: unknown): string | null {
-  return typeof v === "string" && v.trim() ? v.trim() : null;
+  if (typeof v !== "string") return null;
+  const t = v.trim().slice(0, MAX_VALUE);
+  return t || null;
 }
 
 function list(v: unknown): string[] | null {
   if (Array.isArray(v))
     return v.filter((x): x is string => typeof x === "string");
   if (typeof v === "string") return v.split(/[\s,]+/).filter(Boolean);
+  // profile.updated sends { field: newValue }; the names are what matter.
+  if (v && typeof v === "object") return Object.keys(v);
   return null;
 }
 

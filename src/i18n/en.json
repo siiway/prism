@@ -3408,6 +3408,7 @@
     "role_invalid": "Unknown role.",
     "rule_exists": "This rule already exists.",
     "rule_unknown_event": "{{field}}: “{{event}}” isn't a known event.",
+    "rule_duplicate_id": "{{field}}: another rule already uses the id “{{id}}”.",
     "rule_expression_unexpected_end": "{{field}}: the expression ends too early.",
     "rule_expression_unexpected_token": "{{field}}: unexpected “{{token}}” at character {{at}}.",
     "rule_expression_unterminated_string": "{{field}}: a quoted value isn't closed (character {{at}}).",

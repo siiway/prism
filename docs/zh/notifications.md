@@ -200,7 +200,7 @@ DELETE /api/user/me/notification-rulesets/:id
 
 `POST` 和 `PUT` 调用 `sanitizeRulesArray` 校验规则数组：
 
-- 最多 200 条。
+- 最多 200 条，每条的 `id` 在规则集内唯一（否则返回 `rule_duplicate_id`）。
 - 未知的 action 类型或错误结构的 channel 一律 `400`。
 - `match.event` 中的未知事件名返回 `400`（接受 `USER_NOTIFICATION_EVENTS` 中的所有事件以及 `*` / `?` 通配符）。
 - 无法解析的表达式返回 `400`，错误码为 `rule_expression_<原因>`（`unexpected_end`、`unexpected_token`、`unterminated_string`、`unknown_field`、`bad_operator`、`bad_value`、`too_long`、`too_deep`、`too_many_items`），并带有 `params: { field, at, token }`。

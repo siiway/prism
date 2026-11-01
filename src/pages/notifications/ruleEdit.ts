@@ -1,11 +1,13 @@
 // A rule as the rule page edits it, and back. Rules saved before
 // expressions existed are folded in: an event glob becomes an `event`
-// condition, and an account scope on a send rule just narrows its
-// destinations.
+// condition (a glob with `?` becomes the list of events it matches), and an
+// account scope on a send rule just narrows its destinations. Saving writes
+// only the expression, so the old glob can be widened or removed.
 
 import type { TFunction } from "i18next";
 import {
   channelKey,
+  legacyGlob,
   type NotificationRule,
 } from "../../../shared/notificationRules";
 import {
@@ -14,6 +16,7 @@ import {
   type RuleExpr,
 } from "../../../shared/ruleExpression";
 import type { ActionState } from "./ActionCard";
+import { ALL_EVENT_KEYS } from "./catalog";
 import { destKey, type Destination } from "./destinations";
 import { matchExpression, matchStateFor, type MatchState } from "./ruleBuilder";
 
@@ -22,23 +25,40 @@ export interface RuleEditState {
   enabled: boolean;
   match: MatchState;
   action: ActionState;
-  /** A legacy glob with `?`, which expressions can't say; kept as is. */
-  legacyEvent?: string;
+}
+
+/** A legacy event glob as an `event` condition with the same effect. */
+function globCondition(glob: string): RuleExpr {
+  const event = (v: string, op: "eq" | "wildcard" = "eq"): RuleExpr => ({
+    kind: "cmp",
+    field: "event",
+    op,
+    value: { t: "string", v },
+  });
+  if (!glob.includes("?"))
+    return event(glob, glob.includes("*") ? "wildcard" : "eq");
+  // `?` (one character) has no expression form, but the events are a
+  // fixed list, so name the ones it matches. None matching keeps a
+  // condition that, like the glob, never holds.
+  const hits = ALL_EVENT_KEYS.filter((e) => legacyGlob(glob, e));
+  if (hits.length === 0) return event(glob);
+  if (hits.length === 1) return event(hits[0]);
+  return {
+    kind: "in",
+    field: "event",
+    items: hits.map((v) => ({ t: "string", v })),
+  };
 }
 
 /** The rule's whole condition as one expression, legacy glob included. */
 export function ruleExpressionText(rule: NotificationRule): string {
   const glob = rule.match.event;
   const expression = rule.match.expression ?? "";
-  if (!glob || glob === "*" || glob.includes("?")) return expression;
-  const term: RuleExpr = {
-    kind: "cmp",
-    field: "event",
-    op: glob.includes("*") ? "wildcard" : "eq",
-    value: { t: "string", v: glob },
-  };
+  if (!glob || glob === "*") return expression;
+  const term = globCondition(glob);
   const rest = parseRuleExpression(expression);
-  if (rest.error) return expression;
+  // Keep an unreadable expression visible (and failing) next to the glob.
+  if (rest.error) return `${printRuleExpression(term)} and (${expression})`;
   return printRuleExpression(
     rest.expr ? { kind: "and", items: [term, rest.expr] } : term,
   );
@@ -61,12 +81,10 @@ export function newRuleState(): RuleEditState {
 
 export function ruleToState(rule: NotificationRule): RuleEditState {
   const accounts = rule.match.accounts ?? [];
-  const glob = rule.match.event;
   return {
     name: rule.name ?? "",
     enabled: rule.enabled !== false,
     match: matchStateFor(ruleExpressionText(rule)),
-    legacyEvent: glob?.includes("?") ? glob : undefined,
     action:
       rule.action.type === "send"
         ? {
@@ -105,7 +123,6 @@ export function stateToRule(
     return { error: "action" };
   const match: NotificationRule["match"] = {};
   if (m.expression) match.expression = m.expression;
-  if (s.legacyEvent) match.event = s.legacyEvent;
   if (a.type === "drop" && !a.muteAll) match.accounts = a.muteAccounts;
   return {
     rule: {

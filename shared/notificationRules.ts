@@ -126,7 +126,7 @@ export function ruleMatches(
 }
 
 /** Case-sensitive glob with `*` and `?`, as rules saved before expressions. */
-function legacyGlob(pattern: string, text: string): boolean {
+export function legacyGlob(pattern: string, text: string): boolean {
   let p = 0;
   let s = 0;
   let star = -1;

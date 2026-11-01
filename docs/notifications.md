@@ -251,7 +251,8 @@ DELETE /api/user/me/notification-rulesets/:id
 
 `POST` and `PUT` validate the rules array via `sanitizeRulesArray`:
 
-- Max 200 rules.
+- Max 200 rules, each with an `id` unique within the ruleset
+  (`rule_duplicate_id` otherwise).
 - Unknown action types or malformed channels return `400`.
 - Unknown event names in `match.event` return `400` (any event in
   `USER_NOTIFICATION_EVENTS` is accepted, plus the `*` and `?` glob forms).

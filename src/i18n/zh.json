@@ -3408,6 +3408,7 @@
     "role_invalid": "未知角色。",
     "rule_exists": "该规则已存在。",
     "rule_unknown_event": "{{field}}：“{{event}}” 不是已知的事件。",
+    "rule_duplicate_id": "{{field}}：已有其他规则使用 ID “{{id}}”。",
     "rule_expression_unexpected_end": "{{field}}：表达式不完整。",
     "rule_expression_unexpected_token": "{{field}}：第 {{at}} 个字符处出现意外的 “{{token}}”。",
     "rule_expression_unterminated_string": "{{field}}：带引号的值没有闭合（第 {{at}} 个字符）。",
