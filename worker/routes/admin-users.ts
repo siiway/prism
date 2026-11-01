@@ -30,6 +30,7 @@ import { readPage } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { isUserLocked } from "../lib/lockdown";
 import type { DomainRow, UserEmailRow, Variables } from "../types";
+import { parseScopeList } from "../lib/scopeGrants";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -676,7 +677,7 @@ app.get("/:id/authorizations", async (c) => {
     authorizations: await Promise.all(
       results.map(async (row) => ({
         ...row,
-        scopes: row.scopes ? row.scopes.split(" ").filter(Boolean) : [],
+        scopes: parseScopeList(row.scopes),
         icon_url: await proxyImageUrl(c.env.APP_URL, c.env.DB, row.icon_url),
       })),
     ),

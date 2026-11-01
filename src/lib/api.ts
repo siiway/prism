@@ -2341,9 +2341,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
 
-  adminScopeGrants: (kind: "site" | "team", page = 1, teamId?: string) => {
+  adminScopeGrants: (
+    kind: ScopeGrantKind,
+    page = 1,
+    opts: { q?: string; teamId?: string } = {},
+  ) => {
     const search = new URLSearchParams({ page: String(page) });
-    if (teamId) search.set("team_id", teamId);
+    if (opts.q) search.set("q", opts.q);
+    if (opts.teamId) search.set("team_id", opts.teamId);
     return request<{
       grants: AdminScopeGrant[];
       total: number;
@@ -2356,8 +2361,17 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     );
   },
-  adminRevokeScopeGrant: (kind: "site" | "team", id: string) =>
-    request<{ message: string }>(
+  adminGetScopeGrant: (kind: ScopeGrantKind, id: string) =>
+    request<{ grant: AdminScopeGrantDetail }>(
+      "GET",
+      `/admin/scope-grants/${kind}/${id}`,
+      undefined,
+      getToken(),
+    ),
+  /** Takes the grant out of the app's approvals and deletes the tokens
+   *  that carry it. */
+  adminRevokeScopeGrant: (kind: ScopeGrantKind, id: string) =>
+    request<{ message: string; approvals: number; tokens: number }>(
       "DELETE",
       `/admin/scope-grants/${kind}/${id}`,
       undefined,
@@ -3488,23 +3502,40 @@ export interface AdminDomain {
   created_at: number;
 }
 
-/** A site- or team-level scope grant. The two tables differ enough that the
- *  fields specific to each are optional here rather than split into two
- *  types the UI would have to branch on twice. */
+export type ScopeGrantKind = "site" | "team";
+
+/** A site- or team-level scope grant still held by an app: one per app and
+ *  account (site) or app and team (team), from the latest approval. */
 export interface AdminScopeGrant {
   id: string;
   client_id: string;
   app_name: string | null;
   granted_at: number;
-  /** site grants */
+  /** site grants: the site:* scopes approved */
   scopes?: string[];
-  admin_username?: string | null;
+  grantee_user_id?: string | null;
   grantee_username?: string | null;
-  /** team grants */
+  /** team grants: the team permissions approved, e.g. "member:read" */
+  permissions?: string[];
   team_id?: string;
   team_name?: string | null;
+  grantor_user_id?: string | null;
   grantor_username?: string | null;
-  permissions?: unknown;
+}
+
+export interface AdminScopeGrantDetail extends AdminScopeGrant {
+  kind: ScopeGrantKind;
+  first_granted_at: number;
+  times_granted: number;
+  /** What the latest approval listed. */
+  listed: string[];
+  /** What the app holds now, across approvals and live tokens. Team
+   *  permissions come without the team:<id>: prefix. */
+  held_scopes: string[];
+  live_tokens: number;
+  accounts: number;
+  /** team grants: the grantor's current role, which caps the app's. */
+  grantor_role?: string | null;
 }
 
 // ─── Notice board ─────────────────────────────────────────────────────────────

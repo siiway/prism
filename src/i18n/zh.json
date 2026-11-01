@@ -1561,7 +1561,7 @@
       "invites": "加入本实例及其团队的邀请。",
       "apps": "所有用户和团队注册的 OAuth 应用。",
       "connections": "可用于登录和关联账户的第三方提供方。",
-      "scopeGrants": "应用可持有的最高权限。撤销后不再续期；撤销应用本身才能让其现有令牌失效。",
+      "scopeGrants": "应用可持有的最高权限。撤销后立即失效。",
       "domains": "用户和团队声明的域名及其验证状态。",
       "settings": {
         "general": "站点信息、安全联系方式和渲染方式。",
@@ -2202,10 +2202,8 @@
     "teamGrantsTab": "团队",
     "permissionsHeader": "权限",
     "grantedByHeader": "授予者",
-    "noScopeGrants": "暂无授权。",
     "unknownApp": "未知应用",
     "revokeGrantTitle": "撤销该授权？",
-    "revokeGrantBody": "{{app}} 将失去此权限。现有令牌在过期前仍有效；如需立即失效，请在「应用」中撤销该应用。",
     "sessionsSection": "会话",
     "endAllSessions": "结束全部会话",
     "noSessions": "没有活跃会话。",
@@ -2434,7 +2432,36 @@
     "teamFilter": "显示",
     "teamFilterAll": "所有团队",
     "teamFilterInviteSignup": "已允许邀请注册",
-    "teamFilterConvert": "已单独设置转换"
+    "teamFilterConvert": "已单独设置转换",
+    "grantAccountHeader": "账号",
+    "searchSiteGrants": "按应用或账号搜索",
+    "searchTeamGrants": "按应用或团队搜索",
+    "noSiteGrants": "没有应用持有站点级权限。",
+    "noTeamGrants": "没有应用持有团队权限。",
+    "grantRevokedToast": "已撤销 {{app}} 的授权。",
+    "siteGrantBadge": "站点授权",
+    "teamGrantBadge": "团队授权",
+    "grantNotHeld": "已不再持有",
+    "grantNotHeldDesc": "该应用已不再持有其中任何一项。以下是它上次获批的内容。",
+    "grantDetailsTitle": "授权",
+    "siteGrantDesc": "该应用以此账号的身份在整个实例范围内操作。",
+    "teamGrantDesc": "该应用在此团队内操作，权限不超过批准者本人。",
+    "grantAccountDesc": "批准该授权的站点管理员。应用以其身份操作。",
+    "grantorRoleDesc": "当前在团队中的角色为 {{role}}。应用的权限不会超过此人。",
+    "grantorGoneDesc": "已不在团队中，因此应用无法在其中做出更改。",
+    "grantTokensLabel": "有效令牌",
+    "grantTokensDesc": "带有这些作用域、仍可使用或可刷新的令牌。",
+    "revokeGrantLabel": "撤销此授权",
+    "revokeGrantDesc": "从该应用的授权中移除这些作用域，并删除带有它们的令牌。应用获批的其他权限不受影响，这些权限需要重新申请。",
+    "revokeGrantFailed": "无法撤销该授权。",
+    "grantDangerTitle": "危险区域",
+    "grantTimesDesc": "自 {{date}} 起共批准 {{count}} 次",
+    "grantTimesDesc_one": "自 {{date}} 起共批准 {{count}} 次",
+    "grantAccountsDesc": "带有这些权限、仍可使用或可刷新的令牌，涉及 {{count}} 个账号。",
+    "grantAccountsDesc_one": "带有这些权限、仍可使用或可刷新的令牌，涉及 {{count}} 个账号。",
+    "revokeGrantBody": "{{app}} 将立即失去这些作用域，带有它们的 {{count}} 个有效令牌会被删除。",
+    "revokeGrantBody_one": "{{app}} 将立即失去这些作用域，带有它们的 {{count}} 个有效令牌会被删除。",
+    "grantAppHeader": "应用"
   },
   "webhooks": {
     "title": "Webhooks",
@@ -2848,5 +2875,9 @@
       "results": "结果"
     },
     "searching": "搜索中…"
+  },
+  "apiErrors": {
+    "scope_grant_not_found": "此授权不存在或已被撤销。",
+    "invalid_grant_kind": "未知的授权类型。"
   }
 }

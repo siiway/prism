@@ -730,19 +730,27 @@ other way can waive that, and the audit entry records that they did.
 
 ## Scope grants
 
-**Admin → Scope grants** lists the elevated OAuth grants: `site:*`, which lets
-an application act across the instance, and `site:team:*`, which reaches into
-a team without its owner's consent.
+**Admin → Scope grants** lists the elevated OAuth grants apps still hold:
+`site:*`, which lets an application act across the instance (including
+`site:team:*`, which reaches into any team without its owner's consent), and
+team grants (`team:<id>:*`), which let it act in one team.
 
-These were written at authorization time and then never surfaced again —
-nothing listed them and nothing revoked them, so the only way to find out what
-an application still held was to read the table. An authority nobody can
-enumerate is an authority nobody can withdraw.
+The **Site** and **Team** views show one row per app and account, or per app
+and team, with the scopes from the latest approval. Re-approving the same app
+doesn't add rows, and a grant drops off the list once the app no longer holds
+it, in a stored approval or a live token. Search by app, client ID, account or
+team.
 
-Revoking a grant stops that authority from being renewed. Tokens already
-issued under it keep working until they expire, because they are bound to the
-application rather than to this row — if you need them gone now, use
-[Cut off an application](#cut-off-an-application) as well.
+Each grant opens on its own page: the account it acts as (site) or the team
+and who approved it (team), every scope in plain words, when it was approved,
+and how many live tokens carry it. A team app can't do more than the person who
+approved it; if that person has left the team, the page says so.
+
+**Revoke this grant** takes the scopes out of the app's stored approvals and
+deletes the tokens and unused authorization codes that carry them, at once. The
+app keeps anything else it was approved for, such as sign-in, and has to ask
+again for the revoked scopes. An approval left with nothing in it is deleted.
+The audit log records the revoke with how many approvals and tokens it touched.
 
 ## Maintenance jobs
 

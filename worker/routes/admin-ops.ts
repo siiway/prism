@@ -23,6 +23,13 @@ import {
 import { isUserLocked } from "../lib/lockdown";
 import { readPage, likePattern } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
+import {
+  grantLike,
+  grantMatcher,
+  heldScopes,
+  parseScopeList,
+  stripGrant,
+} from "../lib/scopeGrants";
 import type { DomainRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -774,15 +781,28 @@ app.post("/users/bulk", async (c) => {
 //
 // `site:*` and `site:team:*` scopes are the highest-privilege grants the OAuth
 // layer issues: they let an application act across the instance, and the
-// site-team ones deliberately bypass the team owner's consent. They were
-// written at authorization time and then never surfaced again — nothing listed
-// them, nothing revoked them, and the only way to find out what an application
-// still held was to read the table.
+// site-team ones deliberately bypass the team owner's consent. Team grants
+// (`team:<id>:*`) are smaller but still reach into a team on someone's behalf.
 //
-// That is the wrong shape for the most dangerous grant in the system. An
-// authority nobody can enumerate is an authority nobody can withdraw.
+// The grant tables are only a record, written each time someone approves an
+// app. The authority itself lives in the stored approval (oauth_consents) and
+// the tokens issued under it. So the list shows one row per app and account
+// (site) or app and team (team), and only while the app still holds the
+// authority somewhere; and revoking takes it out of the approval and the
+// tokens, not just the record. Revoking the record alone would hide the grant
+// and leave all of its effect.
 
-/** Site-level scope grants, newest first. */
+type GrantKind = "site" | "team";
+
+const readKind = (v: string): GrantKind | null =>
+  v === "site" || v === "team" ? v : null;
+
+const nowSec = () => Math.floor(Date.now() / 1000);
+
+/** A token is live while it works or can still be refreshed. */
+const LIVE = "(t.expires_at > ? OR t.refresh_expires_at > ?)";
+
+/** Site grants, one row per app and account, while the app still holds them. */
 app.get("/scope-grants/site", async (c) => {
   const { page, limit, offset } = readPage(
     c.req.query("page"),
@@ -790,40 +810,58 @@ app.get("/scope-grants/site", async (c) => {
     20,
     100,
   );
+  const q = c.req.query("q")?.trim();
+  const now = nowSec();
+  const where = `g.id = (SELECT g2.id FROM site_scope_grants g2
+                   WHERE g2.client_id = g.client_id
+                     AND g2.grantee_user_id = g.grantee_user_id
+                   ORDER BY g2.granted_at DESC, g2.id DESC LIMIT 1)
+     AND (EXISTS (SELECT 1 FROM oauth_consents oc
+                   WHERE oc.client_id = g.client_id
+                     AND oc.user_id = g.grantee_user_id
+                     AND oc.scopes LIKE '%site:%')
+       OR EXISTS (SELECT 1 FROM oauth_tokens t
+                   WHERE t.client_id = g.client_id
+                     AND t.user_id = g.grantee_user_id
+                     AND t.scopes LIKE '%site:%' AND ${LIVE}))
+     ${
+       q
+         ? `AND (a.name LIKE ? ESCAPE '\\' OR g.client_id LIKE ? ESCAPE '\\'
+              OR u.username LIKE ? ESCAPE '\\')`
+         : ""
+     }`;
+  const args: unknown[] = [now, now];
+  if (q) args.push(likePattern(q), likePattern(q), likePattern(q));
+  const from = `FROM site_scope_grants g
+    LEFT JOIN oauth_apps a ON a.client_id = g.client_id
+    LEFT JOIN users u ON u.id = g.grantee_user_id`;
+
   const [rows, count] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT g.id, g.client_id, g.scopes, g.granted_at,
-              g.admin_user_id, g.grantee_user_id,
-              a.name AS app_name,
-              admin.username AS admin_username,
-              grantee.username AS grantee_username
-         FROM site_scope_grants g
-         LEFT JOIN oauth_apps a ON a.client_id = g.client_id
-         LEFT JOIN users admin ON admin.id = g.admin_user_id
-         LEFT JOIN users grantee ON grantee.id = g.grantee_user_id
+      `SELECT g.id, g.client_id, g.scopes, g.granted_at, g.grantee_user_id,
+              a.name AS app_name, u.username AS grantee_username
+         ${from} WHERE ${where}
         ORDER BY g.granted_at DESC LIMIT ? OFFSET ?`,
     )
-      .bind(limit, offset)
+      .bind(...(args as never[]), limit, offset)
       .all<{
         id: string;
         client_id: string;
         scopes: string;
         granted_at: number;
-        admin_user_id: string | null;
         grantee_user_id: string | null;
         app_name: string | null;
-        admin_username: string | null;
         grantee_username: string | null;
       }>(),
-    c.env.DB.prepare("SELECT COUNT(*) AS n FROM site_scope_grants").first<{
-      n: number;
-    }>(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS n ${from} WHERE ${where}`)
+      .bind(...(args as never[]))
+      .first<{ n: number }>(),
   ]);
 
   return c.json({
     grants: rows.results.map((row) => ({
       ...row,
-      scopes: row.scopes ? row.scopes.split(" ").filter(Boolean) : [],
+      scopes: parseScopeList(row.scopes),
     })),
     total: count?.n ?? 0,
     page,
@@ -831,7 +869,8 @@ app.get("/scope-grants/site", async (c) => {
   });
 });
 
-/** Team-level scope grants, newest first. */
+/** Team grants, one row per app and team, while the app still holds them.
+ *  `?team_id=` narrows it to one team. */
 app.get("/scope-grants/team", async (c) => {
   const { page, limit, offset } = readPage(
     c.req.query("page"),
@@ -839,22 +878,40 @@ app.get("/scope-grants/team", async (c) => {
     20,
     100,
   );
+  const q = c.req.query("q")?.trim();
   const teamFilter = c.req.query("team_id")?.trim();
-  const where = teamFilter ? "WHERE g.team_id = ?" : "";
-  const args: unknown[] = teamFilter ? [teamFilter] : [];
+  const now = nowSec();
+  const held = `'%team:' || g.team_id || ':%'`;
+  const where = `g.id = (SELECT g2.id FROM team_scope_grants g2
+                   WHERE g2.client_id = g.client_id
+                     AND g2.team_id = g.team_id
+                   ORDER BY g2.granted_at DESC, g2.id DESC LIMIT 1)
+     AND (EXISTS (SELECT 1 FROM oauth_consents oc
+                   WHERE oc.client_id = g.client_id AND oc.scopes LIKE ${held})
+       OR EXISTS (SELECT 1 FROM oauth_tokens t
+                   WHERE t.client_id = g.client_id
+                     AND t.scopes LIKE ${held} AND ${LIVE}))
+     ${teamFilter ? "AND g.team_id = ?" : ""}
+     ${
+       q
+         ? `AND (a.name LIKE ? ESCAPE '\\' OR g.client_id LIKE ? ESCAPE '\\'
+              OR tm.name LIKE ? ESCAPE '\\')`
+         : ""
+     }`;
+  const args: unknown[] = [now, now];
+  if (teamFilter) args.push(teamFilter);
+  if (q) args.push(likePattern(q), likePattern(q), likePattern(q));
+  const from = `FROM team_scope_grants g
+    LEFT JOIN oauth_apps a ON a.client_id = g.client_id
+    LEFT JOIN teams tm ON tm.id = g.team_id
+    LEFT JOIN users u ON u.id = g.grantor_user_id`;
 
   const [rows, count] = await Promise.all([
     c.env.DB.prepare(
       `SELECT g.id, g.client_id, g.team_id, g.permissions, g.granted_at,
-              g.grantor_user_id,
-              a.name AS app_name,
-              t.name AS team_name,
+              g.grantor_user_id, a.name AS app_name, tm.name AS team_name,
               u.username AS grantor_username
-         FROM team_scope_grants g
-         LEFT JOIN oauth_apps a ON a.client_id = g.client_id
-         LEFT JOIN teams t ON t.id = g.team_id
-         LEFT JOIN users u ON u.id = g.grantor_user_id
-         ${where}
+         ${from} WHERE ${where}
         ORDER BY g.granted_at DESC LIMIT ? OFFSET ?`,
     )
       .bind(...(args as never[]), limit, offset)
@@ -869,7 +926,7 @@ app.get("/scope-grants/team", async (c) => {
         team_name: string | null;
         grantor_username: string | null;
       }>(),
-    c.env.DB.prepare(`SELECT COUNT(*) AS n FROM team_scope_grants g ${where}`)
+    c.env.DB.prepare(`SELECT COUNT(*) AS n ${from} WHERE ${where}`)
       .bind(...(args as never[]))
       .first<{ n: number }>(),
   ]);
@@ -877,9 +934,7 @@ app.get("/scope-grants/team", async (c) => {
   return c.json({
     grants: rows.results.map((row) => ({
       ...row,
-      permissions: row.permissions
-        ? (JSON.parse(row.permissions) as unknown)
-        : null,
+      permissions: parseScopeList(row.permissions),
     })),
     total: count?.n ?? 0,
     page,
@@ -887,36 +942,247 @@ app.get("/scope-grants/team", async (c) => {
   });
 });
 
-/** Withdraw one grant. `:kind` is `site` or `team`.
+interface GrantRow {
+  id: string;
+  client_id: string;
+  grantee_user_id?: string;
+  team_id?: string;
+}
+
+async function loadGrant(
+  db: D1Database,
+  kind: GrantKind,
+  id: string,
+): Promise<GrantRow | null> {
+  return kind === "site"
+    ? db
+        .prepare(
+          "SELECT id, client_id, grantee_user_id FROM site_scope_grants WHERE id = ?",
+        )
+        .bind(id)
+        .first<GrantRow>()
+    : db
+        .prepare(
+          "SELECT id, client_id, team_id FROM team_scope_grants WHERE id = ?",
+        )
+        .bind(id)
+        .first<GrantRow>();
+}
+
+/** The approvals, live tokens and pending codes that carry a grant. Site
+ *  grants belong to one account; team grants to anyone who approved the app
+ *  for that team. LIKE narrows the rows, grantMatcher decides. */
+async function grantHolders(db: D1Database, kind: GrantKind, g: GrantRow) {
+  const like = grantLike(kind, g.team_id);
+  const matches = grantMatcher(kind, g.team_id);
+  const carries = (row: { scopes: string }) =>
+    parseScopeList(row.scopes).some(matches);
+  const byUser = kind === "site" ? " AND user_id = ?" : "";
+  const args: unknown[] =
+    kind === "site" ? [g.client_id, g.grantee_user_id] : [g.client_id];
+  const now = nowSec();
+
+  const [consents, tokens, codes] = await Promise.all([
+    db
+      .prepare(
+        `SELECT id, user_id, scopes FROM oauth_consents
+          WHERE client_id = ?${byUser} AND scopes LIKE ?`,
+      )
+      .bind(...(args as never[]), like)
+      .all<{ id: string; user_id: string; scopes: string }>(),
+    db
+      .prepare(
+        `SELECT t.id, t.user_id, t.scopes FROM oauth_tokens t
+          WHERE t.client_id = ?${byUser} AND t.scopes LIKE ? AND ${LIVE}`,
+      )
+      .bind(...(args as never[]), like, now, now)
+      .all<{ id: string; user_id: string; scopes: string }>(),
+    db
+      .prepare(
+        `SELECT code, scopes FROM oauth_codes
+          WHERE client_id = ?${byUser} AND scopes LIKE ?`,
+      )
+      .bind(...(args as never[]), like)
+      .all<{ code: string; scopes: string }>(),
+  ]);
+  return {
+    consents: consents.results.filter(carries),
+    tokens: tokens.results.filter(carries),
+    codes: codes.results.filter(carries),
+  };
+}
+
+/** One grant: who it's for, what the app holds now, and how many live
+ *  tokens carry it. Any row of the app-and-account (or app-and-team) pair
+ *  finds the same grant. */
+app.get("/scope-grants/:kind/:id", async (c) => {
+  const kind = readKind(c.req.param("kind"));
+  if (!kind) return c.json({ error: "invalid_grant_kind" }, 400);
+  const db = c.env.DB;
+  const g = await loadGrant(db, kind, c.req.param("id"));
+  if (!g) return c.json({ error: "scope_grant_not_found" }, 404);
+
+  const history =
+    kind === "site"
+      ? db
+          .prepare(
+            `SELECT id, granted_at, scopes AS listed, admin_user_id AS by_id
+               FROM site_scope_grants
+              WHERE client_id = ? AND grantee_user_id = ?
+              ORDER BY granted_at DESC, id DESC`,
+          )
+          .bind(g.client_id, g.grantee_user_id)
+      : db
+          .prepare(
+            `SELECT id, granted_at, permissions AS listed, grantor_user_id AS by_id
+               FROM team_scope_grants
+              WHERE client_id = ? AND team_id = ?
+              ORDER BY granted_at DESC, id DESC`,
+          )
+          .bind(g.client_id, g.team_id);
+
+  const [rows, appRow, holders] = await Promise.all([
+    history.all<{
+      id: string;
+      granted_at: number;
+      listed: string;
+      by_id: string;
+    }>(),
+    db
+      .prepare("SELECT name FROM oauth_apps WHERE client_id = ?")
+      .bind(g.client_id)
+      .first<{ name: string }>(),
+    grantHolders(db, kind, g),
+  ]);
+  const latest = rows.results[0];
+  const first = rows.results[rows.results.length - 1];
+  const userName = async (id: string | null | undefined) =>
+    id
+      ? ((
+          await db
+            .prepare("SELECT username FROM users WHERE id = ?")
+            .bind(id)
+            .first<{ username: string }>()
+        )?.username ?? null)
+      : null;
+
+  const held = heldScopes(
+    kind,
+    [...holders.consents, ...holders.tokens].map((r) => r.scopes),
+    g.team_id,
+  );
+  const base = {
+    kind,
+    id: latest.id,
+    client_id: g.client_id,
+    app_name: appRow?.name ?? null,
+    granted_at: latest.granted_at,
+    first_granted_at: first.granted_at,
+    times_granted: rows.results.length,
+    // What the latest approval listed, for when nothing is held any more.
+    listed: parseScopeList(latest.listed),
+    held_scopes: held,
+    live_tokens: holders.tokens.length,
+    accounts: new Set(
+      [...holders.consents, ...holders.tokens].map((r) => r.user_id),
+    ).size,
+  };
+
+  if (kind === "site")
+    return c.json({
+      grant: {
+        ...base,
+        grantee_user_id: g.grantee_user_id,
+        grantee_username: await userName(g.grantee_user_id),
+      },
+    });
+
+  const [team, role] = await Promise.all([
+    db
+      .prepare("SELECT name FROM teams WHERE id = ?")
+      .bind(g.team_id)
+      .first<{ name: string }>(),
+    db
+      .prepare(
+        "SELECT role FROM team_members WHERE team_id = ? AND user_id = ?",
+      )
+      .bind(g.team_id, latest.by_id)
+      .first<{ role: string }>(),
+  ]);
+  return c.json({
+    grant: {
+      ...base,
+      team_id: g.team_id,
+      team_name: team?.name ?? null,
+      grantor_user_id: latest.by_id,
+      grantor_username: await userName(latest.by_id),
+      // The app acts with this role; null once the grantor has left.
+      grantor_role: role?.role ?? null,
+    },
+  });
+});
+
+/** Withdraw a grant. `:kind` is `site` or `team`.
  *
- *  The tokens already minted under it are left alone on purpose: they are
- *  bound to the application, not to this row, and cutting an application off
- *  is its own operation with its own confirmation. Revoking here stops the
- *  authority from being renewed. */
+ *  Takes the grant's scopes out of every stored approval that has them (an
+ *  approval left with nothing is deleted), deletes the tokens and unused
+ *  codes that carry them, and clears the record. The app keeps anything else
+ *  it was approved for, and has to ask again for the rest. */
 app.delete("/scope-grants/:kind/:id", async (c) => {
-  const kind = c.req.param("kind");
-  if (kind !== "site" && kind !== "team")
-    return c.json({ error: "kind must be site or team" }, 400);
+  const kind = readKind(c.req.param("kind"));
+  if (!kind) return c.json({ error: "invalid_grant_kind" }, 400);
+  const db = c.env.DB;
+  const g = await loadGrant(db, kind, c.req.param("id"));
+  if (!g) return c.json({ error: "scope_grant_not_found" }, 404);
 
-  const table = kind === "site" ? "site_scope_grants" : "team_scope_grants";
-  const row = await c.env.DB.prepare(
-    `SELECT id, client_id FROM ${table} WHERE id = ?`,
-  )
-    .bind(c.req.param("id"))
-    .first<{ id: string; client_id: string }>();
-  if (!row) return c.json({ error: "Grant not found" }, 404);
-
-  await c.env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`)
-    .bind(row.id)
-    .run();
+  const holders = await grantHolders(db, kind, g);
+  const statements = [
+    ...holders.consents.map((row) => {
+      const rest = stripGrant(row.scopes, kind, g.team_id);
+      return rest
+        ? db
+            .prepare("UPDATE oauth_consents SET scopes = ? WHERE id = ?")
+            .bind(rest, row.id)
+        : db.prepare("DELETE FROM oauth_consents WHERE id = ?").bind(row.id);
+    }),
+    ...holders.tokens.map((row) =>
+      db.prepare("DELETE FROM oauth_tokens WHERE id = ?").bind(row.id),
+    ),
+    ...holders.codes.map((row) =>
+      db.prepare("DELETE FROM oauth_codes WHERE code = ?").bind(row.code),
+    ),
+    kind === "site"
+      ? db
+          .prepare(
+            "DELETE FROM site_scope_grants WHERE client_id = ? AND grantee_user_id = ?",
+          )
+          .bind(g.client_id, g.grantee_user_id)
+      : db
+          .prepare(
+            "DELETE FROM team_scope_grants WHERE client_id = ? AND team_id = ?",
+          )
+          .bind(g.client_id, g.team_id),
+  ];
+  await db.batch(statements);
 
   auditOps(
     c,
     "admin.scope_grant.revoke",
-    { kind, client_id: row.client_id },
-    { type: "scope_grant", id: row.id, name: row.client_id },
+    {
+      kind,
+      client_id: g.client_id,
+      ...(kind === "site"
+        ? { user_id: g.grantee_user_id }
+        : { team_id: g.team_id }),
+      approvals: holders.consents.length,
+      tokens: holders.tokens.length,
+    },
+    { type: "scope_grant", id: g.id, name: g.client_id },
   );
-  return c.json({ message: "Grant revoked" });
+  return c.json({
+    approvals: holders.consents.length,
+    tokens: holders.tokens.length,
+  });
 });
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────

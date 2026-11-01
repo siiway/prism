@@ -1561,7 +1561,7 @@
       "invites": "Invitations to join this instance and its teams.",
       "apps": "OAuth applications registered by any user or team.",
       "connections": "Third-party providers people can sign in with and link.",
-      "scopeGrants": "The most powerful permissions apps can hold. Revoking stops renewal; revoke the app itself to end its current tokens.",
+      "scopeGrants": "The most powerful permissions apps hold. Revoking one takes it away at once.",
       "domains": "Domains claimed by users and teams, and their verification state.",
       "settings": {
         "general": "Site identity, security contact and rendering.",
@@ -2202,10 +2202,8 @@
     "teamGrantsTab": "Team",
     "permissionsHeader": "Permissions",
     "grantedByHeader": "Granted by",
-    "noScopeGrants": "No grants.",
     "unknownApp": "Unknown application",
     "revokeGrantTitle": "Revoke this grant?",
-    "revokeGrantBody": "{{app}} loses this permission. Its current tokens work until they expire; revoke the app under Applications to end them now.",
     "sessionsSection": "Sessions",
     "endAllSessions": "End all sessions",
     "noSessions": "No active sessions.",
@@ -2434,7 +2432,36 @@
     "teamFilter": "Show",
     "teamFilterAll": "All teams",
     "teamFilterInviteSignup": "Invite sign-up allowed",
-    "teamFilterConvert": "Converting overridden"
+    "teamFilterConvert": "Converting overridden",
+    "grantAccountHeader": "Account",
+    "searchSiteGrants": "Search by app or account",
+    "searchTeamGrants": "Search by app or team",
+    "noSiteGrants": "No app holds site-wide access.",
+    "noTeamGrants": "No app holds team access.",
+    "grantRevokedToast": "Revoked {{app}}'s grant.",
+    "siteGrantBadge": "Site grant",
+    "teamGrantBadge": "Team grant",
+    "grantNotHeld": "No longer held",
+    "grantNotHeldDesc": "The app no longer holds any of these. This is what it was last approved for.",
+    "grantDetailsTitle": "Grant",
+    "siteGrantDesc": "The app acts across the whole instance as this account.",
+    "teamGrantDesc": "The app acts in this team, limited to what the person who approved it can do.",
+    "grantAccountDesc": "The site admin who approved it. The app acts as them.",
+    "grantorRoleDesc": "Currently {{role}} in the team. The app can't do more than they can.",
+    "grantorGoneDesc": "No longer in the team, so the app can't make changes there.",
+    "grantTimesDesc_one": "Approved {{count}} time since {{date}}",
+    "grantTokensLabel": "Live tokens",
+    "grantTokensDesc": "Tokens carrying these scopes that still work or can be refreshed.",
+    "grantAccountsDesc_one": "Tokens carrying these permissions that still work or can be refreshed, across {{count}} account.",
+    "revokeGrantLabel": "Revoke this grant",
+    "revokeGrantDesc": "Takes these scopes out of the app's approvals and deletes the tokens that carry them. The app keeps anything else it was approved for, and has to ask again for these.",
+    "revokeGrantBody_one": "{{app}} loses these scopes now, and {{count}} live token that carries them is deleted.",
+    "revokeGrantFailed": "Couldn't revoke the grant.",
+    "grantDangerTitle": "Danger zone",
+    "grantTimesDesc": "Approved {{count}} times since {{date}}",
+    "grantAccountsDesc": "Tokens carrying these permissions that still work or can be refreshed, across {{count}} accounts.",
+    "revokeGrantBody": "{{app}} loses these scopes now, and {{count}} live tokens that carry them are deleted.",
+    "grantAppHeader": "Application"
   },
   "webhooks": {
     "title": "Webhooks",
@@ -2848,5 +2875,9 @@
       "results": "Results"
     },
     "searching": "Searching…"
+  },
+  "apiErrors": {
+    "scope_grant_not_found": "This grant doesn't exist or was already revoked.",
+    "invalid_grant_kind": "Unknown grant type."
   }
 }
