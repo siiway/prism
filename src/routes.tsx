@@ -8,7 +8,8 @@
 // the route-tree skeleton; each page's code arrives on demand (and is fetched
 // alongside the SSR HTML for first paint).
 
-import { redirect, type RouteObject } from "react-router-dom";
+import type { ComponentType } from "react";
+import { redirect, useParams, type RouteObject } from "react-router-dom";
 import type { QueryClient } from "@tanstack/react-query";
 import { Layout } from "./components/Layout";
 import type { AuthStore } from "./store/auth";
@@ -30,6 +31,19 @@ export interface RouteContext {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** A detail page that starts over when its record changes. React Router
+ *  reuses the component when only the params change (e.g. jumping from one
+ *  app to another from the command palette), which would carry one record's
+ *  unsaved edits onto the next and let a save send them there. */
+function perRecord(Page: ComponentType): ComponentType {
+  function PerRecord() {
+    const params = useParams();
+    return <Page key={JSON.stringify(params)} />;
+  }
+  PerRecord.displayName = `PerRecord(${Page.displayName ?? Page.name})`;
+  return PerRecord;
+}
 
 function getAuth(ctx: RouteContext) {
   return { user: ctx.authStore.getState().user };
@@ -355,7 +369,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           },
           lazy: () =>
             import("./pages/apps/AppDetail").then((m) => ({
-              Component: m.AppDetail,
+              Component: perRecord(m.AppDetail),
             })),
         },
         {
@@ -389,7 +403,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           },
           lazy: () =>
             import("./pages/teams/TeamDetail").then((m) => ({
-              Component: m.TeamDetail,
+              Component: perRecord(m.TeamDetail),
             })),
         },
         {
@@ -421,7 +435,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           },
           lazy: () =>
             import("./pages/domains/DomainDetail").then((m) => ({
-              Component: m.DomainDetail,
+              Component: perRecord(m.DomainDetail),
             })),
         },
         {
@@ -443,7 +457,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           },
           lazy: () =>
             import("./pages/domains/DomainDetail").then((m) => ({
-              Component: m.DomainDetail,
+              Component: perRecord(m.DomainDetail),
             })),
         },
         {
@@ -541,7 +555,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
               path: "users/:id",
               lazy: () =>
                 import("./pages/admin/AdminUserDetail").then((m) => ({
-                  Component: m.AdminUserDetail,
+                  Component: perRecord(m.AdminUserDetail),
                 })),
             },
             {
@@ -590,7 +604,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
               path: "invites/:id",
               lazy: () =>
                 import("./pages/admin/AdminInviteDetail").then((m) => ({
-                  Component: m.AdminInviteDetail,
+                  Component: perRecord(m.AdminInviteDetail),
                 })),
             },
             {
@@ -611,7 +625,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
               path: "connections/:id",
               lazy: () =>
                 import("./pages/admin/sources/SourceDetail").then((m) => ({
-                  Component: m.SourceDetail,
+                  Component: perRecord(m.SourceDetail),
                 })),
             },
             {
@@ -660,7 +674,7 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
               path: "scope-grants/:kind/:id",
               lazy: () =>
                 import("./pages/admin/AdminScopeGrantDetail").then((m) => ({
-                  Component: m.AdminScopeGrantDetail,
+                  Component: perRecord(m.AdminScopeGrantDetail),
                 })),
             },
             {
