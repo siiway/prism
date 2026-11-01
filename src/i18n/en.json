@@ -1119,7 +1119,16 @@
     "refreshedFrom": "Refreshed {{provider}} account info.",
     "detailNickname": "Nickname: {{value}}",
     "detailUsername": "Username: {{value}}",
-    "detailId": "ID: {{value}}"
+    "detailId": "ID: {{value}}",
+    "noProvidersTitle": "Nothing to link yet",
+    "noProvidersDesc": "This site doesn't offer any sign-in providers, like GitHub or Google, yet. Once an administrator adds one, you can link that account here and use it to sign in.",
+    "noProvidersAdminDesc": "Let people sign in with an account they already have, like GitHub or Google, and link it here.",
+    "setUpProviders": "Set up providers",
+    "providerDisabled": "Turned off by admin",
+    "noProvidersAdminTitle": "Set up a sign-in provider",
+    "setupStep1": "Register an OAuth app with the provider, such as GitHub or Google.",
+    "setupStep2": "Add its client ID and secret under Admin panel → OAuth sources.",
+    "setupStep3": "People can then link it here and use it to sign in."
   },
   "tokens": {
     "title": "Personal access tokens",

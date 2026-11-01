@@ -190,6 +190,83 @@ export function TokenArt() {
   );
 }
 
+function ProviderRow({ y, active }: { y: number; active?: boolean }) {
+  return (
+    <g>
+      <rect
+        x="40"
+        y={y}
+        width="160"
+        height="26"
+        rx="6"
+        style={
+          active
+            ? {
+                ...panel,
+                stroke: "var(--colorBrandBackground)",
+                strokeDasharray: "4 3",
+              }
+            : panel
+        }
+      />
+      <rect
+        x="50"
+        y={y + 6}
+        width="14"
+        height="14"
+        rx="4"
+        style={active ? accent : bar}
+      />
+      <rect x="72" y={y + 10} width="58" height="6" rx="3" style={bar} />
+      {/* A switch, on for the provider being added. */}
+      <rect
+        x="166"
+        y={y + 7}
+        width="22"
+        height="12"
+        rx="6"
+        style={active ? accent : bar}
+      />
+      <circle
+        cx={active ? 182 : 172}
+        cy={y + 13}
+        r="4"
+        style={active ? onAccentFill : panel}
+      />
+    </g>
+  );
+}
+
+/** A settings list of sign-in providers, one being switched on: setting up
+ *  providers (shown to admins). */
+export function ProviderSetupArt() {
+  return (
+    <svg viewBox="0 0 240 150" aria-hidden>
+      <rect x="26" y="16" width="188" height="118" rx="8" style={dashed} />
+      <rect x="40" y="28" width="70" height="6" rx="3" style={bar} />
+      <ProviderRow y={44} active />
+      <ProviderRow y={76} />
+      <ProviderRow y={108} />
+    </svg>
+  );
+}
+
+/** A profile with an empty, dashed slot beside it: nothing to link yet
+ *  (shown to people who can't set providers up themselves). */
+export function NoProvidersArt() {
+  return (
+    <svg viewBox="0 0 240 150" aria-hidden>
+      <rect x="34" y="47" width="56" height="56" rx="10" style={panel} />
+      <circle cx="62" cy="68" r="9" style={bar} />
+      <rect x="48" y="84" width="28" height="5" rx="2.5" style={bar} />
+      <rect x="150" y="47" width="56" height="56" rx="10" style={dashed} />
+      <path d="M92 75 h56" style={dashed} />
+      <circle cx="120" cy="75" r="11" style={panel} />
+      <path d="M115 75 h10" style={{ ...line, strokeLinecap: "round" }} />
+    </svg>
+  );
+}
+
 /** A user at the centre with apps attached: apps you've authorized. */
 export function ConnectedAppsArt() {
   return (

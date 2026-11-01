@@ -1119,7 +1119,16 @@
     "refreshedFrom": "已刷新 {{provider}} 关联信息。",
     "detailNickname": "平台昵称：{{value}}",
     "detailUsername": "用户名：{{value}}",
-    "detailId": "ID：{{value}}"
+    "detailId": "ID：{{value}}",
+    "noProvidersTitle": "暂时没有可关联的账号",
+    "noProvidersDesc": "本站尚未提供 GitHub、Google 等登录方式。管理员添加后，你可以在这里关联对应账号，并用它登录。",
+    "noProvidersAdminDesc": "让用户使用已有账号（如 GitHub、Google）登录，并在这里关联。",
+    "setUpProviders": "配置登录方式",
+    "providerDisabled": "已被管理员关闭",
+    "noProvidersAdminTitle": "设置登录方式",
+    "setupStep1": "在 GitHub、Google 等平台注册一个 OAuth 应用。",
+    "setupStep2": "在 管理面板 → OAuth 来源 中填写它的客户端 ID 和密钥。",
+    "setupStep3": "之后用户就可以在这里关联该账号，并用它登录。"
   },
   "tokens": {
     "title": "个人访问令牌",

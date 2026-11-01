@@ -26,13 +26,17 @@ import {
   GlobeRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/api";
 import { useApi } from "../lib/api-context";
+import { GetStartedPanel } from "../components/GetStartedPanel";
+import { NoProvidersArt, ProviderSetupArt } from "../components/Illustrations";
 import { PageHeader } from "../components/PageHeader";
 import { SkeletonAppCards } from "../components/Skeletons";
 import { useToastMessage } from "../lib/useToastMessage";
+import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
   grid: {
@@ -99,7 +103,19 @@ const useStyles = makeStyles({
 // URL is pre-proxied by /api/site so no client-side proxy registration is
 // needed here.
 function ProviderIcon({ url, alt }: { url: string; alt: string }) {
-  return <Image src={url} alt={alt} width={24} height={24} fit="contain" />;
+  // A dead icon URL would otherwise show the browser's broken-image glyph.
+  const [failed, setFailed] = useState(false);
+  if (failed) return <GlobeRegular style={{ fontSize: 20 }} />;
+  return (
+    <Image
+      src={url}
+      alt={alt}
+      width={24}
+      height={24}
+      fit="contain"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -236,6 +252,8 @@ export function Connections() {
   const styles = useStyles();
   const qc = useQueryClient();
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const isAdmin = useAuthStore((s) => s.user?.role === "admin");
   const { data: connectionsData, isLoading: connsLoading } = useQuery({
     queryKey: ["connections"],
     queryFn: api.listConnections,
@@ -340,6 +358,25 @@ export function Connections() {
   const providerTypeBySlug = new Map(
     providers.map((p) => [p.slug, p.provider]),
   );
+  // Accounts linked through a provider an admin has since turned off still
+  // exist; list them so they can be seen and disconnected.
+  const disabledSlugs = [
+    ...new Set((connectionsData?.connections ?? []).map((c) => c.provider)),
+  ].filter((slug) => !providers.some((p) => p.slug === slug));
+  const cards = [
+    ...providers.map((p) => ({
+      slug: p.slug,
+      name: p.name,
+      iconUrl: p.icon_proxied_url ?? null,
+      enabled: true,
+    })),
+    ...disabledSlugs.map((slug) => ({
+      slug,
+      name: slug,
+      iconUrl: null,
+      enabled: false,
+    })),
+  ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -357,10 +394,41 @@ export function Connections() {
 
       {isLoading ? <SkeletonAppCards count={4} /> : null}
 
+      {/* Nothing to link. An admin can fix that, so they get the steps;
+          everyone else just learns why the page is empty. */}
+      {!isLoading &&
+        cards.length === 0 &&
+        (isAdmin ? (
+          <GetStartedPanel
+            art={<ProviderSetupArt />}
+            title={t("connections.noProvidersAdminTitle")}
+            description={t("connections.noProvidersAdminDesc")}
+            steps={[
+              t("connections.setupStep1"),
+              t("connections.setupStep2"),
+              t("connections.setupStep3"),
+            ]}
+            action={
+              <Button
+                appearance="primary"
+                onClick={() => navigate("/admin/connections")}
+              >
+                {t("connections.setUpProviders")}
+              </Button>
+            }
+          />
+        ) : (
+          <GetStartedPanel
+            art={<NoProvidersArt />}
+            title={t("connections.noProvidersTitle")}
+            description={t("connections.noProvidersDesc")}
+          />
+        ))}
+
       <div className={styles.grid} style={isLoading ? { display: "none" } : {}}>
-        {providers.map((p) => {
+        {cards.map((p) => {
           const conns = getConnections(p.slug);
-          const providerIconUrl = p.icon_proxied_url ?? null;
+          const providerIconUrl = p.iconUrl;
 
           return (
             <div key={p.slug} className={styles.providerCard}>
@@ -376,7 +444,11 @@ export function Connections() {
                   <Text weight="semibold" block>
                     {p.name}
                   </Text>
-                  {conns.length > 0 ? (
+                  {!p.enabled ? (
+                    <Badge color="warning" appearance="tint" size="small">
+                      {t("connections.providerDisabled")}
+                    </Badge>
+                  ) : conns.length > 0 ? (
                     <Badge color="success" appearance="tint" size="small">
                       {t("connections.connected", { count: conns.length })}
                     </Badge>
@@ -393,6 +465,7 @@ export function Connections() {
                 const displayName = details.display;
                 const profileAvatar = getProfileAvatarUrl(conn);
                 const canRefresh =
+                  p.enabled &&
                   providerTypeBySlug.get(conn.provider) !== "telegram";
                 return (
                   <div key={conn.id} className={styles.connRow}>
@@ -549,16 +622,18 @@ export function Connections() {
                 );
               })}
 
-              <Button
-                appearance="outline"
-                size="small"
-                icon={<AddRegular />}
-                onClick={() => handleConnect(p.slug)}
-              >
-                {conns.length > 0
-                  ? t("connections.addAnother", { provider: p.name })
-                  : t("connections.connect", { provider: p.name })}
-              </Button>
+              {p.enabled && (
+                <Button
+                  appearance="outline"
+                  size="small"
+                  icon={<AddRegular />}
+                  onClick={() => handleConnect(p.slug)}
+                >
+                  {conns.length > 0
+                    ? t("connections.addAnother", { provider: p.name })
+                    : t("connections.connect", { provider: p.name })}
+                </Button>
+              )}
             </div>
           );
         })}
