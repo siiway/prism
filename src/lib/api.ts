@@ -4051,7 +4051,8 @@ export interface AdminD1SecretsMigrateResult {
 }
 
 export interface AdminUserList {
-  users: (UserProfile & { app_count: number })[];
+  /** `is_active` is the raw 0/1 column here. */
+  users: (UserProfile & { app_count: number; is_active: number | boolean })[];
   total: number;
   page: number;
   limit: number;
