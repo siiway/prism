@@ -2780,6 +2780,25 @@ app.post("/invites", async (c) => {
   );
 
   return c.json(
+app.get("/invites/:id", async (c) => {
+  const invite = await c.env.DB.prepare(
+    `SELECT i.*, u.username AS created_by_username
+     FROM site_invites i
+     LEFT JOIN users u ON u.id = i.created_by
+     WHERE i.id = ?`,
+  )
+    .bind(c.req.param("id"))
+    .first<SiteInviteRow & { created_by_username: string | null }>();
+  if (!invite) return c.json({ error: "Invite not found" }, 404);
+  return c.json({
+    invite: {
+      ...invite,
+      enabled: isInviteEnabled(invite.enabled),
+      token_available: !isHashedSecret(invite.token),
+    },
+  });
+});
+
     { invite: { id, token, invite_url: inviteUrl, enabled: true } },
     201,
   );

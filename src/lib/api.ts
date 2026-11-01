@@ -2427,6 +2427,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   }) =>
     request<{ invite: { id: string; token: string; invite_url: string } }>(
       "POST",
+  adminGetInvite: (id: string) =>
+    request<{ invite: SiteInvite }>(
+      "GET",
+      `/admin/invites/${encodeURIComponent(id)}`,
+      undefined,
+      getToken(),
+    ),
       "/admin/invites",
       body,
       getToken(),

@@ -1,6 +1,6 @@
 // New site invite (/admin/invites/new): a link that lets someone register
-// while sign-up is invite-only. After creating, the page shows the link once
-// so it can be copied.
+// while sign-up is invite-only. Creating lands on the invite's page, which
+// shows the link to copy.
 
 import {
   Button,
@@ -10,7 +10,6 @@ import {
   Spinner,
   Switch,
   makeStyles,
-  tokens,
 } from "@fluentui/react-components";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -18,30 +17,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
-import { CopyButton } from "../../components/CopyButton";
 import { FormPage } from "../../components/FormPage";
 
 const useStyles = makeStyles({
   grid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    alignItems: "start",
     gap: "16px",
     "@media (max-width: 600px)": { gridTemplateColumns: "1fr" },
-  },
-  link: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px 8px 8px 12px",
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    borderRadius: tokens.borderRadiusLarge,
-  },
-  url: {
-    flex: 1,
-    minWidth: 0,
-    fontFamily: tokens.fontFamilyMonospace,
-    fontSize: tokens.fontSizeBase200,
-    overflowWrap: "anywhere",
   },
 });
 
@@ -62,7 +46,6 @@ export function AdminInviteNew() {
   const [form, setForm] = useState(EMPTY);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-  const [created, setCreated] = useState<string | null>(null);
 
   const set = (key: keyof typeof EMPTY) => (_: unknown, d: { value: string }) =>
     setForm((f) => ({ ...f, [key]: d.value }));
@@ -82,49 +65,17 @@ export function AdminInviteNew() {
         send_email: !!form.email.trim() && form.send_email,
       });
       await qc.invalidateQueries({ queryKey: ["admin", "invites"] });
-      setCreated(res.invite.invite_url);
+      navigate(`/admin/invites/${res.invite.id}`, {
+        replace: true,
+        state: { created: true },
+      });
     } catch (err) {
       setError(
         err instanceof ApiError ? err.message : t("admin.inviteCreateFailed"),
       );
-    } finally {
       setCreating(false);
     }
   };
-
-  if (created) {
-    return (
-      <FormPage
-        backTo="/admin/invites"
-        backLabel={t("admin.invitesTab")}
-        title={t("admin.inviteCreatedTitle")}
-        subtitle={t("admin.inviteCreatedDesc")}
-        actions={
-          <>
-            <Button
-              onClick={() => {
-                setCreated(null);
-                setForm(EMPTY);
-              }}
-            >
-              {t("admin.inviteCreateAnother")}
-            </Button>
-            <Button
-              appearance="primary"
-              onClick={() => navigate("/admin/invites")}
-            >
-              {t("common.done")}
-            </Button>
-          </>
-        }
-      >
-        <div className={styles.link}>
-          <span className={styles.url}>{created}</span>
-          <CopyButton text={created} label={t("admin.copyInviteLink")} />
-        </div>
-      </FormPage>
-    );
-  }
 
   return (
     <FormPage

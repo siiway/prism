@@ -1,42 +1,25 @@
 // Admin invites. Site invites let someone register while sign-up is
 // invite-only; team invites add people to a team (and, when granted, create
 // accounts too). Different lifecycles, same question when one leaks, so they
-// share a page, switched in ?view=. New site invites open /admin/invites/new;
-// editing one opens in place under its row.
+// share a page, switched in ?view=. A site invite opens on its own page
+// (/admin/invites/:id); new ones start at /admin/invites/new.
 
 import {
   Badge,
   Button,
-  Field,
-  Input,
-  Menu,
-  MenuDivider,
-  MenuItem,
-  MenuList,
-  MenuPopover,
-  MenuTrigger,
   Skeleton,
   SkeletonItem,
-  Spinner,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  AddRegular,
-  DeleteRegular,
-  MailRegular,
-  MoreHorizontalRegular,
-} from "@fluentui/react-icons";
-import { Fragment, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AddRegular, MailRegular } from "@fluentui/react-icons";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type SiteInvite } from "../../lib/api";
 import { useApi, useAppOrigin } from "../../lib/api-context";
 import { formatDate } from "../../lib/datetime";
-import { useConfirm } from "../../lib/useConfirm";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
-import { useToastMessage } from "../../lib/useToastMessage";
 import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
@@ -44,53 +27,33 @@ import {
   DataListRow,
   type DataListColumn,
 } from "../../components/DataList";
+import { CopyButton } from "../../components/CopyButton";
 import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
 import { Pagination } from "../../components/Pagination";
 import { Segmented } from "../../components/Segmented";
-import { SettingsToast } from "../../components/Settings";
 import { AdminTeamInvites } from "./AdminTeamInvites";
+import { InviteModeBanner } from "./InviteModeBanner";
 
 const PAGE_SIZE = 20;
 
 const useStyles = makeStyles({
-  toast: { position: "sticky", top: "8px", zIndex: 2, marginBottom: "12px" },
   views: { display: "flex", marginBottom: "12px" },
   badges: { display: "flex", gap: "4px", flexWrap: "wrap" },
-  edit: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    gap: "12px 16px",
-    padding: "16px",
-    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    background: tokens.colorNeutralBackground2,
-    "@media (max-width: 600px)": { gridTemplateColumns: "1fr" },
+  banner: { marginBottom: "12px" },
+  name: {
+    color: tokens.colorNeutralForeground1,
+    textDecorationLine: "none",
+    ":hover": { textDecorationLine: "underline" },
   },
-  editActions: {
-    gridColumn: "1 / -1",
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: "8px",
-  },
-  danger: { color: tokens.colorPaletteRedForeground1 },
 });
-
-type EditForm = {
-  email: string;
-  note: string;
-  max_uses: string;
-  expires_in_days: string;
-};
 
 function SiteInvites() {
   const api = useApi();
   const styles = useStyles();
   const navigate = useNavigate();
   const origin = useAppOrigin();
-  const qc = useQueryClient();
   const { t } = useTranslation();
-  const { message, showMsg } = useToastMessage();
-  const { confirm, confirmDialog } = useConfirm();
 
   const [page, setPage] = useState(1);
   const { query, setQuery, search } = useDebouncedSearch(() => setPage(1));
@@ -114,91 +77,6 @@ function SiteInvites() {
     return () => clearInterval(id);
   }, []);
 
-  const [busy, setBusy] = useState<string | null>(null);
-  const run = async (
-    id: string,
-    action: () => Promise<unknown>,
-    done: string,
-  ) => {
-    setBusy(id);
-    try {
-      await action();
-      await qc.invalidateQueries({ queryKey: ["admin", "invites"] });
-      showMsg("success", done);
-      return true;
-    } catch (err) {
-      showMsg(
-        "error",
-        err instanceof ApiError ? err.message : t("admin.inviteUpdateFailed"),
-      );
-      return false;
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  // ── Inline edit ────────────────────────────────────────────────────────────
-  const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState<EditForm>({
-    email: "",
-    note: "",
-    max_uses: "",
-    expires_in_days: "",
-  });
-  const startEdit = (inv: SiteInvite) => {
-    setEditing(inv.id);
-    setForm({
-      email: inv.email ?? "",
-      note: inv.note ?? "",
-      max_uses: inv.max_uses?.toString() ?? "",
-      expires_in_days: inv.expires_at
-        ? String(Math.max(1, Math.ceil((inv.expires_at - now) / 86400)))
-        : "",
-    });
-  };
-  const saveEdit = async (inv: SiteInvite) => {
-    const ok = await run(
-      inv.id,
-      () =>
-        api.adminUpdateInvite(inv.id, {
-          email: form.email.trim() || null,
-          note: form.note.trim() || null,
-          max_uses: form.max_uses.trim() ? Number(form.max_uses) : null,
-          expires_in_days: form.expires_in_days.trim()
-            ? Number(form.expires_in_days)
-            : null,
-        }),
-      t("admin.inviteSaved"),
-    );
-    if (ok) setEditing(null);
-  };
-  const field = (key: keyof EditForm) => ({
-    value: form[key],
-    onChange: (_: unknown, d: { value: string }) =>
-      setForm((f) => ({ ...f, [key]: d.value })),
-  });
-
-  const revoke = async (inv: SiteInvite) => {
-    const ok = await confirm({
-      title: t("admin.inviteRevokeConfirm"),
-      body: t("admin.inviteRevokeBody"),
-      confirmLabel: t("admin.inviteRevoke"),
-    });
-    if (ok)
-      await run(
-        inv.id,
-        () => api.adminRevokeInvite(inv.id),
-        t("admin.inviteRevoked"),
-      );
-  };
-
-  const copyLink = async (inv: SiteInvite) => {
-    await navigator.clipboard.writeText(
-      `${origin}/register?invite=${inv.token}`,
-    );
-    showMsg("success", t("admin.inviteCopied"));
-  };
-
   const columns: DataListColumn[] = [
     { label: t("admin.inviteFor"), width: "minmax(0, 2fr)" },
     { label: t("admin.inviteUses"), width: "90px", secondary: true },
@@ -208,16 +86,13 @@ function SiteInvites() {
       width: "minmax(0, 1fr)",
       secondary: true,
     },
+    // Copy the link without opening the invite.
     { label: "", width: "32px", end: true },
   ];
 
   return (
     <>
-      {message && (
-        <div className={styles.toast}>
-          <SettingsToast message={message} />
-        </div>
-      )}
+      <InviteModeBanner className={styles.banner} />
 
       <ListSearch
         value={query}
@@ -257,163 +132,78 @@ function SiteInvites() {
         <>
           <DataList columns={columns}>
             {invites.map((inv) => {
+              const path = `/admin/invites/${inv.id}`;
               const expired = inv.expires_at !== null && inv.expires_at < now;
               const usedUp =
                 inv.max_uses !== null && inv.use_count >= inv.max_uses;
               return (
-                <Fragment key={inv.id}>
-                  <DataListRow
-                    cells={[
-                      <DataListName
-                        key="who"
-                        name={inv.email ?? t("admin.inviteAnyone")}
-                        sub={inv.note ?? undefined}
-                        badges={
-                          <span className={styles.badges}>
-                            {!inv.enabled && (
-                              <Badge
-                                appearance="tint"
-                                color="danger"
-                                size="small"
-                              >
-                                {t("admin.inviteDisabled")}
-                              </Badge>
-                            )}
-                            {expired && (
-                              <Badge
-                                appearance="tint"
-                                color="warning"
-                                size="small"
-                              >
-                                {t("admin.inviteExpired")}
-                              </Badge>
-                            )}
-                            {usedUp && (
-                              <Badge
-                                appearance="tint"
-                                color="warning"
-                                size="small"
-                              >
-                                {t("admin.inviteUsedUp")}
-                              </Badge>
-                            )}
-                          </span>
-                        }
-                      />,
-                      inv.max_uses !== null
-                        ? `${inv.use_count} / ${inv.max_uses}`
-                        : `${inv.use_count} / ∞`,
-                      inv.expires_at
-                        ? formatDate(inv.expires_at)
-                        : t("admin.inviteNoExpiry"),
-                      inv.created_by_username
-                        ? `@${inv.created_by_username}`
-                        : inv.created_by,
-                      <Menu key="m">
-                        <MenuTrigger disableButtonEnhancement>
-                          <Button
-                            size="small"
-                            appearance="subtle"
-                            icon={
-                              busy === inv.id ? (
-                                <Spinner size="tiny" />
-                              ) : (
-                                <MoreHorizontalRegular />
-                              )
-                            }
-                            disabled={busy === inv.id}
-                            aria-label={t("admin.inviteActions")}
-                          />
-                        </MenuTrigger>
-                        <MenuPopover>
-                          <MenuList>
-                            <MenuItem
-                              disabled={inv.token_available === false}
-                              onClick={() => void copyLink(inv)}
-                            >
-                              {inv.token_available === false
-                                ? t("admin.hashedInviteCopyHint")
-                                : t("admin.copyInviteLink")}
-                            </MenuItem>
-                            <MenuItem onClick={() => startEdit(inv)}>
-                              {t("common.edit")}
-                            </MenuItem>
-                            <MenuItem
-                              onClick={() =>
-                                void run(
-                                  inv.id,
-                                  () =>
-                                    api.adminUpdateInvite(inv.id, {
-                                      enabled: !inv.enabled,
-                                    }),
-                                  inv.enabled
-                                    ? t("admin.inviteDisabledDone")
-                                    : t("admin.inviteEnabledDone"),
-                                )
-                              }
-                            >
-                              {inv.enabled
-                                ? t("admin.disableInvite")
-                                : t("admin.enableInvite")}
-                            </MenuItem>
-                            <MenuDivider />
-                            <MenuItem
-                              icon={<DeleteRegular />}
-                              className={styles.danger}
-                              onClick={() => void revoke(inv)}
-                            >
-                              {t("admin.inviteRevoke")}
-                            </MenuItem>
-                          </MenuList>
-                        </MenuPopover>
-                      </Menu>,
-                    ]}
-                  />
-                  {editing === inv.id && (
-                    <form
-                      className={styles.edit}
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        void saveEdit(inv);
-                      }}
-                    >
-                      <Field label={t("admin.inviteEmail")}>
-                        <Input type="email" autoFocus {...field("email")} />
-                      </Field>
-                      <Field label={t("admin.inviteNote")}>
-                        <Input {...field("note")} />
-                      </Field>
-                      <Field label={t("admin.inviteMaxUses")}>
-                        <Input
-                          type="number"
-                          min={1}
-                          placeholder={t("admin.inviteUnlimited")}
-                          {...field("max_uses")}
-                        />
-                      </Field>
-                      <Field label={t("admin.inviteExpiresIn")}>
-                        <Input
-                          type="number"
-                          min={1}
-                          placeholder={t("admin.inviteNoExpiry")}
-                          {...field("expires_in_days")}
-                        />
-                      </Field>
-                      <div className={styles.editActions}>
-                        <Button type="button" onClick={() => setEditing(null)}>
-                          {t("common.cancel")}
-                        </Button>
-                        <Button
-                          type="submit"
-                          appearance="primary"
-                          disabled={busy === inv.id}
+                <DataListRow
+                  key={inv.id}
+                  onClick={() => navigate(path)}
+                  cells={[
+                    <DataListName
+                      key="who"
+                      name={
+                        // A real link: keyboard, middle-click, new tab.
+                        <Link
+                          to={path}
+                          className={styles.name}
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          {t("common.save")}
-                        </Button>
-                      </div>
-                    </form>
-                  )}
-                </Fragment>
+                          {inv.email ?? t("admin.inviteAnyone")}
+                        </Link>
+                      }
+                      sub={inv.note ?? undefined}
+                      badges={
+                        <span className={styles.badges}>
+                          {!inv.enabled && (
+                            <Badge
+                              appearance="tint"
+                              color="danger"
+                              size="small"
+                            >
+                              {t("admin.inviteDisabled")}
+                            </Badge>
+                          )}
+                          {expired && (
+                            <Badge
+                              appearance="tint"
+                              color="warning"
+                              size="small"
+                            >
+                              {t("admin.inviteExpired")}
+                            </Badge>
+                          )}
+                          {usedUp && (
+                            <Badge
+                              appearance="tint"
+                              color="warning"
+                              size="small"
+                            >
+                              {t("admin.inviteUsedUp")}
+                            </Badge>
+                          )}
+                        </span>
+                      }
+                    />,
+                    `${inv.use_count} / ${inv.max_uses ?? "∞"}`,
+                    inv.expires_at
+                      ? formatDate(inv.expires_at)
+                      : t("admin.inviteNoExpiry"),
+                    inv.created_by_username
+                      ? `@${inv.created_by_username}`
+                      : inv.created_by,
+                    // Legacy hashed invites have no link to copy.
+                    <span key="copy" onClick={(e) => e.stopPropagation()}>
+                      {inv.token_available !== false && (
+                        <CopyButton
+                          text={`${origin}/register?invite=${inv.token}`}
+                          label={t("admin.copyInviteLink")}
+                        />
+                      )}
+                    </span>,
+                  ]}
+                />
               );
             })}
           </DataList>
@@ -428,8 +218,6 @@ function SiteInvites() {
           )}
         </>
       )}
-
-      {confirmDialog}
     </>
   );
 }
