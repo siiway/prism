@@ -45,6 +45,14 @@ import {
 } from "../lib/notifications";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { verifyAnyTotp } from "../lib/totp";
+import type {
+  OAuthSourceRow,
+  SiteInviteRow,
+  SocialConnectionRow,
+  SocialOAuthStateRow,
+  UserRow,
+  Variables,
+} from "../types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,14 +77,6 @@ interface PendingState {
     avatar_url: string | null;
   }>;
 }
-import type {
-  OAuthSourceRow,
-  SiteInviteRow,
-  SocialConnectionRow,
-  SocialOAuthStateRow,
-  UserRow,
-  Variables,
-} from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();

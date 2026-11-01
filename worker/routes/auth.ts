@@ -60,6 +60,7 @@ import {
 } from "../lib/loginRateLimit";
 import { requireAuth } from "../middleware/auth";
 import { proxyImageUrl } from "../lib/proxyImage";
+import { toSessionUser } from "../lib/sessionUser";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -71,7 +72,6 @@ import {
   releaseSiteInvite,
 } from "../lib/siteInvite";
 import type {
-  AuthUser,
   PasskeyRow,
   SiteInviteRow,
   TotpAuthenticatorRow,
@@ -317,7 +317,10 @@ app.post("/register", async (c) => {
 
   const ttl = config.session_ttl_days * 24 * 60 * 60;
   await issueSession(c, user, ttl, ["pwd"]);
-  return c.json({ user: await safeUser(c.env.APP_URL, c.env.DB, user) }, 201);
+  return c.json(
+    { user: await toSessionUser(c.env.APP_URL, c.env.DB, user) },
+    201,
+  );
 });
 
 // ─── Login ───────────────────────────────────────────────────────────────────
@@ -551,7 +554,7 @@ app.post("/login", async (c) => {
   const usedTotp = (totpCount?.n ?? 0) > 0;
   await issueSession(c, user, ttl, usedTotp ? ["pwd", "otp", "mfa"] : ["pwd"]);
   return c.json({
-    user: await safeUser(c.env.APP_URL, c.env.DB, user),
+    user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });
 });
 
@@ -1245,7 +1248,7 @@ app.post("/passkey/auth/finish", async (c) => {
   // Passkey sign-in is a hardware/software cryptographic authenticator.
   await issueSession(c, user, ttl, ["webauthn"]);
   return c.json({
-    user: await safeUser(c.env.APP_URL, c.env.DB, user),
+    user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });
 });
 
@@ -1828,29 +1831,8 @@ app.post("/gpg-login", async (c) => {
   const ttl = gpgLoginConfig.session_ttl_days * 24 * 60 * 60;
   await issueSession(c, user, ttl);
   return c.json({
-    user: await safeUser(c.env.APP_URL, c.env.DB, user),
+    user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });
 });
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Exported for the invite-registration flow, which needs to hand the client
- *  the same profile shape ordinary registration returns. */
-export async function safeUser(
-  baseUrl: string,
-  db: D1Database,
-  user: UserRow,
-): Promise<AuthUser & { unproxied_avatar_url: string | null }> {
-  return {
-    id: user.id,
-    email: user.email,
-    username: user.username,
-    display_name: user.display_name,
-    avatar_url: await proxyImageUrl(baseUrl, db, user.avatar_url),
-    unproxied_avatar_url: user.avatar_url,
-    role: user.role,
-    email_verified: user.email_verified === 1,
-  };
-}
 
 export default app;

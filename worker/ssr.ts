@@ -15,17 +15,12 @@ import type { Context } from "hono";
 // runtime contract is documented inline below.
 // @ts-expect-error -- JSX module bundled by Vite, not type-checked here.
 import { render as _render } from "../src/entry-server";
-
-interface SessionUser {
-  id: string;
-  email: string;
-  username: string;
-  display_name: string;
-  avatar_url: string | null;
-  unproxied_avatar_url: string | null;
-  role: "admin" | "user";
-  email_verified: boolean;
-}
+import { readSessionCookie } from "./lib/cookies";
+import { verifyJWT } from "./lib/jwt";
+import { getConfigValue, getJwtSecret } from "./lib/config";
+import { toSessionUser, type SessionUser } from "./lib/sessionUser";
+import siteRoutes from "./routes/site";
+import type { UserRow, Variables } from "./types";
 
 interface RenderOptions {
   template: string;
@@ -44,13 +39,6 @@ const render = _render as (
   request: Request,
   opts: RenderOptions,
 ) => Promise<RenderResult>;
-
-import { readSessionCookie } from "./lib/cookies";
-import { verifyJWT } from "./lib/jwt";
-import { getConfigValue, getJwtSecret } from "./lib/config";
-import { proxyImageUrl } from "./lib/proxyImage";
-import siteRoutes from "./routes/site";
-import type { UserRow, Variables } from "./types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 
@@ -77,22 +65,7 @@ async function loadAuth(c: Context<AppEnv>) {
       .first<UserRow>();
     if (!row) return null;
 
-    return {
-      user: {
-        id: row.id,
-        email: row.email,
-        username: row.username,
-        display_name: row.display_name,
-        avatar_url: await proxyImageUrl(
-          c.env.APP_URL,
-          c.env.DB,
-          row.avatar_url,
-        ),
-        unproxied_avatar_url: row.avatar_url,
-        role: row.role,
-        email_verified: row.email_verified === 1,
-      },
-    };
+    return { user: await toSessionUser(c.env.APP_URL, c.env.DB, row) };
   } catch {
     return null;
   }

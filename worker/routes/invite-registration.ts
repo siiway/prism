@@ -23,6 +23,7 @@ import { randomId } from "../lib/crypto";
 import { hashPassword } from "../lib/crypto";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 import { requireAuth } from "../middleware/auth";
+import { toSessionUser } from "../lib/sessionUser";
 import { getConfig, getConfigValue } from "../lib/config";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
@@ -378,7 +379,7 @@ app.post("/auth/register-with-invite", async (c) => {
     .first<UserRow>();
   if (!user) return c.json({ error: "user_create_failed" }, 500);
 
-  const { issueSession, safeUser } = await import("./auth");
+  const { issueSession } = await import("./auth");
   const ttl = config.session_ttl_days * 24 * 60 * 60;
   await issueSession(c, user, ttl, ["pwd"]);
 
@@ -386,7 +387,7 @@ app.post("/auth/register-with-invite", async (c) => {
   return c.json(
     {
       // Same safe profile shape ordinary registration returns.
-      user: await safeUser(c.env.APP_URL, c.env.DB, user),
+      user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
       pending: true,
       requirements,
       synthetic_email: !collectsEmail,

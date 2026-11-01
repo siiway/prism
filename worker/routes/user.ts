@@ -20,10 +20,10 @@ import {
 import { requireAuth } from "../middleware/auth";
 import { readSessionCookie, setSessionCookie } from "../lib/cookies";
 import {
-  proxyImageUrl,
   registerMarkdownImageMappings,
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
+import { toSessionUser } from "../lib/sessionUser";
 import { validateImageUrl } from "../lib/imageValidation";
 import {
   recordAudit,
@@ -36,7 +36,11 @@ import {
   USER_NOTIFICATION_EVENTS,
   parseNotificationRules,
 } from "../lib/notifications";
-import type { NotificationRules, RestrictedCapability } from "../types";
+import {
+  sanitizeRulesArray,
+  type NotificationRule,
+} from "../lib/notificationRules";
+import type { CodedError } from "../lib/apiError";
 import { getConfig, getConfigValue } from "../lib/config";
 import { readPage, likePattern } from "../lib/pagination";
 import { getGithubReadmeFromCache } from "../lib/githubReadme";
@@ -47,6 +51,8 @@ import {
   verifyEmailTemplate,
 } from "../lib/email";
 import type {
+  NotificationRules,
+  RestrictedCapability,
   UserRow,
   UserEmailRow,
   UserNotificationPrefsRow,
@@ -104,7 +110,7 @@ app.get("/me", async (c) => {
   }
 
   return c.json({
-    user: await safeUser(c.env.APP_URL, c.env.DB, row),
+    user: await selfUser(c.env.APP_URL, c.env.DB, row),
     totp_enabled: (totp?.n ?? 0) > 0,
     passkey_count: passkeyCount?.n ?? 0,
     site_access_token_ttl_minutes: config.access_token_ttl_minutes,
@@ -437,7 +443,7 @@ app.patch("/me", async (c) => {
       c.env.APP_URL,
     ).catch(() => {}),
   );
-  return c.json({ user: await safeUser(c.env.APP_URL, c.env.DB, row!) });
+  return c.json({ user: await selfUser(c.env.APP_URL, c.env.DB, row!) });
 });
 
 // Change password
@@ -697,16 +703,10 @@ app.delete("/me", async (c) => {
   return c.json({ ok: true });
 });
 
-async function safeUser(baseUrl: string, db: D1Database, row: UserRow) {
+/** The session user plus the account settings `/user/me` exposes. */
+async function selfUser(baseUrl: string, db: D1Database, row: UserRow) {
   return {
-    id: row.id,
-    email: row.email,
-    username: row.username,
-    display_name: row.display_name,
-    avatar_url: await proxyImageUrl(baseUrl, db, row.avatar_url),
-    unproxied_avatar_url: row.avatar_url,
-    role: row.role,
-    email_verified: row.email_verified === 1,
+    ...(await toSessionUser(baseUrl, db, row)),
     alt_email_login: row.alt_email_login,
     access_token_ttl_minutes: row.access_token_ttl_minutes,
     refresh_token_ttl_days: row.refresh_token_ttl_days,
@@ -1515,12 +1515,6 @@ app.put("/me/notifications", async (c) => {
 // automatically deactivates any other. When a ruleset is active it drives
 // dispatch; otherwise the legacy per-event rules in
 // user_notification_prefs.notification_rules apply.
-
-import {
-  sanitizeRulesArray,
-  type NotificationRule,
-} from "../lib/notificationRules";
-import type { CodedError } from "../lib/apiError";
 
 interface RulesetRow {
   id: string;

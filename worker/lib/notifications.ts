@@ -3,6 +3,9 @@
 import { getConfig } from "./config";
 import { emailConfigFromSite, sendEmail } from "./email";
 import { decryptSecret } from "./secretCrypto";
+import type { NotificationRules } from "../types";
+import { evaluateRuleset, type NotificationRule } from "./notificationRules";
+import { buildRuleContext } from "../../shared/ruleExpression";
 
 // ─── Event catalogue ─────────────────────────────────────────────────────────
 
@@ -1057,10 +1060,6 @@ function withDiscordOperatorMeta(
 }
 
 // ─── Rules helpers ────────────────────────────────────────────────────────────
-
-import type { NotificationRules } from "../types";
-import { evaluateRuleset, type NotificationRule } from "./notificationRules";
-import { buildRuleContext } from "../../shared/ruleExpression";
 
 /**
  * Parse notification_rules JSON, falling back to migrating the legacy
