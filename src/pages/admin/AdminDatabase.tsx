@@ -734,7 +734,9 @@ function TableBrowser({
         </Table>
       </div>
 
-      {data && data.total > data.limit && (
+      {/* page > 1 too: deleting the last row on the last page must still
+          leave a way back. */}
+      {data && (data.total > data.limit || page > 1) && (
         <Pagination
           page={page}
           pageCount={Math.max(1, Math.ceil(data.total / data.limit))}

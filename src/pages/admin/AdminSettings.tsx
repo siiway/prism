@@ -24,7 +24,7 @@ import { useToastMessage } from "../../lib/useToastMessage";
 import type { SiteConfig } from "../../types";
 import { SkeletonSettingsPage } from "../../components/Skeletons";
 import { SettingsToast } from "../../components/Settings";
-import { useConfigDraft, useFail } from "./settings/shared";
+import { useConfigDraft, useFail, type LegalDraft } from "./settings/shared";
 import { useSettingsStyles } from "./settings/styles";
 import { GeneralSection } from "./settings/GeneralSection";
 import { SignupSection } from "./settings/SignupSection";
@@ -49,6 +49,9 @@ export function AdminSettings() {
   });
   const config = data?.config as SiteConfig | undefined;
   const draft = useConfigDraft(config);
+  // Legal saves on its own, but its drafts live here so they outlast the
+  // section being unmounted.
+  const [legalDraft, setLegalDraft] = useState<LegalDraft>({});
   const [saving, setSaving] = useState(false);
   const { message, showMsg } = useToastMessage();
   const fail = useFail(showMsg);
@@ -74,6 +77,7 @@ export function AdminSettings() {
   if (isLoading) return <SkeletonSettingsPage cards={[3, 2]} form />;
 
   const props = { draft, showMsg };
+  const legal = { legalDraft, setLegalDraft };
   return (
     <div className={styles.page}>
       <SettingsToast message={message} />
@@ -86,7 +90,7 @@ export function AdminSettings() {
       {tab === "captcha" && <CaptchaSection {...props} />}
       {tab === "email" && <EmailSection {...props} />}
       {tab === "appearance" && <AppearanceSection {...props} />}
-      {tab === "legal" && <LegalSection {...props} />}
+      {tab === "legal" && <LegalSection {...props} {...legal} />}
       {tab === "danger" && <DangerSection {...props} />}
 
       {/* Legal saves its own drafts; Danger Zone only runs actions. */}

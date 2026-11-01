@@ -1,8 +1,10 @@
 // Settings → Legal: the privacy policy and terms. They live in their own table,
-// not site_config, so each document has its own draft and Save button.
+// not site_config, so each document has its own draft and Save button. The
+// drafts are held by AdminSettings, like the config draft, so they survive a
+// visit to another section.
 
 import { Button, Field, Spinner, Textarea } from "@fluentui/react-components";
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../../../lib/api-context";
@@ -11,9 +13,16 @@ import {
   SettingsCard,
   SettingsFooter,
 } from "../../../components/Settings";
-import { dropKey, useFail, type SectionProps } from "./shared";
+import { dropKey, useFail, type LegalDraft, type SectionProps } from "./shared";
 
-export function LegalSection({ showMsg }: SectionProps) {
+export function LegalSection({
+  showMsg,
+  legalDraft,
+  setLegalDraft,
+}: SectionProps & {
+  legalDraft: LegalDraft;
+  setLegalDraft: Dispatch<SetStateAction<LegalDraft>>;
+}) {
   const api = useApi();
   const qc = useQueryClient();
   const { t } = useTranslation();
@@ -23,9 +32,6 @@ export function LegalSection({ showMsg }: SectionProps) {
     queryKey: ["admin-legal"],
     queryFn: api.adminLegal,
   });
-  const [legalDraft, setLegalDraft] = useState<Partial<Record<string, string>>>(
-    {},
-  );
   const [savingLegal, setSavingLegal] = useState<string | null>(null);
   const legalDoc = (slug: string) =>
     legalData?.documents.find((d) => d.slug === slug);

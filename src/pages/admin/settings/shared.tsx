@@ -57,6 +57,9 @@ export interface SectionProps {
   showMsg: ReturnType<typeof useToastMessage>["showMsg"];
 }
 
+/** Unsaved legal document text by slug. A slug that isn't here is unedited. */
+export type LegalDraft = Partial<Record<string, string>>;
+
 /** Show an API error's message, or a fallback for anything else. */
 export function useFail(showMsg: SectionProps["showMsg"]) {
   const { t } = useTranslation();
