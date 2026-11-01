@@ -287,14 +287,20 @@ export function buildSearchIndex(root: string): IndexedPage[] {
       }
     } else {
       const page = indexed[0];
+      const imports = localImports(route.file, root, src);
+      // Cards written in the page's own components (e.g. the notification
+      // page's Events and Rulesets cards) are deep links on this page too.
+      for (const file of imports) {
+        for (const card of indexFile(read(file), route.path, en)[0].cards) {
+          if (!page.cards.some((c) => c.id === card.id)) page.cards.push(card);
+        }
+      }
       const known = new Set([
         page.title ?? "",
         page.description ?? "",
         ...page.cards.flatMap((c) => [c.title, ...c.keywords]),
       ]);
-      const extra = localImports(route.file, root, src).flatMap((f) =>
-        keywordsIn(read(f), en, known),
-      );
+      const extra = imports.flatMap((f) => keywordsIn(read(f), en, known));
       page.keywords = [...new Set([...page.keywords, ...extra])].slice(
         0,
         MAX_KEYWORDS,
