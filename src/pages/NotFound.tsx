@@ -2,39 +2,11 @@
 // with a 404 status so it's a real "not found" response and not just a
 // client-side flash after navigation.
 
-import {
-  Button,
-  Text,
-  Title2,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
-import { useNavigate } from "react-router-dom";
+import { Text, makeStyles, tokens } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
+import { StatusPage } from "../components/StatusPage";
 
 const useStyles = makeStyles({
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: tokens.colorNeutralBackground1,
-    padding: "16px",
-    boxSizing: "border-box",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "480px",
-    padding: "48px 40px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "16px",
-    textAlign: "center",
-  },
   code: {
     fontFamily: "monospace",
     fontSize: "72px",
@@ -42,35 +14,22 @@ const useStyles = makeStyles({
     color: tokens.colorBrandForeground1,
     letterSpacing: "-2px",
   },
-  actions: {
-    display: "flex",
-    gap: "8px",
-    marginTop: "8px",
-  },
 });
 
 export function NotFound() {
   const styles = useStyles();
   const { t } = useTranslation();
-  const navigate = useNavigate();
-
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
+    <StatusPage
+      mark={
         <Text className={styles.code} weight="semibold">
           404
         </Text>
-        <Title2>{t("notFound.title")}</Title2>
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("notFound.description")}
-        </Text>
-        <div className={styles.actions}>
-          <Button onClick={() => navigate(-1)}>{t("notFound.goBack")}</Button>
-          <Button appearance="primary" onClick={() => navigate("/")}>
-            {t("notFound.goHome")}
-          </Button>
-        </div>
-      </div>
-    </div>
+      }
+      title={t("notFound.title")}
+      description={t("notFound.description")}
+      back={t("notFound.goBack")}
+      primary={{ label: t("notFound.goHome"), to: "/" }}
+    />
   );
 }

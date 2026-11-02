@@ -1,61 +1,23 @@
 // Social login — confirm new account creation with custom username / display name
 
-import {
-  Avatar,
-  Button,
-  Field,
-  Input,
-  MessageBar,
-  Spinner,
-  Text,
-  Title2,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Field, Input } from "@fluentui/react-components";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
-import { AuthShell } from "../components/AuthShell";
+import {
+  SocialError,
+  SocialForm,
+  SocialHeader,
+  SocialPendingFallback,
+  SocialShell,
+} from "../components/SocialPending";
 import { useAuthStore } from "../store/auth";
-
-const useStyles = makeStyles({
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: tokens.colorNeutralBackground1,
-    padding: "16px",
-    boxSizing: "border-box",
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    width: "100%",
-  },
-  actions: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-    width: "100%",
-  },
-});
-
-const PROVIDER_LABELS: Record<string, string> = {
-  github: "GitHub",
-  google: "Google",
-  microsoft: "Microsoft",
-  discord: "Discord",
-  x: "X",
-};
 
 export function SocialConfirm() {
   const api = useApi();
-  const styles = useStyles();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { setAuth } = useAuthStore();
@@ -67,11 +29,7 @@ export function SocialConfirm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const {
-    data,
-    isLoading,
-    error: fetchError,
-  } = useQuery({
+  const { data, error: fetchError } = useQuery({
     queryKey: ["social-pending", key],
     queryFn: () => api.connectionPending(key),
     enabled: !!key,
@@ -97,8 +55,7 @@ export function SocialConfirm() {
     setDisplayName(data.suggested_display_name ?? "");
   }
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreate = async () => {
     setError("");
     setSubmitting(true);
     try {
@@ -116,103 +73,54 @@ export function SocialConfirm() {
         navigate("/", { replace: true });
       }
     } catch (err) {
-      setError(apiErrorText(err, "Failed to create account"));
+      setError(apiErrorText(err, t("auth.registrationFailed")));
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (isLoading || !data) {
-    return (
-      <div className={styles.page}>
-        <Spinner size="large" />
-      </div>
-    );
-  }
+  if (!data) return <SocialPendingFallback expired={!!fetchError} />;
 
-  if (fetchError) {
-    return (
-      <AuthShell maxWidth={420} cardGap={24}>
-        <Title2>{t("auth.sessionExpired")}</Title2>
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("auth.sessionExpiredText")}
-        </Text>
-        <Button appearance="primary" onClick={() => navigate("/login")}>
-          {t("auth.backToLogin")}
-        </Button>
-      </AuthShell>
-    );
-  }
-
-  const providerLabel = PROVIDER_LABELS[data.provider] ?? data.provider;
+  const providerName = data.profile_name ?? data.provider_name;
 
   return (
-    <AuthShell maxWidth={420} cardGap={24}>
-      <>
-        <Avatar
-          image={data.profile_avatar ? { src: data.profile_avatar } : undefined}
-          name={data.profile_name ?? providerLabel}
-          size={64}
-          style={{ alignSelf: "center" }}
-        />
-
-        <div style={{ textAlign: "center" }}>
-          <Title2>{t("auth.createNewAccount")}</Title2>
-          <Text
-            block
-            style={{ color: tokens.colorNeutralForeground3, marginTop: 8 }}
-          >
-            {t("auth.signingInVia", {
-              providerName: data.profile_name ?? providerLabel,
-            })}
-          </Text>
-        </div>
-
-        {error && (
-          <MessageBar intent="error" style={{ width: "100%" }}>
-            {error}
-          </MessageBar>
-        )}
-
-        <form onSubmit={handleCreate} className={styles.form}>
-          <Field label={t("auth.username")} required>
-            <Input
-              value={username}
-              onChange={(e) =>
-                setUsername(
-                  e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""),
-                )
-              }
-              placeholder="your_username"
-              maxLength={32}
-              autoComplete="username"
-              autoFocus
-            />
-          </Field>
-          <Field label={t("auth.displayName")} required>
-            <Input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder={t("auth.displayNamePlaceholder")}
-              maxLength={64}
-            />
-          </Field>
-
-          <div className={styles.actions}>
-            <Button
-              appearance="primary"
-              type="submit"
-              disabled={submitting || !username.trim() || !displayName.trim()}
-              icon={submitting ? <Spinner size="tiny" /> : undefined}
-            >
-              {submitting ? t("auth.creating") : t("auth.createAccountAction")}
-            </Button>
-            <Button appearance="subtle" onClick={() => navigate("/login")}>
-              {t("auth.backToLogin")}
-            </Button>
-          </div>
-        </form>
-      </>
-    </AuthShell>
+    <SocialShell>
+      <SocialHeader
+        avatar={{ name: providerName, url: data.profile_avatar }}
+        title={t("auth.createNewAccount")}
+        subtitle={t("auth.signingInVia", { providerName })}
+      />
+      <SocialError error={error} />
+      <SocialForm
+        onSubmit={handleCreate}
+        submitting={submitting}
+        canSubmit={!!username.trim() && !!displayName.trim()}
+        label={t("auth.createAccountAction")}
+        busyLabel={t("auth.creating")}
+      >
+        <Field label={t("auth.username")} required>
+          <Input
+            value={username}
+            onChange={(e) =>
+              setUsername(
+                e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""),
+              )
+            }
+            placeholder="your_username"
+            maxLength={32}
+            autoComplete="username"
+            autoFocus
+          />
+        </Field>
+        <Field label={t("auth.displayName")} required>
+          <Input
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder={t("auth.displayNamePlaceholder")}
+            maxLength={64}
+          />
+        </Field>
+      </SocialForm>
+    </SocialShell>
   );
 }

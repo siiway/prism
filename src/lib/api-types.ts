@@ -1176,6 +1176,8 @@ export interface DomainVerifyResponse {
 export interface SocialPendingInfo {
   type: "register" | "select";
   provider: string;
+  /** The source's display name. */
+  provider_name: string;
   profile_name: string | null;
   profile_avatar: string | null;
   suggested_username?: string;

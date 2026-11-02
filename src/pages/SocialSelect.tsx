@@ -2,33 +2,28 @@
 
 import {
   Avatar,
-  Button,
   Card,
-  Spinner,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useSiteName } from "../lib/useSiteName";
+import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
-import { AuthShell } from "../components/AuthShell";
+import {
+  BackToLogin,
+  SocialError,
+  SocialHeader,
+  SocialPendingFallback,
+  SocialShell,
+} from "../components/SocialPending";
 import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: tokens.colorNeutralBackground1,
-    padding: "16px",
-    boxSizing: "border-box",
-  },
   accountList: { display: "flex", flexDirection: "column", gap: "8px" },
   accountRow: {
     flexDirection: "row",
@@ -38,15 +33,8 @@ const useStyles = makeStyles({
     transition: "background 0.15s",
     ":hover": { background: tokens.colorNeutralBackground3 },
   },
+  muted: { color: tokens.colorNeutralForeground3 },
 });
-
-const PROVIDER_LABELS: Record<string, string> = {
-  github: "GitHub",
-  google: "Google",
-  microsoft: "Microsoft",
-  discord: "Discord",
-  x: "X",
-};
 
 export function SocialSelect() {
   const api = useApi();
@@ -57,8 +45,9 @@ export function SocialSelect() {
   const { t } = useTranslation();
   const siteName = useSiteName();
   const key = searchParams.get("key") ?? "";
+  const [error, setError] = useState("");
 
-  const { data, isLoading, error } = useQuery({
+  const { data, error: fetchError } = useQuery({
     queryKey: ["social-pending", key],
     queryFn: () => api.connectionPending(key),
     enabled: !!key,
@@ -74,6 +63,7 @@ export function SocialSelect() {
   }, [data, navigate]);
 
   const handleSelect = async (userId: string) => {
+    setError("");
     try {
       const res = await api.connectionComplete({
         key,
@@ -91,83 +81,54 @@ export function SocialSelect() {
         navigate("/", { replace: true });
       }
     } catch (err) {
-      console.error(err);
+      setError(apiErrorText(err, t("auth.loginFailed")));
     }
   };
 
-  if (isLoading || !data) {
-    return (
-      <div className={styles.page}>
-        <Spinner size="large" />
-      </div>
-    );
-  }
+  // No accounts to choose from means the state is unusable: treat it as gone.
+  if (!data?.users?.length)
+    return <SocialPendingFallback expired={!!data || !!fetchError} />;
 
-  if (error || !data.users?.length) {
-    return (
-      <AuthShell maxWidth={420} cardGap={24}>
-        <Title2>{t("auth.sessionExpired")}</Title2>
-        <Text style={{ color: tokens.colorNeutralForeground3 }}>
-          {t("auth.sessionExpiredText")}
-        </Text>
-        <Button appearance="primary" onClick={() => navigate("/login")}>
-          {t("auth.backToLogin")}
-        </Button>
-      </AuthShell>
-    );
-  }
-
-  const providerLabel = PROVIDER_LABELS[data.provider] ?? data.provider;
   const profileSuffix = data.profile_name ? ` (${data.profile_name})` : "";
 
   return (
-    <AuthShell maxWidth={420} cardGap={24}>
-      <>
-        <div>
-          <Title2>{t("auth.whichAccount")}</Title2>
-          <Text
-            block
-            style={{ color: tokens.colorNeutralForeground3, marginTop: 8 }}
+    <SocialShell>
+      <SocialHeader
+        title={t("auth.whichAccount")}
+        subtitle={t("auth.multipleAccountsLinked", {
+          siteName,
+          provider: data.provider_name,
+          profileSuffix,
+        })}
+        centered={false}
+      />
+      <SocialError error={error} />
+
+      <div className={styles.accountList}>
+        {data.users.map((u) => (
+          <Card
+            key={u.id}
+            className={styles.accountRow}
+            onClick={() => handleSelect(u.id)}
           >
-            {t("auth.multipleAccountsLinked", {
-              siteName,
-              provider: providerLabel,
-              profileSuffix,
-            })}
-          </Text>
-        </div>
+            <Avatar
+              name={u.display_name}
+              image={u.avatar_url ? { src: u.avatar_url } : undefined}
+              size={40}
+            />
+            <div>
+              <Text weight="semibold" block>
+                {u.display_name}
+              </Text>
+              <Text size={200} className={styles.muted}>
+                @{u.username}
+              </Text>
+            </div>
+          </Card>
+        ))}
+      </div>
 
-        <div className={styles.accountList}>
-          {data.users.map((u) => (
-            <Card
-              key={u.id}
-              className={styles.accountRow}
-              onClick={() => handleSelect(u.id)}
-            >
-              <Avatar
-                name={u.display_name}
-                image={u.avatar_url ? { src: u.avatar_url } : undefined}
-                size={40}
-              />
-              <div>
-                <Text weight="semibold" block>
-                  {u.display_name}
-                </Text>
-                <Text
-                  size={200}
-                  style={{ color: tokens.colorNeutralForeground3 }}
-                >
-                  @{u.username}
-                </Text>
-              </div>
-            </Card>
-          ))}
-        </div>
-
-        <Button appearance="subtle" onClick={() => navigate("/login")}>
-          {t("auth.backToLogin")}
-        </Button>
-      </>
-    </AuthShell>
+      <BackToLogin />
+    </SocialShell>
   );
 }
