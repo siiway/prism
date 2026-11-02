@@ -1,5 +1,5 @@
 import type { SiteConfig } from "../../shared/types";
-import { sha256Hex } from "./crypto";
+import { randomId, sha256Hex } from "./crypto";
 import {
   normalizeIp,
   rateLimit,
@@ -101,4 +101,32 @@ export async function checkLoginTotpLimit(
     config.login_totp_rate_limit,
     config.login_totp_rate_window_seconds,
   );
+}
+
+/** Record a failed sign-in attempt in the admin login-error log. */
+export async function logLoginError(
+  db: D1Database,
+  errorCode: string,
+  identifier: string | null,
+  ip: string,
+  userAgent: string | null,
+  geo: string | null,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      "INSERT INTO login_errors (id, error_code, identifier, ip_address, user_agent, ip_geo, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(
+      randomId(),
+      errorCode,
+      identifier,
+      ip,
+      userAgent,
+      geo,
+      JSON.stringify(metadata),
+      now,
+    )
+    .run();
 }
