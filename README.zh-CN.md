@@ -94,10 +94,7 @@ prism/
 ├── tests/                   # bun test 测试
 ├── scripts/                 # setup、build、deploy 与检查脚本（Bun）
 ├── public/                  # 静态资源（构建后 pow.wasm 输出至此）
-├── wrangler.jsonc           # Cloudflare Worker 配置
-├── tsconfig.app.json        # 前端 TypeScript 配置
-├── tsconfig.worker.json     # Worker TypeScript 配置
-└── tsconfig.node.json       # Node 工具链 TypeScript 配置
+└── wrangler.jsonc           # Cloudflare Worker 配置
 ```
 
 ## 许可证

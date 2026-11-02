@@ -94,10 +94,7 @@ prism/
 ├── tests/                   # bun test suites
 ├── scripts/                 # setup, build, deploy and check scripts (Bun)
 ├── public/                  # Static assets (pow.wasm lands here after build)
-├── wrangler.jsonc           # Cloudflare Worker config
-├── tsconfig.app.json        # Frontend TypeScript config
-├── tsconfig.worker.json     # Worker TypeScript config
-└── tsconfig.node.json       # Node tooling TypeScript config
+└── wrangler.jsonc           # Cloudflare Worker config
 ```
 
 ## License

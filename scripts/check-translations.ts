@@ -4,7 +4,7 @@
 //
 // The keys the code can use are a fixed set, and this works that set out
 // exactly with the TypeScript type checker over src/web and src/shared
-// (tsconfig.app.json). Nothing is guessed from naming patterns:
+// (src/web/tsconfig.json). Nothing is guessed from naming patterns:
 //
 // - A string literal that is a key uses it: t("a.b"), labelKey: "a.b".
 // - A template literal uses every key it can produce. Each `${…}` has a type,
@@ -96,12 +96,12 @@ const isKey = (s: string) => allKeys.has(s) || keyBases.has(s);
 // ── Source ──────────────────────────────────────────────────────────────────
 
 const config = ts.getParsedCommandLineOfConfigFile(
-  join(ROOT, "tsconfig.app.json"),
+  join(ROOT, "src", "web", "tsconfig.json"),
   {},
   { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} },
 );
 if (!config) {
-  console.log(red("ERROR: cannot read tsconfig.app.json"));
+  console.log(red("ERROR: cannot read src/web/tsconfig.json"));
   process.exit(1);
 }
 const program = ts.createProgram(config.fileNames, config.options);

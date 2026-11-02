@@ -81,8 +81,8 @@ if (flags.has("--skip-wasm")) {
 
 // ── Typecheck ─────────────────────────────────────────────────────────────────
 step("Typechecking");
-bunx("tsc", ["-p", "tsconfig.app.json", "--noEmit"]);
-bunx("tsc", ["-p", "tsconfig.worker.json", "--noEmit"]);
+bunx("tsc", ["-p", "src/web"]);
+bunx("tsc", ["-p", "src/worker"]);
 ok("app and worker");
 
 // ── Vite ──────────────────────────────────────────────────────────────────────

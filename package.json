@@ -10,7 +10,7 @@
     "build": "bun scripts/build.ts",
     "deploy": "bun scripts/deploy.ts",
     "lint": "bun --bun eslint .",
-    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tests --noEmit",
+    "typecheck": "tsc -p src/web && tsc -p src/worker && tsc -p scripts && tsc -p tests",
     "check:i18n": "bun scripts/check-translations.ts",
     "check": "bun run typecheck && bun run lint && bun run format && bun run test && bun run check:i18n",
     "test": "bun test",

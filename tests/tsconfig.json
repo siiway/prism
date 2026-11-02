@@ -2,11 +2,10 @@
   // The tests run under Bun and import both the app and the Worker, so they
   // get the app's settings with Bun's types, the app's globals and the
   // Worker's Env.
-  "extends": "../tsconfig.app.json",
+  "extends": "../src/web/tsconfig.json",
   "compilerOptions": {
-    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.tests.tsbuildinfo",
     "types": ["bun", "vite/client"],
-    // As in tsconfig.worker.json, which the Worker code here is written for.
+    // As in src/worker/tsconfig.json, which the Worker code here is written for.
     "noUnusedParameters": false,
     // Bun runs TypeScript directly, so constructor parameter properties are fine.
     "erasableSyntaxOnly": false
