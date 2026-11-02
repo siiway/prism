@@ -1,7 +1,7 @@
 name: PR
 
-# Pull-request checks: typecheck (app + worker), lint, tests, translation
-# parity, and a build. Nothing is deployed from a pull request, and this
+# Pull-request checks: the prek hooks from prek.toml, both the pre-commit and
+# pre-push stages over every file, then a build. Nothing is deployed from a pull request, and this
 # workflow references no secrets, so fork PRs run it the same as branch PRs.
 # Production is deployed by deploy.yml on push to main.
 #
@@ -36,15 +36,15 @@ jobs:
             bun-${{ runner.os }}-
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Typecheck (app)
-        run: bunx tsc -p tsconfig.app.json --noEmit
-      - name: Typecheck (worker)
-        run: bunx tsc -p tsconfig.worker.json --noEmit
-      - name: Lint
-        run: bun run lint
-      - name: Test
-        run: bun run test
-      - name: Translation parity
-        run: bun run check:i18n
+      - name: Install prek
+        uses: j178/prek-action@v3.0.1
+        with:
+          prek-version: 0.5.7
+          install-only: true
+          cache: false
+      - name: Commit hooks (prettier, eslint, file checks)
+        run: prek run --all-files --show-diff-on-failure --color=always
+      - name: Push hooks (typecheck, tests, translations)
+        run: prek run --all-files --hook-stage pre-push --color=always
       - name: Build
         run: bunx vite build

@@ -10,9 +10,9 @@ name: Deploy
 #
 # The run uses the same scripts as a local deploy: scripts/build.sh (install,
 # typecheck, Vite build, deploy-ready wrangler.json), then scripts/deploy.sh,
-# which applies pending D1 migrations before publishing. Lint, tests and
-# translation parity run first, so a failure stops the deploy before anything
-# reaches production.
+# which applies pending D1 migrations before publishing. The prek hooks from
+# prek.toml (file checks, prettier, eslint, typechecks, tests, translations)
+# run first, so a failure stops the deploy before anything reaches production.
 #
 # Requires CLOUDFLARE_API_TOKEN (repository or `production` Environment secret)
 # scoped to the SiiWay account with: Workers Scripts:Edit, D1:Edit, Workers KV
@@ -82,14 +82,18 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Lint
-        run: bun run lint
+      - name: Install prek
+        uses: j178/prek-action@v3.0.1
+        with:
+          prek-version: 0.5.7
+          install-only: true
+          cache: false
 
-      - name: Test
-        run: bun run test
+      - name: Commit hooks (prettier, eslint, file checks)
+        run: prek run --all-files --show-diff-on-failure --color=always
 
-      - name: Translation parity
-        run: bun run check:i18n
+      - name: Push hooks (typecheck, tests, translations)
+        run: prek run --all-files --hook-stage pre-push --color=always
 
       - name: Build PoW WASM
         run: |

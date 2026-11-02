@@ -20,7 +20,7 @@ add <feature>
 
 ## Git hooks
 
-[prek](https://prek.j178.dev) runs prettier and eslint on commit, and the typechecks and tests on push. Install it, then enable the hooks once (needs `bun` on your PATH, on Windows too):
+[prek](https://prek.j178.dev) runs prettier and eslint on commit, and the typechecks and tests on push. CI runs the same hooks from `prek.toml` over every file. Install it, then enable the hooks once (needs `bun` on your PATH, on Windows too):
 
 ```bash
 prek install --hook-type pre-commit --hook-type pre-push
