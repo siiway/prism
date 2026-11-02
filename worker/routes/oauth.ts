@@ -4274,7 +4274,7 @@ app.get("/me/apps", async (c) => {
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
   const { results } = await c.env.DB.prepare(
-    `SELECT id, name, client_id, description, icon_url, website_url, is_public, enabled, created_at
+    `SELECT id, name, client_id, description, icon_url, website_url, is_public, is_active AS enabled, created_at
      FROM oauth_apps WHERE owner_id = ? AND team_id IS NULL ORDER BY created_at DESC`,
   )
     .bind(resolved.userId)

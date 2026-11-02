@@ -1757,7 +1757,6 @@ app.post("/reset/confirm", async (c) => {
     c.env.DB.prepare("DELETE FROM personal_access_tokens"),
     c.env.DB.prepare("DELETE FROM sessions"),
     c.env.DB.prepare("DELETE FROM totp_authenticators"),
-    c.env.DB.prepare("DELETE FROM totp_secrets"),
     c.env.DB.prepare("DELETE FROM user_totp_recovery"),
     c.env.DB.prepare("DELETE FROM passkeys"),
     c.env.DB.prepare("DELETE FROM social_connections"),

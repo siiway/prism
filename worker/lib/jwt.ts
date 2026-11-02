@@ -190,7 +190,8 @@ export function signAccessToken(
     exp: now + expiresInSeconds,
   });
   const msg = new TextEncoder().encode(`${header}.${body}`);
-  const sig = ml_dsa65.sign(secretKey, msg);
+  // @noble/post-quantum >= 0.6 takes (message, secretKey).
+  const sig = ml_dsa65.sign(msg, secretKey);
   return `${header}.${body}.${bufToBase64url(sig)}`;
 }
 
@@ -205,7 +206,8 @@ export function verifyAccessToken(
   const msg = new TextEncoder().encode(`${headerB64}.${bodyB64}`);
   const sig = base64urlToBuf(sigB64);
 
-  if (!ml_dsa65.verify(publicKey, msg, sig))
+  // @noble/post-quantum >= 0.6 takes (signature, message, publicKey).
+  if (!ml_dsa65.verify(sig, msg, publicKey))
     throw new Error("Invalid JWT signature");
 
   const payload = JSON.parse(
