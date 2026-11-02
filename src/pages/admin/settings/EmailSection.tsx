@@ -25,12 +25,113 @@ import { useSettingsStyles } from "./styles";
 import { NumberInput } from "./fields";
 import { useFail, type SectionProps } from "./shared";
 
+// Static keys, so the translation check can see them.
+const MAIL_SERVER = {
+  smtp: {
+    host: "admin.smtpHost",
+    encryption: "admin.smtpEncryption",
+    port: "admin.smtpPort",
+    username: "admin.smtpUsername",
+    password: "admin.smtpPassword",
+    defaultPort: 587,
+    // STARTTLS first: it's what submission (587) expects.
+    options: [
+      ["starttls", "admin.smtpStarttls"],
+      ["ssl", "admin.smtpSsl"],
+    ],
+  },
+  imap: {
+    host: "admin.imapHost",
+    encryption: "admin.imapEncryption",
+    port: "admin.imapPort",
+    username: "admin.imapUsername",
+    password: "admin.imapPassword",
+    defaultPort: 993,
+    options: [
+      ["ssl", "admin.imapSsl"],
+      ["starttls", "admin.imapStarttls"],
+    ],
+  },
+} as const;
+
+/** Host, encryption, port and login for the outgoing (SMTP) or incoming
+ *  (IMAP) mail server. Both store the same fields under their own prefix. */
+function MailServerFields({
+  kind,
+  draft,
+  hostPlaceholder,
+}: {
+  kind: "smtp" | "imap";
+  draft: SectionProps["draft"];
+  hostPlaceholder: string;
+}) {
+  const { t } = useTranslation();
+  const styles = useSettingsStyles();
+  const { get, set, num } = draft;
+  const keys = MAIL_SERVER[kind];
+  const host = `${kind}_host` as const;
+  const secure = `${kind}_secure` as const;
+  const port = `${kind}_port` as const;
+  const user = `${kind}_user` as const;
+  const password = `${kind}_password` as const;
+  return (
+    <>
+      <div className={styles.grid}>
+        <Field label={t(keys.host)}>
+          <Input
+            value={get(host) ?? ""}
+            onChange={(e) => set(host, e.target.value)}
+            placeholder={hostPlaceholder}
+          />
+        </Field>
+        <Field label={t(keys.encryption)}>
+          <Select
+            value={get(secure) ? "ssl" : "starttls"}
+            onChange={(_, d) => set(secure, d.value === "ssl")}
+          >
+            {keys.options.map(([value, label]) => (
+              <option key={value} value={value}>
+                {t(label)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <Field label={t(keys.port)}>
+        <NumberInput
+          label={t(keys.port)}
+          value={num(port, keys.defaultPort)}
+          onChange={(n) => set(port, n)}
+          min={1}
+          max={65535}
+        />
+      </Field>
+      <div className={styles.grid}>
+        <Field label={t(keys.username)}>
+          <Input
+            value={get(user) ?? ""}
+            onChange={(e) => set(user, e.target.value)}
+            placeholder="user@example.com"
+          />
+        </Field>
+        <Field label={t(keys.password)}>
+          <PasswordInput
+            value={get(password) ?? ""}
+            onChange={(e) => set(password, e.target.value)}
+            placeholder={t("admin.unchanged")}
+          />
+        </Field>
+      </div>
+    </>
+  );
+}
+
 export function EmailSection({ draft, showMsg }: SectionProps) {
   const api = useApi();
   const navigate = useNavigate();
   const { t } = useTranslation();
   const styles = useSettingsStyles();
-  const { get, set, num } = draft;
+  const { get, set } = draft;
   const fail = useFail(showMsg);
 
   const { data: oauthSourcesData } = useQuery({
@@ -146,51 +247,11 @@ export function EmailSection({ draft, showMsg }: SectionProps) {
             </Field>
           )}
           {emailProvider === "smtp" && (
-            <>
-              <div className={styles.grid}>
-                <Field label={t("admin.smtpHost")}>
-                  <Input
-                    value={get("smtp_host") ?? ""}
-                    onChange={(e) => set("smtp_host", e.target.value)}
-                    placeholder={t("admin.smtpHostPlaceholder")}
-                  />
-                </Field>
-                <Field label={t("admin.smtpEncryption")}>
-                  <Select
-                    value={get("smtp_secure") ? "ssl" : "starttls"}
-                    onChange={(_, d) => set("smtp_secure", d.value === "ssl")}
-                  >
-                    <option value="starttls">{t("admin.smtpStarttls")}</option>
-                    <option value="ssl">{t("admin.smtpSsl")}</option>
-                  </Select>
-                </Field>
-              </div>
-              <Field label={t("admin.smtpPort")}>
-                <NumberInput
-                  label={t("admin.smtpPort")}
-                  value={num("smtp_port", 587)}
-                  onChange={(n) => set("smtp_port", n)}
-                  min={1}
-                  max={65535}
-                />
-              </Field>
-              <div className={styles.grid}>
-                <Field label={t("admin.smtpUsername")}>
-                  <Input
-                    value={get("smtp_user") ?? ""}
-                    onChange={(e) => set("smtp_user", e.target.value)}
-                    placeholder="user@example.com"
-                  />
-                </Field>
-                <Field label={t("admin.smtpPassword")}>
-                  <PasswordInput
-                    value={get("smtp_password") ?? ""}
-                    onChange={(e) => set("smtp_password", e.target.value)}
-                    placeholder={t("admin.unchanged")}
-                  />
-                </Field>
-              </div>
-            </>
+            <MailServerFields
+              kind="smtp"
+              draft={draft}
+              hostPlaceholder={t("admin.smtpHostPlaceholder")}
+            />
           )}
           <Field label={t("admin.emailFrom")}>
             <Input
@@ -253,51 +314,11 @@ export function EmailSection({ draft, showMsg }: SectionProps) {
             />
           </Field>
           {receiveProvider === "imap" && (
-            <>
-              <div className={styles.grid}>
-                <Field label={t("admin.imapHost")}>
-                  <Input
-                    value={get("imap_host") ?? ""}
-                    onChange={(e) => set("imap_host", e.target.value)}
-                    placeholder="imap.example.com"
-                  />
-                </Field>
-                <Field label={t("admin.imapEncryption")}>
-                  <Select
-                    value={get("imap_secure") ? "ssl" : "starttls"}
-                    onChange={(_, d) => set("imap_secure", d.value === "ssl")}
-                  >
-                    <option value="ssl">{t("admin.imapSsl")}</option>
-                    <option value="starttls">{t("admin.imapStarttls")}</option>
-                  </Select>
-                </Field>
-              </div>
-              <Field label={t("admin.imapPort")}>
-                <NumberInput
-                  label={t("admin.imapPort")}
-                  value={num("imap_port", 993)}
-                  onChange={(n) => set("imap_port", n)}
-                  min={1}
-                  max={65535}
-                />
-              </Field>
-              <div className={styles.grid}>
-                <Field label={t("admin.imapUsername")}>
-                  <Input
-                    value={get("imap_user") ?? ""}
-                    onChange={(e) => set("imap_user", e.target.value)}
-                    placeholder="user@example.com"
-                  />
-                </Field>
-                <Field label={t("admin.imapPassword")}>
-                  <PasswordInput
-                    value={get("imap_password") ?? ""}
-                    onChange={(e) => set("imap_password", e.target.value)}
-                    placeholder={t("admin.unchanged")}
-                  />
-                </Field>
-              </div>
-            </>
+            <MailServerFields
+              kind="imap"
+              draft={draft}
+              hostPlaceholder="imap.example.com"
+            />
           )}
         </SettingsBody>
         <SettingsFooter>
