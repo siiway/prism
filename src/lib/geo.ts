@@ -1,23 +1,10 @@
 // Frontend rendering of the geo JSON snapshots the worker stores alongside
 // request IPs (session_ips.geo, and the *_geo columns on audit events, login
-// errors). Shape mirrors worker/lib/geo.ts GeoInfo.
+// errors). Older snapshots may lack fields, hence Partial.
 
-export interface IpGeo {
-  continent?: string | null;
-  country?: string | null;
-  isEUCountry?: boolean | null;
-  region?: string | null;
-  regionCode?: string | null;
-  city?: string | null;
-  postalCode?: string | null;
-  latitude?: string | null;
-  longitude?: string | null;
-  metroCode?: string | null;
-  timezone?: string | null;
-  colo?: string | null;
-  asn?: number | null;
-  org?: string | null;
-}
+import type { GeoInfo } from "../../shared/types";
+
+export type IpGeo = Partial<GeoInfo>;
 
 export function parseIpGeo(json: string | null | undefined): IpGeo | null {
   if (!json) return null;

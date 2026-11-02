@@ -327,3 +327,36 @@ export interface NotificationRule {
 }
 
 export type NotificationRules = Record<string, NotificationRule>;
+
+// Cloudflare-derived geolocation snapshot, stored as one JSON blob on
+// session_ips.geo and the *_geo columns of audit events and login errors.
+export interface GeoInfo {
+  /** Continent code, e.g. "AS", "EU". */
+  continent: string | null;
+  /** ISO 3166-1 alpha-2 country code, e.g. "HK". */
+  country: string | null;
+  /** Whether the country is in the EU (GDPR-relevant). */
+  isEUCountry: boolean | null;
+  /** Region / state name, e.g. "Hong Kong". */
+  region: string | null;
+  /** Region / state ISO code. */
+  regionCode: string | null;
+  /** City name. */
+  city: string | null;
+  /** Postal / ZIP code. */
+  postalCode: string | null;
+  /** Approximate latitude (string, as Cloudflare reports it). */
+  latitude: string | null;
+  /** Approximate longitude. */
+  longitude: string | null;
+  /** US metro (DMA) code. */
+  metroCode: string | null;
+  /** IANA timezone, e.g. "Asia/Hong_Kong". */
+  timezone: string | null;
+  /** Cloudflare data-center (colo) code that served the request, e.g. "HKG". */
+  colo: string | null;
+  /** Autonomous system number. */
+  asn: number | null;
+  /** AS organisation / ISP name (cf.asOrganization). */
+  org: string | null;
+}
