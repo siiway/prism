@@ -8,8 +8,8 @@ name: Deploy
 #   * push to `main`                 -> deploy production
 #   * manual run (workflow_dispatch) -> redeploy production from main
 #
-# The run uses the same scripts as a local deploy: scripts/build.sh (install,
-# typecheck, Vite build, deploy-ready wrangler.json), then scripts/deploy.sh,
+# The run uses the same scripts as a local deploy: `bun run build` (PoW WASM,
+# typecheck, Vite build, deploy-ready wrangler.json), then `bun run deploy`,
 # which applies pending D1 migrations before publishing. The prek hooks from
 # prek.toml (file checks, prettier, eslint, typechecks, tests, translations)
 # run first, so a failure stops the deploy before anything reaches production.
@@ -17,8 +17,7 @@ name: Deploy
 # Requires CLOUDFLARE_API_TOKEN (repository or `production` Environment secret)
 # scoped to the SiiWay account with: Workers Scripts:Edit, D1:Edit, Workers KV
 # Storage:Edit, Secrets Store:Read, plus Workers Routes:Edit and Zone:Read on
-# the zone, because production is attached to a custom domain. The account id
-# is pinned in wrangler.jsonc.
+# the zone, because production is attached to a custom domain.
 
 on:
   push:
@@ -95,13 +94,8 @@ jobs:
       - name: Push hooks (typecheck, tests, translations)
         run: prek run --all-files --hook-stage pre-push --color=always
 
-      - name: Build PoW WASM
-        run: |
-          cargo build --release --target wasm32-unknown-unknown --manifest-path src/pow/Cargo.toml
-          cp src/pow/target/wasm32-unknown-unknown/release/prism_pow.wasm public/pow.wasm
-
       - name: Build
-        run: bash scripts/build.sh --skip-wasm
+        run: bun run build
 
       - name: Apply D1 migrations and deploy
-        run: bash scripts/deploy.sh --skip-build --yes
+        run: bun run deploy --skip-build --yes

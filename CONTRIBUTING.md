@@ -1,5 +1,19 @@
 # CONTRIBUTING
 
+## Running locally
+
+```bash
+bun install
+bun run db:migrate
+bun dev
+```
+
+Open <http://localhost:5173>. The dev server runs the Worker against a local database, so you don't need a Cloudflare account. Run `bun run db:migrate` again after pulling new migrations.
+
+Links and the OAuth issuer use `APP_URL` from `wrangler.jsonc`. To point them at `localhost`, create a `.dev.vars` file containing `APP_URL=http://localhost:5173`.
+
+## Before you submit
+
 Please make sure these are done before you submit anything:
 
 1. Everything CI checks passes. One command runs the typechecks, eslint, the prettier check, the tests and the translation key check (needs only Bun, on any OS):

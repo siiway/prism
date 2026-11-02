@@ -37,51 +37,20 @@
 
 ## 快速开始
 
+你需要 [Bun](https://bun.sh) 和一个 Cloudflare 账号（免费套餐即可）。
+
 ```bash
-# 1. 克隆并安装依赖
 git clone https://github.com/siiway/prism
 cd prism
 bun install
-
-# 2. 创建 Cloudflare 资源
-wrangler d1 create prism-db
-wrangler kv namespace create KV_SESSIONS
-wrangler kv namespace create KV_CACHE
-wrangler r2 bucket create prism-assets
-
-# 3. 将资源 ID 填入 wrangler.jsonc
-
-# 4. 执行数据库迁移
-bun run db:migrate
-
-# 5. 启动开发服务器
-bun run dev   # Wrangler 监听 :8787
+bun run setup
 ```
 
-打开 <http://localhost:5173>，系统会自动跳转到首次运行配置页面以创建管理员账号。
+setup 会登录你的 Cloudflare 账号、询问你的 URL、创建数据库和存储，然后部署。打开你的 URL 创建管理员账号。详见[快速开始](https://prism.wss.moe/zh/getting-started)。
 
-## 构建
+更新：`git pull`、`bun install`、`bun run deploy`。
 
-```bash
-# 跨平台（需要 Python 3）
-python scripts/build.py
-
-# Linux / macOS
-bash scripts/build.sh
-
-# Windows PowerShell
-.\scripts\build.ps1
-```
-
-所有脚本均可自动安装缺失的工具链依赖（Rust、wasm-pack、Node.js、bun）。
-
-可选参数：`--skip-wasm`（跳过 PoW WASM 编译）、`--skip-frontend`（跳过 Vite 构建）
-
-## 部署
-
-```bash
-bun run deploy   # 类型检查 + 构建前端 + wrangler 部署
-```
+参与 Prism 开发请参阅 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ## 文档
 
@@ -123,10 +92,7 @@ prism/
 │   └── pow/                 # Rust PoW WASM crate
 │       └── src/lib.rs
 ├── tests/                   # bun test 测试
-├── scripts/                 # 跨平台构建脚本
-│   ├── build.sh
-│   ├── build.ps1
-│   └── build.py
+├── scripts/                 # setup、build、deploy 与检查脚本（Bun）
 ├── public/                  # 静态资源（构建后 pow.wasm 输出至此）
 ├── wrangler.jsonc           # Cloudflare Worker 配置
 ├── tsconfig.app.json        # 前端 TypeScript 配置

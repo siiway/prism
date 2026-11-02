@@ -37,51 +37,20 @@ A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare W
 
 ## Quick Start
 
+You need [Bun](https://bun.sh) and a Cloudflare account (the free tier is enough).
+
 ```bash
-# 1. Clone and install
 git clone https://github.com/siiway/prism
 cd prism
 bun install
-
-# 2. Provision Cloudflare resources
-wrangler d1 create prism-db
-wrangler kv namespace create KV_SESSIONS
-wrangler kv namespace create KV_CACHE
-wrangler r2 bucket create prism-assets
-
-# 3. Fill in the resource IDs in wrangler.jsonc
-
-# 4. Run migrations
-bun run db:migrate
-
-# 5. Start dev server
-bun run dev          # Vite on :5173
+bun run setup
 ```
 
-Open <http://localhost:5173> — you will be redirected to the first-run setup page to create the admin account.
+Setup signs you in to Cloudflare, asks for your URL, creates the database and storage, and deploys. Open your URL to create the admin account. See [Getting Started](https://prism.wss.moe/getting-started) for details.
 
-## Build
+To update: `git pull`, `bun install`, `bun run deploy`.
 
-```bash
-# Cross-platform (requires Python 3)
-python scripts/build.py
-
-# Linux / macOS
-bash scripts/build.sh
-
-# Windows PowerShell
-.\scripts\build.ps1
-```
-
-All scripts auto-install missing toolchain dependencies (Rust, wasm-pack, Node.js, bun).
-
-Optional flags: `--skip-wasm` (skip PoW WASM compilation), `--skip-frontend` (skip Vite build)
-
-## Deploy
-
-```bash
-bun run deploy   # type-checks + builds frontend + wrangler deploy
-```
+To work on Prism itself, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Documentation
 
@@ -123,10 +92,7 @@ prism/
 │   └── pow/                 # Rust PoW WASM crate
 │       └── src/lib.rs
 ├── tests/                   # bun test suites
-├── scripts/                 # Cross-platform build scripts
-│   ├── build.sh
-│   ├── build.ps1
-│   └── build.py
+├── scripts/                 # setup, build, deploy and check scripts (Bun)
 ├── public/                  # Static assets (pow.wasm lands here after build)
 ├── wrangler.jsonc           # Cloudflare Worker config
 ├── tsconfig.app.json        # Frontend TypeScript config

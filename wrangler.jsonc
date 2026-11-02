@@ -5,7 +5,7 @@
   // and writes a deploy-ready dist/prism/wrangler.json next to it.
   // Production deploys MUST use that generated config instead of this one
   // (otherwise wrangler re-bundles the source and skips Vite's SSR work).
-  // See scripts/build.sh — it copies the generated config back here so a
+  // See scripts/build.ts — it copies the generated config back here so a
   // plain `wrangler deploy` from the build directory picks up the right
   // bundle without needing custom flags in the Cloudflare dashboard.
   "main": "src/worker/index.ts",
