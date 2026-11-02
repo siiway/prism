@@ -54,6 +54,7 @@
     "saturation": "饱和度",
     "brightness": "亮度",
     "hue": "色相",
+    "open": "选择颜色",
     "hex": "十六进制颜色",
     "optionalHex": "可选的十六进制颜色",
     "invalidHex": "请输入三位或六位十六进制色值。"

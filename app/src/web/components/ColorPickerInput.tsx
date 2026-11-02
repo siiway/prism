@@ -1,10 +1,17 @@
+// A hex colour field: a swatch that opens the picker in a popover, beside a
+// short text input for typing or pasting a hex value.
+
 import {
   Button,
   ColorArea,
   ColorPicker,
   ColorSlider,
   Input,
+  Popover,
+  PopoverSurface,
+  PopoverTrigger,
   makeStyles,
+  mergeClasses,
   tokens,
   type ColorPickerProps,
 } from "@fluentui/react-components";
@@ -18,31 +25,45 @@ const useStyles = makeStyles({
   root: {
     display: "flex",
     flexDirection: "column",
-    gap: "8px",
-    width: "100%",
-    maxWidth: "320px",
-  },
-  picker: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-  },
-  area: {
-    width: "100%",
-    height: "160px",
+    gap: "4px",
   },
   editor: {
     display: "flex",
     alignItems: "center",
     gap: "8px",
   },
-  input: { flexGrow: 1 },
-  preview: {
-    width: "24px",
-    height: "24px",
+  input: { width: "180px" },
+  swatch: {
+    width: "20px",
+    height: "20px",
+    padding: 0,
     flexShrink: 0,
+    cursor: "pointer",
     borderRadius: tokens.borderRadiusSmall,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: "1px",
+    },
+  },
+  // Empty value in a nullable field: a diagonal line through the swatch.
+  swatchEmpty: {
+    backgroundImage: `linear-gradient(to top right, transparent calc(50% - 1px), ${tokens.colorNeutralStroke1} 50%, transparent calc(50% + 1px))`,
+  },
+  picker: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    width: "240px",
+  },
+  area: {
+    width: "100%",
+    minWidth: 0,
+    height: "160px",
+  },
+  error: {
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorPaletteRedForeground1,
   },
 });
 
@@ -63,6 +84,8 @@ export function ColorPickerInput({
   const { t } = useTranslation();
   const [draft, setDraft] = useState(value ?? "");
   const [lastValue, setLastValue] = useState(value);
+  // The popover lines up with the whole field, not just the swatch.
+  const [anchor, setAnchor] = useState<HTMLSpanElement | null>(null);
   if (value !== lastValue) {
     setLastValue(value);
     setDraft(value ?? "");
@@ -72,6 +95,7 @@ export function ColorPickerInput({
     normalized ?? normalizeHexColor(fallbackColor) ?? DEFAULT_COLOR;
   const pickerColor = hexToHsv(pickerHex) ?? { h: 0, s: 0, v: 0 };
   const invalid = draft !== "" && normalized === null;
+  const empty = nullable && normalized === null;
 
   const handlePickerChange: ColorPickerProps["onColorChange"] = (_, data) => {
     const hex = hsvToHex(data.color);
@@ -94,46 +118,63 @@ export function ColorPickerInput({
 
   return (
     <div className={styles.root}>
-      <ColorPicker
-        className={styles.picker}
-        color={pickerColor}
-        onColorChange={handlePickerChange}
-      >
-        <ColorArea
-          className={styles.area}
-          aria-label={t("colorPicker.area")}
-          inputX={{ "aria-label": t("colorPicker.saturation") }}
-          inputY={{ "aria-label": t("colorPicker.brightness") }}
-        />
-        <ColorSlider
-          aria-label={t("colorPicker.hue")}
-          input={{ "aria-label": t("colorPicker.hue") }}
-        />
-      </ColorPicker>
       <div className={styles.editor}>
-        <span
-          className={styles.preview}
-          style={{
-            backgroundColor:
-              normalized ?? (nullable ? "transparent" : pickerHex),
-          }}
-          aria-hidden="true"
-        />
         <Input
           className={styles.input}
+          root={{ ref: setAnchor }}
           value={draft}
           aria-label={t("colorPicker.hex")}
           aria-invalid={invalid}
-          placeholder={nullable ? t("colorPicker.optionalHex") : "#0078d4"}
+          placeholder={nullable ? t("colorPicker.optionalHex") : DEFAULT_COLOR}
+          contentBefore={
+            <Popover
+              trapFocus
+              positioning={{ target: anchor, position: "below", align: "end" }}
+            >
+              <PopoverTrigger disableButtonEnhancement>
+                <button
+                  type="button"
+                  className={mergeClasses(
+                    styles.swatch,
+                    empty && styles.swatchEmpty,
+                  )}
+                  style={{
+                    backgroundColor: empty
+                      ? "transparent"
+                      : (normalized ?? pickerHex),
+                  }}
+                  aria-label={t("colorPicker.open")}
+                />
+              </PopoverTrigger>
+              <PopoverSurface>
+                <ColorPicker
+                  className={styles.picker}
+                  color={pickerColor}
+                  onColorChange={handlePickerChange}
+                >
+                  <ColorArea
+                    className={styles.area}
+                    aria-label={t("colorPicker.area")}
+                    inputX={{ "aria-label": t("colorPicker.saturation") }}
+                    inputY={{ "aria-label": t("colorPicker.brightness") }}
+                  />
+                  <ColorSlider
+                    aria-label={t("colorPicker.hue")}
+                    input={{ "aria-label": t("colorPicker.hue") }}
+                  />
+                </ColorPicker>
+              </PopoverSurface>
+            </Popover>
+          }
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commitDraft}
           onKeyDown={(event) => {
             if (event.key === "Enter") commitDraft();
           }}
         />
-        {nullable && (
+        {nullable && normalized !== null && (
           <Button
-            size="small"
+            appearance="subtle"
             onClick={() => {
               setDraft("");
               onChange(null);
@@ -144,7 +185,7 @@ export function ColorPickerInput({
         )}
       </div>
       {invalid && (
-        <span role="alert" style={{ color: tokens.colorPaletteRedForeground1 }}>
+        <span role="alert" className={styles.error}>
           {t("colorPicker.invalidHex")}
         </span>
       )}
