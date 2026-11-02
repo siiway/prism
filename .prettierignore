@@ -1,5 +1,0 @@
-# Prettier also skips everything in .gitignore.
-bun.lock
-LICENSE
-THIRD_PARTY_LICENSES
-public/vendor

@@ -17,11 +17,8 @@
     "preview": "vite preview",
     "db:migrate": "wrangler d1 migrations apply prism-db --local",
     "db:migrate:prod": "wrangler d1 migrations apply prism-db --remote",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs",
-    "format": "prettier -c src docs tests",
-    "format:fix": "prettier -w src docs tests"
+    "format": "cd .. && prettier -c . --ignore-path .gitignore --ignore-path app/.prettierignore",
+    "format:fix": "cd .. && prettier -w . --ignore-path .gitignore --ignore-path app/.prettierignore"
   },
   "dependencies": {
     "@cap.js/wasm": "^0.0.7",
@@ -49,9 +46,6 @@
     "worker-mailer": "^1.2.1",
     "zustand": "^5.0.15"
   },
-  "overrides": {
-    "lodash": "^4.18.1"
-  },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.53.1",
     "@cloudflare/workers-types": "^4.20260702.1",
@@ -66,13 +60,10 @@
     "eslint-plugin-react-refresh": "^0.5.4",
     "globals": "^17.11.0",
     "jsonc-parser": "^3.3.1",
-    "mermaid": "^11.17.0",
     "prettier": "^3.9.6",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.67.0",
     "vite": "^8.2.2",
-    "vitepress": "^1.6.4",
-    "vitepress-plugin-mermaid": "^2.0.17",
     "wrangler": "^4.125.0"
   }
 }

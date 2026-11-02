@@ -41,14 +41,14 @@
 
 ```bash
 git clone https://github.com/siiway/prism
-cd prism
+cd prism/app
 bun install
 bun run setup
 ```
 
 setup 会登录你的 Cloudflare 账号、询问你的 URL、创建数据库和存储，然后部署。打开你的 URL 创建管理员账号。详见[快速开始](https://prism.wss.moe/zh/getting-started)。
 
-更新：`git pull`、`bun install`、`bun run deploy`。
+更新：在 `app/` 中运行 `git pull`、`bun install`、`bun run deploy`。
 
 参与 Prism 开发请参阅 [CONTRIBUTING.md](./.github/CONTRIBUTING.md)。
 

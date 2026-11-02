@@ -41,14 +41,14 @@ You need [Bun](https://bun.sh) and a Cloudflare account (the free tier is enough
 
 ```bash
 git clone https://github.com/siiway/prism
-cd prism
+cd prism/app
 bun install
 bun run setup
 ```
 
 Setup signs you in to Cloudflare, asks for your URL, creates the database and storage, and deploys. Open your URL to create the admin account. See [Getting Started](https://prism.wss.moe/getting-started) for details.
 
-To update: `git pull`, `bun install`, `bun run deploy`.
+To update, in `app/`: `git pull`, `bun install`, `bun run deploy`.
 
 To work on Prism itself, see [CONTRIBUTING.md](./.github/CONTRIBUTING.md).
 

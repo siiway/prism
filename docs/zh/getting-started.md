@@ -16,7 +16,7 @@ description: 用一条命令将 Prism 部署到你的 Cloudflare 账号。
 
 ```bash
 git clone https://github.com/siiway/prism
-cd prism
+cd prism/app
 bun install
 bun run setup
 ```
@@ -28,7 +28,7 @@ setup 会：
    `https://auth.example.com`，也可以是 `workers.dev` 地址。
 3. 创建 D1 数据库和 KV 命名空间，并按需创建用于上传图片的 R2
    存储桶，以及用于加密已存储密钥的 Secrets Store 密钥。
-4. 将它们的 ID、你的 URL 和账号写入 `wrangler.jsonc`。
+4. 将它们的 ID、你的 URL 和账号写入 `app/wrangler.jsonc`。
 5. 构建、应用数据库迁移并部署。
 
 setup 会复用已存在的资源，因此你可以再次运行它，例如稍后添加 R2。
@@ -41,6 +41,8 @@ setup 会复用已存在的资源，因此你可以再次运行它，例如稍�
 访问会直接进入登录页。
 
 ## 更新
+
+在 `app/` 中运行：
 
 ```bash
 git pull
@@ -68,7 +70,7 @@ bun run deploy
 如果使用自定义域名，还需要 **Workers Routes:Edit** 和 **Zone:Read**。如果仓库还连接了
 Cloudflare Workers Builds，请断开连接，否则每次推送都会部署两次。
 
-## `wrangler.jsonc` 中的设置
+## `app/wrangler.jsonc` 中的设置
 
 `vars` 块包含可选设置，例如 `LOCKDOWN_USERS` /
 `LOCKDOWN_TEAMS`（任何人都无法删除的账号和团队）以及 `ENABLE_RESET`

@@ -5,8 +5,9 @@
 # Every hook runs a program directly (no `sh -c`), so it works the same under
 # Git Bash, PowerShell and GUI clients on Windows. It needs `bun` on PATH.
 #
-# `bun install` installs both hook types (scripts/hooks.ts). By hand:
-#   bunx prek install
+# This file lives in app/, so `bun install` there installs the hooks with its
+# path (scripts/hooks.ts). Hooks run from the repository root, over every file,
+# and call the app's scripts with `bun run --cwd app`.
 
 default_install_hook_types = ["pre-commit", "pre-push"]
 
@@ -20,7 +21,7 @@ stages = ["pre-commit"]
 [[repos.hooks]]
 id = "detect-private-key"
 stages = ["pre-commit"]
-exclude = '^src/web/i18n/'
+exclude = '^app/src/web/i18n/'
 
 [[repos.hooks]]
 id = "check-added-large-files"
@@ -34,8 +35,8 @@ repo = "local"
 [[repos.hooks]]
 id = "prettier"
 name = "prettier (format whole repo)"
-entry = "bunx"
-args = ["prettier", "-w", "."]
+entry = "bun"
+args = ["run", "--cwd", "app", "format:fix"]
 language = "system"
 stages = ["pre-commit"]
 pass_filenames = false
@@ -51,64 +52,45 @@ stages = ["pre-commit"]
 pass_filenames = false
 always_run = true
 
+# Run by path under Bun, from the root with the changed files: ESLint finds
+# app/eslint.config.ts from each file, and Bun loads it without jiti.
 [[repos.hooks]]
 id = "eslint"
 name = "eslint"
 entry = "bun"
-# Under Bun, so ESLint can load eslint.config.ts without jiti.
-args = ["--bun", "eslint"]
-files = '\.(tsx?|jsx?|mjs|cjs)$'
+args = ["app/node_modules/eslint/bin/eslint.js"]
+files = '^app/.*\.(tsx?|jsx?|mjs|cjs)$'
 language = "system"
 stages = ["pre-commit"]
 
 # ── pre-push: slower checks that CI also runs ─────────────────────────────────
 
 [[repos.hooks]]
-id = "typecheck-app"
-name = "typecheck (app)"
-entry = "bunx"
-args = ["tsc", "-p", "src/web"]
+id = "typecheck"
+name = "typecheck"
+entry = "bun"
+args = ["run", "--cwd", "app", "typecheck"]
 language = "system"
+stages = ["pre-push"]
 pass_filenames = false
 always_run = true
-stages = ["pre-push"]
-
-[[repos.hooks]]
-id = "typecheck-worker"
-name = "typecheck (worker)"
-entry = "bunx"
-args = ["tsc", "-p", "src/worker"]
-language = "system"
-pass_filenames = false
-always_run = true
-stages = ["pre-push"]
-
-[[repos.hooks]]
-id = "typecheck-tests"
-name = "typecheck (tests)"
-entry = "bunx"
-args = ["tsc", "-p", "tests"]
-language = "system"
-pass_filenames = false
-always_run = true
-stages = ["pre-push"]
 
 [[repos.hooks]]
 id = "test"
 name = "tests"
 entry = "bun"
-args = ["run", "test"]
+args = ["run", "--cwd", "app", "test"]
 language = "system"
+stages = ["pre-push"]
 pass_filenames = false
 always_run = true
-stages = ["pre-push"]
 
 [[repos.hooks]]
 id = "translations"
 name = "translation keys"
 entry = "bun"
-args = ["run", "check:i18n"]
+args = ["run", "--cwd", "app", "check:i18n"]
 language = "system"
+stages = ["pre-push"]
 pass_filenames = false
 always_run = true
-stages = ["pre-push"]

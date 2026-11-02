@@ -6,7 +6,7 @@
 //    is installed. Without it browsers use the slower JavaScript solver.
 // 2. Typechecks the app and the Worker.
 // 3. Builds the app and the Worker with Vite into dist/.
-// 4. Writes wrangler.json at the repository root, so `wrangler deploy` ships
+// 4. Writes wrangler.json next to wrangler.jsonc, so `wrangler deploy` ships
 //    the Vite build instead of re-bundling src/worker from scratch.
 
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";

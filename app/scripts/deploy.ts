@@ -98,7 +98,7 @@ if (build) {
   step("Building");
   run(process.execPath, [join(ROOT, "scripts", "build.ts")], { dryRun });
 } else if (!migrationsOnly && !built) {
-  warn("no wrangler.json at the root, so wrangler will re-bundle the source");
+  warn("no built wrangler.json, so wrangler will re-bundle the source");
   warn("instead of deploying the Vite build. Run without --skip-build.");
 }
 

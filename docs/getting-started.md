@@ -16,7 +16,7 @@ description: Deploy Prism to your Cloudflare account with one command.
 
 ```bash
 git clone https://github.com/siiway/prism
-cd prism
+cd prism/app
 bun install
 bun run setup
 ```
@@ -29,7 +29,7 @@ Setup:
 3. Creates the D1 database and KV namespaces and, if you want them, an R2
    bucket for uploaded images and a Secrets Store key that encrypts stored
    secrets.
-4. Writes their IDs, your URL and your account into `wrangler.jsonc`.
+4. Writes their IDs, your URL and your account into `app/wrangler.jsonc`.
 5. Builds, applies the database migrations and deploys.
 
 Setup reuses resources that already exist, so you can run it again, for example
@@ -43,6 +43,8 @@ email, username, display name and password, and the site name. After that,
 visits go straight to the login page.
 
 ## Updating
+
+In `app/`:
 
 ```bash
 git pull
@@ -71,7 +73,7 @@ Store:Read** permissions, plus **Workers Routes:Edit** and **Zone:Read** if you
 use a custom domain. If the repository is also connected to Cloudflare Workers
 Builds, disconnect it, or every push deploys twice.
 
-## Settings in `wrangler.jsonc`
+## Settings in `app/wrangler.jsonc`
 
 The `vars` block holds optional settings such as `LOCKDOWN_USERS` /
 `LOCKDOWN_TEAMS` (accounts and teams nobody can delete) and `ENABLE_RESET`

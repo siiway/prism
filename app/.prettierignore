@@ -1,0 +1,2 @@
+# Prettier also skips everything in ../.gitignore.
+public/vendor
