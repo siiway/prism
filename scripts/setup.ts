@@ -99,17 +99,24 @@ info("The public URL is where people will reach Prism: a domain on this");
 info(
   "account (https://auth.example.com) or https://<name>.<subdomain>.workers.dev.",
 );
-const appUrl = (await ask("Public URL:", config.vars?.APP_URL)).replace(
+const enteredUrl = (await ask("Public URL:", config.vars?.APP_URL)).replace(
   /\/+$/,
   "",
 );
+let appUrl: string;
 let host: string;
 try {
-  const url = new URL(appUrl);
-  if (url.protocol !== "https:" || url.pathname !== "/") throw new Error();
+  const url = new URL(enteredUrl);
+  // Only a bare origin: APP_URL gets paths appended for OAuth callbacks and
+  // issuer metadata, so a path, query, fragment or credentials would break
+  // them.
+  if (url.protocol !== "https:" || url.href !== `${url.origin}/`) {
+    throw new Error();
+  }
+  appUrl = url.origin;
   host = url.hostname;
 } catch {
-  fail(`not an https:// origin: ${appUrl}`);
+  fail(`not an https:// origin: ${enteredUrl}`);
 }
 if (appUrl !== config.vars?.APP_URL)
   change(["vars", "APP_URL"], appUrl, "APP_URL");
