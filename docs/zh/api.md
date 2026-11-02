@@ -170,8 +170,9 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 `GET`、`POST` 和 `DELETE /api/user/gpg[/:id]` 管理已登录用户的密钥。
 `POST` 接受 ASCII armor 格式的 `public_key`，以及可选 `name`；支持 RSA、
 EdDSA 和 ML-DSA 密钥。包含多个密钥的 `public_key`（多个块拼接，或
-`gpg --export --armor key1 key2` 导出的单个块）会被拆分，每个密钥单独保存。
-已注册的密钥会被跳过；有多个密钥时，`name` 会加上 `#1`、`#2`… 后缀。响应为
+`gpg --export --armor key1 key2` 导出的单个块）会被拆分，每个密钥单独保存，
+最多 20 个不同的密钥（超出返回 `400 gpg_too_many_keys`）。重复的密钥和已注册
+的密钥会被跳过；有多个密钥时，`name` 会加上 `#1`、`#2`… 后缀。响应为
 `{ "keys": [...], "added": <数量>, "skipped": <数量> }`；若所有密钥都已存在，
 返回 `409 key_exists`。
 

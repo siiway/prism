@@ -192,8 +192,9 @@ returns `{ "totp_required": true }`; resubmit the same message with `totp_code`.
 `POST` takes an ASCII-armored `public_key` and optional `name`; RSA, EdDSA and
 ML-DSA keys are supported. A `public_key` holding several keys (concatenated
 blocks, or one block from `gpg --export --armor key1 key2`) is split into one
-key per entry. Keys already registered are skipped; with several keys, `name`
-gets a `#1`, `#2`… suffix. The response is
+key per entry, up to 20 distinct keys (`400 gpg_too_many_keys` beyond that).
+Repeated keys and keys already registered are skipped; with several keys,
+`name` gets a `#1`, `#2`… suffix. The response is
 `{ "keys": [...], "added": <count>, "skipped": <count> }`, or `409 key_exists`
 when every key was already there.
 

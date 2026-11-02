@@ -3055,6 +3055,7 @@
     "github_login_missing": "No GitHub username is set.",
     "github_no_readme": "This GitHub user has no profile README.",
     "github_source_needs_account": "Choose a linked GitHub account or enter a GitHub username.",
+    "gpg_too_many_keys": "Add at most {{max}} keys at a time.",
     "group_color_invalid": "The color must be a hex value like #1a2b3c.",
     "group_not_assignable": "You can't assign or remove the group “{{group}}”.",
     "group_not_found": "Group not found.",

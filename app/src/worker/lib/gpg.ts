@@ -59,10 +59,38 @@ export interface AddedGpgKey {
   last_used_at: null;
 }
 
+/** Most keys one add accepts; keeps the insert batch well inside D1 limits. */
+export const MAX_GPG_KEYS_PER_ADD = 20;
+
+const NAME_MAX = 128;
+
 export type AddGpgKeysResult =
   | { ok: true; keys: AddedGpgKey[]; added: number; skipped: number }
-  | { ok: false; error: "pgp_key_invalid"; status: 400 }
-  | { ok: false; error: "key_exists"; status: 409 };
+  | {
+      ok: false;
+      status: 400 | 409;
+      body: { error: string; params?: Record<string, number> };
+    };
+
+const invalidKey = {
+  ok: false,
+  status: 400,
+  body: { error: "pgp_key_invalid" },
+} as const;
+const keyExists = {
+  ok: false,
+  status: 409,
+  body: { error: "key_exists" },
+} as const;
+
+/** Read a stored row's keys, or none if it no longer parses. */
+async function readStoredKeys(armored: string): Promise<openpgp.Key[]> {
+  try {
+    return await readPublicKeys(armored);
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Add every key in a paste as its own row. Keys repeated in the paste or
@@ -79,10 +107,10 @@ export async function addGpgKeys(
   try {
     parsed = await parseArmoredPublicKeys(publicKey);
   } catch {
-    return { ok: false, error: "pgp_key_invalid", status: 400 };
+    return invalidKey;
   }
   if (parsed.length === 0) {
-    return { ok: false, error: "pgp_key_invalid", status: 400 };
+    return invalidKey;
   }
 
   const seen = new Set<string>();
@@ -91,38 +119,60 @@ export async function addGpgKeys(
     seen.add(k.fingerprint);
     return true;
   });
+  if (unique.length > MAX_GPG_KEYS_PER_ADD) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: "gpg_too_many_keys",
+        params: { max: MAX_GPG_KEYS_PER_ADD },
+      },
+    };
+  }
 
+  // A row saved whole by the old OAuth path can hold keys besides the one
+  // its fingerprint column names, so count those as registered too.
   const { results: existingRows } = await db
-    .prepare("SELECT fingerprint FROM user_gpg_keys WHERE user_id = ?")
+    .prepare(
+      "SELECT fingerprint, public_key FROM user_gpg_keys WHERE user_id = ?",
+    )
     .bind(userId)
-    .all<{ fingerprint: string }>();
+    .all<{ fingerprint: string; public_key: string }>();
   const existing = new Set(existingRows.map((r) => r.fingerprint));
+  for (const row of existingRows) {
+    for (const key of await readStoredKeys(row.public_key)) {
+      existing.add(key.getFingerprint().toLowerCase());
+    }
+  }
 
   const toAdd = unique.filter((k) => !existing.has(k.fingerprint));
   if (toAdd.length === 0) {
-    return { ok: false, error: "key_exists", status: 409 };
+    return keyExists;
   }
 
   const now = Math.floor(Date.now() / 1000);
   const baseName = name?.trim();
-  const keys: AddedGpgKey[] = toAdd.map((k, i) => ({
+  const labelFor = (k: ParsedKeyWithArmor, i: number) => {
+    if (!baseName) return (k.uids[0] || k.keyId).slice(0, NAME_MAX);
+    if (toAdd.length === 1) return baseName.slice(0, NAME_MAX);
+    const suffix = ` #${i + 1}`;
+    return baseName.slice(0, NAME_MAX - suffix.length) + suffix;
+  };
+  const candidates: AddedGpgKey[] = toAdd.map((k, i) => ({
     id: randomId(16),
     fingerprint: k.fingerprint,
     key_id: k.keyId,
-    name: (baseName
-      ? toAdd.length === 1
-        ? baseName
-        : `${baseName} #${i + 1}`
-      : k.uids[0] || k.keyId
-    ).slice(0, 128),
+    name: labelFor(k, i),
     created_at: now,
     last_used_at: null,
   }));
-  await db.batch(
-    keys.map((k, i) =>
+  // A concurrent add may have registered some of these since the check
+  // above; skip those instead of failing the whole batch.
+  const results = await db.batch(
+    candidates.map((k, i) =>
       db
         .prepare(
-          "INSERT INTO user_gpg_keys (id, user_id, fingerprint, key_id, name, public_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO user_gpg_keys (id, user_id, fingerprint, key_id, name, public_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, fingerprint) DO NOTHING",
         )
         .bind(
           k.id,
@@ -135,18 +185,24 @@ export async function addGpgKeys(
         ),
     ),
   );
+  const keys = candidates.filter((_, i) => results[i].meta.changes > 0);
+  if (keys.length === 0) {
+    return keyExists;
+  }
 
   return {
     ok: true,
     keys,
     added: keys.length,
-    skipped: unique.length - toAdd.length,
+    skipped: parsed.length - keys.length,
   };
 }
 
 export interface VerifyResult {
   valid: boolean;
-  signerKeyId: string | null; // 16-char hex key ID of the signing key
+  signerKeyId: string | null; // 16-char hex key ID of the signing (sub)key
+  /** Index into the given public keys of the entry that holds the signer. */
+  signerIndex: number | null;
   signedText: string;
 }
 
@@ -160,9 +216,8 @@ export async function verifySignedMessage(
 ): Promise<VerifyResult> {
   // A stored row may hold several keys: OAuth adds used to keep the paste
   // whole, so read every key in it rather than just the first.
-  const publicKeys = (
-    await Promise.all(armoredPublicKeys.map(readPublicKeys))
-  ).flat();
+  const keysPerEntry = await Promise.all(armoredPublicKeys.map(readStoredKeys));
+  const publicKeys = keysPerEntry.flat();
 
   const isCleartext = armoredMessage
     .trimStart()
@@ -200,10 +255,20 @@ export async function verifySignedMessage(
     try {
       await sig.verified;
       const keyId = sig.keyID.toHex().toLowerCase();
-      return { valid: true, signerKeyId: keyId, signedText };
+      // The signer may be a subkey, so look it up among each entry's keys
+      // rather than comparing against primary key IDs.
+      const index = keysPerEntry.findIndex((keys) =>
+        keys.some((k) => k.getKeys(sig.keyID).length > 0),
+      );
+      return {
+        valid: true,
+        signerKeyId: keyId,
+        signerIndex: index === -1 ? null : index,
+        signedText,
+      };
     } catch {
       // signature invalid — continue checking others
     }
   }
-  return { valid: false, signerKeyId: null, signedText };
+  return { valid: false, signerKeyId: null, signerIndex: null, signedText };
 }

@@ -46,7 +46,7 @@ app.post("/", async (c) => {
     body.public_key,
     body.name,
   );
-  if (!result.ok) return c.json({ error: result.error }, result.status);
+  if (!result.ok) return c.json(result.body, result.status);
   const { keys, added, skipped } = result;
   return c.json({ keys, added, skipped });
 });

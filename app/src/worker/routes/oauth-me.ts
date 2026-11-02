@@ -338,7 +338,7 @@ app.post("/me/gpg-keys", async (c) => {
     body.public_key,
     body.name,
   );
-  if (!result.ok) return c.json({ error: result.error }, result.status);
+  if (!result.ok) return c.json(result.body, result.status);
   const { keys, added, skipped } = result;
   // The first key stays at the top level for clients that expect one.
   return c.json({ ...keys[0], keys, added, skipped });

@@ -1,12 +1,21 @@
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import * as openpgp from "openpgp";
-import { addGpgKeys, verifySignedMessage } from "../src/worker/lib/gpg";
+import {
+  addGpgKeys,
+  MAX_GPG_KEYS_PER_ADD,
+  verifySignedMessage,
+} from "../src/worker/lib/gpg";
 import { d1, migratedDatabase } from "./setup/d1";
 
 let sqlite: Database;
 let db: D1Database;
 const now = Math.floor(Date.now() / 1000);
+const keyExists = {
+  ok: false,
+  status: 409,
+  body: { error: "key_exists" },
+} as const;
 
 interface TestKey {
   publicKey: string;
@@ -110,6 +119,18 @@ describe("addGpgKeys", () => {
     expect(storedRows().map((r) => r.name)).toEqual(["Laptop"]);
   });
 
+  test("keeps the #n suffix when a long name is cut", async () => {
+    await addGpgKeys(
+      db,
+      "u1",
+      `${alice.publicKey}\n${bob.publicKey}`,
+      "x".repeat(200),
+    );
+    const names = storedRows().map((r) => r.name);
+    expect(names.map((n) => n.length)).toEqual([128, 128]);
+    expect(names.map((n) => n.slice(-3))).toEqual([" #1", " #2"]);
+  });
+
   test("skips keys repeated in the paste or already registered", async () => {
     await addGpgKeys(db, "u1", alice.publicKey);
     const result = await addGpgKeys(
@@ -119,17 +140,73 @@ describe("addGpgKeys", () => {
         "\n",
       ),
     );
-    expect(result).toMatchObject({ ok: true, added: 2, skipped: 1 });
+    expect(result).toMatchObject({ ok: true, added: 2, skipped: 2 });
     expect(storedRows()).toHaveLength(3);
+  });
+
+  test("treats keys inside an older combined row as registered", async () => {
+    sqlite
+      .query(
+        "INSERT INTO user_gpg_keys (id, user_id, fingerprint, key_id, name, public_key, created_at) VALUES ('legacy', 'u1', ?, ?, 'old', ?, ?)",
+      )
+      .run(
+        alice.fingerprint,
+        alice.fingerprint.slice(-16),
+        `${alice.publicKey}\n${bob.publicKey}`,
+        now,
+      );
+    expect(await addGpgKeys(db, "u1", bob.publicKey)).toEqual(keyExists);
+    const result = await addGpgKeys(
+      db,
+      "u1",
+      `${bob.publicKey}\n${carol.publicKey}`,
+    );
+    expect(result).toMatchObject({ ok: true, added: 1, skipped: 1 });
+  });
+
+  test("skips keys a concurrent add registered after the check", async () => {
+    await addGpgKeys(db, "u1", alice.publicKey);
+    // A stale read: the existing-key lookup sees nothing yet.
+    const stale = {
+      prepare: (sql: string) =>
+        db.prepare(sql.startsWith("SELECT fingerprint") ? `${sql} AND 0` : sql),
+      batch: (stmts: D1PreparedStatement[]) => db.batch(stmts),
+    } as unknown as D1Database;
+
+    const result = await addGpgKeys(
+      stale,
+      "u1",
+      `${alice.publicKey}\n${bob.publicKey}`,
+    );
+    expect(result).toMatchObject({ ok: true, added: 1, skipped: 1 });
+    expect(result.ok && result.keys.map((k) => k.fingerprint)).toEqual([
+      bob.fingerprint,
+    ]);
+    expect(await addGpgKeys(stale, "u1", alice.publicKey)).toEqual(keyExists);
   });
 
   test("rejects a paste whose keys are all registered", async () => {
     await addGpgKeys(db, "u1", alice.publicKey);
-    expect(await addGpgKeys(db, "u1", alice.publicKey)).toEqual({
+    expect(await addGpgKeys(db, "u1", alice.publicKey)).toEqual(keyExists);
+  });
+
+  test("rejects more than the per-add limit of distinct keys", async () => {
+    const many = await Promise.all(
+      Array.from({ length: MAX_GPG_KEYS_PER_ADD + 1 }, (_, i) =>
+        makeKey(`K${i}`),
+      ),
+    );
+    expect(
+      await addGpgKeys(db, "u1", many.map((k) => k.publicKey).join("\n")),
+    ).toEqual({
       ok: false,
-      error: "key_exists",
-      status: 409,
+      status: 400,
+      body: {
+        error: "gpg_too_many_keys",
+        params: { max: MAX_GPG_KEYS_PER_ADD },
+      },
     });
+    expect(storedRows()).toHaveLength(0);
   });
 
   test("rejects text without a valid public key block", async () => {
@@ -139,26 +216,53 @@ describe("addGpgKeys", () => {
     ]) {
       expect(await addGpgKeys(db, "u1", text)).toEqual({
         ok: false,
-        error: "pgp_key_invalid",
         status: 400,
+        body: { error: "pgp_key_invalid" },
       });
     }
     expect(storedRows()).toHaveLength(0);
   });
 });
 
+async function clearsign(privateKey: string): Promise<string> {
+  return openpgp.sign({
+    message: await openpgp.createCleartextMessage({ text: "hello" }),
+    signingKeys: await openpgp.readPrivateKey({ armoredKey: privateKey }),
+  });
+}
+
 describe("verifySignedMessage", () => {
-  test("checks every key in a row that holds several", async () => {
-    const message = await openpgp.sign({
-      message: await openpgp.createCleartextMessage({ text: "hello" }),
-      signingKeys: await openpgp.readPrivateKey({
-        armoredKey: bob.privateKey,
-      }),
-    });
-    const result = await verifySignedMessage(message, [
+  test("finds the signer in a row that holds several keys", async () => {
+    const result = await verifySignedMessage(await clearsign(bob.privateKey), [
+      carol.publicKey,
       `${alice.publicKey}\n${bob.publicKey}`,
     ]);
     expect(result.valid).toBe(true);
-    expect(result.signerKeyId).not.toBeNull();
+    expect(result.signerIndex).toBe(1);
+  });
+
+  test("finds the row when a signing subkey made the signature", async () => {
+    const { publicKey, privateKey } = await openpgp.generateKey({
+      type: "curve25519",
+      userIDs: [{ name: "Dana" }],
+      subkeys: [{ sign: true }],
+      format: "armored",
+    });
+    const key = await openpgp.readKey({ armoredKey: publicKey });
+    const result = await verifySignedMessage(await clearsign(privateKey), [
+      alice.publicKey,
+      publicKey,
+    ]);
+    expect(result.valid).toBe(true);
+    expect(result.signerKeyId).not.toBe(key.getKeyID().toHex());
+    expect(result.signerIndex).toBe(1);
+  });
+
+  test("ignores a stored row that no longer parses", async () => {
+    const result = await verifySignedMessage(
+      await clearsign(alice.privateKey),
+      ["garbage", alice.publicKey],
+    );
+    expect(result).toMatchObject({ valid: true, signerIndex: 1 });
   });
 });
