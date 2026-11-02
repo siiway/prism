@@ -1,6 +1,6 @@
 // Admin → reset everything: the guarded, two-step wipe of all instance data.
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { getConfig } from "../lib/config";
 import { verifyAnyTotp } from "../lib/totp";
 import { PRISM_INTERNAL_CLIENT_ID, grantSudo, isSudoActive } from "../lib/sudo";
@@ -53,20 +53,55 @@ async function loadPendingReset(
   }
 }
 
+/** Whether this session holds a sudo grant for Prism's own actions. */
+async function internalSudoActive(c: Context<AppEnv>): Promise<boolean> {
+  const sessionId = c.get("sessionId");
+  return (
+    !!sessionId &&
+    isSudoActive(
+      c.env.KV_CACHE,
+      c.get("user").id,
+      sessionId,
+      PRISM_INTERNAL_CLIENT_ID,
+    )
+  );
+}
+
+/**
+ * Null when the session holds a sudo grant or `totpCode` is valid, otherwise
+ * the refusal. With `grant`, a valid code also opens a sudo window so later
+ * steps don't prompt again.
+ */
+async function sudoOrTotpRefusal(
+  c: Context<AppEnv>,
+  totpCode: string | undefined,
+  grant = false,
+): Promise<Response | null> {
+  if (await internalSudoActive(c)) return null;
+  if (!totpCode) return c.json({ error: "totp_required" }, 400);
+  const userId = c.get("user").id;
+  if (!(await verifyAnyTotp(c.env, userId, totpCode)))
+    return c.json({ error: "invalid_totp" }, 400);
+  const sessionId = c.get("sessionId");
+  if (grant && sessionId) {
+    const config = await getConfig(c.env.DB);
+    await grantSudo(
+      c.env.KV_CACHE,
+      userId,
+      sessionId,
+      PRISM_INTERNAL_CLIENT_ID,
+      Math.max(0, config.sudo_mode_ttl_minutes),
+    );
+  }
+  return null;
+}
+
 app.get("/reset/status", async (c) => {
   const enabled = isFlagEnabled(c.env.ENABLE_RESET);
   const cooldownRequired = !isFlagEnabled(c.env.NO_RESET_COOLDOWN);
   const pending = await loadPendingReset(c.env.KV_CACHE);
-  const sessionId = c.get("sessionId");
   const user = c.get("user");
-  const sudoActive =
-    !!sessionId &&
-    (await isSudoActive(
-      c.env.KV_CACHE,
-      user.id,
-      sessionId,
-      PRISM_INTERNAL_CLIENT_ID,
-    ));
+  const sudoActive = await internalSudoActive(c);
 
   return c.json({
     enabled,
@@ -89,40 +124,12 @@ app.post("/reset/request", async (c) => {
   }
 
   const user = c.get("user");
-  const sessionId = c.get("sessionId");
   const body = await c.req
     .json<{ totp_code?: string }>()
     .catch(() => ({}) as { totp_code?: string });
 
-  // Either an active sudo grant or a fresh TOTP code authorises requesting.
-  const sudoActive =
-    !!sessionId &&
-    (await isSudoActive(
-      c.env.KV_CACHE,
-      user.id,
-      sessionId,
-      PRISM_INTERNAL_CLIENT_ID,
-    ));
-  if (!sudoActive) {
-    if (!body.totp_code) {
-      return c.json({ error: "totp_required" }, 400);
-    }
-    const ok = await verifyAnyTotp(c.env, user.id, body.totp_code);
-    if (!ok) return c.json({ error: "invalid_totp" }, 400);
-    if (sessionId) {
-      const config = await getConfig(c.env.DB);
-      const ttl = Math.max(0, config.sudo_mode_ttl_minutes);
-      if (ttl > 0) {
-        await grantSudo(
-          c.env.KV_CACHE,
-          user.id,
-          sessionId,
-          PRISM_INTERNAL_CLIENT_ID,
-          ttl,
-        );
-      }
-    }
-  }
+  const refusal = await sudoOrTotpRefusal(c, body.totp_code, true);
+  if (refusal) return refusal;
 
   const existing = await loadPendingReset(c.env.KV_CACHE);
   if (existing) {
@@ -165,8 +172,6 @@ app.post("/reset/confirm", async (c) => {
     return c.json({ error: "reset_disabled" }, 403);
   }
 
-  const user = c.get("user");
-  const sessionId = c.get("sessionId");
   const body = await c.req
     .json<{ confirm?: string; totp_code?: string }>()
     .catch(() => ({}) as { confirm?: string; totp_code?: string });
@@ -189,22 +194,8 @@ app.post("/reset/confirm", async (c) => {
     );
   }
 
-  // Sudo or a fresh TOTP code each authorise confirmation.
-  const sudoActive =
-    !!sessionId &&
-    (await isSudoActive(
-      c.env.KV_CACHE,
-      user.id,
-      sessionId,
-      PRISM_INTERNAL_CLIENT_ID,
-    ));
-  if (!sudoActive) {
-    if (!body.totp_code) {
-      return c.json({ error: "totp_required" }, 400);
-    }
-    const ok = await verifyAnyTotp(c.env, user.id, body.totp_code);
-    if (!ok) return c.json({ error: "invalid_totp" }, 400);
-  }
+  const refusal = await sudoOrTotpRefusal(c, body.totp_code);
+  if (refusal) return refusal;
 
   // Delete all data in reverse dependency order (leaves first)
   await c.env.DB.batch([
