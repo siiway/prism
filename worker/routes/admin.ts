@@ -1,6 +1,6 @@
 // Admin routes: site config, user management, app moderation, audit log
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import {
   configBag,
   encryptConfigUpdates,
@@ -8,7 +8,6 @@ import {
   setConfigValues,
 } from "../lib/config";
 import { invalidLoginRateLimitConfig } from "../lib/loginRateLimit";
-import { getIp } from "../lib/clientIp";
 import {
   SENSITIVE_CONFIG_KEYS,
   encryptSecret,
@@ -43,10 +42,11 @@ import {
 import { randomBase64url, randomId } from "../lib/crypto";
 
 import {
-  recordAudit,
+  PLATFORM_AUDIT,
+  type AuditTarget,
+  auditRequestAction,
   recordAccountDeletion,
   auditRequestMeta,
-  type AuditInput,
 } from "../lib/audit";
 import {
   dissolveTeam,
@@ -61,7 +61,6 @@ import type {
   TeamRow,
   UserRow,
   Variables,
-  WaitUntilCtx,
 } from "../types";
 import { isUserLocked, isTeamLocked } from "../lib/lockdown";
 import { sanitizeRolePermissions } from "../lib/teamGroups";
@@ -402,16 +401,7 @@ app.patch("/config", async (c) => {
   const encrypted = await encryptConfigUpdates(c.env, updates);
   await setConfigValues(c.env.DB, encrypted);
 
-  await logAudit(
-    c.env,
-    c.get("user").id,
-    "admin.config.update",
-    "site_config",
-    null,
-    updates,
-    getIp(c),
-    c.executionCtx,
-  );
+  auditAdmin(c, "admin.config.update", "site_config", null, updates);
   return c.json({ updated: Object.keys(updates) });
 });
 
@@ -528,21 +518,12 @@ app.post("/secrets/migrate", async (c) => {
     await setConfigValues(c.env.DB, cfgUpdates);
   }
 
-  await logAudit(
-    c.env,
-    c.get("user").id,
-    "admin.secrets.migrate",
-    "secrets",
-    null,
-    {
-      apps_encrypted: appsEncrypted,
-      sources_encrypted: sourcesEncrypted,
-      user_pats_encrypted: userPatsEncrypted,
-      config_keys_encrypted: Object.keys(cfgUpdates),
-    },
-    getIp(c),
-    c.executionCtx,
-  );
+  auditAdmin(c, "admin.secrets.migrate", "secrets", null, {
+    apps_encrypted: appsEncrypted,
+    sources_encrypted: sourcesEncrypted,
+    user_pats_encrypted: userPatsEncrypted,
+    config_keys_encrypted: Object.keys(cfgUpdates),
+  });
 
   const after = await collectSecretsStatus(c.env);
   return c.json({
@@ -946,33 +927,24 @@ app.post("/d1-secrets/migrate", async (c) => {
     "refresh_token",
   );
 
-  await logAudit(
-    c.env,
-    c.get("user").id,
-    "admin.d1_secrets.migrate",
-    "secrets",
-    null,
-    {
-      pat: patCount,
-      oauth_tokens_access: oauthAccessCount,
-      oauth_tokens_refresh: oauthRefreshCount,
-      oauth_codes: oauthCodesCount,
-      site_invites: siteInvitesCount,
-      team_invites: teamInvitesCount,
-      users_email_verify_token: usersTokenCount,
-      users_email_verify_code: usersCodeCount,
-      user_emails_verify_token: userEmailsTokenCount,
-      user_emails_verify_code: userEmailsCodeCount,
-      oauth_2fa_codes: twoFaCount,
-      totp_authenticators: totpCount,
-      webhooks: webhooksCount,
-      app_webhooks: appWebhooksCount,
-      social_connections_access: scAccessCount,
-      social_connections_refresh: scRefreshCount,
-    },
-    getIp(c),
-    c.executionCtx,
-  );
+  auditAdmin(c, "admin.d1_secrets.migrate", "secrets", null, {
+    pat: patCount,
+    oauth_tokens_access: oauthAccessCount,
+    oauth_tokens_refresh: oauthRefreshCount,
+    oauth_codes: oauthCodesCount,
+    site_invites: siteInvitesCount,
+    team_invites: teamInvitesCount,
+    users_email_verify_token: usersTokenCount,
+    users_email_verify_code: usersCodeCount,
+    user_emails_verify_token: userEmailsTokenCount,
+    user_emails_verify_code: userEmailsCodeCount,
+    oauth_2fa_codes: twoFaCount,
+    totp_authenticators: totpCount,
+    webhooks: webhooksCount,
+    app_webhooks: appWebhooksCount,
+    social_connections_access: scAccessCount,
+    social_connections_refresh: scRefreshCount,
+  });
 
   const after = await collectD1SecretsStatus(c.env);
   return c.json({
@@ -1215,17 +1187,7 @@ app.patch("/users/:id", async (c) => {
     throw err;
   }
 
-  await logAudit(
-    c.env,
-    admin.id,
-    "admin.user.update",
-    "user",
-    id,
-    body,
-    getIp(c),
-    c.executionCtx,
-    { resourceName: user.username },
-  );
+  auditAdmin(c, "admin.user.update", "user", id, body, user.username);
   return c.json({ ok: true });
 });
 
@@ -1247,7 +1209,7 @@ app.delete("/users/:id", async (c) => {
   }
 
   // Before the delete, so the team fan-out can still read memberships.
-  // This also reaches team owners, which the platform-scope logAudit below
+  // This also reaches team owners, which the platform-scope auditAdmin below
   // does not — webhook delivery matches on (scope, scope_id).
   await recordAccountDeletion(
     c.env,
@@ -1268,23 +1230,12 @@ app.delete("/users/:id", async (c) => {
   c.executionCtx.waitUntil(
     sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
   );
-  await logAudit(
-    c.env,
-    admin.id,
-    "admin.user.delete",
-    "user",
-    id,
-    {},
-    getIp(c),
-    c.executionCtx,
-    { resourceName: user.username },
-  );
+  auditAdmin(c, "admin.user.delete", "user", id, {}, user.username);
   return c.json({ ok: true });
 });
 
 // Terminate all sessions for a user
 app.delete("/users/:id/sessions", async (c) => {
-  const admin = c.get("user");
   const id = c.req.param("id");
   const target = await c.env.DB.prepare(
     "SELECT username FROM users WHERE id = ? AND kind = 'user'",
@@ -1297,24 +1248,16 @@ app.delete("/users/:id/sessions", async (c) => {
   )
     .bind(id)
     .run();
-  const meta = auditRequestMeta(c);
-  const event = {
-    action: "admin.user.sessions_terminate",
-    actorId: admin.id,
-    actorName: admin.username,
-    resourceType: "user",
-    resourceId: id,
-    resourceName: target.username,
-    ip: meta.ip ?? getIp(c),
-    userAgent: meta.userAgent,
-    geo: meta.geo,
-    metadata: { site_admin: true, revoked: result.meta.changes ?? 0 },
-  };
-  c.executionCtx.waitUntil(
-    recordAudit(c.env, c.executionCtx, [
-      { ...event, scope: "platform", scopeId: null },
-      { ...event, scope: "user", scopeId: id },
-    ]),
+  auditRequestAction(
+    c,
+    {
+      action: "admin.user.sessions_terminate",
+      resourceType: "user",
+      resourceId: id,
+      resourceName: target.username,
+      metadata: { site_admin: true, revoked: result.meta.changes ?? 0 },
+    },
+    [PLATFORM_AUDIT, { scope: "user", scopeId: id }],
   );
   return c.json({ ok: true });
 });
@@ -1426,7 +1369,6 @@ app.get("/apps", async (c) => {
 });
 
 app.patch("/apps/:id", async (c) => {
-  const admin = c.get("user");
   const id = c.req.param("id");
   const body = await c.req.json<{
     is_active?: boolean;
@@ -1470,26 +1412,21 @@ app.patch("/apps/:id", async (c) => {
   )
     .bind(...values)
     .run();
-  const meta = auditRequestMeta(c);
-  const auditBase = {
-    action: "admin.app.update",
-    actorId: admin.id,
-    actorName: admin.username,
-    resourceType: "app",
-    resourceId: id,
-    resourceName: app.name,
-    ip: meta.ip ?? getIp(c),
-    userAgent: meta.userAgent,
-    geo: meta.geo,
-    metadata: { ...body, site_admin: true },
-  };
-  c.executionCtx.waitUntil(
-    recordAudit(c.env, c.executionCtx, [
-      { ...auditBase, scope: "platform", scopeId: null },
+  auditRequestAction(
+    c,
+    {
+      action: "admin.app.update",
+      resourceType: "app",
+      resourceId: id,
+      resourceName: app.name,
+      metadata: { ...body, site_admin: true },
+    },
+    [
+      PLATFORM_AUDIT,
       app.team_id
-        ? { ...auditBase, scope: "team", scopeId: app.team_id }
-        : { ...auditBase, scope: "user", scopeId: app.owner_id },
-    ]),
+        ? { scope: "team", scopeId: app.team_id }
+        : { scope: "user", scopeId: app.owner_id },
+    ],
   );
   return c.json({ ok: true });
 });
@@ -1896,7 +1833,6 @@ app.get("/teams-as-users-status", async (c) => {
 });
 
 app.post("/migrate-teams-as-users", async (c) => {
-  const admin = c.get("user");
   const now = Math.floor(Date.now() / 1000);
 
   // 1. Synthesize the team-user row for every team that doesn't have one.
@@ -1943,16 +1879,10 @@ app.post("/migrate-teams-as-users", async (c) => {
     .run();
   const appsRealigned = appUpdate.meta?.changes ?? 0;
 
-  await logAudit(
-    c.env,
-    admin.id,
-    "admin.migrate_teams_as_users",
-    "users",
-    null,
-    { teams_mirrored: teamsMirrored, apps_realigned: appsRealigned },
-    getIp(c),
-    c.executionCtx,
-  );
+  auditAdmin(c, "admin.migrate_teams_as_users", "users", null, {
+    teams_mirrored: teamsMirrored,
+    apps_realigned: appsRealigned,
+  });
 
   return c.json({
     teams_mirrored: teamsMirrored,
@@ -1992,41 +1922,25 @@ app.get("/image-proxy-status", async (c) => {
 });
 
 app.post("/migrate-image-proxy", async (c) => {
-  const admin = c.get("user");
   const urls = await collectReferencedImageUrls(c.env.DB);
   let registered = 0;
   for (const url of urls) {
     await registerImageProxyMapping(c.env.DB, url);
     registered++;
   }
-  await logAudit(
-    c.env,
-    admin.id,
-    "admin.migrate_image_proxy",
-    "image_proxy_mappings",
-    null,
-    { registered },
-    getIp(c),
-    c.executionCtx,
-  );
+  auditAdmin(c, "admin.migrate_image_proxy", "image_proxy_mappings", null, {
+    registered,
+  });
   return c.json({ registered });
 });
 
 // Manual orphan sweep — same job the cron runs, exposed here so admins
 // don't have to wait for the next tick after a big cleanup.
 app.post("/sweep-image-proxy", async (c) => {
-  const admin = c.get("user");
   const { deleted } = await sweepOrphanedImageProxyMappings(c.env.DB);
-  await logAudit(
-    c.env,
-    admin.id,
-    "admin.sweep_image_proxy",
-    "image_proxy_mappings",
-    null,
-    { deleted },
-    getIp(c),
-    c.executionCtx,
-  );
+  auditAdmin(c, "admin.sweep_image_proxy", "image_proxy_mappings", null, {
+    deleted,
+  });
   return c.json({ deleted });
 });
 
@@ -2119,7 +2033,6 @@ app.get("/image-proxy", async (c) => {
 });
 
 app.delete("/image-proxy/:id", async (c) => {
-  const admin = c.get("user");
   const id = c.req.param("id");
   if (!/^[0-9a-f]{32}$/.test(id)) {
     return c.json({ error: "field_invalid", params: { field: "id" } }, 400);
@@ -2135,16 +2048,9 @@ app.delete("/image-proxy/:id", async (c) => {
     .bind(id)
     .run();
   forgetImageProxyMapping(existing.url);
-  await logAudit(
-    c.env,
-    admin.id,
-    "admin.image_proxy.delete",
-    "image_proxy_mappings",
-    id,
-    { url: existing.url },
-    getIp(c),
-    c.executionCtx,
-  );
+  auditAdmin(c, "admin.image_proxy.delete", "image_proxy_mappings", id, {
+    url: existing.url,
+  });
   return c.json({ ok: true });
 });
 
@@ -2305,17 +2211,7 @@ app.delete("/teams/:id", async (c) => {
     sweepOrphanedImageProxyMappings(c.env.DB).catch(() => {}),
   );
 
-  await logAudit(
-    c.env,
-    admin.id,
-    "admin.team.delete",
-    "team",
-    id,
-    {},
-    getIp(c),
-    c.executionCtx,
-    { resourceName: team.name },
-  );
+  auditAdmin(c, "admin.team.delete", "team", id, {}, team.name);
   return c.json({ ok: true });
 });
 
@@ -2326,7 +2222,6 @@ app.delete("/teams/:id", async (c) => {
 // skip. Deliberately admin-only: the grant is the one switch, and a team
 // owner able to set it for themselves would make every owner a registrar.
 app.patch("/teams/:id/invite-registration", async (c) => {
-  const admin = c.get("user");
   const id = c.req.param("id");
 
   const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
@@ -2376,9 +2271,8 @@ app.patch("/teams/:id/invite-registration", async (c) => {
     .bind(...values)
     .run();
 
-  await logAudit(
-    c.env,
-    admin.id,
+  auditAdmin(
+    c,
     "admin.team.invite_registration",
     "team",
     id,
@@ -2387,9 +2281,7 @@ app.patch("/teams/:id/invite-registration", async (c) => {
       exemptions: body.exemptions,
       allow_convert: body.allow_convert,
     },
-    getIp(c),
-    c.executionCtx,
-    { resourceName: team.name },
+    team.name,
   );
 
   const updated = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
@@ -2414,7 +2306,6 @@ app.patch("/teams/:id/invite-registration", async (c) => {
 // access at once. Deletion happens in the reaper after the grace period,
 // which also leaves a window to undo a mistake.
 app.post("/teams/:id/dissolve", async (c) => {
-  const admin = c.get("user");
   const id = c.req.param("id");
 
   const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
@@ -2449,16 +2340,13 @@ app.post("/teams/:id/dissolve", async (c) => {
     ).bind(now, id),
   ]);
 
-  await logAudit(
-    c.env,
-    admin.id,
+  auditAdmin(
+    c,
     "admin.team.dissolve_started",
     "team",
     id,
     { deactivated_accounts: doomed?.n ?? 0 },
-    getIp(c),
-    c.executionCtx,
-    { resourceName: team.name },
+    team.name,
   );
 
   return c.json({
@@ -2468,7 +2356,6 @@ app.post("/teams/:id/dissolve", async (c) => {
 
 // Cancel a staged dissolution before the reaper gets to it.
 app.post("/teams/:id/dissolve/cancel", async (c) => {
-  const admin = c.get("user");
   const id = c.req.param("id");
 
   const team = await c.env.DB.prepare("SELECT id, name FROM teams WHERE id = ?")
@@ -2486,17 +2373,7 @@ app.post("/teams/:id/dissolve/cancel", async (c) => {
     ).bind(now, id),
   ]);
 
-  await logAudit(
-    c.env,
-    admin.id,
-    "admin.team.dissolve_cancelled",
-    "team",
-    id,
-    {},
-    getIp(c),
-    c.executionCtx,
-    { resourceName: team.name },
-  );
+  auditAdmin(c, "admin.team.dissolve_cancelled", "team", id, {}, team.name);
   return c.json({ ok: true });
 });
 
@@ -2675,50 +2552,34 @@ app.get("/login-errors", async (c) => {
 
 // Platform-scope audit. Every admin action funnels through here, so it lands
 // in the Transparent Platform Control log and fans out to platform webhooks.
-async function logAudit(
-  env: Env,
-  userId: string,
+/** Platform audit entry for a site-admin action (also written to the team's
+ *  own log when the resource is a team), stamped `site_admin: true`. */
+function auditAdmin(
+  c: Context<AppEnv>,
   action: string,
   resourceType: string | null,
   resourceId: string | null,
   metadata: unknown,
-  ip: string,
-  ctx: WaitUntilCtx,
-  extra?: {
-    actorName?: string | null;
-    resourceName?: string | null;
-    userAgent?: string | null;
-    geo?: string | null;
-  },
-) {
-  let actorName = extra?.actorName ?? null;
-  if (!actorName) {
-    const u = await env.DB.prepare("SELECT username FROM users WHERE id = ?")
-      .bind(userId)
-      .first<{ username: string }>();
-    actorName = u?.username ?? null;
-  }
-  const auditedMetadata =
-    metadata && typeof metadata === "object"
-      ? { ...(metadata as Record<string, unknown>), site_admin: true }
-      : { value: metadata, site_admin: true };
-  const base = {
-    action,
-    actorId: userId,
-    actorName,
-    resourceType,
-    resourceId,
-    resourceName: extra?.resourceName ?? null,
-    ip,
-    userAgent: extra?.userAgent ?? null,
-    geo: extra?.geo ?? null,
-    metadata: auditedMetadata,
-  };
-  const events: AuditInput[] = [{ ...base, scope: "platform", scopeId: null }];
+  resourceName: string | null = null,
+): void {
+  const targets: AuditTarget[] = [PLATFORM_AUDIT];
   if (resourceType === "team" && resourceId) {
-    events.push({ ...base, scope: "team", scopeId: resourceId });
+    targets.push({ scope: "team", scopeId: resourceId });
   }
-  await recordAudit(env, ctx, events);
+  auditRequestAction(
+    c,
+    {
+      action,
+      resourceType,
+      resourceId,
+      resourceName,
+      metadata:
+        metadata && typeof metadata === "object"
+          ? { ...(metadata as Record<string, unknown>), site_admin: true }
+          : { value: metadata, site_admin: true },
+    },
+    targets,
+  );
 }
 
 // ─── Site Invites ─────────────────────────────────────────────────────────────
@@ -2814,16 +2675,13 @@ app.post("/invites", async (c) => {
     );
   }
 
-  await logAudit(
-    c.env,
-    admin.id,
+  auditAdmin(
+    c,
     "invite.create",
     "site_invite",
     id,
     { email: body.email ?? null },
-    getIp(c),
-    c.executionCtx,
-    { resourceName: body.email ?? null },
+    body.email ?? null,
   );
 
   return c.json(
@@ -2852,7 +2710,6 @@ app.get("/invites/:id", async (c) => {
 });
 
 app.patch("/invites/:id", async (c) => {
-  const admin = c.get("user");
   const id = c.req.param("id");
   const invite = await c.env.DB.prepare(
     "SELECT * FROM site_invites WHERE id = ?",
@@ -2952,9 +2809,8 @@ app.patch("/invites/:id", async (c) => {
     .run();
   if (!updated.meta.changes)
     return c.json({ error: "invite_usage_changed" }, 409);
-  await logAudit(
-    c.env,
-    admin.id,
+  auditAdmin(
+    c,
     enabled === isInviteEnabled(invite.enabled)
       ? "invite.update"
       : enabled
@@ -2963,8 +2819,6 @@ app.patch("/invites/:id", async (c) => {
     "site_invite",
     id,
     { changes },
-    getIp(c),
-    c.executionCtx,
   );
   return c.json({
     invite: {
@@ -2980,7 +2834,6 @@ app.patch("/invites/:id", async (c) => {
 
 // Revoke (delete) invite
 app.delete("/invites/:id", async (c) => {
-  const admin = c.get("user");
   const { id } = c.req.param();
 
   const invite = await c.env.DB.prepare(
@@ -2994,16 +2847,7 @@ app.delete("/invites/:id", async (c) => {
     .bind(id)
     .run();
 
-  await logAudit(
-    c.env,
-    admin.id,
-    "invite.revoke",
-    "site_invite",
-    id,
-    {},
-    getIp(c),
-    c.executionCtx,
-  );
+  auditAdmin(c, "invite.revoke", "site_invite", id, {});
 
   return c.json({ ok: true });
 });
@@ -3195,7 +3039,6 @@ app.post("/oauth-sources/migrate", async (c) => {
 });
 
 app.post("/oauth-sources", async (c) => {
-  const admin = c.get("user");
   const body = await c.req.json<{
     slug: string;
     provider: string;
@@ -3292,16 +3135,13 @@ app.post("/oauth-sources", async (c) => {
     throw err;
   }
 
-  await logAudit(
-    c.env,
-    admin.id,
+  auditAdmin(
+    c,
     "oauth_source.create",
     "oauth_source",
     id,
     { slug: body.slug, provider: body.provider },
-    getIp(c),
-    c.executionCtx,
-    { resourceName: body.slug },
+    body.slug,
   );
   return c.json(
     {
@@ -3318,7 +3158,6 @@ app.post("/oauth-sources", async (c) => {
 });
 
 app.patch("/oauth-sources/:id", async (c) => {
-  const admin = c.get("user");
   const { id } = c.req.param();
 
   const existing = await c.env.DB.prepare(
@@ -3410,22 +3249,11 @@ app.patch("/oauth-sources/:id", async (c) => {
     .bind(...vals)
     .run();
 
-  await logAudit(
-    c.env,
-    admin.id,
-    "oauth_source.update",
-    "oauth_source",
-    id,
-    {},
-    getIp(c),
-    c.executionCtx,
-    { resourceName: existing.slug },
-  );
+  auditAdmin(c, "oauth_source.update", "oauth_source", id, {}, existing.slug);
   return c.json({ ok: true });
 });
 
 app.delete("/oauth-sources/:id", async (c) => {
-  const admin = c.get("user");
   const { id } = c.req.param();
 
   const existing = await c.env.DB.prepare(
@@ -3438,16 +3266,13 @@ app.delete("/oauth-sources/:id", async (c) => {
   await c.env.DB.prepare("DELETE FROM oauth_sources WHERE id = ?")
     .bind(id)
     .run();
-  await logAudit(
-    c.env,
-    admin.id,
+  auditAdmin(
+    c,
     "oauth_source.delete",
     "oauth_source",
     id,
     { slug: existing.slug },
-    getIp(c),
-    c.executionCtx,
-    { resourceName: existing.slug },
+    existing.slug,
   );
   return c.json({ ok: true });
 });

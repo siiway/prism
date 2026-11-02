@@ -23,8 +23,7 @@
 // keep their existing handlers and everything deeper falls through to here.
 
 import { Hono } from "hono";
-import { getIp } from "../lib/clientIp";
-import { recordAudit, auditRequestMeta } from "../lib/audit";
+import { auditRequestAction } from "../lib/audit";
 import { hashPassword, randomId } from "../lib/crypto";
 import { readPage } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
@@ -58,43 +57,21 @@ function auditUser(
   action: string,
   metadata: Record<string, unknown> = {},
 ): void {
-  const admin = c.get("user");
-  const meta = auditRequestMeta(c);
   // Written to both scopes on purpose. The platform log is the operator's
   // record; the user-scope copy is how the account holder finds out that
   // someone else changed their credentials — which is the whole point of
   // Transparent Control, and matters most for exactly these actions.
-  c.executionCtx.waitUntil(
-    recordAudit(c.env, c.executionCtx, [
-      {
-        scope: "platform",
-        scopeId: null,
-        action: `admin.${action}`,
-        actorId: admin.id,
-        actorName: admin.username,
-        resourceType: "user",
-        resourceId: targetId,
-        resourceName: targetName,
-        ip: meta.ip ?? getIp(c),
-        userAgent: meta.userAgent,
-        geo: meta.geo,
-        metadata,
-      },
-      {
-        scope: "user",
-        scopeId: targetId,
-        action: `admin.${action}`,
-        actorId: admin.id,
-        actorName: admin.username,
-        resourceType: "user",
-        resourceId: targetId,
-        resourceName: targetName,
-        ip: meta.ip ?? getIp(c),
-        userAgent: meta.userAgent,
-        geo: meta.geo,
-        metadata: { ...metadata, site_admin: true },
-      },
-    ]),
+  const entry = {
+    action: `admin.${action}`,
+    resourceType: "user",
+    resourceId: targetId,
+    resourceName: targetName,
+  };
+  auditRequestAction(c, { ...entry, metadata });
+  auditRequestAction(
+    c,
+    { ...entry, metadata: { ...metadata, site_admin: true } },
+    [{ scope: "user", scopeId: targetId }],
   );
 }
 

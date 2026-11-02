@@ -14,9 +14,8 @@
 // Mounted under /api/admin, which already sits behind requireAdmin.
 
 import { Hono } from "hono";
-import { getIp } from "../lib/clientIp";
 import {
-  recordAudit,
+  auditRequestAction,
   recordAccountDeletion,
   auditRequestMeta,
 } from "../lib/audit";
@@ -41,24 +40,13 @@ function auditOps(
   metadata: Record<string, unknown>,
   resource?: { type?: string; id?: string | null; name?: string | null },
 ): void {
-  const admin = c.get("user");
-  const meta = auditRequestMeta(c);
-  c.executionCtx.waitUntil(
-    recordAudit(c.env, c.executionCtx, {
-      scope: "platform",
-      scopeId: null,
-      action,
-      actorId: admin.id,
-      actorName: admin.username,
-      resourceType: resource?.type ?? null,
-      resourceId: resource?.id ?? null,
-      resourceName: resource?.name ?? null,
-      ip: meta.ip ?? getIp(c),
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata: { ...metadata, site_admin: true },
-    }),
-  );
+  auditRequestAction(c, {
+    action,
+    resourceType: resource?.type ?? null,
+    resourceId: resource?.id ?? null,
+    resourceName: resource?.name ?? null,
+    metadata: { ...metadata, site_admin: true },
+  });
 }
 
 // ─── Mass revocation ──────────────────────────────────────────────────────────

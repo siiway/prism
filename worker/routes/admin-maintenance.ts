@@ -19,8 +19,7 @@
 // Mounted under /api/admin, which already sits behind requireAdmin.
 
 import { Hono } from "hono";
-import { getIp } from "../lib/clientIp";
-import { recordAudit, auditRequestMeta } from "../lib/audit";
+import { auditRequestAction } from "../lib/audit";
 import { runReverification } from "../cron/reverify";
 import { sweepExpiredSessions } from "../cron/sessions";
 import {
@@ -127,8 +126,6 @@ app.post("/jobs/:key/run", async (c) => {
   const job = JOBS.find((j) => j.key === key);
   if (!job) return c.json({ error: "not_found" }, 404);
 
-  const admin = c.get("user");
-  const meta = auditRequestMeta(c);
   const started = Date.now();
 
   let processed: number | null = null;
@@ -143,22 +140,12 @@ app.post("/jobs/:key/run", async (c) => {
   // Audited whether it succeeded or not. A job an operator ran twenty minutes
   // before things went strange is exactly the kind of thing worth finding
   // afterwards, and a failed run is more interesting than a clean one.
-  c.executionCtx.waitUntil(
-    recordAudit(c.env, c.executionCtx, {
-      scope: "platform",
-      scopeId: null,
-      action: error ? "admin.maintenance.error" : "admin.maintenance.run",
-      actorId: admin.id,
-      actorName: admin.username,
-      resourceType: "job",
-      resourceId: job.key,
-      resourceName: null,
-      ip: meta.ip ?? getIp(c),
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata: { job: job.key, processed, duration_ms: durationMs, error },
-    }),
-  );
+  auditRequestAction(c, {
+    action: error ? "admin.maintenance.error" : "admin.maintenance.run",
+    resourceType: "job",
+    resourceId: job.key,
+    metadata: { job: job.key, processed, duration_ms: durationMs, error },
+  });
 
   if (error)
     return c.json(

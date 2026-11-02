@@ -12,8 +12,7 @@
 
 import { Hono } from "hono";
 import { randomId } from "../lib/crypto";
-import { getIp } from "../lib/clientIp";
-import { recordAudit, auditRequestMeta } from "../lib/audit";
+import { auditRequestAction } from "../lib/audit";
 import { likePattern, readPage } from "../lib/pagination";
 import { optionalAuth } from "../middleware/auth";
 import { MIGRATIONS_PENDING, readWithFallback } from "../lib/schema";
@@ -178,24 +177,13 @@ function auditNotice(
   notice: { id: string; title: string },
   metadata: Record<string, unknown> = {},
 ): void {
-  const admin = c.get("user");
-  const meta = auditRequestMeta(c);
-  c.executionCtx.waitUntil(
-    recordAudit(c.env, c.executionCtx, {
-      scope: "platform",
-      scopeId: null,
-      action,
-      actorId: admin.id,
-      actorName: admin.username,
-      resourceType: "notice",
-      resourceId: notice.id,
-      resourceName: notice.title,
-      ip: meta.ip ?? getIp(c),
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata,
-    }),
-  );
+  auditRequestAction(c, {
+    action,
+    resourceType: "notice",
+    resourceId: notice.id,
+    resourceName: notice.title,
+    metadata,
+  });
 }
 
 /** Validate the writable fields. Returns an error string, or null. */

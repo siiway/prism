@@ -25,8 +25,7 @@
 // Mounted under /api/admin, which already sits behind requireAdmin.
 
 import { Hono, type Context } from "hono";
-import { getIp } from "../lib/clientIp";
-import { recordAudit, auditRequestMeta } from "../lib/audit";
+import { auditRequestAction } from "../lib/audit";
 import { readPage } from "../lib/pagination";
 import { d1ConsoleMode, readOnlyRefusal } from "../lib/consoleMode";
 import type { Variables } from "../types";
@@ -329,24 +328,12 @@ function auditDb(
   metadata: Record<string, unknown>,
   resourceId?: string | null,
 ): void {
-  const admin = c.get("user");
-  const meta = auditRequestMeta(c);
-  c.executionCtx.waitUntil(
-    recordAudit(c.env, c.executionCtx, {
-      scope: "platform",
-      scopeId: null,
-      action,
-      actorId: admin.id,
-      actorName: admin.username,
-      resourceType: "database",
-      resourceId: resourceId ?? null,
-      resourceName: null,
-      ip: meta.ip ?? getIp(c),
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata,
-    }),
-  );
+  auditRequestAction(c, {
+    action,
+    resourceType: "database",
+    resourceId: resourceId ?? null,
+    metadata,
+  });
 }
 
 /** D1 hands back values as JS primitives, except BLOBs, which arrive as

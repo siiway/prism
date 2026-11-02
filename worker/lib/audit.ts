@@ -16,7 +16,9 @@ import { decryptSecret } from "./secretCrypto";
 import { safeFetch, validateOutboundUrl } from "./safeFetch";
 import { geoJson } from "./geo";
 import { getConfigValue } from "./config";
-import type { WaitUntilCtx } from "../types";
+import type { Context } from "hono";
+import { getIp } from "./clientIp";
+import type { Variables, WaitUntilCtx } from "../types";
 
 export type AuditScope = "user" | "team" | "platform";
 
@@ -208,6 +210,44 @@ export function auditRequestMeta(c: {
   // moment of the audited action. Spread-style callers (`...auditRequestMeta`)
   // pick this up for free; the explicit `ip: meta.ip` callers pass meta.geo.
   return { ip, userAgent, geo: geoJson(c) };
+}
+
+/** Where an audit entry is written. */
+export interface AuditTarget {
+  scope: AuditScope;
+  scopeId: string | null;
+}
+
+export const PLATFORM_AUDIT: AuditTarget = { scope: "platform", scopeId: null };
+
+/** Record, in the background, an action the signed-in user took in this
+ *  request: actor and request metadata (IP, user agent, geo) are filled in,
+ *  and the same entry is written once per target scope. */
+export function auditRequestAction(
+  c: Context<{ Bindings: Env; Variables: Variables }>,
+  entry: Pick<
+    AuditInput,
+    "action" | "resourceType" | "resourceId" | "resourceName" | "metadata"
+  >,
+  targets: AuditTarget[] = [PLATFORM_AUDIT],
+): void {
+  const actor = c.get("user");
+  const meta = auditRequestMeta(c);
+  const base = {
+    ...entry,
+    actorId: actor.id,
+    actorName: actor.username,
+    ip: meta.ip ?? getIp(c),
+    userAgent: meta.userAgent,
+    geo: meta.geo,
+  };
+  c.executionCtx.waitUntil(
+    recordAudit(
+      c.env,
+      c.executionCtx,
+      targets.map((t) => ({ ...base, ...t })),
+    ),
+  );
 }
 
 // ─── Webhook delivery ────────────────────────────────────────────────────────

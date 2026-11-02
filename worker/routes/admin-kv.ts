@@ -25,8 +25,7 @@
 // Mounted under /api/admin, which already sits behind requireAdmin.
 
 import { Hono, type Context } from "hono";
-import { getIp } from "../lib/clientIp";
-import { recordAudit, auditRequestMeta } from "../lib/audit";
+import { auditRequestAction } from "../lib/audit";
 import { kvConsoleMode, readOnlyRefusal } from "../lib/consoleMode";
 import type { Variables } from "../types";
 
@@ -103,24 +102,12 @@ function auditKv(
   action: string,
   metadata: Record<string, unknown>,
 ): void {
-  const admin = c.get("user");
-  const meta = auditRequestMeta(c);
-  c.executionCtx.waitUntil(
-    recordAudit(c.env, c.executionCtx, {
-      scope: "platform",
-      scopeId: null,
-      action,
-      actorId: admin.id,
-      actorName: admin.username,
-      resourceType: "kv",
-      resourceId: String(metadata.key ?? null),
-      resourceName: null,
-      ip: meta.ip ?? getIp(c),
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata,
-    }),
-  );
+  auditRequestAction(c, {
+    action,
+    resourceType: "kv",
+    resourceId: String(metadata.key ?? null),
+    metadata,
+  });
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
