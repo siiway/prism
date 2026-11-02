@@ -15,7 +15,10 @@ export default defineConfig({
   plugins: [
     searchIndexPlugin(),
     bundledPackagesPlugin(),
-    cloudflare(),
+    // The Worker builds into dist/<environment name>/. Pin the name so the
+    // folder stays dist/prism whatever the Worker is called in wrangler.jsonc;
+    // scripts/build.ts reads it from there.
+    cloudflare({ viteEnvironment: { name: "prism" } }),
     react(),
   ],
   resolve: {

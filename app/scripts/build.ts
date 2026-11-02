@@ -7,7 +7,7 @@
 // 3. Writes wrangler.json next to wrangler.jsonc, so `wrangler deploy` ships
 //    the Vite build instead of re-bundling src/worker from scratch.
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, bunx, ok, parseArgs, step, tsc, warn } from "./lib.ts";
 
@@ -25,6 +25,8 @@ ok("app and worker");
 
 // ── Vite ──────────────────────────────────────────────────────────────────────
 step("Building the app and the Worker");
+// Start from an empty dist/ so nothing from an earlier build can be deployed.
+rmSync(join(ROOT, "dist"), { recursive: true, force: true });
 bunx("vite", ["build"]);
 
 // ── Deploy config ─────────────────────────────────────────────────────────────
