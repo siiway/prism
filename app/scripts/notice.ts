@@ -151,10 +151,12 @@ function split(raw: string, fallback: string) {
     }
   }
   if (start === lines.length) start = 0;
+  // Only copyright and author lines: some files open with other prose, like
+  // marked's note to its contributors.
   const notice = lines
     .slice(0, start)
-    .map((l) => l.trim())
-    .filter((l) => l && !TITLE.test(l));
+    .map((l) => l.replace(/^#+\s*/, "").trim())
+    .filter((l) => /copyright|©|\(c\)|author|all rights reserved/i.test(l));
   let body = lines.slice(start);
   while (body.length && (!body[0].trim() || TITLE.test(body[0].trim()))) {
     body.shift();

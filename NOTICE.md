@@ -124,21 +124,21 @@ These use a different wording:
 - [@fluentui/react-label](https://www.npmjs.com/package/@fluentui/react-label) 9.4.4: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-link](https://www.npmjs.com/package/@fluentui/react-link) 9.8.4: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-menu](https://www.npmjs.com/package/@fluentui/react-menu) 9.25.3: Copyright (c) Microsoft Corporation All rights reserved.
-- [@fluentui/react-message-bar](https://www.npmjs.com/package/@fluentui/react-message-bar) 9.7.5: @fluentui/react-message-bar-preview; Copyright (c) Microsoft Corporation All rights reserved.
-- [@fluentui/react-motion](https://www.npmjs.com/package/@fluentui/react-motion) 9.16.2: @fluentui/react-motions-preview; Copyright (c) Microsoft Corporation All rights reserved.
+- [@fluentui/react-message-bar](https://www.npmjs.com/package/@fluentui/react-message-bar) 9.7.5: Copyright (c) Microsoft Corporation All rights reserved.
+- [@fluentui/react-motion](https://www.npmjs.com/package/@fluentui/react-motion) 9.16.2: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-motion-components-preview](https://www.npmjs.com/package/@fluentui/react-motion-components-preview) 0.15.7: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-popover](https://www.npmjs.com/package/@fluentui/react-popover) 9.14.6: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-portal](https://www.npmjs.com/package/@fluentui/react-portal) 9.8.15: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-positioning](https://www.npmjs.com/package/@fluentui/react-positioning) 9.23.1: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-provider](https://www.npmjs.com/package/@fluentui/react-provider) 9.22.20: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-radio](https://www.npmjs.com/package/@fluentui/react-radio) 9.6.5: Copyright (c) Microsoft Corporation All rights reserved.
-- [@fluentui/react-shared-contexts](https://www.npmjs.com/package/@fluentui/react-shared-contexts) 9.26.3: Fluent UI React - react-shared-contexts; Copyright (c) Microsoft Corporation All rights reserved.
+- [@fluentui/react-shared-contexts](https://www.npmjs.com/package/@fluentui/react-shared-contexts) 9.26.3: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-skeleton](https://www.npmjs.com/package/@fluentui/react-skeleton) 9.7.5: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-spinner](https://www.npmjs.com/package/@fluentui/react-spinner) 9.8.5: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-switch](https://www.npmjs.com/package/@fluentui/react-switch) 9.7.5: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-table](https://www.npmjs.com/package/@fluentui/react-table) 9.19.19: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-tabs](https://www.npmjs.com/package/@fluentui/react-tabs) 9.12.4: Copyright (c) Microsoft Corporation All rights reserved.
-- [@fluentui/react-tabster](https://www.npmjs.com/package/@fluentui/react-tabster) 9.26.17: @fluentui/react-focus-management; Copyright (c) Microsoft Corporation All rights reserved.
+- [@fluentui/react-tabster](https://www.npmjs.com/package/@fluentui/react-tabster) 9.26.17: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-text](https://www.npmjs.com/package/@fluentui/react-text) 9.6.19: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-textarea](https://www.npmjs.com/package/@fluentui/react-textarea) 9.7.6: Copyright (c) Microsoft Corporation All rights reserved.
 - [@fluentui/react-tooltip](https://www.npmjs.com/package/@fluentui/react-tooltip) 9.10.5: Copyright (c) Microsoft Corporation All rights reserved.
@@ -197,7 +197,7 @@ THE SOFTWARE.
 
 These use a different wording:
 
-- [marked](https://www.npmjs.com/package/marked) 18.0.10: # License information ## Contribution License Agreement If you contribute code to this project, you are implicitly allowing your code to be distributed under the MIT license. You are also implicitly verifying that all code is your original work. `</legalese>` ## Marked; Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/); Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
+- [marked](https://www.npmjs.com/package/marked) 18.0.10: Copyright (c) 2018+, MarkedJS (https://github.com/markedjs/); Copyright (c) 2011-2018, Christopher Jeffrey (https://github.com/chjj/)
 
 ```text
 Permission is hereby granted, free of charge, to any person obtaining a copy
