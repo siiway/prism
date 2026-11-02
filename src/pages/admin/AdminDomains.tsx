@@ -12,8 +12,6 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
-  Skeleton,
-  SkeletonItem,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -36,9 +34,10 @@ import { useToastMessage } from "../../lib/useToastMessage";
 import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
+  type DataListColumn,
   DataListName,
   DataListRow,
-  type DataListColumn,
+  DataListSkeleton,
 } from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
@@ -207,22 +206,7 @@ export function AdminDomains() {
       </ListSearch>
 
       {isFetching && !data ? (
-        <Skeleton aria-busy>
-          <DataList columns={columns}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <DataListRow
-                key={i}
-                cells={columns.map((_, c) => (
-                  <SkeletonItem
-                    key={c}
-                    size={12}
-                    style={{ width: c === 0 ? `${35 + (i % 3) * 12}%` : 60 }}
-                  />
-                ))}
-              />
-            ))}
-          </DataList>
-        </Skeleton>
+        <DataListSkeleton columns={columns} rows={4} />
       ) : domains.length === 0 ? (
         <EmptyState
           icon={<GlobeRegular />}

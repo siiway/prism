@@ -1,7 +1,12 @@
 // The search box above a list: a search icon, and a clear button once
 // something is typed. Callers debounce the value themselves.
 
-import { Button, Input, makeStyles } from "@fluentui/react-components";
+import {
+  Button,
+  Input,
+  makeStyles,
+  mergeClasses,
+} from "@fluentui/react-components";
 import { DismissRegular, SearchRegular } from "@fluentui/react-icons";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -22,17 +27,20 @@ export function ListSearch({
   onChange,
   placeholder,
   children,
+  className,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   /** Filters or actions beside the box. */
   children?: ReactNode;
+  /** Extra styles for the bar, e.g. padding inside a card. */
+  className?: string;
 }) {
   const styles = useStyles();
   const { t } = useTranslation();
   return (
-    <div className={styles.bar}>
+    <div className={mergeClasses(styles.bar, className)}>
       <Input
         className={styles.input}
         value={value}

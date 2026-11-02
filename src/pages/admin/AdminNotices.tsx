@@ -8,8 +8,6 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
-  Skeleton,
-  SkeletonItem,
   Tooltip,
   makeStyles,
   tokens,
@@ -20,7 +18,7 @@ import {
   PinRegular,
 } from "@fluentui/react-icons";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../lib/api";
@@ -29,9 +27,11 @@ import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
+  type DataListColumn,
+  DataListLink,
   DataListName,
   DataListRow,
-  type DataListColumn,
+  DataListSkeleton,
 } from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
 import { GetStartedPanel } from "../../components/GetStartedPanel";
@@ -47,11 +47,6 @@ const useStyles = makeStyles({
 
   pin: { color: tokens.colorNeutralForeground3, flexShrink: 0 },
   muted: { color: tokens.colorNeutralForeground3 },
-  name: {
-    color: tokens.colorNeutralForeground1,
-    textDecorationLine: "none",
-    ":hover": { textDecorationLine: "underline" },
-  },
 });
 
 export function AdminNotices() {
@@ -125,18 +120,7 @@ export function AdminNotices() {
       )}
 
       {isFetching && !data ? (
-        <Skeleton aria-busy>
-          <DataList columns={columns}>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <DataListRow
-                key={i}
-                cells={columns.map((_, c) => (
-                  <SkeletonItem key={c} size={12} style={{ width: "60%" }} />
-                ))}
-              />
-            ))}
-          </DataList>
-        </Skeleton>
+        <DataListSkeleton columns={columns} rows={3} />
       ) : error ? null : boardEmpty ? (
         <GetStartedPanel
           art={<NoticeArt />}
@@ -176,16 +160,7 @@ export function AdminNotices() {
                           </Tooltip>
                         ) : undefined
                       }
-                      name={
-                        // A real link: keyboard, middle-click, new tab.
-                        <Link
-                          to={path}
-                          className={styles.name}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {n.title}
-                        </Link>
-                      }
+                      name={<DataListLink to={path}>{n.title}</DataListLink>}
                       badges={
                         n.level !== "info" && (
                           <Badge

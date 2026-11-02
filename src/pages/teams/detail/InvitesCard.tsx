@@ -27,15 +27,13 @@ import {
   CheckmarkRegular,
   CopyRegular,
   DeleteRegular,
-  DismissRegular,
   EditRegular,
   LinkRegular,
   MailRegular,
   PauseRegular,
   PlayRegular,
-  SearchRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { type Team, type TeamInvite } from "../../../lib/api";
@@ -54,11 +52,12 @@ import {
 } from "../../../components/Settings";
 import { SkeletonTableBodyRows } from "../../../components/Skeletons";
 import { InviteDialog } from "../dialogs/InviteDialog";
+import { ListSearch } from "../../../components/ListSearch";
+import { useDebouncedSearch } from "../../../lib/useDebouncedSearch";
 
 const PAGE_SIZE = 20;
 
 const useStyles = makeStyles({
-  toolbar: { padding: "0 var(--card-pad) 16px" },
   muted: { color: tokens.colorNeutralForeground3 },
   target: { display: "flex", alignItems: "center", gap: "8px" },
   targetIcon: { flexShrink: 0, color: tokens.colorNeutralForeground3 },
@@ -94,15 +93,11 @@ export function InvitesCard({ team, showMsg, confirm }: Props) {
   });
 
   const [page, setPage] = useState(1);
-  const [query, setQuery] = useState("");
-  const [debounced, setDebounced] = useState("");
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setDebounced(query.trim());
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
+  const {
+    query,
+    setQuery,
+    search: debounced,
+  } = useDebouncedSearch(() => setPage(1));
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["team-invites", teamId, page, debounced],
@@ -226,26 +221,11 @@ export function InvitesCard({ team, showMsg, confirm }: Props) {
       }
     >
       {(total > 5 || debounced) && (
-        <div className={styles.toolbar}>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("teams.searchInvitesPlaceholder")}
-            contentBefore={<SearchRegular />}
-            contentAfter={
-              query ? (
-                <Button
-                  appearance="transparent"
-                  size="small"
-                  icon={<DismissRegular />}
-                  aria-label={t("common.clear")}
-                  onClick={() => setQuery("")}
-                />
-              ) : undefined
-            }
-            style={{ width: "100%" }}
-          />
-        </div>
+        <ListSearch
+          value={query}
+          onChange={setQuery}
+          placeholder={t("teams.searchInvitesPlaceholder")}
+        />
       )}
 
       {!isLoading && invites.length === 0 ? (

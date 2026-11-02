@@ -1,8 +1,7 @@
 // Apps: the team's OAuth apps, with creating one or moving a personal app in.
 
-import { Avatar, Button, Input, makeStyles } from "@fluentui/react-components";
-import { DismissRegular, SearchRegular } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { Avatar } from "@fluentui/react-components";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../../../lib/api-context";
@@ -17,29 +16,22 @@ import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import { MigrateAppDialog } from "../dialogs/MigrateAppDialog";
 import { NewTeamAppDialog } from "../dialogs/NewTeamAppDialog";
 import type { TeamTabProps } from "./types";
+import { useDebouncedSearch } from "../../../lib/useDebouncedSearch";
+import { ListSearch } from "../../../components/ListSearch";
 
 const PAGE_SIZE = 20;
 
-const useStyles = makeStyles({
-  toolbar: { padding: "0 var(--card-pad) 16px" },
-});
-
 export function AppsTab({ team, canManage, showMsg }: TeamTabProps) {
   const api = useApi();
-  const styles = useStyles();
   const { t } = useTranslation();
   const teamId = team.id;
 
   const [page, setPage] = useState(1);
-  const [query, setQuery] = useState("");
-  const [debounced, setDebounced] = useState("");
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setDebounced(query.trim());
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
+  const {
+    query,
+    setQuery,
+    search: debounced,
+  } = useDebouncedSearch(() => setPage(1));
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["team-apps", teamId, page, debounced],
@@ -84,26 +76,11 @@ export function AppsTab({ team, canManage, showMsg }: TeamTabProps) {
       }
     >
       {(total > 5 || debounced) && (
-        <div className={styles.toolbar}>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("teams.searchTeamAppsPlaceholder")}
-            contentBefore={<SearchRegular />}
-            contentAfter={
-              query ? (
-                <Button
-                  appearance="transparent"
-                  size="small"
-                  icon={<DismissRegular />}
-                  aria-label={t("common.clear")}
-                  onClick={() => setQuery("")}
-                />
-              ) : undefined
-            }
-            style={{ width: "100%" }}
-          />
-        </div>
+        <ListSearch
+          value={query}
+          onChange={setQuery}
+          placeholder={t("teams.searchTeamAppsPlaceholder")}
+        />
       )}
       {apps.length === 0 ? (
         <SettingsEmpty>

@@ -4,7 +4,6 @@
 import {
   Badge,
   Button,
-  Input,
   Spinner,
   Table,
   TableBody,
@@ -20,10 +19,8 @@ import {
   AddRegular,
   CheckmarkCircleRegular,
   ChevronRightRegular,
-  DismissRegular,
-  SearchRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -39,11 +36,12 @@ import {
 } from "../../../components/Settings";
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import type { TeamTabProps } from "./types";
+import { ListSearch } from "../../../components/ListSearch";
+import { useDebouncedSearch } from "../../../lib/useDebouncedSearch";
 
 const PAGE_SIZE = 20;
 
 const useStyles = makeStyles({
-  toolbar: { padding: "0 var(--card-pad) 16px" },
   domain: {
     color: tokens.colorNeutralForeground1,
     fontFamily: tokens.fontFamilyMonospace,
@@ -85,15 +83,11 @@ export function DomainsTab({ team, canManage, showMsg }: TeamTabProps) {
   const teamId = team.id;
 
   const [page, setPage] = useState(1);
-  const [query, setQuery] = useState("");
-  const [debounced, setDebounced] = useState("");
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setDebounced(query.trim());
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
+  const {
+    query,
+    setQuery,
+    search: debounced,
+  } = useDebouncedSearch(() => setPage(1));
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["team-domains", teamId, page, debounced],
@@ -145,26 +139,11 @@ export function DomainsTab({ team, canManage, showMsg }: TeamTabProps) {
       }
     >
       {(total > 5 || debounced) && (
-        <div className={styles.toolbar}>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("teams.searchTeamDomainsPlaceholder")}
-            contentBefore={<SearchRegular />}
-            contentAfter={
-              query ? (
-                <Button
-                  appearance="transparent"
-                  size="small"
-                  icon={<DismissRegular />}
-                  aria-label={t("common.clear")}
-                  onClick={() => setQuery("")}
-                />
-              ) : undefined
-            }
-            style={{ width: "100%" }}
-          />
-        </div>
+        <ListSearch
+          value={query}
+          onChange={setQuery}
+          placeholder={t("teams.searchTeamDomainsPlaceholder")}
+        />
       )}
       {domains.length === 0 ? (
         <SettingsEmpty>{t("domains.noDomainsYet")}</SettingsEmpty>

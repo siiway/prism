@@ -3,9 +3,8 @@
 
 import {
   Avatar,
-  Badge,
   Button,
-  Input,
+  Badge,
   Menu,
   MenuDivider,
   MenuItem,
@@ -26,12 +25,10 @@ import {
 import { Select } from "../../components/Select";
 import {
   DeleteRegular,
-  DismissRegular,
   MoreHorizontalRegular,
-  SearchRegular,
   TagRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { type TeamMember } from "../../lib/api";
@@ -46,16 +43,11 @@ import {
   SettingsTable,
 } from "../../components/Settings";
 import { SkeletonTableBodyRows } from "../../components/Skeletons";
+import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
+import { ListSearch } from "../../components/ListSearch";
 
 const useStyles = makeStyles({
-  toolbar: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    flexWrap: "wrap",
-    padding: "0 var(--card-pad) 16px",
-  },
-  search: { minWidth: "220px", flex: "1 1 220px" },
+  toolbar: { padding: "0 var(--card-pad) 16px", marginBottom: 0 },
   filter: { width: "200px", maxWidth: "100%" },
   muted: { color: tokens.colorNeutralForeground3 },
   person: { display: "flex", alignItems: "center", gap: "10px", minWidth: 0 },
@@ -114,21 +106,13 @@ export function MembersTable({
   const styles = useStyles();
   const { t } = useTranslation();
 
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
   const [page, setPage] = useState(1);
-
-  // Search hits the server, so wait for a pause rather than firing a request
-  // per keystroke. The page resets with the term: page 3 of the old result
-  // set is meaningless against the new one.
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setDebouncedQuery(query.trim());
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
+  const {
+    query,
+    setQuery,
+    search: debouncedQuery,
+  } = useDebouncedSearch(() => setPage(1));
 
   const isFiltering = debouncedQuery !== "" || groupFilter !== "";
   const isFirstUnfilteredPage = !isFiltering && page === 1;
@@ -197,25 +181,12 @@ export function MembersTable({
   return (
     <>
       {showSearchControls && (
-        <div className={styles.toolbar}>
-          <Input
-            className={styles.search}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("teams.searchMembersPlaceholder")}
-            contentBefore={<SearchRegular />}
-            contentAfter={
-              query ? (
-                <Button
-                  appearance="transparent"
-                  size="small"
-                  icon={<DismissRegular />}
-                  aria-label={t("common.clear")}
-                  onClick={() => setQuery("")}
-                />
-              ) : undefined
-            }
-          />
+        <ListSearch
+          className={styles.toolbar}
+          value={query}
+          onChange={setQuery}
+          placeholder={t("teams.searchMembersPlaceholder")}
+        >
           {groupsEnabled && groupOptions.length > 0 && (
             <Select
               className={styles.filter}
@@ -239,7 +210,7 @@ export function MembersTable({
               {t("teams.memberMatchCount", { count: total })}
             </Text>
           )}
-        </div>
+        </ListSearch>
       )}
 
       {isFiltering && rows.length === 0 && !isFetching ? (

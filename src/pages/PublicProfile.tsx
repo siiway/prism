@@ -32,7 +32,7 @@ import { ApiError } from "../lib/api";
 import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { renderMarkdown } from "../lib/markdown";
-import { CopyIdButton } from "../components/CopyIdButton";
+import { CopyButton } from "../components/CopyButton";
 
 const useStyles = makeStyles({
   page: {
@@ -293,8 +293,8 @@ export function PublicProfile() {
                   <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>
                     {k.name}
                   </Text>
-                  <CopyIdButton
-                    id={k.fingerprint}
+                  <CopyButton
+                    text={k.fingerprint}
                     label={t("publicProfile.copyFingerprint")}
                   />
                 </div>

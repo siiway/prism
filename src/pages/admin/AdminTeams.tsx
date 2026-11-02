@@ -4,14 +4,7 @@
 // and deletion are managed there with site-admin authority. New team opens
 // /teams/new, where a site admin can name the owner.
 
-import {
-  Avatar,
-  Badge,
-  Button,
-  Skeleton,
-  SkeletonItem,
-  makeStyles,
-} from "@fluentui/react-components";
+import { Avatar, Badge, Button, makeStyles } from "@fluentui/react-components";
 import { AddRegular, PeopleTeamRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -23,9 +16,10 @@ import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
+  type DataListColumn,
   DataListName,
   DataListRow,
-  type DataListColumn,
+  DataListSkeleton,
 } from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
@@ -111,22 +105,7 @@ export function AdminTeams() {
       </ListSearch>
 
       {isFetching && !data ? (
-        <Skeleton aria-busy>
-          <DataList columns={columns} linked>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <DataListRow
-                key={i}
-                cells={columns.map((_, c) => (
-                  <SkeletonItem
-                    key={c}
-                    size={12}
-                    style={{ width: c === 0 ? `${40 + (i % 3) * 12}%` : 40 }}
-                  />
-                ))}
-              />
-            ))}
-          </DataList>
-        </Skeleton>
+        <DataListSkeleton columns={columns} linked rows={4} />
       ) : teams.length === 0 ? (
         <EmptyState
           icon={<PeopleTeamRegular />}

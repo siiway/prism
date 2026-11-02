@@ -4,7 +4,6 @@
 import {
   Badge,
   Button,
-  Input,
   Skeleton,
   SkeletonItem,
   Spinner,
@@ -15,11 +14,9 @@ import {
   AddRegular,
   CheckmarkCircleRegular,
   ChevronRightRegular,
-  DismissRegular,
   GlobeRegular,
-  SearchRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -33,6 +30,8 @@ import { DomainArt } from "../components/Illustrations";
 import { PageHeader } from "../components/PageHeader";
 import { Pagination } from "../components/Pagination";
 import { SettingsToast } from "../components/Settings";
+import { useDebouncedSearch } from "../lib/useDebouncedSearch";
+import { ListSearch } from "../components/ListSearch";
 
 const PAGE_SIZE = 20;
 const COLUMNS = "minmax(0, 2.4fr) 110px 120px 120px 80px 20px";
@@ -40,12 +39,6 @@ const NARROW = "@media (max-width: 768px)";
 
 const useStyles = makeStyles({
   toast: { position: "sticky", top: "8px", zIndex: 2, marginBottom: "12px" },
-  toolbar: {
-    display: "flex",
-    gap: "8px",
-    marginBottom: "12px",
-    flexWrap: "wrap",
-  },
   list: {
     borderRadius: tokens.borderRadiusXLarge,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
@@ -113,16 +106,12 @@ export function Domains() {
   });
   const siteName = site?.site_name ?? "Prism";
 
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setDebouncedQuery(query.trim());
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
+  const {
+    query,
+    setQuery,
+    search: debouncedQuery,
+  } = useDebouncedSearch(() => setPage(1));
 
   const { data, isFetching } = useQuery({
     queryKey: ["domains", page, debouncedQuery],
@@ -227,26 +216,11 @@ export function Domains() {
 
       {/* Stays up while a search finds nothing, so it can be cleared. */}
       {data && (domains.length > 0 || debouncedQuery) && (
-        <div className={styles.toolbar}>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("domains.searchDomainsPlaceholder")}
-            contentBefore={<SearchRegular />}
-            contentAfter={
-              query ? (
-                <Button
-                  appearance="transparent"
-                  size="small"
-                  icon={<DismissRegular />}
-                  aria-label={t("common.clear")}
-                  onClick={() => setQuery("")}
-                />
-              ) : undefined
-            }
-            style={{ minWidth: 220, flex: "1 1 220px" }}
-          />
-        </div>
+        <ListSearch
+          value={query}
+          onChange={setQuery}
+          placeholder={t("domains.searchDomainsPlaceholder")}
+        />
       )}
 
       {!isFetching && domains.length === 0 && debouncedQuery && (

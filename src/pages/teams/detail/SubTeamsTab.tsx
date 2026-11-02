@@ -1,9 +1,8 @@
 // Sub-teams: teams nested under this one, which inherit its members and
 // verified domains.
 
-import { Avatar, Button, Input, makeStyles } from "@fluentui/react-components";
-import { DismissRegular, SearchRegular } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { Avatar } from "@fluentui/react-components";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../../../lib/api-context";
@@ -18,29 +17,22 @@ import {
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import { CreateSubTeamDialog } from "../dialogs/CreateSubTeamDialog";
 import type { TeamTabProps } from "./types";
+import { ListSearch } from "../../../components/ListSearch";
+import { useDebouncedSearch } from "../../../lib/useDebouncedSearch";
 
 const PAGE_SIZE = 20;
 
-const useStyles = makeStyles({
-  toolbar: { padding: "0 var(--card-pad) 16px" },
-});
-
 export function SubTeamsTab({ team, canManage, showMsg }: TeamTabProps) {
   const api = useApi();
-  const styles = useStyles();
   const { t } = useTranslation();
   const teamId = team.id;
 
   const [page, setPage] = useState(1);
-  const [query, setQuery] = useState("");
-  const [debounced, setDebounced] = useState("");
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setDebounced(query.trim());
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
+  const {
+    query,
+    setQuery,
+    search: debounced,
+  } = useDebouncedSearch(() => setPage(1));
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ["sub-teams", teamId, page, debounced],
@@ -68,26 +60,11 @@ export function SubTeamsTab({ team, canManage, showMsg }: TeamTabProps) {
       }
     >
       {(total > 5 || debounced) && (
-        <div className={styles.toolbar}>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("teams.searchSubTeamsPlaceholder")}
-            contentBefore={<SearchRegular />}
-            contentAfter={
-              query ? (
-                <Button
-                  appearance="transparent"
-                  size="small"
-                  icon={<DismissRegular />}
-                  aria-label={t("common.clear")}
-                  onClick={() => setQuery("")}
-                />
-              ) : undefined
-            }
-            style={{ width: "100%" }}
-          />
-        </div>
+        <ListSearch
+          value={query}
+          onChange={setQuery}
+          placeholder={t("teams.searchSubTeamsPlaceholder")}
+        />
       )}
       {subTeams.length === 0 ? (
         <SettingsEmpty>

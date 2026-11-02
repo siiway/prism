@@ -6,21 +6,10 @@
 // app and team (team); each opens on its own page, where it can be revoked.
 // The kind lives in ?view= so coming back from a grant lands on the same list.
 
-import {
-  Badge,
-  Skeleton,
-  SkeletonItem,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Badge, makeStyles } from "@fluentui/react-components";
 import { KeyMultipleRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
-import {
-  Link,
-  useLocation,
-  useNavigate,
-  useSearchParams,
-} from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { AdminScopeGrant, ScopeGrantKind } from "../../lib/api";
@@ -31,9 +20,11 @@ import { usePageClamp } from "../../lib/usePageClamp";
 import { useToastMessage } from "../../lib/useToastMessage";
 import {
   DataList,
+  type DataListColumn,
+  DataListLink,
   DataListName,
   DataListRow,
-  type DataListColumn,
+  DataListSkeleton,
 } from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
@@ -47,11 +38,6 @@ const useStyles = makeStyles({
   toast: { marginBottom: "12px" },
   views: { display: "flex", marginBottom: "12px" },
   scopes: { display: "flex", gap: "4px", flexWrap: "wrap" },
-  name: {
-    color: tokens.colorNeutralForeground1,
-    textDecorationLine: "none",
-    ":hover": { textDecorationLine: "underline" },
-  },
 });
 
 /** Where a grant opens. */
@@ -109,18 +95,7 @@ function GrantList({ kind }: { kind: ScopeGrantKind }) {
       />
 
       {isFetching && !data ? (
-        <Skeleton aria-busy>
-          <DataList columns={columns}>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <DataListRow
-                key={i}
-                cells={columns.map((_, c) => (
-                  <SkeletonItem key={c} size={12} style={{ width: "60%" }} />
-                ))}
-              />
-            ))}
-          </DataList>
-        </Skeleton>
+        <DataListSkeleton columns={columns} rows={3} />
       ) : grants.length === 0 ? (
         <EmptyState
           icon={<KeyMultipleRegular />}
@@ -145,14 +120,9 @@ function GrantList({ kind }: { kind: ScopeGrantKind }) {
                     <DataListName
                       key="app"
                       name={
-                        // A real link: keyboard, middle-click, new tab.
-                        <Link
-                          to={path}
-                          className={styles.name}
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        <DataListLink to={path}>
                           {row.app_name ?? t("admin.unknownApp")}
-                        </Link>
+                        </DataListLink>
                       }
                       sub={row.client_id}
                     />,

@@ -15,8 +15,6 @@ import {
   Field,
   Input,
   MessageBar,
-  Skeleton,
-  SkeletonItem,
   Spinner,
   Text,
   Textarea,
@@ -42,9 +40,10 @@ import { useConfirm } from "../../lib/useConfirm";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import {
   DataList,
+  type DataListColumn,
   DataListName,
   DataListRow,
-  type DataListColumn,
+  DataListSkeleton,
 } from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
@@ -526,18 +525,7 @@ export function AdminKvBrowser({ showMsg }: { showMsg: ShowMsg }) {
           {apiErrorText(error, t("common.error"))}
         </MessageBar>
       ) : isFetching && !data ? (
-        <Skeleton aria-busy>
-          <DataList columns={columns}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <DataListRow
-                key={i}
-                cells={columns.map((_, c) => (
-                  <SkeletonItem key={c} size={12} style={{ width: "60%" }} />
-                ))}
-              />
-            ))}
-          </DataList>
-        </Skeleton>
+        <DataListSkeleton columns={columns} rows={4} />
       ) : keys.length === 0 ? (
         <EmptyState
           icon={<KeyRegular />}

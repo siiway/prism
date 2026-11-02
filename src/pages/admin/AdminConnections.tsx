@@ -3,16 +3,10 @@
 // sign-in and opens its page, where that is changed; Add source opens
 // /admin/connections/new.
 
-import {
-  Button,
-  Skeleton,
-  SkeletonItem,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Button, makeStyles, tokens } from "@fluentui/react-components";
 import { AddRegular, PlugConnectedRegular } from "@fluentui/react-icons";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { apiErrorText } from "../../lib/apiError";
@@ -22,9 +16,11 @@ import { useToastMessage } from "../../lib/useToastMessage";
 import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
+  type DataListColumn,
+  DataListLink,
   DataListName,
   DataListRow,
-  type DataListColumn,
+  DataListSkeleton,
 } from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
@@ -55,11 +51,6 @@ const useStyles = makeStyles({
     "@media (max-width: 1100px)": { position: "static" },
   },
   muted: { color: tokens.colorNeutralForeground3 },
-  name: {
-    color: tokens.colorNeutralForeground1,
-    textDecorationLine: "none",
-    ":hover": { textDecorationLine: "underline" },
-  },
 });
 
 export function AdminConnections() {
@@ -165,22 +156,7 @@ export function AdminConnections() {
       <div className={styles.layout}>
         <div className={styles.main}>
           {isFetching && !data ? (
-            <Skeleton aria-busy>
-              <DataList columns={columns}>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <DataListRow
-                    key={i}
-                    cells={columns.map((_, c) => (
-                      <SkeletonItem
-                        key={c}
-                        size={12}
-                        style={{ width: "60%" }}
-                      />
-                    ))}
-                  />
-                ))}
-              </DataList>
-            </Skeleton>
+            <DataListSkeleton columns={columns} rows={3} />
           ) : sources.length === 0 ? (
             <EmptyState
               icon={<PlugConnectedRegular />}
@@ -201,14 +177,7 @@ export function AdminConnections() {
                         <DataListName
                           key="n"
                           name={
-                            // A real link: keyboard, middle-click, new tab.
-                            <Link
-                              to={path}
-                              className={styles.name}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {src.name}
-                            </Link>
+                            <DataListLink to={path}>{src.name}</DataListLink>
                           }
                           sub={src.slug}
                         />,

@@ -2,12 +2,7 @@
 // page on its Moderation tab, where status flags, transfers and revocation
 // live.
 
-import {
-  Avatar,
-  Badge,
-  Skeleton,
-  SkeletonItem,
-} from "@fluentui/react-components";
+import { Avatar, Badge } from "@fluentui/react-components";
 import { AppsRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -18,9 +13,10 @@ import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
+  type DataListColumn,
   DataListName,
   DataListRow,
-  type DataListColumn,
+  DataListSkeleton,
 } from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
@@ -62,25 +58,7 @@ export function AdminApps() {
       />
 
       {isFetching && !data ? (
-        <Skeleton aria-busy>
-          <DataList columns={columns} linked>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <DataListRow
-                key={i}
-                cells={[
-                  <SkeletonItem
-                    key="a"
-                    size={12}
-                    style={{ width: `${40 + (i % 3) * 12}%` }}
-                  />,
-                  <SkeletonItem key="b" size={12} style={{ width: "60%" }} />,
-                  <SkeletonItem key="c" size={12} style={{ width: 60 }} />,
-                  <SkeletonItem key="d" size={12} style={{ width: 72 }} />,
-                ]}
-              />
-            ))}
-          </DataList>
-        </Skeleton>
+        <DataListSkeleton columns={columns} linked rows={5} />
       ) : apps.length === 0 ? (
         <EmptyState
           icon={<AppsRegular />}

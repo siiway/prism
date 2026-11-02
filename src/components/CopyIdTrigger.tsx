@@ -12,15 +12,25 @@ import {
   mergeClasses,
   tokens,
 } from "@fluentui/react-components";
-import {
-  useState,
-  type ReactNode,
-  type KeyboardEvent,
-  type MouseEvent,
-} from "react";
+import { type ReactNode, type KeyboardEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { CopyRegular } from "@fluentui/react-icons";
+import { useCopy } from "../lib/useCopy";
 
 const useStyles = makeStyles({
+  text: {
+    justifyContent: "flex-start",
+    gap: "6px",
+    maxWidth: "100%",
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground2,
+  },
+  ellipsis: {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   trigger: {
     display: "flex",
     alignItems: "center",
@@ -58,24 +68,8 @@ export function CopyIdTrigger({
 }: CopyIdTriggerProps) {
   const styles = useStyles();
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  const copy = () => {
-    void navigator.clipboard
-      .writeText(id)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {
-        // Clipboard access can be denied (permission, insecure context).
-        // Surface the failure in the tooltip instead of swallowing the
-        // rejection and silently leaving nothing copied.
-        setFailed(true);
-        setTimeout(() => setFailed(false), 1500);
-      });
-  };
+  const { state, copy: copyText } = useCopy();
+  const copy = () => void copyText(id);
 
   const onClick = (e: MouseEvent) => {
     e.stopPropagation();
@@ -93,9 +87,9 @@ export function CopyIdTrigger({
   return (
     <Tooltip
       content={
-        copied
+        state === "copied"
           ? (copiedLabel ?? t("common.copied"))
-          : failed
+          : state === "failed"
             ? t("common.copyFailed")
             : label
       }
@@ -112,5 +106,30 @@ export function CopyIdTrigger({
         {children}
       </div>
     </Tooltip>
+  );
+}
+
+/** An id in monospace with a copy icon, copied on click — a list cell or a
+ *  page footer. */
+export function CopyIdText({
+  id,
+  label,
+  copiedLabel,
+}: {
+  id: string;
+  label: string;
+  copiedLabel?: string;
+}) {
+  const styles = useStyles();
+  return (
+    <CopyIdTrigger
+      id={id}
+      label={label}
+      copiedLabel={copiedLabel}
+      className={styles.text}
+    >
+      <span className={styles.ellipsis}>{id}</span>
+      <CopyRegular />
+    </CopyIdTrigger>
   );
 }

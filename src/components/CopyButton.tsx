@@ -1,29 +1,42 @@
-// An icon button that copies a value and briefly shows a check.
+// An icon button that copies a value and briefly shows how it went.
 
 import { Button, Tooltip } from "@fluentui/react-components";
-import { CheckmarkRegular, CopyRegular } from "@fluentui/react-icons";
-import { useState } from "react";
+import {
+  CheckmarkRegular,
+  CopyRegular,
+  DismissRegular,
+} from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
+import { useCopy } from "../lib/useCopy";
 
 export function CopyButton({ text, label }: { text: string; label?: string }) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const name = label ?? t("common.copy");
+  const { state, copy } = useCopy();
   return (
     <Tooltip
-      content={copied ? t("apps.copied") : name}
+      content={
+        state === "copied"
+          ? t("common.copied")
+          : state === "failed"
+            ? t("common.copyFailed")
+            : (label ?? t("common.copy"))
+      }
       relationship="label"
       withArrow
     >
       <Button
         size="small"
         appearance="subtle"
-        icon={copied ? <CheckmarkRegular /> : <CopyRegular />}
-        onClick={() => {
-          void navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
+        icon={
+          state === "copied" ? (
+            <CheckmarkRegular />
+          ) : state === "failed" ? (
+            <DismissRegular />
+          ) : (
+            <CopyRegular />
+          )
+        }
+        onClick={() => void copy(text)}
       />
     </Tooltip>
   );

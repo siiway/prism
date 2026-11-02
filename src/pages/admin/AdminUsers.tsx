@@ -27,9 +27,8 @@ import {
   ChevronRightRegular,
   DismissRegular,
   PersonRegular,
-  SearchRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
@@ -42,6 +41,8 @@ import { useAuthStore } from "../../store/auth";
 import { EmptyState } from "../../components/EmptyState";
 import { Pagination } from "../../components/Pagination";
 import { SettingsToast } from "../../components/Settings";
+import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
+import { ListSearch } from "../../components/ListSearch";
 
 const PAGE_SIZE = 20;
 /** Mirrors the server's per-request cap so the UI can say why the buttons
@@ -52,12 +53,6 @@ const NARROW = "@media (max-width: 768px)";
 
 const useStyles = makeStyles({
   toast: { position: "sticky", top: "8px", zIndex: 2, marginBottom: "12px" },
-  toolbar: {
-    display: "flex",
-    gap: "8px",
-    marginBottom: "12px",
-    flexWrap: "wrap",
-  },
   list: {
     borderRadius: tokens.borderRadiusXLarge,
     border: `1px solid ${tokens.colorNeutralStroke1}`,
@@ -158,16 +153,8 @@ export function AdminUsers() {
   const me = useAuthStore((s) => s.user?.id);
   const { message, showMsg } = useToastMessage();
 
-  const [query, setQuery] = useState("");
-  const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setSearch(query.trim());
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
+  const { query, setQuery, search } = useDebouncedSearch(() => setPage(1));
 
   const { data, isFetching } = useQuery({
     queryKey: ["admin-users", page, search],
@@ -306,26 +293,11 @@ export function AdminUsers() {
         </div>
       )}
 
-      <div className={styles.toolbar}>
-        <Input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t("admin.searchUsers")}
-          contentBefore={<SearchRegular />}
-          contentAfter={
-            query ? (
-              <Button
-                appearance="transparent"
-                size="small"
-                icon={<DismissRegular />}
-                aria-label={t("common.clear")}
-                onClick={() => setQuery("")}
-              />
-            ) : undefined
-          }
-          style={{ minWidth: 220, flex: "1 1 220px" }}
-        />
-      </div>
+      <ListSearch
+        value={query}
+        onChange={setQuery}
+        placeholder={t("admin.searchUsers")}
+      />
 
       {isFetching && !data ? (
         <Skeleton aria-busy>

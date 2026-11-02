@@ -10,7 +10,13 @@
 // chevron; it must not hold other controls. A row with controls passes
 // `onClick` instead and keeps a real link in its first cell.
 
-import { makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import {
+  makeStyles,
+  mergeClasses,
+  Skeleton,
+  SkeletonItem,
+  tokens,
+} from "@fluentui/react-components";
 import { ChevronRightRegular } from "@fluentui/react-icons";
 import { createContext, useContext, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -242,5 +248,86 @@ export function DataListName({
         {sub && <span className={styles.sub}>{sub}</span>}
       </div>
     </div>
+  );
+}
+
+/** Placeholder rows in the list's own frame, so nothing moves when the
+ *  items arrive. `icon` reserves the first column's avatar. */
+export function DataListSkeleton({
+  columns,
+  linked,
+  rows = 4,
+  icon,
+}: {
+  columns: DataListColumn[];
+  linked?: boolean;
+  rows?: number;
+  icon?: "square" | "circle";
+}) {
+  const nameStyles = useNameStyles();
+  return (
+    <Skeleton aria-busy>
+      <DataList columns={columns} linked={linked}>
+        {Array.from({ length: rows }).map((_, i) => (
+          <DataListRow
+            key={i}
+            cells={columns.map((_, c) => {
+              const bar = (
+                <SkeletonItem
+                  key={c}
+                  size={12}
+                  style={{ width: c === 0 ? `${40 + (i % 3) * 12}%` : "60%" }}
+                />
+              );
+              return c === 0 && icon ? (
+                <div key={c} className={nameStyles.root}>
+                  <SkeletonItem shape={icon} size={32} />
+                  {bar}
+                </div>
+              ) : (
+                bar
+              );
+            })}
+          />
+        ))}
+      </DataList>
+    </Skeleton>
+  );
+}
+
+const useLinkStyles = makeStyles({
+  link: {
+    color: tokens.colorNeutralForeground1,
+    textDecorationLine: "none",
+    ":hover": { textDecorationLine: "underline" },
+    ":focus-visible": {
+      outline: `2px solid ${tokens.colorStrokeFocus2}`,
+      borderRadius: "2px",
+    },
+  },
+});
+
+/** The real link inside a row that passes `onClick` (because it holds other
+ *  controls), so the row still works with the keyboard, middle-click and
+ *  "open in new tab". */
+export function DataListLink({
+  to,
+  state,
+  children,
+}: {
+  to: string;
+  state?: unknown;
+  children: ReactNode;
+}) {
+  const styles = useLinkStyles();
+  return (
+    <Link
+      to={to}
+      state={state}
+      className={styles.link}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
+    </Link>
   );
 }

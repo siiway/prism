@@ -6,7 +6,6 @@ import {
   Avatar,
   Badge,
   Button,
-  Input,
   Skeleton,
   SkeletonItem,
   makeStyles,
@@ -19,15 +18,12 @@ import {
   CheckmarkRegular,
   ChevronDownRegular,
   ClockRegular,
-  CopyRegular,
-  DismissRegular,
   FlashRegular,
   GlobeRegular,
   OpenRegular,
-  SearchRegular,
   WarningRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -38,7 +34,7 @@ import { formatDate } from "../lib/datetime";
 import { scopeLabel } from "../lib/scopeLabels";
 import { useConfirm } from "../lib/useConfirm";
 import { useToastMessage } from "../lib/useToastMessage";
-import { CopyIdTrigger } from "../components/CopyIdTrigger";
+import { CopyIdText } from "../components/CopyIdTrigger";
 import { EmptyState } from "../components/EmptyState";
 import { GetStartedPanel } from "../components/GetStartedPanel";
 import { ConnectedAppsArt } from "../components/Illustrations";
@@ -51,18 +47,14 @@ import {
   SettingsSubhead,
   SettingsToast,
 } from "../components/Settings";
+import { useDebouncedSearch } from "../lib/useDebouncedSearch";
+import { ListSearch } from "../components/ListSearch";
 
 const PAGE_SIZE = 20;
 const COLUMNS = "minmax(0, 2.2fr) minmax(0, 2fr) 90px 110px 20px";
 const NARROW = "@media (max-width: 768px)";
 
 const useStyles = makeStyles({
-  toolbar: {
-    display: "flex",
-    gap: "8px",
-    marginBottom: "12px",
-    flexWrap: "wrap",
-  },
   list: {
     "--card-pad": "16px",
     borderRadius: tokens.borderRadiusXLarge,
@@ -198,13 +190,6 @@ const useStyles = makeStyles({
   scopeDesc: {
     fontSize: tokens.fontSizeBase200,
     color: tokens.colorNeutralForeground3,
-  },
-  clientId: {
-    gap: "6px",
-    maxWidth: "100%",
-    fontFamily: tokens.fontFamilyMonospace,
-    fontSize: "12px",
-    color: tokens.colorNeutralForeground2,
   },
   danger: {
     color: tokens.colorPaletteRedForeground1,
@@ -370,15 +355,11 @@ function ConsentDetails({
 
       <SettingsFooter
         start={
-          <CopyIdTrigger
+          <CopyIdText
             id={consent.client_id}
             label={t("common.copyClientId")}
             copiedLabel={t("common.copiedClientId")}
-            className={styles.clientId}
-          >
-            <span>{consent.client_id}</span>
-            <CopyRegular />
-          </CopyIdTrigger>
+          />
         }
       >
         {website && (
@@ -421,20 +402,15 @@ export function ConnectedApps() {
   });
   const siteName = site?.site_name ?? "Prism";
 
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
+  const {
+    query,
+    setQuery,
+    search: debouncedQuery,
+  } = useDebouncedSearch(() => setPage(1));
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   // One change at a time; holds what's being changed.
   const [busy, setBusy] = useState<string | null>(null);
-
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setDebouncedQuery(query.trim());
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
 
   const { data, isFetching } = useQuery({
     queryKey: ["consents", page, debouncedQuery],
@@ -568,26 +544,11 @@ export function ConnectedApps() {
 
       {/* Stays up while a search finds nothing, so it can be cleared. */}
       {data && (data.consents.length > 0 || debouncedQuery) && (
-        <div className={styles.toolbar}>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("connectedApps.searchConsentsPlaceholder")}
-            contentBefore={<SearchRegular />}
-            contentAfter={
-              query ? (
-                <Button
-                  appearance="transparent"
-                  size="small"
-                  icon={<DismissRegular />}
-                  aria-label={t("common.clear")}
-                  onClick={() => setQuery("")}
-                />
-              ) : undefined
-            }
-            style={{ minWidth: 220, flex: "1 1 220px" }}
-          />
-        </div>
+        <ListSearch
+          value={query}
+          onChange={setQuery}
+          placeholder={t("connectedApps.searchConsentsPlaceholder")}
+        />
       )}
 
       {!isFetching && data?.consents.length === 0 && debouncedQuery && (

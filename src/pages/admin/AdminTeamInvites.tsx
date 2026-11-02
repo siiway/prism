@@ -5,14 +5,7 @@
 // creator hand out". Invites that create accounts rather than adding existing
 // ones are why this is one list rather than a tour of every team page.
 
-import {
-  Badge,
-  Button,
-  Skeleton,
-  SkeletonItem,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Badge, Button, makeStyles, tokens } from "@fluentui/react-components";
 import { MailRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -29,8 +22,9 @@ import { usePageClamp } from "../../lib/usePageClamp";
 import { CopyButton } from "../../components/CopyButton";
 import {
   DataList,
-  DataListRow,
   type DataListColumn,
+  DataListRow,
+  DataListSkeleton,
 } from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
@@ -158,18 +152,7 @@ export function AdminTeamInvites() {
       </ListSearch>
 
       {isFetching && !data ? (
-        <Skeleton aria-busy>
-          <DataList columns={columns}>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <DataListRow
-                key={i}
-                cells={columns.map((_, c) => (
-                  <SkeletonItem key={c} size={12} style={{ width: "60%" }} />
-                ))}
-              />
-            ))}
-          </DataList>
-        </Skeleton>
+        <DataListSkeleton columns={columns} rows={3} />
       ) : invites.length === 0 ? (
         <EmptyState
           icon={<MailRegular />}

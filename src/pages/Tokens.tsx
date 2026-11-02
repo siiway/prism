@@ -3,7 +3,6 @@
 import {
   Badge,
   Button,
-  Input,
   Table,
   TableBody,
   TableCell,
@@ -14,14 +13,8 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  AddRegular,
-  DeleteRegular,
-  DismissRegular,
-  KeyRegular,
-  SearchRegular,
-} from "@fluentui/react-icons";
-import { useEffect, useState } from "react";
+import { AddRegular, DeleteRegular, KeyRegular } from "@fluentui/react-icons";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -34,6 +27,8 @@ import { TokenArt } from "../components/Illustrations";
 import { PageHeader } from "../components/PageHeader";
 import { Pagination } from "../components/Pagination";
 import { SkeletonTableRows } from "../components/Skeletons";
+import { useDebouncedSearch } from "../lib/useDebouncedSearch";
+import { ListSearch } from "../components/ListSearch";
 
 const useStyles = makeStyles({
   card: {
@@ -62,17 +57,12 @@ export function Tokens() {
   });
   const siteName = site?.site_name ?? "Prism";
 
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
-
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setDebouncedQuery(query.trim());
-      setPage(1);
-    }, 250);
-    return () => clearTimeout(id);
-  }, [query]);
+  const {
+    query,
+    setQuery,
+    search: debouncedQuery,
+  } = useDebouncedSearch(() => setPage(1));
 
   const { data, isFetching } = useQuery({
     queryKey: ["pat", page, debouncedQuery],
@@ -130,6 +120,14 @@ export function Tokens() {
         />
       ) : (
         <div className={styles.card}>
+          {/* Stays up while a search finds nothing, so it can be cleared. */}
+          {(query || debouncedQuery || !!data?.tokens.length) && (
+            <ListSearch
+              value={query}
+              onChange={setQuery}
+              placeholder={t("tokens.searchTokensPlaceholder")}
+            />
+          )}
           {isFetching && !data ? (
             <SkeletonTableRows rows={5} cols={5} />
           ) : !isFetching && data?.tokens.length === 0 && debouncedQuery ? (
@@ -139,33 +137,6 @@ export function Tokens() {
             />
           ) : data && data.tokens.length > 0 ? (
             <>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  marginBottom: 12,
-                  flexWrap: "wrap",
-                }}
-              >
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={t("tokens.searchTokensPlaceholder")}
-                  contentBefore={<SearchRegular />}
-                  contentAfter={
-                    query ? (
-                      <Button
-                        appearance="transparent"
-                        size="small"
-                        icon={<DismissRegular />}
-                        aria-label={t("common.clear")}
-                        onClick={() => setQuery("")}
-                      />
-                    ) : undefined
-                  }
-                  style={{ minWidth: 220, flex: "1 1 220px" }}
-                />
-              </div>
               <Table>
                 <TableHeader>
                   <TableRow>

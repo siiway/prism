@@ -4,17 +4,10 @@
 // share a page, switched in ?view=. A site invite opens on its own page
 // (/admin/invites/:id); new ones start at /admin/invites/new.
 
-import {
-  Badge,
-  Button,
-  Skeleton,
-  SkeletonItem,
-  makeStyles,
-  tokens,
-} from "@fluentui/react-components";
+import { Badge, Button, makeStyles } from "@fluentui/react-components";
 import { AddRegular, MailRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useApi, useAppOrigin } from "../../lib/api-context";
@@ -23,9 +16,11 @@ import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { usePageClamp } from "../../lib/usePageClamp";
 import {
   DataList,
+  type DataListColumn,
+  DataListLink,
   DataListName,
   DataListRow,
-  type DataListColumn,
+  DataListSkeleton,
 } from "../../components/DataList";
 import { CopyButton } from "../../components/CopyButton";
 import { EmptyState } from "../../components/EmptyState";
@@ -41,11 +36,6 @@ const useStyles = makeStyles({
   views: { display: "flex", marginBottom: "12px" },
   badges: { display: "flex", gap: "4px", flexWrap: "wrap" },
   banner: { marginBottom: "12px" },
-  name: {
-    color: tokens.colorNeutralForeground1,
-    textDecorationLine: "none",
-    ":hover": { textDecorationLine: "underline" },
-  },
 });
 
 function SiteInvites() {
@@ -109,18 +99,7 @@ function SiteInvites() {
       </ListSearch>
 
       {isFetching && !data ? (
-        <Skeleton aria-busy>
-          <DataList columns={columns}>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <DataListRow
-                key={i}
-                cells={columns.map((_, c) => (
-                  <SkeletonItem key={c} size={12} style={{ width: "60%" }} />
-                ))}
-              />
-            ))}
-          </DataList>
-        </Skeleton>
+        <DataListSkeleton columns={columns} rows={3} />
       ) : invites.length === 0 ? (
         <EmptyState
           icon={<MailRegular />}
@@ -144,14 +123,9 @@ function SiteInvites() {
                     <DataListName
                       key="who"
                       name={
-                        // A real link: keyboard, middle-click, new tab.
-                        <Link
-                          to={path}
-                          className={styles.name}
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        <DataListLink to={path}>
                           {inv.email ?? t("admin.inviteAnyone")}
-                        </Link>
+                        </DataListLink>
                       }
                       sub={inv.note ?? undefined}
                       badges={
