@@ -94,3 +94,14 @@ language = "system"
 stages = ["pre-push"]
 pass_filenames = false
 always_run = true
+
+# Builds, then checks that NOTICE.md lists exactly what the build ships.
+[[repos.hooks]]
+id = "notice"
+name = "NOTICE.md"
+entry = "bun"
+args = ["run", "--cwd", "app", "check:notice"]
+language = "system"
+stages = ["pre-push"]
+pass_filenames = false
+always_run = true
