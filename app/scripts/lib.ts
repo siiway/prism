@@ -69,9 +69,19 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}) {
   return { ok: success, stdout: res.stdout ?? "" };
 }
 
-/** Run a dev-dependency binary (wrangler, tsc, vite) through `bun x`. */
+/** Run a dev-dependency binary (wrangler, vite) through `bun x`. */
 export function bunx(bin: string, args: string[], opts: RunOptions = {}) {
   return run(process.execPath, ["x", bin, ...args], opts);
+}
+
+// TypeScript 7 (the native compiler) is installed as `typescript7` next to
+// TypeScript 6, which typescript-eslint and the scripts' own `import ts` still
+// need. Both packages ship a `tsc` bin, so call 7's launcher by path.
+const TSC = join(ROOT, "node_modules", "typescript7", "bin", "tsc");
+
+/** Typecheck with TypeScript 7, e.g. `tsc(["-p", "src/web"])`. */
+export function tsc(args: string[], opts: RunOptions = {}) {
+  return run(process.execPath, [TSC, ...args], opts);
 }
 
 export function wrangler(args: string[], opts: RunOptions = {}) {

@@ -9,7 +9,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT, bunx, ok, parseArgs, step, warn } from "./lib.ts";
+import { ROOT, bunx, ok, parseArgs, step, tsc, warn } from "./lib.ts";
 
 const USAGE = `Usage: bun run build
 
@@ -19,8 +19,8 @@ parseArgs(process.argv.slice(2), { flags: [] }, USAGE);
 
 // ── Typecheck ─────────────────────────────────────────────────────────────────
 step("Typechecking");
-bunx("tsc", ["-p", "src/web"]);
-bunx("tsc", ["-p", "src/worker"]);
+tsc(["-p", "src/web"]);
+tsc(["-p", "src/worker"]);
 ok("app and worker");
 
 // ── Vite ──────────────────────────────────────────────────────────────────────
