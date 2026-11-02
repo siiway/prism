@@ -36,15 +36,9 @@ jobs:
             bun-${{ runner.os }}-
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Install prek
-        uses: j178/prek-action@1382ad72dea72f9d53832f2bcb65b3e87a947204 # v3.0.1
-        with:
-          prek-version: 0.5.7
-          install-only: true
-          cache: false
       - name: Commit hooks (prettier, eslint, file checks)
-        run: prek run --all-files --show-diff-on-failure --color=always
+        run: bunx prek run --all-files --show-diff-on-failure --color=always
       - name: Push hooks (typecheck, tests, translations)
-        run: prek run --all-files --hook-stage pre-push --color=always
+        run: bunx prek run --all-files --hook-stage pre-push --color=always
       - name: Build
         run: bunx vite build

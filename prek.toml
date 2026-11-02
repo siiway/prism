@@ -5,8 +5,10 @@
 # Every hook runs a program directly (no `sh -c`), so it works the same under
 # Git Bash, PowerShell and GUI clients on Windows. It needs `bun` on PATH.
 #
-# Install both hook types once:
-#   prek install --hook-type pre-commit --hook-type pre-push
+# `bun install` installs both hook types (scripts/hooks.ts). By hand:
+#   bunx prek install
+
+default_install_hook_types = ["pre-commit", "pre-push"]
 
 [[repos]]
 repo = "builtin"
