@@ -54,6 +54,7 @@
     "saturation": "Saturation",
     "brightness": "Brightness",
     "hue": "Hue",
+    "open": "Pick a color",
     "hex": "Hex color",
     "optionalHex": "Optional hex color",
     "invalidHex": "Enter a three- or six-digit hex color."
