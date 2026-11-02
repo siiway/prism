@@ -9,6 +9,7 @@ import type {
   TeamRolePermissions,
 } from "./types";
 import type { NotificationRule as NotificationRulesetRule } from "./notificationRules";
+import type { TeamPermission } from "./scopes";
 
 export type { CapMode, CaptchaProvider };
 
@@ -1266,7 +1267,7 @@ export interface OAuthAuthorizeInfo {
   site_scope_confirm_phrase: string | null;
   site_scopes_grantable: boolean;
   requires_team_grant: boolean;
-  team_grant_permissions: string[];
+  team_grant_permissions: TeamPermission[];
   user_admin_teams: Array<{
     id: string;
     name: string;

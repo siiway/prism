@@ -1,27 +1,40 @@
-// Check translation keys against the source in src/web/.
+// Check translation keys against the frontend source.
 //
 //   bun scripts/check-translations.ts
 //
-// Exit code 1 when a key used in code is missing from a locale file. Warnings
-// (exit code 0): keys that exist in only one locale, and keys no code refers to.
+// The keys the code can use are a fixed set, and this works that set out
+// exactly with the TypeScript type checker over src/web and src/shared
+// (tsconfig.app.json). Nothing is guessed from naming patterns:
 //
-// "Unused" is a best guess. A key counts as used when its full name appears as a
-// quoted string anywhere in src/web or src/shared (so t("a.b") and labelKey:
-// "a.b" both count), or when a template literal could produce it, such as
-// `apps.ruleType_${x}` or `${ns}.notFoundTitle`. A template only counts when
-// its literal text looks like part of a key and is specific enough: only key
-// characters, at least 6 of them, including a dot.
-// One that is nearly all interpolation (`${ns}.${key}`) would match almost any
-// key, so it is ignored, and keys built that way may be listed as unused when
-// they are not.
+// - A string literal that is a key uses it: t("a.b"), labelKey: "a.b".
+// - A template literal uses every key it can produce. Each `${…}` has a type,
+//   and when that type is a union of literals ("email" | "captcha") the
+//   template expands to every combination.
+// - apiErrors.<code> uses each code the Worker can send
+//   (scripts/api-error-codes.ts).
+//
+// Exit code 1 when:
+// - a key the code uses is missing from a locale file, or
+// - a key is built from a value whose type is not a fixed set of literals
+//   (a plain `string`), because then no one can say which keys it uses.
+//   Give the value a literal union type, or map it to full keys.
+//
+// Warnings (exit code 0): keys in only one locale, and keys nothing uses.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import ts from "typescript";
+import { workerErrorCodes } from "./api-error-codes.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const SRC_DIR = join(ROOT, "src", "web");
-const I18N_DIR = join(SRC_DIR, "i18n");
+const I18N_DIR = join(ROOT, "src", "web", "i18n");
 const LOCALES = ["en", "zh"];
+/** Namespaces keyed by codes the Worker sends, which no client type lists. */
+const CODE_TABLES: Record<string, () => Iterable<string>> = {
+  // http_error: the client's own code for a failure response that carries
+  // none (src/web/lib/api.ts).
+  apiErrors: () => [...workerErrorCodes(), "http_error"],
+};
 
 const color = process.stdout.isTTY
   ? (code: string) => (text: string) => `\x1b[${code}m${text}\x1b[0m`
@@ -48,30 +61,16 @@ function flatten(obj: unknown, prefix = ""): Set<string> {
   return keys;
 }
 
-function* sourceFiles(dir: string): Generator<string> {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) yield* sourceFiles(path);
-    else if (/\.tsx?$/.test(entry.name)) yield path;
-  }
-}
-
-// t("key.sub") or t('key.sub')
-const RE_LITERAL = /\bt\(\s*(?:"([^"]+)"|'([^']+)')\s*[,)]/g;
-// t(`anything`)
-const RE_TEMPLATE = /\bt\(\s*`([^`]*)`\s*[,)]/g;
-
-const SHARED_DIR = join(ROOT, "src", "shared");
-const escapeRe = (s: string) => s.replace(/[.*+?^()|[\]\\]/g, "\\$&");
-
 function section(title: string): void {
   console.log(`\n${bold(title)}\n${dim("─".repeat(60))}`);
 }
 
-const diff = (a: Set<string>, b: Set<string>) =>
-  [...a].filter((k) => !b.has(k)).sort();
+const diff = (a: Iterable<string>, b: Set<string>) =>
+  [...new Set(a)].filter((k) => !b.has(k)).sort();
 
 console.log(bold("\n🔍  Translation key checker"));
+
+// ── Locale files ────────────────────────────────────────────────────────────
 
 const locales = new Map<string, Set<string>>();
 for (const name of LOCALES) {
@@ -86,31 +85,193 @@ for (const name of LOCALES) {
     `  Loaded ${cyan(`${name}.json`)}: ${locales.get(name)!.size} keys`,
   );
 }
+const allKeys = new Set([...locales.values()].flatMap((keys) => [...keys]));
+
+// A plural key ("a.b_one") is used through its base name ("a.b").
+const PLURAL = /_(zero|one|two|few|many|other)$/;
+const keyBases = new Set([...allKeys].map((k) => k.replace(PLURAL, "")));
+const namespaces = new Set([...allKeys].map((k) => k.split(".")[0]));
+const isKey = (s: string) => allKeys.has(s) || keyBases.has(s);
+
+// ── Source ──────────────────────────────────────────────────────────────────
+
+const config = ts.getParsedCommandLineOfConfigFile(
+  join(ROOT, "tsconfig.app.json"),
+  {},
+  { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} },
+);
+if (!config) {
+  console.log(red("ERROR: cannot read tsconfig.app.json"));
+  process.exit(1);
+}
+const program = ts.createProgram(config.fileNames, config.options);
+const checker = program.getTypeChecker();
+
+/** Every value a type can hold, when that is a fixed set of literals. */
+function literalValues(type: ts.Type): string[] | null {
+  if (type.isUnion()) {
+    const out: string[] = [];
+    for (const member of type.types) {
+      const values = literalValues(member);
+      if (!values) return null;
+      out.push(...values);
+    }
+    return out;
+  }
+  if (type.isStringLiteral()) return [type.value];
+  if (type.isNumberLiteral()) return [String(type.value)];
+  if (type.flags & ts.TypeFlags.BooleanLiteral)
+    return [checker.typeToString(type)];
+  if (type.flags & ts.TypeFlags.Undefined) return ["undefined"];
+  if (type.flags & ts.TypeFlags.Null) return ["null"];
+  return null;
+}
+
+const unwrap = (node: ts.Expression): ts.Expression =>
+  ts.isParenthesizedExpression(node) ||
+  ts.isAsExpression(node) ||
+  ts.isSatisfiesExpression(node) ||
+  ts.isNonNullExpression(node)
+    ? unwrap(node.expression)
+    : node;
+
+/** t(…), i18n.t(…) and i18n.exists(…): the first argument is a key. */
+function keyArgument(node: ts.CallExpression): ts.Expression | undefined {
+  const callee = node.expression;
+  const isTranslator = ts.isIdentifier(callee)
+    ? callee.text === "t"
+    : ts.isPropertyAccessExpression(callee) &&
+      (callee.name.text === "t" || callee.name.text === "exists");
+  return isTranslator && node.arguments.length
+    ? unwrap(node.arguments[0])
+    : undefined;
+}
+
+type Where = { file: string; line: number; text: string };
+const where = (node: ts.Node): Where => {
+  const sf = node.getSourceFile();
+  return {
+    file: relative(ROOT, sf.fileName).replace(/\\/g, "/"),
+    line: sf.getLineAndCharacterOfPosition(node.getStart()).line + 1,
+    text: node.getText().replace(/\s+/g, " ").slice(0, 70),
+  };
+};
 
 const used = new Set<string>();
-const dynamic: { file: string; expr: string }[] = [];
-for (const file of [...sourceFiles(SRC_DIR)].sort()) {
-  const text = readFileSync(file, "utf8");
-  for (const m of text.matchAll(RE_LITERAL)) used.add(m[1] ?? m[2]);
-  for (const m of text.matchAll(RE_TEMPLATE))
-    dynamic.push({ file: relative(ROOT, file), expr: m[1] });
+const missing = new Map<string, Where>();
+const unresolved: (Where & { why: string })[] = [];
+let expanded = 0;
+
+/** The values a template can produce, or why it cannot be known. */
+function expand(node: ts.TemplateExpression): string[] | string {
+  let out = [node.head.text];
+  for (const span of node.templateSpans) {
+    const type = checker.getTypeAtLocation(span.expression);
+    const values = literalValues(type);
+    if (!values)
+      return `\${${span.expression.getText()}} is ${checker.typeToString(type)}`;
+    out = out.flatMap((pre) => values.map((v) => pre + v + span.literal.text));
+  }
+  return out;
 }
-console.log(`  Found ${cyan(String(used.size))} literal key(s) in src/web/`);
+
+for (const sf of program.getSourceFiles()) {
+  if (sf.isDeclarationFile || !/\/src\/(web|shared)\//.test(sf.fileName))
+    continue;
+  const keyArgs = new Set<ts.Node>();
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node)) {
+      const arg = keyArgument(node);
+      if (arg) {
+        keyArgs.add(arg);
+        if (ts.isStringLiteralLike(arg) && !isKey(arg.text))
+          missing.set(arg.text, where(arg));
+        if (
+          ts.isBinaryExpression(arg) &&
+          arg.operatorToken.kind === ts.SyntaxKind.PlusToken
+        )
+          unresolved.push({
+            ...where(arg),
+            why: "built with +; use a template literal",
+          });
+      }
+    }
+    if (ts.isStringLiteralLike(node) && isKey(node.text)) used.add(node.text);
+    if (ts.isTemplateExpression(node)) {
+      const head = node.head.text;
+      const table = head.endsWith(".") && CODE_TABLES[head.slice(0, -1)];
+      // Passed straight to t(): every value it produces must be a key.
+      const isKeyArg = keyArgs.has(node);
+      // Starts like a key ("admin.…"), so its values must be knowable even
+      // when it is stored first and translated later. It may also be
+      // something else that happens to start the same way (`audit.${ext}` as
+      // a file name), so values that are not keys are not reported missing.
+      const looksLikeKey = isKeyArg || namespaces.has(head.split(".")[0]);
+      const values = expand(node);
+      if (typeof values !== "string") {
+        expanded++;
+        for (const v of values) {
+          if (isKey(v)) used.add(v);
+          else if (isKeyArg) missing.set(v, where(node));
+        }
+      } else if (table && node.templateSpans.length === 1) {
+        expanded++;
+        for (const code of table()) {
+          const key = head + code + node.templateSpans[0].literal.text;
+          if (isKey(key)) used.add(key);
+          else missing.set(key, where(node));
+        }
+      } else if (looksLikeKey) {
+        unresolved.push({ ...where(node), why: values });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+}
+
+console.log(`  Found ${cyan(String(used.size))} used key(s) in src/web/`);
 console.log(
-  `  Found ${cyan(String(dynamic.length))} template literal usage(s) in src/web/`,
+  `  Expanded ${cyan(String(expanded))} template literal(s) from their types`,
 );
+
+// ── Report ──────────────────────────────────────────────────────────────────
 
 let errors = 0;
 let warnings = 0;
 
-for (const [name, keys] of locales) {
-  const missing = diff(used, keys);
-  if (!missing.length) continue;
+if (unresolved.length) {
   section(
-    `❌  Keys used in code but MISSING from ${name}.json (${missing.length})`,
+    `❌  Keys built from values that are not a fixed set (${unresolved.length})`,
   );
-  for (const k of missing) console.log(`  ${red("✗")} ${k}`);
-  errors += missing.length;
+  for (const u of unresolved) {
+    console.log(`  ${red("✗")} ${u.file}:${u.line}  ${u.text}`);
+    console.log(dim(`      ${u.why}`));
+  }
+  console.log(
+    dim(
+      "\n  Give each value a literal union type, or map it to full keys, so the\n  keys it can produce are known.",
+    ),
+  );
+  errors += unresolved.length;
+}
+
+for (const [name, keys] of locales) {
+  const bases = new Set([...keys].map((k) => k.replace(PLURAL, "")));
+  const unique = [...new Set([...used, ...missing.keys()])]
+    .filter((k) => !keys.has(k) && !bases.has(k))
+    .sort();
+  if (!unique.length) continue;
+  section(
+    `❌  Keys used in code but MISSING from ${name}.json (${unique.length})`,
+  );
+  for (const k of unique) {
+    const at = missing.get(k);
+    console.log(
+      `  ${red("✗")} ${k}${at ? dim(`  (${at.file}:${at.line})`) : ""}`,
+    );
+  }
+  errors += unique.length;
 }
 
 const [ref, ...others] = LOCALES;
@@ -119,74 +280,34 @@ for (const other of others) {
     [ref, other],
     [other, ref],
   ]) {
-    const missing = diff(locales.get(from)!, locales.get(to)!);
-    if (!missing.length) continue;
+    const absent = diff(locales.get(from)!, locales.get(to)!);
+    if (!absent.length) continue;
     section(
-      `⚠️   In ${from}.json but missing from ${to}.json (${missing.length})`,
+      `⚠️   In ${from}.json but missing from ${to}.json (${absent.length})`,
     );
-    for (const k of missing) console.log(`  ${yellow("△")} ${k}`);
-    warnings += missing.length;
+    for (const k of absent) console.log(`  ${yellow("△")} ${k}`);
+    warnings += absent.length;
   }
 }
 
-// ── Unused keys ─────────────────────────────────────────────────────────────
-
-const usageText = [...sourceFiles(SRC_DIR), ...sourceFiles(SHARED_DIR)]
-  .map((f) => readFileSync(f, "utf8"))
-  .join("\n");
-const quoted = new Set(
-  [...usageText.matchAll(/["'`]([A-Za-z0-9_.]+)["'`]/g)].map((m) => m[1]),
-);
-const templatePatterns = [...usageText.matchAll(/`([^`]*\$\{[^`]*)`/g)]
-  .map((m) => m[1])
-  .filter((t) => {
-    const literal = t.replace(/\$\{[^}]*\}/g, "");
-    return (
-      literal.length >= 6 &&
-      literal.includes(".") &&
-      /^[A-Za-z0-9_.]+$/.test(literal)
-    );
-  })
-  .map(
-    (t) => new RegExp("^" + escapeRe(t).replace(/\$\{[^}]*\}/g, ".*") + "$"),
-  );
-const baseKey = (k: string) => k.replace(/_(one|other|zero|two|few|many)$/, "");
-const isUsed = (k: string) => {
-  const base = baseKey(k);
-  return (
-    quoted.has(k) ||
-    quoted.has(base) ||
-    templatePatterns.some((p) => p.test(k) || p.test(base))
-  );
-};
-
-const allKeys = new Set([...locales.values()].flatMap((keys) => [...keys]));
-const unused = [...allKeys].filter((k) => !isUsed(k)).sort();
-let unusedCount = 0;
+const unused = [...allKeys]
+  .filter((k) => !used.has(k) && !used.has(k.replace(PLURAL, "")))
+  .sort();
 if (unused.length) {
-  section(
-    `🗑️   Keys no code refers to — probably dead (${unused.length}, of ${allKeys.size})`,
-  );
+  section(`🗑️   Keys nothing uses (${unused.length}, of ${allKeys.size})`);
   for (const k of unused) console.log(`  ${yellow("△")} ${k}`);
-  unusedCount = unused.length;
+  warnings += unused.length;
 }
 
-console.log(
-  dim(
-    `\n  ${dynamic.length} t() call(s) build their key at runtime; keys a template could produce are treated as used.`,
-  ),
-);
-
 console.log();
-if (!errors && !warnings && !unusedCount) {
+if (!errors && !warnings) {
   console.log(
-    green("✓  All translation keys are present across all locale files."),
+    green("✓  Every key is used, and every used key is in every locale."),
   );
 } else {
   const parts = [];
-  if (errors) parts.push(red(`${errors} missing key(s)`));
-  if (warnings) parts.push(yellow(`${warnings} drift warning(s)`));
-  if (unusedCount) parts.push(yellow(`${unusedCount} unused key(s)`));
+  if (errors) parts.push(red(`${errors} error(s)`));
+  if (warnings) parts.push(yellow(`${warnings} warning(s)`));
   console.log(`Summary: ${parts.join(", ")}`);
   if (errors) process.exit(1);
 }

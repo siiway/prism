@@ -9,38 +9,19 @@
 // and plain-text machine endpoints.
 
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import en from "../src/web/i18n/en.json";
 import zh from "../src/web/i18n/zh.json";
 import { createApiClient, ApiError } from "../src/web/lib/api";
+import {
+  stripComments as code,
+  workerErrorCodes,
+  workerSources,
+} from "../scripts/api-error-codes";
 
 const CODE = /^[a-z][a-z0-9_]*$/;
 const CODE_TEMPLATE = /^[a-z][a-z0-9_]*\$\{[^}]+\}$/;
 
-function sources(dir: string): { file: string; text: string }[] {
-  const out: { file: string; text: string }[] = [];
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) {
-      if (e.name !== "migrations") out.push(...sources(p));
-    } else if (e.name.endsWith(".ts") && !e.name.endsWith(".d.ts")) {
-      out.push({ file: p, text: readFileSync(p, "utf8") });
-    }
-  }
-  return out;
-}
-
-const worker = sources("src/worker");
-const read = (path: string) =>
-  worker.find((f) => f.file.replace(/\\/g, "/").endsWith(path))!.text;
-
-/** Strip comments and log lines so prose about errors doesn't count. */
-const code = (text: string) =>
-  text
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:"'`])\/\/.*$/gm, "$1")
-    .replace(/^.*\bconsole\.\w+\(.*$/gm, "");
+const worker = workerSources();
 
 describe("API errors are codes", () => {
   test("no `error:` literal is a sentence", () => {
@@ -68,40 +49,8 @@ describe("API errors are codes", () => {
   });
 });
 
-/** Every code the worker can send: `error: "x"` and `?? "x"` literals, plus
- *  the ones helpers return indirectly. */
-function workerCodes(): Set<string> {
-  const codes = new Set<string>();
-  for (const { text } of worker) {
-    const src = code(text);
-    for (const m of src.matchAll(/\berror:\s*"([a-z][a-z0-9_]*)"/g))
-      codes.add(m[1]);
-    for (const m of src.matchAll(
-      /\berror:\s*[\w.]+\s*\?\?\s*"([a-z][a-z0-9_]*)"/g,
-    ))
-      codes.add(m[1]);
-  }
-  // Capability denials and outbound-URL checks return bare codes.
-  for (const path of ["lib/userCapabilities.ts", "lib/safeFetch.ts"])
-    for (const m of code(read(path)).matchAll(/return "([a-z][a-z0-9_]*)";/g))
-      if (m[1].includes("_")) codes.add(m[1]);
-  // PoW failure reasons.
-  const pow = /const POW_ERRORS[^{]*\{([^}]*)\}/.exec(
-    read("middleware/captcha.ts"),
-  );
-  for (const m of pow![1].matchAll(/:\s*"([a-z_]+)"/g)) codes.add(m[1]);
-  // Redirect URI reasons become `redirect_uri_<reason>`.
-  const reasons = /export type RedirectUriReason =([^;]*);/.exec(
-    read("lib/redirectUri.ts"),
-  );
-  for (const m of reasons![1].matchAll(/"([a-z_]+)"/g))
-    codes.add(`redirect_uri_${m[1]}`);
-  codes.add(/MIGRATIONS_PENDING = "([a-z_]+)"/.exec(read("lib/schema.ts"))![1]);
-  return codes;
-}
-
 describe("every code has a translation", () => {
-  const codes = workerCodes();
+  const codes = workerErrorCodes(worker);
 
   test("finds the codes", () => {
     // Guard against the collector silently matching nothing.

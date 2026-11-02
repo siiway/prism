@@ -541,8 +541,11 @@ export function Captcha({ captcha, onVerified, onError }: CaptchaProps) {
   const { t } = useTranslation();
 
   // Enabled providers with "none" filtered out.
-  const providers = useMemo<CaptchaProvider[]>(
-    () => captcha.captcha_providers.filter((p) => p !== "none"),
+  const providers = useMemo(
+    () =>
+      captcha.captcha_providers.filter(
+        (p): p is Exclude<CaptchaProvider, "none"> => p !== "none",
+      ),
     [captcha.captcha_providers],
   );
 
@@ -558,7 +561,10 @@ export function Captcha({ captcha, onVerified, onError }: CaptchaProps) {
         ? null
         : (() => {
             const stored = loadStoredProvider();
-            return stored && providers.includes(stored) ? stored : providers[0];
+            return stored &&
+              (providers as readonly CaptchaProvider[]).includes(stored)
+              ? stored
+              : providers[0];
           })();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing active provider to enabled set / localStorage preference
     setActive(next);

@@ -35,6 +35,16 @@ import { scopeLabel } from "../../lib/scopeLabels";
 import { AuthShell } from "../../components/AuthShell";
 import { useAuthStore } from "../../store/auth";
 import { OAuthConsentHeader } from "../../components/OAuthConsentHeader";
+import type { TeamPermission } from "../../../shared/scopes";
+
+const TEAM_PERMISSION_KEYS: Record<TeamPermission, string> = {
+  read: "oauth.teamScopePermRead",
+  write: "oauth.teamScopePermWrite",
+  delete: "oauth.teamScopePermDelete",
+  "member:read": "oauth.teamScopePermMemberRead",
+  "member:write": "oauth.teamScopePermMemberWrite",
+  "member:profile:read": "oauth.teamScopePermMemberProfileRead",
+};
 
 const useStyles = makeStyles({
   page: {
@@ -268,7 +278,6 @@ export function Authorize() {
         const humanMsg = err.message; // already translated
         if (
           errorCode === "site_scope_totp_invalid" ||
-          errorCode === "site_scope_totp_required" ||
           errorCode === "site_scope_confirm_required" ||
           errorCode === "site_scope_admin_required"
         ) {
@@ -804,10 +813,6 @@ export function Authorize() {
                 {/* Requested permissions list */}
                 <div className={styles.scopeList}>
                   {(data.team_grant_permissions ?? []).map((perm) => {
-                    const labelKey = `teamScopePerm${perm
-                      .split(":")
-                      .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-                      .join("")}` as Parameters<typeof t>[0];
                     return (
                       <div key={perm} className={styles.scopeItem}>
                         <CheckmarkRegular
@@ -816,9 +821,7 @@ export function Authorize() {
                             flexShrink: 0,
                           }}
                         />
-                        <Text size={300}>
-                          {t(`oauth.${labelKey}` as Parameters<typeof t>[0])}
-                        </Text>
+                        <Text size={300}>{t(TEAM_PERMISSION_KEYS[perm])}</Text>
                       </div>
                     );
                   })}

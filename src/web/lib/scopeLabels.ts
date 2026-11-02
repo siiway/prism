@@ -5,7 +5,7 @@
 
 import type { TFunction } from "i18next";
 
-const KEYS: Record<string, string> = {
+const KEYS = {
   openid: "Identity",
   profile: "Profile",
   email: "Email",
@@ -43,7 +43,8 @@ const KEYS: Record<string, string> = {
   "site:config:read": "SiteConfigRead",
   "site:config:write": "SiteConfigWrite",
   "site:token:revoke": "SiteTokenRevoke",
-};
+} as const;
+type ScopeName = (typeof KEYS)[keyof typeof KEYS];
 
 export interface ScopeLabel {
   label: string;
@@ -53,7 +54,7 @@ export interface ScopeLabel {
 }
 
 export function scopeLabel(t: TFunction, scope: string): ScopeLabel {
-  const key = KEYS[scope];
+  const key: ScopeName | undefined = (KEYS as Record<string, ScopeName>)[scope];
   const site = scope.startsWith("site:") || scope.startsWith("admin:");
   if (!key) return { label: scope, site };
   return {

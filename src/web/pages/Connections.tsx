@@ -98,6 +98,8 @@ const ERROR_CODES = [
   "account_mismatch",
   "reauthorization_required",
 ] as const;
+const isErrorCode = (code: string): code is (typeof ERROR_CODES)[number] =>
+  (ERROR_CODES as readonly string[]).includes(code);
 
 function textField(profile: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
@@ -194,7 +196,7 @@ export function Connections() {
   const isLoading = connsLoading || siteLoading;
 
   const errorText = (code: string) =>
-    (ERROR_CODES as readonly string[]).includes(code)
+    isErrorCode(code)
       ? t(`connections.errors.${code}`)
       : t("connections.errors.unknown", { code: code.replace(/_/g, " ") });
 

@@ -27,6 +27,18 @@ import {
 } from "../../../components/Settings";
 import { useSettingsStyles } from "./styles";
 import { useFail, type SectionProps } from "./shared";
+import type { MaintenanceJobKey } from "../../../../shared/codes";
+
+const JOB_LABEL_KEYS: Record<MaintenanceJobKey, string> = {
+  "reverify-domains": "admin.job_reverify_domains",
+  "imap-poll": "admin.job_imap_poll",
+  "sweep-sessions": "admin.job_sweep_sessions",
+  "sweep-pow": "admin.job_sweep_pow",
+  "purge-app-events": "admin.job_purge_app_events",
+  "sweep-image-proxy": "admin.job_sweep_image_proxy",
+  "reap-pending-registrations": "admin.job_reap_pending_registrations",
+  "reap-dissolved-teams": "admin.job_reap_dissolved_teams",
+};
 
 export function DangerSection({ showMsg }: SectionProps) {
   const api = useApi();
@@ -510,10 +522,7 @@ export function DangerSection({ showMsg }: SectionProps) {
         })}
       >
         {maintenanceJobs.data?.jobs.map((job) => (
-          <SettingsRow
-            key={job.key}
-            label={t(`admin.job_${job.key.replace(/-/g, "_")}`)}
-          >
+          <SettingsRow key={job.key} label={t(JOB_LABEL_KEYS[job.key])}>
             <Button
               size="small"
               disabled={runJob.isPending}

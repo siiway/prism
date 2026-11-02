@@ -1,4 +1,9 @@
-import { APP_REQUESTABLE_SCOPES, PLATFORM_SCOPES } from "../../shared/scopes";
+import {
+  APP_REQUESTABLE_SCOPES,
+  PLATFORM_SCOPES,
+  TEAM_PERMISSIONS as TEAM_PERMISSION_LIST,
+  type TeamPermission,
+} from "../../shared/scopes";
 
 /** Platform scopes an app may request in an authorization request. */
 export const REQUESTABLE_SCOPES = new Set(APP_REQUESTABLE_SCOPES);
@@ -55,14 +60,9 @@ export function canClientIntrospectToken(
  * Unbound form:  `team:read`, `team:member:read`, etc.
  * Bound form:    `team:<teamId>:read`, `team:<teamId>:member:read`, etc.
  */
-export const TEAM_PERMISSIONS = new Set([
-  "read",
-  "write",
-  "delete",
-  "member:read",
-  "member:write",
-  "member:profile:read",
-]);
+export const TEAM_PERMISSIONS: ReadonlySet<string> = new Set(
+  TEAM_PERMISSION_LIST,
+);
 
 /** Unbound team scope strings that apps include in their scope request. */
 export const UNBOUND_TEAM_SCOPES = new Set(
@@ -73,10 +73,10 @@ export const UNBOUND_TEAM_SCOPES = new Set(
  * If `s` is an unbound team scope (e.g. `"team:member:read"`), returns the
  * permission part (`"member:read"`).  Otherwise returns null.
  */
-export function parseUnboundTeamScope(s: string): string | null {
+export function parseUnboundTeamScope(s: string): TeamPermission | null {
   if (!s.startsWith("team:")) return null;
   const perm = s.slice(5);
-  return TEAM_PERMISSIONS.has(perm) ? perm : null;
+  return TEAM_PERMISSIONS.has(perm) ? (perm as TeamPermission) : null;
 }
 
 /**

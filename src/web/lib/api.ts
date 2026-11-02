@@ -10,6 +10,11 @@ import type {
 } from "../../shared/types";
 
 import type { NotificationRule as NotificationRulesetRule } from "../../shared/notificationRules";
+import type {
+  ImageProxyResourceType,
+  KvNamespaceKey,
+  MaintenanceJobKey,
+} from "../../shared/codes";
 import { useEffect, useState } from "react";
 import type { i18n as I18n } from "i18next";
 import { clientI18n } from "../i18n/init";
@@ -1344,7 +1349,11 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
         created_at: number;
         created_by_username: string | null;
         created_by_display_name: string | null;
-        resources: Array<{ type: string; id: string; name: string }>;
+        resources: Array<{
+          type: ImageProxyResourceType;
+          id: string;
+          name: string;
+        }>;
       }[];
       total: number;
       page: number;
@@ -2187,7 +2196,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     request<{
       mode: "full" | "read-only" | "off";
       writable: boolean;
-      namespaces: Array<{ key: string }>;
+      namespaces: Array<{ key: KvNamespaceKey }>;
     }>("GET", "/admin/kv/status", undefined, getToken()),
   adminKvKeys: (
     ns: string,
@@ -2511,7 +2520,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
   adminMaintenanceJobs: () =>
     request<{
-      jobs: Array<{ key: string; writes: boolean }>;
+      jobs: Array<{ key: MaintenanceJobKey; writes: boolean }>;
       schedule: string;
     }>("GET", "/admin/maintenance/jobs", undefined, getToken()),
   adminRunMaintenanceJob: (key: string) =>

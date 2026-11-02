@@ -104,6 +104,23 @@ export function useAdminNav(): AdminNavGroup[] {
   return buildAdminNav(t, !!storageConsole);
 }
 
+/** Each admin page, named as in admin.sectionDesc. */
+type AdminSectionKey =
+  | "overview"
+  | "users"
+  | "teams"
+  | "invites"
+  | "apps"
+  | "connections"
+  | "scopeGrants"
+  | "domains"
+  | "notices"
+  | "audit"
+  | "loginErrors"
+  | "imageProxy"
+  | "database"
+  | `settings.${SettingsSection}`;
+
 /** The admin navigation, without fetching anything: also used by search,
  *  which must not call admin endpoints for everyone who opens it. */
 export function buildAdminNav(
@@ -112,7 +129,7 @@ export function buildAdminNav(
 ): AdminNavGroup[] {
   const item = (
     to: string,
-    key: string,
+    key: AdminSectionKey,
     labelKey: string,
     icon: FluentIcon,
   ): AdminNavItem => ({

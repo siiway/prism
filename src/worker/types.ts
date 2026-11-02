@@ -1,3 +1,5 @@
+import type { StoredLoginErrorCode } from "../shared/codes";
+
 // ─── Database row types ───────────────────────────────────────────────────────
 
 export interface UserRow {
@@ -572,7 +574,7 @@ export interface AppAccessRuleRow {
 
 export interface LoginErrorRow {
   id: string;
-  error_code: string;
+  error_code: StoredLoginErrorCode;
   identifier: string | null;
   ip_address: string | null;
   user_agent: string | null;

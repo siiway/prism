@@ -29,27 +29,22 @@ import {
 import { EmptyState } from "../../components/EmptyState";
 import { Pagination } from "../../components/Pagination";
 import { Select } from "../../components/Select";
+import {
+  LOGIN_ERROR_CODES,
+  type StoredLoginErrorCode,
+} from "../../../shared/codes";
 
 const PAGE_SIZE = 50;
 
 type LoginError = {
   id: string;
-  error_code: string;
+  error_code: StoredLoginErrorCode;
   identifier: string | null;
   ip_address: string | null;
   ip_geo: string | null;
   user_agent: string | null;
   created_at: number;
 };
-
-const ERROR_CODES = [
-  "invalid_credentials",
-  "totp_invalid",
-  "account_disabled",
-  "rate_limited",
-  "captcha_failed",
-  "gpg_invalid_signature",
-] as const;
 
 function badgeColor(code: string): "danger" | "warning" | "informative" {
   if (code === "rate_limited") return "warning";
@@ -154,7 +149,7 @@ export function AdminLoginErrors() {
           }}
         >
           <option value="">{t("admin.loginErrors.allErrors")}</option>
-          {ERROR_CODES.map((c) => (
+          {LOGIN_ERROR_CODES.map((c) => (
             <option key={c} value={c}>
               {t(`admin.loginErrors.error_${c}`)}
             </option>

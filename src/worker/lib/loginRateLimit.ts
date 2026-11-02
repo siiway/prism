@@ -1,3 +1,4 @@
+import type { LoginErrorCode } from "../../shared/codes";
 import type { SiteConfig } from "../../shared/types";
 import { randomId, sha256Hex } from "./crypto";
 import {
@@ -106,7 +107,7 @@ export async function checkLoginTotpLimit(
 /** Record a failed sign-in attempt in the admin login-error log. */
 export async function logLoginError(
   db: D1Database,
-  errorCode: string,
+  errorCode: LoginErrorCode,
   identifier: string | null,
   ip: string,
   userAgent: string | null,

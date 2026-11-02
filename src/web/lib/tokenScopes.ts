@@ -9,8 +9,21 @@ const GRANTABLE = new Set(USER_GRANTABLE_SCOPES);
 
 export type LevelId = "none" | "on" | "read" | "write" | "full";
 
+export type ResourceId =
+  | "identity"
+  | "email"
+  | "profile"
+  | "apps"
+  | "teams"
+  | "domains"
+  | "gpg"
+  | "social"
+  | "adminUsers"
+  | "adminConfig"
+  | "adminInvites";
+
 export interface Resource {
-  id: string;
+  id: ResourceId;
   group: "account" | "resources" | "admin";
   /** Each level's scopes include the levels before it. */
   levels: { id: LevelId; scopes: string[] }[];

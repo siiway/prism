@@ -54,6 +54,7 @@ import {
   SettingsFooter,
 } from "../../components/Settings";
 import { SkeletonSettingsCard } from "../../components/Skeletons";
+import type { KvNamespaceKey } from "../../../shared/codes";
 
 const useStyles = makeStyles({
   pane: { display: "flex", flexDirection: "column", gap: "12px", minWidth: 0 },
@@ -344,7 +345,7 @@ export function AdminKvBrowser({ showMsg }: { showMsg: ShowMsg }) {
   const qc = useQueryClient();
   const { confirm, confirmDialog } = useConfirm();
 
-  const [ns, setNs] = useState("sessions");
+  const [ns, setNs] = useState<KvNamespaceKey>("sessions");
   // KV pages with an opaque cursor rather than an offset, so "back" is a
   // stack of the cursors already seen rather than arithmetic.
   const [cursors, setCursors] = useState<string[]>([]);
@@ -367,10 +368,8 @@ export function AdminKvBrowser({ showMsg }: { showMsg: ShowMsg }) {
   // told otherwise so the controls don't flicker in; the server refuses the
   // write either way.
   const writable = status.data?.writable ?? true;
-  const namespaces = status.data?.namespaces ?? [
-    { key: "sessions" },
-    { key: "cache" },
-  ];
+  const namespaces: Array<{ key: KvNamespaceKey }> = status.data
+    ?.namespaces ?? [{ key: "sessions" }, { key: "cache" }];
 
   const cursor = cursors[cursors.length - 1];
   const queryKey = ["admin-kv-keys", ns, prefix, cursor ?? ""];
@@ -469,7 +468,7 @@ export function AdminKvBrowser({ showMsg }: { showMsg: ShowMsg }) {
             aria-label={t("admin.kvNamespace")}
             value={ns}
             onChange={(_, d) => {
-              setNs(d.value);
+              setNs(d.value as KvNamespaceKey);
               setCursors([]);
             }}
           >

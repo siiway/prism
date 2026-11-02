@@ -34,6 +34,7 @@ import {
   bindTeamScopes,
   UNBOUND_TEAM_SCOPES,
 } from "../lib/scopes";
+import type { TeamPermission } from "../../shared/scopes";
 import { deliverAppEvent } from "../lib/app-events";
 import {
   checkAppAuthorizationAllowed,
@@ -107,10 +108,10 @@ function hasUnboundTeamScopes(scopes: string[]): boolean {
   return scopes.some((s) => UNBOUND_TEAM_SCOPES.has(s));
 }
 
-function unboundTeamPermissions(scopes: string[]): string[] {
+function unboundTeamPermissions(scopes: string[]): TeamPermission[] {
   return scopes
     .map((s) => parseUnboundTeamScope(s))
-    .filter((p): p is string => p !== null);
+    .filter((p): p is TeamPermission => p !== null);
 }
 
 /**
@@ -1281,9 +1282,7 @@ app.post("/authorize", requireAuth, async (c) => {
     boundScopes = bindTeamScopes(scopes, body.team_id);
 
     // Audit log
-    const grantedPerms = scopes
-      .map((s) => parseUnboundTeamScope(s))
-      .filter((p): p is string => p !== null);
+    const grantedPerms = unboundTeamPermissions(scopes);
     const grantNow = Math.floor(Date.now() / 1000);
     await c.env.DB.prepare(
       `INSERT INTO team_scope_grants (id, grantor_user_id, team_id, client_id, permissions, granted_at)

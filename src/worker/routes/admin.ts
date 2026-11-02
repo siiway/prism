@@ -65,6 +65,7 @@ import adminSecretsRoutes from "./admin-secrets";
 import adminResetRoutes from "./admin-reset";
 import adminInviteRoutes from "./admin-invites";
 import adminSourceRoutes from "./admin-sources";
+import type { ImageProxyResourceType } from "../../shared/codes";
 import { DISPLAY_NAME_MAX_LENGTH } from "../../shared/limits";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -1185,10 +1186,15 @@ app.get("/image-proxy", async (c) => {
      UNION ALL SELECT avatar_url, 'team', id, name FROM teams WHERE avatar_url IS NOT NULL
      UNION ALL SELECT icon_url, 'app', id, name FROM oauth_apps WHERE icon_url IS NOT NULL
      UNION ALL SELECT icon_url, 'oauth_source', id, name FROM oauth_sources WHERE icon_url IS NOT NULL`,
-  ).all<{ url: string; type: string; id: string; name: string }>();
+  ).all<{
+    url: string;
+    type: ImageProxyResourceType;
+    id: string;
+    name: string;
+  }>();
   const byUrl = new Map<
     string,
-    Array<{ type: string; id: string; name: string }>
+    Array<{ type: ImageProxyResourceType; id: string; name: string }>
   >();
   for (const resource of resources.results) {
     const list = byUrl.get(resource.url) ?? [];

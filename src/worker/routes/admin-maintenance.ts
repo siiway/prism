@@ -29,6 +29,7 @@ import {
 import { sweepExpiredPowUsed } from "../lib/pow";
 import { purgeAppEventQueue } from "../lib/app-events";
 import { sweepOrphanedImageProxyMappings } from "../lib/proxyImage";
+import type { MaintenanceJobKey } from "../../shared/codes";
 import type { Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -41,7 +42,7 @@ const app = new Hono<AppEnv>();
  *  inventing a zero: "swept 0" and "this job doesn't count what it swept"
  *  are different answers, and only one of them means nothing was wrong. */
 interface Job {
-  key: string;
+  key: MaintenanceJobKey;
   /** True when the job changes data rather than only reading it. */
   writes: boolean;
   run: (

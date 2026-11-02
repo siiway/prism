@@ -37,12 +37,13 @@ import {
   SummaryRow,
 } from "../../components/Overview";
 import type { AdminStats } from "../../lib/api";
+import type { StoredLoginErrorCode } from "../../../shared/codes";
 
 const LIST_LIMIT = 5;
 
 interface LoginErrorRow {
   id: string;
-  error_code: string;
+  error_code: StoredLoginErrorCode;
   identifier: string | null;
   ip_address: string | null;
   created_at: number;
@@ -130,8 +131,6 @@ export function AdminDashboard() {
   });
 
   const config = configData?.config;
-  const o = (key: string, opts?: Record<string, unknown>) =>
-    t(`admin.overviewPage.${key}`, opts);
 
   // ── Needs attention ──────────────────────────────────────────────────
   const plaintextSecrets = secrets
@@ -171,16 +170,20 @@ export function AdminDashboard() {
 
   // ── Configuration summary ────────────────────────────────────────────
   const onOff = (on: boolean | undefined) => ({
-    value: config ? (on ? o("on") : o("off")) : "—",
+    value: config
+      ? on
+        ? t("admin.overviewPage.on")
+        : t("admin.overviewPage.off")
+      : "—",
     dim: !on,
   });
   const registration = !config
     ? "—"
     : !config.allow_registration
-      ? o("regClosed")
+      ? t("admin.overviewPage.regClosed")
       : config.invite_only
-        ? o("regInviteOnly")
-        : o("regOpen");
+        ? t("admin.overviewPage.regInviteOnly")
+        : t("admin.overviewPage.regOpen");
   const emailLabel: Record<string, string> = {
     resend: t("admin.emailResend"),
     mailchannels: "MailChannels",
@@ -240,11 +243,13 @@ export function AdminDashboard() {
             <Callout
               key={a.key}
               icon={a.icon}
-              title={o(`${a.key}Title`)}
-              description={o(`${a.key}Desc`, { count: plaintextSecrets })}
+              title={t(`admin.overviewPage.${a.key}Title`)}
+              description={t(`admin.overviewPage.${a.key}Desc`, {
+                count: plaintextSecrets,
+              })}
               action={
                 <Button onClick={() => navigate(a.to)}>
-                  {o(`${a.key}Action`)}
+                  {t(`admin.overviewPage.${a.key}Action`)}
                 </Button>
               }
             />
@@ -286,13 +291,13 @@ export function AdminDashboard() {
         </MetricGrid>
       )}
 
-      <SectionTitle>{o("recent")}</SectionTitle>
+      <SectionTitle>{t("admin.overviewPage.recent")}</SectionTitle>
       <ListGrid>
         <ListColumn
-          title={o("newestUsers")}
+          title={t("admin.overviewPage.newestUsers")}
           to="/admin/users"
           count={users.data?.total}
-          empty={o("noUsers")}
+          empty={t("admin.overviewPage.noUsers")}
           loading={users.isLoading}
         >
           {(users.data?.users ?? []).slice(0, LIST_LIMIT).map((u) => (
@@ -307,9 +312,9 @@ export function AdminDashboard() {
         </ListColumn>
 
         <ListColumn
-          title={o("adminActivity")}
+          title={t("admin.overviewPage.adminActivity")}
           to="/admin/audit"
-          empty={o("noActivity")}
+          empty={t("admin.overviewPage.noActivity")}
           loading={audit.isLoading}
         >
           {(audit.data?.events ?? []).slice(0, LIST_LIMIT).map((ev) => (
@@ -324,10 +329,10 @@ export function AdminDashboard() {
         </ListColumn>
 
         <ListColumn
-          title={o("failedSignIns")}
+          title={t("admin.overviewPage.failedSignIns")}
           to="/admin/login-errors"
           count={loginErrors.data?.total}
-          empty={o("noFailedSignIns")}
+          empty={t("admin.overviewPage.noFailedSignIns")}
           loading={loginErrors.isLoading}
         >
           {errors.slice(0, LIST_LIMIT).map((e) => (
@@ -344,57 +349,57 @@ export function AdminDashboard() {
         </ListColumn>
       </ListGrid>
 
-      <SectionTitle>{o("configuration")}</SectionTitle>
+      <SectionTitle>{t("admin.overviewPage.configuration")}</SectionTitle>
       <SummaryList>
         <SummaryRow
           to="/admin/settings/signup"
-          label={o("cfgRegistration")}
+          label={t("admin.overviewPage.cfgRegistration")}
           value={registration}
         />
         <SummaryRow
           to="/admin/settings/signup"
-          label={o("cfgEmailVerification")}
+          label={t("admin.overviewPage.cfgEmailVerification")}
           {...onOff(config?.require_email_verification)}
         />
         <SummaryRow
           to="/admin/settings/email"
-          label={o("cfgEmail")}
+          label={t("admin.overviewPage.cfgEmail")}
           value={
             emailOff
-              ? o("notSet")
+              ? t("admin.overviewPage.notSet")
               : (emailLabel[config.email_provider] ?? config.email_provider)
           }
           dim={emailOff}
         />
         <SummaryRow
           to="/admin/settings/captcha"
-          label={o("cfgCaptcha")}
+          label={t("admin.overviewPage.cfgCaptcha")}
           value={
             captchaProviders.length === 0
-              ? o("notSet")
+              ? t("admin.overviewPage.notSet")
               : captchaProviders.map((p) => t(`admin.captcha_${p}`)).join(", ")
           }
           dim={captchaProviders.length === 0}
         />
         <SummaryRow
           to="/admin/settings/profiles"
-          label={o("cfgProfiles")}
+          label={t("admin.overviewPage.cfgProfiles")}
           {...onOff(config?.enable_public_profiles)}
         />
         <SummaryRow
           to="/admin/settings/teams"
-          label={o("cfgSubTeams")}
+          label={t("admin.overviewPage.cfgSubTeams")}
           {...onOff(config?.enable_sub_teams)}
         />
         <SummaryRow
           to="/admin/settings/general"
-          label={o("cfgSecurityContact")}
-          value={config?.security_contact || o("notSet")}
+          label={t("admin.overviewPage.cfgSecurityContact")}
+          value={config?.security_contact || t("admin.overviewPage.notSet")}
           dim={!config?.security_contact}
         />
         <SummaryRow
           to="/admin/settings/general"
-          label={o("cfgSsr")}
+          label={t("admin.overviewPage.cfgSsr")}
           {...onOff(config ? !config.disable_ssr : undefined)}
         />
       </SummaryList>

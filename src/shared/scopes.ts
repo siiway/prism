@@ -49,6 +49,18 @@ export const PLATFORM_SCOPES: string[] = [
   "offline_access",
 ];
 
+/** Permission suffixes for team-scoped tokens. Unbound form: `team:read`,
+ *  `team:member:read`; bound form: `team:<teamId>:read`. */
+export const TEAM_PERMISSIONS = [
+  "read",
+  "write",
+  "delete",
+  "member:read",
+  "member:write",
+  "member:profile:read",
+] as const;
+export type TeamPermission = (typeof TEAM_PERMISSIONS)[number];
+
 /** Scopes an app may request directly. Bound team scopes (`team:<id>:...`)
  *  are validated separately against the team the token is bound to — see
  *  UNBOUND_TEAM_SCOPES in src/worker/lib/scopes.ts. */

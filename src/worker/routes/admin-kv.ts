@@ -27,6 +27,7 @@
 import { Hono, type Context } from "hono";
 import { auditRequestAction } from "../lib/audit";
 import { kvConsoleMode, readOnlyRefusal } from "../lib/consoleMode";
+import type { KvNamespaceKey } from "../../shared/codes";
 import type { Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -64,7 +65,7 @@ const NAMESPACES = {
     binding: "KV_SESSIONS",
   },
   cache: { binding: "KV_CACHE" },
-} as const;
+} as const satisfies Record<KvNamespaceKey, { binding: string }>;
 
 type NamespaceKey = keyof typeof NAMESPACES;
 
