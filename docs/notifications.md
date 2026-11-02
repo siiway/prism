@@ -5,142 +5,88 @@ description: Email, Telegram, and Discord notifications fired on user-account ev
 
 # Notifications
 
-Prism delivers notifications to users on security-relevant events — app
-changes, domain lifecycle, security factor changes, OAuth consent
-grants/revokes, team membership, and more — to end-user channels (email,
-Telegram, Discord). Every user picks which events fire and where. For the
-full record of these events (with scoped webhooks to arbitrary destinations),
-see [Audit Logs](audit-logs.md).
+Prism notifies users about security-relevant events — app changes, domain
+changes, security factor changes, OAuth consent grants and revokes, team
+membership and more — by email, Telegram and Discord. Each user chooses which
+events fire and where. For a full record of events, with webhooks to other
+destinations, see [Audit Logs](audit-logs.md).
 
-Two ways to configure exist side-by-side:
+There are two ways to configure delivery:
 
-- **Preferences** — a flat per-event `brief|full` map. Simple, fast to set up.
-- **Rulesets** — named, ordered match/action arrays with account filtering and
-  `stop` semantics. More expressive when you want to mute a single event for
-  one address while keeping the rest of the firehose, or split brief vs. full
-  delivery between channels.
+- **Preferences** — pick `brief` or `full` for each event. Simple and quick.
+- **Rulesets** — ordered rules with conditions. Use these to mute one event for
+  one address, route events by country or time of day, or send different levels
+  to different channels.
 
-The rule engine evaluates rulesets first; the flat preferences map is preserved
-for backwards compatibility and read in the absence of a ruleset.
+While a ruleset is active it replaces the preferences.
 
 ## Events
 
-| Event                                   | Triggered when                                   |
-| --------------------------------------- | ------------------------------------------------ |
-| `app.created` / `updated` / `deleted`   | Your OAuth app changed                           |
-| `domain.added` / `verified` / `deleted` | Your domain changed                              |
-| `connection.added` / `removed`          | Social connection added or removed               |
-| `connection.login`                      | A login completed via a linked social connection |
-| `profile.updated`                       | Display name, avatar, etc. changed               |
-| `security.passkey_added` / `_removed`   | Passkey added/removed                            |
-| `security.totp_enabled` / `_disabled`   | TOTP authenticator enrolled/removed              |
-| `token.created` / `revoked`             | Personal access token created/revoked            |
-| `team.member_added` / `_removed`        | You were added to or removed from a team         |
-| `oauth.consent_granted` / `_revoked`    | OAuth consent granted to or revoked from an app  |
-
-The set is mirrored in `src/worker/lib/notifications.ts → USER_NOTIFICATION_EVENTS`.
-Webhooks subscribe to the same names — this catalogue is the single source of
-truth for "things you can be notified about."
+| Event                                   | Triggered when                                      |
+| --------------------------------------- | --------------------------------------------------- |
+| `app.created` / `updated` / `deleted`   | Your OAuth app changed                              |
+| `domain.added` / `verified` / `deleted` | Your domain changed                                 |
+| `connection.added` / `removed`          | Social connection added or removed                  |
+| `connection.login`                      | A sign-in completed through a linked social account |
+| `profile.updated`                       | Display name, avatar, etc. changed                  |
+| `security.passkey_added` / `_removed`   | Passkey added or removed                            |
+| `security.totp_enabled` / `_disabled`   | TOTP authenticator added or removed                 |
+| `token.created` / `revoked`             | Personal access token created or revoked            |
+| `team.member_added` / `_removed`        | You were added to or removed from a team            |
+| `oauth.consent_granted` / `_revoked`    | You granted or revoked an app's access              |
 
 ## Levels
 
-Each delivery has a level:
+- **`brief`** — the event, when it happened, and what it was about (app name,
+  domain, and so on).
+- **`full`** — adds a link, plus IP, user agent and related details (for
+  `connection.login`, the source, the provider username and whether it's a new
+  device).
 
-- **`brief`** — minimum: event name + when it happened + the resource label
-  (app name, domain, etc.).
-- **`full`** — includes the same context + a permalink + IP, user agent, and
-  related metadata (e.g. for `connection.login`, the source slug + provider
-  username + new-device flag).
+`full` deliberately includes the IP address and user agent on security events so
+you can spot sign-ins you don't recognise. Choose `brief` if you'd rather not
+have that in your inbox or chat. Telegram messages pass through Telegram's
+servers, so use `brief` for anything you wouldn't put in a Telegram chat.
 
 ## Channels
 
-| Channel  | Configured via                                                                                                                                                                |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Email    | The user's verified primary email plus any verified secondary emails on `user_emails`. The HTML body is XSS-safe by construction (every interpolated string is HTML-escaped). |
-| Telegram | A linked Telegram social connection. Prism sends with the bot token from the enabled Telegram OAuth source selected by `tg_notify_source_slug`.                               |
-| Discord  | A linked Discord social connection. Prism uses the Discord OAuth source selected by `discord_notify_source_slug` for user IDs, and sends DMs with `discord_bot_token`.        |
+| Channel  | Delivered to                                                                       |
+| -------- | ---------------------------------------------------------------------------------- |
+| Email    | The user's verified primary email and any verified secondary emails                |
+| Telegram | The user's linked Telegram account, through the site's Telegram bot                |
+| Discord  | The user's linked Discord account, as a direct message from the site's Discord bot |
 
-If `tg_notify_source_slug` is empty, Telegram delivery is disabled site-wide
-even when users have Telegram channels in their rules. If either
-`discord_notify_source_slug` or `discord_bot_token` is empty, Discord delivery
-is disabled site-wide. The site's email provider must be configured for email
-delivery to function.
-
-## Flat preferences
-
-The legacy / simple form. Stored on `user_notification_prefs.events` (and the
-Telegram-only mirror `tg_events`) as a `Record<string, "brief"|"full">`. Any
-event not listed is "off."
-
-`GET /api/user/me/notifications`:
-
-```json
-{
-  "email_events": {
-    "app.created": "full",
-    "security.totp_enabled": "brief"
-  },
-  "tg_events": {
-    "connection.login": "full"
-  }
-}
-```
-
-`PUT /api/user/me/notifications` accepts the same shape and replaces the
-stored preferences atomically.
-
-The legacy `string[]` shape (every event treated as `"full"`) is still
-parsed by `parsePrefsEvents` for forward-compat with old data.
+Email needs an email provider configured. Telegram is off for everyone until an
+admin picks a Telegram source, and Discord until an admin picks a source and
+sets a bot token (both under **Admin → Settings → Email & notifications → Chat
+notifications**).
 
 ## Rulesets
 
-A ruleset is an ordered array of rules. When an event fires the engine walks
-top-to-bottom, applies the action of every rule that matches, and returns the
-deduped delivery list to actually send to. Only one ruleset can be active; while
-one is, it replaces the flat preferences.
+A ruleset is an ordered list of rules. When an event fires, Prism goes through
+the rules from top to bottom, applies every rule that matches, and sends to the
+resulting list of destinations. Only one ruleset can be active.
 
-In the UI each ruleset has its own page (**Notifications → Rulesets**), and
-each rule has its own page with a visual expression builder, a raw expression
-editor, the action, its place in the order, and a live test against a made-up
-event. The ruleset page's **Trace** runs every rule against a made-up event and
-shows which matched and where the notification would go; it uses the same
-evaluator as dispatch (`src/shared/notificationRules.ts`).
+Each ruleset and each rule has its own page under **Notifications → Rulesets**.
+A rule can be built visually or written as an expression, and can be tested
+against a made-up event. The ruleset's **Trace** runs every rule against a
+made-up event and shows which matched and where the notification would go.
 
-### Rule shape
+### Rule
 
-```json
-{
-  "id": "rule_xyz",
-  "name": "Security events from outside the office",
-  "enabled": true,
-  "match": {
-    "expression": "event.category eq \"security\" and not ip.src in {10.0.0.0/8}"
-  },
-  "action": {
-    "type": "send",
-    "channels": [{ "kind": "tg", "connection_id": "tg_abc", "level": "full" }]
-  },
-  "stop": false
-}
-```
+| Field              | Meaning                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| `name`             | Label (up to 64 characters, optional)                                                                |
+| `enabled`          | `false` skips the rule                                                                               |
+| `match.expression` | When the rule applies. Empty matches every event                                                     |
+| `match.accounts`   | Optional. Limits the rule's _effect_ to these destinations (`email:<id>`, `tg:<id>`, `discord:<id>`) |
+| `action.type`      | `send` adds channels; `drop` clears what was collected so far                                        |
+| `action.channels`  | For `send`: the destinations and a level (`brief` or `full`) for each                                |
+| `stop`             | `true` ends evaluation after this rule matches                                                       |
 
-| Field                         | Meaning                                                                                                                                                 |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                          | Stable rule identifier                                                                                                                                  |
-| `name`                        | Human-readable label (≤ 64 chars, optional)                                                                                                             |
-| `enabled`                     | `false` skips the rule without affecting state                                                                                                          |
-| `match.expression`            | Rule expression (below). Empty or missing matches every event. Stored in canonical form                                                                 |
-| `match.event`                 | Legacy glob, still honoured: `*` matches everything, `?` one character, otherwise literal and anchored. ANDed with `match.expression` when both are set |
-| `match.accounts`              | Optional. Each entry is `email:<email_id>`, `tg:<connection_id>`, or `discord:<connection_id>`. Limits the rule's _effect_ to those accounts only       |
-| `action.type`                 | `send` (append channels) or `drop` (clear delivery so far)                                                                                              |
-| `action.channels` (send only) | Array of `{ kind: "email", email_id, level }`, `{ kind: "tg", connection_id, level }`, or `{ kind: "discord", connection_id, level }`                   |
-| `stop`                        | `true` halts evaluation after this rule matches                                                                                                         |
+### Expressions
 
-### Rule expressions
-
-The syntax follows Cloudflare's Rules language, cut down to what a notification
-carries. The parser, type checks and evaluator are in
-`src/shared/ruleExpression.ts`, shared by the Worker and the frontend.
+The syntax follows Cloudflare's Rules language:
 
 ```
 event.category eq "security" and not ip.src in {10.0.0.0/8 192.168.0.0/16}
@@ -148,64 +94,53 @@ event.category eq "security" and not ip.src in {10.0.0.0/8 192.168.0.0/16}
 time.hour in {0..6 22..23} and starts_with(event, "connection.")
 ```
 
-| Field                    | Type   | Value                                                                                 |
-| ------------------------ | ------ | ------------------------------------------------------------------------------------- |
-| `event`                  | string | Event name, e.g. `security.passkey_added`                                             |
-| `event.category`         | string | Part before the dot: `app`, `domain`, `connection`, `profile`, `security`, `token`, … |
-| `ip.src`                 | IP     | IP address of whoever caused the event (`CF-Connecting-IP`)                           |
-| `ip.src.country`         | string | Two-letter country of that address (`CF-IPCountry`); empty when unknown               |
-| `http.user_agent`        | string | Their User-Agent                                                                      |
-| `resource.name`          | string | What the event is about: app, domain, team, token, passkey or provider name           |
-| `oauth.scopes`           | array  | Scopes granted (`oauth.consent_granted`)                                              |
-| `profile.changed_fields` | array  | Fields changed (`profile.updated`)                                                    |
-| `time.hour`              | int    | Hour of the event, 0–23, UTC                                                          |
-| `time.weekday`           | int    | Day of the event, 1 (Monday) – 7 (Sunday), UTC                                        |
+| Field                    | Type   | Value                                                                  |
+| ------------------------ | ------ | ---------------------------------------------------------------------- |
+| `event`                  | string | Event name, e.g. `security.passkey_added`                              |
+| `event.category`         | string | Part before the dot: `app`, `domain`, `connection`, `security`, …      |
+| `ip.src`                 | IP     | IP address of whoever caused the event                                 |
+| `ip.src.country`         | string | Two-letter country of that address; empty when unknown                 |
+| `http.user_agent`        | string | Their User-Agent                                                       |
+| `resource.name`          | string | What the event is about: app, domain, team, token, passkey or provider |
+| `oauth.scopes`           | array  | Scopes granted (`oauth.consent_granted`)                               |
+| `profile.changed_fields` | array  | Fields changed (`profile.updated`)                                     |
+| `time.hour`              | int    | Hour of the event, 0–23, UTC                                           |
+| `time.weekday`           | int    | Day of the event, 1 (Monday) – 7 (Sunday), UTC                         |
 
 | Type   | Comparisons                                                                                 |
 | ------ | ------------------------------------------------------------------------------------------- |
 | string | `eq` `ne` `contains` `wildcard`, `in {"a" "b"}`, `starts_with(f, "x")`, `ends_with(f, "x")` |
-| IP     | `eq` `ne`, `in {203.0.113.7 10.0.0.0/8 2001:db8::/32}` (IPv4 and IPv6, CIDR in sets)        |
-| int    | `eq` `ne` `lt` `le` `gt` `ge`, `in {1 2 9..17}` (ranges in sets)                            |
-| array  | `contains "x"` (any element equals), `in {"a" "b"}` (any element in the set)                |
+| IP     | `eq` `ne`, `in {203.0.113.7 10.0.0.0/8 2001:db8::/32}`                                      |
+| int    | `eq` `ne` `lt` `le` `gt` `ge`, `in {1 2 9..17}`                                             |
+| array  | `contains "x"`, `in {"a" "b"}`                                                              |
 
-- Logic: `and` / `&&`, `or` / `||`, `not` / `!`, parentheses. `not` binds
-  tighter than `and`, which binds tighter than `or`. `==`, `!=`, `<`, `<=`, `>`,
-  `>=` mean `eq`, `ne`, `lt`, `le`, `gt`, `ge`.
-- Strings are double-quoted; `\"` and `\\` escape. Comparisons are
-  case-sensitive except `wildcard`, which is case-insensitive and supports `*`
-  only.
-- A field with no value (no country, an event without scopes) only satisfies
-  `ne`.
-- Limits: 4096 characters, 200 conditions, 100 values per set, 512 characters
-  per string, nesting depth 32. No user input is compiled into a regular
-  expression; wildcard matching is linear.
+- Combine with `and` / `&&`, `or` / `||`, `not` / `!` and parentheses. `not`
+  binds tightest, then `and`, then `or`. `==`, `!=`, `<`, `<=`, `>`, `>=` work
+  as `eq`, `ne`, `lt`, `le`, `gt`, `ge`.
+- Strings are double-quoted. Comparisons are case-sensitive except `wildcard`,
+  which is case-insensitive and supports `*` only.
+- A field with no value (no country, no scopes) only satisfies `ne`.
+- Expressions are limited to 4096 characters, with at most 200 conditions.
+- The visual builder handles OR-ed groups of AND-ed conditions; anything more
+  complex, like `not (a or b)`, is edited as text.
 
-The builder edits expressions that are OR-ed groups of AND-ed conditions (each
-condition one comparison, optionally `not contains` / `not … in`); anything
-else, such as `not (a or b)`, is edited as text.
+### How rules combine
 
-### Evaluation rules
+- Several `send` rules add up. If a channel appears at two levels, the higher
+  (`full`) wins.
+- `drop` clears everything collected so far. Combined with a broad rule above it,
+  that lets you say "everything to my main email, except domain events."
+- `match.accounts` limits the rule's effect, not whether it matches. A scoped
+  `send` skips channels outside those accounts; a scoped `drop` clears only the
+  listed accounts. The UI's "Mute only these destinations" sets this.
+- `stop: true` keeps rules below from undoing this one.
+- Disabled rules, and rules whose expression doesn't parse, are skipped.
 
-- Multiple `send` rules accumulate. Encountering the same channel at a higher
-  level upgrades it (`full > brief`).
-- `drop` clears the delivery set built up so far. Combined with a more
-  permissive rule above, this lets you say "everything to my main email,
-  except domain events to the burner."
-- `match.accounts` filters the _effect_ of the rule, not its match condition.
-  A `send` rule with scoped accounts silently skips channels that don't belong
-  to those accounts. A `drop` rule with scoped accounts only clears the listed
-  accounts — others pass through as if the rule hadn't fired. The UI's "Mute
-  only these destinations" writes this.
-- `stop: true` halts evaluation. Useful as a tail-anchor to keep more general
-  rules below from undoing the current one.
-- Disabled rules, and rules whose expression no longer parses, are skipped.
-
-### Worked example
+### Example
 
 ```json
 [
   {
-    "id": "1",
     "name": "Everything to primary email",
     "match": {},
     "action": {
@@ -214,7 +149,6 @@ else, such as `not (a or b)`, is edited as text.
     }
   },
   {
-    "id": "2",
     "name": "Sign-ins from abroad also to Telegram",
     "match": {
       "expression": "event eq \"connection.login\" and ip.src.country ne \"DE\""
@@ -225,7 +159,6 @@ else, such as `not (a or b)`, is edited as text.
     }
   },
   {
-    "id": "3",
     "name": "Quiet nights, except security",
     "match": {
       "expression": "time.hour in {0..6} and event.category ne \"security\""
@@ -236,89 +169,53 @@ else, such as `not (a or b)`, is edited as text.
 ]
 ```
 
-`connection.login` from the US at 14:00 UTC → primary email + Telegram.
-`app.created` at 03:00 UTC → nothing (rule 3 cleared what rule 1 added).
-`security.totp_disabled` at 03:00 UTC → primary email.
+A `connection.login` from the US at 14:00 UTC goes to the primary email and
+Telegram. An `app.created` at 03:00 UTC goes nowhere. A `security.totp_disabled`
+at 03:00 UTC goes to the primary email.
 
-### Endpoints
+### API
 
-```
-GET    /api/user/me/notification-rulesets
-POST   /api/user/me/notification-rulesets
-PUT    /api/user/me/notification-rulesets/:id
-DELETE /api/user/me/notification-rulesets/:id
-```
-
-`POST` and `PUT` validate the rules array via `sanitizeRulesArray`:
-
-- Max 200 rules, each with an `id` unique within the ruleset
-  (`rule_duplicate_id` otherwise).
-- Unknown action types or malformed channels return `400`.
-- Unknown event names in `match.event` return `400` (any event in
-  `USER_NOTIFICATION_EVENTS` is accepted, plus the `*` and `?` glob forms).
-- An expression that doesn't parse returns `400` with
-  `rule_expression_<reason>` (`unexpected_end`, `unexpected_token`,
-  `unterminated_string`, `unknown_field`, `bad_operator`, `bad_value`,
-  `too_long`, `too_deep`, `too_many_items`) and `params: { field, at, token }`.
+Rulesets are managed with `GET`, `POST`, `PUT` and `DELETE` on
+`/api/user/me/notification-rulesets[/:id]`; preferences with `GET` and `PUT` on
+`/api/user/me/notifications`. A ruleset can have at most 200 rules. An invalid
+rule or expression returns `400` with an error code such as
+`rule_expression_unknown_field` and `params` saying where.
 
 ## Telegram setup
 
-Telegram login and Telegram notification delivery use the same bot token. The
-token lives in the Telegram OAuth source as its `client_secret`.
+Telegram login and Telegram notifications use the same bot.
 
-1. Open Telegram and chat with `@BotFather`.
-2. Run `/newbot`, choose a display name and username, then copy the HTTP API token.
-3. Run `/setdomain`, select the bot, and enter the public Prism domain, for example `prism.example.com`. Telegram Login will reject callbacks from domains not registered here.
-4. In Prism, go to **Admin → OAuth Sources → Add Source**.
-5. Select **Telegram**, set a slug such as `telegram`, paste the bot token into the secret/token field, and keep the source enabled.
-6. Go to **Admin → Settings → Email & notifications → Chat notifications**.
-7. Pick the Telegram OAuth source under **Telegram** and save. This sets `tg_notify_source_slug`.
-8. Each user who wants Telegram delivery opens **Linked Accounts**, connects Telegram through the same bot/domain, then enables Telegram channels on **Notifications**.
+1. In Telegram, chat with `@BotFather`, run `/newbot`, and copy the HTTP API token.
+2. Run `/setdomain`, select the bot, and enter your Prism domain, e.g.
+   `prism.example.com`. Telegram rejects logins from unregistered domains.
+3. In Prism, go to **Admin → OAuth Sources → Add Source**, choose **Telegram**,
+   set a slug such as `telegram`, and paste the bot token.
+4. Go to **Admin → Settings → Email & notifications → Chat notifications** and
+   pick that source under **Telegram**.
+5. Each user connects Telegram under **Linked Accounts**, then turns on Telegram
+   channels under **Notifications**.
 
-Delivery details:
-
-- Prism sends with `https://api.telegram.org/bot<TOKEN>/sendMessage`.
-- The linked Telegram connection's `provider_user_id` is used as `chat_id`.
-- Users usually need to have authorized the Telegram Login widget for Prism before Prism can message them.
-
-Telegram messages are plain text with an inline link back to the relevant page
-in Prism.
+Users need to have signed in with the Telegram widget for Prism before the bot
+can message them. Messages are plain text with a link back to Prism.
 
 ## Discord setup
 
-Discord OAuth login and Discord bot delivery are separate Discord credentials.
-The OAuth source stores the OAuth client ID/secret used to link accounts. The
-notification sender must use a bot token from the same Discord application, set
-as `discord_bot_token` in Prism.
+Discord login and Discord notifications use two different credentials from the
+same Discord application: the OAuth client ID and secret (to link accounts) and
+a bot token (to send DMs). The bot token is not the OAuth client secret.
 
-1. Open the [Discord Developer Portal](https://discord.com/developers/applications) and create or select the application used for Prism Discord login.
-2. Under **OAuth2 → General**, copy the **Client ID** and **Client Secret**. Add this redirect URL: `https://your-domain/api/connections/<slug>/callback`.
-3. In Prism, go to **Admin → OAuth Sources → Add Source**, select **Discord**, set a slug such as `discord`, paste the OAuth Client ID/Secret, and keep the source enabled.
-4. Back in Discord Developer Portal, open **Bot** for the same application.
-5. Create a bot if one does not exist, click **Reset Token** if needed, and copy the bot token. This token is not the OAuth client secret.
-6. In Prism, go to **Admin → Settings → Email & notifications → Chat notifications**, pick the Discord OAuth source under **Discord**, paste the bot token into **Discord bot token**, and save. This sets `discord_notify_source_slug` and `discord_bot_token`.
-7. Each user who wants Discord delivery opens **Linked Accounts**, connects Discord, then enables Discord channels on **Notifications**.
+1. In the [Discord Developer Portal](https://discord.com/developers/applications),
+   create or open the application. Under **OAuth2 → General**, copy the **Client
+   ID** and **Client Secret** and add the redirect URL
+   `https://your-domain/api/connections/<slug>/callback`.
+2. In Prism, go to **Admin → OAuth Sources → Add Source**, choose **Discord**,
+   set a slug such as `discord`, and paste the client ID and secret.
+3. In the Developer Portal, open **Bot**, create the bot if needed, and copy its
+   token (use **Reset Token** if you can't see it).
+4. In Prism, go to **Admin → Settings → Email & notifications → Chat
+   notifications**, pick the Discord source, paste the bot token, and save.
+5. Each user connects Discord under **Linked Accounts**, then turns on Discord
+   channels under **Notifications**.
 
-Delivery details:
-
-- Prism first calls `POST /users/@me/channels` with `Authorization: Bot <token>` and the linked user's Discord ID.
-- Prism then posts the notification to the returned DM channel.
-- Discord can reject DMs if the user blocks the bot, disables DMs from shared servers, or if Discord's platform policy/rate limits prevent opening a DM. Prism silently skips failed DM attempts because notifications run asynchronously.
-
-## Email rendering
-
-Email bodies are HTML with a small inline header and a `<table>` of context
-rows. Every dynamic value goes through `esc()` (escapes `& < > " '`) before
-interpolation, and every link is filtered through `safeHref()` (only `http:` /
-`https:` URLs survive). The plaintext alternative is generated automatically
-from the same data.
-
-## Privacy notes
-
-- The full level deliberately includes IP and user agent on security-relevant
-  events (`security.*`, `connection.login`, `token.*`) so users can spot
-  unfamiliar logins. Choose `brief` if you don't want that information landing
-  in your inbox.
-- Telegram messages travel via Telegram's servers. Anything you wouldn't put
-  in a Telegram chat shouldn't be in a `full`-level Telegram delivery — pick
-  `brief` for those events instead.
+Discord can refuse a DM if the user has blocked the bot or turned off DMs from
+shared servers. Prism skips a failed DM silently.

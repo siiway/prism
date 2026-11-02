@@ -75,19 +75,9 @@ sequenceDiagram
   end
 ```
 
-The check happens inside `GET /api/oauth/app-info` — after the user has
-authenticated but **before** the consent screen is rendered. If the user
-doesn't match, the API returns `403` with:
-
-```json
-{
-  "error": "unauthorized_whitelist",
-  "app_name": "Your App Name"
-}
-```
-
-The frontend catches this and redirects to `/unauthorized?app_name=...`,
-where the user sees the app name and a "Go back" button.
+The check runs after the user signs in but before the consent screen. A user
+who doesn't match sees an "Access denied" page with the app's name and a
+"Go back" button.
 
 ---
 
