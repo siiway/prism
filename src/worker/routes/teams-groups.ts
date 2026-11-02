@@ -61,6 +61,25 @@ async function groupContext(
   return { team, role: eff.role, siteDefaults };
 }
 
+/** groupContext for changing group definitions: groups are on for the team
+ *  and the caller's role may manage them. */
+async function groupManager(c: import("hono").Context<AppEnv>, teamId: string) {
+  const ctx = await groupContext(c, teamId);
+  if (!ctx) return c.json({ error: "not_found" }, 404);
+  if (ctx.team.enable_groups !== 1)
+    return c.json({ error: "member_groups_disabled" }, 403);
+  if (!canManageGroups(ctx.role, ctx.team.role_permissions, ctx.siteDefaults))
+    return c.json({ error: "forbidden" }, 403);
+  return ctx;
+}
+
+function findGroup(db: D1Database, teamId: string, groupId: string) {
+  return db
+    .prepare("SELECT * FROM team_groups WHERE id = ? AND team_id = ?")
+    .bind(groupId, teamId)
+    .first<TeamGroupRow>();
+}
+
 // List group definitions. Readable by any member — a member seeing which
 // labels exist is harmless, and the client needs the capability flags to
 // decide what to render.
@@ -104,12 +123,8 @@ app.get("/:id/groups", async (c) => {
 app.post("/:id/groups", async (c) => {
   const id = c.req.param("id");
 
-  const ctx = await groupContext(c, id);
-  if (!ctx) return c.json({ error: "not_found" }, 404);
-  if (ctx.team.enable_groups !== 1)
-    return c.json({ error: "member_groups_disabled" }, 403);
-  if (!canManageGroups(ctx.role, ctx.team.role_permissions, ctx.siteDefaults))
-    return c.json({ error: "forbidden" }, 403);
+  const ctx = await groupManager(c, id);
+  if (ctx instanceof Response) return ctx;
 
   const body = await c.req.json<{
     slug?: string;
@@ -216,18 +231,10 @@ app.patch("/:id/groups/:groupId", async (c) => {
   const id = c.req.param("id");
   const groupId = c.req.param("groupId");
 
-  const ctx = await groupContext(c, id);
-  if (!ctx) return c.json({ error: "not_found" }, 404);
-  if (ctx.team.enable_groups !== 1)
-    return c.json({ error: "member_groups_disabled" }, 403);
-  if (!canManageGroups(ctx.role, ctx.team.role_permissions, ctx.siteDefaults))
-    return c.json({ error: "forbidden" }, 403);
+  const ctx = await groupManager(c, id);
+  if (ctx instanceof Response) return ctx;
 
-  const group = await c.env.DB.prepare(
-    "SELECT * FROM team_groups WHERE id = ? AND team_id = ?",
-  )
-    .bind(groupId, id)
-    .first<TeamGroupRow>();
+  const group = await findGroup(c.env.DB, id, groupId);
   if (!group) return c.json({ error: "group_not_found" }, 404);
 
   const body = await c.req.json<{
@@ -317,18 +324,10 @@ app.delete("/:id/groups/:groupId", async (c) => {
   const id = c.req.param("id");
   const groupId = c.req.param("groupId");
 
-  const ctx = await groupContext(c, id);
-  if (!ctx) return c.json({ error: "not_found" }, 404);
-  if (ctx.team.enable_groups !== 1)
-    return c.json({ error: "member_groups_disabled" }, 403);
-  if (!canManageGroups(ctx.role, ctx.team.role_permissions, ctx.siteDefaults))
-    return c.json({ error: "forbidden" }, 403);
+  const ctx = await groupManager(c, id);
+  if (ctx instanceof Response) return ctx;
 
-  const group = await c.env.DB.prepare(
-    "SELECT * FROM team_groups WHERE id = ? AND team_id = ?",
-  )
-    .bind(groupId, id)
-    .first<TeamGroupRow>();
+  const group = await findGroup(c.env.DB, id, groupId);
   if (!group) return c.json({ error: "group_not_found" }, 404);
 
   // Assignments go with it via ON DELETE CASCADE — downstream apps stop
