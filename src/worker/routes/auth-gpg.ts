@@ -154,29 +154,12 @@ app.post("/gpg-login", async (c) => {
     return c.json({ error: "no_gpg_keys" }, 401);
   }
 
-  // Verify the clearsign signature
-  let verifyResult: Awaited<ReturnType<typeof verifySignedMessage>>;
-  try {
-    verifyResult = await verifySignedMessage(
-      body.signed_message,
-      gpgKeys.map((k) => k.public_key),
-    );
-  } catch {
-    c.executionCtx.waitUntil(
-      logLoginError(
-        c.env.DB,
-        "gpg_invalid_signature",
-        body.identifier,
-        ip,
-        ua,
-        geoJson(c),
-        { user_id: user.id },
-      ).catch(() => {}),
-    );
-    return c.json({ error: "signature_invalid" }, 401);
-  }
-
-  if (!verifyResult.valid) {
+  // Verify the signature; a message that can't be parsed fails the same way.
+  const verifyResult = await verifySignedMessage(
+    body.signed_message,
+    gpgKeys.map((k) => k.public_key),
+  ).catch(() => null);
+  if (!verifyResult?.valid) {
     c.executionCtx.waitUntil(
       logLoginError(
         c.env.DB,
