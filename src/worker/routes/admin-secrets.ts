@@ -9,11 +9,14 @@ import {
   encryptSecret,
   hashSecret,
   isEncryptedSecret,
-  isHashedSecret,
   isSecretsKeyConfigured,
 } from "../lib/secretCrypto";
 import { auditAdmin } from "../lib/audit";
 import type { Variables } from "../types";
+import type {
+  AdminD1SecretsMigrateResult,
+  AdminD1SecretsStatus,
+} from "../../shared/api";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -220,37 +223,6 @@ async function collectSecretsStatus(env: Env): Promise<SecretsMigrateStatus> {
 // Idempotent: rows already in stored form are left alone. Safe to
 // re-run after new plaintext rows accumulate (e.g. between deploys).
 
-interface D1SecretsMigrateStatus {
-  binding_configured: boolean;
-  pat_total: number;
-  pat_plaintext: number;
-  oauth_tokens_total: number;
-  oauth_tokens_access_plaintext: number;
-  oauth_tokens_refresh_plaintext: number;
-  oauth_codes_total: number;
-  oauth_codes_plaintext: number;
-  site_invites_total: number;
-  site_invites_plaintext: number;
-  team_invites_total: number;
-  team_invites_plaintext: number;
-  email_verify_users_total: number;
-  email_verify_users_plaintext: number;
-  user_emails_verify_total: number;
-  user_emails_verify_plaintext: number;
-  oauth_2fa_codes_total: number;
-  oauth_2fa_codes_plaintext: number;
-  totp_authenticators_total: number;
-  totp_authenticators_plaintext: number;
-  webhooks_total: number;
-  webhooks_plaintext: number;
-  app_webhooks_total: number;
-  app_webhooks_plaintext: number;
-  social_connections_access_total: number;
-  social_connections_access_plaintext: number;
-  social_connections_refresh_total: number;
-  social_connections_refresh_plaintext: number;
-}
-
 const ENC = "__ENC_v1__";
 const HASH = "__HASH_v1__";
 
@@ -281,9 +253,7 @@ async function countPlaintextHashed(
   return { total, plain };
 }
 
-async function collectD1SecretsStatus(
-  env: Env,
-): Promise<D1SecretsMigrateStatus> {
+async function collectD1SecretsStatus(env: Env): Promise<AdminD1SecretsStatus> {
   const [
     pat,
     otAccess,
@@ -356,50 +326,117 @@ app.get("/d1-secrets/status", async (c) => {
   return c.json(await collectD1SecretsStatus(c.env));
 });
 
-// Convert each plaintext column to its stored form (hash or ciphertext)
-// using the SECRETS_KEY-backed helpers. Streams in batches so a single
-// invocation doesn't exceed worker CPU limits on large tables.
-async function migrateColumnHash(
-  env: Env,
-  table: string,
-  pkCol: string,
-  col: string,
-): Promise<number> {
-  let migrated = 0;
-  // 200 rows per page keeps the worker well under CPU budget even when
-  // every row needs an HMAC. Loop until we see a page with no rows
-  // requiring conversion.
-  while (true) {
-    const { results } = await env.DB.prepare(
-      `SELECT ${pkCol} AS pk, ${col} AS v FROM ${table}
-         WHERE ${col} IS NOT NULL AND ${col} != ''
-           AND substr(${col}, 1, 11) != ? AND substr(${col}, 1, 10) != ?
-         LIMIT 200`,
-    )
-      .bind(HASH, ENC)
-      .all<{ pk: string; v: string }>();
-    if (results.length === 0) return migrated;
-    for (const row of results) {
-      const hashed = await hashSecret(env, row.v);
-      if (!hashed || isHashedSecret(row.v)) continue;
-      await env.DB.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${pkCol} = ?`)
-        .bind(hashed, row.pk)
-        .run();
-      migrated++;
-    }
-  }
+type Migrated = AdminD1SecretsMigrateResult["migrated"];
+
+interface SecretColumn {
+  table: string;
+  pk: string;
+  col: string;
+  /** Bearer-style verifiers are hashed; secrets read back for outbound use
+   *  are encrypted. */
+  store: "hash" | "encrypt";
 }
 
-async function migrateColumnEncrypt(
+const SECRET_COLUMNS: Record<keyof Migrated, SecretColumn | null> = {
+  pat: {
+    table: "personal_access_tokens",
+    pk: "id",
+    col: "token",
+    store: "hash",
+  },
+  oauth_tokens_access: {
+    table: "oauth_tokens",
+    pk: "id",
+    col: "access_token",
+    store: "hash",
+  },
+  oauth_tokens_refresh: {
+    table: "oauth_tokens",
+    pk: "id",
+    col: "refresh_token",
+    store: "hash",
+  },
+  // The code is both the primary key and the column being rewritten, so
+  // rows are addressed by rowid.
+  oauth_codes: {
+    table: "oauth_codes",
+    pk: "rowid",
+    col: "code",
+    store: "hash",
+  },
+  // Invite tokens stay plaintext so managers can copy a link after creation.
+  // Rows hashed earlier stay valid but can't be copied.
+  site_invites: null,
+  team_invites: null,
+  users_email_verify_token: {
+    table: "users",
+    pk: "id",
+    col: "email_verify_token",
+    store: "hash",
+  },
+  users_email_verify_code: {
+    table: "users",
+    pk: "id",
+    col: "email_verify_code",
+    store: "hash",
+  },
+  user_emails_verify_token: {
+    table: "user_emails",
+    pk: "id",
+    col: "verify_token",
+    store: "hash",
+  },
+  user_emails_verify_code: {
+    table: "user_emails",
+    pk: "id",
+    col: "verify_code",
+    store: "hash",
+  },
+  oauth_2fa_codes: {
+    table: "oauth_2fa_codes",
+    pk: "rowid",
+    col: "code",
+    store: "hash",
+  },
+  totp_authenticators: {
+    table: "totp_authenticators",
+    pk: "id",
+    col: "secret",
+    store: "encrypt",
+  },
+  webhooks: { table: "webhooks", pk: "id", col: "secret", store: "encrypt" },
+  app_webhooks: {
+    table: "app_webhooks",
+    pk: "id",
+    col: "secret",
+    store: "encrypt",
+  },
+  social_connections_access: {
+    table: "social_connections",
+    pk: "id",
+    col: "access_token",
+    store: "encrypt",
+  },
+  social_connections_refresh: {
+    table: "social_connections",
+    pk: "id",
+    col: "refresh_token",
+    store: "encrypt",
+  },
+};
+
+// Convert a plaintext column to its stored form (hash or ciphertext) using
+// the SECRETS_KEY-backed helpers. Works in pages of 200 rows, which keeps the
+// worker well under its CPU budget even when every row needs an HMAC, until
+// no row is left to convert.
+async function migrateColumn(
   env: Env,
-  table: string,
-  pkCol: string,
-  col: string,
+  { table, pk, col, store }: SecretColumn,
 ): Promise<number> {
   let migrated = 0;
   while (true) {
     const { results } = await env.DB.prepare(
-      `SELECT ${pkCol} AS pk, ${col} AS v FROM ${table}
+      `SELECT ${pk} AS pk, ${col} AS v FROM ${table}
          WHERE ${col} IS NOT NULL AND ${col} != ''
            AND substr(${col}, 1, 11) != ? AND substr(${col}, 1, 10) != ?
          LIMIT 200`,
@@ -408,10 +445,13 @@ async function migrateColumnEncrypt(
       .all<{ pk: string; v: string }>();
     if (results.length === 0) return migrated;
     for (const row of results) {
-      const ct = await encryptSecret(env, row.v);
-      if (!ct || isEncryptedSecret(row.v)) continue;
-      await env.DB.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${pkCol} = ?`)
-        .bind(ct, row.pk)
+      const stored =
+        store === "hash"
+          ? await hashSecret(env, row.v)
+          : await encryptSecret(env, row.v);
+      if (!stored) continue;
+      await env.DB.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${pk} = ?`)
+        .bind(stored, row.pk)
         .run();
       migrated++;
     }
@@ -445,143 +485,16 @@ app.post("/d1-secrets/migrate", async (c) => {
 
   const before = await collectD1SecretsStatus(c.env);
 
-  // ── Hash-only columns (bearer-style verifiers) ──────────────────────────
-  const patCount = await migrateColumnHash(
-    c.env,
-    "personal_access_tokens",
-    "id",
-    "token",
-  );
-  const oauthAccessCount = await migrateColumnHash(
-    c.env,
-    "oauth_tokens",
-    "id",
-    "access_token",
-  );
-  const oauthRefreshCount = await migrateColumnHash(
-    c.env,
-    "oauth_tokens",
-    "id",
-    "refresh_token",
-  );
-  // oauth_codes uses `code` as the natural primary key but the value
-  // also IS the column we're rewriting, so we use rowid for the WHERE.
-  const oauthCodesCount = await migrateColumnHash(
-    c.env,
-    "oauth_codes",
-    "rowid",
-    "code",
-  );
-  // Invite tokens remain plaintext so authorized managers can copy a link
-  // after creation. Existing hashed invite rows remain valid but cannot be
-  // recovered or copied.
-  const siteInvitesCount = 0;
-  const teamInvitesCount = 0;
-  const usersTokenCount = await migrateColumnHash(
-    c.env,
-    "users",
-    "id",
-    "email_verify_token",
-  );
-  const usersCodeCount = await migrateColumnHash(
-    c.env,
-    "users",
-    "id",
-    "email_verify_code",
-  );
-  const userEmailsTokenCount = await migrateColumnHash(
-    c.env,
-    "user_emails",
-    "id",
-    "verify_token",
-  );
-  const userEmailsCodeCount = await migrateColumnHash(
-    c.env,
-    "user_emails",
-    "id",
-    "verify_code",
-  );
-  const twoFaCount = await migrateColumnHash(
-    c.env,
-    "oauth_2fa_codes",
-    "rowid",
-    "code",
-  );
+  const migrated = {} as Migrated;
+  for (const [key, column] of Object.entries(SECRET_COLUMNS))
+    migrated[key as keyof Migrated] = column
+      ? await migrateColumn(c.env, column)
+      : 0;
 
-  // ── Encrypt-only columns (recoverable for outbound use) ─────────────────
-  const totpCount = await migrateColumnEncrypt(
-    c.env,
-    "totp_authenticators",
-    "id",
-    "secret",
-  );
-  const webhooksCount = await migrateColumnEncrypt(
-    c.env,
-    "webhooks",
-    "id",
-    "secret",
-  );
-  const appWebhooksCount = await migrateColumnEncrypt(
-    c.env,
-    "app_webhooks",
-    "id",
-    "secret",
-  );
-  const scAccessCount = await migrateColumnEncrypt(
-    c.env,
-    "social_connections",
-    "id",
-    "access_token",
-  );
-  const scRefreshCount = await migrateColumnEncrypt(
-    c.env,
-    "social_connections",
-    "id",
-    "refresh_token",
-  );
-
-  auditAdmin(c, "admin.d1_secrets.migrate", "secrets", null, {
-    pat: patCount,
-    oauth_tokens_access: oauthAccessCount,
-    oauth_tokens_refresh: oauthRefreshCount,
-    oauth_codes: oauthCodesCount,
-    site_invites: siteInvitesCount,
-    team_invites: teamInvitesCount,
-    users_email_verify_token: usersTokenCount,
-    users_email_verify_code: usersCodeCount,
-    user_emails_verify_token: userEmailsTokenCount,
-    user_emails_verify_code: userEmailsCodeCount,
-    oauth_2fa_codes: twoFaCount,
-    totp_authenticators: totpCount,
-    webhooks: webhooksCount,
-    app_webhooks: appWebhooksCount,
-    social_connections_access: scAccessCount,
-    social_connections_refresh: scRefreshCount,
-  });
+  auditAdmin(c, "admin.d1_secrets.migrate", "secrets", null, migrated);
 
   const after = await collectD1SecretsStatus(c.env);
-  return c.json({
-    migrated: {
-      pat: patCount,
-      oauth_tokens_access: oauthAccessCount,
-      oauth_tokens_refresh: oauthRefreshCount,
-      oauth_codes: oauthCodesCount,
-      site_invites: siteInvitesCount,
-      team_invites: teamInvitesCount,
-      users_email_verify_token: usersTokenCount,
-      users_email_verify_code: usersCodeCount,
-      user_emails_verify_token: userEmailsTokenCount,
-      user_emails_verify_code: userEmailsCodeCount,
-      oauth_2fa_codes: twoFaCount,
-      totp_authenticators: totpCount,
-      webhooks: webhooksCount,
-      app_webhooks: appWebhooksCount,
-      social_connections_access: scAccessCount,
-      social_connections_refresh: scRefreshCount,
-    },
-    before,
-    after,
-  });
+  return c.json({ migrated, before, after });
 });
 
 export default app;
