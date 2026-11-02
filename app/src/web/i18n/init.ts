@@ -28,7 +28,7 @@ export function createServerI18n(lng: string): I18n {
     fallbackLng: "en",
     supportedLngs: [...SUPPORTED_LNGS],
     interpolation: { escapeValue: false },
-    initImmediate: false,
+    initAsync: false,
   });
   return instance;
 }
