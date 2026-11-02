@@ -37,11 +37,7 @@ import { formatDate } from "../../lib/datetime";
 import { CopyIdTrigger } from "../../components/CopyIdTrigger";
 import { Pagination } from "../../components/Pagination";
 import { RoleBadge } from "../../components/RoleBadge";
-import {
-  SettingsEmpty,
-  SettingsFooter,
-  SettingsTable,
-} from "../../components/Settings";
+import { SettingsEmpty, SettingsTable } from "../../components/Settings";
 import { SkeletonTableBodyRows } from "../../components/Skeletons";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { ListSearch } from "../../components/ListSearch";
@@ -143,7 +139,6 @@ export function MembersTable({
   const rows = useMemo(() => data?.members ?? [], [data]);
   const total = data?.total ?? memberCount;
   const limit = data?.limit || 50;
-  const pageCount = Math.max(1, Math.ceil(total / limit));
 
   // Definitions rather than whatever happens to be on the current page: with
   // a roster spread over many pages, a group that only appears on page 7
@@ -418,16 +413,14 @@ export function MembersTable({
           </Table>
         </SettingsTable>
       )}
-      {(pageCount > 1 || page > 1) && (
-        <SettingsFooter>
-          <Pagination
-            page={page}
-            pageCount={pageCount}
-            onChange={setPage}
-            disabled={isFetching}
-          />
-        </SettingsFooter>
-      )}
+      <Pagination
+        page={page}
+        total={total}
+        pageSize={limit}
+        onChange={setPage}
+        disabled={isFetching}
+        footer
+      />
     </>
   );
 }

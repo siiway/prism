@@ -267,7 +267,6 @@ export function AuditLog({ base }: { base: string }) {
   });
 
   const events = data?.events ?? [];
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / 50)) : 1;
   const range: Range = filters.range ?? "all";
   const hasFilters =
     range !== "all" ||
@@ -581,10 +580,11 @@ export function AuditLog({ base }: { base: string }) {
         </table>
       </div>
 
-      {totalPages > 1 && (
+      {data && (
         <Pagination
           page={page}
-          pageCount={totalPages}
+          total={data.total}
+          pageSize={50}
           onChange={setPage}
           disabled={isLoading}
         />

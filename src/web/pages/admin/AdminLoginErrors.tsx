@@ -244,15 +244,13 @@ export function AdminLoginErrors() {
               />
             ))}
           </DataList>
-          {(total > PAGE_SIZE || page > 1) && (
-            <Pagination
-              page={page}
-              pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
-              total={total}
-              onChange={setPage}
-              disabled={isFetching}
-            />
-          )}
+          <Pagination
+            page={page}
+            total={total}
+            pageSize={PAGE_SIZE}
+            onChange={setPage}
+            disabled={isFetching}
+          />
         </>
       )}
     </div>

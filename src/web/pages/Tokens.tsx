@@ -204,8 +204,8 @@ export function Tokens() {
               </Table>
               <Pagination
                 page={page}
-                pageCount={Math.max(1, Math.ceil((data.total || 0) / 20))}
                 total={data.total}
+                pageSize={20}
                 onChange={setPage}
                 disabled={isFetching}
               />

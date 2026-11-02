@@ -47,7 +47,6 @@ import { RoleBadge } from "../../../components/RoleBadge";
 import {
   SettingsCard,
   SettingsEmpty,
-  SettingsFooter,
   SettingsTable,
 } from "../../../components/Settings";
 import { SkeletonTableBodyRows } from "../../../components/Skeletons";
@@ -350,16 +349,14 @@ export function InvitesCard({ team, showMsg, confirm }: Props) {
         </SettingsTable>
       )}
 
-      {(total > PAGE_SIZE || page > 1) && (
-        <SettingsFooter>
-          <Pagination
-            page={page}
-            pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
-            onChange={setPage}
-            disabled={isFetching}
-          />
-        </SettingsFooter>
-      )}
+      <Pagination
+        page={page}
+        total={total}
+        pageSize={PAGE_SIZE}
+        onChange={setPage}
+        disabled={isFetching}
+        footer
+      />
 
       <Dialog
         open={editing !== null}

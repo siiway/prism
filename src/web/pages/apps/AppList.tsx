@@ -154,8 +154,8 @@ export function AppList() {
           </DataList>
           <Pagination
             page={page}
-            pageCount={Math.max(1, Math.ceil((data.total || 0) / PAGE_SIZE))}
             total={data.total}
+            pageSize={PAGE_SIZE}
             onChange={setPage}
             disabled={isFetching}
           />

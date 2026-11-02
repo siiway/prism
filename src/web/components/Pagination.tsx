@@ -1,6 +1,6 @@
-// Shared pagination bar: previous / next / jump-to-page with the current and
-// total page count. With a single page only the item count is shown — the
-// controls would all be disabled anyway.
+// Shared pagination bar: the item count, previous / next and jump-to-page
+// with the current and total page count. Hidden while every row fits on the
+// first page.
 
 import {
   Button,
@@ -11,6 +11,7 @@ import {
 } from "@fluentui/react-components";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { SettingsFooter } from "./Settings";
 
 const useStyles = makeStyles({
   pager: {
@@ -32,25 +33,28 @@ const useStyles = makeStyles({
 
 interface PaginationProps {
   page: number;
-  /** Total number of pages (>= 1). */
-  pageCount: number;
+  /** Rows across all pages. */
+  total: number;
+  pageSize: number;
   onChange: (page: number) => void;
-  /** Pass the total item count to show it next to the page indicator. */
-  total?: number;
   /** Disable navigation while a fetch is in flight. */
   disabled?: boolean;
+  /** Sit in a SettingsFooter, for a list inside a settings card. */
+  footer?: boolean;
 }
 
 export function Pagination({
   page,
-  pageCount,
-  onChange,
   total,
+  pageSize,
+  onChange,
   disabled,
+  footer,
 }: PaginationProps) {
   const styles = useStyles();
   const { t } = useTranslation();
   const [jump, setJump] = useState("");
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   const goToPage = () => {
     const n = Number.parseInt(jump, 10);
@@ -60,22 +64,15 @@ export function Pagination({
     }
   };
 
-  const count = total !== undefined && (
-    <Text size={200} className={styles.pageCount}>
-      {t("common.totalItems", { count: total })}
-    </Text>
-  );
+  // A list that shrank under a later page (e.g. after deleting its last row)
+  // keeps the controls, so Previous still leads back to the rows.
+  if (pageCount <= 1 && page <= 1) return null;
 
-  // One page and on it: only the count. A list that shrank under a later
-  // page (e.g. after deleting its last row) keeps the controls, so Previous
-  // still leads back to the rows.
-  if (pageCount <= 1 && page <= 1) {
-    return count ? <div className={styles.pager}>{count}</div> : null;
-  }
-
-  return (
+  const bar = (
     <div className={styles.pager}>
-      {count}
+      <Text size={200} className={styles.pageCount}>
+        {t("common.totalItems", { count: total })}
+      </Text>
       <Button
         size="small"
         appearance="subtle"
@@ -112,4 +109,5 @@ export function Pagination({
       </Button>
     </div>
   );
+  return footer ? <SettingsFooter>{bar}</SettingsFooter> : bar;
 }

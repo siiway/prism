@@ -731,15 +731,13 @@ function TableBrowser({
         </Table>
       </div>
 
-      {/* page > 1 too: deleting the last row on the last page must still
-          leave a way back. */}
-      {data && (data.total > data.limit || page > 1) && (
+      {data && (
         <Pagination
           page={page}
-          pageCount={Math.max(1, Math.ceil(data.total / data.limit))}
           total={data.total}
-          disabled={isFetching}
+          pageSize={data.limit}
           onChange={setPage}
+          disabled={isFetching}
         />
       )}
       {confirmDialog}

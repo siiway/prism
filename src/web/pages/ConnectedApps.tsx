@@ -649,15 +649,13 @@ export function ConnectedApps() {
               );
             })}
           </div>
-          {(data.total > PAGE_SIZE || page > 1) && (
-            <Pagination
-              page={page}
-              pageCount={Math.max(1, Math.ceil((data.total || 0) / PAGE_SIZE))}
-              total={data.total}
-              onChange={setPage}
-              disabled={isFetching}
-            />
-          )}
+          <Pagination
+            page={page}
+            total={data.total}
+            pageSize={PAGE_SIZE}
+            onChange={setPage}
+            disabled={isFetching}
+          />
         </>
       )}
 

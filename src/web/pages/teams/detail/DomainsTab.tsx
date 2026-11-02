@@ -31,7 +31,6 @@ import { Pagination } from "../../../components/Pagination";
 import {
   SettingsCard,
   SettingsEmpty,
-  SettingsFooter,
   SettingsTable,
 } from "../../../components/Settings";
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
@@ -243,16 +242,14 @@ export function DomainsTab({ team, canManage, showMsg }: TeamTabProps) {
           </Table>
         </SettingsTable>
       )}
-      {(total > PAGE_SIZE || page > 1) && (
-        <SettingsFooter>
-          <Pagination
-            page={page}
-            pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
-            onChange={setPage}
-            disabled={isFetching}
-          />
-        </SettingsFooter>
-      )}
+      <Pagination
+        page={page}
+        total={total}
+        pageSize={PAGE_SIZE}
+        onChange={setPage}
+        disabled={isFetching}
+        footer
+      />
     </SettingsCard>
   );
 }
