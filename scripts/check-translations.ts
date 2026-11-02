@@ -1,9 +1,16 @@
-// Check that every translation key used in src/web/ exists in all locale files.
+// Check translation keys against the source in src/web/.
 //
 //   bun scripts/check-translations.ts
 //
-// Exit code 1 when a key used in code is missing from a locale file. Keys that
-// exist in only one locale are reported as warnings.
+// Exit code 1 when a key used in code is missing from a locale file. Warnings
+// (exit code 0): keys that exist in only one locale, and keys no code refers to.
+//
+// "Unused" is a best guess. A key counts as used when its full name appears as a
+// quoted string anywhere in src/web or src/shared (so t("a.b") and labelKey:
+// "a.b" both count), or when a template literal with a literal prefix such as
+// `apps.ruleType_${x}` could produce it. A template with no literal prefix
+// (`${ns}.${key}`) cannot be matched, so keys built that way may be listed
+// as unused when they are not.
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -50,6 +57,9 @@ function* sourceFiles(dir: string): Generator<string> {
 const RE_LITERAL = /\bt\(\s*(?:"([^"]+)"|'([^']+)')\s*[,)]/g;
 // t(`anything`)
 const RE_TEMPLATE = /\bt\(\s*`([^`]*)`\s*[,)]/g;
+
+const SHARED_DIR = join(ROOT, "src", "shared");
+const escapeRe = (s: string) => s.replace(/[.*+?^()|[\]\\]/g, "\\$&");
 
 function section(title: string): void {
   console.log(`\n${bold(title)}\n${dim("─".repeat(60))}`);
@@ -116,16 +126,52 @@ for (const other of others) {
   }
 }
 
-if (dynamic.length) {
-  section(
-    `ℹ️   Dynamic template keys — cannot be statically verified (${dynamic.length})`,
+// ── Unused keys ─────────────────────────────────────────────────────────────
+
+const usageText = [...sourceFiles(SRC_DIR), ...sourceFiles(SHARED_DIR)]
+  .map((f) => readFileSync(f, "utf8"))
+  .join("\n");
+const quoted = new Set(
+  [...usageText.matchAll(/["'`]([A-Za-z0-9_.]+)["'`]/g)].map((m) => m[1]),
+);
+const templatePatterns = [...usageText.matchAll(/`([^`]*\$\{[^`]*)`/g)]
+  .map((m) => m[1])
+  .filter((t) => {
+    const prefix = t.split("${")[0];
+    return prefix.length >= 6 && prefix.includes(".");
+  })
+  .map(
+    (t) => new RegExp("^" + escapeRe(t).replace(/\$\{[^}]*\}/g, ".*") + "$"),
   );
-  for (const { file, expr } of dynamic)
-    console.log(`  ${dim("~")} ${dim(file)}: \`${expr}\``);
+const baseKey = (k: string) => k.replace(/_(one|other|zero|two|few|many)$/, "");
+const isUsed = (k: string) => {
+  const base = baseKey(k);
+  return (
+    quoted.has(k) ||
+    quoted.has(base) ||
+    templatePatterns.some((p) => p.test(k) || p.test(base))
+  );
+};
+
+const allKeys = new Set([...locales.values()].flatMap((keys) => [...keys]));
+const unused = [...allKeys].filter((k) => !isUsed(k)).sort();
+let unusedCount = 0;
+if (unused.length) {
+  section(
+    `🗑️   Keys no code refers to — probably dead (${unused.length}, of ${allKeys.size})`,
+  );
+  for (const k of unused) console.log(`  ${yellow("△")} ${k}`);
+  unusedCount = unused.length;
 }
 
+console.log(
+  dim(
+    `\n  ${dynamic.length} t() call(s) build their key at runtime; keys matching a literal prefix are treated as used.`,
+  ),
+);
+
 console.log();
-if (!errors && !warnings) {
+if (!errors && !warnings && !unusedCount) {
   console.log(
     green("✓  All translation keys are present across all locale files."),
   );
@@ -133,6 +179,7 @@ if (!errors && !warnings) {
   const parts = [];
   if (errors) parts.push(red(`${errors} missing key(s)`));
   if (warnings) parts.push(yellow(`${warnings} drift warning(s)`));
+  if (unusedCount) parts.push(yellow(`${unusedCount} unused key(s)`));
   console.log(`Summary: ${parts.join(", ")}`);
   if (errors) process.exit(1);
 }
