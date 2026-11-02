@@ -359,6 +359,13 @@ OAuth 令牌等价端点：`GET /api/oauth/me/social-connections`（`social:read
 `/me/team/:teamId/...` 路径需要绑定到该团队的令牌（参见
 [OAuth → 团队 scope](oauth.md#团队-scope)）；仅有 `teams:*` 令牌不够。
 
+`POST /me/domains` 接受 `{ "domain": "example.com" }`，返回 `201`，包含域名的
+`id`、`domain`、`verification_token`、`verified`，以及各验证方式所需的值：
+`txt_record` / `txt_value`（DNS TXT）、`http_url` / `http_path` / `http_value`
+（`.well-known` 文件）和 `meta_tag`（HTML meta）。如果用户已有一个已验证的上级域名
+（例如添加 `app.example.com` 时已验证 `example.com`），新域名会立即通过验证：
+`verified` 为 `true`，`verified_by_parent` 为该上级域名。
+
 ### `GET /api/oauth/consents` / `DELETE /api/oauth/consents/:client_id`
 
 列出当前用户已授权的应用，或撤销其中一个。撤销会移除该应用的授权以及所有未过期令牌。

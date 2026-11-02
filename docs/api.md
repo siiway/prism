@@ -383,6 +383,14 @@ listed in [OAuth → Scopes](oauth.md#scopes).
 The `/me/team/:teamId/...` paths need a token bound to that team (see
 [OAuth → Team scopes](oauth.md#team-scopes)); a `teams:*` token isn't enough.
 
+`POST /me/domains` takes `{ "domain": "example.com" }` and returns `201` with
+the domain's `id`, `domain`, `verification_token`, `verified`, and the values
+for each verification method: `txt_record` / `txt_value` (DNS TXT),
+`http_url` / `http_path` / `http_value` (`.well-known` file) and `meta_tag`
+(HTML meta). If the user already has a verified parent domain (for example
+`example.com` when adding `app.example.com`), the new domain is verified on
+the spot: `verified` is `true` and `verified_by_parent` names that parent.
+
 ### `GET /api/oauth/consents` / `DELETE /api/oauth/consents/:client_id`
 
 List the apps the current user has authorized, or revoke one. Revoking removes
