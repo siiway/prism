@@ -8,15 +8,10 @@ import {
   Tab,
   TabList,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  ArrowLeftRegular,
-  OpenRegular,
-  ShieldCheckmarkRegular,
-} from "@fluentui/react-icons";
+import { OpenRegular, ShieldCheckmarkRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import {
   useLocation,
@@ -48,6 +43,7 @@ import { SignInTab } from "./detail/SignInTab";
 import { PermissionsTab } from "./detail/PermissionsTab";
 import { AccessTab } from "./detail/AccessTab";
 import { ModerationTab } from "./detail/ModerationTab";
+import { BackButton, DetailHeader } from "../../components/DetailHeader";
 
 const TABS = [
   "overview",
@@ -75,35 +71,6 @@ const CARD_TAB: Record<string, TabId> = {
 };
 
 const useStyles = makeStyles({
-  back: {
-    alignSelf: "flex-start",
-    marginLeft: "-8px",
-    color: tokens.colorNeutralForeground3,
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "16px",
-  },
-  titles: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    flex: "1 1 240px",
-    minWidth: 0,
-  },
-  titleLine: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "8px",
-  },
-  title: {
-    letterSpacing: "-0.015em",
-    overflowWrap: "anywhere",
-  },
-  muted: { color: tokens.colorNeutralForeground3 },
   tabBar: {
     borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
   },
@@ -277,19 +244,13 @@ export function AppDetail() {
 
   return (
     <SettingsPage>
-      <Button
-        appearance="subtle"
-        size="small"
-        icon={<ArrowLeftRegular />}
-        className={styles.back}
-        onClick={() =>
-          navigate(
-            fromAdmin
-              ? "/admin/apps"
-              : app.team_id
-                ? `/teams/${app.team_id}`
-                : "/apps",
-          )
+      <BackButton
+        to={
+          fromAdmin
+            ? "/admin/apps"
+            : app.team_id
+              ? `/teams/${app.team_id}`
+              : "/apps"
         }
       >
         {fromAdmin
@@ -297,20 +258,20 @@ export function AppDetail() {
           : app.team_id
             ? (app.team_name ?? t("apps.team"))
             : t("apps.myApplications")}
-      </Button>
+      </BackButton>
 
-      <div className={styles.header}>
-        <Avatar
-          image={app.icon_url ? { src: app.icon_url } : undefined}
-          name={app.name}
-          size={48}
-          shape="square"
-        />
-        <div className={styles.titles}>
-          <div className={styles.titleLine}>
-            <Title2 as="h1" className={styles.title}>
-              {app.name}
-            </Title2>
+      <DetailHeader
+        icon={
+          <Avatar
+            image={app.icon_url ? { src: app.icon_url } : undefined}
+            name={app.name}
+            size={48}
+            shape="square"
+          />
+        }
+        title={app.name}
+        badges={
+          <>
             {app.is_verified && (
               <Badge
                 appearance="tint"
@@ -330,24 +291,24 @@ export function AppDetail() {
                 ? t("apps.typePublic")
                 : t("apps.typeConfidential")}
             </Badge>
-          </div>
-          {app.description && (
-            <Text className={styles.muted}>{app.description}</Text>
-          )}
-        </div>
-        {app.website_url && (
-          <Button
-            as="a"
-            href={app.website_url}
-            target="_blank"
-            rel="noreferrer"
-            size="small"
-            icon={<OpenRegular />}
-          >
-            {t("apps.openWebsite")}
-          </Button>
-        )}
-      </div>
+          </>
+        }
+        subtitle={app.description}
+        actions={
+          app.website_url && (
+            <Button
+              as="a"
+              href={app.website_url}
+              target="_blank"
+              rel="noreferrer"
+              size="small"
+              icon={<OpenRegular />}
+            >
+              {t("apps.openWebsite")}
+            </Button>
+          )
+        }
+      />
 
       {isSiteAdmin && !normalView && !adminBannerDismissed && (
         <ViewBanner

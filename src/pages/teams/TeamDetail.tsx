@@ -12,7 +12,6 @@ import {
   Tab,
   TabList,
   Text,
-  Title2,
   Tooltip,
   makeStyles,
   tokens,
@@ -46,6 +45,7 @@ import { ModerationTab } from "./detail/ModerationTab";
 import { SettingsTab } from "./detail/SettingsTab";
 import { SubTeamsTab } from "./detail/SubTeamsTab";
 import type { TeamTabProps } from "./detail/types";
+import { DetailHeader } from "../../components/DetailHeader";
 
 type TabId =
   | "members"
@@ -59,27 +59,6 @@ type TabId =
 
 const useStyles = makeStyles({
   breadcrumb: { marginLeft: "-8px" },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "16px",
-  },
-  titles: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    flex: "1 1 240px",
-    minWidth: 0,
-  },
-  titleLine: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "8px",
-  },
-  title: { letterSpacing: "-0.015em", overflowWrap: "anywhere" },
-  muted: { color: tokens.colorNeutralForeground3 },
   tabBar: { borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
   // Line the first tab label up with the content edge.
   tabs: { marginLeft: "-10px", overflowX: "auto" },
@@ -249,17 +228,17 @@ export function TeamDetail() {
         ))}
       </Breadcrumb>
 
-      <div className={styles.header}>
-        <Avatar
-          image={team.avatar_url ? { src: team.avatar_url } : undefined}
-          name={team.name}
-          size={48}
-        />
-        <div className={styles.titles}>
-          <div className={styles.titleLine}>
-            <Title2 as="h1" className={styles.title}>
-              {team.name}
-            </Title2>
+      <DetailHeader
+        icon={
+          <Avatar
+            image={team.avatar_url ? { src: team.avatar_url } : undefined}
+            name={team.name}
+            size={48}
+          />
+        }
+        title={team.name}
+        badges={
+          <>
             <RoleBadge role={myRole} />
             {team.inherited_from && (
               <Tooltip
@@ -271,23 +250,23 @@ export function TeamDetail() {
                 </Badge>
               </Tooltip>
             )}
-          </div>
-          {team.description && (
-            <Text className={styles.muted}>{team.description}</Text>
-          )}
-        </div>
-        {team.profile_is_public && (
-          <Button
-            as="a"
-            href={`/t/${team.id}`}
-            target="_blank"
-            size="small"
-            icon={<OpenRegular />}
-          >
-            {t("teams.viewPublicProfile")}
-          </Button>
-        )}
-      </div>
+          </>
+        }
+        subtitle={team.description}
+        actions={
+          team.profile_is_public && (
+            <Button
+              as="a"
+              href={`/t/${team.id}`}
+              target="_blank"
+              size="small"
+              icon={<OpenRegular />}
+            >
+              {t("teams.viewPublicProfile")}
+            </Button>
+          )
+        }
+      />
 
       {/* A site admin acting through the override is shown as owner. Say
           where that came from, and offer their real membership if any. */}

@@ -6,12 +6,10 @@ import {
   Button,
   MessageBar,
   Spinner,
-  Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { ArrowLeftRegular, DeleteRegular } from "@fluentui/react-icons";
+import { DeleteRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -49,20 +47,9 @@ import {
   type Section,
   type SourceForm,
 } from "./sourceForm";
+import { BackButton, DetailHeader } from "../../../components/DetailHeader";
 
 const useStyles = makeStyles({
-  back: {
-    alignSelf: "flex-start",
-    marginLeft: "-8px",
-    color: tokens.colorNeutralForeground3,
-  },
-  titles: { display: "flex", flexDirection: "column", gap: "4px" },
-  titleLine: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
   muted: { color: tokens.colorNeutralForeground3 },
   mono: { fontFamily: tokens.fontFamilyMonospace },
   stack: { display: "flex", flexDirection: "column", gap: "16px" },
@@ -176,15 +163,9 @@ export function SourceDetail() {
   };
 
   const back = (
-    <Button
-      appearance="subtle"
-      size="small"
-      icon={<ArrowLeftRegular />}
-      className={styles.back}
-      onClick={() => navigate("/admin/connections")}
-    >
+    <BackButton to={"/admin/connections"}>
       {t("admin.connectionsTab")}
-    </Button>
+    </BackButton>
   );
 
   if (isLoading)
@@ -229,20 +210,24 @@ export function SourceDetail() {
   return (
     <SettingsPage>
       {back}
-      <div className={styles.titles}>
-        <div className={styles.titleLine}>
-          <Title2 as="h1">{source.name}</Title2>
-          {!enabled && (
-            <Badge appearance="tint" color="warning">
-              {t("admin.oauthOff")}
-            </Badge>
-          )}
-        </div>
-        <Text className={styles.muted}>
-          {providerLabel(t, source.provider)} ·{" "}
-          <span className={styles.mono}>{source.slug}</span>
-        </Text>
-      </div>
+      <DetailHeader
+        title={source.name}
+        badges={
+          <>
+            {!enabled && (
+              <Badge appearance="tint" color="warning">
+                {t("admin.oauthOff")}
+              </Badge>
+            )}
+          </>
+        }
+        subtitle={
+          <>
+            {providerLabel(t, source.provider)} ·{" "}
+            <span className={styles.mono}>{source.slug}</span>
+          </>
+        }
+      />
 
       <SettingsToast message={message} />
 

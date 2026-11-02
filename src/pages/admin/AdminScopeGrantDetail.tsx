@@ -9,11 +9,10 @@ import {
   MessageBar,
   Spinner,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { ArrowLeftRegular, DeleteRegular } from "@fluentui/react-icons";
+import { DeleteRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -33,21 +32,9 @@ import {
   SettingsToast,
 } from "../../components/Settings";
 import { SkeletonSettingsCard } from "../../components/Skeletons";
+import { BackButton, DetailHeader } from "../../components/DetailHeader";
 
 const useStyles = makeStyles({
-  back: {
-    alignSelf: "flex-start",
-    marginLeft: "-8px",
-    color: tokens.colorNeutralForeground3,
-  },
-  titles: { display: "flex", flexDirection: "column", gap: "4px" },
-  titleLine: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
-
   mono: {
     fontFamily: tokens.fontFamilyMonospace,
     fontSize: tokens.fontSizeBase200,
@@ -92,15 +79,7 @@ export function AdminScopeGrantDetail() {
   const listPath =
     kind === "team" ? "/admin/scope-grants?view=team" : "/admin/scope-grants";
   const back = (
-    <Button
-      appearance="subtle"
-      size="small"
-      icon={<ArrowLeftRegular />}
-      className={styles.back}
-      onClick={() => navigate(listPath)}
-    >
-      {t("admin.scopeGrantsTab")}
-    </Button>
+    <BackButton to={listPath}>{t("admin.scopeGrantsTab")}</BackButton>
   );
 
   if (isLoading)
@@ -158,25 +137,27 @@ export function AdminScopeGrantDetail() {
   return (
     <SettingsPage>
       {back}
-      <div className={styles.titles}>
-        <div className={styles.titleLine}>
-          <Title2 as="h1">{appName}</Title2>
-          <Badge
-            appearance="tint"
-            color={kind === "site" ? "danger" : "informative"}
-          >
-            {kind === "site"
-              ? t("admin.siteGrantBadge")
-              : t("admin.teamGrantBadge")}
-          </Badge>
-          {!held && (
-            <Badge appearance="tint" color="subtle">
-              {t("admin.grantNotHeld")}
+      <DetailHeader
+        title={appName}
+        badges={
+          <>
+            <Badge
+              appearance="tint"
+              color={kind === "site" ? "danger" : "informative"}
+            >
+              {kind === "site"
+                ? t("admin.siteGrantBadge")
+                : t("admin.teamGrantBadge")}
             </Badge>
-          )}
-        </div>
-        <Text className={styles.mono}>{grant.client_id}</Text>
-      </div>
+            {!held && (
+              <Badge appearance="tint" color="subtle">
+                {t("admin.grantNotHeld")}
+              </Badge>
+            )}
+          </>
+        }
+        subtitle={<Text className={styles.mono}>{grant.client_id}</Text>}
+      />
 
       <SettingsToast message={message} />
 

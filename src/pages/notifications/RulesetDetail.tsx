@@ -12,7 +12,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { ArrowLeftRegular, FilterRegular } from "@fluentui/react-icons";
+import { FilterRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -36,15 +36,11 @@ import { RulesCard } from "./RulesCard";
 import { TraceCard } from "./TraceCard";
 import { useDestinations } from "./useDestinations";
 import { useRuleset } from "./useRuleset";
+import { BackButton } from "../../components/DetailHeader";
 
 const LIST_PATH = "/notifications#rulesets";
 
 const useStyles = makeStyles({
-  back: {
-    alignSelf: "flex-start",
-    marginLeft: "-8px",
-    color: tokens.colorNeutralForeground3,
-  },
   title: {
     overflowWrap: "anywhere",
   },
@@ -135,15 +131,7 @@ export function RulesetDetail() {
   };
 
   const back = (
-    <Button
-      appearance="subtle"
-      size="small"
-      icon={<ArrowLeftRegular />}
-      className={styles.back}
-      onClick={() => navigate(LIST_PATH)}
-    >
-      {t("notifications.title")}
-    </Button>
+    <BackButton to={LIST_PATH}>{t("notifications.title")}</BackButton>
   );
 
   if (isLoading) {

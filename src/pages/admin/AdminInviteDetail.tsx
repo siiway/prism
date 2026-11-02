@@ -10,12 +10,10 @@ import {
   Input,
   MessageBar,
   Spinner,
-  Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { ArrowLeftRegular, DeleteRegular } from "@fluentui/react-icons";
+import { DeleteRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -39,20 +37,9 @@ import {
 import { Segmented } from "../../components/Segmented";
 import { SkeletonSettingsCard } from "../../components/Skeletons";
 import { InviteModeBanner } from "./InviteModeBanner";
+import { BackButton, DetailHeader } from "../../components/DetailHeader";
 
 const useStyles = makeStyles({
-  back: {
-    alignSelf: "flex-start",
-    marginLeft: "-8px",
-    color: tokens.colorNeutralForeground3,
-  },
-  titles: { display: "flex", flexDirection: "column", gap: "4px" },
-  titleLine: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
   muted: { color: tokens.colorNeutralForeground3 },
   grid: {
     display: "grid",
@@ -176,15 +163,7 @@ export function AdminInviteDetail() {
   };
 
   const back = (
-    <Button
-      appearance="subtle"
-      size="small"
-      icon={<ArrowLeftRegular />}
-      className={styles.back}
-      onClick={() => navigate("/admin/invites")}
-    >
-      {t("admin.invitesTab")}
-    </Button>
+    <BackButton to={"/admin/invites"}>{t("admin.invitesTab")}</BackButton>
   );
 
   if (isLoading)
@@ -323,35 +302,39 @@ export function AdminInviteDetail() {
   return (
     <SettingsPage>
       {back}
-      <div className={styles.titles}>
-        <div className={styles.titleLine}>
-          <Title2 as="h1">{title}</Title2>
-          {!invite.enabled && (
-            <Badge appearance="tint" color="danger">
-              {t("admin.inviteDisabled")}
-            </Badge>
-          )}
-          {expired && (
-            <Badge appearance="tint" color="warning">
-              {t("admin.inviteExpired")}
-            </Badge>
-          )}
-          {usedUp && (
-            <Badge appearance="tint" color="warning">
-              {t("admin.inviteUsedUp")}
-            </Badge>
-          )}
-        </div>
-        <Text className={styles.muted}>
-          {t("admin.inviteSummary", {
-            uses: `${invite.use_count} / ${invite.max_uses ?? "∞"}`,
-            date: formatDate(invite.created_at),
-            who: invite.created_by_username
-              ? `@${invite.created_by_username}`
-              : invite.created_by,
-          })}
-        </Text>
-      </div>
+      <DetailHeader
+        title={title}
+        badges={
+          <>
+            {!invite.enabled && (
+              <Badge appearance="tint" color="danger">
+                {t("admin.inviteDisabled")}
+              </Badge>
+            )}
+            {expired && (
+              <Badge appearance="tint" color="warning">
+                {t("admin.inviteExpired")}
+              </Badge>
+            )}
+            {usedUp && (
+              <Badge appearance="tint" color="warning">
+                {t("admin.inviteUsedUp")}
+              </Badge>
+            )}
+          </>
+        }
+        subtitle={
+          <>
+            {t("admin.inviteSummary", {
+              uses: `${invite.use_count} / ${invite.max_uses ?? "∞"}`,
+              date: formatDate(invite.created_at),
+              who: invite.created_by_username
+                ? `@${invite.created_by_username}`
+                : invite.created_by,
+            })}
+          </>
+        }
+      />
 
       <InviteModeBanner />
       <SettingsToast message={message} />

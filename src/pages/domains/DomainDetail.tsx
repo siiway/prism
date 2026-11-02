@@ -12,10 +12,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  ArrowLeftRegular,
-  CheckmarkCircleRegular,
-} from "@fluentui/react-icons";
+import { CheckmarkCircleRegular } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -39,13 +36,9 @@ import {
 } from "../../components/Settings";
 import { SkeletonSettingsCard } from "../../components/Skeletons";
 import { VerificationCard } from "./VerificationCard";
+import { BackButton } from "../../components/DetailHeader";
 
 const useStyles = makeStyles({
-  back: {
-    alignSelf: "flex-start",
-    marginLeft: "-8px",
-    color: tokens.colorNeutralForeground3,
-  },
   titleLine: {
     display: "flex",
     alignItems: "center",
@@ -226,15 +219,9 @@ export function DomainDetail() {
   };
 
   const back = (
-    <Button
-      appearance="subtle"
-      size="small"
-      icon={<ArrowLeftRegular />}
-      className={styles.back}
-      onClick={() => navigate(listPath)}
-    >
+    <BackButton to={listPath}>
       {isTeam ? (team?.name ?? t("teams.domainsTitle")) : t("nav.domains")}
-    </Button>
+    </BackButton>
   );
 
   if (domainQuery.isLoading) {

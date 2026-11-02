@@ -16,7 +16,6 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
-  ArrowLeftRegular,
   CheckmarkCircleRegular,
   DismissCircleRegular,
   FilterRegular,
@@ -53,13 +52,9 @@ import { newSample, sampleContext } from "./sample";
 import { SampleEventFields } from "./SampleEvent";
 import { useDestinations } from "./useDestinations";
 import { useRuleset } from "./useRuleset";
+import { BackButton } from "../../components/DetailHeader";
 
 const useStyles = makeStyles({
-  back: {
-    alignSelf: "flex-start",
-    marginLeft: "-8px",
-    color: tokens.colorNeutralForeground3,
-  },
   title: { overflowWrap: "anywhere" },
   result: {
     display: "flex",
@@ -138,15 +133,9 @@ export function RuleDetail() {
   }, [title]);
 
   const back = (
-    <Button
-      appearance="subtle"
-      size="small"
-      icon={<ArrowLeftRegular />}
-      className={styles.back}
-      onClick={() => navigate(rulesetPath)}
-    >
+    <BackButton to={rulesetPath}>
       {ruleset?.name ?? t("notifications.title")}
-    </Button>
+    </BackButton>
   );
 
   if (isLoading) {

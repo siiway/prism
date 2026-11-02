@@ -9,14 +9,11 @@ import {
   MessageBarBody,
   MessageBarTitle,
   Spinner,
-  Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
 import {
   ArrowCounterclockwiseRegular,
-  ArrowLeftRegular,
   DeleteRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useState } from "react";
@@ -52,20 +49,9 @@ import {
   type NoticeForm,
   type Section,
 } from "./noticeForm";
+import { BackButton, DetailHeader } from "../../../components/DetailHeader";
 
 const useStyles = makeStyles({
-  back: {
-    alignSelf: "flex-start",
-    marginLeft: "-8px",
-    color: tokens.colorNeutralForeground3,
-  },
-  titles: { display: "flex", flexDirection: "column", gap: "4px" },
-  titleLine: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    flexWrap: "wrap",
-  },
   muted: { color: tokens.colorNeutralForeground3 },
   danger: { color: tokens.colorPaletteRedForeground1 },
 });
@@ -149,15 +135,7 @@ export function NoticeDetail() {
     );
 
   const back = (
-    <Button
-      appearance="subtle"
-      size="small"
-      icon={<ArrowLeftRegular />}
-      className={styles.back}
-      onClick={() => navigate("/admin/notices")}
-    >
-      {t("admin.noticesTab")}
-    </Button>
+    <BackButton to={"/admin/notices"}>{t("admin.noticesTab")}</BackButton>
   );
 
   if (isLoading)
@@ -260,36 +238,40 @@ export function NoticeDetail() {
   return (
     <SettingsPage>
       {back}
-      <div className={styles.titles}>
-        <div className={styles.titleLine}>
-          <Title2 as="h1">{notice.title}</Title2>
-          {!notice.is_published && (
-            <Badge appearance="tint" color="subtle">
-              {t("admin.noticeDraftBadge")}
-            </Badge>
-          )}
-          {notice.level !== "info" && (
-            <Badge appearance="tint" color={levelColor(notice.level)}>
-              {t(`admin.noticeLevel_${notice.level}`)}
-            </Badge>
-          )}
-        </div>
-        <Text className={styles.muted}>
-          {t("admin.noticeSummary", {
-            audience:
-              notice.audience === "team"
-                ? t("admin.noticeForTeam", {
-                    team: notice.team_name ?? notice.team_id,
-                  })
-                : t(`admin.noticeAudience_${notice.audience}`),
-            window: noticeWindow(t, notice),
-            date: formatDate(notice.created_at),
-            who: notice.created_by_username
-              ? `@${notice.created_by_username}`
-              : (notice.created_by ?? "—"),
-          })}
-        </Text>
-      </div>
+      <DetailHeader
+        title={notice.title}
+        badges={
+          <>
+            {!notice.is_published && (
+              <Badge appearance="tint" color="subtle">
+                {t("admin.noticeDraftBadge")}
+              </Badge>
+            )}
+            {notice.level !== "info" && (
+              <Badge appearance="tint" color={levelColor(notice.level)}>
+                {t(`admin.noticeLevel_${notice.level}`)}
+              </Badge>
+            )}
+          </>
+        }
+        subtitle={
+          <>
+            {t("admin.noticeSummary", {
+              audience:
+                notice.audience === "team"
+                  ? t("admin.noticeForTeam", {
+                      team: notice.team_name ?? notice.team_id,
+                    })
+                  : t(`admin.noticeAudience_${notice.audience}`),
+              window: noticeWindow(t, notice),
+              date: formatDate(notice.created_at),
+              who: notice.created_by_username
+                ? `@${notice.created_by_username}`
+                : (notice.created_by ?? "—"),
+            })}
+          </>
+        }
+      />
 
       <SettingsToast message={message} />
 

@@ -10,16 +10,14 @@
 import {
   Avatar,
   Badge,
-  Button,
   MessageBar,
   Tab,
   TabList,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { ArrowLeftRegular, CopyRegular } from "@fluentui/react-icons";
+import { CopyRegular } from "@fluentui/react-icons";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -38,36 +36,12 @@ import { AccessTab } from "./user/AccessTab";
 import { OverviewTab } from "./user/OverviewTab";
 import { ResourcesTab } from "./user/ResourcesTab";
 import type { UserTabProps } from "./user/types";
+import { BackButton, DetailHeader } from "../../components/DetailHeader";
 
 const TABS = ["overview", "access", "resources", "audit"] as const;
 type TabId = (typeof TABS)[number];
 
 const useStyles = makeStyles({
-  back: {
-    alignSelf: "flex-start",
-    marginLeft: "-8px",
-    color: tokens.colorNeutralForeground3,
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "16px",
-  },
-  titles: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    flex: "1 1 240px",
-    minWidth: 0,
-  },
-  titleLine: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "8px",
-  },
-  title: { letterSpacing: "-0.015em", overflowWrap: "anywhere" },
   muted: { color: tokens.colorNeutralForeground3, overflowWrap: "anywhere" },
   id: {
     gap: "6px",
@@ -115,15 +89,7 @@ export function AdminUserDetail() {
     );
 
   const back = (
-    <Button
-      appearance="subtle"
-      size="small"
-      icon={<ArrowLeftRegular />}
-      className={styles.back}
-      onClick={() => navigate("/admin/users")}
-    >
-      {t("admin.usersTab")}
-    </Button>
+    <BackButton to={"/admin/users"}>{t("admin.usersTab")}</BackButton>
   );
 
   if (isLoading)
@@ -156,17 +122,17 @@ export function AdminUserDetail() {
     <SettingsPage>
       {back}
 
-      <div className={styles.header}>
-        <Avatar
-          name={user.display_name || user.username}
-          image={user.avatar_url ? { src: user.avatar_url } : undefined}
-          size={48}
-        />
-        <div className={styles.titles}>
-          <div className={styles.titleLine}>
-            <Title2 as="h1" className={styles.title}>
-              {user.display_name || user.username}
-            </Title2>
+      <DetailHeader
+        icon={
+          <Avatar
+            name={user.display_name || user.username}
+            image={user.avatar_url ? { src: user.avatar_url } : undefined}
+            size={48}
+          />
+        }
+        title={user.display_name || user.username}
+        badges={
+          <>
             {user.role === "admin" && (
               <Badge appearance="tint" color="brand">
                 {t("admin.userPage.roleAdmin")}
@@ -177,21 +143,21 @@ export function AdminUserDetail() {
                 {t("admin.disabledStatus")}
               </Badge>
             )}
-          </div>
-          <Text className={styles.muted}>
-            @{user.username} · {user.email}
-          </Text>
-        </div>
-        <CopyIdTrigger
-          id={user.id}
-          label={t("admin.userPage.copyUserId")}
-          copiedLabel={t("admin.userPage.copiedUserId")}
-          className={styles.id}
-        >
-          <span>{user.id}</span>
-          <CopyRegular />
-        </CopyIdTrigger>
-      </div>
+          </>
+        }
+        subtitle={`@${user.username} · ${user.email}`}
+        actions={
+          <CopyIdTrigger
+            id={user.id}
+            label={t("admin.userPage.copyUserId")}
+            copiedLabel={t("admin.userPage.copiedUserId")}
+            className={styles.id}
+          >
+            <span>{user.id}</span>
+            <CopyRegular />
+          </CopyIdTrigger>
+        }
+      />
 
       <div className={styles.tabBar}>
         <TabList
