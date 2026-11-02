@@ -25,11 +25,12 @@ import {
 } from "../lib/notifications";
 import type { OAuthAppRow, TeamRow, Variables } from "../types";
 import {
-  getEffectiveTeamRequirements,
+  checkMemberAdd,
   getSiteRequirementFloor,
   getUserSecurityState,
   mergeWithSiteFloor,
   unmetRequirements,
+  unmetTeamRequirements,
 } from "../lib/teamRequirements";
 import { isTeamLocked } from "../lib/lockdown";
 import {
@@ -285,23 +286,16 @@ app.post("/join/:token", requireAuth, async (c) => {
       }
     }
 
-    const teamReq = await getEffectiveTeamRequirements(
+    const unmet = await unmetTeamRequirements(
       c.env.DB,
       invite.team_id,
+      user.id,
     );
-    if (teamReq) {
-      const state = await getUserSecurityState(c.env.DB, user.id);
-      const unmet = unmetRequirements(teamReq, state);
-      if (unmet.length) {
-        return c.json(
-          {
-            error: "join_requirements_unmet",
-            unmet_requirements: unmet,
-          },
-          403,
-        );
-      }
-    }
+    if (unmet.length)
+      return c.json(
+        { error: "join_requirements_unmet", unmet_requirements: unmet },
+        403,
+      );
   }
 
   const claim = await c.env.DB.prepare(
@@ -1312,41 +1306,15 @@ app.post("/:id/members", async (c) => {
   const existing = await getMember(c.env.DB, id, target.id);
   if (existing) return c.json({ error: "already_member" }, 409);
 
-  // Both gates below are the *team's* policy about who may join it. A site
-  // admin adding someone is the site overruling that policy on purpose, so
-  // the checks are skipped rather than failed — and what was skipped is
-  // written into the audit entry, which is the part the team needs to see.
-  const bypassed: string[] = [];
-
-  // A restricted account may only ever belong inside its own origin team's
-  // subtree — being *added* by another member is not an exception, or the
-  // constraint would be one invitation away from meaningless.
-  const targetState = await getRestrictionState(c.env.DB, target.id);
-  if (targetState) {
-    const joinErr = await checkTeamJoinAllowed(c.env.DB, targetState, id);
-    if (joinErr) {
-      if (!eff.elevated) return c.json({ error: joinErr }, 403);
-      bypassed.push("restricted_account_scope");
-    }
-  }
-
-  const teamReq = await getEffectiveTeamRequirements(c.env.DB, id);
-  if (teamReq) {
-    const state = await getUserSecurityState(c.env.DB, target.id);
-    const unmet = unmetRequirements(teamReq, state);
-    if (unmet.length) {
-      if (!eff.elevated) {
-        return c.json(
-          {
-            error: "join_requirements_unmet_user",
-            unmet_requirements: unmet,
-          },
-          403,
-        );
-      }
-      bypassed.push(...unmet);
-    }
-  }
+  // A site admin overrides the team's join policy; what was skipped goes
+  // into the audit entry, which is the part the team needs to see.
+  const gate = await checkMemberAdd(c.env.DB, id, target.id, eff.elevated);
+  if (!gate.ok)
+    return c.json(
+      { error: gate.error, unmet_requirements: gate.unmet_requirements },
+      403,
+    );
+  const { bypassed } = gate;
 
   await c.env.DB.prepare(
     "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",

@@ -7,6 +7,7 @@
 // below; team owners can still opt their team in further than the floor.
 
 import { getConfigValue } from "./config";
+import { checkTeamJoinAllowed, getRestrictionState } from "./userCapabilities";
 
 export interface TeamRequirementsRow {
   require_2fa: number;
@@ -191,4 +192,54 @@ export async function teamsBlockingDowngrade(
     if (missing.length) offenders.push({ id: t.id, name: t.name, missing });
   }
   return offenders;
+}
+
+/** The team's requirements `userId` doesn't meet; empty when it sets none. */
+export async function unmetTeamRequirements(
+  db: D1Database,
+  teamId: string,
+  userId: string,
+): Promise<RequirementKey[]> {
+  const req = await getEffectiveTeamRequirements(db, teamId);
+  if (!req) return [];
+  return unmetRequirements(req, await getUserSecurityState(db, userId));
+}
+
+export type MemberAddCheck =
+  | { ok: false; error: string; unmet_requirements?: RequirementKey[] }
+  | { ok: true; bypassed: string[] };
+
+/**
+ * Whether `userId` may be added to the team by someone else: a restricted
+ * account only inside its origin team's subtree, and only someone who meets
+ * the team's security requirements. Both are the team's policy, which a site
+ * admin acting from outside (`elevated`) overrides on purpose; what was
+ * overridden comes back for the audit entry.
+ */
+export async function checkMemberAdd(
+  db: D1Database,
+  teamId: string,
+  userId: string,
+  elevated: boolean,
+): Promise<MemberAddCheck> {
+  const bypassed: string[] = [];
+  const state = await getRestrictionState(db, userId);
+  if (state) {
+    const joinErr = await checkTeamJoinAllowed(db, state, teamId);
+    if (joinErr) {
+      if (!elevated) return { ok: false, error: joinErr };
+      bypassed.push("restricted_account_scope");
+    }
+  }
+  const unmet = await unmetTeamRequirements(db, teamId, userId);
+  if (unmet.length) {
+    if (!elevated)
+      return {
+        ok: false,
+        error: "join_requirements_unmet_user",
+        unmet_requirements: unmet,
+      };
+    bypassed.push(...unmet);
+  }
+  return { ok: true, bypassed };
 }

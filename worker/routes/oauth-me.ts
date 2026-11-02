@@ -21,6 +21,7 @@ import { proxyImageUrl } from "../lib/proxyImage";
 import { readPage, likePattern } from "../lib/pagination";
 import { validateRedirectUriForRegistration } from "../lib/redirectUri";
 import {
+  guardCapability,
   hasLiveRestrictedAccounts,
   sanitizeRestrictedCapabilities,
 } from "../lib/userCapabilities";
@@ -40,6 +41,7 @@ import {
 } from "../lib/teams";
 import type { DomainRow, OAuthAppRow, Variables } from "../types";
 import { verifyDpopProof } from "../lib/dpop";
+import { checkMemberAdd } from "../lib/teamRequirements";
 import { REQUESTABLE_SCOPES } from "../lib/scopes";
 import { challengeStepUp, deriveAcr } from "../lib/stepUp";
 import { proxyUserAvatar } from "../lib/proxyImage";
@@ -318,6 +320,8 @@ app.get("/me/gpg-keys", async (c) => {
 app.post("/me/gpg-keys", async (c) => {
   const resolved = await resolveBearerToken(c, "gpg:write");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+  const capErr = await guardCapability(c.env.DB, resolved.userId, "gpg:manage");
+  if (capErr) return c.json({ error: capErr }, 403);
 
   const { parseArmoredPublicKey } = await import("../lib/gpg");
   const body = await c.req.json<{ public_key: string; name?: string }>();
@@ -432,6 +436,12 @@ app.delete("/me/social-connections/:id", async (c) => {
 app.post("/me/teams", async (c) => {
   const resolved = await resolveBearerToken(c, "teams:create");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+  const capErr = await guardCapability(
+    c.env.DB,
+    resolved.userId,
+    "team:create",
+  );
+  if (capErr) return c.json({ error: capErr }, 403);
 
   const body = await c.req.json<{
     name: string;
@@ -551,6 +561,12 @@ app.delete("/me/teams/:id", async (c) => {
 app.post("/me/domains", async (c) => {
   const resolved = await resolveBearerToken(c, "domains:write");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+  const capErr = await guardCapability(
+    c.env.DB,
+    resolved.userId,
+    "domain:create",
+  );
+  if (capErr) return c.json({ error: capErr }, 403);
 
   const body = await c.req.json<{ domain: string }>();
   if (!body.domain)
@@ -800,6 +816,8 @@ app.patch("/me/profile", async (c) => {
 app.post("/me/apps", async (c) => {
   const resolved = await resolveBearerToken(c, "apps:write");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+  const capErr = await guardCapability(c.env.DB, resolved.userId, "app:create");
+  if (capErr) return c.json({ error: capErr }, 403);
 
   const body = await c.req.json<{
     name: string;
@@ -1134,6 +1152,13 @@ app.post("/me/teams/:id/members", async (c) => {
     .first();
 
   if (alreadyMember) return c.json({ error: "already_member" }, 409);
+
+  const gate = await checkMemberAdd(c.env.DB, teamId, targetUser.id, false);
+  if (!gate.ok)
+    return c.json(
+      { error: gate.error, unmet_requirements: gate.unmet_requirements },
+      403,
+    );
 
   // Only owners can add admins
   const role =
@@ -1626,12 +1651,21 @@ app.post("/me/team/:teamId/members", async (c) => {
     return c.json({ error: "team_owner_required" }, 403);
 
   const now = Math.floor(Date.now() / 1000);
-  const existing = await c.env.DB.prepare(
-    "SELECT user_id FROM team_members WHERE team_id = ? AND user_id = ?",
+  const target = await c.env.DB.prepare(
+    "SELECT id FROM users WHERE id = ? AND is_active = 1 AND kind = 'user'",
   )
-    .bind(teamId, body.user_id)
+    .bind(body.user_id)
     .first();
-  if (existing) return c.json({ error: "already_member" }, 409);
+  if (!target) return c.json({ error: "user_not_found" }, 404);
+  if (await getMember(c.env.DB, teamId, body.user_id))
+    return c.json({ error: "already_member" }, 409);
+
+  const gate = await checkMemberAdd(c.env.DB, teamId, body.user_id, false);
+  if (!gate.ok)
+    return c.json(
+      { error: gate.error, unmet_requirements: gate.unmet_requirements },
+      403,
+    );
 
   await c.env.DB.prepare(
     "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
