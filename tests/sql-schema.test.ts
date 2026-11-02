@@ -3,22 +3,11 @@
 // that does not exist (or no longer exists) before they fail at runtime.
 
 import { describe, expect, test } from "bun:test";
-import { Database } from "bun:sqlite";
 import { readdirSync, readFileSync } from "fs";
 import { join, relative } from "path";
+import { migratedDatabase } from "./setup/d1";
 
 const root = join(import.meta.dir, "..");
-const migrationsDir = join(root, "worker/db/migrations");
-
-function migratedSchema(): Database {
-  const db = new Database(":memory:");
-  for (const file of readdirSync(migrationsDir)
-    .filter((f) => f.endsWith(".sql"))
-    .sort()) {
-    db.exec(readFileSync(join(migrationsDir, file), "utf8"));
-  }
-  return db;
-}
 
 function workerSources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -50,7 +39,7 @@ function staticStatements(): Array<{ where: string; sql: string }> {
 
 describe("worker SQL", () => {
   test("every static statement compiles against the migrated schema", () => {
-    const db = migratedSchema();
+    const db = migratedDatabase();
     const statements = staticStatements();
     expect(statements.length).toBeGreaterThan(500);
     const failures: string[] = [];

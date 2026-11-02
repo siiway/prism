@@ -4,81 +4,9 @@ import { Hono } from "hono";
 import oauthRoutes from "../worker/routes/oauth";
 import { signJWT } from "../worker/lib/jwt";
 import { SESSION_COOKIE } from "../worker/lib/cookies";
-
-class SqliteD1Statement {
-  private values: unknown[] = [];
-
-  constructor(
-    private readonly db: Database,
-    private readonly sql: string,
-  ) {}
-
-  bind(...values: unknown[]) {
-    this.values = values;
-    return this;
-  }
-
-  async run() {
-    const result = this.db.query(this.sql).run(...this.values);
-    return { success: true, meta: { changes: Number(result.changes) } };
-  }
-
-  async first<T>(columnName?: string) {
-    const row =
-      (this.db.query(this.sql).get(...this.values) as T | null) ?? null;
-    if (row === null || columnName === undefined) return row;
-    return Object(row)[columnName] ?? null;
-  }
-
-  async all<T>() {
-    return {
-      success: true,
-      results: this.db.query(this.sql).all(...this.values) as T[],
-    };
-  }
-
-  async raw<T>() {
-    return this.db.query(this.sql).values(...this.values) as T[];
-  }
-}
-
-class SqliteD1 {
-  constructor(private readonly db: Database) {}
-
-  prepare(sql: string) {
-    return new SqliteD1Statement(this.db, sql);
-  }
-}
-
-class MemoryKv {
-  private readonly values = new Map<string, string>();
-
-  constructor(initial: Record<string, string> = {}) {
-    for (const [key, value] of Object.entries(initial))
-      this.values.set(key, value);
-  }
-
-  async get(key: string) {
-    return this.values.get(key) ?? null;
-  }
-
-  async put(key: string, value: string) {
-    this.values.set(key, value);
-  }
-
-  async delete(key: string) {
-    this.values.delete(key);
-  }
-}
+import { d1, executionCtx, MemoryKv } from "./setup/d1";
 
 const jwtSecret = "test-jwt-secret-oauth";
-const executionCtx = {
-  waitUntil(promise: Promise<unknown>) {
-    void promise.catch(() => undefined);
-  },
-  passThroughOnException() {},
-} as ExecutionContext;
-
 let sqlite: Database;
 let db: D1Database;
 let app: Hono;
@@ -217,7 +145,7 @@ beforeEach(() => {
     );
   `);
 
-  db = new SqliteD1(sqlite) as unknown as D1Database;
+  db = d1(sqlite);
 
   app = new Hono();
   app.route("/oauth", oauthRoutes);

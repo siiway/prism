@@ -19,75 +19,7 @@ import {
 } from "../worker/lib/socialOAuthState";
 import { signJWT } from "../worker/lib/jwt";
 import connections from "../worker/routes/connections";
-
-class SqliteD1Statement {
-  private values: unknown[] = [];
-
-  constructor(
-    private readonly db: Database,
-    private readonly sql: string,
-  ) {}
-
-  bind(...values: unknown[]) {
-    this.values = values;
-    return this;
-  }
-
-  async run() {
-    const before = this.db.query("SELECT total_changes() AS n").get() as {
-      n: number;
-    };
-    const results = this.db.query(this.sql).all(...this.values);
-    const after = this.db.query("SELECT total_changes() AS n").get() as {
-      n: number;
-    };
-    return {
-      success: true,
-      results,
-      meta: { changes: after.n - before.n },
-    };
-  }
-
-  async first<T>() {
-    return (this.db.query(this.sql).get(...this.values) as T | null) ?? null;
-  }
-
-  async all<T>() {
-    return {
-      success: true,
-      results: this.db.query(this.sql).all(...this.values) as T[],
-    };
-  }
-}
-
-class SqliteD1 {
-  constructor(private readonly db: Database) {}
-
-  prepare(sql: string) {
-    return new SqliteD1Statement(this.db, sql);
-  }
-}
-
-class MemoryKv {
-  private readonly values = new Map<string, string>();
-
-  constructor(initial: Record<string, string> = {}) {
-    for (const [key, value] of Object.entries(initial))
-      this.values.set(key, value);
-  }
-
-  async get(key: string) {
-    return this.values.get(key) ?? null;
-  }
-
-  async put(key: string, value: string) {
-    this.values.set(key, value);
-  }
-
-  async delete(key: string) {
-    this.values.delete(key);
-  }
-}
+import { d1, executionCtx, MemoryKv } from "./setup/d1";
 
 const migration = await Bun.file(
   "worker/db/migrations/0071_social_oauth_states.sql",
@@ -98,13 +30,6 @@ const atomicSecurityMigration = await Bun.file(
 const state = "s".repeat(32);
 const now = Math.floor(Date.now() / 1000);
 const jwtSecret = "test-jwt-secret";
-const executionCtx = {
-  waitUntil(promise: Promise<unknown>) {
-    void promise.catch(() => undefined);
-  },
-  passThroughOnException() {},
-} as ExecutionContext;
-
 let sqlite: Database;
 let db: D1Database;
 
@@ -197,7 +122,7 @@ beforeEach(() => {
       ('source-1', 'github', 'github', 'GitHub', 'client-id', 'client-secret', 1, 0),
       ('source-2', 'telegram', 'telegram', 'Telegram', 'bot-id', 'bot-secret', 1, 0);
   `);
-  db = new SqliteD1(sqlite) as unknown as D1Database;
+  db = d1(sqlite);
 });
 
 afterEach(() => sqlite.close());

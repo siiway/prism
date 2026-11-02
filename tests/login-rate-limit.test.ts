@@ -8,50 +8,7 @@ import {
   type LoginRateLimitConfig,
 } from "../worker/lib/loginRateLimit";
 import { getConfig } from "../worker/lib/config";
-
-class SqliteD1Statement {
-  private values: unknown[] = [];
-
-  constructor(
-    private readonly db: Database,
-    private readonly sql: string,
-  ) {}
-
-  bind(...values: unknown[]) {
-    this.values = values;
-    return this;
-  }
-
-  async run() {
-    const before = this.db.query("SELECT total_changes() AS n").get() as {
-      n: number;
-    };
-    const results = this.db.query(this.sql).all(...this.values);
-    const after = this.db.query("SELECT total_changes() AS n").get() as {
-      n: number;
-    };
-    return { success: true, results, meta: { changes: after.n - before.n } };
-  }
-
-  async first<T>() {
-    return (this.db.query(this.sql).get(...this.values) as T | null) ?? null;
-  }
-
-  async all<T>() {
-    return {
-      success: true,
-      results: this.db.query(this.sql).all(...this.values) as T[],
-    };
-  }
-}
-
-class SqliteD1 {
-  constructor(private readonly db: Database) {}
-
-  prepare(sql: string) {
-    return new SqliteD1Statement(this.db, sql);
-  }
-}
+import { d1 } from "./setup/d1";
 
 const migration = await Bun.file(
   "worker/db/migrations/0073_atomic_security_state.sql",
@@ -78,7 +35,7 @@ beforeEach(() => {
   sqlite.exec(
     "CREATE TABLE site_config (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)",
   );
-  db = new SqliteD1(sqlite) as unknown as D1Database;
+  db = d1(sqlite);
 });
 
 afterEach(() => sqlite.close());

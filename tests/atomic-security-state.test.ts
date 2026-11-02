@@ -5,54 +5,7 @@ import { verifyDpopProof } from "../worker/lib/dpop";
 import { claimReplayValue } from "../worker/lib/securityState";
 import { rateLimit } from "../worker/middleware/rateLimit";
 import type { OAuthAppRow } from "../worker/types";
-
-class SqliteD1Statement {
-  private values: unknown[] = [];
-
-  constructor(
-    private readonly db: Database,
-    private readonly sql: string,
-  ) {}
-
-  bind(...values: unknown[]) {
-    this.values = values;
-    return this;
-  }
-
-  async run() {
-    const results = this.db.query(this.sql).all(...this.values);
-    const { changes } = this.db.query("SELECT changes() AS changes").get() as {
-      changes: number;
-    };
-    return { success: true, results, meta: { changes } };
-  }
-
-  async first<T>(columnName?: string) {
-    const row =
-      (this.db.query(this.sql).get(...this.values) as T | null) ?? null;
-    if (row === null || columnName === undefined) return row;
-    return Object(row)[columnName] ?? null;
-  }
-
-  async all<T>() {
-    return {
-      success: true,
-      results: this.db.query(this.sql).all(...this.values) as T[],
-    };
-  }
-
-  async raw<T>() {
-    return this.db.query(this.sql).values(...this.values) as T[];
-  }
-}
-
-class SqliteD1 {
-  constructor(private readonly db: Database) {}
-
-  prepare(sql: string) {
-    return new SqliteD1Statement(this.db, sql);
-  }
-}
+import { d1 } from "./setup/d1";
 
 const migration = await Bun.file(
   "worker/db/migrations/0073_atomic_security_state.sql",
@@ -66,7 +19,7 @@ let db: D1Database;
 beforeEach(() => {
   sqlite = new Database(":memory:");
   sqlite.exec(migration);
-  db = new SqliteD1(sqlite) as unknown as D1Database;
+  db = d1(sqlite);
 });
 
 function testEnv(database: D1Database): Env {
@@ -203,7 +156,7 @@ describe("atomic security state", () => {
 
   test("admits exactly the rate-limit allowance across concurrent instances", async () => {
     const limit = 7;
-    const otherInstance = new SqliteD1(sqlite) as unknown as D1Database;
+    const otherInstance = d1(sqlite);
     const results = await Promise.all(
       Array.from({ length: 40 }, (_, index) =>
         rateLimit(
@@ -223,10 +176,7 @@ describe("atomic security state", () => {
 
   test("claims an identical valid DPoP proof exactly once", async () => {
     const { pair, publicJwk } = await p256Key();
-    const envs = [
-      testEnv(db),
-      testEnv(new SqliteD1(sqlite) as unknown as D1Database),
-    ];
+    const envs = [testEnv(db), testEnv(d1(sqlite))];
     const proof = await es256Jwt(
       pair.privateKey,
       { typ: "dpop+jwt", alg: "ES256", jwk: publicJwk },
@@ -252,10 +202,7 @@ describe("atomic security state", () => {
 
   test("claims an identical valid private_key_jwt assertion exactly once", async () => {
     const { pair, publicJwk } = await p256Key();
-    const envs = [
-      testEnv(db),
-      testEnv(new SqliteD1(sqlite) as unknown as D1Database),
-    ];
+    const envs = [testEnv(db), testEnv(d1(sqlite))];
     const app = oauthApp(
       JSON.stringify({ keys: [{ ...publicJwk, kid: "signing-key" }] }),
     );

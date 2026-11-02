@@ -2,39 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
 import oauthRoutes from "../worker/routes/oauth";
-
-class SqliteD1Statement {
-  private values: unknown[] = [];
-
-  constructor(
-    private readonly db: Database,
-    private readonly sql: string,
-  ) {}
-
-  bind(...values: unknown[]) {
-    this.values = values;
-    return this;
-  }
-
-  async first<T>() {
-    return (this.db.query(this.sql).get(...this.values) as T | null) ?? null;
-  }
-}
-
-class SqliteD1 {
-  constructor(private readonly db: Database) {}
-
-  prepare(sql: string) {
-    return new SqliteD1Statement(this.db, sql);
-  }
-}
-
-const executionCtx = {
-  waitUntil(promise: Promise<unknown>) {
-    void promise.catch(() => undefined);
-  },
-  passThroughOnException() {},
-} as ExecutionContext;
+import { d1, executionCtx } from "./setup/d1";
 
 let sqlite: Database;
 let db: D1Database;
@@ -118,7 +86,7 @@ beforeEach(() => {
     [JSON.stringify(["openid", "app:glint:workbench"]), now + 3600, now],
   );
 
-  db = new SqliteD1(sqlite) as unknown as D1Database;
+  db = d1(sqlite);
   app = new Hono();
   app.route("/oauth", oauthRoutes);
 });
