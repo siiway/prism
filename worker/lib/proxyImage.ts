@@ -231,3 +231,21 @@ export async function sweepOrphanedImageProxyMappings(
 
   return { deleted: orphans.length };
 }
+
+/** A user row with its avatar routed through the image proxy, keeping the
+ *  original URL as `unproxied_avatar_url`. */
+export async function proxyUserAvatar<T extends Record<string, unknown>>(
+  baseUrl: string,
+  db: D1Database,
+  row: T,
+): Promise<T & { unproxied_avatar_url: unknown }> {
+  return {
+    ...row,
+    avatar_url: await proxyImageUrl(
+      baseUrl,
+      db,
+      row.avatar_url as string | null,
+    ),
+    unproxied_avatar_url: row.avatar_url,
+  };
+}

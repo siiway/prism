@@ -1,4 +1,7 @@
-import { PLATFORM_SCOPES } from "../../shared/scopes";
+import { APP_REQUESTABLE_SCOPES, PLATFORM_SCOPES } from "../../shared/scopes";
+
+/** Platform scopes an app may request in an authorization request. */
+export const REQUESTABLE_SCOPES = new Set(APP_REQUESTABLE_SCOPES);
 
 const VALID_PLATFORM_SCOPES = new Set(PLATFORM_SCOPES);
 
