@@ -1,682 +1,237 @@
 ---
 title: Teams
-description: Collaborate on OAuth apps and verified domains. Roles, invites, requirement gates, and team-as-user storage.
+description: Collaborate on OAuth apps and verified domains. Roles, invites, join requirements, sub-teams and member groups.
 ---
 
 # Teams
 
 A team is a shared owner for OAuth applications and verified domains. Members
-can manage the team's apps and domains in the same UI as their personal
-resources, while ownership of those resources cleanly survives any single
-member leaving the team.
+manage the team's apps and domains in the same UI as their personal ones, and
+ownership survives any single member leaving.
 
 ## Roles
 
-| Role       | Can manage members | Can edit team settings | Can manage apps/domains                | Can transfer ownership | Can disband |
-| ---------- | ------------------ | ---------------------- | -------------------------------------- | ---------------------- | ----------- |
-| `owner`    | yes                | yes                    | yes                                    | yes (to a co-owner)    | yes         |
-| `co-owner` | yes (except owner) | yes                    | yes                                    | no                     | no          |
-| `admin`    | yes (member only)  | no                     | yes                                    | no                     | no          |
-| `member`   | no                 | no                     | yes (read; write apps the team allows) | no                     | no          |
+| Role       | Manage members     | Edit team settings | Manage apps/domains                    | Transfer ownership  | Disband |
+| ---------- | ------------------ | ------------------ | -------------------------------------- | ------------------- | ------- |
+| `owner`    | yes                | yes                | yes                                    | yes (to a co-owner) | yes     |
+| `co-owner` | yes (except owner) | yes                | yes                                    | no                  | no      |
+| `admin`    | yes (members only) | no                 | yes                                    | no                  | no      |
+| `member`   | no                 | no                 | read; write apps if the team allows it | no                  | no      |
 
-There is exactly one owner per team. Transferring ownership is a single,
-audited operation; the previous owner is demoted to co-owner.
+Each team has one owner. Transferring ownership demotes the previous owner to
+co-owner.
 
-**Site administrators** can hold owner-level authority on every team — as the
-site, even on teams they belong to or own — and can override the team's own join
-requirements when adding people. Ordinary navigation uses their membership;
-opening a resource from the admin panel explicitly elevates it. A dismissible
-banner identifies either mode, and elevated actions land in both team and
-platform audit logs marked `site_admin: true`. An admin can **switch to normal
-view** to act as their own membership instead. See
-[Admin → Site-admin access to every team](admin.md#site-admin-access-to-every-team).
+Site administrators have owner-level authority on every team. See
+[Admin → Teams](admin.md#teams).
 
 ## Joining a team
 
-There are three ways to join:
+1. **Direct add** by an admin, co-owner or owner, from **Teams → \<team\> →
+   Members → Add member**.
+2. **Invite link** from **Members → Generate invite**, optionally locked to an
+   email address, limited in uses, and given an expiry. The link opens
+   `/teams/join/:token`, which shows the team and any unmet
+   [requirements](#join-requirements) before the person accepts.
+3. **API** — `POST /api/teams/join/:token`.
 
-1. **Direct add** by an admin/co-owner/owner from **Teams → \<team\> → Members → Add member**.
-   A site administrator can do this for any team, from **Admin → Teams → Add member**.
-2. **Invite link** generated from **Members → Generate invite**. Optional email
-   lock, max-uses cap, and expiry. Visiting `/teams/join/:token` shows the team
-   profile and any unmet [requirements](#join-requirements) before accepting.
-3. **API** — `POST /api/teams/join/:token` with a session bearer.
+Admins can edit, disable or revoke invites they created; co-owners and owners
+can manage all of the team's invites. A usage limit can't be lowered below the
+current number of uses. An invite can also carry one [member group](#member-groups),
+which is assigned when the person joins.
 
 ## Join requirements
 
-Team owners can require members to satisfy security factors before joining (and
-again whenever a member tries to drop below the bar). Admins can also enforce a
-**site floor** — a minimum every team is forced to require, regardless of the
-team-level flag.
+Team owners can require members to have:
 
-| Requirement                                | Team flag                      | Site floor key                        |
-| ------------------------------------------ | ------------------------------ | ------------------------------------- |
-| At least one TOTP authenticator or passkey | `teams.require_2fa`            | `default_team_require_2fa`            |
-| Verified primary email                     | `teams.require_verified_email` | `default_team_require_verified_email` |
+- at least one TOTP authenticator or passkey, and/or
+- a verified primary email.
 
-Effective requirement = team flag **OR** site floor. Owners can opt their team
-in further than the floor but cannot opt out below it. The team-settings UI
-greys out the toggle for any factor forced by the site.
+Site admins can set a minimum that applies to every team; owners can require
+more but never less. The team settings page greys out anything the site forces.
 
 ::: warning Retroactive enforcement
-Turning a requirement on flips it for every existing member immediately. Any
-member who hasn't enrolled the factor is locked out of team operations until
-they do. The `unmetRequirements` helper surfaces this on the join confirmation
-screen and on the user-side mutation paths (e.g. removing the last TOTP
-authenticator) so members get a clear error before data is changed. Notify
-members before flipping a requirement on a populated team.
+Turning a requirement on applies to existing members immediately. Anyone who
+hasn't enrolled is locked out of team operations until they do. Tell members
+before you turn one on.
 :::
 
-The user-facing join flow at `/teams/join/:token` shows the requirements first
-and links to **Profile → Security** / **Profile → Email** to satisfy them. The
-endpoint payload includes:
+## Sub-teams
 
-```json
-{
-  "team": { "id": "...", "name": "Acme", "avatar_url": "..." },
-  "requirements": {
-    "require_2fa": true,
-    "require_verified_email": true,
-    "forced_by_site": { "require_2fa": false, "require_verified_email": true }
-  },
-  "unmet": ["2fa"]
-}
-```
+A team can be created under another team to mirror an organisation's structure.
+Nesting is limited by the site's maximum depth (default 5), and teams can't be
+moved in a way that creates a cycle.
 
-## Sub-teams (nested teams)
+Two things pass down from a team to everything beneath it, and each can be
+turned off by the site admin:
 
-A team can be created **under another team** to mirror an organisation's
-internal structure. Sub-teams nest recursively up to the operator-configured
-`max_team_depth` (default **5 levels**); the server rejects cycles and
-over-depth re-parents on both create and move.
+- **Membership** — a member of a team has at least the same role on every
+  sub-team. A direct role on a sub-team stacks on top; the higher one wins.
+- **Verified domains** — a sub-team sees its ancestors' domains as read-only
+  entries, and a sub-domain of an ancestor's verified domain is verified
+  automatically.
 
-The entire feature is gated behind site config — operators can turn it off,
-tighten the depth cap, or toggle the inheritance semantics independently.
-See [Configurability](#configurability) below.
+Apps stay with the team that created them.
 
-### Inheritance — what flows down
+Manage sub-teams from **Teams → \<team\> → Sub-teams**. You need to be an admin
+or higher on the parent (direct or inherited) to create one. Moving a team to a
+new parent needs the owner of that team and an admin on the new parent. Deleting
+a team deletes every sub-team under it; each level's apps go to that level's
+own owner.
 
-Sub-teams are not isolated copies. Two things automatically flow from an
-ancestor to every team underneath it (each can be turned off independently
-in site config):
+### Member list visibility
 
-1. **Membership** (`inherit_team_membership`, default on) — a member of team
-   **A** has _at least_ their A-role on every descendant of A. A direct
-   membership on a sub-team stacks on top: the effective role is
-   `max(direct, inherited)`. Useful for "department head is an admin of
-   every project sub-team" without duplicating rows. When the toggle is off,
-   `getEffectiveMember` degenerates to a direct-only lookup and listings
-   stop expanding into sub-team subtrees.
-2. **Verified domains** (`inherit_team_domains`, default on) — every domain
-   owned by an ancestor is visible to sub-teams as a read-only entry tagged
-   with `inherited_from`. This lets a sub-team auto-verify a sub-domain when
-   the parent already owns the apex domain. When the toggle is off, both
-   the listing and the auto-verify lookup are restricted to the team's own
-   domains.
-
-Everything else stays independent. Apps belong to whatever team created them;
-the existing `share-to-team` flow still works for explicit copies.
-
-### Configurability
-
-All sub-team behavior is driven by site config (admin → **Settings → Sub-teams**). Each value is also surfaced on the unauthenticated
-`/api/site` payload so SDK clients can mirror the gates in their UIs.
-
-| Key                                   | Type | Default | Effect                                                                                                       |
-| ------------------------------------- | ---- | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `enable_sub_teams`                    | bool | `true`  | Master switch — when `false` the sub-team endpoints reject every request and the UI hides the Sub-teams tab. |
-| `max_team_depth`                      | int  | `5`     | Server-enforced cap on nesting depth. Validated 1–20 on the admin API.                                       |
-| `inherit_team_membership`             | bool | `true`  | Cascade member roles to descendants.                                                                         |
-| `inherit_team_domains`                | bool | `true`  | Surface ancestor-owned domains on sub-team listings + auto-verify.                                           |
-| `default_team_profile_show_sub_teams` | bool | `true`  | Public-profile default for the sub-team listing section.                                                     |
-
-The per-team override `profile_show_sub_teams` (column on `teams`) follows
-the same `null`/`0`/`1` convention as every other `profile_show_*` flag:
-`null` follows the site default, `0`/`1` override.
-
-### Managing sub-teams
-
-- **Create**: `POST /api/teams/:parentId/sub-teams` (admin+ on the parent —
-  direct _or_ inherited counts) or the equivalent **Teams → \<team\> →
-  Sub-teams → New sub-team** button. The creator becomes the new sub-team's
-  owner.
-- **List**: `GET /api/teams/:id/sub-teams` returns the immediate children with
-  member counts and the caller's effective role. Members of an ancestor team
-  can list.
-- **Move / re-parent**: `PATCH /api/teams/:id { "parent_team_id": "..." }`
-  with `null` to promote back to top-level. **Owner-only** on the team being
-  moved, and the caller must be admin+ on the new parent. The server walks
-  both subtrees to reject moves that would create a cycle or exceed
-  `MAX_TEAM_DEPTH`.
-- **Delete**: `DELETE /api/teams/:id` cascades through every descendant. For
-  each level (deepest first) `dissolveTeam` reassigns that level's apps to
-  that level's own owner — sub-team owners keep their apps, with the
-  deleting user as the final fallback. The DB schema has
-  `parent_team_id REFERENCES teams(id) ON DELETE CASCADE` as a belt to the
-  application-level braces.
-
-### Inherited memberships in listings
-
-- `GET /api/teams` (session) and `GET /api/oauth/me/teams` both expand each
-  direct membership to its full subtree. Entries carry an `inherited_from`
-  ancestor id (or `null` for direct memberships). The session listing is
-  paginated (`?page=`, `?limit=`, `?q=` name search) and returns `total`.
-- `GET /api/teams/:id` returns:
-  - `team.ancestors` — `[{id, name, avatar_url}]` from immediate parent to
-    root, useful for breadcrumbs.
-  - `team.sub_teams` — the **first page** of immediate children (20) with
-    member counts, plus `team.sub_team_count` for all of them. Page through
-    `GET /api/teams/:id/sub-teams` for the rest.
-  - `team.my_role` — the _effective_ role; `team.inherited_from` carries the
-    ancestor id when the role came from inheritance.
-  - `members` — the **first page** of direct members (50), plus
-    `member_count` for the whole team. Page and filter through
-    `GET /api/teams/:id/members`; the detail response carries page one so the
-    initial render needs a single request. Inherited members are not listed —
-    they are visible by inspecting ancestor teams, and surfacing them here
-    would multiply listings.
-- The other team-scoped lists are paginated too: `GET /api/teams/:id/apps`,
-  `GET /api/teams/:id/domains`, `GET /api/teams/:id/invites` and
-  `GET /api/teams/:id/sub-teams` all accept `?page=`, `?limit=` and `?q=`
-  (name/domain/email search) and return a `total` alongside the page. The
-  teams and apps lists on the dashboard are paginated the same way.
-
-### Member list visibility (Restricted member list)
-
-Team owners and co-owners can enable **Member list visibility** under
-**Teams → \<team\> → Settings → Member list visibility**
-(`restrict_member_list_for_members`).
-
-When enabled, viewers whose effective role is `member` can only see owners,
-co-owners, admins, and their own direct membership in team member lists and
-roster APIs (`GET /api/teams/:id`, `GET /api/teams/:id/members`, and OAuth
-`GET /api/oauth/me/team/:teamId/members`). Looking up hidden members via
-`GET /api/oauth/me/team/:teamId/members/:userId/profile` returns `404`. The
-public team profile also omits regular members when this setting is active.
+Under **Settings → Member list visibility**, owners and co-owners can limit what
+plain members see: only owners, co-owners, admins and themselves. This also
+applies to the public team profile and to apps reading the member list.
 
 ## Member groups
 
-Member groups are team-defined labels you attach to members — a member can hold
-several at once. They are **pure labels**: they never enter the role ladder, so
-nothing about what anyone can do inside Prism changes when you hand one out.
-Their entire purpose is to ride along with member information to the apps your
-team connects, so those apps can authorize on them.
+Member groups are labels you attach to members, and a member can hold several.
+They never change what anyone can do in Prism. They ride along with member
+information to the apps your team connects, so those apps can make decisions on
+them.
 
-Off by default. Only the team owner can turn them on, under
-**Teams → \<team\> → Settings → Member groups**.
+They're off by default; the team owner turns them on under **Settings → Member
+groups**.
 
-### Groups vs. sub-teams
+### Groups or sub-teams?
 
-Both can drive group-based authorization downstream, so it's worth being
-explicit about which one fits:
-
-|                                     | Sub-team                          | Member group                     |
-| ----------------------------------- | --------------------------------- | -------------------------------- |
-| Independent entity (own page, id)   | yes                               | no — a label inside one team     |
-| Can own apps and domains            | yes                               | no                               |
-| Cardinality                         | tree, depth-capped                | flat, many-per-member            |
-| Affects Prism's own authorization   | **yes** — roles cascade with it   | **no**                           |
-| Shape in claims                     | its own `in_team_<sub-team-id>`   | `groups_in_team_<team-id>` array |
-| Can be granted to an app on its own | yes, it has its own `team:` scope | no, rides with member info       |
-| Membership vs. the parent team      | may be a different set of people  | always a subset of the members   |
-
-Split **organisation and resources** with a sub-team; label **attributes of the
-same set of people** with a group. Using sub-teams as labels is the trap worth
-naming: every "label" becomes another team id in the claims, and because
-membership cascades downward the person you only meant to tag ends up holding a
-role there too.
+Use a **sub-team** for a separate unit with its own page, apps, domains and
+roles. Use a **group** to label an attribute of the same set of people (say,
+`oncall`). Using sub-teams as labels adds a team to the claims for every label,
+and because membership passes down, the person you only meant to tag also gets a
+role there.
 
 ### Defining and assigning
 
-Definitions live under **Teams → \<team\> → Groups**. Each has:
+Define groups under **Teams → \<team\> → Groups**:
 
-| Field       | Notes                                                                                                       |
-| ----------- | ----------------------------------------------------------------------------------------------------------- |
-| `slug`      | The stable identifier apps authorize on. **Immutable** — renaming would silently break downstream policies. |
-| `name`      | Display label, freely editable.                                                                             |
-| description | Optional, for humans.                                                                                       |
-| colour      | Optional `#rrggbb`, used for the badge.                                                                     |
+| Field       | Notes                                                             |
+| ----------- | ----------------------------------------------------------------- |
+| Slug        | What apps check. Can't be changed later, so policies don't break. |
+| Name        | Display label; editable.                                          |
+| Description | Optional.                                                         |
+| Colour      | Optional `#rrggbb` for the badge.                                 |
 
-Limits: 50 groups per team, 20 groups per member, slug ≤ 32 characters of
-lowercase alphanumerics and single hyphens.
+Limits: 50 groups per team, 20 per member, slugs up to 32 lowercase letters,
+digits and single hyphens.
 
-Assign from the members table — the tag button on a member row. The dialog
-sends the full desired set and the server reconciles it, permission-checking
-only the groups that actually change.
+Assign groups from the tag button on a member row. Owners and co-owners can
+always define and assign. For admins, the owner chooses whether they can
+**manage** groups (default off) and **assign** them (default on), and can
+reserve a particular group for owners. Only the owner can change these settings.
 
-### Who can manage and assign
+Groups pass down to sub-teams the same way roles do, and are managed at the team
+they come from.
 
-Owners and co-owners always can. What **admins** may do is configurable by the
-owner, resolved through a chain where each level only contributes the keys it
-explicitly sets:
+Switching groups off hides them rather than erasing them: connected apps stop
+seeing them from the next token refresh, and turning them back on restores every
+assignment. Removing a group, or turning the feature off, only ever makes
+downstream access stricter.
 
-```
-per-group admin_assignable   →  team role_permissions  →  site default  →  built-in
-(assignment only)               (Groups → Admin           (default_team_    (manage: off
-                                 permissions)              role_permissions)  assign: on)
-```
+### Where apps see them
 
-| Capability      | What it covers                      | Built-in default |
-| --------------- | ----------------------------------- | ---------------- |
-| `groups:manage` | Create, edit and delete definitions | off              |
-| `groups:assign` | Attach and detach groups on members | on               |
-
-The per-group `admin_assignable` override exists so a team that generally lets
-admins hand out labels can still reserve a sensitive one for owners.
-
-::: warning The switches themselves are owner-only
-Toggling the feature, editing `role_permissions`, and setting a per-group
-`admin_assignable` are all restricted to the owner — deliberately, and not
-merely to "admin and above". A capability set that the constrained role could
-edit would be no constraint at all: an admin would simply grant themselves
-whatever the owner withheld.
-:::
-
-### Inheritance
-
-Groups flow down the sub-team tree the same way roles do: a member of an
-ancestor team carries that team's labels on every descendant, flagged with
-`inherited_from` so the UI can render them read-only. Inherited labels are
-managed at the team they come from.
-
-This rides on the same `inherit_team_membership` switch as role inheritance —
-when ancestors and descendants are decoupled for membership, labels stop
-crossing that boundary too.
-
-### Turning them off
-
-Switching the feature off **hides, it does not erase**. Definitions and
-assignments stay in the database; every read surface simply stops emitting
-them, so connected apps see no groups from the next token refresh onward.
-Turning it back on restores every assignment exactly as it was.
-
-The same holds along the inheritance chain: an ancestor with groups switched
-off contributes nothing to its descendants, so a disabled team's labels can't
-leak out through its children.
-
-::: tip Downstream effect
-Because apps authorize on these labels, disabling the feature (or deleting a
-group) makes downstream authorization **stricter**, not looser — the affected
-users simply stop presenting the label.
-:::
-
-### Where they show up
-
-| Surface                              | Shape                                                                      |
-| ------------------------------------ | -------------------------------------------------------------------------- |
-| `GET /api/teams/:id` (session)       | `members[].groups` — `{slug, name, color, inherited_from}`                 |
-| `GET /api/oauth/me/team/:id/members` | same, under `team:<id>:member:read`                                        |
-| `.../members/:userId/profile`        | same, under `team:<id>:member:profile:read`                                |
-| ID token / userinfo                  | `groups_in_team_<id>` — array of slugs; `teams[].groups` via `oidc_fields` |
-
-No new OAuth scope: groups ride along with the member information an app is
-already trusted to read. An app already holding `team:<id>:member:read` starts
-seeing groups on its next call without re-consent — the trade-off accepted
-because these are team-authored labels, not personal data. Management and
-assignment are dashboard-only; `team:<id>:member:write` does **not** grant them.
-
-Team `role_permissions` never leave the dashboard API — downstream apps see
-which labels a member holds, not how the team configured who may hand them out.
+Groups appear on team member information the app is already allowed to read
+(`team:<id>:member:read`, `team:<id>:member:profile:read`), and as a
+`groups_in_team_<id>` array of slugs in ID tokens. No extra scope or consent is
+needed; management is dashboard-only.
 
 ## Invite-link registration
 
 Normally a team invite only admits people who already have a Prism account. A
-team the site administrator has authorised can instead hand out links that
-**create** accounts, from a standalone page at `/join/<team-id>`.
+team that a site admin has authorised can also hand out links that create
+accounts, from a page at `/join/<team-id>`. The accounts are **restricted** (see
+below), so a large single-purpose group can sign in without each person being
+able to create teams, apps and domains.
 
-Accounts made this way are **restricted**: every resource-creating feature is
-off unless the site administrator grants it. The point is to let a large,
-single-purpose population sign in without each of them also becoming able to
-create teams, applications and verified domains.
+To use it, a site admin grants the team the ability on its **Moderation** tab.
+A team owner can't grant it to themselves. Then tick **Usable for creating new
+accounts** when generating an invite. Such an invite:
 
-::: tip What this does and doesn't save
-Restricting features saves rows and abuse surface. It does **not** reduce
-authentication traffic — a user who only ever signs in to one application
-still goes through the full `/authorize` → `/token` → refresh cycle.
-:::
+- must have a finite usage limit, below the site's cap (default 1000);
+- always grants the `member` role;
+- is rate-limited per hour (default 200), on top of the usual per-IP limit
+  and captcha.
 
-### Who can turn it on
+A registrant's account starts pending. It can manage its own security (to
+enrol 2FA or verify an email), but can't sign in to any application until it
+satisfies the team's requirements and joins. Unfinished registrations are
+deleted after 72 hours by default. A seat is used when the account is created,
+so an abandoned registration still counts against the limit.
 
-One switch: a **per-team grant** from a site administrator, on the team's
-**Moderation** tab. The team owner cannot grant it to themselves; otherwise
-every team owner on the instance would be a registrar. Once granted, the
-team's admins can create registration invites.
-
-Closing sign-up (`allow_registration` off) stops it too: while sign-up is
-closed, no invite creates accounts. Invite-only sign-up doesn't affect it —
-a team invite is an invite.
-
-### Creating a registration invite
-
-Tick **Usable for creating new accounts** when generating an invite. Such an
-invite:
-
-- **must have a finite usage limit**, capped by
-  `team_invite_registration_max_uses_cap`. The ordinary default of `0` means
-  _unlimited_, which is harmless for admission but would mean unbounded
-  registration here.
-- **always grants `member`**. Someone arriving through a link should never
-  begin able to manage the team.
-
-Every team invite can also carry one optional **member group**. The creator may
-select only groups they are allowed to assign. The groups are attached when a
-new member accepts the invite and also when invite-link registration completes.
-An existing **direct** member may accept a group-bearing invite to add those
-group when the invite explicitly allows existing members; an invite without
-that option still reports that they are already a member.
-
-The invite dialog accepts either a relative duration (hours, days, months, or
-years) or an absolute local date and time, including seconds. The browser
-converts either form to an absolute Unix timestamp and sends `expires_at`. The
-server requires that timestamp to be in the future and no more than 10 years
-away.
-
-The link points at `/join/<team-id>?invite=<code>`, not the ordinary
-`/teams/join/<token>` route.
-
-### Managing invitations
-
-Team admins can edit, enable, disable, or revoke invitations they created.
-Co-owners and owners can manage every invitation in the team. Editing can change
-the email lock, usage limit, and expiry, but never the link, creator, or recorded
-uses; a usage limit cannot be lowered below its current uses. Disabling an invite
-blocks both joining and invite-link registration until it is enabled again.
-
-New invitations retain their plaintext link so authorized managers can copy it
-after the creation dialog closes. Older HMAC-hashed invitations are shown as
-`(hashed)` and cannot be copied because their original credential cannot be
-recovered.
-
-### What a registrant goes through
-
-```
-/join/<team-id>  →  account created (pending)  →  requirements  →  member
-```
-
-The account exists before its requirements are met, because everything that
-satisfies a requirement — enrolling 2FA, verifying an address — needs an
-authenticated session. This mirrors what ordinary registration already does
-when the site requires email verification.
-
-While pending, the account can do nothing but manage its own security, and
-**cannot sign in to any application**. A pending account holds no membership,
-so its token would carry no `in_team_*` or `groups_in_team_*` claims — an app
-receiving one would read it as "not a member" and likely create a local record
-it then has to reconcile.
-
-Pass `?continue=<url>` (same-origin only) to send the user somewhere specific
-once they finish.
-
-Abandoned registrations are deleted after `restricted_pending_ttl_hours`.
-
-### Email
-
-If the site administrator exempts this team from email verification, the
-registration form does not ask for an address at all and the account gets a
-synthesised `@users.invalid` placeholder.
-
-That is deliberate. Storing an _unverified real_ address instead would be
-worse: `users.email` is `UNIQUE`, so one typo permanently locks the true owner
-of that address out of the instance — and the person who typed it can never
-verify it, so their own account can never be converted either.
-
-The holder can bind a real address whenever they like, and must before
-converting.
-
-### Anti-abuse
-
-Four defences, none of them exemptible:
-
-| Defence                        | Bounds                                                  |
-| ------------------------------ | ------------------------------------------------------- |
-| Per-IP rate limit              | 5 registrations per 5 minutes, as ordinary registration |
-| Captcha / proof-of-work        | Bot resistance                                          |
-| Per-invite rate limit          | `team_invite_registration_rate_per_hour` — the burst    |
-| `max_uses`, claimed atomically | **The total.** The only hard bound                      |
-
-The per-invite limit matters because per-IP limiting does nothing against a
-link shared to thousands of people who each register once from their own
-address.
-
-A seat is claimed when the account is created, not when the join completes. An
-abandoned registration burns one — accepted, because deferring the claim would
-make the check racy and would also strand people who enrolled 2FA only to be
-told the invite had filled up.
+If the site admin exempts the team from email verification, the form doesn't ask
+for an address. The account gets a placeholder, and the person must add a real
+one before converting to a full account.
 
 ## Restricted accounts
 
-### What is restricted
+Accounts created through invite links are restricted. By default they **can't**
+create teams or apps, verify domains, make personal access tokens or GPG keys,
+publish a public profile, or convert to a full account. Team features and their
+own account security always work. Site admins can lift individual capabilities
+(see [Configuration](configuration.md#invite-link-registration)).
 
-| Capability                                    | Default       |
-| --------------------------------------------- | ------------- |
-| Create teams                                  | off           |
-| Create applications                           | off           |
-| Verify domains                                | off           |
-| Personal access tokens                        | off           |
-| Public profile                                | off           |
-| GPG keys                                      | off           |
-| Convert to a full account                     | off           |
-| Team features, and their own account security | **always on** |
+A restricted account is confined to its **origin team and that team's
+sub-teams**: it can only join those, and can only sign in to apps owned by them.
+Joining another team doesn't widen this.
 
-Site administrators lift individual capabilities through
-`restricted_user_capabilities`. Defaults deny, so a feature added later is
-automatically off for these accounts without anyone having to remember.
+**Converting** — where allowed, the person converts from **Security → Account
+type**. It needs a verified real email, keeps their team membership, lifts all
+restrictions, and can't be undone. The site default can be overridden per team
+on its Moderation tab.
 
-Account security is never gated — gating it would deadlock registration, since
-a pending account has to enrol 2FA to finish joining.
-
-### Scope
-
-A restricted account is confined to its **origin team's subtree**:
-
-- it may join that team and its descendants, and no others — being _added_ by
-  an admin is not an exception;
-- it may sign in only to applications owned by that team or its descendants.
-
-The anchor is the origin team, never the account's current memberships.
-Anchoring on memberships would be self-defeating: join a second team and its
-whole subtree opens up.
-
-Application scope is checked at `/authorize` only, not on refresh — otherwise
-transferring an app out of the team would silently invalidate live tokens.
-
-### Converting to a full account
-
-Where enabled, the holder converts from **Security → Account type**. The site
-default is `self:convert`; a site administrator can override it for one team
-on the team's **Moderation** tab (allow, don't allow, or follow the site
-default). Conversion:
-
-- unlocks every ordinary feature,
-- keeps their team membership,
-- requires a real, verified address first — the deferred email cost comes due
-  here rather than at registration, so only people who actually want the rest
-  of Prism pay it,
-- is **one-way**,
-- and takes the account out of the set a dissolution would delete.
-
-`origin_team_id` is kept afterwards for traceability but stops constraining
-anything.
-
-### Dissolution
-
-Dissolving a team that minted accounts **deletes those accounts**. Because of
-that:
-
-- only a site administrator can do it, through a staged flow;
-- all four ordinary dissolution routes refuse — owner delete, last-member
-  leave, the OAuth `teams:delete` scope, and the plain admin delete;
-- only accounts whose `origin_team_id` is that team are deleted. Members who
-  joined with their own Prism accounts, and anyone who converted, are
-  untouched;
-- stage one deactivates every affected account at once; stage two deletes them
-  in batches after `restricted_dissolve_grace_hours`, leaving a window to
-  cancel.
-
-The registration page states this before anyone signs up.
-
-::: warning Protection is keyed on accounts, not on the switch
-A team is protected while it still has live restricted accounts — _not_ while
-its invite registration grant is on. Otherwise the grant could be turned off
-and the team dissolved by its owner with thousands of accounts still anchored
-to it. Protection lapses by itself once those accounts are gone.
-:::
-
-A team containing restricted members also cannot be moved out of its origin
-team's subtree, and ownership cannot be transferred to a restricted account.
+**Dissolving** a team that created accounts deletes those accounts, so only a
+site admin can do it, through a staged flow with a grace period (see
+[Admin → Invite-link registration](admin.md#invite-link-registration)). The team
+is protected from ordinary deletion for as long as it has live restricted
+accounts, even if the grant is switched off. Accounts that converted, and
+members who joined with their own accounts, are not deleted.
 
 ## Team-owned apps and domains
 
-OAuth apps can be created directly under a team (**Teams → \<team\> → Apps → New**)
-or transferred in from a member's personal apps (**Apps → \<app\> → Settings →
-Transfer**). Personal apps that are transferred in are reassigned in-place —
-the `client_id` and `client_secret` remain valid, so partner integrations don't
-break.
+Create an app under a team from **Teams → \<team\> → Apps → New**, or move one in
+from your personal apps (**Apps → \<app\> → Settings → Transfer**). A transferred
+app keeps its client ID and secret, so integrations don't break.
 
-Only effective team administrators (or stronger roles) can create an app or
-rotate its secret. A generated `client_secret` is shown once in that create or
-rotation response; app reads available to other team members expose only
-`has_client_secret`. With `SECRETS_KEY` configured, team app secrets are
-encrypted at rest. After upgrading a legacy deployment, use **Admin → Maintenance
-→ Danger zone → Migrate secrets to Secrets Store** and rotate existing team app
-secrets, because encryption cannot revoke copies
-that may already have been disclosed.
+Only team admins or higher can create an app or rotate its secret. The secret is
+shown once, when it's created or rotated.
 
-Domains work the same way. A domain verified on a personal account can be
-shared with a team (`POST /api/teams/:id/domains/:domainId/share-to-team`) and
-later moved back (`/share-to-personal`), or fully transferred (`/to-personal`)
-to remove the team's edit access.
-
-## Team-as-user storage
-
-Every team has a synthetic `users` row with `kind = 'team'` and `id` matching
-`teams.id`. This row exists only so `oauth_apps.owner_id` joins to a single
-table for both personal and team apps — it has no password, no sessions, no
-social connections, and cannot log in. The synthetic email and username
-(`team-<id>@teams.invalid` / `team:<id>`) are colon-prefixed to guarantee they
-can never collide with a real registration.
-
-When a team is disbanded, `dissolveTeam` first reassigns any remaining
-team-owned apps to the team's owner (or, if there's no owner row, to the
-deleting admin). This survives the cascading delete on `oauth_apps.owner_id`.
+A personal domain can be shared with a team and later moved back, or fully
+transferred to the team.
 
 ## Public team profiles
 
-Like users, teams are private by default. The team owner (or admin) explicitly
-opts the team in at **Teams → \<team\> → Settings → Public profile**, then picks
-which sections to expose. Site-wide defaults and the master `enable_public_profiles`
-kill switch live in [Configuration](configuration.md#public-profiles). See
-[Public Profiles](public-profile.md) for the full per-section breakdown.
-
-A team's public page links to the owner's `/u/<username>` page only when _both_
-profiles are public. If the owner's profile is private, the team page shows the
-display name without a link.
+Teams are private by default. The owner or an admin opts the team in at
+**Settings → Public profile** and picks which sections to show. See
+[Public Profiles](public-profile.md).
 
 ## OAuth scopes
 
-Three scope families touch teams, with very different blast radius. The full
-table with consent rules and worked examples is in
-[OAuth → Team scopes — three tiers](oauth.md#team-scopes-three-tiers); the
-short version:
+Three scope families cover teams. Pick the narrowest one that fits.
 
-### Aggregate `teams:*`
+| Family        | Example          | Reach                                  | Who can grant it                         |
+| ------------- | ---------------- | -------------------------------------- | ---------------------------------------- |
+| `teams:*`     | `teams:read`     | Every team the user belongs to         | The user                                 |
+| `team:*`      | `team:read`      | One team, chosen on the consent screen | An owner, co-owner or admin of that team |
+| `site:team:*` | `site:team:read` | Every team on the instance             | A site admin, after a 2FA confirmation   |
 
-Acts on **every team the user is a member of** at once. One consent covers all
-of them. Endpoints under `/api/oauth/me/teams[/...]`.
+- **`teams:*`** (`read`, `write`, `create`, `delete`) suits workspace pickers,
+  membership sync, and ID-token claims for tools like Cloudflare Access.
+- **`team:*`** (`read`, `write`, `delete`, `member:read`, `member:write`,
+  `member:profile:read`) is bound to the team the user picks, so the token can
+  only touch that team. `team:delete` needs an owner or co-owner, and
+  `team:member:write` can't promote anyone beyond what the granting user could.
+- **`site:team:*`** is for site-administration tools only. See
+  [OAuth → Site scopes](oauth.md#site-scopes-admin-only).
 
-| Scope          | Grants                                                               |
-| -------------- | -------------------------------------------------------------------- |
-| `teams:read`   | List team memberships and roles                                      |
-| `teams:create` | Create a new team                                                    |
-| `teams:write`  | Update team settings; add and remove members across the user's teams |
-| `teams:delete` | Delete a team (owner only — checked at request time)                 |
+Don't request `teams:*` and `team:*` together; the consent screen then shows both
+an all-teams notice and a team picker, which confuses users.
 
-Right shape for: "what teams is this user in?" use cases — workspace pickers,
-syncing membership lists, OIDC IdP claims for Cloudflare Access policies.
+The ID token carries `in_team_<id>`, `role_in_team_<id>` and
+`groups_in_team_<id>` claims for use in policies. See
+[OAuth → ID token](oauth.md#id-token) and the
+[Cloudflare Access integration](oauth.md#cloudflare-access).
 
-### Single-team `team:*`
+## API
 
-Acts on **exactly one team**, picked by the user at consent time. Prism
-rewrites `team:read` → `team:<team-id>:read` (via `bindTeamScopes()`) before
-issuing the token, so the token can only ever touch that team. Endpoints
-under `/api/oauth/me/team/:teamId/...`.
-
-| Requested                  | Bound form                      | Grants                                         |
-| -------------------------- | ------------------------------- | ---------------------------------------------- |
-| `team:read`                | `team:<id>:read`                | Read the team's settings                       |
-| `team:write`               | `team:<id>:write`               | Update the team's settings                     |
-| `team:delete`              | `team:<id>:delete`              | Disband the team                               |
-| `team:member:read`         | `team:<id>:member:read`         | List members and their roles                   |
-| `team:member:write`        | `team:<id>:member:write`        | Add/remove members and change roles            |
-| `team:member:profile:read` | `team:<id>:member:profile:read` | Read a member's profile through the team scope |
-
-Two extra rules at consent time (see `worker/routes/oauth.ts:830-859`):
-
-- The user must be `owner`, `co-owner`, or `admin` of the chosen team.
-- `team:delete` additionally requires `owner` or `co-owner` — admins can grant
-  reads/writes but only the people who could actually disband the team can
-  grant deletion.
-
-`team:member:write` also can't escalate beyond what the granting user could do
-themselves: an admin granting it cannot give the app the ability to promote
-past `admin` — the cap is enforced on every member mutation.
-
-Each grant is audited in `team_scope_grants` (team id + permissions),
-independent of the OAuth consent record.
-
-Right shape for: an integration scoped to a single team — a deploy bot for one
-workspace, a chatbot for one team's channel, etc.
-
-### Cross-instance `site:team:*`
-
-Cross-team admin access without a per-team consent. Granting requires the
-user to be a site admin and goes through the
-[site-scope confirmation flow](oauth.md#site-scopes-admin-only) (2FA + the
-exact phrase `grant site access`). Use only for site-administration tools.
-
-### `oidc_fields` claim
-
-The same `oidc_fields` mechanism that surfaces user role in ID tokens also
-emits per-team claims when an app declares them — useful for Cloudflare Access
-policies that depend on team membership. The `teams:read` scope unlocks the
-flat `teams` claim plus the `in_team_<id>` / `role_in_team_<id>` per-team
-markers, and `groups_in_team_<id>` for teams using
-[member groups](#member-groups). See the
-[Cloudflare Access integration](oauth.md#cloudflare-access) for details.
-
-### Picking a tier
-
-- Use **`teams:*`** when the integration cares about the user's whole team
-  graph (membership sync, claim mapping).
-- Use **`team:*`** when the integration scopes to one workspace at a time —
-  the smaller blast radius is worth the team-id picker on the consent screen.
-- Don't request `teams:*` and `team:*` together: you'll get the union, but the
-  consent UX shows both an all-teams notice and a team-id picker on the same
-  screen, which confuses users.
-- Reserve **`site:team:*`** for site-administration tooling — anything granted
-  there bypasses individual team owners' consent.
-
-## Endpoint summary
-
-See [API → Teams](api.md#teams) for the full table. The most-used endpoints:
-
-```
-GET    /api/teams                            list memberships (expanded with inherited)
-POST   /api/teams                            create (optionally with parent_team_id; admins may set owner_username)
-PATCH  /api/teams/:id                        update settings, requirements, parent_team_id
-GET    /api/teams/:id                        team + ancestors + sub_teams summary
-GET    /api/teams/:id/sub-teams              list immediate children
-POST   /api/teams/:id/sub-teams              create a sub-team under :id
-GET    /api/teams/:id/members                list members (direct only) — paginated, ?q= and ?group=
-POST   /api/teams/:id/members                add by username/id
-PATCH  /api/teams/:id/members/:userId        change role (site admins may set role=owner, or demote the owner)
-DELETE /api/teams/:id/members/:userId        remove (or leave with self)
-GET    /api/teams/:id/groups                 list group definitions + capabilities
-POST   /api/teams/:id/groups                 create a group
-PATCH  /api/teams/:id/groups/:groupId        rename / recolour (slug immutable)
-DELETE /api/teams/:id/groups/:groupId        delete (unassigns everywhere)
-PUT    /api/teams/:id/members/:userId/groups replace a member's group set
-POST   /api/teams/:id/transfer-ownership     transfer to another member (owner, or any site admin)
-GET    /api/teams/join/:token                preview an invite (auth optional)
-POST   /api/teams/join/:token                accept
-```
+See [API → Teams](api.md#teams) for the endpoints.

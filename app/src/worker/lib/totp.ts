@@ -1,0 +1,250 @@
+// TOTP implementation (RFC 6238 / RFC 4226) using Web Crypto
+
+import { bytesToHex, sha256Hex } from "./crypto";
+import { decryptSecret } from "./secretCrypto";
+
+const BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+export function generateTotpSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
+  let result = "";
+  for (let i = 0; i < bytes.length; i += 5) {
+    const b0 = bytes[i] ?? 0;
+    const b1 = bytes[i + 1] ?? 0;
+    const b2 = bytes[i + 2] ?? 0;
+    const b3 = bytes[i + 3] ?? 0;
+    const b4 = bytes[i + 4] ?? 0;
+    result += BASE32_CHARS[b0 >> 3];
+    result += BASE32_CHARS[((b0 & 0x07) << 2) | (b1 >> 6)];
+    result += BASE32_CHARS[(b1 >> 1) & 0x1f];
+    result += BASE32_CHARS[((b1 & 0x01) << 4) | (b2 >> 4)];
+    result += BASE32_CHARS[((b2 & 0x0f) << 1) | (b3 >> 7)];
+    result += BASE32_CHARS[(b3 >> 2) & 0x1f];
+    result += BASE32_CHARS[((b3 & 0x03) << 3) | (b4 >> 5)];
+    result += BASE32_CHARS[b4 & 0x1f];
+  }
+  return result;
+}
+
+function base32ToBytes(secret: string): Uint8Array<ArrayBuffer> {
+  const clean = secret.toUpperCase().replace(/[^A-Z2-7]/g, "");
+  const bytes = new Uint8Array(Math.floor((clean.length * 5) / 8));
+  let bits = 0;
+  let bitsCount = 0;
+  let byteIndex = 0;
+  for (const ch of clean) {
+    const val = BASE32_CHARS.indexOf(ch);
+    if (val === -1) continue;
+    bits = (bits << 5) | val;
+    bitsCount += 5;
+    if (bitsCount >= 8) {
+      bytes[byteIndex++] = (bits >> (bitsCount - 8)) & 0xff;
+      bitsCount -= 8;
+    }
+  }
+  return bytes;
+}
+
+async function hotp(
+  secret: Uint8Array<ArrayBuffer>,
+  counter: bigint,
+): Promise<number> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    secret,
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+
+  const counterBuf = new ArrayBuffer(8);
+  const view = new DataView(counterBuf);
+  // Write 64-bit big-endian counter
+  view.setUint32(0, Number(counter >> 32n), false);
+  view.setUint32(4, Number(counter & 0xffffffffn), false);
+
+  const hmac = new Uint8Array(
+    await crypto.subtle.sign("HMAC", key, counterBuf),
+  );
+  const offset = hmac[19] & 0x0f;
+  const code =
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff);
+  return code % 1_000_000;
+}
+
+/**
+ * Which time step a code matches at, or null when it matches none in the
+ * accepted window. Callers that need single-use semantics record the returned
+ * counter and refuse anything at or below it (see verifyAnyTotp).
+ */
+export async function matchTotpCounter(
+  token: string,
+  secret: string,
+  window = 1,
+  timestampMs = Date.now(),
+): Promise<bigint | null> {
+  const normalized = token.replace(/\s+/g, "");
+  if (normalized.length !== 6 || !/^\d{6}$/.test(normalized)) return null;
+  const secretBytes = base32ToBytes(secret);
+  const counter = BigInt(Math.floor(timestampMs / 30_000));
+  for (let i = -window; i <= window; i++) {
+    const step = counter + BigInt(i);
+    const code = await hotp(secretBytes, step);
+    if (code.toString().padStart(6, "0") === normalized) return step;
+  }
+  return null;
+}
+
+export function generateBackupCodes(count = 10): string[] {
+  const codes: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const bytes = crypto.getRandomValues(new Uint8Array(5));
+    const code = bytesToHex(bytes).slice(0, 8).toUpperCase();
+    codes.push(`${code.slice(0, 4)}-${code.slice(4)}`);
+  }
+  return codes;
+}
+
+/** Hash a single backup code with SHA-256. Normalises (strips hyphens, uppercases) before hashing. */
+async function hashBackupCode(code: string): Promise<string> {
+  const normalized = code.replace(/-/g, "").toUpperCase();
+  return `$sha256$${await sha256Hex(normalized)}`;
+}
+
+/** Hash all codes in a plaintext array. Already-hashed entries (starting with `$sha256$`) are passed through unchanged. */
+export async function hashBackupCodes(codes: string[]): Promise<string[]> {
+  return Promise.all(
+    codes.map((c) => (c.startsWith("$sha256$") ? c : hashBackupCode(c))),
+  );
+}
+
+/**
+ * Verify a TOTP code against any of the user's enabled authenticators or backup codes.
+ * Consumes a backup code if matched (single-use).
+ *
+ * `env` is required so the stored authenticator secret can be decrypted
+ * via the SECRETS_KEY-backed envelope; legacy plaintext rows pass
+ * through `decryptSecret` as a no-op.
+ */
+export async function verifyAnyTotp(
+  env: Env,
+  userId: string,
+  code: string,
+): Promise<boolean> {
+  const db = env.DB;
+  const recovery = await db
+    .prepare("SELECT * FROM user_totp_recovery WHERE user_id = ?")
+    .bind(userId)
+    .first<{ user_id: string; backup_codes: string; updated_at: number }>();
+  if (recovery) {
+    const codes = JSON.parse(recovery.backup_codes) as string[];
+    // Tolerate pasted whitespace alongside the optional hyphen
+    const normalized = code.replace(/[\s-]/g, "").toUpperCase();
+    let idx = -1;
+    for (let i = 0; i < codes.length; i++) {
+      const stored = codes[i];
+      if (stored.startsWith("$sha256$")) {
+        if (stored === (await hashBackupCode(normalized))) {
+          idx = i;
+          break;
+        }
+      } else if (stored.replace(/-/g, "").toUpperCase() === normalized) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx !== -1) {
+      codes.splice(idx, 1);
+      // Compare-and-swap against the list this request read. Writing the
+      // whole blob unconditionally loses to concurrency twice over: two
+      // logins presenting the same code both find it and both succeed, and
+      // two presenting different codes overwrite each other, leaving one of
+      // them still valid after it was accepted. Whoever writes against a
+      // list that has since changed is refused and the code stays unspent.
+      const claimed = await db
+        .prepare(
+          `UPDATE user_totp_recovery SET backup_codes = ?
+            WHERE user_id = ? AND backup_codes = ?`,
+        )
+        .bind(JSON.stringify(codes), userId, recovery.backup_codes)
+        .run();
+      return claimed.meta.changes === 1;
+    }
+  }
+  const totps = await db
+    .prepare(
+      "SELECT * FROM totp_authenticators WHERE user_id = ? AND enabled = 1",
+    )
+    .bind(userId)
+    .all<{
+      id: string;
+      user_id: string;
+      name: string;
+      secret: string;
+      enabled: number;
+      created_at: number;
+      last_used_counter: number | null;
+    }>();
+  for (const t of totps.results) {
+    const plainSecret = (await decryptSecret(env, t.secret)) ?? t.secret;
+    const counter = await matchTotpCounter(code, plainSecret);
+    if (counter === null) continue;
+    if (!(await claimTotpCounter(db, t.id, counter, t.last_used_counter)))
+      return false;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Retire a time step so its code cannot be presented twice (RFC 6238 §5.2).
+ *
+ * Returns false when the step is at or below the last one this authenticator
+ * accepted — a replay of the code just used, or of an earlier code still
+ * inside the window. The UPDATE carries the same condition, so two requests
+ * racing with the same code cannot both win it: whichever lands second
+ * changes no rows and is refused.
+ */
+async function claimTotpCounter(
+  db: D1Database,
+  authenticatorId: string,
+  counter: bigint,
+  lastUsed: number | null,
+): Promise<boolean> {
+  const step = Number(counter);
+  if (lastUsed !== null && step <= lastUsed) return false;
+  const res = await db
+    .prepare(
+      `UPDATE totp_authenticators SET last_used_counter = ?
+        WHERE id = ? AND (last_used_counter IS NULL OR last_used_counter < ?)`,
+    )
+    .bind(step, authenticatorId, step)
+    .run();
+  return res.meta.changes === 1;
+}
+
+/**
+ * Record the step an enrolment code matched at, so the code the user typed to
+ * prove possession cannot then be replayed against the login form.
+ */
+export async function claimEnrolmentCounter(
+  db: D1Database,
+  authenticatorId: string,
+  counter: bigint,
+): Promise<void> {
+  await claimTotpCounter(db, authenticatorId, counter, null);
+}
+
+export function totpUri(secret: string, email: string, issuer: string): string {
+  const params = new URLSearchParams({
+    secret,
+    issuer,
+    algorithm: "SHA1",
+    digits: "6",
+    period: "30",
+  });
+  return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(email)}?${params}`;
+}

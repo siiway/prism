@@ -80,7 +80,7 @@ export default withMermaid(
               text: "Guide",
               link: "/getting-started",
               activeMatch:
-                "^/(getting-started|configuration|architecture|admin|social-login)",
+                "^/(getting-started|configuration|admin|social-login)",
             },
             { text: "API", link: "/api", activeMatch: "^/api" },
             { text: "OAuth / OIDC", link: "/oauth", activeMatch: "^/oauth" },
@@ -103,7 +103,7 @@ export default withMermaid(
                 { text: "Getting Started", link: "/getting-started" },
                 { text: "Configuration", link: "/configuration" },
                 { text: "Social Login Setup", link: "/social-login" },
-                { text: "Architecture", link: "/architecture" },
+
                 { text: "Admin Guide", link: "/admin" },
               ],
             },
@@ -148,7 +148,7 @@ export default withMermaid(
               text: "指南",
               link: "/zh/getting-started",
               activeMatch:
-                "^/zh/(getting-started|configuration|architecture|admin|social-login)",
+                "^/zh/(getting-started|configuration|admin|social-login)",
             },
             { text: "API", link: "/zh/api", activeMatch: "^/zh/api" },
             {
@@ -175,7 +175,7 @@ export default withMermaid(
                 { text: "快速开始", link: "/zh/getting-started" },
                 { text: "配置", link: "/zh/configuration" },
                 { text: "社交登录配置", link: "/zh/social-login" },
-                { text: "架构", link: "/zh/architecture" },
+
                 { text: "管理员指南", link: "/zh/admin" },
               ],
             },

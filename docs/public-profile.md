@@ -5,106 +5,78 @@ description: Let users and teams opt into public-facing pages that expose the fi
 
 # Public Profiles
 
-Prism users can opt into a public profile at `/u/<username>`, and team owners can opt their teams into a public page at `/t/<team-id>`. Both are visible to anyone without logging in. Each user / team owner picks which sections to share, and admins set sensible site-wide defaults.
+Users can opt into a public profile at `/u/<username>`, and team owners can opt their teams into a public page at `/t/<team-id>`. Both are visible to anyone without signing in. Each user or team owner picks which sections to share, and admins set site-wide defaults.
 
-Profiles are private by default. Nothing becomes visible until the user (or team owner) explicitly opts in.
+Profiles are private by default. Nothing becomes visible until the user (or team owner) opts in.
 
-## How it works
+## How visibility works
 
-Visibility is layered:
+1. **Site switch** — admins can turn the feature off for the whole instance. With it off, profile pages and endpoints always return 404.
+2. **Opt-in** — each user turns on "Make my profile public" in **Profile → Public profile**. Until then, the profile returns 404.
+3. **Per-field choices** — once public, the user picks which fields to share. Fields they haven't touched follow the site default.
 
-1. **Master site switch** — admins can disable the feature for the entire instance. With it off, `/u/<username>` and `/api/users/<username>` always return 404, regardless of any user's preference.
-2. **Per-user opt-in** — each user toggles "Make my profile public" in **Profile → Public profile**. With it off, the same 404 response.
-3. **Per-field flags** — when public, the user picks which fields to share (display name, avatar, email, join date, GPG keys, authorized apps, owned apps). Fields the user hasn't explicitly customized follow the site default for that field.
+A missing user and a private user give the same 404, so nobody can use it to find out which usernames exist.
 
-The 404 response is identical for non-existent users and private users, so the endpoint doesn't leak which usernames exist on the instance.
+## User profile fields
 
-## Available fields — user profile
+| Field            | What it shows                                             | Default     |
+| ---------------- | --------------------------------------------------------- | ----------- |
+| Display name     | The user's display name                                   | Public      |
+| Avatar           | The user's avatar image                                   | Public      |
+| Email            | The primary email address                                 | **Private** |
+| Join date        | When the account was created                              | Public      |
+| GPG public keys  | Fingerprint, key ID and label of each GPG key             | Public      |
+| Authorized apps  | Apps the user has granted access to (name, icon, website) | **Private** |
+| User-owned apps  | OAuth apps the user registered (name, icon, description)  | Public      |
+| Verified domains | Domains the user owns and has verified                    | Public      |
 
-| Field            | What it shows                                                   | Default     |
-| ---------------- | --------------------------------------------------------------- | ----------- |
-| Display name     | The user's display name                                         | Public      |
-| Avatar           | The user's avatar image                                         | Public      |
-| Email            | The user's primary email address                                | **Private** |
-| Join date        | When the account was created                                    | Public      |
-| GPG public keys  | Fingerprint, key ID, and label of each registered GPG key       | Public      |
-| Authorized apps  | Apps the user has granted OAuth access to (name, icon, website) | **Private** |
-| User-owned apps  | OAuth apps the user has registered (name, icon, description)    | Public      |
-| Verified domains | Domains the user owns and has verified                          | Public      |
+These are the out-of-the-box site defaults; admins can change any of them. Authorized apps default to private because the list reveals which services someone uses.
 
-The "default" column is the out-of-the-box site default — admins can flip any of them.
+## Team profile fields
 
-::: tip Why authorized apps default to private
-The list of services a user has connected is sensitive (it reveals what they use). It defaults to private even when the rest of the profile is public.
-:::
+Team owners and admins (not site admins) control a team's visibility. Teams are private by default.
 
-## Available fields — team profile
+| Field            | What it shows                                                            | Default     |
+| ---------------- | ------------------------------------------------------------------------ | ----------- |
+| Description      | The team's description                                                   | Public      |
+| Avatar           | The team avatar                                                          | Public      |
+| Owner            | The owner's username, linked to their profile if that is also public     | **Private** |
+| Member count     | The number of members                                                    | Public      |
+| Team-owned apps  | OAuth apps registered to the team                                        | Public      |
+| Verified domains | Domains owned by the team                                                | Public      |
+| Member list      | Each member (each member's own "show joined teams" setting also applies) | **Private** |
+| Sub-teams        | Immediate sub-teams that have themselves opted into a public profile     | Public      |
 
-Teams have their own visibility flags, controlled by **team owners and admins** (not site admins). The same per-section opt-in model applies; teams are private by default.
-
-| Field            | What it shows                                                                       | Default     |
-| ---------------- | ----------------------------------------------------------------------------------- | ----------- |
-| Description      | The team's description                                                              | Public      |
-| Avatar           | The team avatar                                                                     | Public      |
-| Owner            | The team owner's username (linked to their public profile if also public)           | **Private** |
-| Member count     | Number of team members (a number, not the list)                                     | Public      |
-| Team-owned apps  | OAuth apps registered to this team                                                  | Public      |
-| Verified domains | Domains owned by the team                                                           | Public      |
-| Member list      | Each individual member (each member's own `profile_show_joined_teams` also applies) | **Private** |
-| Sub-teams        | Immediate sub-teams that have _themselves_ opted into a public profile              | Public      |
-
-When a team is a sub-team, its public page also surfaces a small "Sub-team
-of `<parent>`" breadcrumb at the top — but **only when the parent is itself
-public**. If the parent is private, the breadcrumb is omitted so the
-parent's existence isn't leaked via the child. The breadcrumb is always
-on; there's no per-team toggle to hide it (it's just inherent to the
-hierarchy).
-
-::: tip Why owner defaults to private
-A team's owner is a specific user. Showing their username on a public team page would surface that person even when their own user profile is private. The team owner has to explicitly opt in.
-:::
-
-The team page at `/t/<team-id>` will only link to the owner's `/u/<username>` page if the owner has also made _their_ profile public. If they haven't, the team page shows just the owner's display name with no link.
+A sub-team's page shows a "Sub-team of `<parent>`" link, but only when the parent is public too. The owner is private by default because showing their username would surface that person even if their own profile is private. If the owner's profile is private, the team page shows their display name without a link.
 
 ## User settings
 
-Users manage visibility in **Profile → Public profile**.
+In **Profile → Public profile**:
 
-1. Toggle **Make my profile public**. Until this is on, no one else can view the profile.
-2. Use the per-field switches to choose what to share. Switches you haven't touched show "(site default)" so it's clear when the value is inherited.
-3. Click **View public profile** to open `/u/<username>` in a new tab and see exactly what others will see.
+1. Turn on **Make my profile public**.
+2. Use the switches to choose what to share. Untouched ones are labelled "(site default)".
+3. Click **View public profile** to see exactly what others see.
 
-Switches save immediately on toggle — there's no separate "save" step.
+Switches save as soon as you change them.
 
 ## Team settings
 
-Team owners and admins manage visibility in **Teams → \<team\> → Settings → Public profile**. The flow is the same as user settings:
-
-1. **Make this team public** — master switch. Off = the team page returns 404 to outsiders.
-2. Per-section switches with "(site default)" labels for inherited values.
-3. **View public profile** opens `/t/<team-id>` in a new tab.
-
-Members can always see the team's own public-profile page even when private — useful for previewing.
+Team owners and admins use **Teams → \<team\> → Settings → Public profile**, which works the same way: a **Make this team public** switch, per-section switches, and **View public profile**. Team members can always preview the page, even when it's private.
 
 ## Admin settings
 
-Admins configure the feature in **Admin → Settings → Public profiles**.
+In **Admin → Settings → Public profiles**:
 
-- **Users can publish a profile** — the master setting. **Not allowed** = the feature is unavailable site-wide for both users _and_ teams.
-- **Default visibility for each field** (user profiles) — applies to every user who hasn't set their own preference for that field.
-- **Default visibility for each section** (team profiles) — applies to every team that hasn't set its own preference. Edited by team owners/admins, not site admins.
+- **Users can publish a profile** — the master switch. **Not allowed** turns the feature off for users and teams.
+- **Defaults** for each user field and each team section. They apply to everyone who hasn't chosen for themselves, and take effect immediately.
 
-Updating a default propagates immediately to anyone using the inherited value.
-
-Changing a default does **not** flip the master `profile_is_public` flag for any user or team — that's always an explicit per-user (or per-team-owner) opt-in. Admins cannot make any profile public against the owner's will.
+Changing a default never makes a profile public. That is always the user's or team owner's own opt-in.
 
 ## Public API
 
-Public profile data is available via JSON endpoints that require no authentication.
+No authentication is needed for either endpoint.
 
 ### `GET /api/users/:username`
-
-Returns the user profile (filtered by visibility flags) or `404` if the username is unknown, private, or the feature is disabled.
 
 ```bash
 curl https://your-prism-domain/api/users/alice
@@ -144,11 +116,9 @@ curl https://your-prism-domain/api/users/alice
 }
 ```
 
-A field that the user has hidden is returned as `null` (or the entire array is `null` for collections like `gpg_keys`, `domains`).
+A field the user hid comes back as `null`.
 
 ### `GET /api/public/teams/:id`
-
-Returns the team profile or `404` under the same rules.
 
 ```bash
 curl https://your-prism-domain/api/public/teams/team_abc123
@@ -161,7 +131,6 @@ curl https://your-prism-domain/api/public/teams/team_abc123
     "name": "Acme",
     "description": "We make stuff.",
     "avatar_url": "/api/proxy/image?...",
-    "unproxied_avatar_url": "https://example.com/acme.png",
     "created_at": 1730000000,
     "owner": {
       "username": "alice",
@@ -169,37 +138,24 @@ curl https://your-prism-domain/api/public/teams/team_abc123
       "avatar_url": "/api/proxy/image?..."
     },
     "member_count": 12,
-    "apps": [
-      {
-        "id": "app_...",
-        "client_id": "...",
-        "name": "Acme Cloud",
-        "description": "",
-        "icon_url": null,
-        "website_url": "https://acme.example",
-        "created_at": 1730000000
-      }
-    ],
+    "apps": [],
     "domains": [{ "domain": "acme.example", "verified_at": 1730000000 }]
   }
 }
 ```
 
-When the team owner has opted into showing themselves but their _own_ user profile is private, `owner.username` and `owner.avatar_url` are `null` — only `display_name` is exposed, with no link out.
+If the owner's own profile is private, `owner.username` and `owner.avatar_url` are `null` and only `display_name` is shown.
 
-### Behavior
+### Notes
 
-- Both endpoints accept an optional Bearer token. For user profiles, a token belonging to the profile's owner returns the profile even when private. For team profiles, **any team member's** token (not just the owner) returns the team page when private — useful for previewing.
-- All `404` responses share the same body (`{"error":"not_found"}`), so callers can't distinguish "doesn't exist" from "opted out."
-- Image URLs go through Prism's avatar proxy (`/api/proxy/image?...`); the original is also returned as `unproxied_avatar_url` for direct use.
+- Both endpoints accept an optional Bearer token. The owner of a private profile can still read it; for a private team, any member can.
+- Every `404` has the same body (`{"error":"not_found"}`).
+- Image URLs go through Prism's avatar proxy. The original is also returned as `unproxied_avatar_url`.
+- Profiles list only GPG key metadata. The full public keys are at `/users/:username.gpg`, which is always public and not affected by these settings.
 
-### GPG keys
+## SDK
 
-The public profile includes only metadata for each registered GPG key (fingerprint, key ID, label). The full ASCII-armored public key blocks remain at the existing `/users/:username.gpg` endpoint, which is independent of these visibility flags — it has always been public for federated lookups.
-
-## SDK usage
-
-The [`@siiway/prism`](https://www.npmjs.com/package/@siiway/prism) TypeScript SDK exposes both endpoints:
+The [`@siiway/prism`](https://www.npmjs.com/package/@siiway/prism) TypeScript SDK wraps both endpoints:
 
 ```ts
 import { PrismClient } from "@siiway/prism";
@@ -212,47 +168,6 @@ const client = new PrismClient({
 
 const profile = await client.getPublicProfile("alice");
 const team = await client.getPublicTeamProfile("team_abc123");
-
-console.log(profile?.display_name, team?.member_count);
 ```
 
-Both calls return `null` (instead of throwing) when the profile is missing or private, so a single null-check covers all the "no public data" cases. No token is needed.
-
-## Database schema
-
-### `users`
-
-| Column                         | Type                         | Meaning                                                                           |
-| ------------------------------ | ---------------------------- | --------------------------------------------------------------------------------- |
-| `profile_is_public`            | `INTEGER NOT NULL DEFAULT 0` | `1` = the user has opted in. No NULL state — admins can never silently flip this. |
-| `profile_show_display_name`    | `INTEGER` (nullable)         | `NULL` = follow site default; `0`/`1` = explicit user choice.                     |
-| `profile_show_avatar`          | `INTEGER` (nullable)         | Same.                                                                             |
-| `profile_show_email`           | `INTEGER` (nullable)         | Same.                                                                             |
-| `profile_show_joined_at`       | `INTEGER` (nullable)         | Same.                                                                             |
-| `profile_show_gpg_keys`        | `INTEGER` (nullable)         | Same.                                                                             |
-| `profile_show_authorized_apps` | `INTEGER` (nullable)         | Same.                                                                             |
-| `profile_show_owned_apps`      | `INTEGER` (nullable)         | Same.                                                                             |
-| `profile_show_domains`         | `INTEGER` (nullable)         | Same.                                                                             |
-
-### `teams`
-
-| Column                      | Type                                           | Meaning                                                                             |
-| --------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `profile_is_public`         | `INTEGER NOT NULL DEFAULT 0`                   | Set by team owner/admin. Same no-NULL guarantee.                                    |
-| `profile_show_description`  | `INTEGER` (nullable)                           | `NULL` = follow site default; `0`/`1` = explicit team choice.                       |
-| `profile_show_avatar`       | `INTEGER` (nullable)                           | Same.                                                                               |
-| `profile_show_owner`        | `INTEGER` (nullable)                           | Same.                                                                               |
-| `profile_show_member_count` | `INTEGER` (nullable)                           | Same.                                                                               |
-| `profile_show_apps`         | `INTEGER` (nullable)                           | Same.                                                                               |
-| `profile_show_domains`      | `INTEGER` (nullable)                           | Same.                                                                               |
-| `profile_show_members`      | `INTEGER` (nullable)                           | Same.                                                                               |
-| `profile_show_sub_teams`    | `INTEGER` (nullable)                           | Same. Added in `0048_sub_team_config.sql`.                                          |
-| `parent_team_id`            | `TEXT` (nullable, self-FK `ON DELETE CASCADE`) | Set when the team is a sub-team. Drives both the public breadcrumb and inheritance. |
-
-### `site_config`
-
-| Key                           | Meaning                                           |
-| ----------------------------- | ------------------------------------------------- |
-| `enable_public_profiles`      | Master kill switch covering both users and teams. |
-| `default_profile_show_*`      | Per-field defaults for user profiles.             |
-| `default_team_profile_show_*` | Per-section defaults for team profiles.           |
+Both return `null` instead of throwing when the profile is missing or private.

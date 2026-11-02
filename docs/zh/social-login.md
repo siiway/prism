@@ -5,292 +5,114 @@ description: 在 Prism 中配置 OAuth 来源——内置提供商（GitHub、Go
 
 # 社交登录配置
 
-Prism 通过 **OAuth 来源**（OAuth Sources）支持社交登录——每个来源是一个独立命名的 OAuth 连接，拥有自己的 slug、凭据和显示名称。你可以添加同一提供商类型的多个来源（例如「GitHub（工作）」和「GitHub（个人）」），也可以使用通用 OIDC 或通用 OAuth 2 类型添加自定义提供商。
+Prism 通过 **OAuth 来源**支持社交登录——每个来源是一个独立命名的、单独配置的连接。你可以添加同一提供商的多个来源（比如「GitHub（工作）」和「GitHub（个人）」），也可以使用通用 OIDC 或通用 OAuth 2 类型添加自己的提供商。
 
-OAuth 来源在 **Admin → OAuth Sources** 中管理（不在 Settings 中）。每个来源有唯一的 **slug**，出现在其回调 URL 中：
+来源在 **管理 → OAuth 来源** 中管理。每个来源有唯一的 **slug**，会出现在其回调 URL 中：
 
 ```
 https://<your-prism-domain>/api/connections/<slug>/callback
 ```
 
-> **注意：** Telegram 的登录流程与标准 OAuth 不同——它使用已验证的来源域名，而不是注册的回调 URL。上方的回调 URL 格式不适用于 Telegram。详见 [Telegram 章节](#telegram)。
+> **注意：** Telegram 不使用回调 URL，而是使用已验证的来源域名。详见 [Telegram](#telegram)。
+
+对所有提供商而言步骤都相同：在提供商处使用上面的回调 URL 创建 OAuth 应用，然后在 Prism 中填写 Client ID 和 Client Secret 添加来源。登录页面会立即出现该按钮。
 
 ## 内置提供商
 
 ### GitHub
 
-#### 1. 创建 GitHub OAuth 应用
-
 1. 前往 [GitHub Developer Settings → OAuth Apps](https://github.com/settings/developers)，点击 **New OAuth App**。
-2. 填写表单：
+2. 将 **Homepage URL** 设为 `https://your-prism-domain`，**Authorization callback URL** 设为 `https://your-prism-domain/api/connections/<slug>/callback`。
+3. 注册应用，复制 **Client ID**，然后生成客户端密钥并立即复制——它只显示一次。
+4. 在 Prism 中进入 **管理 → OAuth 来源 → 添加来源**。将**提供商**设为 **GitHub**，选择 slug（如 `github`）、显示名称，并粘贴凭据。
 
-   | 字段                       | 值                                                          |
-   | -------------------------- | ----------------------------------------------------------- |
-   | Application name           | 你的站点名称                                                |
-   | Homepage URL               | `https://your-prism-domain`                                 |
-   | Authorization callback URL | `https://your-prism-domain/api/connections/<slug>/callback` |
-
-3. 点击 **Register application**。
-4. 复制 **Client ID**。
-5. 点击 **Generate a new client secret** 并立即复制——密钥仅显示一次。
-
-#### 2. 在 Prism 中添加来源
-
-前往 **Admin → OAuth Sources → 添加来源**：
-
-| 字段          | 值                           |
-| ------------- | ---------------------------- |
-| Slug          | `github`（或任意唯一键）     |
-| 提供商        | **GitHub**                   |
-| 显示名称      | `GitHub`（显示在登录按钮上） |
-| Client ID     | 从 GitHub 粘贴               |
-| Client Secret | 从 GitHub 粘贴               |
-
-保存后，登录和注册页面会立即出现该按钮。
-
-#### 注意事项
-
-- Prism 请求 `user:email` 权限范围，确保即使邮箱设为私密也能返回邮箱地址。
-- 如果 GitHub 用户没有公开邮箱且邮箱为私密，GitHub 返回邮箱列表——Prism 选取主要的已验证邮箱。
-- GitHub 不支持 OpenID Connect。Prism 使用其 REST API（`/user`、`/user/emails`）。
+Prism 会请求 `user:email` 权限范围，以便即使邮箱为私密也能获取，并选取主要的已验证邮箱。
 
 ### Google
 
-#### 1. 创建 Google OAuth 2.0 客户端
+1. 打开 [Google Cloud Console](https://console.cloud.google.com)，选择或创建项目，然后进入 **APIs & Services → Credentials → Create Credentials → OAuth client ID**。
+2. 如果要求配置 **OAuth 同意屏幕**：用户类型选 **External**，授权域名填你的 Prism 域名，权限范围 `openid`、`email`、`profile`。
+3. 选择 **Web application**。将 `https://your-prism-domain` 添加为授权的 JavaScript 来源，将回调 URL 添加为授权的重定向 URI。
+4. 复制 **Client ID** 和 **Client Secret**。
+5. 在 Prism 中添加来源，**提供商：Google**。
 
-1. 打开 [Google Cloud Console](https://console.cloud.google.com)，选择或创建一个项目。
-2. 前往 **APIs & Services → Credentials → Create Credentials → OAuth client ID**。
-3. 如果需要，先配置 **OAuth 同意屏幕**：
-   - 用户类型：**External**
-   - 授权域名：你的 Prism 域名
-   - 权限范围：`openid`、`email`、`profile`
-4. 填写 **Create OAuth client ID**：
-
-   | 字段                          | 值                                                          |
-   | ----------------------------- | ----------------------------------------------------------- |
-   | Application type              | **Web application**                                         |
-   | Authorized JavaScript origins | `https://your-prism-domain`                                 |
-   | Authorized redirect URIs      | `https://your-prism-domain/api/connections/<slug>/callback` |
-
-5. 复制 **Client ID** 和 **Client Secret**。
-
-#### 2. 在 Prism 中添加来源
-
-前往 **Admin → OAuth Sources → 添加来源**，选择 **提供商：Google**，设置 slug（如 `google`），粘贴凭据。
-
-#### 注意事项
-
-- Google 使用 OpenID Connect，Prism 请求 `openid email profile`。
-- 新项目同意屏幕默认处于**测试**模式，仅允许已添加的测试用户登录。发布同意屏幕后，任意 Google 账号均可登录。
-- 未经验证的应用会显示警告屏幕，如预计有外部用户请提交验证。
+新建的 Google 项目默认处于测试模式。发布同意屏幕后任何人才能登录；在 Google 完成验证之前，未经验证的应用会显示警告。
 
 ### Microsoft
 
-#### 1. 注册 Azure AD 应用程序
+1. 打开 [Azure Portal → App registrations](https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/RegisteredApps)，点击 **New registration**。
+2. 将 **Supported account types** 设为 **Accounts in any organizational directory and personal Microsoft accounts**，并添加 **Web** 重定向 URI（回调 URL）。
+3. 复制 **Application (client) ID**。在 **Certificates & secrets** 下创建客户端密钥并复制其 **Value**。
+4. 在 Prism 中添加来源，**提供商：Microsoft**。
 
-1. 打开 [Azure 门户 → 应用注册](https://portal.azure.com/#blade/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/RegisteredApps)，点击 **New registration**。
-2. 填写表单：
-
-   | 字段                    | 值                                                                             |
-   | ----------------------- | ------------------------------------------------------------------------------ |
-   | Name                    | 你的站点名称                                                                   |
-   | Supported account types | **Accounts in any organizational directory and personal Microsoft accounts**   |
-   | Redirect URI            | 平台选择 **Web** — `https://your-prism-domain/api/connections/<slug>/callback` |
-
-3. 点击 **Register**。
-4. 从 Overview 页面复制 **Application (client) ID**。
-5. 前往 **Certificates & secrets → New client secret**，复制 **Value**（不是 Secret ID）。
-
-#### 2. 在 Prism 中添加来源
-
-前往 **Admin → OAuth Sources → 添加来源**，选择 **提供商：Microsoft**，设置 slug（如 `microsoft`），粘贴凭据。
-
-#### 注意事项
-
-- Prism 通过 `common` 租户端点请求 `openid email profile`，个人账号（Outlook/Hotmail）和工作/学校账号（Azure AD）均可登录。
-- 如需限制特定租户，调整 Supported account types 即可。
-- 客户端密钥会过期，请设置提醒在到期前轮换。
+个人账号（Outlook/Hotmail）与工作/学校账号均可登录。如需限制为单个租户，可通过 **Supported account types** 设置。客户端密钥会过期，请在到期前轮换。
 
 ### Discord
 
-#### 1. 创建 Discord 应用程序
-
 1. 打开 [Discord Developer Portal](https://discord.com/developers/applications)，点击 **New Application**。
-2. 前往 **OAuth2 → General**：
-   - 复制 **Client ID**。
-   - 点击 **Reset Secret**，确认后复制 **Client Secret**。
-   - 在 **Redirects** 下添加：
-     ```
-     https://your-prism-domain/api/connections/<slug>/callback
-     ```
-3. 保存更改。
+2. 在 **OAuth2 → General** 下复制 **Client ID**，重置并复制 **Client Secret**，并在 **Redirects** 下添加回调 URL。
+3. 在 Prism 中添加来源，**提供商：Discord**。
 
-#### 2. 在 Prism 中添加来源
-
-前往 **Admin → OAuth Sources → 添加来源**，选择 **提供商：Discord**，设置 slug（如 `discord`），粘贴凭据。
-
-#### 注意事项
-
-- Prism 请求 `identify email`。`identify` 授予用户名和头像访问权限，`email` 授予已验证邮箱。
-- 如果 Discord 用户未设置邮箱，Prism 将拒绝登录。
-- Discord 不支持 OpenID Connect，Prism 使用 `/users/@me`。
+如果 Discord 用户账号没有邮箱，登录会被拒绝。
 
 ### Telegram
 
-Telegram 使用基于小部件的身份验证流程，而非标准 OAuth。流程中没有授权码交换——用户在 Telegram 中确认登录后，其个人信息数据会以查询参数的形式直接发送至回调 URL，并附带由机器人令牌派生的 HMAC 签名。
+Telegram 使用登录小部件而非标准 OAuth：用户在 Telegram 中确认后，其签名资料数据会直接发送到 Prism。
 
-#### 1. 创建 Telegram 机器人
-
-1. 打开与 [@BotFather](https://t.me/BotFather) 的对话，运行 `/newbot`。
-2. 按提示为机器人设置名称和用户名。
-3. BotFather 会给你一个格式为 `123456789:ABCdef-GHIjkl...` 的**机器人令牌**。复制它——这是 Prism 中的 **Client Secret**。
-4. **冒号前的数字部分**（如 `123456789`）是**机器人 ID**——这是 Prism 中的 **Client ID**。
-
-#### 2. 注册域名
-
-Telegram 要求在允许登录前，先在 BotFather 中注册来源域名：
-
-1. 在同一个 BotFather 对话中，运行 `/setdomain`。
-2. 选择你的机器人。
-3. 输入你的 Prism 域名（不含路径），例如 `https://your-prism-domain`。
+1. 与 [@BotFather](https://t.me/BotFather) 对话并运行 `/newbot`。BotFather 会给你一个**机器人令牌**，形如 `123456789:ABCdef-GHIjkl...`。这就是 Prism 中的 **Client Secret**。冒号前的数字是机器人 ID，即 **Client ID**。
+2. 运行 `/setdomain`，选择你的机器人，并输入你的 Prism 域名（如 `https://your-prism-domain`）。
 
 ::: warning
-必须**先**在 BotFather 中设置域名，再尝试 Telegram 登录。来自未注册来源域名的登录请求会因签名无效而失败。
+务必在首次 Telegram 登录**之前**在 BotFather 中设置域名。来自未注册来源的登录会因签名无效而失败。
 :::
 
-#### 3. 在 Prism 中添加来源
+3. 在 Prism 中添加来源，**提供商：Telegram**，**Client ID** 填机器人 ID，**Client Secret** 填完整机器人令牌。
 
-前往 **Admin → OAuth Sources → 添加来源**：
+说明：
 
-| 字段          | 值                                      |
-| ------------- | --------------------------------------- |
-| Slug          | `telegram`（或任意唯一键）              |
-| 提供商        | **Telegram**                            |
-| 显示名称      | `Telegram`（显示在登录按钮上）          |
-| Client ID     | 机器人数字 ID（令牌中 `:` 前的数字）    |
-| Client Secret | 完整机器人令牌（`123456789:ABCdef...`） |
+- Telegram 不提供邮箱。通过这种方式注册的用户会得到一个占位地址和未验证的邮箱；他们可以在个人资料设置中添加并验证真实邮箱。
+- 超过 24 小时的 Telegram 登录会被拒绝。
+- 同一机器人令牌也用于发送 Telegram [通知](notifications.md#telegram-配置)。
 
-保存后，登录和注册页面会立即出现该按钮。
+### X (Twitter)
 
-#### 注意事项
+1. 打开 [X Developer Portal](https://developer.x.com/en/portal/dashboard)，选择或创建项目，并创建一个 **App**。
+2. 在 **User authentication settings** 下点击 **Set up**。选择 **Read** 权限和 **Web App, Automated App or Bot** 类型。将 **Callback URI** 设为回调 URL，**Website URL** 设为你的 Prism 域名。
+3. 在 **Keys and tokens** 标签页复制 **OAuth 2.0 Client ID** 和 **Client Secret**（只显示一次）。
+4. 在 Prism 中添加来源，**提供商：X (Twitter)**。
 
-- **Telegram 不提供邮箱地址。** 通过 Telegram 注册的用户将使用占位邮箱（`telegram_<id>@prism.local`），且无法通过 Telegram 完成邮箱验证。用户注册后可在个人资料设置中添加并验证真实邮箱。
-- 身份验证数据中的时间戳（`auth_date`）会在服务器端验证——超过 24 小时的会话将被拒绝。
-- 与其他提供商不同，无需在提供商处注册回调 URL。Telegram 通过在 BotFather 中设置的来源域名进行路由，而非注册的重定向 URI。
-
-### X（Twitter）
-
-X 采用强制 PKCE 的 OAuth 2.0。Prism 会在每次授权请求中生成并发送 `code_challenge`，并通过 HTTP Basic 完成令牌交换——无需任何额外配置。
-
-#### 1. 创建 X OAuth 2.0 应用
-
-1. 打开 [X 开发者后台](https://developer.x.com/en/portal/dashboard)，选择（或创建）项目，并在其中新建 **App**。
-2. 在应用的 **User authentication settings** 中点击 **Set up**（或 **Edit**）：
-   - **App permissions**：选择 **Read** 即可——Prism 仅读取资料。
-   - **Type of App**：**Web App, Automated App or Bot**（机密客户端，会下发 client secret）。
-   - **Callback URI / Redirect URL**：`https://your-prism-domain/api/connections/<slug>/callback`
-   - **Website URL**：你的 Prism 域名
-3. 保存后在 **Keys and tokens** 标签的 **OAuth 2.0 Client ID and Client Secret** 区域复制 **Client ID** 与 **Client Secret**（密钥只显示一次，遗失需重新生成）。
-
-#### 2. 在 Prism 中添加来源
-
-进入 **Admin → OAuth Sources → Add source**：
-
-| 字段          | 值                      |
-| ------------- | ----------------------- |
-| Slug          | `x`（或任意唯一键）     |
-| 提供商        | **X (Twitter)**         |
-| 显示名称      | `X`（显示在登录按钮上） |
-| Client ID     | 从 X 开发者后台复制     |
-| Client Secret | 从 X 开发者后台复制     |
-
-保存后，登录页面会立即出现该按钮。
-
-#### 注意事项
-
-- **X v2 API 不返回邮箱。** 通过 X 注册的用户将使用占位邮箱（`x_<id>@prism.local`），且初始状态为未验证——注册后可在个人资料设置中添加并验证真实邮箱。与 Telegram 流程一致。
-- Prism 请求的 scope 为 `users.read tweet.read offline.access`。其中 `offline.access` 是获取 `refresh_token` 的前提；缺失它时连接页的**刷新**按钮会要求用户重新授权。
-- Prism 调用 `/2/users/me?user.fields=profile_image_url,name,username`，并在写入前展开 v2 的 `data` 外层。
-- X 的令牌端点要求 HTTP Basic 认证，而非在请求体里附带 `client_secret`。Prism 在初次换码和刷新流程中已自动处理。
+X 的 API 不提供邮箱，因此这些用户同样会得到一个占位、未验证的邮箱。Prism 会请求 `offline.access` 权限范围以便刷新令牌。
 
 ### Cloudflare
 
-**使用 Cloudflare 登录**让用户以其 Cloudflare 账号进行认证——与 Wrangler 等工具代表用户操作账号所用的是同一套 OAuth 机制。Cloudflare 的 OAuth 客户端是**API 访问**客户端（其 scope 即 Cloudflare API 令牌权限名），并非 OpenID Connect 提供商。因此 Prism 在 `https://dash.cloudflare.com/oauth2/{auth,token}` 完成授权后，再从 Cloudflare API（`GET https://api.cloudflare.com/client/v4/user`）读取登录用户的身份。与其他内置提供商一样，你**无需**填写任何端点 URL。
+**使用 Cloudflare 登录**让用户以其 Cloudflare 账号登录。你无需填写任何端点 URL。
 
 ::: warning 不要请求 `openid`
-Cloudflare 的自管理 OAuth 客户端无法请求 `openid` scope——权限范围选择器中根本没有该项，强行请求会在授权步骤报 `invalid_scope`（“The OAuth 2.0 Client is not allowed to request scope 'openid'”）。Prism 改为请求 **`user-details.read`**（见下）。
+Cloudflare 的 OAuth 客户端无法请求 `openid` 权限范围；授权步骤会以 `invalid_scope` 失败。Prism 改用 `user-details.read`。
 :::
 
-#### 1. 创建 Cloudflare OAuth 客户端
+1. 在 [Cloudflare 控制台](https://dash.cloudflare.com/?to=/:account/oauth-clients)，进入 **Manage Account → OAuth clients → Create client**。
+2. 将 **Response type** 设为 `code`，**Grant type** 设为 `authorization_code`（如需令牌刷新再加上 `refresh_token`），**Token authentication method** 设为 **Client secret post**，**Redirect URLs** 设为回调 URL。
+3. 权限范围选择 **User Details Read**（`user-details.read`），如果启用了 `refresh_token` 再加上 `offline_access`。
+4. 创建客户端并立即复制 **Client ID** 和 **Client Secret**。
+5. 在 Prism 中添加来源，**提供商：Cloudflare**。
 
-1. 在 [Cloudflare 控制台](https://dash.cloudflare.com/?to=/:account/oauth-clients)，进入 **Manage Account → OAuth clients**，点击 **Create client**。
-2. 填写表单：
+说明：
 
-   | 字段         | 值                                                           |
-   | ------------ | ------------------------------------------------------------ |
-   | 客户端名称   | 你的站点名称                                                 |
-   | 响应类型     | `code`                                                       |
-   | 授权类型     | `authorization_code`（需要令牌刷新时再加上 `refresh_token`） |
-   | 令牌认证方式 | **Client secret post**（`client_secret_post`）               |
-   | 重定向 URL   | `https://your-prism-domain/api/connections/<slug>/callback`  |
-
-3. 在权限范围步骤，选择 **User Details Read**（`user-details.read`，位于 **Account & Billing** 分类下）——Prism 依靠它读取登录用户的身份。若启用了 `refresh_token` 授权，则同时添加 **`offline_access`**。
-4. 点击 **Create client**，立即复制 **Client ID** 与 **Client Secret**——密钥只显示一次。
-
-#### 2. 在 Prism 中添加来源
-
-进入 **Admin → OAuth Sources → Add source**：
-
-| 字段          | 值                               |
-| ------------- | -------------------------------- |
-| Slug          | `cloudflare`（或任意唯一键）     |
-| 提供商        | **Cloudflare**                   |
-| 显示名称      | `Cloudflare`（显示在登录按钮上） |
-| Client ID     | 从 Cloudflare 复制               |
-| Client Secret | 从 Cloudflare 复制               |
-
-保存后，登录页面会立即出现该按钮。
-
-#### 注意事项
-
-- Prism 请求的 scope 为 `user-details.read offline_access`，并从 `GET /client/v4/user` 读取身份，映射 `id`（提供商 ID）、`first_name`/`last_name`（显示名）与 `username`。Cloudflare 用户对象没有头像字段，因此不导入头像。
-- **邮箱：** Cloudflare API 用户对象不含邮箱验证标记，Prism 无法确认该地址，因此**不予信任**。每次 Cloudflare 登录都会获得占位邮箱（`cloudflare_<id>@prism.local`）且初始未验证——之后可在个人资料设置中添加并验证真实邮箱。与 Telegram、X 流程一致。
-- **刷新令牌：** 要让连接页的**刷新**按钮生效，OAuth 客户端必须启用 `refresh_token` 授权，且来源需保留 `offline_access` scope（Prism 默认发送）。否则 Cloudflare 不返回 `refresh_token`，用户须重新连接以续期。
-- **私有与公开客户端：** 新建的 OAuth 客户端为**私有**——只有创建它的账号成员才能授权。要让任意 Cloudflare 用户登录，需完成 Cloudflare 的相关要求并将客户端可见性改为**公开**（此操作不可逆）。
-- 令牌端点接受 `client_secret_post`，因此你无需配置 PKCE 或 HTTP Basic。
+- Cloudflare 不会说明邮箱是否已验证，因此 Prism 不信任它。用户会得到占位、未验证的邮箱，之后可以添加真实邮箱。
+- 新建的 OAuth 客户端是**私有**的：只有创建它的 Cloudflare 账号成员才能登录。要让任意 Cloudflare 用户登录，需满足 Cloudflare 的要求并将客户端改为**公开**（此操作不可撤销）。
 
 ## 通用 OpenID Connect
 
-使用**提供商：通用 OpenID Connect** 可接入任何符合 OIDC 标准的身份提供商（Keycloak、Okta、Auth0、Authentik、Zitadel 等）。
+选择 **提供商：通用 OpenID Connect** 即可添加任意 OIDC 提供商（Keycloak、Okta、Auth0、Authentik、Zitadel……）。
 
-### OIDC 自动发现（推荐）
+**使用自动发现（推荐）：** 输入 **Issuer URL**（如 `https://accounts.example.com`），点击 **Discover**。Prism 会读取 `{issuer}/.well-known/openid-configuration` 并填充 **Auth URL**、**Token URL** 和 **Userinfo URL**。
 
-添加通用 OIDC 来源时，填写 **Issuer URL** 后点击**自动发现**按钮。Prism 会请求 `{issuer}/.well-known/openid-configuration` 并自动填充三个端点 URL。
+**手动配置：** 如果提供商没有发现文档，自行填写三个 URL，例如 `https://accounts.example.com/oauth2/authorize`、`/oauth2/token` 和 `/oauth2/userinfo`。
 
-| 字段         | 示例                           |
-| ------------ | ------------------------------ |
-| Issuer URL   | `https://accounts.example.com` |
-| 授权 URL     | 自动填充                       |
-| 令牌 URL     | 自动填充                       |
-| 用户信息 URL | 自动填充                       |
+**Scopes** 字段默认为 `openid email profile`；如果提供商需要不同的权限范围，填写你自己的以空格分隔的列表。
 
-### 手动配置
-
-如果提供商不发布 discovery 文档，直接填写三个 URL：
-
-| 字段         | 示例                                            |
-| ------------ | ----------------------------------------------- |
-| 授权 URL     | `https://accounts.example.com/oauth2/authorize` |
-| 令牌 URL     | `https://accounts.example.com/oauth2/token`     |
-| 用户信息 URL | `https://accounts.example.com/oauth2/userinfo`  |
-
-### 权限范围
-
-**Scopes** 字段留空时默认为 `openid email profile`。如提供商需要不同的权限范围，填写以空格分隔的自定义列表。
-
-### 用户信息映射
-
-Prism 使用标准 OIDC 声明映射用户信息：
+Prism 按如下方式映射 userinfo 响应：
 
 | Prism 字段 | OIDC 声明                     |
 | ---------- | ----------------------------- |
@@ -300,23 +122,15 @@ Prism 使用标准 OIDC 声明映射用户信息：
 | 头像       | `picture`                     |
 | 邮箱       | `email`                       |
 
-### 回调 URL
-
-```
-https://your-prism-domain/api/connections/<slug>/callback
-```
-
-在身份提供商的配置中将此 URL 添加为允许的重定向 URI。
+在你的提供商允许的重定向 URI 中注册回调 URL。
 
 ## 通用 OAuth 2.0
 
-使用**提供商：通用 OAuth 2** 可接入符合 OAuth 2.0 但不完全符合 OIDC 标准的提供商（如 GitLab 自定义路径、Gitea、内部服务等）。
-
-与通用 OIDC 不同，没有自动发现功能——三个端点 URL 均需手动填写。Prism 使用访问令牌调用用户信息端点，并尝试映射常见字段（`sub`/`id`、`name`/`login`/`username`、`picture`/`avatar_url`、`email`）。
+对于使用 OAuth 2.0 但不是 OIDC 的提供商（Gitea、自定义 userinfo 路径的 GitLab、内部服务），选择 **提供商：通用 OAuth 2**。没有自动发现，因此需要手动填写全部三个端点 URL。Prism 调用 userinfo 端点并映射常见字段（`sub`/`id`、`name`/`login`/`username`、`picture`/`avatar_url`、`email`）。
 
 ## 同一提供商的多个来源
 
-每个来源拥有独立的 slug、Client ID 和 Client Secret，可以添加任意数量同类型来源：
+每个来源有自己的 slug 和凭据，因此可以按需添加任意多个：
 
 | Slug           | 提供商 | 显示名称         |
 | -------------- | ------ | ---------------- |
@@ -325,40 +139,38 @@ https://your-prism-domain/api/connections/<slug>/callback
 | `google`       | Google | Google           |
 | `keycloak-dev` | OIDC   | 内部 SSO（开发） |
 
-所有已启用的来源将作为独立按钮显示在登录和注册页面。
+所有已启用的来源都会在登录和注册页面拥有各自的按钮。
 
-## 流程安全
+## Cookie
 
-每次登录都会设置一个有效期 10 分钟且带有 `Secure`、`HttpOnly`、`SameSite=Lax` 属性的关联 cookie。Prism 仅在 D1 中保存其哈希，并在回调时原子消费匹配的 state。复制到其他浏览器的回调 URL 会被拒绝，因为该浏览器没有发起流程时的 cookie。关联提供商还会额外绑定到发起流程的同一个有效 Prism 会话。登录成功后，Prism 通过干净的 `/auth/callback` URL 跳转，并且只用 HttpOnly Cookie 安装会话；会话 JWT 不会写入 URL，也不会返回给浏览器 JavaScript。
-
-因此，完成社交登录期间必须允许 Prism 来源使用 cookie。如果回调显示 `invalid_state`，请在同一浏览器中重新开始流程，不要在不同浏览器或浏览器配置文件之间复制回调 URL。在同一浏览器中发起新的社交登录会取代仍在进行的旧流程。
+社交登录要求为 Prism 站点启用 Cookie。请在发起登录的同一浏览器中完成登录；复制到其他浏览器或浏览器配置文件的回调 URL 会以 `invalid_state` 被拒绝。如果遇到这种情况，重新开始即可。
 
 ## 本地开发
 
-本地测试时，使用 `http://localhost:5173` 作为域名注册 OAuth 应用，slug 与生产环境保持一致：
+本地测试时，使用 `http://localhost:5173` 作为域名注册 OAuth 应用：
 
 ```
 http://localhost:5173/api/connections/<slug>/callback
 ```
 
 ::: tip
-Google 和 Microsoft 要求生产环境使用 HTTPS，但允许开发环境使用 `http://localhost`。GitHub 和 Discord 也允许使用纯 HTTP 的 localhost URI。
+Google 和 Microsoft 在生产环境要求 HTTPS，但开发环境允许 `http://localhost`。GitHub 和 Discord 允许纯 HTTP 的 localhost URI。
 :::
 
-::: warning Telegram 与本地开发
-Telegram 要求来源域名使用 HTTPS，不支持 `http://localhost`。如需本地测试 Telegram 登录，需要一个公网 HTTPS 地址——可使用 [cloudflared tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) 或 ngrok 等内网穿透工具，并在 BotFather 中注册该地址（`/setdomain`）。
+::: warning Telegram 与 localhost
+Telegram 要求 HTTPS，不允许 `http://localhost`。本地测试请使用来自隧道（如 [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) 或 ngrok）的公网 HTTPS URL，并在 BotFather 中注册该地址（`/setdomain`）。
 :::
 
 ## 常见问题
 
-**重定向 URI 不匹配** — 在提供商处注册的回调 URL 必须与来源 slug 完全一致（包括大小写）。检查 slug 和 `APP_URL`（`wrangler.jsonc`）是否与注册时一致。
+**重定向 URI 不匹配** — 在提供商处注册的回调 URL 必须完全一致：包括 slug、协议和末尾斜杠。
 
-**每次登录都创建新账号** — 社交关联通过 `(source_slug, provider_user_id)` 匹配。如果 slug 改变，旧关联会成为孤立记录。使用**个人资料 → 关联账号**重新关联。
+**每次登录都创建新账号** — 连接按来源 slug 和提供商的用户 ID 匹配。如果你更改了 slug，旧连接将不再匹配。用户可以从 **个人资料 → 关联账号** 重新连接。
 
-**首次社交登录时提示邮箱已被占用** — 如果已存在相同邮箱的账号（通过密码注册），Prism 会拒绝社交登录并报冲突错误。用户需先使用密码登录，然后在**个人资料 → 关联账号**中关联社交提供商。
+**首次社交登录时提示邮箱已被占用** — 该邮箱的账号已通过密码注册存在。用户必须先使用密码登录，然后在 **个人资料 → 关联账号** 中连接该提供商。
 
-**Telegram：签名无效** — 身份验证数据的 HMAC 校验失败。通常原因是 Prism 中的 **Client Secret** 与机器人令牌不匹配，或来源域名尚未在 BotFather 中注册（`/setdomain`）。请检查这两项后重试。
+**Telegram：签名无效** — **Client Secret** 与机器人令牌不匹配，或域名未在 BotFather 中注册（`/setdomain`）。请检查这两项。
 
-**Telegram：认证已过期** — Telegram 认证会话超过 24 小时。可能是用户长时间未完成认证流程。请让用户重新开始登录流程。
+**Telegram：认证已过期** — Telegram 登录已超过 24 小时。请重新开始登录。
 
-**通用 OIDC 自动发现失败** — 确保 Issuer URL 使用 HTTPS，且提供商发布了 `{issuer}/.well-known/openid-configuration`。Worker 在服务端请求该文档（无 CORS 问题），但提供商不可达或响应慢会导致超时。
+**通用 OIDC 自动发现失败** — 确保 Issuer URL 使用 HTTPS，提供商发布了 `{issuer}/.well-known/openid-configuration`，且提供商可访问。

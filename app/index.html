@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Primary meta -->
+    <title>Prism</title>
+    <meta name="description" content="Sign in to your account" />
+    <meta name="application-name" content="Prism" />
+    <meta name="theme-color" content="#ffffff" />
+
+    <!-- Page canvas, inline so it applies before the first paint. The
+         bundled stylesheet can arrive after the server-rendered markup has
+         already painted (always in dev, where Vite injects CSS from JS), and
+         until then the page would show the browser's default white — a
+         flash on every dark-mode reload. Keyed off the data-theme attribute
+         the script below sets synchronously. -->
+    <style>
+      html {
+        --prism-canvas: #ffffff;
+        color-scheme: light;
+        background: var(--prism-canvas);
+      }
+      html[data-theme="dark"] {
+        --prism-canvas: #1a1a1a;
+        color-scheme: dark;
+      }
+    </style>
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Prism" />
+    <meta property="og:description" content="Sign in to your account" />
+    <meta property="og:image" content="/ic_fluent_lock_shield_48_color.svg" />
+
+    <!-- Favicon -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/ic_fluent_lock_shield_48_color.svg"
+    />
+
+    <!-- Global stylesheet as a render-blocking <link> rather than a JS
+         import: Vite only injects JS-imported CSS once the module runs, so
+         in dev the server-rendered page painted unstyled (default margins,
+         no box-sizing reset) before snapping into place. -->
+    <link rel="stylesheet" href="/src/web/index.css" />
+
+    <!-- Resolve color scheme synchronously before paint and refresh the
+         prism_color_scheme cookie. An explicit user choice saved by the
+         in-app theme switcher (localStorage prism_theme_mode) wins over
+         matchMedia. The cookie is what the server reads on the *next*
+         request to SSR with the right theme; refreshing it on every load
+         means an OS theme change is picked up by the next navigation, not
+         the one after. -->
+    <script>
+      (function () {
+        var mode = null;
+        try {
+          // Remove credentials/profile caches written by older builds before
+          // any application or third-party code can observe them. Browser
+          // sessions now live exclusively in the HttpOnly session cookie.
+          localStorage.removeItem("token");
+          localStorage.removeItem("accounts");
+          localStorage.removeItem("user");
+          mode = localStorage.getItem("prism_theme_mode");
+        } catch (e) {
+          /* storage may be blocked; fall through to matchMedia */
+        }
+        var scheme =
+          mode === "dark" || mode === "light"
+            ? mode
+            : window.matchMedia &&
+                window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        document.cookie =
+          "prism_color_scheme=" +
+          scheme +
+          "; path=/; max-age=31536000; samesite=lax";
+        document.documentElement.setAttribute("data-theme", scheme);
+        // Match the browser chrome (mobile address bar) to the canvas too.
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta)
+          meta.setAttribute(
+            "content",
+            scheme === "dark" ? "#1a1a1a" : "#ffffff",
+          );
+      })();
+    </script>
+    <!--app-head-->
+  </head>
+  <body>
+    <div id="root"><!--app-html--></div>
+    <!--app-state-->
+    <script type="module" src="/src/web/entry-client.tsx"></script>
+  </body>
+</html>

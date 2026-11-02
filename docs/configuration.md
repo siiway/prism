@@ -1,517 +1,319 @@
 ---
 title: Configuration
-description: All runtime configuration keys stored in D1, plus Wrangler bindings, environment variables, and secrets.
+description: Runtime configuration keys, plus Wrangler bindings, environment variables, and secrets.
 ---
 
 # Configuration
 
-## Avatar proxy
+Site settings are edited at runtime in **Admin → Settings**; no redeploy is
+needed. This page lists the keys behind them, then the Wrangler bindings and
+variables that are set at deploy time.
 
-The avatar proxy rejects source responses larger than the configured byte
-limit. Its optional cache is disabled by default and can use `KV_CACHE` or D1;
-configure cache mode, TTL, and the per-avatar cache limit in **Admin Panel →
-Avatar Proxy**. D1 entries are removed by the scheduled cleanup job, while KV
-uses its native expiration TTL.
-
-Raster conversion to WebP is optional. Add an `IMAGES` Cloudflare Images
-binding, including in each named Wrangler environment, before enabling it. Safe
-SVG remains SVG and is sanitized rather than rasterized.
-
-Site configuration is stored in the `site_config` D1 table and editable at runtime
-through **Admin → Settings**. No redeployment is needed to change any of these values.
-
-Sensitive keys (captcha secrets — both the global and the China Turnstile one —
-social client secrets, SMTP/IMAP passwords, the GitHub README PAT, Discord bot
-token) are encrypted at rest with AES-GCM via the
-[`SECRETS_KEY`](#wrangler-bindings--variables) Cloudflare Secrets Store binding.
-The admin panel transparently decrypts on read; values are never exposed via the
-config API.
+Sensitive values (captcha secrets, social client secrets, SMTP/IMAP passwords,
+the GitHub README token, the Discord bot token) are encrypted at rest when the
+[`SECRETS_KEY`](#secrets-key-setup) binding is present, and are never returned by
+the config API.
 
 ## General
 
-| Key                          | Type    | Default                         | Description                                                                                  |
-| ---------------------------- | ------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
-| `site_name`                  | string  | `"Prism"`                       | Displayed in the browser title and emails                                                    |
-| `site_description`           | string  | `"Federated identity platform"` | Shown on the login page                                                                      |
-| `site_icon_url`              | string? | `null`                          | URL to a favicon / logo                                                                      |
-| `allow_registration`         | boolean | `true`                          | Allow new users to self-register                                                             |
-| `invite_only`                | boolean | `false`                         | Require an invite token to register, even when `allow_registration = true`                   |
-| `require_email_verification` | boolean | `false`                         | Block login until email is verified                                                          |
-| `accent_color`               | string  | `"#0078d4"`                     | Primary brand color, selected with the color picker or entered as hex. Drives FluentUI theme |
-| `custom_css`                 | string  | `""`                            | Injected as a `<style>` block on every page                                                  |
-| `disable_user_create_team`   | boolean | `false`                         | Hide the "New team" button — only admins can create teams                                    |
-| `disable_user_create_app`    | boolean | `false`                         | Hide the "New application" button — only admins can create OAuth apps                        |
-| `allow_alt_email_login`      | boolean | `true`                          | Let users sign in with any verified secondary email, not just primary                        |
-| `initialized`                | boolean | `false`                         | Set to `true` after first-run setup. Do not change manually                                  |
+| Key                          | Type    | Default                         | Description                                                |
+| ---------------------------- | ------- | ------------------------------- | ---------------------------------------------------------- |
+| `site_name`                  | string  | `"Prism"`                       | Shown in the browser title and emails                      |
+| `site_description`           | string  | `"Federated identity platform"` | Shown on the login page                                    |
+| `site_icon_url`              | string? | `null`                          | URL to a favicon / logo                                    |
+| `allow_registration`         | boolean | `true`                          | Allow self-registration                                    |
+| `invite_only`                | boolean | `false`                         | Require an invite token to register                        |
+| `require_email_verification` | boolean | `false`                         | Block sign-in until the email is verified                  |
+| `accent_color`               | string  | `"#0078d4"`                     | Primary brand color (hex)                                  |
+| `custom_css`                 | string  | `""`                            | Injected as a `<style>` block on every page                |
+| `disable_user_create_team`   | boolean | `false`                         | Hide "New team" — only admins can create teams             |
+| `disable_user_create_app`    | boolean | `false`                         | Hide "New application" — only admins can create OAuth apps |
+| `allow_alt_email_login`      | boolean | `true`                          | Let users sign in with any verified secondary email        |
+| `security_contact`           | string  | `""`                            | `mailto:` address or https URL for vulnerability reports   |
+| `security_policy_url`        | string  | `""`                            | Link to your disclosure policy                             |
+
+When `security_contact` is set, Prism serves `/.well-known/security.txt`.
 
 ## Legal pages
 
-Two operator-authored documents — a Privacy Policy and Terms of Service — can be
-published from **Admin → Settings → Legal**. Each is written in Markdown (rendered
-and sanitized the same way as profile READMEs) and served at its own public page,
-reachable without signing in:
+A Privacy Policy and Terms of Service, written in Markdown, can be published
+from **Admin → Settings → Legal**. They're served without sign-in at `/privacy`
+and `/terms`, with footer links on every page. Each is limited to 256 KiB. Save
+a document empty to hide both the page and its link.
 
-| Document         | Page       | API endpoint             |
-| ---------------- | ---------- | ------------------------ |
-| Privacy Policy   | `/privacy` | `GET /api/legal/privacy` |
-| Terms of Service | `/terms`   | `GET /api/legal/terms`   |
+## Avatar proxy
 
-Unlike the settings above, these are **not** stored in `site_config` — they live
-in a dedicated `legal_documents` D1 table (slug, content, `updated_at`,
-`updated_by`). A policy is a large document, and `site_config` is read in full on
-essentially every request; keeping the documents out of it avoids loading them on
-the hot path. Each is capped at 256 KiB.
-
-A link to each published page appears in the footer of every page (signed in or
-out). Clearing a document (saving it empty) hides both the page and its footer
-link. The public `GET /api/site` payload does not include the full text — it only
-exposes the `has_privacy_policy` / `has_terms_of_service` booleans so the footer
-knows which links to render; the content is fetched on demand when a reader opens
-the page, and the endpoint returns the last-updated timestamp for a "Last updated"
-line.
+Avatars and icons from other sites are served through Prism's image proxy.
+Responses over the size limit are rejected. An optional cache (off by default,
+using KV or D1) and its TTL are set in **Admin → Avatar Proxy**. Raster
+conversion to WebP is optional and needs an `IMAGES` Cloudflare Images binding.
 
 ## Sessions & tokens
 
-| Key                        | Type   | Default | Description                                                                                                          |
-| -------------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------- |
-| `session_ttl_days`         | number | `30`    | Session JWT lifetime. Per-user override via `users.access_token_ttl_minutes` / `refresh_token_ttl_days` (admin-only) |
-| `access_token_ttl_minutes` | number | `60`    | OAuth access token lifetime (default; per-user override available)                                                   |
-| `refresh_token_ttl_days`   | number | `30`    | OAuth refresh token lifetime (default; per-user override available)                                                  |
+| Key                        | Type   | Default | Description                  |
+| -------------------------- | ------ | ------- | ---------------------------- |
+| `session_ttl_days`         | number | `30`    | Session lifetime             |
+| `access_token_ttl_minutes` | number | `60`    | OAuth access token lifetime  |
+| `refresh_token_ttl_days`   | number | `30`    | OAuth refresh token lifetime |
+
+An admin can override the access and refresh lifetimes for a single user.
 
 ## Bot protection (captcha)
 
-Prism runs an **ordered set of providers**. The first is the default the visitor
-sees; the rest are **alternates** they can switch to when the default fails or
-takes too long — the "try a different method" affordance. The site moderator
-chooses both which providers are in the set and their order. The captcha is
-challenged on register, login, password change, email-verification resend,
-team-join, invite registration, step-up 2FA, and any flow the admin enables.
+Prism runs an ordered set of providers. The first is the default; the rest are
+alternates a visitor can switch to if the default fails or is slow. Each
+provider has its own credentials, so you can configure all of them. Captcha
+protects registration, sign-in, password change, email-verification resend,
+team join, invite registration and step-up 2FA.
 
-Each provider carries **its own credentials** (they can all be configured at
-once), so a submitted token names the provider that produced it and the server
-verifies it against that provider — rejecting any provider not in the enabled
-set.
+| Key                              | Type     | Default      | Description                                                               |
+| -------------------------------- | -------- | ------------ | ------------------------------------------------------------------------- |
+| `captcha_providers`              | string[] | `[]`         | Ordered enabled set. First is the default. `[]` = off                     |
+| `captcha_switch_timeout_seconds` | number   | `15`         | Delay before "try a different method" appears. `0` = only after a failure |
+| `turnstile_site_key`             | string   | `""`         | Turnstile site key                                                        |
+| `turnstile_secret_key`           | string   | `""`         | Turnstile secret                                                          |
+| `turnstile_endpoint_mode`        | string   | `"global"`   | Which host serves Turnstile (see below)                                   |
+| `turnstile_china_site_key`       | string   | `""`         | Site key of a `region: "china"` widget                                    |
+| `turnstile_china_secret_key`     | string   | `""`         | Secret for that key                                                       |
+| `hcaptcha_site_key`              | string   | `""`         | hCaptcha site key                                                         |
+| `hcaptcha_secret_key`            | string   | `""`         | hCaptcha secret                                                           |
+| `recaptcha_site_key`             | string   | `""`         | reCAPTCHA v3 site key                                                     |
+| `recaptcha_secret_key`           | string   | `""`         | reCAPTCHA v3 secret                                                       |
+| `geetest_captcha_id`             | string   | `""`         | GeeTest v4 CAPTCHA ID                                                     |
+| `geetest_captcha_key`            | string   | `""`         | GeeTest v4 key                                                            |
+| `geetest_fail_open`              | boolean  | `false`      | Accept visitors when GeeTest is unreachable. `false` = reject             |
+| `cap_mode`                       | string   | `"embedded"` | `embedded` (runs inside Prism) or `external` (self-hosted Cap Standalone) |
+| `cap_api_endpoint`               | string   | `""`         | Cap Standalone base URL (external mode)                                   |
+| `cap_site_key`                   | string   | `""`         | Cap Standalone site key (external mode)                                   |
+| `cap_secret_key`                 | string   | `""`         | Cap Standalone secret (external mode)                                     |
+| `cap_challenge_count`            | number   | `50`         | Puzzles per Cap challenge (embedded mode)                                 |
+| `cap_challenge_difficulty`       | number   | `4`          | Cap difficulty (embedded mode)                                            |
+| `cap_instrumentation`            | boolean  | `true`       | Cap's anti-automation script (embedded mode)                              |
 
-| Key                              | Type     | Default      | Description                                                                      |
-| -------------------------------- | -------- | ------------ | -------------------------------------------------------------------------------- |
-| `captcha_providers`              | string[] | `[]`         | Ordered enabled set. `[0]` = default, rest = switchable alternates. `[]` = off   |
-| `captcha_switch_timeout_seconds` | number   | `15`         | Delay before the "try a different method" control appears. `0` = only on failure |
-| `turnstile_site_key`             | string   | `""`         | Turnstile global (`region: "world"`) site key                                    |
-| `turnstile_secret_key`           | string   | `""`         | Turnstile global secret (encrypted at rest)                                      |
-| `turnstile_endpoint_mode`        | string   | `"global"`   | Turnstile-only. Which host serves the widget (see below)                         |
-| `turnstile_china_site_key`       | string   | `""`         | Turnstile-only. Site key of a `region: "china"` widget (see below)               |
-| `turnstile_china_secret_key`     | string   | `""`         | Turnstile-only. Secret for that key (encrypted at rest)                          |
-| `hcaptcha_site_key`              | string   | `""`         | hCaptcha site key                                                                |
-| `hcaptcha_secret_key`            | string   | `""`         | hCaptcha secret (encrypted at rest)                                              |
-| `recaptcha_site_key`             | string   | `""`         | reCAPTCHA v3 site key                                                            |
-| `recaptcha_secret_key`           | string   | `""`         | reCAPTCHA v3 secret (encrypted at rest)                                          |
-| `geetest_captcha_id`             | string   | `""`         | GeeTest v4 public CAPTCHA ID                                                     |
-| `geetest_captcha_key`            | string   | `""`         | GeeTest v4 private key (encrypted at rest)                                       |
-| `geetest_fail_open`              | boolean  | `false`      | Accept when GeeTest is unreachable. `false` = fail closed (reject)               |
-| `cap_mode`                       | string   | `"embedded"` | `embedded` (in-worker, KV-backed) or `external` (self-hosted Cap Standalone)     |
-| `cap_api_endpoint`               | string   | `""`         | Cap Standalone base URL (external mode)                                          |
-| `cap_site_key`                   | string   | `""`         | Cap Standalone site key (external mode)                                          |
-| `cap_secret_key`                 | string   | `""`         | Cap Standalone secret (external mode, encrypted at rest)                         |
-| `cap_challenge_count`            | number   | `50`         | PoW puzzles per Cap challenge (embedded mode)                                    |
-| `cap_challenge_difficulty`       | number   | `4`          | Cap PoW target prefix length in hex chars (embedded mode)                        |
-| `cap_instrumentation`            | boolean  | `true`       | Emit Cap's anti-automation instrumentation script (embedded mode)                |
-| `pow_difficulty`                 | number   | `20`         | Leading zero bits required for the built-in proof-of-work (higher = harder)      |
+Provider names: `turnstile`, `hcaptcha`, `recaptcha`, `geetest` and `cap`
+([Cap](https://trycap.dev)).
 
-Providers: `turnstile`, `hcaptcha`, `recaptcha`, `pow` (built-in Rust→WASM
-proof-of-work), `geetest` (GeeTest v4 / SenseBot behavioural), `cap`
-([Cap](https://trycap.dev) self-hosted proof-of-work).
+### Turnstile and Mainland China
 
-> **Migration.** Sites configured before switchable sets keep working: the legacy
-> `captcha_provider` + shared `captcha_site_key`/`captcha_secret_key` are read
-> once and seeded into `captcha_providers[0]` and that provider's per-provider
-> credential fields. Saving the captcha settings once writes the new shape.
+Cloudflare serves Turnstile from a global host and a Mainland-China host
+(`challenges.cloudflare-cn.com`). A widget only works on the host matching the
+region it was created with, so using the China host means a second widget
+created with `region: "china"` (this needs a Cloudflare China Network
+entitlement). Put its keys in `turnstile_china_site_key` and
+`turnstile_china_secret_key`.
 
-### GeeTest v4
+`turnstile_endpoint_mode` picks which pair a visitor gets:
 
-GeeTest ("极验") is a behavioural captcha that is often friendlier than a
-checkbox challenge. Prism integrates **v4 / SenseBot** (`initGeetest4`). Create a
-CAPTCHA in the GeeTest console and copy its **ID** (public) and **key** (secret)
-into `geetest_captcha_id` / `geetest_captcha_key`. When GeeTest's own service is
-unreachable the widget can emit a bypass token; `geetest_fail_open` decides
-whether Prism accepts it — the default is **fail closed** so an outage does not
-silently drop bot protection.
+- `global` — always the global host.
+- `china` — always the China host.
+- `client_language` — China when the browser language is Chinese.
+- `server_region` — China when the request comes from `CN`.
+- `client_region` — China when the browser timezone is in Mainland China.
 
-### Cap
-
-[Cap](https://trycap.dev) is a self-hosted, privacy-friendly proof-of-work
-captcha. Two modes:
-
-- **Embedded** (default) — Cap runs inside the Worker via `capjs-core`. Challenges
-  are stateless signed JWTs and the redeem token is derived deterministically
-  from the challenge, so redeeming is idempotent; single use is enforced once at
-  the gate via the atomic D1 replay-claim table. The HMAC secret is derived from
-  the server JWT secret, so there is **no extra binding or server to run**. Tuned
-  by `cap_challenge_count` / `cap_challenge_difficulty` and `cap_instrumentation`.
-- **External** — point `cap_api_endpoint` (+ `cap_site_key` / `cap_secret_key`) at
-  a self-hosted [Cap Standalone](https://trycap.dev/guide/standalone/) server.
-
-Cap is a modern alternative to the built-in `pow` provider, which remains
-available (see below).
-
-### Turnstile: two hosts, two widgets
-
-Cloudflare serves Turnstile from a global host (`challenges.cloudflare.com`) and
-a Mainland-China host (`challenges.cloudflare-cn.com`). The two are **not**
-interchangeable, which shapes the whole setting:
-
-- Every Turnstile widget carries a **`region`** — `world` or `china` — chosen when
-  the widget is created.
-- A widget only works on the host matching its region. A `region: "world"` site
-  key sent to the China host gets HTTP 400, which the widget reports as
-  `Error: 400020` on a form that can then never be submitted.
-- `region` is **immutable**: the API rejects a change with
-  `you cannot change region`. An existing global key can never be promoted.
-- Creating a `region: "china"` widget needs an entitlement tied to a
-  [China Network](https://developers.cloudflare.com/china-network/) contract —
-  without it the API answers `not entitled to create widgets with this region`.
-  Cloudflare's China Network docs put it plainly: _"Turnstile is not available
-  within Mainland China."_
-
-So using the China host means switching the **site key** as well as the host.
-That is what `turnstile_china_site_key` / `turnstile_china_secret_key` are for:
-a second widget, created with `region: "china"`, sitting beside the global pair
-in `turnstile_site_key` / `turnstile_secret_key`.
-
-**If `turnstile_china_site_key` is empty, every mode below behaves as `global`.**
-Nothing breaks if you pick a China-leaning mode without holding the entitlement —
-visitors are simply served the global widget.
-
-### `turnstile_endpoint_mode`
-
-Picks which of the two pairs a given visitor gets:
-
-- `global` — always the global host and key.
-- `china` — always the China host and key.
-- `client_language` — the browser picks China when its language is Chinese (`zh*`).
-- `server_region` — the server picks China when the request's edge geolocation is `CN`.
-- `client_region` — the browser picks China when its timezone is a Mainland-China zone.
-
-Because the decision selects a key as well as a host, both site keys are sent to
-the browser for the client-side modes; site keys are public, so this discloses
-nothing. The token comes back tagged with the widget that minted it
-(`captcha_variant`), and the server verifies it against that widget's secret.
-
-**Validation.** A configured China key is trusted only after it answers: Prism
-requests a challenge for it from the China host, caches the verdict in
-`KV_CACHE` for 6 h on success and 1 h on failure, and falls back to `global`
-whenever it fails. This catches a key typed into the wrong field, a widget that
-was actually created `region: "world"`, and a lapsed entitlement. The probe runs
-in the background, so a cold cache serves the global host rather than waiting on
-it.
-
-**Why the fallback is server-side.** The Turnstile bundle reads its challenge
-origin from its own `<script>` tag exactly once at load, and the `base-url`
-parameter that would override it is disabled in the production bundle. A widget
-that has already loaded from the wrong host cannot be redirected without
-reloading the page, so the choice has to be right before the browser commits.
-
-**Proof-of-work** (`pow`) requires no third-party service. The Rust→WASM solver
-in `pow/` runs ~10× faster than the JS fallback. Difficulty 20 takes ~0.1–2 s
-depending on device. Values above 24 may time out on low-end mobile devices.
-PoW is single-use and replay-protected via the `pow_used` table. For a
-self-hosted proof-of-work option with a polished widget, consider the `cap`
-provider above.
+If `turnstile_china_site_key` is empty, every mode behaves as `global`, so
+picking a China mode without the entitlement costs nothing. Prism also checks a
+China key before using it and falls back to global if it doesn't work.
 
 ## Two-factor / step-up
 
-| Key                       | Type    | Default | Description                                                                                                                                                                |
-| ------------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sudo_mode_ttl_minutes`   | number  | `5`     | After a successful step-up, subsequent challenges from the same `(user, session, app)` skip the TOTP/passkey prompt for this many minutes. `0` disables sudo mode entirely |
-| `require_captcha_for_2fa` | boolean | `false` | Site-wide: every step-up confirmation must solve the active captcha. Apps can also opt in per challenge. No-op when `captcha_providers` is empty                           |
+| Key                       | Type    | Default | Description                                                                                                  |
+| ------------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------ |
+| `sudo_mode_ttl_minutes`   | number  | `5`     | After a successful step-up, further challenges from the same app skip the prompt for this long. `0` disables |
+| `require_captcha_for_2fa` | boolean | `false` | Every step-up confirmation must solve the captcha                                                            |
 
 ## Public profiles
 
-User and team public profiles are off until the user (or team owner) explicitly
-opts in. Site defaults apply only to fields the user has not customized — they
-never silently flip a private profile to public.
+Profiles are off until a user (or team owner) opts in. Site defaults only apply
+to fields the user hasn't set themselves, and never make a private profile
+public.
 
-### User profile defaults
+| Key                                      | Default | Description                                            |
+| ---------------------------------------- | ------- | ------------------------------------------------------ |
+| `enable_public_profiles`                 | `true`  | Master switch. `false` = all profile pages 404         |
+| `default_profile_show_display_name`      | `true`  |                                                        |
+| `default_profile_show_avatar`            | `true`  |                                                        |
+| `default_profile_show_email`             | `false` |                                                        |
+| `default_profile_show_joined_at`         | `true`  |                                                        |
+| `default_profile_show_gpg_keys`          | `true`  |                                                        |
+| `default_profile_show_authorized_apps`   | `false` |                                                        |
+| `default_profile_show_owned_apps`        | `true`  |                                                        |
+| `default_profile_show_domains`           | `true`  |                                                        |
+| `default_profile_show_joined_teams`      | `false` | Also controls appearing in a team's public member list |
+| `default_profile_show_readme`            | `true`  |                                                        |
+| `profile_readme_max_bytes`               | `65536` | Maximum README size                                    |
+| `default_team_profile_show_description`  | `true`  | Team profile defaults                                  |
+| `default_team_profile_show_avatar`       | `true`  |                                                        |
+| `default_team_profile_show_owner`        | `false` |                                                        |
+| `default_team_profile_show_member_count` | `true`  |                                                        |
+| `default_team_profile_show_apps`         | `true`  |                                                        |
+| `default_team_profile_show_domains`      | `true`  |                                                        |
+| `default_team_profile_show_members`      | `false` |                                                        |
+| `default_team_profile_show_sub_teams`    | `true`  |                                                        |
 
-| Key                                    | Type    | Default | Description                                                                             |
-| -------------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------- |
-| `enable_public_profiles`               | boolean | `true`  | Master kill switch. `false` ⇒ both `/u/:username` and `/t/:id` always 404               |
-| `default_profile_show_display_name`    | boolean | `true`  |                                                                                         |
-| `default_profile_show_avatar`          | boolean | `true`  |                                                                                         |
-| `default_profile_show_email`           | boolean | `false` | Sensitive — opt-in even when the rest of the profile is public                          |
-| `default_profile_show_joined_at`       | boolean | `true`  |                                                                                         |
-| `default_profile_show_gpg_keys`        | boolean | `true`  |                                                                                         |
-| `default_profile_show_authorized_apps` | boolean | `false` | Reveals the user's connected services — opt-in                                          |
-| `default_profile_show_owned_apps`      | boolean | `true`  |                                                                                         |
-| `default_profile_show_domains`         | boolean | `true`  |                                                                                         |
-| `default_profile_show_joined_teams`    | boolean | `false` | Also gates appearing in any team's public member list                                   |
-| `default_profile_show_readme`          | boolean | `true`  | README is itself opt-in (empty = hidden); this only matters if the user has written one |
-| `profile_readme_max_bytes`             | number  | `65536` | Hard cap on README markdown source size                                                 |
+## Teams
 
-### Team profile defaults
+| Key                                   | Type    | Default | Description                                                                        |
+| ------------------------------------- | ------- | ------- | ---------------------------------------------------------------------------------- |
+| `enable_sub_teams`                    | boolean | `true`  | Master switch for [sub-teams](teams.md#sub-teams)                                  |
+| `max_team_depth`                      | integer | `5`     | Maximum nesting depth (1–20)                                                       |
+| `inherit_team_membership`             | boolean | `true`  | Members of a team have at least the same role on its sub-teams                     |
+| `inherit_team_domains`                | boolean | `true`  | Sub-teams see and auto-verify against ancestors' domains                           |
+| `default_team_require_2fa`            | boolean | `false` | Every team requires a TOTP authenticator or passkey                                |
+| `default_team_require_verified_email` | boolean | `false` | Every team requires a verified primary email                                       |
+| `default_team_role_permissions`       | object  | `{}`    | Default group permissions for team admins, e.g. `{"admin":{"groups:manage":true}}` |
 
-| Key                                      | Type    | Default | Description                                                                       |
-| ---------------------------------------- | ------- | ------- | --------------------------------------------------------------------------------- |
-| `default_team_profile_show_description`  | boolean | `true`  |                                                                                   |
-| `default_team_profile_show_avatar`       | boolean | `true`  |                                                                                   |
-| `default_team_profile_show_owner`        | boolean | `false` | Opt-in: would otherwise reveal the owner's username                               |
-| `default_team_profile_show_member_count` | boolean | `true`  |                                                                                   |
-| `default_team_profile_show_apps`         | boolean | `true`  |                                                                                   |
-| `default_team_profile_show_domains`      | boolean | `true`  |                                                                                   |
-| `default_team_profile_show_members`      | boolean | `false` | The full member list. Each member's own `profile_show_joined_teams` still applies |
-| `default_team_profile_show_sub_teams`    | boolean | `true`  | Sub-team listing. Each child must also be public to actually appear               |
-
-There is no site default for the master `profile_is_public` flag — privacy-first.
-The team owner (or admin) must always set it explicitly.
-
-### Sub-teams (nested teams)
-
-Master switch and inheritance toggles for the [sub-team feature](teams.md#sub-teams-nested-teams).
-See that page for the full semantics; the keys themselves:
-
-| Key                       | Type    | Default | Description                                                                     |
-| ------------------------- | ------- | ------- | ------------------------------------------------------------------------------- |
-| `enable_sub_teams`        | boolean | `true`  | Master switch. When `false` every sub-team endpoint returns 403.                |
-| `max_team_depth`          | integer | `5`     | Hard cap on nesting depth (root = 0). Admin API validates 1–20.                 |
-| `inherit_team_membership` | boolean | `true`  | Cascade member roles to descendants (effective role = max(direct, inherited)).  |
-| `inherit_team_domains`    | boolean | `true`  | Surface ancestor-owned domains on sub-team listings + use them for auto-verify. |
-
-### Member groups
-
-Site-wide fallback for the per-team capability set behind
-[member groups](teams.md#member-groups). There is no master switch — the
-feature is opt-in per team and off by default, so nothing is emitted until a
-team owner turns it on.
-
-| Key                             | Type   | Default | Description                                                                              |
-| ------------------------------- | ------ | ------- | ---------------------------------------------------------------------------------------- |
-| `default_team_role_permissions` | object | `{}`    | Fallback capability grants for the `admin` role, e.g. `{"admin":{"groups:manage":true}}` |
-
-Resolution order is per-group override → team `role_permissions` → this key →
-built-in defaults (`groups:manage` off, `groups:assign` on). Each level only
-contributes the keys it explicitly sets, so an empty object here simply lets
-every team fall through to the built-ins.
+Turning on the two `default_team_require_*` floors applies to existing members
+immediately; tell them first.
 
 ### Invite-link registration
 
-Bounds for [invite-link registration](teams.md#invite-link-registration).
-Whether a team may use it at all is a per-team grant from a site admin, and
-nothing creates accounts while `allow_registration` is `false`.
+Whether a team may use [invite-link registration](teams.md#invite-link-registration)
+is a per-team grant from a site admin. Nothing creates accounts while
+`allow_registration` is `false`.
 
-| Key                                      | Type    | Default | Description                                                                               |
-| ---------------------------------------- | ------- | ------- | ----------------------------------------------------------------------------------------- |
-| `team_invite_registration_max_uses_cap`  | integer | `1000`  | Ceiling on the `max_uses` a team may set on a registration-capable invite.                |
-| `team_invite_registration_rate_per_hour` | integer | `200`   | Registrations per hour per invite. Per-IP limiting can't bound a widely shared link.      |
-| `restricted_user_capabilities`           | object  | `{}`    | Features granted to restricted accounts, e.g. `{"app:create": true}`. Empty = all denied. |
-| `restricted_pending_ttl_hours`           | integer | `72`    | How long an unfinished registration survives before the reaper deletes it.                |
-| `restricted_dissolve_grace_hours`        | integer | `168`   | Grace period between a dissolution deactivating accounts and deleting them.               |
+| Key                                      | Default | Description                                                                              |
+| ---------------------------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `team_invite_registration_max_uses_cap`  | `1000`  | Highest `max_uses` an invite that creates accounts may have                              |
+| `team_invite_registration_rate_per_hour` | `200`   | Registrations per hour per invite                                                        |
+| `restricted_user_capabilities`           | `{}`    | Features granted to restricted accounts, e.g. `{"app:create": true}`. Empty = all denied |
+| `restricted_pending_ttl_hours`           | `72`    | How long an unfinished registration survives                                             |
+| `restricted_dissolve_grace_hours`        | `168`   | Delay between deactivating and deleting accounts when a team is dissolved                |
 
 Capability keys: `team:create`, `app:create`, `domain:create`, `pat:create`,
-`profile:public`, `gpg:manage`, `self:convert`. Anything absent falls back to
-the built-in defaults, which deny everything. Account security is never gated.
-`self:convert` is the site default; a team can override it (see
-[Teams → Converting to a full account](teams.md#converting-to-a-full-account)).
-
-### Team join requirements (site floor)
-
-Site-wide minimums every team is forced to require, regardless of the team-level
-flag. Owners can opt their team in further but cannot opt out below the floor.
-
-| Key                                   | Type    | Default | Description                                                           |
-| ------------------------------------- | ------- | ------- | --------------------------------------------------------------------- |
-| `default_team_require_2fa`            | boolean | `false` | Floor: every team requires at least one TOTP authenticator or passkey |
-| `default_team_require_verified_email` | boolean | `false` | Floor: every team requires a verified primary email                   |
-
-::: warning
-Turning these on retroactively forces every existing member to satisfy the
-factor — anyone who hasn't enrolled is locked out of team operations until they
-do. Roll them out behind a member-side notice.
-:::
+`profile:public`, `gpg:manage`, `self:convert`.
 
 ## GitHub README sync
 
-Users can opt to sync their public profile README from a GitHub user repo. Cache
-respects ETag and serves stale-on-error.
+Users can sync their profile README from a GitHub repo.
 
-| Key                               | Type   | Default | Description                                                                                                                         |
-| --------------------------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `github_readme_token`             | string | `""`    | Site-global GitHub PAT used as the last-resort token for README fetches. Empty = unauthenticated 60 req/h per IP. Encrypted at rest |
-| `github_readme_cache_ttl_seconds` | number | `3600`  | Serve cached README for this long before issuing a conditional GET                                                                  |
-| `github_readme_token_failures`    | number | `0`     | Auto-managed: site PAT 401 counter. Auto-clears the token at 3 failures                                                             |
+| Key                               | Default | Description                                                                        |
+| --------------------------------- | ------- | ---------------------------------------------------------------------------------- |
+| `github_readme_token`             | `""`    | GitHub token for README fetches. Empty = unauthenticated (60 requests/hour per IP) |
+| `github_readme_cache_ttl_seconds` | `3600`  | How long a fetched README is served before re-checking                             |
 
 ## GPG login
 
-| Key                    | Type   | Default | Description                                                                                                                                                                                                    |
-| ---------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gpg_challenge_prefix` | string | `""`    | Extra lines inserted between the site header and the random challenge in the clearsign payload. Use this to add a human-readable marker so users can verify the challenge they're signing comes from your site |
+| Key                    | Default | Description                                                                               |
+| ---------------------- | ------- | ----------------------------------------------------------------------------------------- |
+| `gpg_challenge_prefix` | `""`    | Extra text in the challenge users sign, so they can recognise it as coming from your site |
 
 ## Third-party notifications
 
-| Key                          | Type   | Default | Description                                                                                                                                                                                             |
-| ---------------------------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tg_notify_source_slug`      | string | `""`    | Slug of an enabled Telegram OAuth source whose bot is used to deliver Telegram notifications. Leave empty to disable Telegram delivery. The source's bot token doubles as the bot used to message users |
-| `discord_notify_source_slug` | string | `""`    | Slug of an enabled Discord OAuth source used to identify linked Discord users for notification DMs. Leave empty to disable Discord delivery                                                             |
-| `discord_bot_token`          | string | `""`    | Discord bot token used to open DM channels and send notification messages. This is separate from the Discord OAuth source client secret                                                                 |
+| Key                          | Default | Description                                                                  |
+| ---------------------------- | ------- | ---------------------------------------------------------------------------- |
+| `tg_notify_source_slug`      | `""`    | Telegram OAuth source whose bot sends notifications. Empty disables Telegram |
+| `discord_notify_source_slug` | `""`    | Discord OAuth source used to find users for DMs. Empty disables Discord      |
+| `discord_bot_token`          | `""`    | Discord bot token used to send the DMs                                       |
 
 ## Social login
 
-Each OAuth source (GitHub, Google, Microsoft, Discord, Telegram, X, Cloudflare,
-Generic OIDC, Generic OAuth 2) is now a row in the `oauth_sources` table — managed in
-**Admin → OAuth Sources**, not here. The legacy keys below remain readable for
-backwards compatibility but new deployments should use OAuth Sources directly.
+Social providers are configured as OAuth sources in **Admin → OAuth Sources**,
+not here. See [Social Login Setup](social-login.md).
 
-| Key (legacy)              | Description                          |
-| ------------------------- | ------------------------------------ |
-| `github_client_id`        | GitHub OAuth App Client ID           |
-| `github_client_secret`    | GitHub OAuth App Client Secret       |
-| `google_client_id`        | Google Cloud OAuth 2.0 Client ID     |
-| `google_client_secret`    | Google Cloud OAuth 2.0 Client Secret |
-| `microsoft_client_id`     | Azure AD Application (client) ID     |
-| `microsoft_client_secret` | Azure AD Client Secret               |
-| `discord_client_id`       | Discord Application ID               |
-| `discord_client_secret`   | Discord Client Secret                |
+## Email
 
-All `*_client_secret` values are encrypted at rest. Callback URL format for
-sources is:
+| Key              | Default                 | Description                                |
+| ---------------- | ----------------------- | ------------------------------------------ |
+| `email_provider` | `"none"`                | `none`, `resend`, `mailchannels` or `smtp` |
+| `email_api_key`  | `""`                    | API key for Resend or Mailchannels         |
+| `email_from`     | `"noreply@example.com"` | From address                               |
+| `smtp_host`      | `""`                    | SMTP server                                |
+| `smtp_port`      | `587`                   | SMTP port                                  |
+| `smtp_secure`    | `false`                 | `true` = implicit TLS, `false` = STARTTLS  |
+| `smtp_user`      | `""`                    | SMTP username                              |
+| `smtp_password`  | `""`                    | SMTP password                              |
 
-```
-https://your-domain/api/connections/<slug>/callback
-```
+### Receiving
 
-## Email — Sending
-
-| Key              | Type    | Default                 | Description                                    |
-| ---------------- | ------- | ----------------------- | ---------------------------------------------- |
-| `email_provider` | string  | `"none"`                | `none` \| `resend` \| `mailchannels` \| `smtp` |
-| `email_api_key`  | string  | `""`                    | API key for Resend or Mailchannels (encrypted) |
-| `email_from`     | string  | `"noreply@example.com"` | From address for outgoing emails               |
-| `smtp_host`      | string  | `""`                    | SMTP server hostname (when provider is `smtp`) |
-| `smtp_port`      | number  | `587`                   | SMTP server port                               |
-| `smtp_secure`    | boolean | `false`                 | Use SSL/TLS (true) or STARTTLS (false)         |
-| `smtp_user`      | string  | `""`                    | SMTP username                                  |
-| `smtp_password`  | string  | `""`                    | SMTP password (encrypted)                      |
-
-## Email — Receiving
-
-| Key                      | Type    | Default        | Description                                                                                                                                          |
-| ------------------------ | ------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `email_verify_methods`   | string  | `"both"`       | `link` (system sends email) \| `send` (user sends email to verify) \| `both`                                                                         |
-| `email_receive_provider` | string  | `"cloudflare"` | `cloudflare` (Email Workers) \| `imap` (poll via IMAP) \| `none`                                                                                     |
-| `email_receive_host`     | string  | `""`           | Domain for `verify-<code>@<host>` emails (Cloudflare only). Blank = derive from `APP_URL`                                                            |
-| `imap_host`              | string  | `""`           | IMAP server hostname (when receive provider is `imap`)                                                                                               |
-| `imap_port`              | number  | `993`          | IMAP server port                                                                                                                                     |
-| `imap_secure`            | boolean | `true`         | Use implicit TLS (true, port 993) or STARTTLS (false, port 143)                                                                                      |
-| `imap_user`              | string  | `""`           | IMAP username — also shown to users as the destination address (with code as subject)                                                                |
-| `imap_password`          | string  | `""`           | IMAP password (encrypted)                                                                                                                            |
-| `social_verify_ttl_days` | number  | `0`            | When non-zero, an email verified through a social provider stays trusted for this many days before re-verification is requested. `0` disables expiry |
+| Key                      | Default        | Description                                                                     |
+| ------------------------ | -------------- | ------------------------------------------------------------------------------- |
+| `email_verify_methods`   | `"both"`       | `link`, `send` (user emails Prism) or `both`                                    |
+| `email_receive_provider` | `"cloudflare"` | `cloudflare` (Email Workers), `imap`, or `none`                                 |
+| `email_receive_host`     | `""`           | Domain for `verify-<code>@<host>` (Cloudflare only). Blank = the `APP_URL` host |
+| `imap_host`              | `""`           | IMAP server                                                                     |
+| `imap_port`              | `993`          | IMAP port                                                                       |
+| `imap_secure`            | `true`         | Implicit TLS (port 993) or STARTTLS (port 143)                                  |
+| `imap_user`              | `""`           | IMAP username; also shown to users as the address to email                      |
+| `imap_password`          | `""`           | IMAP password                                                                   |
+| `social_verify_ttl_days` | `0`            | Days an email verified through a social provider stays trusted. `0` = no expiry |
 
 ## Domain verification
 
-Domains can be verified via DNS TXT, an HTML meta tag, or a `.well-known` file —
-whichever the user picks at add time. Verified domains are re-checked on the
-configured cron interval.
+Domains can be verified by DNS TXT record, HTML meta tag or a `.well-known`
+file, and are re-checked on a schedule.
 
-| Key                    | Type   | Default | Description                                               |
-| ---------------------- | ------ | ------- | --------------------------------------------------------- |
-| `domain_reverify_days` | number | `30`    | Days between automatic re-verification checks for domains |
+| Key                    | Default | Description                             |
+| ---------------------- | ------- | --------------------------------------- |
+| `domain_reverify_days` | `30`    | Days between automatic re-verifications |
 
 ## Diagnostics & rate limiting
 
-| Key                                    | Type   | Default | Description                                                                                                          |
-| -------------------------------------- | ------ | ------- | -------------------------------------------------------------------------------------------------------------------- |
-| `login_error_retention_days`           | number | `30`    | How long failed-login rows in the `login_errors` table are kept before the cron purges them                          |
-| `login_dos_rate_limit`                 | number | `120`   | Maximum login POSTs admitted from one IP in the DoS backstop window                                                  |
-| `login_dos_rate_window_seconds`        | number | `60`    | Sliding-window length for the per-IP login POST backstop                                                             |
-| `login_ip_rate_limit`                  | number | `60`    | Maximum captcha-cleared login attempts admitted from one IP in its window                                            |
-| `login_ip_rate_window_seconds`         | number | `60`    | Sliding-window length for captcha-cleared per-IP login attempts                                                      |
-| `login_identifier_rate_limit`          | number | `30`    | Maximum login attempts for one normalized email or username in its window                                            |
-| `login_identifier_rate_window_seconds` | number | `300`   | Sliding-window length for per-identifier login attempts                                                              |
-| `login_totp_rate_limit`                | number | `15`    | Maximum TOTP submissions for one user across all usernames and email aliases                                         |
-| `login_totp_rate_window_seconds`       | number | `300`   | Sliding-window length for per-user TOTP submissions                                                                  |
-| `ipv6_rate_limit_prefix`               | number | `64`    | Prefix length used to bucket IPv6 addresses in the D1-backed rate limiter (so a `/64` doesn't get unlimited retries) |
+| Key                                               | Default      | Description                                              |
+| ------------------------------------------------- | ------------ | -------------------------------------------------------- |
+| `login_error_retention_days`                      | `30`         | How long failed-sign-in records are kept                 |
+| `login_dos_rate_limit` / `_window_seconds`        | `120` / `60` | Login POSTs per IP                                       |
+| `login_ip_rate_limit` / `_window_seconds`         | `60` / `60`  | Captcha-cleared login attempts per IP                    |
+| `login_identifier_rate_limit` / `_window_seconds` | `30` / `300` | Login attempts per email or username                     |
+| `login_totp_rate_limit` / `_window_seconds`       | `15` / `300` | TOTP submissions per user                                |
+| `ipv6_rate_limit_prefix`                          | `64`         | Bits of an IPv6 address that share one rate-limit bucket |
 
-All eight login-limit values are editable under **Admin → Settings → Auth &
-Token Settings** and must be integers from `1` to `86400`. The password request
-that opens a TOTP prompt and the TOTP follow-up are separate login POSTs, so both
-consume these shared limits. The defaults allow 15 complete two-request TOTP
-logins per identifier in five minutes, up from the previous limit of five. TOTP
-submissions also consume a canonical per-user limit, so switching between a
-username, primary email, and alternate emails cannot multiply guessing attempts.
-The captcha-cleared IP and identifier limits are claimed atomically: a request
-rejected by either limit does not consume the other limit's allowance.
+Limits are integers from `1` to `86400`. The password step and the TOTP step are
+separate requests, and both count.
 
 ## Wrangler bindings & variables
 
-These are configured in `wrangler.jsonc` and not editable from the admin panel.
+These are set in `wrangler.jsonc`, not in the admin panel.
 
 ### Variables
 
-| Variable            | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `APP_URL`           | Yes      | Full origin of the deployment, e.g. `https://auth.example.com`                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `LOCKDOWN_USERS`    | No       | Comma / semicolon / whitespace separated list of usernames that cannot be deleted by anyone (including admins). Leave empty to disable.                                                                                                                                                                                                                                                                                                                                                                              |
-| `LOCKDOWN_TEAMS`    | No       | Comma / semicolon / whitespace separated list of team names that cannot be deleted by anyone (including admins). Leave empty to disable.                                                                                                                                                                                                                                                                                                                                                                             |
-| `ENABLE_RESET`      | No       | Set to `"true"` to enable the **Admin → Maintenance → Danger zone → Site reset** button. When unset or anything else the button is hidden (destructive).                                                                                                                                                                                                                                                                                                                                                             |
-| `D1_CONSOLE`        | No       | Availability of **Admin → Database**. **Off unless set.** Unset, `"off"` (also `"false"` / `"0"` / `"no"` / `"disabled"` / `"none"`) and anything unrecognised all remove the surface: the endpoints 404 and the tab disappears. `"read-only"` (also `"readonly"` / `"read"`) allows browsing and `SELECT` but refuses every write, including one that sets `allow_write`. `"full"` (also `"on"` / `"true"` / `"1"`) is unrestricted — except the audit log, which is append-only from the console at every setting. |
-| `KV_CONSOLE`        | No       | Availability of the key–value browser in the same panel. Same values as `D1_CONSOLE`. **Unset follows `D1_CONSOLE`** — the two are windows onto the same instance's storage, so a setting for one is a statement about both unless this one says otherwise. With neither set, both are off.                                                                                                                                                                                                                          |
-| `NO_RESET_COOLDOWN` | No       | Set to `"true"` to skip the 30-minute cooldown between requesting a reset and being allowed to confirm it. 2FA is still required even when this is set.                                                                                                                                                                                                                                                                                                                                                              |
+| Variable            | Required | Description                                                                                                                                          |
+| ------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_URL`           | Yes      | Full origin of the deployment, e.g. `https://auth.example.com`                                                                                       |
+| `LOCKDOWN_USERS`    | No       | Usernames that nobody, admins included, can delete. Separate with commas, semicolons or spaces                                                       |
+| `LOCKDOWN_TEAMS`    | No       | Team names that nobody can delete. Same format                                                                                                       |
+| `ENABLE_RESET`      | No       | `"true"` shows the **Site reset** button in the Danger zone. Hidden otherwise                                                                        |
+| `NO_RESET_COOLDOWN` | No       | `"true"` skips the 30-minute wait before a reset can be confirmed. 2FA is still required                                                             |
+| `D1_CONSOLE`        | No       | Availability of **Admin → Database**: unset/`off` (default), `read-only`, or `full`. See [Admin → Database](admin.md#database-and-key-value-browser) |
+| `KV_CONSOLE`        | No       | Same for the key–value browser. Follows `D1_CONSOLE` when unset                                                                                      |
 
 ### Bindings
 
-| Binding       | Kind                 | Required             | Notes                                                                                             |
-| ------------- | -------------------- | -------------------- | ------------------------------------------------------------------------------------------------- |
-| `DB`          | D1 database          | Yes                  | Persistent state, including atomically serialized rate-limit buckets and OAuth one-time claims    |
-| `KV_SESSIONS` | KV namespace         | Yes                  | Session JWT secret, RSA keypair (for ID token signing), per-session metadata                      |
-| `KV_CACHE`    | KV namespace         | Yes                  | Non-authoritative caches and short-lived state, including IMAP poll cursors and image-proxy cache |
-| `ASSETS`      | Workers Assets       | Yes                  | Built SPA. `html_handling: "none"` so SSR can render `/` itself                                   |
-| `SECRETS_KEY` | Secrets Store secret | Strongly recommended | 32-byte base64url AES-GCM master key. When bound, all sensitive D1 fields encrypt at rest         |
+| Binding       | Kind                 | Required             | Notes                                      |
+| ------------- | -------------------- | -------------------- | ------------------------------------------ |
+| `DB`          | D1 database          | Yes                  | Persistent state                           |
+| `KV_SESSIONS` | KV namespace         | Yes                  | Session secrets and signing keys           |
+| `KV_CACHE`    | KV namespace         | Yes                  | Caches and short-lived state               |
+| `ASSETS`      | Workers Assets       | Yes                  | The built web app                          |
+| `SECRETS_KEY` | Secrets Store secret | Strongly recommended | Master key used to encrypt secrets at rest |
 
 ### `SECRETS_KEY` setup
 
-Generate a 32-byte master key:
+Generate a 32-byte key:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Create the Secrets Store, store the key under name `prism-secrets-key`, and add
-the `secrets_store_secrets` binding shown in `wrangler.jsonc`.
+Create a Secrets Store, save the key under the name `prism-secrets-key`, and add
+the `secrets_store_secrets` binding shown in `wrangler.jsonc`. After
+redeploying, run **Admin → Maintenance → Danger zone → Migrate secrets to
+Secrets Store** and **Migrate D1 secrets** once to protect existing data.
 
-After redeploying, run the migration once from
-**Admin → Maintenance → Danger zone → "Migrate secrets to Secrets Store"** to
-encrypt existing OAuth/source/SMTP/IMAP/captcha credentials in D1. Bearer-style
-secrets (PATs, OAuth codes, OAuth tokens, invite tokens, email-verify codes, 2FA
-codes, individual backup codes) are migrated to a keyed HMAC-SHA256 hash in a
-companion endpoint (**"Migrate D1 secrets"**) so they remain look-up-able by
-value but are not recoverable from the database.
+Without the binding, Prism works with plaintext storage, and you can add it
+later.
 
-If `SECRETS_KEY` is not bound, encryption/hashing is a no-op — the legacy
-plaintext path keeps working until you opt in.
-
-### Cron triggers
+### Cron trigger
 
 ```jsonc
 "triggers": { "crons": ["0 */6 * * *"] }
 ```
 
-Expired atomic security-state rows are also removed in bounded batches after
-successful inserts, so reclamation keeps pace even where cron is disabled. The
-scheduled sweep catches remaining rows after traffic stops.
+Every six hours Prism re-verifies domains, polls the IMAP mailbox (when used)
+and cleans up expired data. You can also run these on demand from **Admin →
+Settings → Maintenance jobs**.
 
-Every 6 hours the worker:
+### Deletion lockdown
 
-- re-verifies domains whose `next_reverify_at` has passed,
-- polls the IMAP mailbox (when `email_receive_provider = imap`),
-- purges the `app_event_queue` and expired `pow_used` rows,
-- removes expired D1 rate-limit buckets and DPoP / `private_key_jwt` one-time claims,
-- sweeps orphaned `image_proxy_mappings` (mappings whose source row no longer exists).
-
-### User / team deletion lockdown
-
-When you have users or teams that must never be deleted — shared service
-accounts, bot identities, or critical organisational teams — set
-`LOCKDOWN_USERS` and `LOCKDOWN_TEAMS` in `wrangler.jsonc`. Locked accounts
-return a 403 error when any admin (or team owner) attempts to delete them
-through the API.
-
-The variables accept a comma, semicolon, or whitespace separated list of names.
-Leading and trailing whitespace on each name is stripped.
+Users and teams that must never be deleted (service accounts, bot identities,
+critical teams) can be listed in `LOCKDOWN_USERS` and `LOCKDOWN_TEAMS`. Attempts
+to delete them through the API return 403.

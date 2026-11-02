@@ -1,0 +1,238 @@
+// HS256 / RS256 / ML-DSA-65 JWT implementation
+
+import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
+import { bufToBase64url, base64urlToBuf } from "./crypto";
+
+const utf8 = new TextEncoder();
+
+/** One JWT segment: JSON, UTF-8, base64url. */
+function encodeSegment(value: unknown): string {
+  return bufToBase64url(utf8.encode(JSON.stringify(value)));
+}
+
+function decodeSegment<T>(segment: string): T {
+  return JSON.parse(new TextDecoder().decode(base64urlToBuf(segment))) as T;
+}
+
+/** The signing input (`header.body`), with iat / exp stamped on the body. */
+function signingInput(
+  header: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  expiresInSeconds: number,
+): string {
+  const now = Math.floor(Date.now() / 1000);
+  return `${encodeSegment(header)}.${encodeSegment({
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds,
+  })}`;
+}
+
+/** Split a compact JWT into what was signed, the body and the signature. */
+function splitJwt(token: string) {
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("Invalid JWT format");
+  const [header, body, sig] = parts;
+  return {
+    input: utf8.encode(`${header}.${body}`),
+    body,
+    signature: base64urlToBuf(sig),
+  };
+}
+
+function assertNotExpired(payload: { exp: number }) {
+  if (payload.exp < Math.floor(Date.now() / 1000))
+    throw new Error("JWT expired");
+}
+
+async function importKey(secret: string): Promise<CryptoKey> {
+  if (!secret) throw new Error("JWT secret is not set");
+  return crypto.subtle.importKey(
+    "raw",
+    utf8.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"],
+  );
+}
+
+// ── HS256 session token ───────────────────────────────────────────────────────
+
+export interface JWTPayload {
+  sub: string;
+  role: "admin" | "user";
+  sessionId: string;
+  iat: number;
+  exp: number;
+  [key: string]: unknown;
+}
+
+export async function signJWT(
+  payload: Omit<JWTPayload, "iat" | "exp">,
+  secret: string,
+  expiresInSeconds: number,
+): Promise<string> {
+  const input = signingInput(
+    { alg: "HS256", typ: "JWT" },
+    payload,
+    expiresInSeconds,
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    await importKey(secret),
+    utf8.encode(input),
+  );
+  return `${input}.${bufToBase64url(sig)}`;
+}
+
+export async function verifyJWT(
+  token: string,
+  secret: string,
+): Promise<JWTPayload> {
+  const { input, body, signature } = splitJwt(token);
+  const valid = await crypto.subtle.verify(
+    "HMAC",
+    await importKey(secret),
+    signature,
+    input,
+  );
+  if (!valid) throw new Error("Invalid JWT signature");
+  const payload = decodeSegment<JWTPayload>(body);
+  assertNotExpired(payload);
+  return payload;
+}
+
+// ── RS256 ID and logout tokens ────────────────────────────────────────────────
+
+async function signRS256(
+  typ: string,
+  payload: Record<string, unknown>,
+  privateKey: CryptoKey,
+  kid: string,
+  expiresInSeconds: number,
+): Promise<string> {
+  const input = signingInput(
+    { alg: "RS256", typ, kid },
+    payload,
+    expiresInSeconds,
+  );
+  const sig = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    privateKey,
+    utf8.encode(input),
+  );
+  return `${input}.${bufToBase64url(sig)}`;
+}
+
+// RS256 signing — kept for backward compatibility with existing OIDC clients
+export function signIdTokenRS256(
+  payload: Record<string, unknown>,
+  privateKey: CryptoKey,
+  kid: string,
+  expiresInSeconds: number,
+): Promise<string> {
+  return signRS256("JWT", payload, privateKey, kid, expiresInSeconds);
+}
+
+// OIDC Back-Channel Logout token: typ "logout+jwt", so RPs can tell it apart
+// from an ID token.
+export function signLogoutTokenRS256(
+  payload: Record<string, unknown>,
+  privateKey: CryptoKey,
+  kid: string,
+  expiresInSeconds: number,
+): Promise<string> {
+  return signRS256("logout+jwt", payload, privateKey, kid, expiresInSeconds);
+}
+
+/**
+ * Verify an RS256 JWT signature and return its payload. The expiry is NOT
+ * enforced here: the one caller is OIDC RP-Initiated Logout, which accepts an
+ * expired `id_token_hint` (the whole point of logout is that the session is
+ * ending). Throws when the format or signature is invalid.
+ */
+export async function verifyIdTokenRS256(
+  token: string,
+  publicKey: CryptoKey,
+): Promise<Record<string, unknown>> {
+  const { input, body, signature } = splitJwt(token);
+  const valid = await crypto.subtle.verify(
+    "RSASSA-PKCS1-v1_5",
+    publicKey,
+    signature,
+    input,
+  );
+  if (!valid) throw new Error("Invalid JWT signature");
+  return decodeSegment<Record<string, unknown>>(body);
+}
+
+// ── ML-DSA-65 access token (RFC 9068 at+JWT, post-quantum) ────────────────────
+
+export interface AccessTokenPayload {
+  iss: string;
+  sub: string;
+  aud: string[];
+  /** OAuth client that requested the token */
+  client_id: string;
+  /** Token ID — matches oauth_tokens.id for revocation lookup */
+  jti: string;
+  scope: string;
+  /** RFC 9449 DPoP confirmation: the bound key's JWK thumbprint. */
+  cnf?: { jkt: string };
+  /** RFC 9470 authentication context, for step-up decisions at the resource. */
+  acr?: string;
+  auth_time?: number;
+  amr?: string[];
+  iat: number;
+  exp: number;
+}
+
+/**
+ * Extract the unique audience entries from a scope list.
+ * Regular scopes use the issuer as audience; cross-app scopes (`app:<cid>:*`)
+ * also add the target app's client_id so App A can verify the token was meant
+ * for it. RFC 8707 resource indicators, when supplied, are added too so a named
+ * resource server can confirm the token was minted for it.
+ */
+export function extractAud(
+  scopes: string[],
+  issuer: string,
+  resources: string[] = [],
+): string[] {
+  const aud = new Set([issuer]);
+  for (const s of scopes) {
+    const m = s.match(/^app:([^:]+):/);
+    if (m) aud.add(m[1]);
+  }
+  for (const r of resources) aud.add(r);
+  return [...aud];
+}
+
+export function signAccessToken(
+  payload: Omit<AccessTokenPayload, "iat" | "exp">,
+  secretKey: Uint8Array,
+  kid: string,
+  expiresInSeconds: number,
+): string {
+  const input = signingInput(
+    { alg: "ML-DSA-65", typ: "at+JWT", kid },
+    payload,
+    expiresInSeconds,
+  );
+  // @noble/post-quantum >= 0.6 takes (message, secretKey).
+  const sig = ml_dsa65.sign(utf8.encode(input), secretKey);
+  return `${input}.${bufToBase64url(sig)}`;
+}
+
+export function verifyAccessToken(
+  token: string,
+  publicKey: Uint8Array,
+): AccessTokenPayload {
+  const { input, body, signature } = splitJwt(token);
+  // @noble/post-quantum >= 0.6 takes (signature, message, publicKey).
+  if (!ml_dsa65.verify(signature, input, publicKey))
+    throw new Error("Invalid JWT signature");
+  const payload = decodeSegment<AccessTokenPayload>(body);
+  assertNotExpired(payload);
+  return payload;
+}

@@ -33,11 +33,9 @@ curl https://your-prism-domain/api/oauth/me/profile \
   -H "Authorization: Bearer prism_pat_<token>"
 ```
 
-Prism identifies PATs by the `prism_pat_` prefix and validates them against the `personal_access_tokens` table instead of the OAuth token table.
-
 ## Scope reference
 
-See [Admin Guide → OAuth Scope Reference](admin.md#oauth-scope-reference) for the full list of available scopes and what each one allows.
+See [OAuth → Scopes](oauth.md#scopes) for the full list of scopes and what each one allows.
 
 Note: admin scopes (`admin:*`) are available to PATs but only work if the token owner has `role = admin`.
 

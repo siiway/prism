@@ -1,227 +1,105 @@
 ---
 title: 快速开始
-description: 从零开始在 Cloudflare Workers 上部署 Prism — 资源创建、密钥配置、数据库迁移与首次部署。
+description: 用一条命令将 Prism 部署到你的 Cloudflare 账号。
 ---
 
 # 快速开始
 
 ## 前置条件
 
-- [Bun](https://bun.sh) 1.1+（也可用 `pnpm`，两份 lockfile 同步维护）
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)（`bun add -g wrangler`）
+- [Bun](https://bun.sh) 1.3+
 - 一个 Cloudflare 账号（免费套餐即可）
-- _（可选）_ Rust + wasm-pack，用于编译 PoW WASM 加速模块
 
-构建脚本（`scripts/build.sh`、`build.ps1`、`build.py`）会自动安装所有缺失的工具链组件。
-
-## 1. 安装依赖
+## 部署
 
 ```bash
+git clone https://github.com/siiway/prism
+cd prism/app
 bun install
+bun run setup
 ```
 
-## 2. 创建 Cloudflare 资源
+setup 会：
 
-### D1 数据库
+1. 登录你的 Cloudflare 账号（会打开浏览器）。
+2. 询问 Worker 名称和公开 URL：可以是 Cloudflare 账号下的域名，例如
+   `https://auth.example.com`，也可以是 `workers.dev` 地址。
+3. 创建 D1 数据库和 KV 命名空间，并按需创建用于上传图片的 R2
+   存储桶，以及用于加密已存储密钥的 Secrets Store 密钥。
+4. 将它们的 ID、你的 URL 和账号写入 `app/wrangler.jsonc`。
+5. 构建、应用数据库迁移并部署。
+
+setup 会复用已存在的资源，因此你可以再次运行它，例如稍后添加 R2。
+`bun run setup --dry-run` 会显示它将执行的操作，而不做任何更改。
+
+## 首次初始化
+
+首次访问时，Prism 会重定向到 `/init`。请输入管理员账号的
+邮箱、用户名、显示名称和密码，以及站点名称。之后
+访问会直接进入登录页。
+
+## 更新
+
+在 `app/` 中运行：
 
 ```bash
-wrangler d1 create prism-db
+git pull
+bun install
+bun run deploy
 ```
 
-把返回的 `database_id` 复制到 `wrangler.jsonc`：
+`bun run deploy` 会构建、应用待处理的数据库迁移，然后发布 Worker。它会
+列出待处理的迁移，并在改动生产环境前请求确认。请用它
+代替 `wrangler deploy`，后者会跳过迁移。
 
-```jsonc
-"d1_databases": [
-  {
-    "binding": "DB",
-    "database_name": "prism-db",
-    "database_id": "<paste here>",
-    "migrations_dir": "worker/db/migrations"
-  }
-]
-```
+| 选项                | 作用                      |
+| ------------------- | ------------------------- |
+| `--dry-run`         | 打印每条命令而不执行      |
+| `-y`, `--yes`       | 跳过确认提示（用于 CI）   |
+| `--migrations-only` | 仅应用迁移，不部署        |
+| `--skip-migrations` | 发布而不改动数据库        |
+| `--skip-build`      | 部署 `dist/` 中已有的内容 |
 
-### KV namespace
+### CI
 
-```bash
-wrangler kv namespace create KV_SESSIONS
-wrangler kv namespace create KV_CACHE
-```
+仓库的 GitHub Actions 会在每次推送到 `main` 时部署，并在拉取请求上运行检查。
+部署需要一个 `CLOUDFLARE_API_TOKEN` Secret，具有 **Workers Scripts:Edit**、
+**D1:Edit**、**Workers KV Storage:Edit** 和 **Secrets Store:Read** 权限；
+如果使用自定义域名，还需要 **Workers Routes:Edit** 和 **Zone:Read**。如果仓库还连接了
+Cloudflare Workers Builds，请断开连接，否则每次推送都会部署两次。
 
-把两个 `id` 复制到 `wrangler.jsonc`。本地开发也需要 `preview_id` — 可以加 `--preview` 重跑命令，或直接复用相同 ID。
+## `app/wrangler.jsonc` 中的设置
 
-### R2 桶 _（可选）_
+`vars` 块包含可选设置，例如 `LOCKDOWN_USERS` /
+`LOCKDOWN_TEAMS`（任何人都无法删除的账号和团队）以及 `ENABLE_RESET`
+（显示 **站点重置** 按钮）。参见
+[配置](configuration.md#wrangler-绑定与变量)。
 
-R2 仅用于存放超过 D1 内联限制的头像/应用图标；较小的上传直接写入 D1。默认 `wrangler.jsonc` 中绑定被注释，无 R2 也能直接部署。开启 R2：
+## 稍后添加 Secrets Store 密钥
 
-```bash
-wrangler r2 bucket create prism-assets
-```
+如果你要为已有数据的站点添加该密钥，请以管理员身份登录，并
+打开 **管理 → 维护 → 危险区域**。运行以下操作一次；两者都可安全重复执行：
 
-…然后取消 `r2_buckets` 块的注释。
+- **迁移密钥到 Secret Store**：加密现有密钥。
+- **哈希并加密已存储的令牌**：将令牌和授权码存储为带密钥的哈希。
 
-### Secrets Store（强烈推荐）
+## 社交登录
 
-生成一把 32 字节主密钥，保存进 Cloudflare Secrets Store。所有敏感字段会因此在数据库中加密（OAuth `client_secret`、验证码 secret、SMTP/IMAP 密码、GitHub README PAT，以及 [架构 → 数据库中的密钥](architecture.md#数据库中的密钥) 列出的所有 bearer 类机密）。
+在 **管理 → OAuth 来源** 下添加提供商。参见
+[社交登录配置](social-login.md)。
 
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-```
+## 邮件
 
-在 Cloudflare 控制台创建 Secrets Store，把生成的值以 `prism-secrets-key` 为名存入，然后在 `wrangler.jsonc` 中加入绑定：
+Prism 可通过 Resend、Mailchannels 或 SMTP 发送邮件，配置位于
+**管理 → 设置 → 邮件**。邮件用于验证、密码重置和通知。
 
-```jsonc
-"secrets_store_secrets": [
-  {
-    "binding": "SECRETS_KEY",
-    "store_id": "<your-store-id>",
-    "secret_name": "prism-secrets-key"
-  }
-]
-```
+| 提供商       | `email_provider` |
+| ------------ | ---------------- |
+| Resend       | `resend`         |
+| Mailchannels | `mailchannels`   |
+| SMTP         | `smtp`           |
+| 关闭         | `none`           |
 
-不绑定也没问题：加密/哈希将退化为 no-op，Prism 会以明文存储继续运行。可以日后再启用 — **管理面板 → 维护 → 危险区域** 中的迁移按钮是幂等的。
-
-## 3. 运行迁移
-
-```bash
-bun db:migrate          # 本地 D1
-bun db:migrate:prod     # 线上 D1
-```
-
-## 4. 设置 `APP_URL`
-
-更新 `wrangler.jsonc`，让 Worker 知道自己的对外 origin：
-
-```jsonc
-"vars": {
-  "APP_URL": "https://auth.yourdomain.com"
-}
-```
-
-本地开发可保持默认，开发服务器使用 `http://localhost:5173`。
-
-`vars` 块中还包含三个可选的零配置开关：
-
-- `LOCKDOWN_USERS` / `LOCKDOWN_TEAMS` — 逗号分隔的用户名/团队名称列表，
-  列表中的记录将永久受保护，无法删除（API 返回 403）。留空即禁用。
-- `ENABLE_RESET` — 设为 `"true"` 后在管理面板 Danger Zone 中显示 **站点重置** 按钮。
-  为防误操作，默认隐藏。`NO_RESET_COOLDOWN` 可跳过确认前的 30 分钟等待。
-
-详见 [配置](configuration.md#wrangler-绑定与变量) 了解所有 Wrangler 变量与绑定。
-
-## 5. 启动开发服务器
-
-```bash
-bun dev
-```
-
-Vite 监听 `http://localhost:5173`。[Cloudflare Vite 插件](https://developers.cloudflare.com/workers/vite-plugin/) 把 Worker 与 Vite 一起跑在同一个进程里 — 无需另起 `wrangler dev`，`entry-server.tsx`（SSR）也会随客户端一起热更新。
-
-## 6. 首次初始化
-
-首次访问时 Prism 会跳到 `/init`，请填写：
-
-- **邮箱** — 管理员账号邮箱
-- **用户名** — 字母数字组合，会出现在公开资料 URL 中
-- **显示名称** — UI 上展示的名字
-- **密码**
-- **站点名称** — 浏览器标题与邮件中使用
-
-提交后会创建首个管理员账号并把站点标记为已初始化；后续访问直接跳到登录页。
-
-## 7. （可选）编译 PoW WASM
-
-PoW 防机器人有纯 JS 兜底，但用 `pow/src/lib.rs` 编译出的 WASM 模块快约 10 倍。
-
-```bash
-cd pow
-wasm-pack build --target no-modules --out-dir ../public/pow-wasm
-cp ../public/pow-wasm/prism_pow_bg.wasm ../public/pow.wasm
-```
-
-或直接用任意一个构建脚本（自动完成上述步骤）：
-
-```bash
-bash scripts/build.sh --skip-frontend
-```
-
-## 8. 部署到生产
-
-```bash
-bash scripts/deploy.sh          # 或：pwsh scripts/deploy.ps1
-                                # 或：python scripts/deploy.py
-```
-
-部署脚本会依次执行构建、应用待处理的 D1 迁移、发布 Worker。顺序是刻意安排的：编译失败会在任何东西进入生产环境之前中断整个流程；迁移先于依赖它的代码上线。Prism 的迁移都是增量式的，因此在部署完成前，线上正在运行的 Worker 仍能正常使用新库结构。
-
-确认提示之前会先列出待应用的迁移，方便你确认即将执行的内容。常用参数：
-
-| 参数                | 作用                             |
-| ------------------- | -------------------------------- |
-| `--dry-run`         | 只打印将要执行的命令，不实际执行 |
-| `-y`、`--yes`       | 跳过确认提示（用于 CI）          |
-| `--migrations-only` | 只应用迁移，不部署               |
-| `--skip-migrations` | 只部署，不改动数据库             |
-| `--skip-build`      | 直接部署 `dist/` 中已有的产物    |
-
-GitHub Actions 在每次推送到 `main` 时执行同一套脚本（见下文「CI（GitHub Actions）」一节）：先 `bash scripts/build.sh`，再 `bash scripts/deploy.sh --skip-build --yes`，因此 CI 部署与本地部署一样会应用待处理的迁移。
-
-`bun deploy` 仍然可用，它会跑 `tsc -b && vite build` 再执行 `wrangler deploy` — 但它**不会**应用迁移，使用它时请自行执行 `bun db:migrate:prod`。
-
-部署与迁移是两条命令，没有任何机制让它们变成原子操作。因此，存储来自迁移的功能都按「能撑过这个空档」来编写：如果它的表还不存在，该功能会声明自己不可用，其他一切不受影响。[公告板](admin.md#公告板)是目前的例子 —— 公告板读取为空，**Admin → Notices** 返回 503 并写明需要执行的命令，而不是让缺失的表拖垮每一个渲染公告板的页面。
-
-安全强制类迁移会刻意失败关闭，不能当作可选功能。尤其是，部署依赖它的代码前必须先应用
-`0073_atomic_security_state.sql`；如果表尚不存在，受影响的认证与 OAuth 请求会失败，而不
-会回退到非原子的 KV 检查。生产与 CI 部署脚本已保证这个顺序。如果使用 `bun deploy` 或
-`--skip-migrations`，请先运行 `bun db:migrate:prod`。
-
-两种方式都会生成可直接部署的 `dist/prism/wrangler.json` — 生产部署必须使用它，否则 `wrangler deploy` 会重新打包源码并丢失 Vite 的 SSR 处理。提供的构建脚本会自动把生成的配置拷回原位。
-
-## 9. 部署后：迁移密钥
-
-如果你绑定了 `SECRETS_KEY`，请以管理员身份登录，进入 **管理面板 → 维护 → 危险区域** 并依次执行：
-
-- **Migrate secrets to Secrets Store** — 加密历史 site_config 字段以及 OAuth 应用/源的 `client_secret`。
-- **Migrate D1 secrets** — 把 bearer 类明文（PAT、OAuth token/code、邀请 token、邮箱验证码、二次验证码、单条备用码）替换为 HMAC-SHA256 哈希。
-
-两者都是幂等的，重复执行安全。
-
-## CI（GitHub Actions）
-
-- **生产环境**（`.github/workflows/deploy.yml`）在推送到 `main` 时部署，也可从 `main`
-  手动运行。它先运行 lint、测试与翻译一致性检查，再运行 `scripts/build.sh` 与
-  `scripts/deploy.sh`——先应用待处理的 D1 迁移再发布。同一时间只有一个部署，且正在运行的
-  部署永不取消，因此不会在迁移与发布之间被中断。该任务在 `production` GitHub Environment
-  中运行，可在其中添加必需审核者来控制部署。如果仓库仍连接着 Cloudflare Workers Builds
-  （`prism` Worker 的 **Settings → Builds**），请断开连接，否则每次推送到 `main` 都会
-  部署两次。
-- **Pull Request**（`.github/workflows/pr.yml`）运行检查——类型检查（app + worker）、
-  lint、测试、翻译一致性、构建。PR 不会触发任何部署，该工作流也不使用任何 Secret，因此
-  来自 fork 的 PR 同样完整运行。
-
-部署需要一个 Secret `CLOUDFLARE_API_TOKEN`（可设为仓库级，也可设在 `production`
-Environment 上），其权限范围需覆盖该账号的 **Workers Scripts:Edit**、**D1:Edit**、
-**Workers KV Storage:Edit** 与 **Secrets Store:Read**（该 Worker 绑定了 Secrets Store
-中的 `SECRETS_KEY`）。生产环境绑定了自定义域名，因此该 Token 还需要对应 Zone 的
-**Workers Routes:Edit** 与 **Zone:Read**。账号 ID 已固定写在 `wrangler.jsonc` 中，
-因此无需再配置账号 ID 的 Secret。
-
-## 社交登录配置
-
-每个 provider 都需要先到对应平台创建 OAuth 应用。在 **Admin → OAuth Sources** 添加 OAuth 源 — 同一类型可以加多个，每个有独立 slug。详见 [社交登录配置](social-login.md)；回调 URL 的格式见 [OAuth / OIDC 指南](oauth.md)。
-
-## 邮件配置
-
-Prism 支持三种发送方式与两种接收方式，均在 **Admin → Settings → Email** 中配置。
-
-| Provider     | `email_provider` 值 | 关键字段                    |
-| ------------ | ------------------- | --------------------------- |
-| Resend       | `resend`            | `email_api_key`（管理面板） |
-| Mailchannels | `mailchannels`      | `email_api_key`（管理面板） |
-| SMTP         | `smtp`              | 见管理面板                  |
-| 关闭         | `none`              | —                           |
-
-邮件用于邮箱验证、改密、通知。设置 `require_email_verification = false`（默认）允许用户在未验证邮箱时也登录。
-
-入站邮件（用户主动发邮件验证）走 Cloudflare Email Workers，或把 `email_receive_provider` 设为 `imap` 并填入轮询邮箱。
+默认情况下，用户可在验证邮箱前登录；开启 `require_email_verification`
+可改变这一点。若要允许用户通过向 Prism 发送邮件来完成验证，请使用
+Cloudflare Email Workers 或 IMAP 邮箱（参见[管理指南](admin.md#邮件)）。

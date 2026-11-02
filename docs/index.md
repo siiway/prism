@@ -22,41 +22,41 @@ hero:
 features:
   - icon: 🔐
     title: OAuth 2.0 + OpenID Connect
-    details: Full authorization code flow with PKCE, OIDC Discovery, RS256-signed ID tokens, token introspection and revocation, and a compliant UserInfo endpoint.
+    details: Authorization code flow with PKCE, OIDC Discovery, signed ID tokens, token introspection and revocation, and UserInfo.
 
   - icon: 🌐
     title: Social & Federated Login
-    details: GitHub, Google, Microsoft, Discord, Telegram, X, plus Generic OIDC and Generic OAuth 2 sources for any compliant provider. Multiple sources of the same type, signed-in via GPG clearsign, and per-source linking.
+    details: GitHub, Google, Microsoft, Discord, Telegram, X and Cloudflare, plus Generic OIDC and OAuth 2 sources for any other provider. GPG sign-in too.
 
   - icon: 🛡️
     title: Multi-Factor & Step-Up
-    details: Multiple TOTP authenticators per account, passkeys (WebAuthn / FIDO2), GPG keys, and server-initiated step-up 2FA with sudo grace windows for sensitive actions.
+    details: TOTP authenticators, passkeys, GPG keys, and step-up 2FA that apps can request before sensitive actions.
 
   - icon: 👥
     title: Teams
-    details: Shared ownership of OAuth apps and verified domains. Roles, invites, transfer of ownership, and site-floor join requirements (2FA / verified email).
+    details: Shared ownership of OAuth apps and verified domains, with roles, invites, sub-teams and join requirements.
 
   - icon: 🤖
     title: Bot Protection
-    details: Cloudflare Turnstile, hCaptcha, reCAPTCHA v3, or a self-contained Rust→WASM proof-of-work — no third-party service required. Captcha can also gate 2FA confirmations.
+    details: Cloudflare Turnstile, hCaptcha, reCAPTCHA v3, GeeTest, or Cap, a proof-of-work that runs inside Prism with no third-party service.
 
   - icon: 🏗️
     title: App Registry & Cross-App Scopes
-    details: Users register and manage their own OAuth apps. Apps can publish named permission scopes that other apps request via the standard consent screen.
+    details: Users register their own OAuth apps. Apps can publish permission scopes that other apps request through the consent screen.
 
   - icon: 🔔
     title: Audit Logs & Notifications
-    details: Per-user, per-team, and platform audit logs (Transparent Control) with scoped Discord / Telegram / General webhooks, app event streams (SSE / WebSocket), plus per-event email and Telegram notifications with a rule-engine for fine-grained routing.
+    details: Audit logs for each user, team and the platform, with webhooks. App event streams, and email, Telegram and Discord notifications with routing rules.
 
   - icon: 🪪
     title: Public Profiles
-    details: Opt-in `/u/<username>` and `/t/<team-id>` pages with per-field visibility controls, GPG keys, README sync from GitHub, and federated `.gpg` lookups.
+    details: Opt-in `/u/<username>` and `/t/<team-id>` pages with per-field visibility controls.
 
   - icon: 🔒
     title: Encrypted at Rest
-    details: AES-GCM envelope encryption for reversible secrets (OAuth client secrets, captcha keys, SMTP/IMAP) and keyed HMAC-SHA256 hashing for bearer tokens — all rooted in a Cloudflare Secrets Store binding.
+    details: Secrets are encrypted and tokens are stored hashed, using a key held in a Cloudflare Secrets Store.
 
   - icon: ⚡
-    title: Edge-Native, SSR
-    details: Cloudflare Workers + D1 + KV + R2. Server-side rendered React 19 SPA so logged-in users skip the loading flash. One `wrangler deploy` ships everything globally.
+    title: Edge-Native
+    details: Runs on Cloudflare Workers, D1 and KV. One deploy ships everything globally.
 ---

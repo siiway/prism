@@ -1,0 +1,242 @@
+// Worker-side glue between an incoming Request and src/web/entry-server.tsx.
+//
+// Responsibilities:
+//   1. Pull the prebuilt index.html template from the ASSETS binding (so
+//      Vite-injected hashed asset URLs resolve correctly in production).
+//   2. Read the session cookie and, if present, prefetch the authenticated
+//      user so the SSR pass renders the dashboard instead of a flash of
+//      "loading…" before the client hydrates.
+//   3. Hand the request off to entry-server.render.
+
+import type { Context } from "hono";
+// The SSR entry is JSX. The worker tsconfig doesn't compile JSX (adding it
+// drags in DOM types and breaks existing crypto code), so we suppress the
+// type-resolution here. Vite resolves the module at bundle time, and the
+// runtime contract is documented inline below.
+// @ts-expect-error -- JSX module bundled by Vite, not type-checked here.
+import { render as _render } from "../web/entry-server";
+import { readSessionCookie } from "./lib/cookies";
+import { verifyJWT } from "./lib/jwt";
+import { getConfigValue, getJwtSecret } from "./lib/config";
+import { toSessionUser, type SessionUser } from "./lib/sessionUser";
+import siteRoutes from "./routes/site";
+import type { UserRow, Variables } from "./types";
+
+interface RenderOptions {
+  template: string;
+  auth?: { user: SessionUser | null } | null;
+  locale?: string | null;
+  colorScheme?: "dark" | "light";
+  prefetched?: Array<{ queryKey: unknown[]; data: unknown }>;
+  fetcher?: (input: string, init?: RequestInit) => Promise<Response>;
+}
+interface RenderResult {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+}
+const render = _render as (
+  request: Request,
+  opts: RenderOptions,
+) => Promise<RenderResult>;
+
+type AppEnv = { Bindings: Env; Variables: Variables };
+
+async function loadAuth(c: Context<AppEnv>) {
+  const token = readSessionCookie(c);
+  if (!token) return null;
+
+  try {
+    const secret = await getJwtSecret(c.env.KV_SESSIONS);
+    const payload = await verifyJWT(token, secret);
+    const session = await c.env.DB.prepare(
+      `SELECT s.id, s.user_id, u.is_active
+         FROM sessions s
+         JOIN users u ON s.user_id = u.id
+        WHERE s.id = ? AND s.expires_at > ? AND u.kind = 'user'`,
+    )
+      .bind(payload.sessionId, Math.floor(Date.now() / 1000))
+      .first<{ id: string; user_id: string; is_active: number }>();
+    if (!session || !session.is_active || session.user_id !== payload.sub)
+      return null;
+
+    const row = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
+      .bind(session.user_id)
+      .first<UserRow>();
+    if (!row) return null;
+
+    return { user: await toSessionUser(c.env.APP_URL, c.env.DB, row) };
+  } catch {
+    return null;
+  }
+}
+
+async function loadTemplate(c: Context<AppEnv>): Promise<string | null> {
+  if (!c.env.ASSETS) return null;
+  // ASSETS is keyed by request URL path; ask it for "/index.html" specifically.
+  const url = new URL(c.req.url);
+  url.pathname = "/index.html";
+  const res = await c.env.ASSETS.fetch(new Request(url.toString()));
+  if (!res.ok) return null;
+  return await res.text();
+}
+
+type AppFetch = (
+  req: Request,
+  env: Env,
+  ctx: Context<AppEnv>["executionCtx"],
+) => Response | Promise<Response>;
+
+export async function ssrHandler(
+  c: Context<AppEnv>,
+  appFetch: AppFetch,
+): Promise<Response> {
+  const template = await loadTemplate(c);
+  if (!template) {
+    return new Response("SSR template missing", { status: 500 });
+  }
+
+  // Admin kill switch: serve the bare client template and let the bundle
+  // hydrate on its own. Mirrors the catch-block fallback further down.
+  if (await getConfigValue(c.env.DB, "disable_ssr")) {
+    return new Response(
+      template
+        .replace("<!--app-head-->", "")
+        .replace("<!--app-html-->", "")
+        .replace("<!--app-state-->", ""),
+      { headers: { "Content-Type": "text/html; charset=utf-8" } },
+    );
+  }
+
+  // Request-local in-process fetcher passed into the SSR API client. Relative
+  // `/api/...` calls dispatch through the same Hono app instead of a network
+  // round trip. Only same-origin API URLs are accepted before forwarding the
+  // original cookie, so this transport cannot leak credentials off-origin.
+  const origin = new URL(c.req.url).origin;
+  const cookieHeader = c.req.header("Cookie") ?? "";
+  const fetcher = async (
+    input: string,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const url = new URL(input, origin);
+    if (url.origin !== origin || !url.pathname.startsWith("/api/")) {
+      throw new Error("SSR fetcher only accepts same-origin API URLs");
+    }
+    const headers = new Headers(init?.headers ?? {});
+    if (cookieHeader && !headers.has("Cookie"))
+      headers.set("Cookie", cookieHeader);
+    return appFetch(
+      new Request(url.toString(), { ...init, headers }),
+      c.env,
+      c.executionCtx,
+    );
+  };
+
+  const auth = await loadAuth(c);
+
+  // Prefetch the global ["site"] query. Almost every page uses
+  // useQuery({ queryKey: ["site"] }) for theming and gating; populating it
+  // server-side means the rendered HTML matches what the client would
+  // produce after fetching, removing the post-hydration flash.
+  const prefetched: Array<{ queryKey: unknown[]; data: unknown }> = [];
+  try {
+    const siteUrl = new URL(c.req.url);
+    siteUrl.pathname = "/site";
+    const siteRes = await siteRoutes.fetch(
+      new Request(siteUrl.toString(), { headers: c.req.raw.headers }),
+      c.env,
+      c.executionCtx,
+    );
+    if (siteRes.ok) {
+      const data = await siteRes.json();
+      prefetched.push({ queryKey: ["site"], data });
+    }
+  } catch (err) {
+    console.error("SSR site prefetch failed:", err);
+  }
+
+  // Locale: the prism_lang cookie (an explicit choice from the account
+  // menu; absent means "system"), else the first language in the browser's
+  // Accept-Language preference order that we support.
+  const readCookie = (name: string): string | null => {
+    const raw = c.req.header("Cookie");
+    if (!raw) return null;
+    for (const part of raw.split(";")) {
+      const [n, ...rest] = part.trim().split("=");
+      if (n === name) return rest.join("=") || null;
+    }
+    return null;
+  };
+  const supported = ["en", "zh"];
+  const cookieLocale = readCookie("prism_lang");
+  const preferred = (c.req.header("Accept-Language") ?? "")
+    .split(",")
+    .map((part) => {
+      const [tag, ...params] = part.trim().split(";");
+      const q = params.find((p) => p.trim().startsWith("q="));
+      return {
+        base: tag.toLowerCase().split("-")[0],
+        q: q ? Number(q.trim().slice(2)) || 0 : 1,
+      };
+    })
+    .filter((p) => p.q > 0)
+    .sort((a, b) => b.q - a.q)
+    .find((p) => supported.includes(p.base))?.base;
+  const locale =
+    cookieLocale && supported.includes(cookieLocale)
+      ? cookieLocale
+      : (preferred ?? "en");
+
+  // Resolve color scheme so the SSR pass renders FluentProvider with the
+  // same theme the client will hydrate to — otherwise users see a light→
+  // dark flash on every page load. The cookie is written by the FOUC shim
+  // on first visit (and by ThemeProvider on change); the client hint
+  // covers Chromium browsers' first request before the cookie exists.
+  const cookieScheme = readCookie("prism_color_scheme");
+  const chScheme = c.req.header("Sec-CH-Prefers-Color-Scheme");
+  const colorScheme: "dark" | "light" =
+    cookieScheme === "dark" || cookieScheme === "light"
+      ? cookieScheme
+      : chScheme === "dark"
+        ? "dark"
+        : "light";
+
+  try {
+    const result = await render(c.req.raw, {
+      template,
+      auth: auth ?? undefined,
+      locale,
+      colorScheme,
+      prefetched,
+      fetcher,
+    });
+    return new Response(result.body, {
+      status: result.status,
+      headers: {
+        ...result.headers,
+        // Ask Chromium browsers to send the color-scheme client hint on
+        // future requests so a cookie-less first visit can still SSR with
+        // the right theme. Vary on the inputs that affect the response.
+        "Accept-CH": "Sec-CH-Prefers-Color-Scheme",
+        Vary: "Cookie, Sec-CH-Prefers-Color-Scheme, Accept-Language",
+        ...(auth ? { "Cache-Control": "private, no-store" } : {}),
+      },
+    });
+  } catch (err) {
+    console.error("SSR error:", err);
+    // Last-ditch: return the un-rendered template so the client can still
+    // hydrate. Better than a blank 500.
+    return new Response(
+      template
+        .replace("<!--app-head-->", "")
+        .replace("<!--app-html-->", "")
+        .replace("<!--app-state-->", ""),
+      {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          ...(auth ? { "Cache-Control": "private, no-store" } : {}),
+        },
+      },
+    );
+  }
+}

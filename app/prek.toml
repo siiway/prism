@@ -1,0 +1,96 @@
+# Configuration file for `prek`, a git hook framework written in Rust.
+# See https://prek.j178.dev for more information.
+#:schema https://www.schemastore.org/prek.json
+#
+# Every hook runs a program directly (no `sh -c`), so it works the same under
+# Git Bash, PowerShell and GUI clients on Windows. It needs `bun` on PATH.
+#
+# This file lives in app/, so `bun install` there installs the hooks with its
+# path (scripts/hooks.ts). Hooks run from the repository root, over every file,
+# and call the app's scripts with `bun run --cwd app`.
+
+default_install_hook_types = ["pre-commit", "pre-push"]
+
+[[repos]]
+repo = "builtin"
+
+[[repos.hooks]]
+id = "check-merge-conflict"
+stages = ["pre-commit"]
+
+[[repos.hooks]]
+id = "detect-private-key"
+stages = ["pre-commit"]
+exclude = '^app/src/web/i18n/'
+
+[[repos.hooks]]
+id = "check-added-large-files"
+stages = ["pre-commit"]
+
+[[repos]]
+repo = "local"
+
+# ── pre-commit: fast, rewrites files ──────────────────────────────────────────
+
+[[repos.hooks]]
+id = "prettier"
+name = "prettier (format whole repo)"
+entry = "bun"
+args = ["run", "--cwd", "app", "format:fix"]
+language = "system"
+stages = ["pre-commit"]
+pass_filenames = false
+always_run = true
+
+[[repos.hooks]]
+id = "restage"
+name = "restage formatted files"
+entry = "git"
+args = ["add", "-u"]
+language = "system"
+stages = ["pre-commit"]
+pass_filenames = false
+always_run = true
+
+# Run by path under Bun, from the root with the changed files: ESLint finds
+# app/eslint.config.ts from each file, and Bun loads it without jiti.
+[[repos.hooks]]
+id = "eslint"
+name = "eslint"
+entry = "bun"
+args = ["app/node_modules/eslint/bin/eslint.js"]
+files = '^app/.*\.(tsx?|jsx?|mjs|cjs)$'
+language = "system"
+stages = ["pre-commit"]
+
+# ── pre-push: slower checks that CI also runs ─────────────────────────────────
+
+[[repos.hooks]]
+id = "typecheck"
+name = "typecheck"
+entry = "bun"
+args = ["run", "--cwd", "app", "typecheck"]
+language = "system"
+stages = ["pre-push"]
+pass_filenames = false
+always_run = true
+
+[[repos.hooks]]
+id = "test"
+name = "tests"
+entry = "bun"
+args = ["run", "--cwd", "app", "test"]
+language = "system"
+stages = ["pre-push"]
+pass_filenames = false
+always_run = true
+
+[[repos.hooks]]
+id = "translations"
+name = "translation keys"
+entry = "bun"
+args = ["run", "--cwd", "app", "check:i18n"]
+language = "system"
+stages = ["pre-push"]
+pass_filenames = false
+always_run = true

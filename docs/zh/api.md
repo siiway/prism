@@ -1,43 +1,37 @@
 ---
 title: API 参考
-description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG、公开资料与管理员端点。
+description: Prism 的 REST API — 认证、OAuth、应用、团队、域名、GPG、公开资料及管理端点。
 ---
 
 # API 参考
 
 基础路径：`/api`
 
-所有端点均返回 JSON。Web 界面使用带 `Secure`、`HttpOnly` 属性的 `__Host-prism_session` Cookie 认证；浏览器 JavaScript 无法读取它。API 集成应使用标准授权码流程颁发的 OAuth access token，或前缀为 `prism_pat_` 的 PAT。接受 OAuth token 的端点通常挂载在 `/api/oauth/me/*`。
+所有端点均返回 JSON。Web 界面使用安全的 HttpOnly 会话 Cookie 进行认证。API 集成应使用标准授权码流程颁发的 OAuth access token，或使用个人访问令牌（前缀 `prism_pat_`）。通过令牌认证的用户端点大多位于 `/api/oauth/me/*` 下。
 
-`/api/*` 的 CORS 锁定为 `APP_URL`。`/api/proxy/image/*`、`/.well-known/*` 与 `/api/users/:username`（公开资料）不附带 `Access-Control-Allow-Credentials`，便于安全嵌入。
-
-请求正文全局上限为 5 MiB。Prism 会在进入路由前拒绝声明过大的 `Content-Length`，并在读取未声明长度或长度不准确的流式正文时执行相同限制。超限请求返回 `413`。
+跨源请求仅允许来自 `APP_URL`，但图片代理、`/.well-known/*` 和公开资料端点除外，这些端点可以安全嵌入。请求正文限制为 5 MiB；更大的请求会返回 `413`。
 
 ## 错误
 
-请求失败时返回稳定、可供程序识别的错误码，而不是英文文本：
+失败的请求会返回稳定、机器可读的错误码：
 
 ```json
 { "error": "field_required", "params": { "field": "name" } }
 ```
 
-`error` 是小写错误码，例如 `team_not_found`、`forbidden` 或 `invite_used_up`；请据此判断，错误码不会因措辞调整而改变。当提示需要填入内容（字段名、上限、URL 等）时会附带 `params`。Web 界面会根据语言文件（`src/i18n/` 中的 `apiErrors.<code>`）把错误码翻译成读者的语言，因此用户看到的文字与程序看到的错误码始终一致。
+`error` 是小写错误码，例如 `team_not_found` 或 `forbidden`；请据此判断。当消息中有待填内容（字段名、限制值）时会附带 `params`。Web 界面会翻译每个错误码，因此响应中没有英文消息。成功的写操作会返回数据，没有可返回内容时返回 `{ "ok": true }`。
 
-成功的写操作返回数据，没有可返回的内容时返回 `{ "ok": true }`；不再提供用于显示的 `message` 字段。
-
-OAuth 与 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/register`、`/api/oauth/userinfo`、设备授权流程等）遵循各自的 RFC：`error` 为标准错误码，`error_description` 为面向客户端开发者的英文说明。
+OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/register`、`/api/oauth/userinfo`、设备流程等）则遵循各自的 RFC：`error` 是标准错误码，`error_description` 是面向客户端开发者的英文文本。
 
 ## 初始化
 
 ### `GET /api/init/status`
 
-返回实例是否已完成初始化。
-
-**响应** — `{ "initialized": false }`
+在首次运行设置完成前返回 `{ "initialized": false }`。
 
 ### `POST /api/init`
 
-创建第一个管理员账号。仅在 `initialized = false` 时有效。
+创建第一个管理员账号。仅在设置完成前有效。
 
 ```json
 {
@@ -49,13 +43,13 @@ OAuth 与 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 }
 ```
 
-**响应** — `{ "user": { ... } }`。新会话仅通过 HttpOnly Cookie 设置。
+**响应** — `{ "user": { ... } }`。会话仅通过 Cookie 设置。
 
 ## 站点
 
 ### `GET /api/site`
 
-供前端读取的公开站点配置。无需认证。仅返回安全字段，绝不暴露任何 secret。
+供前端使用的公开站点配置。无需认证；绝不包含密钥。
 
 ```json
 {
@@ -65,27 +59,19 @@ OAuth 与 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
   "allow_registration": true,
   "invite_only": false,
   "captcha_provider": "none",
-  "captcha_site_key": "",
-  "pow_difficulty": 20,
   "accent_color": "#0078d4",
-  "custom_css": "",
   "initialized": true,
   "require_email_verification": false,
-  "email_verify_methods": "both",
   "enable_public_profiles": true,
-  "disable_user_create_team": false,
-  "disable_user_create_app": false,
   "enable_sub_teams": true,
   "max_team_depth": 5,
-  "inherit_team_membership": true,
-  "inherit_team_domains": true,
-  "default_team_profile_show_sub_teams": true,
   "enabled_sources": [
-    { "slug": "github", "provider": "github", "name": "GitHub" },
-    { "slug": "google", "provider": "google", "name": "Google" }
+    { "slug": "github", "provider": "github", "name": "GitHub" }
   ]
 }
 ```
+
+实际响应包含更多字段（功能开关和默认值）。
 
 ## 认证
 
@@ -98,15 +84,11 @@ OAuth 与 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
   "password": "hunter2",
   "display_name": "Alice",
   "captcha_token": "...",
-  "pow_challenge": "...",
-  "pow_nonce": 12345,
   "invite_token": "..."
 }
 ```
 
-仅根据当前启用的验证码 provider 携带相应字段；站点为「仅限邀请」模式时 `invite_token` 必填。
-
-**响应** — 注册后同时登录时返回 `{ "user": { ... } }`；会话凭据仅通过 HttpOnly Cookie 设置。
+包含与当前验证码提供商 匹配的机器人防护字段。`invite_token` 在仅限邀请模式下必填。**响应** — 当注册同时登录用户时返回 `{ "user": { ... } }`（会话仅存在于 Cookie 中）。
 
 ### `POST /api/auth/login`
 
@@ -119,11 +101,9 @@ OAuth 与 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 }
 ```
 
-`identifier` 接受用户名、主邮箱或任意已验证的次要邮箱（`allow_alt_email_login` 为 true 时）。仅在用户启用了 TOTP 时需要 `totp_code`；Passkey 走专用端点。
+`identifier` 是用户名、主邮箱，或（当 `allow_alt_email_login` 开启时）任意已验证的次要邮箱。仅在已启用 TOTP 时需要 `totp_code`。Passkey 使用下方专用端点。
 
-**响应** — `{ "user": { ... } }`。会话凭据仅通过 HttpOnly Cookie 设置，不会出现在 JSON 中。
-
-若启用了 TOTP 但未提供 code：
+**响应** — `{ "user": { ... } }`。如果已启用 TOTP 但未发送验证码：
 
 ```json
 { "totp_required": true, "available_methods": ["totp", "passkey", "backup"] }
@@ -131,105 +111,50 @@ OAuth 与 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 
 ### `POST /api/auth/logout`
 
-撤销当前会话。需认证。
+结束当前会话。Prism 同一时间只支持一个浏览器会话；切换账号意味着退出后重新登录。
 
-Prism 有意让每个浏览器同一时间只保留一个会话。切换账号需要先退出再重新认证；会话 JWT 不会为了后台账号保存在 Web Storage 中。
+### 邮箱验证
 
-### `GET /api/auth/verify-email?token=<token>`
+| 端点                                      | 用途                                                |
+| ----------------------------------------- | --------------------------------------------------- |
+| `GET /api/auth/verify-email?token=`       | 使用邮件中的链接验证                                |
+| `POST /api/auth/email-verify-code`        | 获取用于发送验证的邮箱地址：`{ "address", "code" }` |
+| `POST /api/auth/check-email-verification` | `{ "verified": boolean }` — 用户发送邮件期间轮询    |
+| `POST /api/auth/resend-verify-email`      | 重新发送链接（接受验证码字段）                      |
 
-通过邮件中的 token 验证邮箱。
+## TOTP
 
-### `POST /api/auth/email-verify-code`
+所有端点都需要认证。一个用户可以拥有多个认证器。
 
-返回一个验证地址，让用户通过发送邮件来验证。Cloudflare Email Workers 模式下格式为 `verify-<code>@<domain>`；IMAP 模式下为配置的邮箱地址（验证码作为邮件主题）。需认证。
+| 端点                               | 用途                                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| `GET /api/auth/totp/list`          | 列出认证器                                                                     |
+| `POST /api/auth/totp/setup`        | 创建密钥。可选 `name`。返回 `{ name, secret, uri }`；`uri` 是 `otpauth://` URI |
+| `POST /api/auth/totp/verify`       | 用第一个验证码确认设置。首次添加任意认证器时返回备用码                         |
+| `DELETE /api/auth/totp/:id`        | 移除一个。需要 TOTP 验证码、备用码或 Passkey 验证                              |
+| `POST /api/auth/totp/backup-codes` | 重新生成备用码。需要有效的 TOTP 验证码                                         |
 
-```json
-{ "address": "verify-abc123@example.com", "code": "abc123" }
-```
+## Passkey (WebAuthn)
 
-### `POST /api/auth/check-email-verification`
+| 端点                                               | 用途                                         |
+| -------------------------------------------------- | -------------------------------------------- |
+| `POST /api/auth/passkey/register/begin` / `finish` | 添加 Passkey                                 |
+| `POST /api/auth/passkey/auth/begin` / `finish`     | 登录。传入 `username` 可缩小凭据范围，或省略 |
+| `POST /api/auth/passkey/verify/begin` / `finish`   | 登录状态下重新验证（用于加强确认）           |
+| `GET /api/auth/passkeys`                           | 列出用户的 Passkey                           |
+| `DELETE /api/auth/passkeys/:id`                    | 移除一个                                     |
 
-供长轮询用：返回 `{ "verified": boolean }`。在用户主动发邮件验证期间用得上。
-
-### `POST /api/auth/resend-verify-email`
-
-重新发送验证链接。需认证，可携带可选验证码字段。
-
-### `GET /api/auth/pow-challenge`
-
-获取 PoW 挑战。
-
-```json
-{ "challenge": "...", "difficulty": 20, "expires_at": 1741568400 }
-```
-
-## TOTP（多认证器）
-
-需认证。
-
-### `GET /api/auth/totp/list`
-
-列出已启用的 TOTP 认证器。
-
-### `POST /api/auth/totp/setup`
-
-生成新 TOTP secret，返回 secret 与 `otpauth://` URI。可传 `name` 标记新认证器（如 `"Pixel 9"`）。
-
-```json
-{ "name": "Pixel 9", "secret": "...", "uri": "otpauth://totp/..." }
-```
-
-### `POST /api/auth/totp/verify`
-
-提交首次正确码以确认绑定。首次为账号添加任意认证器时还会返回备用码。
-
-### `DELETE /api/auth/totp/:id`
-
-按 ID 移除单个认证器。需要当前 TOTP code、备用码或 Passkey 二次验证之一 — 资料 → 安全 中的对话框会自动选择已启用的方式。
-
-### `POST /api/auth/totp/backup-codes`
-
-重新生成备用码。需要有效 TOTP code。
-
-## Passkey（WebAuthn）
-
-### `POST /api/auth/passkey/register/begin` / `/finish`
-
-为已登录用户添加 Passkey。
-
-### `POST /api/auth/passkey/auth/begin` / `/finish`
-
-用 Passkey 登录。`begin` 可传 `username` 限定凭据范围，省略则使用 discoverable credential。
-
-### `POST /api/auth/passkey/verify/begin` / `/finish`
-
-已登录态的 Passkey 二次验证 — 用于步骤提升场景（例如移除最后一个 TOTP 认证器）。
-
-### `GET /api/auth/passkeys`
-
-列出当前用户的 Passkey。
-
-### `DELETE /api/auth/passkeys/:id`
-
-删除 Passkey。
-
-## GPG 公钥
+## GPG 密钥
 
 ### `POST /api/auth/gpg-challenge`
 
-请求登录挑战。每 IP 每分钟 30 次限流。
-
-```json
-{ "identifier": "alice" }
-```
-
-**响应** — `{ "challenge": "...", "text": "Prism login\n..." }`
-
-`gpg_challenge_prefix` 配置会插入到站点头与随机挑战之间，让用户能验证签名文本来自你的站点。
+请求登录挑战：`{ "identifier": "alice" }`。返回
+`{ "challenge": "...", "text": "Prism login\n..." }`。站点的
+`gpg_challenge_prefix` 会添加到文本中，以便用户识别你的站点。
 
 ### `POST /api/auth/gpg-login`
 
-提交 `gpg --clearsign` 签名后的挑战。每 IP 每分钟 10 次限流。挑战一次性使用，5 分钟过期。
+提交用 `gpg --clearsign` 签名的挑战：
 
 ```json
 {
@@ -238,277 +163,213 @@ Prism 有意让每个浏览器同一时间只保留一个会话。切换账号�
 }
 ```
 
-**响应** — `{ "user": { ... } }`；会话仅通过 HttpOnly Cookie 设置。
+挑战仅可使用一次，5 分钟后过期。如果账号已启用 TOTP，且未关闭 **GPG 验证后仍要求 2FA**，第一次调用会返回 `{ "totp_required": true }`；请携带 `totp_code` 重新提交同一消息。
 
-若账号启用了 TOTP 且未在偏好中关闭 `gpg_require_2fa`（Security > GPG 密钥 > _GPG 验证后仍要求 2FA_），首次请求会以状态 `200` 返回 `{ "totp_required": true }`。此时再次提交同一段签名消息并附上 `totp_code` 字段完成登录。已关闭该偏好的账号即使启用了身份验证器，也会在第一次请求就登录成功——关闭该开关等同于显式声明信任 GPG 签名密钥作为独立因素。
+### 管理密钥
 
-### `GET /api/user/gpg` / `POST /api/user/gpg` / `DELETE /api/user/gpg/:id`
+`GET`、`POST` 和 `DELETE /api/user/gpg[/:id]` 管理已登录用户的密钥。
+`POST` 接受 ASCII armor 或二进制 `public_key`，以及可选 `name`；支持 RSA、
+EdDSA 和 ML-DSA 密钥。
 
-会话认证下的 GPG 公钥管理。`POST` 接受 ASCII armor 或二进制 `public_key` 加可选 `name`；同时支持 RSA/EdDSA 等经典算法和 ML-DSA 后量子算法。
+`GET /users/:username.gpg` 是公开查询，以 armor 块返回用户密钥（`application/pgp-keys`）。
 
-### `GET /users/:username.gpg`
-
-公开联邦端点。返回该用户全部已注册公钥（ASCII armor 块按空行分隔），`Content-Type: application/pgp-keys`。
-
-### OAuth scope 版 GPG 端点
-
-| Method   | Path                         | Scope       |
-| -------- | ---------------------------- | ----------- |
-| `GET`    | `/api/oauth/me/gpg-keys`     | `gpg:read`  |
-| `POST`   | `/api/oauth/me/gpg-keys`     | `gpg:write` |
-| `DELETE` | `/api/oauth/me/gpg-keys/:id` | `gpg:write` |
-
-请求/响应格式与会话认证版相同。
+使用 OAuth：`GET /api/oauth/me/gpg-keys`（`gpg:read`）、`POST` 和
+`DELETE /api/oauth/me/gpg-keys/:id`（`gpg:write`）。
 
 ## 会话
 
-### `GET /api/auth/sessions`
-
-列出当前用户的活跃（未过期）会话。已过期的行会被排除，并由定时任务清理，因此只会返回仍然有效的会话。
-
-每个会话包含其创建来源 IP，以及 `ip_geo`：一个 JSON 字符串，保存该 IP 的完整 Cloudflare 属地信息（continent、country、region、city、postalCode、经纬度、timezone、colo、asn、org 等）；不可用时为 `null`（例如本地开发环境）。
-
-### `GET /api/auth/sessions/:id/ips`
-
-该会话认证过的所有不同 IP，按最近出现排序。每条包含 IP、`geo`（同样是完整 Cloudflare 属地 JSON 字符串）以及 `first_seen` / `last_seen` 时间戳。若会话不属于调用者则返回 404。
-
-### `DELETE /api/auth/sessions/:id`
-
-按 id 撤销单个会话。
-
-### `DELETE /api/auth/sessions`
-
-撤销除当前会话外的所有会话（“登出其他所有设备”）。返回 `{ "revoked": <数量> }`。
+| 端点                             | 用途                                                      |
+| -------------------------------- | --------------------------------------------------------- |
+| `GET /api/auth/sessions`         | 用户的活动会话，含 IP 及其地理位置                        |
+| `GET /api/auth/sessions/:id/ips` | 该会话登录过的每个 IP，含首次/最后出现时间                |
+| `DELETE /api/auth/sessions/:id`  | 撤销一个会话                                              |
+| `DELETE /api/auth/sessions`      | 撤销除当前会话外的所有会话。返回 `{ "revoked": <count> }` |
 
 ## 用户
 
-需认证。
+所有端点都需要认证。
 
-### `GET /api/user/me` / `PATCH /api/user/me`
+| 端点                                                                       | 用途                                                                            |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `GET` / `PATCH /api/user/me`                                               | 读取或更新用户（显示名、头像、资料可见性、偏好）                                |
+| `POST /api/user/me/change-password`                                        | `{ "current_password", "new_password" }`                                        |
+| `POST /api/user/me/avatar`                                                 | `multipart/form-data`，字段 `avatar`。最大 2 MB；JPEG、PNG、WebP 或 GIF         |
+| `POST /api/user/me/readme`                                                 | 保存 Markdown README                                                            |
+| `POST /api/user/me/readme/sync`                                            | 从用户的 `github.com/<login>/<login>` 仓库同步                                  |
+| `GET` / `POST` / `DELETE /api/user/me/emails[/:id]`                        | 管理次要邮箱。`POST /:id/resend` 重发；`POST /:id/set-primary` 验证后切换主邮箱 |
+| `GET` / `PUT /api/user/me/notifications`                                   | 通知偏好。参见[通知](notifications.md)                                          |
+| `GET` / `POST` / `PUT` / `DELETE /api/user/me/notification-rulesets[/:id]` | 通知规则集。参见[通知](notifications.md)                                        |
+| `GET` / `POST` / `DELETE /api/user/tokens[/:id]`                           | 个人访问令牌。值仅在创建时显示。参见[个人访问令牌](personal-access-tokens.md)   |
+| `DELETE /api/user/me`                                                      | 删除账号：`{ "password": "...", "confirm": "DELETE" }`                          |
 
-读取与部分更新当前用户（显示名、头像、公开资料开关、通知偏好）。部分字段下方有专用端点。
-
-### `POST /api/user/me/change-password`
-
-```json
-{ "current_password": "...", "new_password": "..." }
-```
-
-### `POST /api/user/me/avatar`
-
-`multipart/form-data`，字段 `avatar`，最大 2 MB。接受 JPEG、PNG、WebP、GIF。绑定 R2 时存 R2，否则内联存 D1。
-
-### `POST /api/user/me/readme` / `POST /api/user/me/readme/sync`
-
-手写 markdown README，或从 GitHub 用户仓库 README（`github.com/<login>/<login>`）同步。同步会遵守 `github_readme_cache_ttl_seconds` 缓存以及 `github_readme_token` PAT 配置。
-
-### `GET /api/user/me/emails` / `POST` / `DELETE /api/user/me/emails/:id`
-
-次要邮箱管理。`POST /:id/resend` 重发验证；`POST /:id/set-primary` 在验证后切换主邮箱。
-
-### `GET /api/user/me/notifications` / `PUT`
-
-读写用户通知偏好（事件 × 通道 × `brief|full` 等级）。详见 [通知](notifications.md)。
-
-### `GET /api/user/me/notification-rulesets` / `POST` / `PUT /:id` / `DELETE /:id`
-
-具名规则集 — 按顺序执行的 match/action 规则，可基于账号 key 过滤，并支持 `stop`。表达力比扁平偏好更强。详见 [通知](notifications.md)。
-
-### `GET /api/user/tokens` / `POST` / `DELETE /:id`
-
-个人访问令牌。明文仅在创建响应中一次性返回。`GET` 支持 `?page=`、`?limit=`、`?q=` 名称搜索并返回 `total`。详见 [个人访问令牌](personal-access-tokens.md)。
-
-### `DELETE /api/user/me`
-
-永久删除账号。`{ "password": "...", "confirm": "DELETE" }`
+列表端点接受 `?page=`、`?limit=`，通常还接受 `?q=`，并返回 `total`。
 
 ## OAuth 应用
 
-需认证。完整流程见 [OAuth / OIDC 指南](oauth.md) 与 [跨应用权限](app-permissions.md)。
+所有端点都需要认证。参见 [OAuth / OIDC 指南](oauth.md) 和
+[跨应用权限](app-permissions.md)。
 
-| Method                              | Path                                         | 说明                                                                                                    |
-| ----------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `GET`                               | `/api/apps`                                  | 列出当前用户的应用。`?page=`、`?limit=`、`?q=` 名称搜索，返回 `total`                                   |
-| `POST`                              | `/api/apps`                                  | 创建应用                                                                                                |
-| `GET`                               | `/api/apps/:id`                              | 读取                                                                                                    |
-| `PATCH`                             | `/api/apps/:id`                              | 更新；包含 `oidc_fields`、`optional_scopes`、`use_jwt_tokens`、`allow_self_manage_exported_permissions` |
-| `POST`                              | `/api/apps/:id/rotate-secret`                | 轮换 `client_secret`                                                                                    |
-| `DELETE`                            | `/api/apps/:id`                              | 删除                                                                                                    |
-| `GET`                               | `/api/apps/:id/scope-definitions`            | 列出导出 scope 定义                                                                                     |
-| `POST` / `PATCH` / `DELETE`         | `/api/apps/:id/scope-definitions[/:scope]`   | 管理 scope 定义（`allow_self_manage_exported_permissions` 开启后应用可用 HTTP Basic 自管）              |
-| `GET` / `POST` / `DELETE`           | `/api/apps/:id/scope-access-rules[/:ruleId]` | owner-allow / owner-deny / app-allow / app-deny 规则                                                    |
-| `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:appId/webhooks[/:id]`            | 应用通知 webhook，详见 [应用通知](app-notifications.md)                                                 |
+| 方法                                | 路径                                         | 说明                                                                                                        |
+| ----------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `GET`                               | `/api/apps`                                  | 当前用户拥有的应用                                                                                          |
+| `POST`                              | `/api/apps`                                  | 创建应用                                                                                                    |
+| `GET`                               | `/api/apps/:id`                              | 读取应用                                                                                                    |
+| `PATCH`                             | `/api/apps/:id`                              | 更新字段，包括 `oidc_fields`、`optional_scopes`、`use_jwt_tokens`、`allow_self_manage_exported_permissions` |
+| `POST`                              | `/api/apps/:id/rotate-secret`                | 轮换 `client_secret`                                                                                        |
+| `DELETE`                            | `/api/apps/:id`                              | 删除应用                                                                                                    |
+| `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:id/scope-definitions[/:scope]`   | 导出的 scope                                                                                                |
+| `GET` / `POST` / `DELETE`           | `/api/apps/:id/scope-access-rules[/:ruleId]` | 谁可以添加或请求应用的 scope                                                                                |
+| `GET` / `POST` / `DELETE`           | `/api/apps/:id/access-rules[/:ruleId]`       | [访问白名单](app-access-whitelist.md)                                                                       |
+| `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:appId/webhooks[/:id]`            | [应用通知](app-notifications.md)                                                                            |
 
-OAuth 应用密钥为只写字段。`POST /api/apps`、`POST /api/teams/:id/apps` 与
-`POST /api/apps/:id/rotate-secret` 只在当次响应中返回新生成的明文。列表、读取、
-更新和管理员列表响应绝不会返回存储值；应用对象改用 `has_client_secret` 表示是否
-已配置密钥。创建或轮换团队应用需要有效的团队 `admin` 或更高角色。
-
-`/api/apps/:appId/events/sse` 与 `…/events/ws` 是 SSE / WebSocket 流，详见 [应用通知](app-notifications.md)。
+应用密钥为只写：仅在创建应用或轮换其密钥时返回生成的密钥。其他情况下只会得到 `has_client_secret`。
 
 ## 团队
 
-完整指南见 [团队](teams.md)。端点速览：
+概念参见[团队](teams.md)。
 
-| Method                    | Path                                                 | 说明                                                                                                                                                                                                                       |
-| ------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`                     | `/api/teams`                                         | 列出当前用户可达的团队（直接 + 通过子团队继承可见；每条携带 `parent_team_id` 与 `inherited_from`）                                                                                                                         |
-| `POST`                    | `/api/teams`                                         | 创建团队。可选 `parent_team_id` 表示创建子团队 — 调用者需在上级团队上是 admin+（直接或继承），且深度 ≤ `max_team_depth`。站点管理员可传 `owner_username` / `owner_id` 把团队直接交给他人                                   |
-| `GET`                     | `/api/teams/:id`                                     | 团队详情 + `my_role`（有效）、`inherited_from`、`ancestors[]`（直接父 → 根）、`sub_teams[]`（直接子团队 + 成员数）、直接成员                                                                                               |
-| `PATCH`                   | `/api/teams/:id`                                     | 更新名称、描述、头像、公开资料开关（含 `profile_show_sub_teams`）、`parent_team_id`（owner-only，校验环 & 深度）、`require_2fa`、`require_verified_email`、`enable_groups`（owner-only）、`role_permissions`（owner-only） |
-| `DELETE`                  | `/api/teams/:id`                                     | 解散（owner，直接或继承）。级联到所有子团队；每一层的应用回退给该层自己的 owner                                                                                                                                            |
-| `GET`                     | `/api/teams/:id/sub-teams`                           | 列出直接子团队。`?page=`、`?limit=`、`?q=`，返回 `total`。上级团队的成员（直接或继承）可查看                                                                                                                               |
-| `POST`                    | `/api/teams/:id/sub-teams`                           | 在 `:id` 下创建子团队 — 等价于 `POST /api/teams` 带 `parent_team_id`                                                                                                                                                       |
-| `GET`                     | `/api/teams/:id/members`                             | 分页成员列表。`?page=`、`?limit=`（上限 100）、`?q=`（显示名/用户名）、`?group=`（slug，继承来的标签同样命中）                                                                                                             |
-| `POST`                    | `/api/teams/:id/members`                             | 按 `username` 或 `user_id` 添加成员（admin 及以上）。站点管理员会覆盖团队加入门槛与受限账号范围限制；审计记录会在 `bypassed` 中列出跳过项                                                                                  |
-| `PATCH`                   | `/api/teams/:id/members/:userId`                     | 修改角色。站点管理员还可设为 `owner`（等同转移所有权并把在任所有者降为 co-owner），也可以直接把所有者降级 —— 这会让团队失去所有者，响应与审计记录都会带 `owner_vacated`                                                    |
-| `DELETE`                  | `/api/teams/:id/members/:userId`                     | 移除成员；`:userId = self` 即退出团队。站点管理员可移除所有者 —— 同一批次中会提升剩余成员里级别最高者（`new_owner_id`），若无人可提升则团队被留为空且没有所有者（`owner_vacated`）                                         |
-| `PATCH`                   | `/api/teams/:id/membership/show-on-profile`          | 单成员开关：是否出现在团队公开成员列表                                                                                                                                                                                     |
-| `GET`                     | `/api/teams/:id/groups`                              | 列出[身份组](teams.md#身份组)定义与解析后的管理员权限（任意成员可读）                                                                                                                                                      |
-| `POST`                    | `/api/teams/:id/groups`                              | 创建身份组。需要 `groups:manage` 能力；`admin_assignable` 仅 owner 可设                                                                                                                                                    |
-| `PATCH`                   | `/api/teams/:id/groups/:groupId`                     | 更新名称/描述/颜色。`slug` 不可变；`admin_assignable` 仅 owner 可设                                                                                                                                                        |
-| `DELETE`                  | `/api/teams/:id/groups/:groupId`                     | 删除身份组 —— 级联解除所有分配                                                                                                                                                                                             |
-| `PUT`                     | `/api/teams/:id/members/:userId/groups`              | 覆盖某成员的身份组集合（`{ group_ids: [...] }`）。仅对发生变化的身份组做权限校验                                                                                                                                           |
-| `POST`                    | `/api/teams/:id/transfer-ownership`                  | 把所有权转给另一名成员。站点管理员可从团队外部调用，目标甚至可以尚未加入                                                                                                                                                   |
-| `GET`                     | `/api/teams/:id/invites`                             | 列出有效邀请 token。`?page=`、`?limit=`、`?q=` 邮箱搜索，返回 `total`                                                                                                                                                      |
-| `POST`                    | `/api/teams/:id/invites`                             | 生成邀请 token。支持邮箱锁定、最大次数、`group_ids` 中的一个可选身份组、`allow_existing_members`，以及绝对 Unix `expires_at` 时间戳（必须位于未来，最长 10 年）                                                            |
-| `PATCH`                   | `/api/teams/:id/invites/:token`                      | 修改邮箱限制、使用次数上限、有效期或启用状态。admin 只能管理自己创建的邀请；co-owner 和 owner 可管理全部团队邀请                                                                                                           |
-| `DELETE`                  | `/api/teams/:id/invites/:token`                      | 撤销邀请                                                                                                                                                                                                                   |
-| `GET`                     | `/api/teams/join/:token`（认证可选）                 | 查看邀请 — 返回团队、门槛、未满足项                                                                                                                                                                                        |
-| `POST`                    | `/api/teams/join/:token`                             | 接受邀请，通过条件更新占用一次使用次数并分配预设身份组；仅当 `allow_existing_members` 开启时，已有直属成员可加入该身份组                                                                                                   |
-| `GET` / `POST` / `DELETE` | `/api/teams/:id/domains[/:domainId]`                 | 团队域名。`?page=`、`?limit=`、`?q=`，返回 `total`。`GET` 同时返回上级团队拥有的域名作为只读条目，带 `inherited_from` 标记（受 `inherit_team_domains` 控制）                                                               |
-| `POST`                    | `/api/teams/:id/domains/:domainId/verify`            | 触发重新核验                                                                                                                                                                                                               |
-| `POST`                    | `/api/teams/:id/domains/:domainId/to-personal`       | 把已验证域名转回所有者个人空间                                                                                                                                                                                             |
-| `POST`                    | `/api/teams/:id/domains/:domainId/share-to-team`     | 把个人域名共享给团队                                                                                                                                                                                                       |
-| `POST`                    | `/api/teams/:id/domains/:domainId/share-to-personal` | 反向操作                                                                                                                                                                                                                   |
-| `GET` / `POST`            | `/api/teams/:id/apps`                                | 团队 OAuth 应用。`?page=`、`?limit=`、`?q=`，返回 `total`                                                                                                                                                                  |
-| `POST`                    | `/api/teams/:id/apps/transfer`                       | 把个人应用转入团队                                                                                                                                                                                                         |
-| `DELETE`                  | `/api/teams/:id/apps/:appId/transfer`                | 把团队应用转回原所有者                                                                                                                                                                                                     |
+| 方法                      | 路径                                                                                 | 说明                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `GET`                     | `/api/teams`                                                                         | 用户可访问的团队，包括继承的子团队（`inherited_from`）                                    |
+| `POST`                    | `/api/teams`                                                                         | 创建团队。`parent_team_id` 使其成为子团队。站点管理员可设置 `owner_username` / `owner_id` |
+| `GET`                     | `/api/teams/:id`                                                                     | 团队详情，含 `my_role`、`ancestors`、`sub_teams` 和第一页成员                             |
+| `PATCH`                   | `/api/teams/:id`                                                                     | 更新设置、加入门槛、`parent_team_id`、身份组设置                                          |
+| `DELETE`                  | `/api/teams/:id`                                                                     | 解散团队及所有子团队                                                                      |
+| `GET` / `POST`            | `/api/teams/:id/sub-teams`                                                           | 列出或创建子团队                                                                          |
+| `GET`                     | `/api/teams/:id/members`                                                             | 成员。`?q=`、`?group=`（slug）                                                            |
+| `POST`                    | `/api/teams/:id/members`                                                             | 通过 `username` 或 `user_id` 添加成员                                                     |
+| `PATCH`                   | `/api/teams/:id/members/:userId`                                                     | 更改角色                                                                                  |
+| `DELETE`                  | `/api/teams/:id/members/:userId`                                                     | 移除成员，或退出（自己的 id）                                                             |
+| `PATCH`                   | `/api/teams/:id/membership/show-on-profile`                                          | 选择加入或退出团队的公开成员列表                                                          |
+| `GET` / `POST`            | `/api/teams/:id/groups`                                                              | 列出或创建[身份组](teams.md#身份组)                                                       |
+| `PATCH` / `DELETE`        | `/api/teams/:id/groups/:groupId`                                                     | 更新或删除身份组                                                                          |
+| `PUT`                     | `/api/teams/:id/members/:userId/groups`                                              | 替换成员的身份组：`{ "group_ids": [...] }`                                                |
+| `POST`                    | `/api/teams/:id/transfer-ownership`                                                  | 将所有权转移给另一名成员                                                                  |
+| `GET` / `POST`            | `/api/teams/:id/invites`                                                             | 列出或创建邀请（邮箱锁定、最大使用次数、一个身份组、绝对 `expires_at`）                   |
+| `PATCH` / `DELETE`        | `/api/teams/:id/invites/:token`                                                      | 编辑、启用/禁用或撤销邀请                                                                 |
+| `GET`                     | `/api/teams/join/:token`                                                             | 预览邀请：团队、门槛、未满足项（认证可选）                                                |
+| `POST`                    | `/api/teams/join/:token`                                                             | 接受邀请                                                                                  |
+| `GET` / `POST` / `DELETE` | `/api/teams/:id/domains[/:domainId]`                                                 | 团队域名                                                                                  |
+| `POST`                    | `/api/teams/:id/domains/:domainId/verify`                                            | 重新验证                                                                                  |
+| `POST`                    | `/api/teams/:id/domains/:domainId/share-to-team`, `share-to-personal`, `to-personal` | 将个人域名共享给团队、反向操作或移出                                                      |
+| `GET` / `POST`            | `/api/teams/:id/apps`                                                                | 团队拥有的应用                                                                            |
+| `POST` / `DELETE`         | `/api/teams/:id/apps/transfer`, `/api/teams/:id/apps/:appId/transfer`                | 将个人应用移入团队，或移回                                                                |
 
-## 邀请链接注册
+### 邀请链接注册
 
-语义详见 [团队 → 邀请链接注册](teams.md#邀请链接注册)。
+参见[团队 → 邀请链接注册](teams.md#邀请链接注册)。
 
-| 方法    | 路径                                       | 说明                                                                                                  |
-| ------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `GET`   | `/api/join/:teamId`                        | 未认证。团队品牌信息、生效门槛、captcha 配置。通道关闭时返回 404                                      |
-| `POST`  | `/api/auth/register-with-invite`           | 创建 pending 账号并返回会话，原子占用一个邀请名额                                                     |
-| `GET`   | `/api/auth/invite-join/status`             | 该 pending 账号还差哪些门槛                                                                           |
-| `POST`  | `/api/auth/invite-join/complete`           | 门槛满足后写入成员行，始终以 `member` 身份加入                                                        |
-| `GET`   | `/api/user/me/restriction`                 | 调用者是否受限、拥有哪些能力、能否转换                                                                |
-| `POST`  | `/api/user/me/convert`                     | 解除受限。单向不可逆，需已绑定并验证真实邮箱                                                          |
-| `PATCH` | `/api/admin/teams/:id/invite-registration` | 站点管理员：授予/撤销，设置豁免项（仅 `email_verification`）以及 `allow_convert`（`null` = 站点默认） |
-| `POST`  | `/api/admin/teams/:id/dissolve`            | 站点管理员：阶段一，停用该团队的账号。需输入团队名确认                                                |
-| `POST`  | `/api/admin/teams/:id/dissolve/cancel`     | 宽限期内撤销分段解散                                                                                  |
-| `GET`   | `/api/admin/restricted-users`              | 按 `?team_id=` 或 `?invite_token=` 反查产生的账号 —— 邀请码泄漏时用于定损                             |
-
-`POST /api/teams/:id/invites` 额外接受 `allows_registration`，它要求 `max_uses` 为有限值且不超过站点上限，并强制角色为 `member`。
-`PATCH /api/teams/:id` 接受 `allow_normal_user_join`。
+| 方法   | 路径                             | 说明                                         |
+| ------ | -------------------------------- | -------------------------------------------- |
+| `GET`  | `/api/join/:teamId`              | 公开。团队品牌、门槛和验证码配置             |
+| `POST` | `/api/auth/register-with-invite` | 创建待处理账号并登录                         |
+| `GET`  | `/api/auth/invite-join/status`   | 待处理账号仍需满足的条件                     |
+| `POST` | `/api/auth/invite-join/complete` | 满足门槛后加入团队                           |
+| `GET`  | `/api/user/me/restriction`       | 调用者是否受限，以及是否可以转换             |
+| `POST` | `/api/user/me/convert`           | 转换为完整账号（单向；需要已验证的真实邮箱） |
 
 ## 域名
 
-| Method   | Path                      | 说明                                                                                               |
-| -------- | ------------------------- | -------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/domains`            | 列出当前用户的域名。`?page=`、`?limit=`、`?q=`，返回 `total`                                       |
-| `POST`   | `/api/domains`            | 添加域名，返回 `verification_method` 选项与每种方法的具体说明（DNS TXT、HTML meta、`.well-known`） |
-| `POST`   | `/api/domains/:id/verify` | 用所选方法触发重新核验                                                                             |
-| `DELETE` | `/api/domains/:id`        | 删除                                                                                               |
+| 方法     | 路径                      | 说明                                                        |
+| -------- | ------------------------- | ----------------------------------------------------------- |
+| `GET`    | `/api/domains`            | 用户的域名                                                  |
+| `POST`   | `/api/domains`            | 添加域名。返回验证选项（DNS TXT、HTML meta、`.well-known`） |
+| `POST`   | `/api/domains/:id/verify` | 立即检查验证                                                |
+| `DELETE` | `/api/domains/:id`        | 移除                                                        |
 
 ## 社交连接
 
-| Method   | Path                               | 说明                                                                                |
-| -------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
-| `GET`    | `/api/connections`                 | 列出当前用户已绑定的社交账号                                                        |
-| `POST`   | `/api/connections/intent`          | 为 `mode=connect` 创建有效期五分钟且绑定会话的预检 token                            |
-| `GET`    | `/api/connections/:slug/begin`     | 开始登录（默认 `?mode=login`）或关联（`?mode=connect`），并设置浏览器关联 cookie    |
-| `GET`    | `/api/connections/:slug/callback`  | 绑定浏览器的 OAuth 回调（由 provider 跳转触发）；关联模式要求与发起时相同的有效会话 |
-| `POST`   | `/api/connections/:slug/tg-verify` | 使用相同的浏览器与会话绑定校验 Telegram 回调数据                                    |
-| `POST`   | `/api/connections/:id/refresh`     | 从 provider 刷新显示名/头像                                                         |
-| `DELETE` | `/api/connections/:id`             | 解绑                                                                                |
+| 方法     | 路径                               | 说明                                                              |
+| -------- | ---------------------------------- | ----------------------------------------------------------------- |
+| `GET`    | `/api/connections`                 | 用户已关联的账号                                                  |
+| `POST`   | `/api/connections/intent`          | 获取用于关联提供商 的短期令牌                                     |
+| `GET`    | `/api/connections/:slug/begin`     | 开始登录（`?mode=login`）或关联（`?mode=connect&intent=<token>`） |
+| `GET`    | `/api/connections/:slug/callback`  | 提供商的重定向目标                                                |
+| `POST`   | `/api/connections/:slug/tg-verify` | 验证 Telegram 登录数据                                            |
+| `POST`   | `/api/connections/:id/refresh`     | 从提供商 刷新显示名和头像                                         |
+| `DELETE` | `/api/connections/:id`             | 取消关联                                                          |
 
-社交登录 state 在 10 分钟后过期。begin 端点对每个客户端 IP 每五分钟最多允许 20 次尝试，超过后返回带 `Retry-After` 的 `429`；全局进行中状态池达到上限时返回 `503`。关联账号时，将 `/intent` 返回的 token 作为 `?mode=connect&intent=<token>` 传入；它必须与 begin 请求及回调中的有效会话一致。
-
-OAuth scope 版本：
-
-| Method   | Path                                   | Scope          |
-| -------- | -------------------------------------- | -------------- |
-| `GET`    | `/api/oauth/me/social-connections`     | `social:read`  |
-| `DELETE` | `/api/oauth/me/social-connections/:id` | `social:write` |
+该流程必须在发起它的浏览器中于 10 分钟内完成。
+OAuth 令牌等价端点：`GET /api/oauth/me/social-connections`（`social:read`）
+和 `DELETE /api/oauth/me/social-connections/:id`（`social:write`）。
 
 ## OAuth 2.0 / OIDC
 
-完整流程见 [OAuth / OIDC 指南](oauth.md)。
+流程说明参见 [OAuth / OIDC 指南](oauth.md)。
 
-| Method               | Path                                      | 说明                                     |
-| -------------------- | ----------------------------------------- | ---------------------------------------- |
-| `GET`                | `/api/oauth/authorize`                    | 返回应用信息与请求 scope，供同意页使用   |
-| `POST`               | `/api/oauth/authorize`                    | 同意 / 拒绝                              |
-| `POST`               | `/api/oauth/par`                          | 推送式授权请求（RFC 9126）               |
-| `POST`               | `/api/oauth/register`                     | 动态客户端注册（RFC 7591）               |
-| `GET`/`PUT`/`DELETE` | `/api/oauth/register/:client_id`          | 客户端配置管理（RFC 7592）               |
-| `POST`               | `/api/oauth/token`                        | 授权码、刷新、设备与令牌交换等 grant     |
-| `POST`               | `/api/oauth/device_authorization`         | 设备授权（RFC 8628）                     |
-| `GET`                | `/api/oauth/device`                       | 根据 `user_code` 返回设备验证页数据      |
-| `POST`               | `/api/oauth/device/decision`              | 批准 / 拒绝设备请求（会话认证）          |
-| `GET` / `POST`       | `/api/oauth/userinfo`                     | OIDC UserInfo（OIDC Core §5.3.1）        |
-| `POST`               | `/api/oauth/introspect`                   | RFC 7662                                 |
-| `POST`               | `/api/oauth/revoke`                       | RFC 7009                                 |
-| `GET` / `POST`       | `/api/oauth/end_session`                  | OIDC RP 发起的登出                       |
-| `GET`                | `/.well-known/openid-configuration`       | OpenID Connect Discovery 1.0             |
-| `GET`                | `/.well-known/oauth-authorization-server` | RFC 8414 授权服务器元数据                |
-| `GET`                | `/.well-known/oauth-protected-resource`   | RFC 9728 受保护资源元数据                |
-| `GET`                | `/.well-known/webfinger`                  | RFC 7033 issuer 发现                     |
-| `GET`                | `/.well-known/jwks.json`                  | ID Token 与 JWT access token 的 RSA 公钥 |
-| `GET`                | `/.well-known/security.txt`               | RFC 9116（配置了安全联系人时）           |
-| `GET`                | `/.well-known/change-password`            | 跳转到修改密码页面                       |
+| 方法                 | 路径                                      | 说明                             |
+| -------------------- | ----------------------------------------- | -------------------------------- |
+| `GET`                | `/api/oauth/authorize`                    | 授权页面的应用信息和请求的 scope |
+| `POST`               | `/api/oauth/authorize`                    | 批准或拒绝                       |
+| `POST`               | `/api/oauth/par`                          | 推送授权请求（RFC 9126）         |
+| `POST`               | `/api/oauth/register`                     | 动态客户端注册（RFC 7591）       |
+| `GET`/`PUT`/`DELETE` | `/api/oauth/register/:client_id`          | 客户端管理（RFC 7592）           |
+| `POST`               | `/api/oauth/token`                        | 授权码、刷新、设备和令牌交换授权 |
+| `POST`               | `/api/oauth/device_authorization`         | 设备授权（RFC 8628）             |
+| `GET` / `POST`       | `/api/oauth/userinfo`                     | OIDC UserInfo                    |
+| `POST`               | `/api/oauth/introspect`                   | RFC 7662                         |
+| `POST`               | `/api/oauth/revoke`                       | RFC 7009                         |
+| `GET` / `POST`       | `/api/oauth/end_session`                  | RP 发起的登出                    |
+| `GET`                | `/.well-known/openid-configuration`       | OpenID Connect Discovery         |
+| `GET`                | `/.well-known/oauth-authorization-server` | RFC 8414 元数据                  |
+| `GET`                | `/.well-known/oauth-protected-resource`   | RFC 9728 元数据                  |
+| `GET`                | `/.well-known/webfinger`                  | 颁发者发现                       |
+| `GET`                | `/.well-known/jwks.json`                  | 公共签名密钥                     |
+| `GET`                | `/.well-known/security.txt`               | 配置安全联系人时                 |
+| `GET`                | `/.well-known/change-password`            | 重定向到修改密码页面             |
 
-### 步骤提升 2FA
+### 加强 2FA
 
-| Method | Path                         | 认证                                            |
-| ------ | ---------------------------- | ----------------------------------------------- |
-| `POST` | `/api/oauth/2fa/challenges`  | 应用凭据（HTTP Basic）或 PKCE                   |
-| `GET`  | `/api/oauth/2fa/info`        | 可选用户会话 — 驱动 SPA                         |
-| `POST` | `/api/oauth/2fa/authorize`   | 用户会话 — 提交 TOTP/Passkey/备用码或 sudo 旁路 |
-| `POST` | `/api/oauth/2fa/sudo/revoke` | 用户会话 — 主动结束 sudo 宽限期                 |
-| `POST` | `/api/oauth/2fa/verify`      | 应用凭据 — 用回跳 code 兑换验证结果             |
+| 方法   | 路径                         | 认证                              |
+| ------ | ---------------------------- | --------------------------------- |
+| `POST` | `/api/oauth/2fa/challenges`  | 应用凭据（HTTP Basic）或 PKCE     |
+| `POST` | `/api/oauth/2fa/verify`      | 应用凭据 — 用重定向 code 交换结果 |
+| `POST` | `/api/oauth/2fa/sudo/revoke` | 用户会话 — 结束 Sudo 模式窗口     |
 
-### `/api/oauth/me/*`（按 token 鉴权的用户 API）
+其他加强端点用于 Prism 自己的确认页面。
 
-接受 OAuth access token 或 PAT。所需 scope 见 [OAuth → Scopes](oauth.md#scopes) 与 [管理员 → OAuth scope 参考](admin.md#oauth-scope-reference)。
+### `/api/oauth/me/*` (令牌认证)
 
-| 路径                                                                            | Scope                                                                                                                                                                              |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /me/profile`                                                               | `profile`                                                                                                                                                                          |
-| `PATCH /me/profile`                                                             | `profile:write`                                                                                                                                                                    |
-| `GET /me/apps` / `POST /me/apps` / `PATCH /me/apps/:id` / `DELETE /me/apps/:id` | `apps:read` / `apps:write`                                                                                                                                                         |
-| `GET /me/team-apps`                                                             | `apps:read`                                                                                                                                                                        |
-| `GET /me/teams` / `POST` / `PATCH /me/teams/:id` / `DELETE`                     | `teams:read` / `teams:write` / `teams:create` / `teams:delete` — 列表包含通过子团队继承可见的团队（带 `inherited_from`）。PATCH/DELETE 使用有效角色（继承的 admin/owner 同样有效） |
-| `POST /me/teams/:id/members` / `DELETE`                                         | `teams:write` — 使用有效角色                                                                                                                                                       |
-| `GET /me/domains` / `POST` / `POST :domain/verify` / `DELETE`                   | `domains:read` / `domains:write`                                                                                                                                                   |
-| `GET /me/gpg-keys` / `POST` / `DELETE`                                          | `gpg:read` / `gpg:write`                                                                                                                                                           |
-| `GET /me/social-connections` / `DELETE`                                         | `social:read` / `social:write`                                                                                                                                                     |
-| `GET /me/admin/users` / `PATCH` / `DELETE`                                      | `admin:users:read` / `:write` / `:delete`                                                                                                                                          |
-| `GET /me/admin/config` / `PATCH`                                                | `admin:config:read` / `:write`                                                                                                                                                     |
-| `POST /me/invites` / `GET` / `DELETE`                                           | `admin:invites:create` / `:read` / `:delete`                                                                                                                                       |
-| `GET /me/site/users[/:id]`                                                      | `admin:users:read`                                                                                                                                                                 |
-| `GET /me/team/:teamId/info` / `PATCH`                                           | `teams:read` / `teams:write`                                                                                                                                                       |
-| `GET /me/team/:teamId/members` / `POST` / `DELETE` / `PATCH …/role`             | `teams:read` / `teams:write`                                                                                                                                                       |
-| `GET /me/team/:teamId/members/:userId/profile`                                  | `teams:read`                                                                                                                                                                       |
+这些端点接受 OAuth access token 或个人访问令牌。scope 列于
+[OAuth → 权限范围](oauth.md#权限范围)。
+
+| 路径                                                                     | Scope                                                          |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `GET /me/profile`                                                        | `profile`                                                      |
+| `PATCH /me/profile`                                                      | `profile:write`                                                |
+| `GET` / `POST` / `PATCH` / `DELETE /me/apps[/:id]`                       | `apps:read` / `apps:write`                                     |
+| `GET /me/team-apps`                                                      | `apps:read`                                                    |
+| `GET` / `POST` / `PATCH` / `DELETE /me/teams[/:id]`                      | `teams:read` / `teams:create` / `teams:write` / `teams:delete` |
+| `POST` / `DELETE /me/teams/:id/members`                                  | `teams:write`                                                  |
+| `GET` / `POST` / `DELETE /me/domains`, `POST /me/domains/:domain/verify` | `domains:read` / `domains:write`                               |
+| `GET` / `POST` / `DELETE /me/gpg-keys`                                   | `gpg:read` / `gpg:write`                                       |
+| `GET` / `DELETE /me/social-connections`                                  | `social:read` / `social:write`                                 |
+| `GET` / `PATCH` / `DELETE /me/admin/users`                               | `admin:users:read` / `:write` / `:delete`                      |
+| `GET` / `PATCH /me/admin/config`                                         | `admin:config:read` / `admin:config:write`                     |
+| `GET` / `POST` / `DELETE /me/invites`                                    | `admin:invites:read` / `:create` / `:delete`                   |
+| `GET /me/team/:teamId/info`, `PATCH`                                     | `team:<id>:read` / `team:<id>:write`                           |
+| `GET` / `POST` / `PATCH` / `DELETE /me/team/:teamId/members[...]`        | `team:<id>:member:read` / `team:<id>:member:write`             |
+| `GET /me/team/:teamId/members/:userId/profile`                           | `team:<id>:member:profile:read`                                |
+
+`/me/team/:teamId/...` 路径需要绑定到该团队的令牌（参见
+[OAuth → 团队 scope](oauth.md#团队-scope)）；仅有 `teams:*` 令牌不够。
+
+`POST /me/domains` 接受 `{ "domain": "example.com" }`，返回 `201`，包含域名的
+`id`、`domain`、`verification_token`、`verified`，以及各验证方式所需的值：
+`txt_record` / `txt_value`（DNS TXT）、`http_url` / `http_path` / `http_value`
+（`.well-known` 文件）和 `meta_tag`（HTML meta）。如果用户已有一个已验证的上级域名
+（例如添加 `app.example.com` 时已验证 `example.com`），新域名会立即通过验证：
+`verified` 为 `true`，`verified_by_parent` 为该上级域名。
 
 ### `GET /api/oauth/consents` / `DELETE /api/oauth/consents/:client_id`
 
-管理当前用户已授权的应用。`DELETE` 同时撤销该应用的所有未过期 token。`GET` 支持 `?page=`、`?limit=`、`?q=` 应用名称搜索并返回 `total`。
+列出当前用户已授权的应用，或撤销其中一个。撤销会移除该应用的授权以及所有未过期令牌。
 
 ## 搜索
 
-### `GET /api/search?q=<文本>`
+### `GET /api/search?q=<text>`
 
-供命令面板（Ctrl/⌘ K）使用，需要登录会话。在一次请求中查找调用者可以打开、且名称包含 `q`
-的各类条目（不区分大小写，至少 2 个字符，最多取前 100 个），每类最多返回 5 条：
-
-- 所有用户：自己的 OAuth 应用（含所在团队的应用）、团队、域名、个人访问令牌，以及已授权的应用；
-- 管理员：改为查找全站的用户（按用户名、显示名或邮箱）、团队、OAuth 应用（按名称或 Client ID）、
-  域名和 OAuth 来源，不再单独查找个人的应用、团队和域名。
+驱动命令面板（Ctrl/⌘ K）。需要会话。匹配名称中包含 `q`（至少 2 个字符）的条目，每种类型最多返回 5 条结果：
 
 ```json
 {
@@ -525,189 +386,54 @@ OAuth scope 版本：
 }
 ```
 
-`kind` 取值为 `app`、`team`、`domain`、`token`、`consent`、`user`、`oauth_source`；
-`admin` 表示全站范围的结果；`url` 是打开该条目的应用内路径。查询过短时返回空列表。
+`kind` 为 `app`、`team`、`domain`、`token`、`consent`、`user` 或 `oauth_source`。
+管理员还会获得全站结果（`admin: true`）。
 
 ## 公开资料
 
 ### `GET /api/users/:username`
 
-按可见性开关返回用户公开资料；用户不存在、私有或 `enable_public_profiles` 关闭都返回 404，且响应体一致以避免泄露用户名是否存在。可携带可选 Bearer — 资料拥有者自己的 token 即使在私密状态也能看到自己。详见 [公开资料](public-profile.md)。
+用户的公开资料，按用户选择分享的内容过滤。如果用户不存在、为私有或公开资料功能已关闭，返回 `404`；三种情况下响应相同。参见[公开资料](public-profile.md)。
 
 ### `GET /api/public/teams/:id`
 
-返回团队公开资料；同样的 404 一致性。任意成员的 token 即可在私密时看到完整数据（便于预览）。
-
-启用子团队且团队所有者开启该分区后（`profile_show_sub_teams`，或站点默认 `default_team_profile_show_sub_teams`），响应包含 `sub_teams[]` 数组 —— 仅包括**自身也已公开**的子团队，避免私密子团队的名字被父团队顺带泄露。若团队的父团队自身也是公开的，响应还会带 `parent_team` 面包屑 `{id, name, avatar_url}`。
+团队公开资料，遵循相同的 `404` 规则。包含 `sub_teams`（仅自身也公开的子团队）以及当父团队公开时的 `parent_team` 面包屑。
 
 ## 头像代理
 
-### `GET /api/proxy/image/:id`
+远程头像和图标图片通过 Prism 提供，因此页面不会直接加载第三方图片。
 
-按已注册映射推送图片，SVG 会被消毒。`:id` 是 `POST /api/proxy/image/register`（需认证）返回的不透明 ID — 不接受 URL 透传，杜绝被用作 SSRF 中继。每次上游请求及重定向前，Prism 都会拒绝本地/保留的 IPv4、IPv6 字面量，以及 A 或 AAAA 记录并非公网单播地址的域名。图片上限为 5 MiB：声明长度超限时会在读取前拒绝；对于分块传输或长度标注不实的位图响应，会通过计数字节的受限流转发，并在越界时立即取消上游。由于此时响应头已经发出，客户端会看到图片响应中断，而不是 JSON 格式的大小错误。SVG 为执行消毒会读入受限缓冲区。响应附带跨源头便于嵌入。
+- `POST /api/proxy/image/register`（需认证）注册远程 HTTPS 图片 URL，并返回 `{ "id": "...", "url": "/api/proxy/image/<id>" }`。私有和保留地址会被拒绝。
+- `GET /api/proxy/image/:id` 提供图片。可安全嵌入，SVG 会被清理，超过 5 MiB 的图片会被拒绝。只有已注册的 ID 可用；它不是开放代理。
 
-### `POST /api/proxy/image/register`
+## 管理
 
-为前端需要展示的远程 HTTPS 图片 URL（markdown 预览、`ImageUrlInput` 预览等）注册映射。需认证。注册时会拒绝本地及保留 IP 字面量；域名会在实际获取前即时检查 DNS。返回 `{ "id": "...", "url": "/api/proxy/image/<id>" }`。
+所有管理端点都需要具有管理员角色的用户。管理面板为每个管理操作使用对应的 `/api/admin/*` 端点；主要端点如下：
 
-## 管理员
+| 路径                                                                                            | 用途                                                                      |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `GET` / `PATCH /api/admin/config`                                                               | 读取或更新设置。密钥会被脱敏，并在写入时加密                              |
+| `GET /api/admin/stats`                                                                          | 总计                                                                      |
+| `GET /api/admin/users`, `GET` / `PATCH` / `DELETE /api/admin/users/:id`                         | 列出、读取、更新（角色、启用状态、邮箱、按用户令牌有效期）或删除用户      |
+| `DELETE /api/admin/users/:id/sessions`                                                          | 撤销用户的所有会话                                                        |
+| `POST /api/admin/users/bulk`                                                                    | `{ user_ids, action }` — `activate`、`deactivate` 或 `delete`；最多 50 个 |
+| `GET` / `PATCH /api/admin/apps[/:id]`                                                           | 验证或停用应用                                                            |
+| `POST /api/admin/apps/:id/transfer`                                                             | `{ owner_id }` 或 `{ team_id }`                                           |
+| `GET` / `POST` / `PATCH` / `DELETE /api/admin/oauth-sources[/:id]`                              | 管理 OAuth 来源                                                           |
+| `GET /api/admin/oauth-sources/discover`                                                         | 获取颁发者的 OIDC discovery                                               |
+| `GET` / `POST` / `DELETE /api/admin/invites[/:id]`                                              | 站点邀请                                                                  |
+| `GET /api/admin/teams`, `DELETE /api/admin/teams/:id`                                           | 列出或解散团队                                                            |
+| `GET /api/admin/domains`, `POST /api/admin/domains/:id/verify`, `DELETE /api/admin/domains/:id` | 域名，包括强制验证                                                        |
+| `GET /api/admin/audit-log`                                                                      | 平台审计日志                                                              |
+| `GET /api/audit/:scope/export`                                                                  | 导出你有权读取的审计日志：`?format=csv\|json`，最多 10,000 个事件         |
+| `GET /api/admin/login-errors`                                                                   | 失败的登录                                                                |
+| `POST /api/admin/test-email`                                                                    | 发送测试邮件                                                              |
+| `GET /api/notices`, `POST /api/notices/:id/dismiss`                                             | 当前查看者的公告（公开公告在未登录时也可用）                              |
 
-需 `role = admin`。
-
-### 配置
-
-| Method  | Path                | 说明                                              |
-| ------- | ------------------- | ------------------------------------------------- |
-| `GET`   | `/api/admin/config` | 读取所有配置（敏感字段已脱敏）                    |
-| `PATCH` | `/api/admin/config` | 批量更新；绑定了 `SECRETS_KEY` 时敏感字段自动加密 |
-
-### 统计 / 仪表盘
-
-`GET /api/admin/stats` → `{ users, apps, verified_domains, active_tokens }`。
-
-### 用户
-
-| Method   | Path                               | 说明                                                   |
-| -------- | ---------------------------------- | ------------------------------------------------------ |
-| `GET`    | `/api/admin/users?page=…&search=…` | 分页用户列表                                           |
-| `GET`    | `/api/admin/users/:id`             | 详情（含会话、应用、连接）                             |
-| `PATCH`  | `/api/admin/users/:id`             | `role`、`is_active`、`email_verified`、按用户 TTL 覆写 |
-| `DELETE` | `/api/admin/users/:id`             | 永久删除                                               |
-| `DELETE` | `/api/admin/users/:id/sessions`    | 撤销该用户全部会话                                     |
-
-### 应用 / OAuth Sources / 邀请 / Webhook / 团队
-
-| 路径                                                         | 说明                                                                              |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| `GET / PATCH /api/admin/apps[/:id]`                          | 验证或停用                                                                        |
-| `GET / POST / PATCH / DELETE /api/admin/oauth-sources[/:id]` | 源 CRUD。`GET` 支持 `?page=`、`?limit=`、`?q=` 名称/slug 搜索，返回 `total`       |
-| `GET /api/admin/oauth-sources/discover`                      | 自动获取 OIDC 发现                                                                |
-| `POST /api/admin/oauth-sources/migrate`                      | 一次性：把旧的 site_config 社交字段导入为 sources                                 |
-| `GET / POST / DELETE /api/admin/invites[/:id]`               | 站点邀请 token。`GET` 支持 `?page=`、`?limit=`、`?q=` 邮箱/备注搜索，返回 `total` |
-| `GET /api/admin/teams` / `DELETE /:id`                       | 列出 / 解散团队                                                                   |
-| `POST /api/admin/test-email`                                 | 发送测试发件邮件                                                                  |
-| `POST /api/admin/test-email-receiving`                       | 生成验证邮箱接收测试码                                                            |
-
-### 单账号管理
-
-即 `/api/user/me/*` 那一套，按用户 ID 寻址。全部仅限管理员、仅接受会话认证，并**同时**审计进平台日志和目标用户自己的 user 作用域日志（带 `site_admin: true` 标记）。详见 [管理员 → 账号详情页](admin.md#账号详情页)。
-
-| Method           | Path                                               | 说明                                                                                                                                                              |
-| ---------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PATCH`          | `/api/admin/users/:id`                             | 现在还接受 `username`、`email`、`display_name`、`avatar_url`。修改 `email` 会清除其已验证状态，除非同一请求中带上 `email_verified`。用户名/邮箱被占用时返回 `409` |
-| `POST`           | `/api/admin/users/:id/password`                    | `{ password, revoke_sessions? }`。`password: null` 表示清除 —— 若没有可用的第三方登录则拒绝                                                                       |
-| `GET`            | `/api/admin/users/:id/security`                    | 认证器、Passkey、恢复码数量、是否设置了密码                                                                                                                       |
-| `DELETE`         | `/api/admin/users/:id/2fa`                         | 移除全部因素与恢复码 —— 账号恢复按钮                                                                                                                              |
-| `DELETE`         | `/api/admin/users/:id/totp/:totpId`                | 移除单个认证器                                                                                                                                                    |
-| `DELETE`         | `/api/admin/users/:id/passkeys/:passkeyId`         | 移除单个 Passkey                                                                                                                                                  |
-| `GET` / `DELETE` | `/api/admin/users/:id/tokens[/:tokenId]`           | 个人访问令牌。令牌值永不返回                                                                                                                                      |
-| `GET` / `DELETE` | `/api/admin/users/:id/connections[/:connId]`       | 已绑定的第三方。解绑最后一种登录方式会被拒绝                                                                                                                      |
-| `GET` / `DELETE` | `/api/admin/users/:id/gpg-keys[/:keyId]`           | GPG 密钥                                                                                                                                                          |
-| `GET`            | `/api/admin/users/:id/emails`                      | 主邮箱与备用邮箱                                                                                                                                                  |
-| `POST`           | `/api/admin/users/:id/emails/:emailId/verify`      | 标记为已验证。`:emailId` 用 `primary` 表示 users 行上的主地址                                                                                                     |
-| `POST`           | `/api/admin/users/:id/emails/:emailId/set-primary` | 提升备用地址为主邮箱，原主邮箱降级进备用列表                                                                                                                      |
-| `DELETE`         | `/api/admin/users/:id/emails/:emailId`             | 删除备用地址                                                                                                                                                      |
-| `GET` / `DELETE` | `/api/admin/users/:id/domains[/:domainId]`         | 该账号的个人域名                                                                                                                                                  |
-| `GET` / `DELETE` | `/api/admin/users/:id/authorizations[/:consentId]` | OAuth 授权。撤销时会一并删除据此签发的令牌与授权码                                                                                                                |
-| `GET`            | `/api/admin/users/:id/teams`                       | 团队成员关系（只读 —— 请在团队页修改）                                                                                                                            |
-| `GET`            | `/api/admin/users/:id/lockdown`                    | `LOCKDOWN_USERS` 是否保护该账号不被删除                                                                                                                           |
-
-### 键值浏览器
-
-与数据库控制台使用相同的开关，通过 `KV_CONSOLE`（未设置时跟随 `D1_CONSOLE`）。详见 [管理员 → 键值浏览器](admin.md#键值浏览器)。
-
-| Method   | Path                              | 说明                                                                              |
-| -------- | --------------------------------- | --------------------------------------------------------------------------------- |
-| `GET`    | `/api/admin/kv/status`            | 模式、是否可写、可用命名空间                                                      |
-| `GET`    | `/api/admin/kv/:ns/keys`          | 列出键。`?prefix=`、`?cursor=`、`?limit=`（上限 1000）。返回 KV 的不透明 `cursor` |
-| `GET`    | `/api/admin/kv/:ns/keys/:key`     | 读取单个值（键需 URL 编码）。密钥材料返回 `protected: true` 与 `value: null`      |
-| `PUT`    | `/api/admin/kv/:ns/keys/:key`     | 写入。`{ value, expiration_ttl? }`；TTL 下限 60 秒。密钥材料会被拒绝              |
-| `DELETE` | `/api/admin/kv/:ns/keys/:key`     | 删除。密钥材料允许删除 —— 那是轮换                                                |
-| `POST`   | `/api/admin/kv/:ns/purge?prefix=` | 删除某前缀下的全部键，每次调用一页。跳过密钥材料                                  |
-
-`:ns` 取值为 `sessions` 或 `cache`。
-
-### 实例级操作
-
-| Method   | Path                                         | 说明                                                                                                                                                    |
-| -------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/admin/revoke/preview`                  | 大规模撤销会销毁什么，但不执行                                                                                                                          |
-| `POST`   | `/api/admin/revoke/sessions`                 | 删除全部会话。`{ include_self? }` —— 默认保留调用者自己的会话                                                                                           |
-| `POST`   | `/api/admin/revoke/app/:appId`               | 删除某应用的令牌、授权码与同意记录。`{ deactivate? }`                                                                                                   |
-| `POST`   | `/api/admin/revoke/user/:userId/grants`      | 对某账号在全部应用上执行同样操作                                                                                                                        |
-| `GET`    | `/api/admin/domains`                         | 全部域名。`?page=`、`?limit=`、`?q=`、`?verified=0\|1`                                                                                                  |
-| `POST`   | `/api/admin/domains/:id/verify`              | `{ verified }` —— 属于覆盖，记录为 `admin_override` 而非校验                                                                                            |
-| `DELETE` | `/api/admin/domains/:id`                     | 删除域名                                                                                                                                                |
-| `POST`   | `/api/admin/apps/:id/transfer`               | `{ owner_id }` 或 `{ team_id }`。client ID 与密钥保持不变                                                                                               |
-| `POST`   | `/api/admin/users/:id/convert`               | 解除邀请注册限制。`{ require_verified_email? }`                                                                                                         |
-| `GET`    | `/api/admin/scope-grants/site`               | 应用仍持有的站点级 OAuth 授权，每个应用与账号一条。`?q=` 搜索                                                                                           |
-| `GET`    | `/api/admin/scope-grants/team`               | 应用仍持有的团队级授权，每个应用与团队一条。`?q=` 搜索，`?team_id=` 筛选                                                                                |
-| `GET`    | `/api/admin/scope-grants/:kind/:id`          | 单个授权：仍持有的作用域、有效令牌数、批准历史。错误码：`invalid_grant_kind`、`scope_grant_not_found`                                                   |
-| `DELETE` | `/api/admin/scope-grants/:kind/:id`          | 撤销：从授权中移除这些作用域，并删除带有它们的令牌和授权码。返回 `{ approvals, tokens }`                                                                |
-| `GET`    | `/api/admin/users/:id/sessions`              | 活跃会话及其 IP / 地理位置历史                                                                                                                          |
-| `DELETE` | `/api/admin/users/:id/sessions/:sessionId`   | 结束单个会话（`DELETE …/sessions` 仍然结束全部）                                                                                                        |
-| `GET`    | `/api/admin/maintenance/jobs`                | 可执行的定时任务，以及它们平时运行的 cron 表达式                                                                                                        |
-| `POST`   | `/api/admin/maintenance/jobs/:key/run`       | 立即执行。会 await —— 返回 `processed`（任务无计数时为 `null`）与 `duration_ms`                                                                         |
-| `POST`   | `/api/admin/users/bulk`                      | `{ user_ids, action }`，action 为 `activate` \| `deactivate` \| `delete`。最多 50 个 ID；调用者本人及 `LOCKDOWN_USERS` 中的账号会被跳过并列入 `skipped` |
-| `GET`    | `/api/admin/team-invites`                    | 全部未失效的团队邀请。`?page=`、`?limit=`、`?q=` 团队/邮箱、`?registration=1`                                                                           |
-| `DELETE` | `/api/admin/team-invites/:token`             | 撤销单个邀请链接                                                                                                                                        |
-| `GET`    | `/api/admin/users/:id/notifications`         | 规则集名称、是否生效与规则数量 —— 不含具体内容                                                                                                          |
-| `DELETE` | `/api/admin/users/:id/notification-rulesets` | 将路由重置为按事件的默认设置                                                                                                                            |
-
-### 公告板
-
-读取使用可选认证 —— 公开公告正是为无法登录的人而存在。撰写仅限管理员。详见 [管理员 → 公告板](admin.md#公告板)。
-
-| Method   | Path                       | 说明                                                                                                                                                |
-| -------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/notices`             | 当前查看者可见的公告：已发布、在展示窗口内、受众匹配、且未被关闭。未登录时返回 `public` 公告                                                        |
-| `POST`   | `/api/notices/:id/dismiss` | 为调用者关闭该公告。未登录返回 401，公告不可关闭时返回 403                                                                                          |
-| `GET`    | `/api/admin/notices`       | 全部公告（含草稿），带关闭次数统计。`?q=` 按标题匹配                                                                                                |
-| `GET`    | `/api/admin/notices/:id`   | 单条公告，含团队名称、作者与关闭次数                                                                                                                |
-| `POST`   | `/api/admin/notices`       | 创建。`{ title, body, level?, audience?, team_id?, is_published?, starts_at?, ends_at?, is_dismissible?, pinned? }` —— 未设 `is_published` 时为草稿 |
-| `PATCH`  | `/api/admin/notices/:id`   | 更新。基于合并后的记录校验，因此只改一端时间也会与另一端比对。`{ reset_dismissals: true }` 会让它对所有关闭过的人重新出现                           |
-| `DELETE` | `/api/admin/notices/:id`   | 删除，并级联删除关闭记录。若只是想撤下，请改用取消发布                                                                                              |
-
-### 数据库
-
-直接访问 D1。仅限管理员、仅接受会话认证，且每次调用都会被审计。**未设置 `D1_CONSOLE` 时关闭** —— 下列端点默认全部返回 404。详见 [管理员 → 数据库](admin.md#数据库)。
-
-| Method   | Path                               | 说明                                                                                                                     |
-| -------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `GET`    | `/api/admin/db/tables`             | 全部表，含行数、列与 `CREATE TABLE` 语句                                                                                 |
-| `GET`    | `/api/admin/db/tables/:table/rows` | 分页读取行。`?page=`、`?limit=`（上限 500）、`?order_by=`、`?dir=`、`?where=` 原始 SQL 片段                              |
-| `POST`   | `/api/admin/db/tables/:table/rows` | 插入。请求体 `{ values }` —— 未知列会被忽略                                                                              |
-| `PATCH`  | `/api/admin/db/tables/:table/rows` | 更新单行。请求体 `{ key, values }`，按主键或 `rowid` 定位                                                                |
-| `DELETE` | `/api/admin/db/tables/:table/rows` | 删除单行。请求体 `{ key }`                                                                                               |
-| `POST`   | `/api/admin/db/query`              | 执行 SQL。请求体 `{ sql, params?, allow_write? }`。非纯读取语句在没有 `allow_write` 时会被拒绝；多条语句在同一事务中执行 |
-
-对 `audit_events`、`audit_log` 与 `sqlite_master` 的写入，在任何设置下都会以 `403 { append_only: true }` 拒绝，行编辑端点与控制台皆然 —— 读取不受影响。详见 [管理员 → 审计日志在此处只追加](admin.md#审计日志在此处只追加)。
-
-### 审计 / 登录错误
-
-| Method | Path                          | 说明                                                                                |
-| ------ | ----------------------------- | ----------------------------------------------------------------------------------- |
-| `GET`  | `/api/admin/audit-log?page=…` | 审计事件                                                                            |
-| `GET`  | `/api/audit/:scope/export`    | 导出调用者有权读取的任意作用域。`?format=csv\|json` 及表格的筛选条件。上限 10000 条 |
-| `GET`  | `/api/admin/login-errors`     | 失败登录表                                                                          |
-
-### 密钥迁移 / Danger Zone
-
-| Method         | Path                                                            | 说明                                                          |
-| -------------- | --------------------------------------------------------------- | ------------------------------------------------------------- |
-| `GET`          | `/api/admin/secrets/status`                                     | `SECRETS_KEY` 是否绑定，多少 site_config 行尚未加密           |
-| `POST`         | `/api/admin/secrets/migrate`                                    | 加密 site_config / oauth source / oauth app 的剩余明文 secret |
-| `GET`          | `/api/admin/d1-secrets/status`                                  | bearer 类字段的同上状态                                       |
-| `POST`         | `/api/admin/d1-secrets/migrate`                                 | 哈希尚未迁移的 token / code                                   |
-| `GET / POST`   | `/api/admin/teams-as-users-status` & `/migrate-teams-as-users`  | 为每个团队补建 `kind = 'team'` 用户行                         |
-| `GET / POST`   | `/api/admin/image-proxy-status` & `/migrate-image-proxy`        | 为旧头像/图标补建头像代理映射                                 |
-| `POST`         | `/api/admin/sweep-image-proxy`                                  | 立即清理孤儿映射（同时也会被 cron 调用）                      |
-| `GET / DELETE` | `/api/admin/image-proxy[/:id]`                                  | 浏览 / 删除代理映射                                           |
-| `POST`         | `/api/admin/migrate-recovery-codes`                             | 重新哈希历史明文备用码                                        |
-| `GET / POST`   | `/api/admin/reset/status` & `/request` & `/cancel` & `/confirm` | 邮件签署的站点重置流程                                        |
+数据库控制台、键值浏览器、密钥迁移、公告编辑器、scope 授权和其他维护工具均由管理面板驱动；参见[管理指南](admin.md)。
 
 ## 健康检查
 
 ### `GET /api/health`
 
-总是返回 `{ "ok": true }`。无需认证。
+返回 `{ "ok": true }`。无需认证。

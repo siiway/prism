@@ -1,285 +1,111 @@
 ---
 title: Getting Started
-description: Set up Prism on Cloudflare Workers from scratch — provisioning resources, secrets, migrations, and your first deploy.
+description: Deploy Prism to your Cloudflare account with one command.
 ---
 
 # Getting Started
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) 1.1+ (or `pnpm` — both lockfiles are kept in sync)
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/) (`bun add -g wrangler`)
-- A Cloudflare account (free tier is sufficient)
-- _(Optional)_ Rust + wasm-pack for the PoW WASM accelerator
+- [Bun](https://bun.sh) 1.3+
+- A Cloudflare account (the free tier is enough)
 
-The build scripts (`scripts/build.sh`, `build.ps1`, `build.py`) install all
-missing toolchain components automatically.
-
-## 1. Install dependencies
+## Deploy
 
 ```bash
+git clone https://github.com/siiway/prism
+cd prism/app
 bun install
+bun run setup
 ```
 
-## 2. Provision Cloudflare resources
+Setup:
 
-### D1 database
+1. Signs you in to Cloudflare (it opens a browser).
+2. Asks for the Worker name and the public URL: a domain on your Cloudflare
+   account, such as `https://auth.example.com`, or a `workers.dev` address.
+3. Creates the D1 database and KV namespaces and, if you want them, an R2
+   bucket for uploaded images and a Secrets Store key that encrypts stored
+   secrets.
+4. Writes their IDs, your URL and your account into `app/wrangler.jsonc`.
+5. Builds, applies the database migrations and deploys.
+
+Setup reuses resources that already exist, so you can run it again, for example
+to add R2 later. `bun run setup --dry-run` shows what it would do without
+changing anything.
+
+## First-run setup
+
+On your first visit Prism redirects you to `/init`. Enter the admin account's
+email, username, display name and password, and the site name. After that,
+visits go straight to the login page.
+
+## Updating
+
+In `app/`:
 
 ```bash
-wrangler d1 create prism-db
+git pull
+bun install
+bun run deploy
 ```
 
-Copy the `database_id` into `wrangler.jsonc`:
-
-```jsonc
-"d1_databases": [
-  {
-    "binding": "DB",
-    "database_name": "prism-db",
-    "database_id": "<paste here>",
-    "migrations_dir": "worker/db/migrations"
-  }
-]
-```
-
-### KV namespaces
-
-```bash
-wrangler kv namespace create KV_SESSIONS
-wrangler kv namespace create KV_CACHE
-```
-
-Copy the two `id` values into `wrangler.jsonc`. Each namespace also needs a
-`preview_id` for local dev — run the same commands with `--preview` appended or
-just reuse the same IDs for local testing.
-
-### R2 bucket _(optional)_
-
-R2 is only used for hosted avatars and app icons larger than what fits inline
-in D1; smaller uploads are stored directly. The binding is commented out in the
-default `wrangler.jsonc` so you can deploy without it. To enable R2:
-
-```bash
-wrangler r2 bucket create prism-assets
-```
-
-…then uncomment the `r2_buckets` block in `wrangler.jsonc`.
-
-### Secrets Store (strongly recommended)
-
-Generate a 32-byte master key and store it in a Cloudflare Secrets Store. This
-encrypts every sensitive value at rest (OAuth `client_secret`s, captcha secret,
-SMTP/IMAP passwords, GitHub README PAT, plus the bearer-style tokens listed in
-[Architecture → Secrets at rest](architecture.md#secrets-at-rest)).
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-```
-
-Create a Secrets Store in the Cloudflare dashboard, save the generated value
-under name `prism-secrets-key`, then add the binding to `wrangler.jsonc`:
-
-```jsonc
-"secrets_store_secrets": [
-  {
-    "binding": "SECRETS_KEY",
-    "store_id": "<your-store-id>",
-    "secret_name": "prism-secrets-key"
-  }
-]
-```
-
-If you skip this binding, encryption/hashing degrades to a no-op and Prism stays
-fully functional with plaintext storage. You can opt in later — the migration
-endpoints in **Admin → Maintenance → Danger zone** are idempotent.
-
-## 3. Run migrations
-
-```bash
-bun db:migrate          # local D1
-bun db:migrate:prod     # production D1
-```
-
-## 4. Set `APP_URL`
-
-Update `wrangler.jsonc` so the Worker knows its public origin:
-
-```jsonc
-"vars": {
-  "APP_URL": "https://auth.yourdomain.com"
-}
-```
-
-For local dev, leave it as the default — the dev server uses
-`http://localhost:5173`.
-
-The `vars` block also contains three optional zero-config knobs:
-
-- `LOCKDOWN_USERS` / `LOCKDOWN_TEAMS` — comma-separated lists of
-  usernames / team names that are permanently protected from deletion
-  (the API returns 403). Leave empty to disable.
-- `ENABLE_RESET` — set to `"true"` to surface the **Site reset** button
-  in the admin Danger Zone. Off by default to prevent accidental wipes.
-  `NO_RESET_COOLDOWN` skips the 30-minute wait before confirming the reset.
-
-See [Configuration](configuration.md#wrangler-bindings--variables) for the
-full set of Wrangler vars and bindings.
-
-## 5. Start development server
-
-```bash
-bun dev
-```
-
-Vite starts on `http://localhost:5173`. The
-[Cloudflare Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/)
-runs the Worker in-process alongside Vite — no separate `wrangler dev` needed,
-and `entry-server.tsx` (SSR) is hot-reloaded along with the rest of the SPA.
-
-## 6. First-run setup
-
-On first visit, Prism redirects you to `/init`. Fill in:
-
-- **Email** — the admin account email
-- **Username** — alphanumeric, used in profile URLs
-- **Display name** — shown in the UI
-- **Password**
-- **Site name** — shown in the browser title and emails
-
-Submitting creates the first admin account and marks the instance as
-initialized. Subsequent visits go directly to the login page.
-
-## 7. (Optional) Build PoW WASM
-
-The proof-of-work bot protection has a pure-JS fallback but runs ~10× faster
-with the WASM module compiled from `pow/src/lib.rs`.
-
-```bash
-cd pow
-wasm-pack build --target no-modules --out-dir ../public/pow-wasm
-cp ../public/pow-wasm/prism_pow_bg.wasm ../public/pow.wasm
-```
-
-Or use any of the build scripts which do this automatically:
-
-```bash
-bash scripts/build.sh --skip-frontend
-```
-
-## 8. Deploy to production
-
-```bash
-bash scripts/deploy.sh          # or: pwsh scripts/deploy.ps1
-                                # or: python scripts/deploy.py
-```
-
-The deploy scripts build, apply any pending D1 migrations, and publish the
-Worker, in that order: a compile error stops the run before anything reaches
-production, and migrations land before the code that depends on them. Prism's
-migrations are additive, so the currently-deployed Worker keeps running
-against the new schema while the deploy finishes.
-
-Pending migrations are listed before the confirmation prompt, so you see what
-is about to be applied. Useful options:
+`bun run deploy` builds, applies pending database migrations, then publishes the Worker. It
+lists the pending migrations and asks before touching production. Use it
+instead of `wrangler deploy`, which skips the migrations.
 
 | Option              | Effect                                   |
 | ------------------- | ---------------------------------------- |
 | `--dry-run`         | Print each command instead of running it |
-| `-y`, `--yes`       | Skip the confirmation prompt (for CI)    |
+| `-y`, `--yes`       | Don't ask for confirmation (for CI)      |
 | `--migrations-only` | Apply migrations without deploying       |
 | `--skip-migrations` | Publish without touching the database    |
 | `--skip-build`      | Deploy what is already in `dist/`        |
 
-GitHub Actions runs the same scripts on every push to `main` (see
-[CI](#ci-github-actions)): `bash scripts/build.sh`, then
-`bash scripts/deploy.sh --skip-build --yes`, so CI deploys apply pending
-migrations exactly the way a local deploy does.
+### CI
 
-`bun deploy` remains available and runs `tsc -b && vite build` then
-`wrangler deploy` — note that it does **not** apply migrations, so apply them
-yourself (`bun db:migrate:prod`) if you use it.
+The repository's GitHub Actions deploy on every push to `main` and run checks on
+pull requests. Deploys need a `CLOUDFLARE_API_TOKEN` secret with **Workers
+Scripts:Edit**, **D1:Edit**, **Workers KV Storage:Edit** and **Secrets
+Store:Read** permissions, plus **Workers Routes:Edit** and **Zone:Read** if you
+use a custom domain. If the repository is also connected to Cloudflare Workers
+Builds, disconnect it, or every push deploys twice.
 
-A deploy and a migration are two commands, and nothing makes them atomic.
-Features whose storage arrived in a migration are written to survive the gap:
-if their tables are not there yet, that feature reports itself unavailable and
-nothing else is affected. The [notice board](admin.md#notice-board) is the
-current example — its board reads as empty and **Admin → Notices** returns a
-503 naming the command to run, rather than the missing table taking down every
-page that renders the board.
+## Settings in `app/wrangler.jsonc`
 
-Security-enforcement migrations are deliberately fail-closed rather than
-optional. In particular, `0073_atomic_security_state.sql` must be applied before
-deploying the code that uses it; without those tables, affected authentication
-and OAuth requests fail instead of falling back to non-atomic KV checks. The
-provided production and CI deployment scripts already enforce this order. If
-you use `bun deploy` or `--skip-migrations`, run `bun db:migrate:prod` first.
+The `vars` block holds optional settings such as `LOCKDOWN_USERS` /
+`LOCKDOWN_TEAMS` (accounts and teams nobody can delete) and `ENABLE_RESET`
+(shows the **Site reset** button). See
+[Configuration](configuration.md#wrangler-bindings-variables).
 
-Either way the build emits a deploy-ready `dist/prism/wrangler.json` —
-production deploys must use that config so Vite's SSR pass is preserved (a
-plain `wrangler deploy` from the project root re-bundles the source and skips
-SSR). The provided build scripts copy the generated config back into place
-automatically.
+## Adding the Secrets Store key later
 
-## 9. Post-deploy: encrypt secrets
+If you add the key to a site that already has data, sign in as the admin and
+open **Admin → Maintenance → Danger zone**. Run these once; both are safe to
+repeat:
 
-If you bound `SECRETS_KEY`, log in as the admin and visit
-**Admin → Maintenance → Danger zone**. Run the two migrations once:
+- **Migrate secrets to Secret Store**: encrypts existing secrets.
+- **Hash and encrypt stored tokens**: stores tokens and codes as keyed hashes.
 
-- **Migrate secrets to Secrets Store** — encrypts existing site_config secret
-  values and OAuth-app/source `client_secret`s.
-- **Migrate D1 secrets** — replaces plaintext bearer-style values (PATs, OAuth
-  tokens/codes, invite tokens, email-verify codes, 2FA codes, individual backup
-  codes) with HMAC-SHA256 keyed hashes.
+## Social login
 
-Both are idempotent — re-running is safe.
+Add providers under **Admin → OAuth Sources**. See
+[Social Login Setup](social-login.md).
 
-## CI (GitHub Actions)
+## Email
 
-- **Production** (`.github/workflows/deploy.yml`) deploys on a push to `main`,
-  or a manual run from `main`. It runs lint, tests and translation parity
-  first, then `scripts/build.sh` and `scripts/deploy.sh`, which applies
-  pending D1 migrations before publishing. One deploy runs at a time and a
-  running deploy is never cancelled, so it cannot be cut off between migrating
-  and publishing. The job runs in the `production` GitHub Environment; add
-  required reviewers there to gate deploys. If the repository is still
-  connected to Cloudflare Workers Builds (the `prism` Worker's
-  **Settings → Builds**), disconnect it, or every push to `main` deploys
-  twice.
-- **Pull requests** (`.github/workflows/pr.yml`) run the checks — typecheck
-  (app + worker), lint, tests, translation parity, and a build. Nothing is
-  deployed from a pull request, and the workflow uses no secrets, so fork PRs
-  run it the same way.
+Prism can send email through Resend, Mailchannels or SMTP, configured in
+**Admin → Settings → Email**. Email is used for verification, password reset and
+notifications.
 
-The deploy needs one secret, `CLOUDFLARE_API_TOKEN` (repository-wide, or on the
-`production` Environment), scoped to the account with **Workers Scripts:Edit**,
-**D1:Edit**, **Workers KV Storage:Edit**, and **Secrets Store:Read** (the Worker
-binds a Secrets Store `SECRETS_KEY`). Production is on a custom domain, so the
-token also needs **Workers Routes:Edit** and **Zone:Read** on that zone. The
-account id is pinned in `wrangler.jsonc`, so no account-id secret is required.
+| Provider     | `email_provider` |
+| ------------ | ---------------- |
+| Resend       | `resend`         |
+| Mailchannels | `mailchannels`   |
+| SMTP         | `smtp`           |
+| Off          | `none`           |
 
-## Social login setup
-
-Each provider requires an OAuth app registration. Add OAuth Sources in
-**Admin → OAuth Sources** — multiple sources of the same provider type are
-supported, each with its own slug. See
-[Social Login Setup](social-login.md) for per-provider walkthroughs and
-[OAuth / OIDC Guide](oauth.md) for the callback URL format.
-
-## Email setup
-
-Prism supports three send providers and two receive providers, configured in
-**Admin → Settings → Email**.
-
-| Provider     | `email_provider` value | Key variable               |
-| ------------ | ---------------------- | -------------------------- |
-| Resend       | `resend`               | `email_api_key` (Admin UI) |
-| Mailchannels | `mailchannels`         | `email_api_key` (Admin UI) |
-| SMTP         | `smtp`                 | See UI                     |
-| None / off   | `none`                 | —                          |
-
-Email is used for verification, password reset, and notifications. Setting
-`require_email_verification = false` (the default) lets users log in before
-verifying.
-
-For inbound mail (verify-by-sending), enable Cloudflare Email Workers or set
-`email_receive_provider = imap` and configure the polling mailbox.
+By default users can sign in before verifying their email; turn on
+`require_email_verification` to change that. To let users verify by sending an
+email to Prism, use Cloudflare Email Workers or an IMAP mailbox (see the
+[Admin Guide](admin.md#email)).
