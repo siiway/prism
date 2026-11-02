@@ -89,3 +89,13 @@ language = "system"
 pass_filenames = false
 always_run = true
 stages = ["pre-push"]
+
+[[repos.hooks]]
+id = "translations"
+name = "translation keys"
+entry = "bun"
+args = ["run", "check:i18n"]
+language = "system"
+pass_filenames = false
+always_run = true
+stages = ["pre-push"]

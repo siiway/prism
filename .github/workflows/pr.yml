@@ -45,6 +45,6 @@ jobs:
       - name: Test
         run: bun run test
       - name: Translation parity
-        run: bash scripts/check_translations.sh
+        run: bun run check:i18n
       - name: Build
         run: bunx vite build
