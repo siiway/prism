@@ -16,6 +16,7 @@ import {
 import { parseInviteExpiry } from "../lib/inviteExpiry";
 import {
   canManageTeamInvite,
+  inviteSetClause,
   isInviteEnabled,
   validateInviteMaxUses,
   loadInviteGroups,
@@ -318,7 +319,7 @@ app.post("/:id/invites", async (c) => {
   );
 });
 
-// Revoke an invite
+// Edit an invite
 app.patch("/:id/invites/:token", async (c) => {
   const id = c.req.param("id");
   const token = c.req.param("token");
@@ -392,31 +393,14 @@ app.patch("/:id/invites/:token", async (c) => {
   }
   if (!Object.keys(changes).length)
     return c.json({ error: "nothing_to_update" }, 400);
-  const assignments: string[] = [];
-  const values: unknown[] = [];
-  if (body.email !== undefined) {
-    assignments.push("email = ?");
-    values.push(email);
-  }
-  if (body.max_uses !== undefined) {
-    assignments.push("max_uses = ?");
-    values.push(maxUses);
-  }
-  if (body.expires_at !== undefined) {
-    assignments.push("expires_at = ?");
-    values.push(expiresAt);
-  }
-  if (body.enabled !== undefined) {
-    assignments.push("enabled = ?");
-    values.push(enabled ? 1 : 0);
-  }
+  const set = inviteSetClause(changes);
   const useGuard =
     body.max_uses !== undefined && maxUses !== 0 ? " AND uses <= ?" : "";
-  if (useGuard) values.push(maxUses);
+  // The guard's value binds last: it follows `team_id = ?` in the SQL.
   const updated = await c.env.DB.prepare(
-    `UPDATE team_invites SET ${assignments.join(", ")} WHERE token = ? AND team_id = ?${useGuard}`,
+    `UPDATE team_invites SET ${set.sql} WHERE token = ? AND team_id = ?${useGuard}`,
   )
-    .bind(...values, token, id)
+    .bind(...set.values, token, id, ...(useGuard ? [maxUses] : []))
     .run();
   if (!updated.meta.changes)
     return c.json({ error: "invite_usage_changed" }, 409);

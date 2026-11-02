@@ -27,6 +27,20 @@ export function isInviteEnabled(enabled: number | null | undefined): boolean {
   return enabled !== 0;
 }
 
+/**
+ * The SET list and its values for an invite edit. `changes` is keyed by
+ * column name; booleans are stored as 0/1.
+ */
+export function inviteSetClause(changes: Record<string, unknown>) {
+  const columns = Object.keys(changes);
+  return {
+    sql: columns.map((col) => `${col} = ?`).join(", "),
+    values: columns.map((col) =>
+      typeof changes[col] === "boolean" ? Number(changes[col]) : changes[col],
+    ),
+  };
+}
+
 export interface InviteRow {
   token: string;
   team_id: string;

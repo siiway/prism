@@ -14,6 +14,7 @@ import { randomBase64url, randomId } from "../lib/crypto";
 import { auditAdmin } from "../lib/audit";
 import type { SiteInviteRow, Variables } from "../types";
 import {
+  inviteSetClause,
   isInviteEnabled,
   validateInviteMaxUses,
 } from "../lib/inviteManagement";
@@ -214,37 +215,16 @@ app.patch("/invites/:id", async (c) => {
   }
   if (!Object.keys(changes).length)
     return c.json({ error: "nothing_to_update" }, 400);
-  const assignments: string[] = [];
-  const values: unknown[] = [];
-  if (body.email !== undefined) {
-    assignments.push("email = ?");
-    values.push(email);
-  }
-  if (body.note !== undefined) {
-    assignments.push("note = ?");
-    values.push(note);
-  }
-  if (body.max_uses !== undefined) {
-    assignments.push("max_uses = ?");
-    values.push(maxUses);
-  }
-  if (body.expires_in_days !== undefined) {
-    assignments.push("expires_at = ?");
-    values.push(expiresAt);
-  }
-  if (body.enabled !== undefined) {
-    assignments.push("enabled = ?");
-    values.push(enabled ? 1 : 0);
-  }
+  const set = inviteSetClause(changes);
   const useGuard =
     body.max_uses !== undefined && maxUses !== null
       ? " AND use_count <= ?"
       : "";
   // The guard's value binds after the id: it follows `id = ?` in the SQL.
   const updated = await c.env.DB.prepare(
-    `UPDATE site_invites SET ${assignments.join(", ")} WHERE id = ?${useGuard}`,
+    `UPDATE site_invites SET ${set.sql} WHERE id = ?${useGuard}`,
   )
-    .bind(...values, id, ...(useGuard ? [maxUses] : []))
+    .bind(...set.values, id, ...(useGuard ? [maxUses] : []))
     .run();
   if (!updated.meta.changes)
     return c.json({ error: "invite_usage_changed" }, 409);
