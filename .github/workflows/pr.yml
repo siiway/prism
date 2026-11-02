@@ -42,9 +42,5 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Commit hooks (prettier, eslint, file checks)
         run: bunx prek run -c prek.toml --all-files --show-diff-on-failure --color=always
-      - name: Push hooks (typecheck, tests, translations)
+      - name: Push hooks (typecheck, tests, translations, build and NOTICE.md)
         run: bunx prek run -c prek.toml --all-files --hook-stage pre-push --color=always
-      - name: Build
-        run: bunx vite build
-      - name: NOTICE.md lists what the build ships
-        run: bun scripts/notice.ts --check
