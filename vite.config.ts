@@ -6,7 +6,4 @@ import { searchIndexPlugin } from "./vite/searchIndex";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [searchIndexPlugin(), cloudflare(), react()],
-  server: {
-    allowedHosts: ["vite.krnl64.win"],
-  },
 });
