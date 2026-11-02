@@ -22,7 +22,7 @@ import { useToastMessage } from "../../../lib/useToastMessage";
 import {
   SettingsBody,
   SettingsCard,
-  SettingsFooter,
+  SaveFooter,
   SettingsPage,
   SettingsRow,
   SettingsToast,
@@ -190,20 +190,13 @@ export function SourceDetail() {
   const footer = (section: Section) => {
     const dirty = sectionDirty(section, form, saved);
     return (
-      <SettingsFooter>
-        {dirty && busy !== section && (
-          <Button appearance="subtle" onClick={() => discard(section)}>
-            {t("common.discard")}
-          </Button>
-        )}
-        <Button
-          appearance="primary"
-          disabled={!dirty || !sectionValid(section, form) || busy !== null}
-          onClick={() => void save(section)}
-        >
-          {busy === section ? <Spinner size="tiny" /> : t("common.saveChanges")}
-        </Button>
-      </SettingsFooter>
+      <SaveFooter
+        dirty={dirty}
+        saving={busy === section}
+        disabled={!sectionValid(section, form) || busy !== null}
+        onDiscard={() => discard(section)}
+        onSave={() => void save(section)}
+      />
     );
   };
 

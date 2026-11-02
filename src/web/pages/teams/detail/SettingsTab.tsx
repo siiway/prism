@@ -7,7 +7,6 @@ import {
   Input,
   Link,
   MessageBar,
-  Spinner,
   Switch,
   Textarea,
   makeStyles,
@@ -27,7 +26,7 @@ import { ImageUrlInput } from "../../../components/ImageUrlInput";
 import {
   SettingsBody,
   SettingsCard,
-  SettingsFooter,
+  SaveFooter,
   SettingsRow,
   SettingsSubhead,
 } from "../../../components/Settings";
@@ -265,20 +264,13 @@ export function SettingsTab({
             />
           </div>
         </SettingsBody>
-        <SettingsFooter>
-          {dirty && !saving && (
-            <Button appearance="subtle" onClick={() => setEdits({})}>
-              {t("common.discard")}
-            </Button>
-          )}
-          <Button
-            appearance="primary"
-            disabled={!dirty || saving || !!pending || !form.name.trim()}
-            onClick={saveProfile}
-          >
-            {saving ? <Spinner size="tiny" /> : t("common.saveChanges")}
-          </Button>
-        </SettingsFooter>
+        <SaveFooter
+          dirty={dirty}
+          saving={saving}
+          disabled={!!pending || !form.name.trim()}
+          onDiscard={() => setEdits({})}
+          onSave={saveProfile}
+        />
       </SettingsCard>
 
       {(isOwner || isCoOwnerOrAbove) && (

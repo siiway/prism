@@ -30,7 +30,7 @@ import { useToastMessage } from "../../../lib/useToastMessage";
 import {
   SettingsBody,
   SettingsCard,
-  SettingsFooter,
+  SaveFooter,
   SettingsPage,
   SettingsRow,
   SettingsToast,
@@ -193,20 +193,13 @@ export function NoticeDetail() {
     const dirty = sectionDirty(section, form, saved);
     const valid = SECTION_FIELDS[section].every((k) => !errors[k]);
     return (
-      <SettingsFooter>
-        {dirty && busy !== section && (
-          <Button appearance="subtle" onClick={() => discard(section)}>
-            {t("common.discard")}
-          </Button>
-        )}
-        <Button
-          appearance="primary"
-          disabled={!dirty || !valid || busy !== null}
-          onClick={() => void save(section)}
-        >
-          {busy === section ? <Spinner size="tiny" /> : t("common.saveChanges")}
-        </Button>
-      </SettingsFooter>
+      <SaveFooter
+        dirty={dirty}
+        saving={busy === section}
+        disabled={!valid || busy !== null}
+        onDiscard={() => discard(section)}
+        onSave={() => void save(section)}
+      />
     );
   };
 

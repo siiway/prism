@@ -47,7 +47,7 @@ import { Select } from "../../components/Select";
 import {
   SettingsBody,
   SettingsCard,
-  SettingsFooter,
+  SaveFooter,
   SettingsToast,
 } from "../../components/Settings";
 import { SkeletonSettingsCard } from "../../components/Skeletons";
@@ -284,20 +284,13 @@ function CacheCard() {
             onChange={(webp) => set({ webp })}
           />
         </SettingsBody>
-        <SettingsFooter>
-          {dirty && !saving && (
-            <Button appearance="subtle" onClick={() => setEdits({})}>
-              {t("common.discard")}
-            </Button>
-          )}
-          <Button
-            appearance="primary"
-            disabled={!dirty || !valid || saving}
-            onClick={() => void save()}
-          >
-            {saving ? <Spinner size="tiny" /> : t("common.saveChanges")}
-          </Button>
-        </SettingsFooter>
+        <SaveFooter
+          dirty={dirty}
+          saving={saving}
+          disabled={!valid}
+          onDiscard={() => setEdits({})}
+          onSave={() => void save()}
+        />
       </SettingsCard>
     </>
   );

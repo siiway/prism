@@ -5,7 +5,9 @@
 // form. Add flows open from the card's action instead of sitting open.
 
 import {
+  Button,
   MessageBar,
+  Spinner,
   Subtitle2,
   Text,
   makeStyles,
@@ -14,6 +16,7 @@ import {
 } from "@fluentui/react-components";
 import { ChevronRightRegular } from "@fluentui/react-icons";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 const NARROW = "@media (max-width: 640px)";
@@ -316,6 +319,41 @@ export function SettingsFooter({
       {start && <span className={styles.footerStart}>{start}</span>}
       {children}
     </div>
+  );
+}
+
+/** Discard + Save for a card's edits. Discard shows while there are unsaved
+ *  changes; Save needs changes and is held while saving. */
+export function SaveFooter({
+  dirty,
+  saving,
+  disabled,
+  onDiscard,
+  onSave,
+}: {
+  dirty: boolean;
+  saving: boolean;
+  /** Also hold Save, e.g. for invalid input or another save in flight. */
+  disabled?: boolean;
+  onDiscard: () => void;
+  onSave: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <SettingsFooter>
+      {dirty && !saving && (
+        <Button appearance="subtle" onClick={onDiscard}>
+          {t("common.discard")}
+        </Button>
+      )}
+      <Button
+        appearance="primary"
+        disabled={!dirty || saving || disabled}
+        onClick={onSave}
+      >
+        {saving ? <Spinner size="tiny" /> : t("common.saveChanges")}
+      </Button>
+    </SettingsFooter>
   );
 }
 
