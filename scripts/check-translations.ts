@@ -7,10 +7,13 @@
 //
 // "Unused" is a best guess. A key counts as used when its full name appears as a
 // quoted string anywhere in src/web or src/shared (so t("a.b") and labelKey:
-// "a.b" both count), or when a template literal with a literal prefix such as
-// `apps.ruleType_${x}` could produce it. A template with no literal prefix
-// (`${ns}.${key}`) cannot be matched, so keys built that way may be listed
-// as unused when they are not.
+// "a.b" both count), or when a template literal could produce it, such as
+// `apps.ruleType_${x}` or `${ns}.notFoundTitle`. A template only counts when
+// its literal text looks like part of a key and is specific enough: only key
+// characters, at least 6 of them, including a dot.
+// One that is nearly all interpolation (`${ns}.${key}`) would match almost any
+// key, so it is ignored, and keys built that way may be listed as unused when
+// they are not.
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -137,8 +140,12 @@ const quoted = new Set(
 const templatePatterns = [...usageText.matchAll(/`([^`]*\$\{[^`]*)`/g)]
   .map((m) => m[1])
   .filter((t) => {
-    const prefix = t.split("${")[0];
-    return prefix.length >= 6 && prefix.includes(".");
+    const literal = t.replace(/\$\{[^}]*\}/g, "");
+    return (
+      literal.length >= 6 &&
+      literal.includes(".") &&
+      /^[A-Za-z0-9_.]+$/.test(literal)
+    );
   })
   .map(
     (t) => new RegExp("^" + escapeRe(t).replace(/\$\{[^}]*\}/g, ".*") + "$"),
@@ -166,7 +173,7 @@ if (unused.length) {
 
 console.log(
   dim(
-    `\n  ${dynamic.length} t() call(s) build their key at runtime; keys matching a literal prefix are treated as used.`,
+    `\n  ${dynamic.length} t() call(s) build their key at runtime; keys a template could produce are treated as used.`,
   ),
 );
 
