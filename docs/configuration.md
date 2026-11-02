@@ -26,6 +26,7 @@ the config API.
 | `require_email_verification` | boolean | `false`                         | Block sign-in until the email is verified                  |
 | `accent_color`               | string  | `"#0078d4"`                     | Primary brand color (hex)                                  |
 | `custom_css`                 | string  | `""`                            | Injected as a `<style>` block on every page                |
+| `show_powered_by`            | boolean | `true`                          | Show the "Powered by Prism" source link in the footer      |
 | `disable_user_create_team`   | boolean | `false`                         | Hide "New team" — only admins can create teams             |
 | `disable_user_create_app`    | boolean | `false`                         | Hide "New application" — only admins can create OAuth apps |
 | `allow_alt_email_login`      | boolean | `true`                          | Let users sign in with any verified secondary email        |

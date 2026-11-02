@@ -103,6 +103,7 @@ app.get("/site", async (c) => {
     custom_css: config.custom_css,
     has_privacy_policy: publishedLegal.includes("privacy"),
     has_terms_of_service: publishedLegal.includes("terms"),
+    show_powered_by: config.show_powered_by,
     initialized: config.initialized,
     r2_enabled: !!c.env.R2_ASSETS,
     tg_notify_source_slug: config.tg_notify_source_slug,

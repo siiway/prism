@@ -86,6 +86,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   sudo_mode_ttl_minutes: 5,
   require_captcha_for_2fa: false,
   enable_public_profiles: true,
+  show_powered_by: true,
   default_profile_show_display_name: true,
   default_profile_show_avatar: true,
   default_profile_show_email: false,

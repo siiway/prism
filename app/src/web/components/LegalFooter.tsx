@@ -1,11 +1,10 @@
-// Footer links to the operator's legal pages.
+// Footer links to the operator's legal pages and to Prism's source code.
 //
 // Rendered at the bottom of both shells — the signed-out auth pages and the
 // signed-in app — so the Privacy Policy and Terms of Service are always one
-// click away wherever a visitor is. It is deliberately silent when neither
-// document is published: an operator who has written no policy gets no empty
-// footer, the same way the notice board shows nothing when there is nothing
-// to say.
+// click away wherever a visitor is. The "Powered by Prism" link tells visitors
+// of any deployment where the software comes from; the operator can hide it
+// with `show_powered_by`. With nothing to link, the footer renders nothing.
 //
 // Which links appear is driven by the `has_*` booleans on /site, not the
 // content itself — the payload stays small and the actual markdown is only
@@ -16,6 +15,8 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useApi } from "../lib/api-context";
+
+const SOURCE_URL = "https://github.com/siiway/prism";
 
 const useStyles = makeStyles({
   footer: {
@@ -53,7 +54,9 @@ export function LegalFooter() {
   if (site?.has_terms_of_service)
     links.push({ to: "/terms", label: t("legal.terms") });
 
-  if (links.length === 0) return null;
+  const poweredBy = !!site?.show_powered_by;
+
+  if (links.length === 0 && !poweredBy) return null;
 
   return (
     <footer className={styles.footer}>
@@ -62,6 +65,16 @@ export function LegalFooter() {
           {l.label}
         </Link>
       ))}
+      {poweredBy && (
+        <a
+          href={SOURCE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.link}
+        >
+          {t("legal.poweredBy")}
+        </a>
+      )}
     </footer>
   );
 }

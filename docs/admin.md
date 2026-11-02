@@ -100,6 +100,8 @@ deliver chat notifications. Leave empty to disable that channel. See
 ### Appearance and Legal
 
 - **Accent color** and **custom CSS**, applied on every page.
+- **Footer credit**: a "Powered by Prism" link to the source code at the
+  bottom of every page. Shown by default; set it to Hidden to remove it.
 - **Privacy Policy** and **Terms of Service** in Markdown, published at
   `/privacy` and `/terms` with footer links. Leave one empty to hide it. Each is
   limited to 256 KiB.
