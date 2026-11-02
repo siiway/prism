@@ -142,9 +142,21 @@ if (migrate) {
     const [res] = await query(`SELECT name FROM ${table} ORDER BY id`);
     applied = new Set(res.results.map((row) => row.name));
   } catch (err) {
-    // A new database has no migrations table yet.
     if (!/no such table/i.test((err as Error).message)) {
       fail(`could not read the applied migrations: ${(err as Error).message}`);
+    }
+    // No migrations table is fine for a new database. One that already has
+    // tables would get every migration replayed over its existing schema.
+    const [res] = await query(
+      "SELECT name FROM sqlite_master WHERE type = 'table' " +
+        "AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*'",
+    );
+    if (res.results.length > 0) {
+      fail(
+        `${database} has tables but no ${table} table, so it's unknown which ` +
+          `migrations it has. Use an empty database, or record the applied ` +
+          `migrations in ${table} first.`,
+      );
     }
     applied = new Set();
   }

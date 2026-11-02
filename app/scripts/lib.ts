@@ -128,11 +128,22 @@ export function cloudflareApi() {
       : fail("could not read wrangler's credentials");
 
   async function request(method: string, path: string, body?: unknown) {
-    const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
-      method,
-      headers: { ...auth, "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+        method,
+        headers: { ...auth, "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        // D1 stops a query after 30 s, so this only trips on a stalled
+        // connection.
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (err) {
+      const e = err as Error;
+      fail(
+        `${method} ${path}: ${e.name === "TimeoutError" ? "no response from Cloudflare in 60 s" : e.message}`,
+      );
+    }
     const json = (await res.json().catch(() => null)) as ApiResponse;
     return { status: res.status, json };
   }
