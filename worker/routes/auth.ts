@@ -54,6 +54,7 @@ import type { PasskeyRow, SiteInviteRow, UserRow, Variables } from "../types";
 import totpRoutes from "./auth-totp";
 import gpgLoginRoutes from "./auth-gpg";
 import inboundEmailVerifyRoutes from "./auth-email-verify";
+import { PASSWORD_MIN_LENGTH } from "../../shared/limits";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -112,7 +113,7 @@ app.post("/register", async (c) => {
       },
       400,
     );
-  if (body.password.length < 8)
+  if (body.password.length < PASSWORD_MIN_LENGTH)
     return c.json({ error: "password_too_short" }, 400);
   if (!/^[a-z0-9_.-]{2,32}$/i.test(body.username))
     return c.json({ error: "username_invalid" }, 400);

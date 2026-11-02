@@ -14,6 +14,7 @@ import {
   printRuleExpression,
   type ExprErrorCode,
 } from "../../shared/ruleExpression";
+import { RULE_NAME_MAX_LENGTH } from "../../shared/limits";
 
 export {
   channelKey,
@@ -26,8 +27,6 @@ export {
   type RuleMatch,
   type RuleSendChannel,
 } from "../../shared/notificationRules";
-
-const RULE_NAME_MAX = 64;
 
 // One literal per reason, so every code the API can send is greppable.
 const EXPR_ERRORS: Record<ExprErrorCode, CodedError> = {
@@ -88,10 +87,10 @@ export function sanitizeRulesArray(
           params: { field: `rules[${i}].name` },
         };
       const trimmed = r.name.trim();
-      if (trimmed.length > RULE_NAME_MAX)
+      if (trimmed.length > RULE_NAME_MAX_LENGTH)
         return {
           error: "field_max_length",
-          params: { field: `rules[${i}].name`, max: RULE_NAME_MAX },
+          params: { field: `rules[${i}].name`, max: RULE_NAME_MAX_LENGTH },
         };
       name = trimmed || undefined;
     }

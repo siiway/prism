@@ -47,15 +47,12 @@
 import type { SiteConfig, TurnstileEndpointMode } from "../types";
 import { getGeo } from "./geo";
 
-/** Directive sent to the browser. The server has already collapsed
- *  "server_region" into a concrete "global"/"china"; the client-side modes
- *  pass through for the browser to resolve against its own environment. */
-export type TurnstileEndpointDirective =
-  "global" | "china" | "client_language" | "client_region";
+import type {
+  TurnstileEndpointDirective,
+  TurnstileVariant,
+} from "../../shared/api";
 
-/** Which of the two configured widgets minted a token. Travels with the token
- *  from the browser so the server verifies against the matching secret. */
-export type TurnstileVariant = "global" | "china";
+export type { TurnstileEndpointDirective, TurnstileVariant };
 
 /** What a public payload needs in order to render the right widget: the host
  *  strategy, plus the China sitekey when — and only when — the browser may

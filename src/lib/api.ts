@@ -106,7 +106,7 @@ import type {
   AppScopeDefinition,
   AppScopeAccessRule,
   AppAccessRule,
-} from "./api-types";
+} from "../../shared/api";
 
 export type {
   NotificationEmailRule,
@@ -118,7 +118,13 @@ export type {
   TeamCapability,
   TeamRolePermissions,
 };
-export type * from "./api-types";
+export type * from "../../shared/api";
+export {
+  NOTICE_AUDIENCES,
+  NOTICE_LEVELS,
+  REDIRECT_URI_MATCH_TYPES,
+  VERIFICATION_METHODS,
+} from "../../shared/api";
 
 // API client — all requests go through here
 

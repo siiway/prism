@@ -9,15 +9,11 @@ import type {
   NoticeInput,
   NoticeLevel,
 } from "../../../lib/api";
+import { NOTICE_AUDIENCES, NOTICE_LEVELS } from "../../../lib/api";
 import { formatDateTime } from "../../../lib/datetime";
 
-export const LEVELS: NoticeLevel[] = ["info", "warning", "critical"];
-export const AUDIENCES: NoticeAudience[] = [
-  "public",
-  "users",
-  "admins",
-  "team",
-];
+export const LEVELS = NOTICE_LEVELS;
+export const AUDIENCES = NOTICE_AUDIENCES;
 
 export interface NoticeForm {
   title: string;

@@ -30,6 +30,7 @@ import { proxyImageUrl } from "../lib/proxyImage";
 import { isUserLocked } from "../lib/lockdown";
 import type { DomainRow, UserEmailRow, Variables } from "../types";
 import { parseScopeList } from "../lib/scopeGrants";
+import { PASSWORD_MIN_LENGTH } from "../../shared/limits";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -117,7 +118,10 @@ app.post("/:id/password", async (c) => {
         409,
       );
   } else {
-    if (typeof body.password !== "string" || body.password.length < 8)
+    if (
+      typeof body.password !== "string" ||
+      body.password.length < PASSWORD_MIN_LENGTH
+    )
       return c.json({ error: "password_too_short" }, 400);
     hash = await hashPassword(body.password);
   }

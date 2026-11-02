@@ -27,14 +27,15 @@
 //   • match compares normalized (scheme, host:port, pathname, search) —
 //     never the raw string
 
+import {
+  REDIRECT_URI_MATCH_TYPES,
+  type RedirectUri,
+  type RedirectUriMatchType,
+} from "../../shared/api";
+
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
-export type RedirectUriMatchType = "equals" | "regex" | "wildcard";
-
-export interface RedirectUriEntry {
-  type: RedirectUriMatchType;
-  value: string;
-}
+export type RedirectUriEntry = RedirectUri;
 
 function tryParse(uri: string): URL | null {
   try {
@@ -71,10 +72,9 @@ export function parseRedirectUris(
     ) {
       const type = (item as { type?: unknown }).type;
       out.push({
-        type:
-          type === "regex" || type === "wildcard" || type === "equals"
-            ? (type as RedirectUriMatchType)
-            : "equals",
+        type: REDIRECT_URI_MATCH_TYPES.includes(type as RedirectUriMatchType)
+          ? (type as RedirectUriMatchType)
+          : "equals",
         value: (item as { value: string }).value,
       });
     }

@@ -4,15 +4,15 @@
 
 import { safeFetch } from "./safeFetch";
 
-export const VERIFICATION_METHODS = [
-  "dns-txt",
-  "http-file",
-  "html-meta",
-] as const;
-export type VerificationMethod = (typeof VERIFICATION_METHODS)[number];
+import {
+  VERIFICATION_METHODS,
+  type VerificationMethod,
+} from "../../shared/api";
+
+export { VERIFICATION_METHODS, type VerificationMethod };
 
 export function isVerificationMethod(v: unknown): v is VerificationMethod {
-  return v === "dns-txt" || v === "http-file" || v === "html-meta";
+  return (VERIFICATION_METHODS as readonly unknown[]).includes(v);
 }
 
 export interface MethodInstructions {

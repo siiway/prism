@@ -20,13 +20,9 @@
 
 import { hmacSha256Hex } from "./crypto";
 
-/** The four fields the initGeetest4 widget hands back on success. */
-export interface GeetestOutput {
-  lot_number: string;
-  captcha_output: string;
-  pass_token: string;
-  gen_time: string;
-}
+import type { GeetestOutput } from "../../shared/api";
+
+export type { GeetestOutput };
 
 const GEETEST_VALIDATE_URL = "https://gcaptcha4.geetest.com/validate";
 

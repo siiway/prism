@@ -19,6 +19,7 @@ import {
 import { AddRegular, DeleteRegular } from "@fluentui/react-icons";
 import { useTranslation } from "react-i18next";
 import type { RedirectUri, RedirectUriMatchType } from "../lib/api";
+import { REDIRECT_URI_MATCH_TYPES } from "../lib/api";
 
 const useStyles = makeStyles({
   row: {
@@ -41,8 +42,6 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
   },
 });
-
-const MATCH_TYPES: RedirectUriMatchType[] = ["equals", "regex", "wildcard"];
 
 interface Props {
   /** Omit inside a card that already names the list; the hints go too. */
@@ -90,7 +89,7 @@ export function RedirectUriEditor({ label, value, onChange }: Props) {
                 })
               }
             >
-              {MATCH_TYPES.map((mt) => (
+              {REDIRECT_URI_MATCH_TYPES.map((mt) => (
                 <Option key={mt} value={mt}>
                   {typeLabel(mt)}
                 </Option>

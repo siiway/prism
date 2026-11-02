@@ -37,6 +37,7 @@ import { TraceCard } from "./TraceCard";
 import { useDestinations } from "./useDestinations";
 import { useRuleset } from "./useRuleset";
 import { BackButton } from "../../components/DetailHeader";
+import { RULE_NAME_MAX_LENGTH } from "../../../shared/limits";
 
 const LIST_PATH = "/notifications#rulesets";
 
@@ -218,7 +219,7 @@ export function RulesetDetail() {
             <Field>
               <Input
                 aria-label={t("notifications.rulesetName")}
-                maxLength={64}
+                maxLength={RULE_NAME_MAX_LENGTH}
                 value={name}
                 onChange={(_, d) => setName(d.value)}
               />

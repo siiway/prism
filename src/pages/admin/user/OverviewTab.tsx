@@ -36,6 +36,7 @@ import { Segmented } from "../../../components/Segmented";
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import type { UserTabProps } from "./types";
 import { clientI18n } from "../../../i18n/init";
+import { PASSWORD_MIN_LENGTH } from "../../../../shared/limits";
 
 const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
@@ -474,7 +475,7 @@ function SecurityCard({ userId, showMsg, confirm }: UserTabProps) {
             </Button>
             <Button
               appearance="primary"
-              disabled={password.length < 8 || busy !== null}
+              disabled={password.length < PASSWORD_MIN_LENGTH || busy !== null}
               onClick={() => void savePassword()}
             >
               {busy === "password" ? (

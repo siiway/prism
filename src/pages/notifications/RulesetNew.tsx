@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { FormPage } from "../../components/FormPage";
+import { RULE_NAME_MAX_LENGTH } from "../../../shared/limits";
 
 export function RulesetNew() {
   const api = useApi();
@@ -70,7 +71,7 @@ export function RulesetNew() {
       <Field label={t("notifications.rulesetName")} required>
         <Input
           autoFocus
-          maxLength={64}
+          maxLength={RULE_NAME_MAX_LENGTH}
           value={name}
           onChange={(_, d) => setName(d.value)}
         />

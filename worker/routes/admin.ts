@@ -65,6 +65,7 @@ import adminSecretsRoutes from "./admin-secrets";
 import adminResetRoutes from "./admin-reset";
 import adminInviteRoutes from "./admin-invites";
 import adminSourceRoutes from "./admin-sources";
+import { DISPLAY_NAME_MAX_LENGTH } from "../../shared/limits";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -569,11 +570,18 @@ app.patch("/users/:id", async (c) => {
     values.push(null, null);
   }
   if (body.display_name !== undefined) {
-    if (body.display_name.length < 1 || body.display_name.length > 64)
+    if (
+      body.display_name.length < 1 ||
+      body.display_name.length > DISPLAY_NAME_MAX_LENGTH
+    )
       return c.json(
         {
           error: "field_length",
-          params: { field: "display_name", min: 1, max: 64 },
+          params: {
+            field: "display_name",
+            min: 1,
+            max: DISPLAY_NAME_MAX_LENGTH,
+          },
         },
         400,
       );

@@ -17,24 +17,11 @@ import { requireAuth } from "../middleware/auth";
 import { likePattern } from "../lib/pagination";
 import type { Variables } from "../types";
 import { listEffectiveTeamMemberships } from "../lib/teams";
+import type { SearchHit, SearchKind } from "../../shared/api";
 
 const RESULT_LIMIT = 5;
 const MIN_QUERY = 2;
 const MAX_QUERY = 100;
-
-export type SearchKind =
-  "app" | "team" | "domain" | "token" | "consent" | "user" | "oauth_source";
-
-export interface SearchHit {
-  kind: SearchKind;
-  /** Site-wide (admin) result rather than one of the user's own. */
-  admin: boolean;
-  id: string;
-  title: string;
-  subtitle: string | null;
-  /** In-app path to open it. */
-  url: string;
-}
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 

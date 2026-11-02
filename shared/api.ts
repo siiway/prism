@@ -1,11 +1,16 @@
-// Request and response shapes of the Prism API, as the client sees them.
-// Re-exported from ./api, so callers keep importing from there.
+// Request and response shapes of the Prism API. The Worker builds them and
+// the client reads them, so both import from here. The frontend re-exports
+// everything through src/lib/api.
 
 import type {
+  CapMode,
+  CaptchaProvider,
   RestrictedCapability,
   TeamRolePermissions,
-} from "../../shared/types";
-import type { NotificationRule as NotificationRulesetRule } from "../../shared/notificationRules";
+} from "./types";
+import type { NotificationRule as NotificationRulesetRule } from "./notificationRules";
+
+export type { CapMode, CaptchaProvider };
 
 /** Server-resolved directive telling the client which Turnstile challenge-script
  *  host to load. "server_region" has already been collapsed server-side into a
@@ -18,11 +23,6 @@ export type TurnstileEndpointDirective =
  *  with the token so the server verifies it against the matching secret — the
  *  global and China widgets have separate sitekey/secret pairs. */
 export type TurnstileVariant = "global" | "china";
-
-export type CaptchaProvider =
-  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
-
-export type CapMode = "embedded" | "external";
 
 /** GeeTest v4 widget validate output, submitted for server-side verification. */
 export interface GeetestOutput {
@@ -42,10 +42,10 @@ export interface PublicCaptchaConfig {
   /** Seconds before the "try a different method" control is revealed. 0 = off. */
   captcha_switch_timeout_seconds: number;
   turnstile_site_key: string;
-  turnstile_endpoint?: TurnstileEndpointDirective;
-  /** Sitekey of the region:"china" widget, present only when the directive can
+  turnstile_endpoint: TurnstileEndpointDirective;
+  /** Sitekey of the region:"china" widget; empty unless the directive can
    *  actually route this visitor to the China host. */
-  turnstile_china_site_key?: string;
+  turnstile_china_site_key: string;
   hcaptcha_site_key: string;
   recaptcha_site_key: string;
   geetest_captcha_id: string;
@@ -902,9 +902,11 @@ export interface AdminScopeGrantDetail extends AdminScopeGrant {
 
 // ─── Notice board ─────────────────────────────────────────────────────────────
 
-export type NoticeLevel = "info" | "warning" | "critical";
+export const NOTICE_LEVELS = ["info", "warning", "critical"] as const;
+export type NoticeLevel = (typeof NOTICE_LEVELS)[number];
 /** `public` also reaches the signed-out pages; `team` needs a team_id. */
-export type NoticeAudience = "public" | "users" | "admins" | "team";
+export const NOTICE_AUDIENCES = ["public", "users", "admins", "team"] as const;
+export type NoticeAudience = (typeof NOTICE_AUDIENCES)[number];
 
 export interface Notice {
   id: string;
@@ -976,7 +978,12 @@ export interface AdminSession {
   }>;
 }
 
-export type RedirectUriMatchType = "equals" | "regex" | "wildcard";
+export const REDIRECT_URI_MATCH_TYPES = [
+  "equals",
+  "regex",
+  "wildcard",
+] as const;
+export type RedirectUriMatchType = (typeof REDIRECT_URI_MATCH_TYPES)[number];
 
 export interface RedirectUri {
   type: RedirectUriMatchType;
@@ -1053,9 +1060,11 @@ export interface CreateAppBody {
 // ─── Audit logs (Transparent Control) ────────────────────────────────────────
 
 /** One match from GET /api/search. */
+export type SearchKind =
+  "app" | "team" | "domain" | "token" | "consent" | "user" | "oauth_source";
+
 export interface SearchHit {
-  kind:
-    "app" | "team" | "domain" | "token" | "consent" | "user" | "oauth_source";
+  kind: SearchKind;
   /** Site-wide (admin) result rather than one of the user's own. */
   admin: boolean;
   id: string;
@@ -1129,7 +1138,12 @@ export interface AuditWebhookInput {
   is_active?: boolean;
 }
 
-export type VerificationMethod = "dns-txt" | "http-file" | "html-meta";
+export const VERIFICATION_METHODS = [
+  "dns-txt",
+  "http-file",
+  "html-meta",
+] as const;
+export type VerificationMethod = (typeof VERIFICATION_METHODS)[number];
 
 export interface Domain {
   id: string;
@@ -1520,7 +1534,7 @@ export type {
   RuleSendChannel as NotificationRuleSendChannel,
   RuleAction as NotificationRuleAction,
   NotificationRule as NotificationRulesetRule,
-} from "../../shared/notificationRules";
+} from "./notificationRules";
 
 export interface NotificationRuleset {
   id: string;

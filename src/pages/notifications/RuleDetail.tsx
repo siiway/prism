@@ -53,6 +53,7 @@ import { SampleEventFields } from "./SampleEvent";
 import { useDestinations } from "./useDestinations";
 import { useRuleset } from "./useRuleset";
 import { BackButton } from "../../components/DetailHeader";
+import { RULE_NAME_MAX_LENGTH } from "../../../shared/limits";
 
 const useStyles = makeStyles({
   title: { overflowWrap: "anywhere" },
@@ -252,7 +253,7 @@ export function RuleDetail() {
         <SettingsBody>
           <Field label={t("notifications.rule.name")}>
             <Input
-              maxLength={64}
+              maxLength={RULE_NAME_MAX_LENGTH}
               value={state.name}
               placeholder={t("notifications.rule.namePlaceholder")}
               onChange={(_, d) => setState({ ...state, name: d.value })}

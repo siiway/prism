@@ -21,6 +21,7 @@ import { useDebouncedSearch } from "../../../lib/useDebouncedSearch";
 import { NoticeBar } from "../../../components/NoticeBoard";
 import { Select } from "../../../components/Select";
 import { AUDIENCES, LEVELS, type NoticeForm } from "./noticeForm";
+import { NOTICE_TITLE_MAX_LENGTH } from "../../../../shared/limits";
 
 const useStyles = makeStyles({
   stack: { display: "flex", flexDirection: "column", gap: "16px" },
@@ -72,7 +73,7 @@ export function ContentFields({
           <Input
             autoFocus={autoFocus}
             autoComplete="off"
-            maxLength={120}
+            maxLength={NOTICE_TITLE_MAX_LENGTH}
             value={form.title}
             onChange={(_, d) => onChange({ title: d.value })}
           />

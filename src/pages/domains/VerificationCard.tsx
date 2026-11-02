@@ -12,6 +12,7 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Domain, VerificationMethod } from "../../lib/api";
+import { VERIFICATION_METHODS } from "../../lib/api";
 import { formatDate } from "../../lib/datetime";
 import { CopyButton } from "../../components/CopyButton";
 import { Segmented } from "../../components/Segmented";
@@ -50,8 +51,6 @@ const useStyles = makeStyles({
     overflowWrap: "anywhere",
   },
 });
-
-const METHODS = ["dns-txt", "http-file", "html-meta"] as const;
 
 interface Props {
   domain: Domain;
@@ -153,7 +152,7 @@ export function VerificationCard({
           label={t("domains.methodLabel")}
           value={method}
           onChange={setMethod}
-          options={METHODS.map((m) => ({
+          options={VERIFICATION_METHODS.map((m) => ({
             value: m,
             label: t(`domains.method.${m}`),
           }))}

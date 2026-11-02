@@ -6,27 +6,13 @@
 // Only *public* material is included — site keys, the GeeTest public id, the
 // Cap endpoint/site key. Secrets never appear here.
 
-import type { CaptchaProvider, CapMode, SiteConfig } from "../types";
-import type { TurnstileEndpointDirective } from "./turnstile";
+import type { CaptchaProvider, SiteConfig } from "../types";
+import type {
+  PublicCaptchaConfig,
+  TurnstileEndpointDirective,
+} from "../../shared/api";
 
-export interface PublicCaptchaConfig {
-  /** Ordered enabled set. Element 0 is the default; the rest are switchable
-   *  alternates. Empty means captcha is off / not required here. */
-  captcha_providers: CaptchaProvider[];
-  /** Seconds before the "try a different method" nudge appears. */
-  captcha_switch_timeout_seconds: number;
-  /** Turnstile global (region:"world") site key. */
-  turnstile_site_key: string;
-  turnstile_endpoint: TurnstileEndpointDirective;
-  turnstile_china_site_key: string;
-  hcaptcha_site_key: string;
-  recaptcha_site_key: string;
-  geetest_captcha_id: string;
-  cap_mode: CapMode;
-  cap_site_key: string;
-  cap_api_endpoint: string;
-  pow_difficulty: number;
-}
+export type { PublicCaptchaConfig };
 
 /**
  * Build the public captcha descriptor. `providers` is the set actually exposed

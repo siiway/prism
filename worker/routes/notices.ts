@@ -18,16 +18,16 @@ import { optionalAuth } from "../middleware/auth";
 import { MIGRATIONS_PENDING, readWithFallback } from "../lib/schema";
 import type { NoticeRow, Variables } from "../types";
 import type { CodedError } from "../lib/apiError";
+import {
+  NOTICE_AUDIENCES as AUDIENCES,
+  NOTICE_LEVELS as LEVELS,
+  type NoticeAudience,
+  type NoticeLevel,
+} from "../../shared/api";
+import { NOTICE_TITLE_MAX_LENGTH } from "../../shared/limits";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 
-export const LEVELS = ["info", "warning", "critical"] as const;
-export const AUDIENCES = ["public", "users", "admins", "team"] as const;
-
-export type NoticeLevel = (typeof LEVELS)[number];
-export type NoticeAudience = (typeof AUDIENCES)[number];
-
-const MAX_TITLE = 120;
 const MAX_BODY_BYTES = 8_000;
 
 function serialize(row: NoticeRow) {
@@ -202,10 +202,10 @@ async function validate(
   if (body.title !== undefined) {
     const t = body.title.trim();
     if (!t) return { error: "field_required", params: { field: "title" } };
-    if (t.length > MAX_TITLE)
+    if (t.length > NOTICE_TITLE_MAX_LENGTH)
       return {
         error: "field_max_length",
-        params: { field: "title", max: MAX_TITLE },
+        params: { field: "title", max: NOTICE_TITLE_MAX_LENGTH },
       };
   }
   if (body.body !== undefined) {

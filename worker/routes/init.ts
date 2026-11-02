@@ -6,6 +6,7 @@ import { hashPassword, randomId } from "../lib/crypto";
 import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import type { UserRow, Variables } from "../types";
+import { PASSWORD_MIN_LENGTH } from "../../shared/limits";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -39,7 +40,7 @@ app.post("/", async (c) => {
       400,
     );
   }
-  if (body.password.length < 8) {
+  if (body.password.length < PASSWORD_MIN_LENGTH) {
     return c.json({ error: "password_too_short" }, 400);
   }
 

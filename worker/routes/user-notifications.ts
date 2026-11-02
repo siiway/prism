@@ -16,6 +16,7 @@ import type {
   UserNotificationPrefsRow,
   Variables,
 } from "../types";
+import { RULE_NAME_MAX_LENGTH } from "../../shared/limits";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -177,7 +178,6 @@ function sanitizeNotificationRules(input: unknown): NotificationRules | null {
   return valid;
 }
 
-const RULESET_NAME_MAX = 64;
 const RULESET_NAME_RE = /^[\w][\w .,'\-()/]{0,63}$/u;
 
 function validateRulesetName(
@@ -192,11 +192,11 @@ function validateRulesetName(
   const trimmed = raw.trim();
   if (!trimmed)
     return { name: "", error: "field_required", params: { field: "name" } };
-  if (trimmed.length > RULESET_NAME_MAX)
+  if (trimmed.length > RULE_NAME_MAX_LENGTH)
     return {
       name: trimmed,
       error: "field_max_length",
-      params: { field: "name", max: RULESET_NAME_MAX },
+      params: { field: "name", max: RULE_NAME_MAX_LENGTH },
     };
   if (!RULESET_NAME_RE.test(trimmed))
     return {

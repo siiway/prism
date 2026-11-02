@@ -36,6 +36,10 @@ import type { RestrictedCapability, UserRow, Variables } from "../types";
 import notificationRoutes from "./user-notifications";
 import tokenRoutes from "./user-tokens";
 import emailRoutes from "./user-emails";
+import {
+  PASSWORD_MIN_LENGTH,
+  DISPLAY_NAME_MAX_LENGTH,
+} from "../../shared/limits";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -131,11 +135,18 @@ app.patch("/me", async (c) => {
   const values: unknown[] = [];
 
   if (body.display_name !== undefined) {
-    if (body.display_name.length < 1 || body.display_name.length > 64)
+    if (
+      body.display_name.length < 1 ||
+      body.display_name.length > DISPLAY_NAME_MAX_LENGTH
+    )
       return c.json(
         {
           error: "field_length",
-          params: { field: "display_name", min: 1, max: 64 },
+          params: {
+            field: "display_name",
+            min: 1,
+            max: DISPLAY_NAME_MAX_LENGTH,
+          },
         },
         400,
       );
@@ -446,7 +457,7 @@ app.post("/me/change-password", async (c) => {
     if (!ok) return c.json({ error: "wrong_password" }, 401);
   }
 
-  if (!body.new_password || body.new_password.length < 8)
+  if (!body.new_password || body.new_password.length < PASSWORD_MIN_LENGTH)
     return c.json({ error: "password_too_short" }, 400);
 
   const hash = await hashPassword(body.new_password);
