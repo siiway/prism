@@ -2,7 +2,7 @@
   "name": "prism",
   "version": "0.0.1",
   "type": "module",
-  "packageManager": "bun@1.3.11",
+  "packageManager": "bun@1.4.4",
   "scripts": {
     "dev": "vite",
     "prepare": "bun scripts/hooks.ts",
