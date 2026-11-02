@@ -50,7 +50,7 @@ Setup signs you in to Cloudflare, asks for your URL, creates the database and st
 
 To update: `git pull`, `bun install`, `bun run deploy`.
 
-To work on Prism itself, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+To work on Prism itself, see [CONTRIBUTING.md](./.github/CONTRIBUTING.md).
 
 ## Documentation
 

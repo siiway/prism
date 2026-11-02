@@ -51,4 +51,4 @@
 
 ## Contributing
 
-@CONTRIBUTING.md
+@.github/CONTRIBUTING.md

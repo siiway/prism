@@ -54,8 +54,9 @@ always_run = true
 [[repos.hooks]]
 id = "eslint"
 name = "eslint"
-entry = "bunx"
-args = ["eslint"]
+entry = "bun"
+# Under Bun, so ESLint can load eslint.config.ts without jiti.
+args = ["--bun", "eslint"]
 files = '\.(tsx?|jsx?|mjs|cjs)$'
 language = "system"
 stages = ["pre-commit"]

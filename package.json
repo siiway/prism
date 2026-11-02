@@ -9,7 +9,7 @@
     "setup": "bun scripts/setup.ts",
     "build": "bun scripts/build.ts",
     "deploy": "bun scripts/deploy.ts",
-    "lint": "eslint .",
+    "lint": "bun --bun eslint .",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "check:i18n": "bun scripts/check-translations.ts",
     "check": "bun run typecheck && bun run lint && bun run format && bun run test && bun run check:i18n",
@@ -51,11 +51,6 @@
   },
   "overrides": {
     "lodash": "^4.18.1"
-  },
-  "pnpm": {
-    "overrides": {
-      "lodash": "^4.18.1"
-    }
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.53.1",

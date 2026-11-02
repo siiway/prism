@@ -50,7 +50,7 @@ setup 会登录你的 Cloudflare 账号、询问你的 URL、创建数据库和�
 
 更新：`git pull`、`bun install`、`bun run deploy`。
 
-参与 Prism 开发请参阅 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+参与 Prism 开发请参阅 [CONTRIBUTING.md](./.github/CONTRIBUTING.md)。
 
 ## 文档
 

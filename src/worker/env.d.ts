@@ -1,8 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
-// This file is auto-updated by `wrangler types` after running:
-//   pnpm install && wrangler types
-// The Env interface below mirrors wrangler.jsonc bindings.
+// The Worker's bindings and vars. Kept by hand: when you add a binding or var
+// to wrangler.jsonc, add it here too.
 
 interface Env {
   // D1 Database
