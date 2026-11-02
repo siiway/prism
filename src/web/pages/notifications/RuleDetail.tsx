@@ -235,18 +235,18 @@ export function RuleDetail() {
         title={t("notifications.rule.ruleTitle")}
         description={t("notifications.rule.ruleDesc")}
         action={
-          <Segmented<"on" | "off">
+          <Segmented
             label={t("notifications.rule.status")}
-            value={state.enabled ? "on" : "off"}
+            value={state.enabled}
             options={[
               {
-                value: "on",
+                value: true,
                 label: t("notifications.rule.enabled"),
                 brand: true,
               },
-              { value: "off", label: t("notifications.rule.disabled") },
+              { value: false, label: t("notifications.rule.disabled") },
             ]}
-            onChange={(v) => setState({ ...state, enabled: v === "on" })}
+            onChange={(enabled) => setState({ ...state, enabled })}
           />
         }
       >

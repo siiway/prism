@@ -74,12 +74,12 @@ export function GeneralSection({ draft }: SectionProps) {
         >
           <Segmented
             label={t("admin.disableSsr")}
-            value={flag("disable_ssr") ? "browser" : "server"}
+            value={flag("disable_ssr")}
             options={[
-              { value: "server", label: t("admin.renderServer") },
-              { value: "browser", label: t("admin.renderBrowser") },
+              { value: false, label: t("admin.renderServer") },
+              { value: true, label: t("admin.renderBrowser") },
             ]}
-            onChange={(v) => set("disable_ssr", v === "browser")}
+            onChange={(v) => set("disable_ssr", v)}
           />
         </SettingsRow>
       </SettingsCard>

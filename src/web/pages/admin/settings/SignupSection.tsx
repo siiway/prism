@@ -75,12 +75,12 @@ export function SignupSection({ draft }: SectionProps) {
         >
           <Segmented
             label={t("admin.allowAltEmailLogin")}
-            value={flag("allow_alt_email_login", true) ? "any" : "primary"}
+            value={flag("allow_alt_email_login", true)}
             options={[
-              { value: "primary", label: t("admin.altEmailPrimaryOnly") },
-              { value: "any", label: t("admin.altEmailAny") },
+              { value: false, label: t("admin.altEmailPrimaryOnly") },
+              { value: true, label: t("admin.altEmailAny") },
             ]}
-            onChange={(v) => set("allow_alt_email_login", v === "any")}
+            onChange={(v) => set("allow_alt_email_login", v)}
           />
         </SettingsRow>
       </SettingsCard>

@@ -105,13 +105,13 @@ function AccountCard({ userId, user, isSelf, showMsg }: UserTabProps) {
       >
         <Segmented
           label={t("admin.accountActive")}
-          value={user.is_active ? "active" : "disabled"}
+          value={!!user.is_active}
           disabled={isSelf || busy !== null}
           options={[
-            { value: "active", label: t("admin.userPage.statusActive") },
-            { value: "disabled", label: t("admin.userPage.statusDisabled") },
+            { value: true, label: t("admin.userPage.statusActive") },
+            { value: false, label: t("admin.userPage.statusDisabled") },
           ]}
-          onChange={(v) => void update("active", { is_active: v === "active" })}
+          onChange={(v) => void update("active", { is_active: v })}
         />
       </SettingsRow>
       <SettingsRow
@@ -120,15 +120,13 @@ function AccountCard({ userId, user, isSelf, showMsg }: UserTabProps) {
       >
         <Segmented
           label={t("admin.emailVerifiedToggle")}
-          value={user.email_verified ? "verified" : "unverified"}
+          value={!!user.email_verified}
           disabled={busy !== null}
           options={[
-            { value: "unverified", label: t("admin.userPage.emailUnverified") },
-            { value: "verified", label: t("admin.userPage.emailVerified") },
+            { value: false, label: t("admin.userPage.emailUnverified") },
+            { value: true, label: t("admin.userPage.emailVerified") },
           ]}
-          onChange={(v) =>
-            void update("verified", { email_verified: v === "verified" })
-          }
+          onChange={(v) => void update("verified", { email_verified: v })}
         />
       </SettingsRow>
       <SettingsRow label={t("admin.joinedHeader")}>

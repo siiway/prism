@@ -98,12 +98,12 @@ export function ProfilesSection({ draft }: SectionProps) {
         <SettingsRow label={t("admin.enablePublicProfiles")}>
           <Segmented
             label={t("admin.enablePublicProfiles")}
-            value={publicProfiles ? "on" : "off"}
+            value={publicProfiles}
             options={[
-              { value: "off", label: t("admin.choiceNotAllowed") },
-              { value: "on", label: t("admin.choiceAllowed") },
+              { value: false, label: t("admin.choiceNotAllowed") },
+              { value: true, label: t("admin.choiceAllowed") },
             ]}
-            onChange={(v) => set("enable_public_profiles", v === "on")}
+            onChange={(v) => set("enable_public_profiles", v)}
           />
         </SettingsRow>
         {publicProfiles && (

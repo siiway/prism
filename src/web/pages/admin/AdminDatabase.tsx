@@ -986,12 +986,12 @@ function SqlConsole({
             <div className={styles.footerStart}>
               <Segmented
                 label={t("admin.dbWriteMode")}
-                value={allowWrite ? "write" : "read"}
+                value={allowWrite}
                 options={[
-                  { value: "read", label: t("admin.dbModeRead") },
-                  { value: "write", label: t("admin.dbModeWrite") },
+                  { value: false, label: t("admin.dbModeRead") },
+                  { value: true, label: t("admin.dbModeWrite") },
                 ]}
-                onChange={(v) => setAllowWrite(v === "write")}
+                onChange={setAllowWrite}
               />
             </div>
           )}

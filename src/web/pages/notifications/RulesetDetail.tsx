@@ -48,8 +48,6 @@ const useStyles = makeStyles({
   danger: { color: tokens.colorPaletteRedForeground1 },
 });
 
-type Status = "active" | "inactive";
-
 export function RulesetDetail() {
   const api = useApi();
   const styles = useStyles();
@@ -95,15 +93,13 @@ export function RulesetDetail() {
   const refresh = () =>
     qc.invalidateQueries({ queryKey: ["notification-rulesets"] });
 
-  const setStatus = (status: Status) =>
+  const setActive = (active: boolean) =>
     run("status", async () => {
-      await api.updateNotificationRuleset(id, {
-        is_active: status === "active",
-      });
+      await api.updateNotificationRuleset(id, { is_active: active });
       await refresh();
       showMsg(
         "success",
-        status === "active"
+        active
           ? t("notifications.rulesetActivated")
           : t("notifications.rulesetDeactivated"),
       );
@@ -172,22 +168,22 @@ export function RulesetDetail() {
         title={t("notifications.rulesetStatusTitle")}
         description={t("notifications.rulesetStatusDesc")}
         action={
-          <Segmented<Status>
+          <Segmented
             label={t("notifications.rulesetStatusTitle")}
-            value={ruleset.is_active ? "active" : "inactive"}
+            value={!!ruleset.is_active}
             disabled={busy !== null}
             options={[
               {
-                value: "active",
+                value: true,
                 label: t("notifications.rulesetActive"),
                 brand: true,
               },
               {
-                value: "inactive",
+                value: false,
                 label: t("notifications.rulesetInactive"),
               },
             ]}
-            onChange={(s) => void setStatus(s)}
+            onChange={(active) => void setActive(active)}
           />
         }
       />

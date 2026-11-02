@@ -35,12 +35,12 @@ export function TeamsSection({ draft }: SectionProps) {
           <SettingsRow key={key} label={t(label)}>
             <Segmented
               label={t(label)}
-              value={flag(key) ? "admins" : "everyone"}
+              value={flag(key)}
               options={[
-                { value: "everyone", label: t("admin.createEveryone") },
-                { value: "admins", label: t("admin.createAdminsOnly") },
+                { value: false, label: t("admin.createEveryone") },
+                { value: true, label: t("admin.createAdminsOnly") },
               ]}
-              onChange={(v) => set(key, v === "admins")}
+              onChange={(v) => set(key, v)}
             />
           </SettingsRow>
         ))}
@@ -73,12 +73,12 @@ export function TeamsSection({ draft }: SectionProps) {
         <SettingsRow label={t("admin.enableSubTeams")}>
           <Segmented
             label={t("admin.enableSubTeams")}
-            value={subTeams ? "on" : "off"}
+            value={subTeams}
             options={[
-              { value: "off", label: t("admin.choiceNotAllowed") },
-              { value: "on", label: t("admin.choiceAllowed") },
+              { value: false, label: t("admin.choiceNotAllowed") },
+              { value: true, label: t("admin.choiceAllowed") },
             ]}
-            onChange={(v) => set("enable_sub_teams", v === "on")}
+            onChange={(v) => set("enable_sub_teams", v)}
           />
         </SettingsRow>
         {subTeams && (

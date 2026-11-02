@@ -1,7 +1,7 @@
 // Compact segmented radio group: a hairline track with one highlighted
 // segment. Used for the account menu's theme and language switches and the
 // notification level pickers. A null value highlights nothing, which bulk
-// controls use for "mixed".
+// controls use for "mixed". Values may be booleans for a two-way choice.
 
 import { makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import type { ReactNode } from "react";
@@ -61,7 +61,7 @@ const useStyles = makeStyles({
   },
 });
 
-export interface SegmentedOption<T extends string> {
+export interface SegmentedOption<T extends string | boolean> {
   value: T;
   label: string;
   /** Rendered instead of the label, e.g. an icon; the label becomes its name. */
@@ -70,7 +70,7 @@ export interface SegmentedOption<T extends string> {
   brand?: boolean;
 }
 
-interface SegmentedProps<T extends string> {
+interface SegmentedProps<T extends string | boolean> {
   label: string;
   value: T | null;
   options: SegmentedOption<T>[];
@@ -81,7 +81,7 @@ interface SegmentedProps<T extends string> {
   className?: string;
 }
 
-export function Segmented<T extends string>({
+export function Segmented<T extends string | boolean>({
   label,
   value,
   options,
@@ -101,7 +101,7 @@ export function Segmented<T extends string>({
         const selected = o.value === value;
         return (
           <button
-            key={o.value}
+            key={String(o.value)}
             type="button"
             role="radio"
             aria-checked={selected}

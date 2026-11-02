@@ -364,17 +364,17 @@ export function AdminInviteDetail() {
         >
           <Segmented
             label={t("admin.inviteActiveLabel")}
-            value={invite.enabled ? "active" : "paused"}
+            value={!!invite.enabled}
             disabled={busy !== null}
             options={[
-              { value: "active", label: t("admin.inviteStatusActive") },
-              { value: "paused", label: t("admin.inviteStatusPaused") },
+              { value: true, label: t("admin.inviteStatusActive") },
+              { value: false, label: t("admin.inviteStatusPaused") },
             ]}
             onChange={(v) =>
               void run(
                 "enabled",
-                () => api.adminUpdateInvite(id, { enabled: v === "active" }),
-                v === "active"
+                () => api.adminUpdateInvite(id, { enabled: v }),
+                v
                   ? t("admin.inviteEnabledDone")
                   : t("admin.inviteDisabledDone"),
               )

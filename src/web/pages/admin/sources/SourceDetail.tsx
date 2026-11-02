@@ -238,19 +238,17 @@ export function SourceDetail() {
         >
           <Segmented
             label={t("admin.oauthOfferLabel")}
-            value={enabled ? "shown" : "hidden"}
+            value={enabled}
             disabled={busy !== null}
             options={[
-              { value: "hidden", label: t("admin.oauthOfferedNo") },
-              { value: "shown", label: t("admin.oauthOfferedYes") },
+              { value: false, label: t("admin.oauthOfferedNo") },
+              { value: true, label: t("admin.oauthOfferedYes") },
             ]}
             onChange={(v) =>
               void patch(
                 "enabled",
-                { enabled: v === "shown" },
-                v === "shown"
-                  ? t("admin.oauthEnabledDone")
-                  : t("admin.oauthDisabledDone"),
+                { enabled: v },
+                v ? t("admin.oauthEnabledDone") : t("admin.oauthDisabledDone"),
               )
             }
           />
@@ -261,18 +259,14 @@ export function SourceDetail() {
         >
           <Segmented
             label={t("admin.oauthTwoStepLabel")}
-            value={source.trusted !== 0 ? "skipped" : "required"}
+            value={source.trusted !== 0}
             disabled={busy !== null}
             options={[
-              { value: "required", label: t("admin.oauthTrustedNo") },
-              { value: "skipped", label: t("admin.oauthTrustedYes") },
+              { value: false, label: t("admin.oauthTrustedNo") },
+              { value: true, label: t("admin.oauthTrustedYes") },
             ]}
             onChange={(v) =>
-              void patch(
-                "trusted",
-                { trusted: v === "skipped" },
-                t("admin.oauthSaved"),
-              )
+              void patch("trusted", { trusted: v }, t("admin.oauthSaved"))
             }
           />
         </SettingsRow>

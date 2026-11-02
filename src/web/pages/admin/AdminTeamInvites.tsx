@@ -136,16 +136,13 @@ export function AdminTeamInvites() {
       >
         <Segmented
           label={t("admin.teamInviteFilter")}
-          value={registrationOnly ? "registration" : "all"}
+          value={registrationOnly}
           options={[
-            { value: "all", label: t("admin.teamInviteFilterAll") },
-            {
-              value: "registration",
-              label: t("admin.registrationInvitesOnly"),
-            },
+            { value: false, label: t("admin.teamInviteFilterAll") },
+            { value: true, label: t("admin.registrationInvitesOnly") },
           ]}
           onChange={(v) => {
-            setRegistrationOnly(v === "registration");
+            setRegistrationOnly(v);
             setPage(1);
           }}
         />

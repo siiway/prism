@@ -128,12 +128,12 @@ export function useSettingRows({ set, flag, num }: ConfigDraft) {
     <SettingsRow label={t(labelKey)} description={t(descKey)}>
       <Segmented
         label={t(labelKey)}
-        value={flag(key) ? "on" : "off"}
+        value={flag(key)}
         options={[
-          { value: "off", label: t("admin.choiceNotRequired") },
-          { value: "on", label: t("admin.choiceRequired") },
+          { value: false, label: t("admin.choiceNotRequired") },
+          { value: true, label: t("admin.choiceRequired") },
         ]}
-        onChange={(v) => set(key, v === "on")}
+        onChange={(v) => set(key, v)}
       />
     </SettingsRow>
   );

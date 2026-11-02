@@ -286,17 +286,17 @@ export function NoticeDetail() {
         >
           <Segmented
             label={t("admin.noticeVisibilityLabel")}
-            value={notice.is_published ? "published" : "draft"}
+            value={!!notice.is_published}
             disabled={busy !== null}
             options={[
-              { value: "draft", label: t("admin.noticeDraftBadge") },
-              { value: "published", label: t("admin.noticePublished") },
+              { value: false, label: t("admin.noticeDraftBadge") },
+              { value: true, label: t("admin.noticePublished") },
             ]}
             onChange={(v) =>
               void patch(
                 "published",
-                { is_published: v === "published" },
-                v === "published"
+                { is_published: v },
+                v
                   ? t("admin.noticePublishedDone")
                   : t("admin.noticeUnpublishedDone"),
               )
@@ -309,18 +309,14 @@ export function NoticeDetail() {
         >
           <Segmented
             label={t("admin.noticePositionLabel")}
-            value={notice.pinned ? "pinned" : "date"}
+            value={!!notice.pinned}
             disabled={busy !== null}
             options={[
-              { value: "date", label: t("admin.noticePositionByDate") },
-              { value: "pinned", label: t("admin.noticePinnedBadge") },
+              { value: false, label: t("admin.noticePositionByDate") },
+              { value: true, label: t("admin.noticePinnedBadge") },
             ]}
             onChange={(v) =>
-              void patch(
-                "pinned",
-                { pinned: v === "pinned" },
-                t("admin.noticeUpdated"),
-              )
+              void patch("pinned", { pinned: v }, t("admin.noticeUpdated"))
             }
           />
         </SettingsRow>
@@ -330,16 +326,16 @@ export function NoticeDetail() {
         >
           <Segmented
             label={t("admin.noticeDismissLabel")}
-            value={notice.is_dismissible ? "yes" : "no"}
+            value={!!notice.is_dismissible}
             disabled={busy !== null}
             options={[
-              { value: "no", label: t("admin.choiceNotAllowed") },
-              { value: "yes", label: t("admin.choiceAllowed") },
+              { value: false, label: t("admin.choiceNotAllowed") },
+              { value: true, label: t("admin.choiceAllowed") },
             ]}
             onChange={(v) =>
               void patch(
                 "dismissible",
-                { is_dismissible: v === "yes" },
+                { is_dismissible: v },
                 t("admin.noticeUpdated"),
               )
             }

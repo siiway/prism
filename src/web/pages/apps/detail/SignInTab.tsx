@@ -178,12 +178,12 @@ export function SignInTab({ formApi }: { formApi: AppFormApi }) {
           >
             <Segmented
               label={s}
-              value={form.optional_scopes.includes(s) ? "optional" : "required"}
+              value={form.optional_scopes.includes(s)}
               options={[
-                { value: "required", label: t("apps.scopeRequired") },
-                { value: "optional", label: t("apps.scopeOptional") },
+                { value: false, label: t("apps.scopeRequired") },
+                { value: true, label: t("apps.scopeOptional") },
               ]}
-              onChange={(v) => setOptional(s, v === "optional")}
+              onChange={(v) => setOptional(s, v)}
             />
             {removeButton(t("common.remove"), () => removeScope(s))}
           </SettingsRow>
