@@ -16,7 +16,7 @@ import {
 import { getMLDSAKey } from "../lib/mldsa";
 import { verifyAccessToken } from "../lib/jwt";
 import { randomBase64url, randomId } from "../lib/crypto";
-import { createDomain, parseDomainInput, verifyDomain } from "../lib/domains";
+import { addDomain, verifyDomain } from "../lib/domains";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { readPage, likePattern } from "../lib/pagination";
 import { validateRedirectUriForRegistration } from "../lib/redirectUri";
@@ -569,28 +569,13 @@ app.post("/me/domains", async (c) => {
   if (capErr) return c.json({ error: capErr }, 403);
 
   const body = await c.req.json<{ domain: string }>();
-  if (!body.domain)
-    return c.json(
-      { error: "field_required", params: { field: "domain" } },
-      400,
-    );
-
-  const domain = parseDomainInput(body.domain);
-  if (!domain) return c.json({ error: "domain_invalid" }, 400);
-
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
-  )
-    .bind(resolved.userId, domain)
-    .first();
-  if (existing) return c.json({ error: "domain_exists" }, 409);
-
-  const created = await createDomain(c.env.DB, {
+  const added = await addDomain(c.env.DB, {
     userId: resolved.userId,
     teamId: null,
-    domain,
+    domain: body.domain,
   });
-  return c.json(created, 201);
+  if (!added.ok) return c.json(added.body, added.status);
+  return c.json(added.created, 201);
 });
 
 // DELETE /api/oauth/me/domains/:domain — remove a domain (requires domains:write)

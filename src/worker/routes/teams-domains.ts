@@ -5,8 +5,7 @@ import { Hono, type Context } from "hono";
 import { getConfigValue } from "../lib/config";
 import {
   copyDomain,
-  createDomain,
-  parseDomainInput,
+  addDomain,
   readRequestedMethod,
   verifyDomain,
 } from "../lib/domains";
@@ -145,27 +144,13 @@ app.post(":id/domains", async (c) => {
   if (denied) return denied;
 
   const body = await c.req.json<{ domain: string }>();
-  if (!body.domain)
-    return c.json(
-      { error: "field_required", params: { field: "domain" } },
-      400,
-    );
-  const domain = parseDomainInput(body.domain);
-  if (!domain) return c.json({ error: "domain_invalid" }, 400);
-
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM domains WHERE team_id = ? AND domain = ?",
-  )
-    .bind(id, domain)
-    .first();
-  if (existing) return c.json({ error: "domain_exists" }, 409);
-
-  const created = await createDomain(c.env.DB, {
+  const added = await addDomain(c.env.DB, {
     userId: c.get("user").id,
     teamId: id,
-    domain,
+    domain: body.domain,
   });
-  return c.json(created, 201);
+  if (!added.ok) return c.json(added.body, added.status);
+  return c.json(added.created, 201);
 });
 
 // Verify team domain. Body: { method?: "dns-txt" | "http-file" | "html-meta" }

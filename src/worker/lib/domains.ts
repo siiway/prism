@@ -2,6 +2,7 @@
 // shared by every place that adds, verifies, copies or re-verifies one.
 
 import type { Context } from "hono";
+import type { CodedError } from "./apiError";
 import { getConfigValue } from "./config";
 import {
   checkMethod,
@@ -126,6 +127,50 @@ export type CreatedDomain = {
   verified: boolean;
   verified_by_parent?: string;
 } & MethodInstructions;
+
+/**
+ * Add a domain the user typed in: normalize it, refuse one the owner already
+ * has, then insert it as createDomain does.
+ */
+export async function addDomain(
+  db: D1Database,
+  input: {
+    userId: string;
+    teamId: string | null;
+    domain: unknown;
+    appId?: string | null;
+  },
+): Promise<
+  | { ok: true; created: CreatedDomain }
+  | { ok: false; status: 400 | 409; body: CodedError }
+> {
+  if (!input.domain)
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "field_required", params: { field: "domain" } },
+    };
+  const domain =
+    typeof input.domain === "string" ? parseDomainInput(input.domain) : null;
+  if (!domain)
+    return { ok: false, status: 400, body: { error: "domain_invalid" } };
+
+  const existing = await (
+    input.teamId
+      ? db
+          .prepare("SELECT id FROM domains WHERE team_id = ? AND domain = ?")
+          .bind(input.teamId, domain)
+      : db
+          .prepare(
+            "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
+          )
+          .bind(input.userId, domain)
+  ).first();
+  if (existing)
+    return { ok: false, status: 409, body: { error: "domain_exists" } };
+
+  return { ok: true, created: await createDomain(db, { ...input, domain }) };
+}
 
 /**
  * Insert a domain for `owner`, added by `userId`. It is verified on the spot

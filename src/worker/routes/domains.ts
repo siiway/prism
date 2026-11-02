@@ -11,8 +11,7 @@ import {
 } from "../lib/notifications";
 import {
   copyDomain,
-  createDomain,
-  parseDomainInput,
+  addDomain,
   readRequestedMethod,
   verifyDomain,
 } from "../lib/domains";
@@ -145,28 +144,15 @@ app.post("/", async (c) => {
   if (capErr) return c.json({ error: capErr }, 403);
 
   const body = await c.req.json<{ domain: string; app_id?: string }>();
-  if (!body.domain)
-    return c.json(
-      { error: "field_required", params: { field: "domain" } },
-      400,
-    );
-  const domain = parseDomainInput(body.domain);
-  if (!domain) return c.json({ error: "domain_invalid" }, 400);
-
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
-  )
-    .bind(user.id, domain)
-    .first();
-  if (existing) return c.json({ error: "domain_exists" }, 409);
-
-  const created = await createDomain(c.env.DB, {
+  const added = await addDomain(c.env.DB, {
     userId: user.id,
     teamId: null,
-    domain,
+    domain: body.domain,
     appId: body.app_id,
   });
-  recordDomainEvent(c, "added", created.id, domain);
+  if (!added.ok) return c.json(added.body, added.status);
+  const { created } = added;
+  recordDomainEvent(c, "added", created.id, created.domain);
   return c.json(created, 201);
 });
 
