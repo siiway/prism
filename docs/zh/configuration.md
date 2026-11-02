@@ -74,9 +74,8 @@ Prism 运行一组有序的提供商。第一个是默认项；其余是备用�
 | `cap_challenge_count`            | number   | `50`         | 每个 Cap 挑战的谜题数量（内嵌模式）                                 |
 | `cap_challenge_difficulty`       | number   | `4`          | Cap 难度（内嵌模式）                                                |
 | `cap_instrumentation`            | boolean  | `true`       | Cap 的反自动化脚本（内嵌模式）                                      |
-| `pow_difficulty`                 | number   | `20`         | 内置工作量证明所需的前导零比特数。数值越高越难                      |
 
-提供商名称：`turnstile`、`hcaptcha`、`recaptcha`、`geetest`、`cap`（[Cap](https://trycap.dev)）和 `pow`（内置工作量证明，无需第三方服务）。难度 20 大约需要 0.1–2 秒；高于 24 的值在低端手机上可能过慢。
+提供商名称：`turnstile`、`hcaptcha`、`recaptcha`、`geetest` 和 `cap`（[Cap](https://trycap.dev)）。
 
 ### Turnstile 与中国大陆
 

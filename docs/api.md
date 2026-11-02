@@ -141,11 +141,6 @@ switching accounts means signing out and in again.
 | `POST /api/auth/check-email-verification` | `{ "verified": boolean }` — poll while the user sends the email        |
 | `POST /api/auth/resend-verify-email`      | Resend the link (accepts captcha fields)                               |
 
-### `GET /api/auth/pow-challenge`
-
-Returns a challenge for the proof-of-work provider:
-`{ "challenge": "...", "difficulty": 20, "expires_at": 1741568400 }`.
-
 ## TOTP
 
 All endpoints require authentication. A user can have several authenticators.

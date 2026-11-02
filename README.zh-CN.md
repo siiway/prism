@@ -13,7 +13,7 @@
 - **团队** — OAuth 应用与域名的共享所有权；角色、邀请、所有权转移、站点级加入门槛
 - **应用注册** — 用户自助创建 OAuth 应用；管理员可验证；支持跨应用 scope
 - **域名验证** — 每个域名可在 DNS TXT、HTML meta、`.well-known` 中任选一种，自动重新核验
-- **机器人防护** — Cloudflare Turnstile、hCaptcha、reCAPTCHA v3 或工作量证明（Rust→WASM）；同时可门禁 2FA
+- **机器人防护** — Cloudflare Turnstile、hCaptcha、reCAPTCHA v3、极验或 Cap（工作量证明）；同时可门禁 2FA
 - **Webhook 与通知** — 用户 + 管理员 webhook、应用事件流（webhook / SSE / WebSocket）、邮件 + Telegram 通知，规则引擎做精细路由
 - **公开资料** — 可选启用 `/u/<username>` 与 `/t/<team-id>`，按字段控制可见性，支持 GPG 公钥与 GitHub README 同步
 - **数据库加密** — AES-GCM 信封 + keyed HMAC，根植于 Cloudflare Secrets Store 绑定
@@ -33,7 +33,6 @@
 | 前端        | React 19 + FluentUI v9         |
 | 前端路由    | React Router v7                |
 | 状态管理    | Zustand v5 + TanStack Query v5 |
-| PoW 求解器  | Rust → WASM（Web Worker 回退） |
 
 ## 快速开始
 

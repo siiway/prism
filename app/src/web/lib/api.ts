@@ -425,8 +425,6 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     provider?: CaptchaProvider;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
-    pow_challenge?: string;
-    pow_nonce?: number;
     geetest?: GeetestOutput;
     cap_token?: string;
   }) =>
@@ -478,8 +476,6 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     provider?: CaptchaProvider;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
-    pow_challenge?: string;
-    pow_nonce?: number;
     geetest?: GeetestOutput;
     cap_token?: string;
   }) =>
@@ -494,8 +490,6 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     provider?: CaptchaProvider;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
-    pow_challenge?: string;
-    pow_nonce?: number;
     geetest?: GeetestOutput;
     cap_token?: string;
   }) =>
@@ -640,12 +634,6 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       undefined,
       getToken(),
     ),
-  powChallenge: () =>
-    request<{ challenge: string; difficulty: number; expires_at: number }>(
-      "GET",
-      "/auth/pow-challenge",
-    ),
-
   // ─── User ────────────────────────────────────────────────────────────────
   me: () => request<MeResponse>("GET", "/user/me", undefined, getToken()),
   updateMe: (

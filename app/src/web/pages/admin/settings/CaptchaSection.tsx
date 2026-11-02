@@ -40,7 +40,6 @@ const CAPTCHA_PROVIDERS: CaptchaProvider[] = [
   "turnstile",
   "hcaptcha",
   "recaptcha",
-  "pow",
   "geetest",
   "cap",
 ];
@@ -273,21 +272,6 @@ export function CaptchaSection({ draft }: SectionProps) {
                   />
                 </Field>
               </div>
-            )}
-
-            {p === "pow" && (
-              <Field
-                label={t("admin.powDifficulty")}
-                hint={t("admin.powDifficultyHint")}
-              >
-                <NumberInput
-                  label={t("admin.powDifficulty")}
-                  value={num("pow_difficulty", 20)}
-                  onChange={(n) => set("pow_difficulty", n)}
-                  unit={t("admin.unitBits")}
-                  min={1}
-                />
-              </Field>
             )}
 
             {p === "geetest" && (

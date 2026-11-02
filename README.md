@@ -13,7 +13,7 @@ A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare W
 - **Teams** — shared ownership of OAuth apps and domains, roles, invites, transfer-ownership, site-floor join requirements
 - **App registry** — users register and manage their own OAuth apps; admins can verify; cross-app permission scopes
 - **Domain verification** — DNS TXT, HTML meta, or `.well-known` — pick per domain, auto re-verify
-- **Bot protection** — Cloudflare Turnstile, hCaptcha, reCAPTCHA v3, or proof-of-work (Rust→WASM); also gates 2FA confirmations
+- **Bot protection** — Cloudflare Turnstile, hCaptcha, reCAPTCHA v3, GeeTest or Cap (proof-of-work); also gates 2FA confirmations
 - **Webhooks & notifications** — user + admin webhooks, app event streams (webhook / SSE / WebSocket), email + Telegram notifications with a rule engine
 - **Public profiles** — opt-in `/u/<username>` and `/t/<team-id>` pages with per-field visibility, GPG keys, GitHub README sync
 - **Encrypted at rest** — AES-GCM envelope + keyed HMAC, rooted in a Cloudflare Secrets Store binding
@@ -23,17 +23,16 @@ A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare W
 
 ## Stack
 
-| Layer            | Technology                        |
-| ---------------- | --------------------------------- |
-| Runtime          | Cloudflare Workers                |
-| Router           | Hono v4                           |
-| Database         | Cloudflare D1 (SQLite)            |
-| Cache / Sessions | Cloudflare KV                     |
-| File storage     | Cloudflare R2                     |
-| Frontend         | React 19 + FluentUI v9            |
-| Routing          | React Router v7                   |
-| State            | Zustand v5 + TanStack Query v5    |
-| PoW solver       | Rust → WASM (Web Worker fallback) |
+| Layer            | Technology                     |
+| ---------------- | ------------------------------ |
+| Runtime          | Cloudflare Workers             |
+| Router           | Hono v4                        |
+| Database         | Cloudflare D1 (SQLite)         |
+| Cache / Sessions | Cloudflare KV                  |
+| File storage     | Cloudflare R2                  |
+| Frontend         | React 19 + FluentUI v9         |
+| Routing          | React Router v7                |
+| State            | Zustand v5 + TanStack Query v5 |
 
 ## Quick Start
 

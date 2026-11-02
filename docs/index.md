@@ -38,7 +38,7 @@ features:
 
   - icon: 🤖
     title: Bot Protection
-    details: Cloudflare Turnstile, hCaptcha, reCAPTCHA v3, GeeTest, or a built-in proof-of-work that needs no third-party service.
+    details: Cloudflare Turnstile, hCaptcha, reCAPTCHA v3, GeeTest, or Cap, a proof-of-work that runs inside Prism with no third-party service.
 
   - icon: 🏗️
     title: App Registry & Cross-App Scopes

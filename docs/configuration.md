@@ -89,12 +89,9 @@ team join, invite registration and step-up 2FA.
 | `cap_challenge_count`            | number   | `50`         | Puzzles per Cap challenge (embedded mode)                                 |
 | `cap_challenge_difficulty`       | number   | `4`          | Cap difficulty (embedded mode)                                            |
 | `cap_instrumentation`            | boolean  | `true`       | Cap's anti-automation script (embedded mode)                              |
-| `pow_difficulty`                 | number   | `20`         | Leading zero bits for the built-in proof-of-work. Higher is harder        |
 
-Provider names: `turnstile`, `hcaptcha`, `recaptcha`, `geetest`, `cap`
-([Cap](https://trycap.dev)) and `pow` (built-in proof-of-work, no third-party
-service). Difficulty 20 takes about 0.1–2 seconds; values above 24 may be too
-slow on low-end phones.
+Provider names: `turnstile`, `hcaptcha`, `recaptcha`, `geetest` and `cap`
+([Cap](https://trycap.dev)).
 
 ### Turnstile and Mainland China
 

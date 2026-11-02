@@ -8,7 +8,7 @@
 // missing on the other the way it did while each tier kept its own copy.
 
 export type CaptchaProvider =
-  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "pow" | "geetest" | "cap";
+  "none" | "turnstile" | "hcaptcha" | "recaptcha" | "geetest" | "cap";
 
 /** How the embedded Cap challenge store is backed / where verification runs.
  *  "embedded" runs capjs-core inside the Worker (KV-backed replay guard);
@@ -101,7 +101,6 @@ export interface SiteConfig {
   /** Secret for turnstile_china_site_key. Tokens minted by the China widget
    *  verify against this, not captcha_secret_key. Encrypted at rest. */
   turnstile_china_secret_key: string;
-  pow_difficulty: number;
   domain_reverify_days: number;
   session_ttl_days: number;
   access_token_ttl_minutes: number;

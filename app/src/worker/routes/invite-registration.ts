@@ -201,8 +201,6 @@ app.post("/auth/register-with-invite", async (c) => {
     email?: string;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
-    pow_challenge?: string;
-    pow_nonce?: number;
   }>();
 
   const team = body.team_id

@@ -26,7 +26,6 @@ import {
   reapPendingRegistrations,
   reapDissolvedTeams,
 } from "../cron/restricted";
-import { sweepExpiredPowUsed } from "../lib/pow";
 import { purgeAppEventQueue } from "../lib/app-events";
 import { sweepOrphanedImageProxyMappings } from "../lib/proxyImage";
 import type { MaintenanceJobKey } from "../../shared/codes";
@@ -77,14 +76,6 @@ const JOBS: Job[] = [
     writes: true,
     run: async (env) => {
       await sweepExpiredSessions(env.DB);
-      return null;
-    },
-  },
-  {
-    key: "sweep-pow",
-    writes: true,
-    run: async (env) => {
-      await sweepExpiredPowUsed(env.DB);
       return null;
     },
   },

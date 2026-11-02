@@ -1,83 +1,21 @@
 // Build Prism for deployment.
 //
-//   bun run build [--skip-wasm]
+//   bun run build
 //
-// 1. Compiles the proof-of-work solver (src/pow) to public/pow.wasm, when Rust
-//    is installed. Without it browsers use the slower JavaScript solver.
-// 2. Typechecks the app and the Worker.
-// 3. Builds the app and the Worker with Vite into dist/.
-// 4. Writes wrangler.json next to wrangler.jsonc, so `wrangler deploy` ships
+// 1. Typechecks the app and the Worker.
+// 2. Builds the app and the Worker with Vite into dist/.
+// 3. Writes wrangler.json next to wrangler.jsonc, so `wrangler deploy` ships
 //    the Vite build instead of re-bundling src/worker from scratch.
 
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
-import {
-  ROOT,
-  bunx,
-  has,
-  info,
-  ok,
-  parseArgs,
-  run,
-  step,
-  warn,
-} from "./lib.ts";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { ROOT, bunx, ok, parseArgs, step, warn } from "./lib.ts";
 
-const USAGE = `Usage: bun run build [options]
+const USAGE = `Usage: bun run build
 
-  --skip-wasm   Don't compile the proof-of-work solver
   -h, --help    Show this help`;
 
-const { flags } = parseArgs(
-  process.argv.slice(2),
-  { flags: ["--skip-wasm"] },
-  USAGE,
-);
-
-// rustup installs into ~/.cargo/bin, which a fresh shell may not have on PATH.
-const cargoBin = join(
-  process.env.CARGO_HOME ?? join(homedir(), ".cargo"),
-  "bin",
-);
-if (existsSync(cargoBin)) {
-  process.env.PATH = `${cargoBin}${delimiter}${process.env.PATH}`;
-}
-
-// ── Proof-of-work WASM ────────────────────────────────────────────────────────
-if (flags.has("--skip-wasm")) {
-  step("Skipping the proof-of-work WASM (--skip-wasm)");
-} else if (!has("cargo")) {
-  step("Skipping the proof-of-work WASM");
-  warn(
-    "Rust is not installed, so browsers will use the slower JavaScript solver.",
-  );
-  info("Install it from https://rustup.rs to build the WASM solver.");
-} else {
-  step("Building the proof-of-work WASM");
-  const target = "wasm32-unknown-unknown";
-  if (has("rustup")) {
-    const installed = run("rustup", ["target", "list", "--installed"], {
-      capture: true,
-    });
-    if (!installed.stdout.split(/\s+/).includes(target)) {
-      run("rustup", ["target", "add", target]);
-    }
-  }
-  run("cargo", [
-    "build",
-    "--release",
-    "--target",
-    target,
-    "--manifest-path",
-    join("src", "pow", "Cargo.toml"),
-  ]);
-  copyFileSync(
-    join(ROOT, "src", "pow", "target", target, "release", "prism_pow.wasm"),
-    join(ROOT, "public", "pow.wasm"),
-  );
-  ok("public/pow.wasm");
-}
+parseArgs(process.argv.slice(2), { flags: [] }, USAGE);
 
 // ── Typecheck ─────────────────────────────────────────────────────────────────
 step("Typechecking");

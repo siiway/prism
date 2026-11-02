@@ -56,7 +56,6 @@ turn captcha off.
 | reCAPTCHA v3         | Site key + secret. Invisible.                                                             |
 | GeeTest v4           | Captcha ID + key. **Fail open** lets visitors through if GeeTest is down; off by default. |
 | Cap                  | Self-hosted proof-of-work, embedded in Prism or an external server.                       |
-| Proof-of-Work        | Built in, no third-party service.                                                         |
 
 For Turnstile, the **Challenge Endpoint** setting chooses between the global
 host and the Mainland-China host. Anything other than "always global" needs a

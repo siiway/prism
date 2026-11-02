@@ -9,8 +9,6 @@ description: Deploy Prism to your Cloudflare account with one command.
 
 - [Bun](https://bun.sh) 1.3+
 - A Cloudflare account (the free tier is enough)
-- _(Optional)_ [Rust](https://rustup.rs), for the faster proof-of-work solver.
-  Without it, browsers use a slower JavaScript solver.
 
 ## Deploy
 

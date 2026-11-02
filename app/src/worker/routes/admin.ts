@@ -154,7 +154,6 @@ app.patch("/config", async (c) => {
     "turnstile_endpoint_mode",
     "turnstile_china_site_key",
     "turnstile_china_secret_key",
-    "pow_difficulty",
     "domain_reverify_days",
     "session_ttl_days",
     "access_token_ttl_minutes",

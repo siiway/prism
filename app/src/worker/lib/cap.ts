@@ -12,8 +12,8 @@
 //   external — a self-hosted Cap Standalone server does the work; we only
 //     validate the redeemed token against its /:siteKey/siteverify endpoint.
 //
-// The embedded HMAC secret is derived from the server JWT secret (same trick
-// as lib/pow.ts) so no new binding or stored secret is required.
+// The embedded HMAC secret is derived from the server JWT secret, so no new
+// binding or stored secret is required.
 
 import {
   generateChallenge,

@@ -11,7 +11,6 @@
 import type { CaptchaProvider } from "../../shared/types";
 import { getConfig } from "../lib/config";
 import { getIp } from "../lib/clientIp";
-import { verifyPowChallenge } from "../lib/pow";
 import { verifyGeetest, type GeetestOutput } from "../lib/geetest";
 import { verifyCapToken } from "../lib/cap";
 import { decryptSecret } from "../lib/secretCrypto";
@@ -29,8 +28,6 @@ export interface CaptchaSubmission {
   provider?: CaptchaProvider;
   captcha_token?: string;
   captcha_variant?: TurnstileVariant;
-  pow_challenge?: string;
-  pow_nonce?: number;
   geetest?: GeetestOutput;
   cap_token?: string;
 }
@@ -43,20 +40,10 @@ function extractCaptchaSubmission(body: unknown): CaptchaSubmission {
     provider: b.provider as CaptchaProvider | undefined,
     captcha_token: b.captcha_token as string | undefined,
     captcha_variant: b.captcha_variant as TurnstileVariant | undefined,
-    pow_challenge: b.pow_challenge as string | undefined,
-    pow_nonce: b.pow_nonce as number | undefined,
     geetest: b.geetest as GeetestOutput | undefined,
     cap_token: b.cap_token as string | undefined,
   };
 }
-
-const POW_ERRORS: Record<string, string> = {
-  malformed: "pow_malformed",
-  bad_signature: "pow_bad_signature",
-  expired: "pow_expired",
-  replayed: "pow_replayed",
-  wrong_difficulty: "pow_invalid",
-};
 
 async function verifyTurnstile(
   token: string,
@@ -160,25 +147,6 @@ async function verifyCaptchaToken(
     env ? ((await decryptSecret(env, v)) ?? "") : v;
 
   switch (provider) {
-    case "pow": {
-      if (!env) return { success: false, error: "captcha_unavailable" };
-      if (!submission.pow_challenge || submission.pow_nonce === undefined) {
-        return { success: false, error: "captcha_required" };
-      }
-      const result = await verifyPowChallenge(
-        env,
-        submission.pow_challenge,
-        submission.pow_nonce,
-        config.pow_difficulty,
-      );
-      return result.ok
-        ? { success: true }
-        : {
-            success: false,
-            error: POW_ERRORS[result.reason] ?? "pow_invalid",
-          };
-    }
-
     case "cap": {
       if (!env) return { success: false, error: "captcha_unavailable" };
       if (!submission.cap_token) {

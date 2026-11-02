@@ -106,7 +106,6 @@ const site = {
   invite_only: false,
   captcha_provider: "none",
   captcha_site_key: "",
-  pow_difficulty: 1,
   require_email_verification: false,
   email_verify_methods: "link",
   accent_color: "#0078d4",

@@ -122,11 +122,6 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 | `POST /api/auth/check-email-verification` | `{ "verified": boolean }` — 用户发送邮件期间轮询    |
 | `POST /api/auth/resend-verify-email`      | 重新发送链接（接受验证码字段）                      |
 
-### `GET /api/auth/pow-challenge`
-
-返回工作量证明提供商 的挑战：
-`{ "challenge": "...", "difficulty": 20, "expires_at": 1741568400 }`。
-
 ## TOTP
 
 所有端点都需要认证。一个用户可以拥有多个认证器。

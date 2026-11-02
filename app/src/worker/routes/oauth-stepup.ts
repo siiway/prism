@@ -299,8 +299,6 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     use_sudo?: boolean;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
-    pow_challenge?: string;
-    pow_nonce?: number;
   }>();
 
   if (!body.challenge_id) {

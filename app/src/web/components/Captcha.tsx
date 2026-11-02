@@ -1,5 +1,5 @@
 // Captcha widget supporting an *enabled set* of providers the visitor can
-// switch between — Turnstile, hCaptcha, reCAPTCHA v3, PoW, GeeTest v4 and Cap.
+// switch between — Turnstile, hCaptcha, reCAPTCHA v3, GeeTest v4 and Cap.
 //
 // The site exposes an ordered `captcha_providers` list (see PublicCaptchaConfig):
 // element 0 is the default rendered first; the rest are alternates. When more
@@ -9,16 +9,8 @@
 // survives failed attempts and re-renders on the same page.
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import {
-  Button,
-  Spinner,
-  Text,
-  ProgressBar,
-  Link,
-  tokens,
-} from "@fluentui/react-components";
+import { Spinner, Text, Link, tokens } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
-import { useApi } from "../lib/api-context";
 import type {
   CaptchaProvider,
   GeetestOutput,
@@ -26,7 +18,6 @@ import type {
   TurnstileEndpointDirective,
   TurnstileVariant,
 } from "../lib/api";
-import { solvePoW } from "../lib/pow";
 // Self-hosted Cap solver assets. @cap.js/widget otherwise fetches these from
 // cdn.jsdelivr.net at solve time — an external CDN dependency that a strict CSP
 // (`connect-src`/`script-src`) blocks and that a self-hosted identity platform
@@ -73,8 +64,6 @@ export interface CaptchaValue {
   provider?: CaptchaProvider;
   captcha_token?: string;
   captcha_variant?: TurnstileVariant;
-  pow_challenge?: string;
-  pow_nonce?: number;
   /** GeeTest v4 validate output. */
   geetest?: GeetestOutput;
   /** Cap redeem token. */
@@ -221,13 +210,9 @@ function ProviderWidget({
   onVerified: (value: CaptchaValue) => void;
   onError?: (err: string) => void;
 }) {
-  const api = useApi();
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
-  const [powState, setPowState] = useState<
-    "idle" | "solving" | "done" | "error"
-  >("idle");
   const [geetestReady, setGeetestReady] = useState(false);
   const geetestObjRef = useRef<GeetestCaptchaObj | null>(null);
 
@@ -335,29 +320,6 @@ function ProviderWidget({
       },
     );
   }, [provider, captcha.recaptcha_site_key]);
-
-  // ─── Proof of Work ──────────────────────────────────────────────────────
-  const solveChallenge = useCallback(async () => {
-    setPowState("solving");
-    try {
-      const { challenge, difficulty } = await api.powChallenge();
-      const nonce = await solvePoW(challenge, difficulty);
-      onVerifiedRef.current({
-        provider: "pow",
-        pow_challenge: challenge,
-        pow_nonce: nonce,
-      });
-      setPowState("done");
-    } catch {
-      setPowState("error");
-      onErrorRef.current?.(tRef.current("captcha.powFailed"));
-    }
-  }, [api]);
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async task on provider change; setState happens inside the async flow
-    if (provider === "pow") solveChallenge();
-  }, [provider, solveChallenge]);
 
   // ─── GeeTest v4 ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -473,46 +435,6 @@ function ProviderWidget({
   ]);
 
   // ─── Render per provider ──────────────────────────────────────────────────
-
-  if (provider === "pow") {
-    return (
-      <div
-        style={{
-          padding: "12px",
-          border: "1px solid var(--colorNeutralStroke1)",
-          borderRadius: "4px",
-        }}
-      >
-        {powState === "idle" && <Text>{t("captcha.powPreparing")}</Text>}
-        {powState === "solving" && (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Spinner size="tiny" />
-            <Text>{t("captcha.powSolving")}</Text>
-          </div>
-        )}
-        {powState === "done" && (
-          <Text style={{ color: "var(--colorPaletteLightGreenForeground1)" }}>
-            ✓ {t("captcha.powSolved")}
-          </Text>
-        )}
-        {powState === "error" && (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Text style={{ color: "var(--colorPaletteRedForeground1)" }}>
-              {t("captcha.powFailedShort")}
-            </Text>
-            <Button size="small" onClick={solveChallenge}>
-              {t("captcha.retry")}
-            </Button>
-          </div>
-        )}
-        <ProgressBar
-          value={
-            powState === "done" ? 1 : powState === "solving" ? undefined : 0
-          }
-        />
-      </div>
-    );
-  }
 
   // reCAPTCHA v3 is invisible.
   if (provider === "recaptcha") return null;

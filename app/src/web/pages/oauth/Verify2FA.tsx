@@ -137,7 +137,6 @@ export function Verify2FA() {
   const captchaSatisfied =
     !captchaRequired ||
     !!captchaValue?.captcha_token ||
-    (!!captchaValue?.pow_challenge && captchaValue?.pow_nonce !== undefined) ||
     !!captchaValue?.geetest ||
     !!captchaValue?.cap_token;
 

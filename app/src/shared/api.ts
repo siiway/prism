@@ -53,7 +53,6 @@ export interface PublicCaptchaConfig {
   cap_mode: CapMode;
   cap_site_key: string;
   cap_api_endpoint: string;
-  pow_difficulty: number;
 }
 
 export interface SitePublicConfig {
@@ -184,8 +183,6 @@ export interface RegisterBody {
   provider?: CaptchaProvider;
   captcha_token?: string;
   captcha_variant?: TurnstileVariant;
-  pow_challenge?: string;
-  pow_nonce?: number;
   geetest?: GeetestOutput;
   cap_token?: string;
 }
@@ -197,8 +194,6 @@ export interface LoginBody {
   provider?: CaptchaProvider;
   captcha_token?: string;
   captcha_variant?: TurnstileVariant;
-  pow_challenge?: string;
-  pow_nonce?: number;
   geetest?: GeetestOutput;
   cap_token?: string;
 }
@@ -1338,11 +1333,6 @@ export interface OAuth2FAAuthorizeBody {
    *  and provider is turnstile/hcaptcha/recaptcha. */
   captcha_token?: string;
   captcha_variant?: TurnstileVariant;
-  /** PoW solution challenge. Required when info.captcha_required is true and
-   *  provider is "pow". */
-  pow_challenge?: string;
-  /** PoW solution nonce. Required alongside pow_challenge. */
-  pow_nonce?: number;
   /** GeeTest v4 validate output. Required when provider is "geetest". */
   geetest?: GeetestOutput;
   /** Cap redeem token. Required when provider is "cap". */

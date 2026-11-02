@@ -33,7 +33,6 @@ const JOB_LABEL_KEYS: Record<MaintenanceJobKey, string> = {
   "reverify-domains": "admin.job_reverify_domains",
   "imap-poll": "admin.job_imap_poll",
   "sweep-sessions": "admin.job_sweep_sessions",
-  "sweep-pow": "admin.job_sweep_pow",
   "purge-app-events": "admin.job_purge_app_events",
   "sweep-image-proxy": "admin.job_sweep_image_proxy",
   "reap-pending-registrations": "admin.job_reap_pending_registrations",

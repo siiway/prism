@@ -1,7 +1,7 @@
 // Auth routes: register, login, logout, 2FA, passkeys, email verify, social OAuth callback
 
 import { Hono } from "hono";
-import { getConfig, getConfigValue } from "../lib/config";
+import { getConfig } from "../lib/config";
 import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
 import { clearSessionCookie } from "../lib/cookies";
@@ -28,7 +28,6 @@ import {
 } from "../lib/webauthn";
 import { captchaRefusal } from "../middleware/captcha";
 import type { TurnstileVariant } from "../lib/turnstile";
-import { issuePowChallenge } from "../lib/pow";
 import { issueCapChallenge, redeemCapChallenge } from "../lib/cap";
 import { rateLimitIp } from "../middleware/rateLimit";
 import {
@@ -84,8 +83,6 @@ app.post("/register", async (c) => {
     invite_token?: string;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
-    pow_challenge?: string;
-    pow_nonce?: number;
   }>();
 
   // Invite-only mode: validate the invite token before anything else.
@@ -201,8 +198,6 @@ app.post("/login", async (c) => {
     totp_code?: string;
     captcha_token?: string;
     captcha_variant?: TurnstileVariant;
-    pow_challenge?: string;
-    pow_nonce?: number;
   }>();
 
   // Generous per-IP backstop on *all* login POSTs. Its only job is to bound the
@@ -882,18 +877,6 @@ app.delete("/passkeys/:id", requireAuth, async (c) => {
     ).catch(() => {}),
   );
   return c.json({ ok: true });
-});
-
-// ─── PoW challenge ───────────────────────────────────────────────────────────
-
-app.get("/pow-challenge", async (c) => {
-  const difficulty = await getConfigValue(c.env.DB, "pow_difficulty");
-  const issued = await issuePowChallenge(c.env);
-  return c.json({
-    challenge: issued.challenge,
-    difficulty,
-    expires_at: issued.expires_at,
-  });
 });
 
 // ─── Cap challenge (embedded mode) ───────────────────────────────────────────

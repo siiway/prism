@@ -38,7 +38,7 @@ features:
 
   - icon: 🤖
     title: 机器人防护
-    details: Cloudflare Turnstile、hCaptcha、reCAPTCHA v3、GeeTest，或无需第三方服务的内置工作量证明。
+    details: Cloudflare Turnstile、hCaptcha、reCAPTCHA v3、GeeTest，或在 Prism 内运行、无需第三方服务的工作量证明 Cap。
 
   - icon: 🏗️
     title: 应用注册与跨应用 Scope

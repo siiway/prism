@@ -27,7 +27,6 @@ export const MAINTENANCE_JOB_KEYS = [
   "reverify-domains",
   "imap-poll",
   "sweep-sessions",
-  "sweep-pow",
   "purge-app-events",
   "sweep-image-proxy",
   "reap-pending-registrations",

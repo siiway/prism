@@ -37,6 +37,5 @@ export function buildPublicCaptcha(
     cap_mode: config.cap_mode,
     cap_site_key: config.cap_site_key,
     cap_api_endpoint: config.cap_api_endpoint,
-    pow_difficulty: config.pow_difficulty,
   };
 }

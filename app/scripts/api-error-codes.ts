@@ -78,11 +78,6 @@ export function workerErrorCodes(worker = workerSources()): Set<string> {
       /return "([a-z][a-z0-9_]*)";/g,
     ))
       if (m[1].includes("_")) codes.add(m[1]);
-  // PoW failure reasons.
-  const pow = /const POW_ERRORS[^{]*\{([^}]*)\}/.exec(
-    read("middleware/captcha.ts"),
-  );
-  for (const m of pow![1].matchAll(/:\s*"([a-z_]+)"/g)) codes.add(m[1]);
   // Redirect URI reasons become `redirect_uri_<reason>`.
   const reasons = /export type RedirectUriReason =([^;]*);/.exec(
     read("lib/redirectUri.ts"),

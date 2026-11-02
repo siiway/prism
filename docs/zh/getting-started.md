@@ -9,8 +9,6 @@ description: 用一条命令将 Prism 部署到你的 Cloudflare 账号。
 
 - [Bun](https://bun.sh) 1.3+
 - 一个 Cloudflare 账号（免费套餐即可）
-- _（可选）_ [Rust](https://rustup.rs)，用于更快的工作量证明求解器。
-  没有它时，浏览器会使用较慢的 JavaScript 求解器。
 
 ## 部署
 

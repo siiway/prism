@@ -38,8 +38,3 @@ wrangler.json
 # docs
 docs/.vitepress/dist
 docs/.vitepress/cache
-
-# pow
-app/src/pow/target
-app/public/pow-wasm
-app/public/pow.wasm

@@ -150,8 +150,8 @@ accounts** when generating an invite. Such an invite:
 
 - must have a finite usage limit, below the site's cap (default 1000);
 - always grants the `member` role;
-- is rate-limited per hour (default 200), on top of the usual per-IP limit,
-  captcha and proof-of-work.
+- is rate-limited per hour (default 200), on top of the usual per-IP limit
+  and captcha.
 
 A registrant's account starts pending. It can manage its own security (to
 enrol 2FA or verify an email), but can't sign in to any application until it

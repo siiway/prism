@@ -35,7 +35,6 @@ const DEFAULT_CONFIG: SiteConfig = {
   turnstile_endpoint_mode: "global",
   turnstile_china_site_key: "",
   turnstile_china_secret_key: "",
-  pow_difficulty: 20,
   domain_reverify_days: 30,
   session_ttl_days: 30,
   access_token_ttl_minutes: 60,
@@ -199,7 +198,7 @@ function migrateLegacyCaptcha(config: SiteConfig): void {
   // (2) Backfill the legacy provider's credentials whenever its new slot is
   // empty — independent of whether the set above was just seeded or was
   // already persisted. Only turnstile/hcaptcha/recaptcha shared the legacy
-  // pair; pow has no keys and geetest/cap post-date the legacy field.
+  // pair; geetest and cap post-date the legacy field.
   const bag = configBag(config);
   const siteKeyField = `${legacy}_site_key`;
   const secretKeyField = `${legacy}_secret_key`;
