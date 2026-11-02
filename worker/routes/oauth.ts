@@ -11,6 +11,11 @@ import {
   hashLookupCandidate,
   timingSafeSecretEqual,
 } from "../lib/secretCrypto";
+import {
+  findPersonalAccessToken,
+  isExpired,
+  touchPersonalAccessToken,
+} from "../lib/personalAccessTokens";
 import { getMLDSAKey } from "../lib/mldsa";
 import {
   signAccessToken,
@@ -4157,31 +4162,12 @@ async function resolveBearerToken(
 
   // Personal Access Token (prism_pat_ prefix)
   if (raw.startsWith("prism_pat_")) {
-    const lookupHash = await hashLookupCandidate(c.env, raw);
-    if (!lookupHash) return null;
-    const pat = await c.env.DB.prepare(
-      "SELECT id, user_id, scopes, expires_at FROM personal_access_tokens WHERE token = ? OR token = ?",
-    )
-      .bind(raw, lookupHash)
-      .first<{
-        id: string;
-        user_id: string;
-        scopes: string;
-        expires_at: number | null;
-      }>();
-    if (!pat) return null;
-    if (pat.expires_at !== null && pat.expires_at < now) return null;
-    const scopes = JSON.parse(pat.scopes) as string[];
-    if (!scopes.includes(requiredScope)) return null;
-    // Update last_used_at asynchronously (best-effort)
-    c.env.DB.prepare(
-      "UPDATE personal_access_tokens SET last_used_at = ? WHERE id = ?",
-    )
-      .bind(now, pat.id)
-      .run()
-      .catch(() => {});
+    const pat = await findPersonalAccessToken(c.env, raw);
+    if (!pat || isExpired(pat, now)) return null;
+    if (!pat.scopes.includes(requiredScope)) return null;
+    touchPersonalAccessToken(c.env, c.executionCtx, pat.id, now);
     resolvedUserId = pat.user_id;
-    resolvedScopes = scopes;
+    resolvedScopes = pat.scopes;
   } else if (raw.split(".").length === 3) {
     // JWT access token
     let payload;

@@ -4,7 +4,11 @@ import type { Context, MiddlewareHandler, Next } from "hono";
 import { verifyJWT } from "../lib/jwt";
 import { getJwtSecret } from "../lib/config";
 import { readSessionCookie } from "../lib/cookies";
-import { hashLookupCandidate } from "../lib/secretCrypto";
+import {
+  findPersonalAccessToken,
+  isExpired,
+  touchPersonalAccessToken,
+} from "../lib/personalAccessTokens";
 import { getIp } from "../lib/clientIp";
 import { geoJson, recordSessionIp } from "../lib/geo";
 import type { AuthUser, Variables } from "../types";
@@ -165,31 +169,15 @@ export function tryPatAuth(scopes: {
     if (!raw.startsWith("prism_pat_")) return await next();
 
     const now = Math.floor(Date.now() / 1000);
-    // The token column may be plaintext (legacy) or HMAC-keyed hash
-    // (post-migration). Look up under both forms so PATs issued before
-    // SECRETS_KEY was wired up keep working until the admin migrate runs.
-    const lookupHash = await hashLookupCandidate(c.env, raw);
-    if (!lookupHash) return c.json({ error: "unauthorized" }, 401);
-    const pat = await c.env.DB.prepare(
-      "SELECT id, user_id, scopes, expires_at FROM personal_access_tokens WHERE token = ? OR token = ?",
-    )
-      .bind(raw, lookupHash)
-      .first<{
-        id: string;
-        user_id: string;
-        scopes: string;
-        expires_at: number | null;
-      }>();
+    const pat = await findPersonalAccessToken(c.env, raw);
     if (!pat) return c.json({ error: "unauthorized" }, 401);
-    if (pat.expires_at !== null && pat.expires_at < now)
-      return c.json({ error: "token_expired" }, 401);
+    if (isExpired(pat, now)) return c.json({ error: "token_expired" }, 401);
 
-    const tokenScopes = JSON.parse(pat.scopes) as string[];
     const required =
       c.req.method === "GET" || c.req.method === "HEAD"
         ? scopes.read
         : scopes.write;
-    if (!tokenScopes.includes(required))
+    if (!pat.scopes.includes(required))
       return c.json({ error: "insufficient_scope" }, 403);
 
     const user = await c.env.DB.prepare(
@@ -224,16 +212,7 @@ export function tryPatAuth(scopes: {
     // for policy or auditing in addition to consulting the effective role.
     c.set("patAuth", true);
 
-    // Best-effort: bump last-used timestamp; never block the request on this
-    c.executionCtx.waitUntil(
-      c.env.DB.prepare(
-        "UPDATE personal_access_tokens SET last_used_at = ? WHERE id = ?",
-      )
-        .bind(now, pat.id)
-        .run()
-        .then(() => undefined)
-        .catch(() => undefined),
-    );
+    touchPersonalAccessToken(c.env, c.executionCtx, pat.id, now);
 
     await next();
   };
