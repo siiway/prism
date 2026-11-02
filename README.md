@@ -66,37 +66,6 @@ To work on Prism itself, see [CONTRIBUTING.md](./.github/CONTRIBUTING.md).
 - [Cross-App Permissions](https://prism.wss.moe/app-permissions) — exposing scopes to other apps
 - [Personal Access Tokens](https://prism.wss.moe/personal-access-tokens) and [Public Profiles](https://prism.wss.moe/public-profile)
 
-## Project Structure
-
-```text
-prism/
-├── src/
-│   ├── worker/              # Cloudflare Worker (backend)
-│   │   ├── index.ts         # Hono app entry point
-│   │   ├── ssr.ts           # Server-side rendering of the web app
-│   │   ├── db/migrations/   # D1 SQL migrations
-│   │   ├── lib/             # crypto, jwt, totp, webauthn, email, config
-│   │   ├── middleware/      # auth, captcha, rateLimit
-│   │   ├── cron/            # scheduled jobs (domain re-verification etc.)
-│   │   └── routes/          # init, auth, oauth, apps, domains, connections, user, admin
-│   ├── web/                 # React frontend
-│   │   ├── entry-client.tsx # Browser entry
-│   │   ├── entry-server.tsx # Server render entry
-│   │   ├── routes.tsx       # Router + guards
-│   │   ├── components/      # Layout, ThemeProvider, Captcha
-│   │   ├── pages/           # All page components
-│   │   ├── lib/             # API client, PoW solver
-│   │   ├── i18n/            # Translations (en, zh)
-│   │   └── store/           # Zustand auth store
-│   ├── shared/              # Used by both: API types, limits, scopes, rule language
-│   └── pow/                 # Rust PoW WASM crate
-│       └── src/lib.rs
-├── tests/                   # bun test suites
-├── scripts/                 # setup, build, deploy and check scripts (Bun)
-├── public/                  # Static assets (pow.wasm lands here after build)
-└── wrangler.jsonc           # Cloudflare Worker config
-```
-
 ## License
 
 GNU General Public License 3.0. See [LICENSE](./LICENSE) for details.

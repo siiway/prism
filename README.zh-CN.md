@@ -66,37 +66,6 @@ setup 会登录你的 Cloudflare 账号、询问你的 URL、创建数据库和�
 - [跨应用权限](https://prism.wss.moe/zh/app-permissions) — 把 scope 暴露给其他应用
 - [个人访问令牌](https://prism.wss.moe/zh/personal-access-tokens) 与 [公开资料](https://prism.wss.moe/zh/public-profile)
 
-## 项目结构
-
-```text
-prism/
-├── src/
-│   ├── worker/              # Cloudflare Worker（后端）
-│   │   ├── index.ts         # Hono 应用入口
-│   │   ├── ssr.ts           # Web 应用的服务端渲染
-│   │   ├── db/migrations/   # D1 SQL 迁移文件
-│   │   ├── lib/             # 加密、JWT、TOTP、WebAuthn、邮件、配置
-│   │   ├── middleware/      # 认证、验证码、限流
-│   │   ├── cron/            # 定时任务（域名重新验证等）
-│   │   └── routes/          # init、auth、oauth、apps、domains、connections、user、admin
-│   ├── web/                 # React 前端
-│   │   ├── entry-client.tsx # 浏览器入口
-│   │   ├── entry-server.tsx # 服务端渲染入口
-│   │   ├── routes.tsx       # 路由 + 守卫
-│   │   ├── components/      # 布局、主题、验证码
-│   │   ├── pages/           # 所有页面组件
-│   │   ├── lib/             # API 客户端、PoW 求解器
-│   │   ├── i18n/            # 翻译（en、zh）
-│   │   └── store/           # Zustand 认证状态
-│   ├── shared/              # 两端共用：API 类型、输入限制、权限范围、规则语言
-│   └── pow/                 # Rust PoW WASM crate
-│       └── src/lib.rs
-├── tests/                   # bun test 测试
-├── scripts/                 # setup、build、deploy 与检查脚本（Bun）
-├── public/                  # 静态资源（构建后 pow.wasm 输出至此）
-└── wrangler.jsonc           # Cloudflare Worker 配置
-```
-
 ## 许可证
 
 GNU 通用公共许可证 3.0，详见 [LICENSE](./LICENSE)。
