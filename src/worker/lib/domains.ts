@@ -22,7 +22,7 @@ const DOMAIN_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
  * ("https://Example.COM/path" → "example.com"), stray path segments,
  * surrounding whitespace, uppercase, and a trailing DNS-root dot.
  */
-export function normalizeDomainInput(raw: string): string {
+function normalizeDomainInput(raw: string): string {
   let domain = raw.trim().toLowerCase();
   if (domain.includes("://")) {
     try {

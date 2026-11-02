@@ -292,10 +292,7 @@ function globToRegExp(pattern: string): RegExp {
  * may be literal action names (`app.create`), `*` (all), or fnmatch-style
  * globs (`app.*`, `team.member.*`).
  */
-export function matchesEventPattern(
-  patterns: string[],
-  action: string,
-): boolean {
+function matchesEventPattern(patterns: string[], action: string): boolean {
   return patterns.some((p) => {
     if (p === "*" || p === action) return true;
     if (!p.includes("*") && !p.includes("?")) return false;
@@ -401,9 +398,7 @@ function eventSummary(event: DeliveredEvent): string {
 }
 
 /** Values available to {placeholder} interpolation in General webhooks. */
-export function auditPlaceholders(
-  event: DeliveredEvent,
-): Record<string, string> {
+function auditPlaceholders(event: DeliveredEvent): Record<string, string> {
   return {
     id: event.id,
     scope: event.scope,

@@ -28,7 +28,7 @@ function readCookie(): string | null {
 }
 
 /** The first of the browser's preferred languages we support. */
-export function browserLanguage(): SupportedLng {
+function browserLanguage(): SupportedLng {
   const prefs =
     typeof navigator === "undefined"
       ? []

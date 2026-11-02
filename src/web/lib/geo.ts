@@ -19,7 +19,7 @@ export function parseIpGeo(json: string | null | undefined): IpGeo | null {
 // "City, Region, Country" with blanks dropped and repeats de-duplicated
 // (city-states report the same value for several fields). Returns "" when
 // nothing is known.
-export function formatLocation(
+function formatLocation(
   city: string | null | undefined,
   region: string | null | undefined,
   country: string | null | undefined,
@@ -61,7 +61,7 @@ export function formatNetwork(
 // Used by the session detail dialog to dump *everything* Cloudflare returned
 // for an IP. `latitude`/`longitude` are folded into a single coordinate row by
 // the caller, so they're intentionally excluded here.
-export const GEO_FIELD_ORDER: {
+const GEO_FIELD_ORDER: {
   key: keyof IpGeo;
   labelKey: string;
 }[] = [

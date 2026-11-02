@@ -31,7 +31,7 @@ export type RequirementKey = "verified_email" | "2fa";
 
 /** Look up the requirement flags on a team. Missing teams return null so
  *  callers can short-circuit (the surrounding handler will already 404). */
-export async function getTeamRequirements(
+async function getTeamRequirements(
   db: D1Database,
   teamId: string,
 ): Promise<TeamRequirementsRow | null> {
@@ -76,7 +76,7 @@ export function mergeWithSiteFloor(
 }
 
 /** Convenience: getTeamRequirements + getSiteRequirementFloor + merge. */
-export async function getEffectiveTeamRequirements(
+async function getEffectiveTeamRequirements(
   db: D1Database,
   teamId: string,
 ): Promise<EffectiveTeamRequirements | null> {
@@ -91,10 +91,7 @@ export async function getEffectiveTeamRequirements(
 /** True if the user has at least one enabled TOTP authenticator or any
  *  passkey on file. Backup codes alone don't count — they're a recovery
  *  path, not a primary factor. */
-export async function userHas2FA(
-  db: D1Database,
-  userId: string,
-): Promise<boolean> {
+async function userHas2FA(db: D1Database, userId: string): Promise<boolean> {
   const totp = await db
     .prepare(
       "SELECT 1 AS x FROM totp_authenticators WHERE user_id = ? AND enabled = 1 LIMIT 1",

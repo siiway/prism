@@ -36,7 +36,7 @@ async function sha256Base64url(input: string): Promise<string> {
 
 /** RFC 7638 JWK thumbprint: base64url(SHA-256(canonical JWK)). The canonical
  *  form contains only the required members, in lexicographic order, no space. */
-export async function jwkThumbprint(jwk: Jwk): Promise<string | null> {
+async function jwkThumbprint(jwk: Jwk): Promise<string | null> {
   let canonical: string;
   if (jwk.kty === "EC" && jwk.crv && jwk.x && jwk.y) {
     canonical = `{"crv":"${jwk.crv}","kty":"EC","x":"${jwk.x}","y":"${jwk.y}"}`;
@@ -51,7 +51,7 @@ export async function jwkThumbprint(jwk: Jwk): Promise<string | null> {
 }
 
 /** Strip query + fragment: the DPoP `htu` is compared against the bare URI. */
-export function htuOf(url: string): string {
+function htuOf(url: string): string {
   try {
     const u = new URL(url);
     return `${u.origin}${u.pathname}`;

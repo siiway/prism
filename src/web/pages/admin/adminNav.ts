@@ -34,7 +34,7 @@ import { useTranslation } from "react-i18next";
 import { useApi } from "../../lib/api-context";
 
 /** Site settings sections, each at /admin/settings/<section>. */
-export const SETTINGS_SECTIONS = [
+const SETTINGS_SECTIONS = [
   "general",
   "signup",
   "auth",

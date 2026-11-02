@@ -36,7 +36,7 @@ export const TOKEN_TYPE_ACCESS_TOKEN =
  * Centralized so the three token-issuing endpoints (token, 2FA verify,
  * authorize-confirm) enforce byte-for-byte identical client-auth rules.
  */
-export async function clientSecretValid(
+async function clientSecretValid(
   env: Env,
   oauthApp: OAuthAppRow,
   clientSecret: string | undefined,

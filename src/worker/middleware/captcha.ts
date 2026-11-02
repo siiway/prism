@@ -37,7 +37,7 @@ export interface CaptchaSubmission {
 
 /** Pull the captcha fields out of a parsed request body. Keeps the route
  *  handlers from re-listing the field set at every callsite. */
-export function extractCaptchaSubmission(body: unknown): CaptchaSubmission {
+function extractCaptchaSubmission(body: unknown): CaptchaSubmission {
   const b = (body ?? {}) as Record<string, unknown>;
   return {
     provider: b.provider as CaptchaProvider | undefined,
@@ -129,7 +129,7 @@ async function verifyRecaptcha(
  * outright rather than silently downgraded, so a stale/forged field cannot pick
  * a provider the site turned off.
  */
-export async function verifyCaptchaToken(
+async function verifyCaptchaToken(
   db: D1Database,
   submission: CaptchaSubmission,
   ip: string,

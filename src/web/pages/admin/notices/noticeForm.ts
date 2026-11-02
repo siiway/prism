@@ -47,7 +47,7 @@ export const SECTION_FIELDS: Record<Section, (keyof NoticeForm)[]> = {
 };
 
 /** Unix seconds ⇄ a datetime-local value in the viewer's time zone. */
-export function toLocalInput(unix: number | null): string {
+function toLocalInput(unix: number | null): string {
   if (!unix) return "";
   const d = new Date(unix * 1000);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -55,7 +55,7 @@ export function toLocalInput(unix: number | null): string {
     d.getHours(),
   )}:${pad(d.getMinutes())}`;
 }
-export function fromLocalInput(value: string): number | null {
+function fromLocalInput(value: string): number | null {
   if (!value) return null;
   const ms = new Date(value).getTime();
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;

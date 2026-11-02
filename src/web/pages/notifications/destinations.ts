@@ -37,7 +37,7 @@ export const DEST_KIND_KEYS: Record<DestKind, string> = {
   discord: "notifications.discordChannel",
 };
 
-export function connectionLabel(c: { username: string | null; name: string }) {
+function connectionLabel(c: { username: string | null; name: string }) {
   return c.username ? `@${c.username}` : c.name;
 }
 

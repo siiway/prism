@@ -106,7 +106,7 @@ export function generateBackupCodes(count = 10): string[] {
 }
 
 /** Hash a single backup code with SHA-256. Normalises (strips hyphens, uppercases) before hashing. */
-export async function hashBackupCode(code: string): Promise<string> {
+async function hashBackupCode(code: string): Promise<string> {
   const normalized = code.replace(/-/g, "").toUpperCase();
   return `$sha256$${await sha256Hex(normalized)}`;
 }

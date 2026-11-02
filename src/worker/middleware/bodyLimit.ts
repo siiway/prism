@@ -6,7 +6,7 @@ import {
   limitStreamBytes,
 } from "../lib/bodyLimit";
 
-export const MAX_REQUEST_BODY_BYTES = 5 * 1024 * 1024;
+const MAX_REQUEST_BODY_BYTES = 5 * 1024 * 1024;
 
 /**
  * Reject declared oversized bodies before route middleware runs and wrap every

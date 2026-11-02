@@ -54,8 +54,7 @@ export interface Condition {
 export type Groups = Condition[][];
 
 let seq = 0;
-export const newKey = () =>
-  `c${Date.now().toString(36)}${(seq++).toString(36)}`;
+const newKey = () => `c${Date.now().toString(36)}${(seq++).toString(36)}`;
 
 export function newCondition(field: RuleField = "event"): Condition {
   return {
@@ -109,7 +108,7 @@ function setItems(type: RuleFieldType, raw: string): SetItem[] | null {
 }
 
 /** One condition as an expression node, or null when its value is invalid. */
-export function conditionToExpr(c: Condition): RuleExpr | null {
+function conditionToExpr(c: Condition): RuleExpr | null {
   const type = fieldType(c.field);
   if (!BUILDER_OPS[type].includes(c.op)) return null;
   switch (c.op) {

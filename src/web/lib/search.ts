@@ -273,5 +273,3 @@ export function searchEntries(
       GROUP_ORDER.indexOf(a.entry.group) - GROUP_ORDER.indexOf(b.entry.group),
   );
 }
-
-export { GROUP_ORDER as SEARCH_GROUPS };

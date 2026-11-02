@@ -2,12 +2,7 @@
 
 import type { SiteConfig, SiteConfigRow } from "../types";
 import { randomId } from "./crypto";
-import {
-  SENSITIVE_CONFIG_KEYS,
-  decryptSecret,
-  encryptSecret,
-  isEncryptedSecret,
-} from "./secretCrypto";
+import { SENSITIVE_CONFIG_KEYS, encryptSecret } from "./secretCrypto";
 
 const DEFAULT_CONFIG: SiteConfig = {
   site_name: "Prism",
@@ -189,8 +184,8 @@ export async function getConfig(db: D1Database): Promise<SiteConfig> {
  *      condition is exactly what left Turnstile rendering with an empty sitekey.
  *
  * Secrets are copied as-is (still ciphertext at this stage); the per-provider
- * secret keys are in SENSITIVE_CONFIG_KEYS, so decryptConfigSecrets handles them
- * downstream exactly like the legacy field.
+ * secret keys are in SENSITIVE_CONFIG_KEYS, and the captcha check decrypts
+ * them exactly like the legacy field.
  */
 function migrateLegacyCaptcha(config: SiteConfig): void {
   const legacy = config.captcha_provider;
@@ -278,26 +273,6 @@ export async function setConfigValues(
  */
 export function configBag(config: SiteConfig): Record<string, unknown> {
   return config as unknown as Record<string, unknown>;
-}
-
-/**
- * Decrypt the encrypted-at-rest fields of a SiteConfig in place. Callers
- * that need the actual plaintext of e.g. `email_api_key` or
- * `captcha_secret_key` MUST run the result of getConfig() through this
- * before using the value. Cheap when no fields are encrypted (no-ops).
- */
-export async function decryptConfigSecrets(
-  env: Env,
-  config: SiteConfig,
-): Promise<SiteConfig> {
-  const bag = configBag(config);
-  for (const key of SENSITIVE_CONFIG_KEYS) {
-    const v = bag[key];
-    if (typeof v === "string" && isEncryptedSecret(v)) {
-      bag[key] = await decryptSecret(env, v);
-    }
-  }
-  return config;
 }
 
 /**

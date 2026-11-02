@@ -206,7 +206,7 @@ export function isTypePartiallySelected(
 }
 
 /** Collapse a selection back to the shortest set of filter tokens. */
-export function selectionToEvents(
+function selectionToEvents(
   selection: EventSelection,
   scope: AuditScopeKey,
 ): string[] {

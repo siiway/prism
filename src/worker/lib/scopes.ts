@@ -60,9 +60,7 @@ export function canClientIntrospectToken(
  * Unbound form:  `team:read`, `team:member:read`, etc.
  * Bound form:    `team:<teamId>:read`, `team:<teamId>:member:read`, etc.
  */
-export const TEAM_PERMISSIONS: ReadonlySet<string> = new Set(
-  TEAM_PERMISSION_LIST,
-);
+const TEAM_PERMISSIONS: ReadonlySet<string> = new Set(TEAM_PERMISSION_LIST);
 
 /** Unbound team scope strings that apps include in their scope request. */
 export const UNBOUND_TEAM_SCOPES = new Set(

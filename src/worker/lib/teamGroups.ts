@@ -61,7 +61,7 @@ export function validateGroupColor(color: string | null): CodedError | null {
  *  out labels is a natural extension of that) while managing the definitions
  *  themselves is off (creating a group shapes what downstream apps can
  *  authorize on, which is an owner-level decision). */
-export const TEAM_CAPABILITY_DEFAULTS: Record<TeamCapability, boolean> = {
+const TEAM_CAPABILITY_DEFAULTS: Record<TeamCapability, boolean> = {
   "groups:manage": false,
   "groups:assign": true,
 };
@@ -90,7 +90,7 @@ export function parseRolePermissions(raw: string | null): TeamRolePermissions {
  * falls through. Owners and co-owners never reach this function — they hold
  * every capability unconditionally.
  */
-export function resolveAdminCapability(
+function resolveAdminCapability(
   capability: TeamCapability,
   teamPermissions: TeamRolePermissions,
   siteDefaults: TeamRolePermissions,

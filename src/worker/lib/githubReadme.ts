@@ -90,7 +90,7 @@ async function resolveTokens(
 }
 
 /** Issue the request to GitHub. Honours `If-None-Match` for conditional GETs. */
-export async function fetchGithubReadme(
+async function fetchGithubReadme(
   login: string,
   etag: string | null,
   token: string | null,

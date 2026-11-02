@@ -213,7 +213,7 @@ export function isSiteAdmin(c: Context<AppEnv>): boolean {
   return actorFor(c).role === "admin";
 }
 
-export async function getTeamAuthority(
+async function getTeamAuthority(
   db: D1Database,
   teamId: string,
   actor: TeamActor,
@@ -261,7 +261,7 @@ export async function teamAuthority(
 }
 
 /** Did the site-admin override grant this request its authority over `teamId`? */
-export function actedAsSiteAdmin(c: Context<AppEnv>, teamId: string): boolean {
+function actedAsSiteAdmin(c: Context<AppEnv>, teamId: string): boolean {
   return c.get("teamElevation")?.get(teamId) === true;
 }
 

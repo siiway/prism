@@ -115,6 +115,3 @@ export async function verifySignedMessage(
   }
   return { valid: false, signerKeyId: null, signedText };
 }
-
-/** @deprecated Use verifySignedMessage — supports both clearsign and --sign --armor */
-export const verifyClearsign = verifySignedMessage;

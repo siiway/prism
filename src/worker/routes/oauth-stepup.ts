@@ -18,7 +18,12 @@ import {
   parseRedirectUris,
   redirectUriMatchesRegistered,
 } from "../lib/redirectUri";
-import type { OAuthAppRow, Variables } from "../types";
+import type {
+  OAuth2FAChallengeRow,
+  OAuth2FACodeRow,
+  OAuthAppRow,
+  Variables,
+} from "../types";
 import {
   authenticateClient,
   buildConsentAppSummary,
@@ -169,7 +174,7 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     "SELECT * FROM oauth_2fa_challenges WHERE id = ?",
   )
     .bind(challenge_id)
-    .first<import("../types").OAuth2FAChallengeRow>();
+    .first<OAuth2FAChallengeRow>();
   if (!challenge) return c.json({ error: "invalid_challenge" }, 400);
 
   const now = Math.floor(Date.now() / 1000);
@@ -309,7 +314,7 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     "SELECT * FROM oauth_2fa_challenges WHERE id = ?",
   )
     .bind(body.challenge_id)
-    .first<import("../types").OAuth2FAChallengeRow>();
+    .first<OAuth2FAChallengeRow>();
   if (!challenge) return c.json({ error: "invalid_challenge" }, 400);
 
   const now = Math.floor(Date.now() / 1000);
@@ -522,7 +527,7 @@ app.post("/2fa/verify", async (c) => {
     "SELECT * FROM oauth_2fa_codes WHERE code = ? OR code = ?",
   )
     .bind(code, codeLookup)
-    .first<import("../types").OAuth2FACodeRow>();
+    .first<OAuth2FACodeRow>();
   // Bind the code to (client_id, redirect_uri) before any other check so a
   // stolen code is useless to a different app or sent to a different URI.
   if (!codeRow || codeRow.client_id !== clientId)

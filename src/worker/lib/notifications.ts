@@ -49,7 +49,7 @@ export type NotificationPrefsMap = Record<string, NotificationLevel>;
  * Handles the old `string[]` format (all treated as "full") and the new
  * `Record<string, "brief"|"full">` format.
  */
-export function parsePrefsEvents(raw: string): NotificationPrefsMap {
+function parsePrefsEvents(raw: string): NotificationPrefsMap {
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {

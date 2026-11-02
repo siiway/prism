@@ -100,12 +100,6 @@ export interface TotpAuthenticatorRow {
   created_at: number;
 }
 
-export interface TotpRecoveryRow {
-  user_id: string;
-  backup_codes: string; // JSON string[]
-  updated_at: number;
-}
-
 export interface PasskeyRow {
   id: string;
   user_id: string;
@@ -245,13 +239,6 @@ export interface TeamGroupRow {
   admin_assignable: number | null;
   created_at: number;
   updated_at: number;
-}
-
-export interface TeamMemberGroupRow {
-  team_id: string;
-  user_id: string;
-  group_id: string;
-  assigned_at: number;
 }
 
 export interface TeamMemberRow {
@@ -433,16 +420,6 @@ export interface UserEmailRow {
   created_at: number;
 }
 
-export interface SessionRow {
-  id: string;
-  user_id: string;
-  token_hash: string;
-  user_agent: string | null;
-  ip_address: string | null;
-  expires_at: number;
-  created_at: number;
-}
-
 export interface OAuthSourceRow {
   id: string;
   slug: string;
@@ -495,30 +472,6 @@ export interface SiteConfigRow {
   updated_at: number;
 }
 
-export interface AuditLogRow {
-  id: string;
-  user_id: string | null;
-  action: string;
-  resource_type: string | null;
-  resource_id: string | null;
-  metadata: string; // JSON
-  ip_address: string | null;
-  created_at: number;
-}
-
-export interface WebhookRow {
-  id: string;
-  name: string;
-  url: string;
-  secret: string;
-  events: string; // JSON string[]
-  is_active: number;
-  user_id: string | null; // null = admin-scope, non-null = user-scope
-  created_by: string;
-  created_at: number;
-  updated_at: number;
-}
-
 export interface UserNotificationPrefsRow {
   user_id: string;
   events: string; // JSON Record<string, "brief"|"full"> — legacy: string[]
@@ -526,24 +479,7 @@ export interface UserNotificationPrefsRow {
   notification_rules: string; // JSON NotificationRules — current canonical format
 }
 
-export type {
-  NotificationEmailRule,
-  NotificationTgRule,
-  NotificationDiscordRule,
-  NotificationRule,
-  NotificationRules,
-} from "../shared/types";
-
-export interface WebhookDeliveryRow {
-  id: string;
-  webhook_id: string;
-  event_type: string;
-  payload: string; // JSON
-  response_status: number | null;
-  response_body: string | null;
-  success: number;
-  delivered_at: number;
-}
+export type { NotificationRules } from "../shared/types";
 
 export interface AppScopeDefinitionRow {
   id: string;
@@ -594,11 +530,8 @@ export interface LoginErrorRow {
  *  fire-and-forget, so this is all they need to ask for. */
 export type WaitUntilCtx = { waitUntil: (p: Promise<unknown>) => void };
 
-export type SocialProvider = "github" | "google" | "microsoft" | "discord";
-
 export type {
   CaptchaProvider,
-  CapMode,
   TurnstileEndpointMode,
   SiteConfig,
   RestrictedCapabilities,

@@ -56,9 +56,7 @@ const EVENT_LABELS = new Map(
   EVENT_GROUPS.flatMap((g) => g.events.map((e) => [e.value, e.labelKey])),
 );
 
-export const CATEGORIES = [
-  ...new Set(ALL_EVENT_KEYS.map((e) => e.split(".")[0])),
-];
+const CATEGORIES = [...new Set(ALL_EVENT_KEYS.map((e) => e.split(".")[0]))];
 
 /**
  * Choices for operators that compare against exact values (equals, is in);

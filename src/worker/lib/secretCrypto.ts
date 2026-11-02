@@ -145,9 +145,7 @@ export function isHashedSecret(value: string | null | undefined): boolean {
  *  or hash). Use this to reject candidate inputs from the wire — no real
  *  user-facing token/code/password starts with `__`, so a candidate that
  *  does is either a probe or accidental copy-paste of stored material. */
-export function looksLikeStoredSecret(
-  value: string | null | undefined,
-): boolean {
+function looksLikeStoredSecret(value: string | null | undefined): boolean {
   return isEncryptedSecret(value) || isHashedSecret(value);
 }
 

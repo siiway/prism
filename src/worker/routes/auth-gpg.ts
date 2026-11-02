@@ -7,7 +7,7 @@ import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
 import { randomId } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
-import { verifyClearsign } from "../lib/gpg";
+import { verifySignedMessage } from "../lib/gpg";
 import { rateLimitIp } from "../middleware/rateLimit";
 import { logLoginError } from "../lib/loginRateLimit";
 import { issueSession } from "../lib/session";
@@ -155,9 +155,9 @@ app.post("/gpg-login", async (c) => {
   }
 
   // Verify the clearsign signature
-  let verifyResult: Awaited<ReturnType<typeof verifyClearsign>>;
+  let verifyResult: Awaited<ReturnType<typeof verifySignedMessage>>;
   try {
-    verifyResult = await verifyClearsign(
+    verifyResult = await verifySignedMessage(
       body.signed_message,
       gpgKeys.map((k) => k.public_key),
     );

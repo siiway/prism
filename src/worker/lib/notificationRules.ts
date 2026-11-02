@@ -17,15 +17,8 @@ import {
 import { RULE_NAME_MAX_LENGTH } from "../../shared/limits";
 
 export {
-  channelKey,
   evaluateRuleset,
-  traceRuleset,
-  type NotificationLevel,
   type NotificationRule,
-  type ResolvedDelivery,
-  type RuleAction,
-  type RuleMatch,
-  type RuleSendChannel,
 } from "../../shared/notificationRules";
 
 // One literal per reason, so every code the API can send is greppable.

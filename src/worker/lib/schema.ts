@@ -24,7 +24,7 @@
  *  to the 500 handler, which is the right outcome for a real failure. Treating
  *  every query error as "migrations pending" would hide exactly the bugs this
  *  is meant not to resemble. */
-export function isMissingSchemaError(err: unknown): boolean {
+function isMissingSchemaError(err: unknown): boolean {
   // D1 puts SQLite's text in `message`, but wraps in some paths, so the
   // `cause` chain is walked too. Bounded, because a cause chain can be
   // circular and this runs on a request path.

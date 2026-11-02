@@ -60,10 +60,7 @@ async function fetchWithTimeout(url: string): Promise<Response | null> {
   }
 }
 
-export async function checkDnsTxt(
-  domain: string,
-  token: string,
-): Promise<boolean> {
+async function checkDnsTxt(domain: string, token: string): Promise<boolean> {
   try {
     const hostname = `_prism-verify.${domain}`;
     const res = await fetch(
@@ -83,10 +80,7 @@ export async function checkDnsTxt(
   }
 }
 
-export async function checkHttpFile(
-  domain: string,
-  token: string,
-): Promise<boolean> {
+async function checkHttpFile(domain: string, token: string): Promise<boolean> {
   const url = `https://${domain}/.well-known/prism-verify-${token}.txt`;
   const res = await fetchWithTimeout(url);
   if (!res || !res.ok) return false;
@@ -94,10 +88,7 @@ export async function checkHttpFile(
   return text.trim() === `prism-verify=${token}`;
 }
 
-export async function checkHtmlMeta(
-  domain: string,
-  token: string,
-): Promise<boolean> {
+async function checkHtmlMeta(domain: string, token: string): Promise<boolean> {
   const url = `https://${domain}/`;
   const res = await fetchWithTimeout(url);
   if (!res || !res.ok) return false;

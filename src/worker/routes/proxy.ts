@@ -42,7 +42,7 @@ const ALLOWED_TYPES = new Set([
  *  - <foreignObject> (can embed arbitrary HTML)
  *  - <use> with external (non-fragment) hrefs (prevents sprite-sheet injection)
  */
-export function sanitizeSvg(raw: string): string {
+function sanitizeSvg(raw: string): string {
   return (
     raw
       .replace(/<!DOCTYPE[\s\S]*?>/gi, "")

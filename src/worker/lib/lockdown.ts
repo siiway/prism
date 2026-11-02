@@ -1,4 +1,4 @@
-export function parseLockdownList(value: string | undefined): Set<string> {
+function parseLockdownList(value: string | undefined): Set<string> {
   if (!value) return new Set();
   return new Set(
     value

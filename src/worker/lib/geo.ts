@@ -13,7 +13,7 @@
 
 import type { GeoInfo } from "../../shared/types";
 
-export const EMPTY_GEO: GeoInfo = {
+const EMPTY_GEO: GeoInfo = {
   continent: null,
   country: null,
   isEUCountry: null,
@@ -83,7 +83,7 @@ export function getGeo(c: HasRawRequest): GeoInfo {
   };
 }
 
-export function isEmptyGeo(g: GeoInfo): boolean {
+function isEmptyGeo(g: GeoInfo): boolean {
   return (Object.values(g) as (string | number | boolean | null)[]).every(
     (v) => v === null,
   );

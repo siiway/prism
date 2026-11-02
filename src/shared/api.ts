@@ -1531,9 +1531,6 @@ export interface NotifDiscordConnection {
 
 export type {
   NotificationLevel,
-  RuleMatch as NotificationRuleMatch,
-  RuleSendChannel as NotificationRuleSendChannel,
-  RuleAction as NotificationRuleAction,
   NotificationRule as NotificationRulesetRule,
 } from "./notificationRules";
 

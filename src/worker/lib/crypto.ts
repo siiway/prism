@@ -120,7 +120,7 @@ export async function sha256Hex(str: string): Promise<string> {
 }
 
 /** HMAC-SHA256 of a UTF-8 message. A string key is UTF-8 encoded. */
-export async function hmacSha256(
+async function hmacSha256(
   key: string | BufferSource,
   message: string,
 ): Promise<ArrayBuffer> {

@@ -22,7 +22,7 @@ export function forgetImageProxyMapping(url: string): void {
 }
 
 /** Deterministic id for a given URL (sha256 prefix). Pure function, no DB. */
-export async function imageProxyId(url: string): Promise<string> {
+async function imageProxyId(url: string): Promise<string> {
   return (await sha256Hex(url)).slice(0, 32);
 }
 
@@ -83,7 +83,7 @@ const MD_IMG_RE = /!\[[^\]]*\]\(\s*([^)\s]+)/g;
  * profile viewers (who can't hit the authenticated /register endpoint)
  * still find each embedded image already mapped.
  */
-export function extractMarkdownImageUrls(source: string): string[] {
+function extractMarkdownImageUrls(source: string): string[] {
   const urls = new Set<string>();
   let m: RegExpExecArray | null;
   while ((m = HTML_IMG_RE.exec(source)) !== null) urls.add(m[1]);

@@ -172,7 +172,7 @@ export type CapabilityDenial =
  * majority of users, so call sites can invoke it unconditionally rather than
  * branching on account type first.
  */
-export async function checkUserCapability(
+async function checkUserCapability(
   db: D1Database,
   user: RestrictionState,
   capability: RestrictedCapability,
@@ -206,7 +206,7 @@ export async function guardCapability(
 }
 
 /** The error code for a denial. */
-export function denialMessage(denial: CapabilityDenial): string {
+function denialMessage(denial: CapabilityDenial): string {
   if (denial.reason === "pending_join") return "restricted_pending_join";
   return "restricted_feature";
 }
@@ -224,7 +224,7 @@ export function denialMessage(denial: CapabilityDenial): string {
  * same organisation, and the app-authorization rule uses the same boundary,
  * so membership and authorization stay consistent.
  */
-export async function isWithinOriginSubtree(
+async function isWithinOriginSubtree(
   db: D1Database,
   originTeamId: string,
   teamId: string,

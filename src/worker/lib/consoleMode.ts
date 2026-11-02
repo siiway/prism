@@ -24,7 +24,7 @@ export type ConsoleMode = "full" | "read-only" | "off";
  *
  *  Anything unrecognised is also off, for the same reason: a typo in the
  *  variable should fail closed. */
-export function parseConsoleMode(raw: string | undefined): ConsoleMode {
+function parseConsoleMode(raw: string | undefined): ConsoleMode {
   const v = raw?.trim().toLowerCase();
   if (!v) return "off";
   if (["read-only", "readonly", "read", "ro"].includes(v)) return "read-only";

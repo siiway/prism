@@ -22,7 +22,7 @@ export type LoginRateLimitConfig = Pick<
   | "login_totp_rate_window_seconds"
 >;
 
-export const LOGIN_RATE_LIMIT_CONFIG_KEYS = [
+const LOGIN_RATE_LIMIT_CONFIG_KEYS = [
   "login_dos_rate_limit",
   "login_dos_rate_window_seconds",
   "login_ip_rate_limit",
