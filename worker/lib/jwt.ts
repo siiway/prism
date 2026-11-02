@@ -3,29 +3,60 @@
 import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
 import { bufToBase64url, base64urlToBuf } from "./crypto";
 
-function encodeBase64url(obj: unknown): string {
-  const json = JSON.stringify(obj);
-  let str = "";
-  for (const c of new TextEncoder().encode(json)) str += String.fromCharCode(c);
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+const utf8 = new TextEncoder();
+
+/** One JWT segment: JSON, UTF-8, base64url. */
+function encodeSegment(value: unknown): string {
+  return bufToBase64url(utf8.encode(JSON.stringify(value)));
 }
 
-function decodeBase64url(str: string): string {
-  const padded = str.replace(/-/g, "+").replace(/_/g, "/");
-  const pad = (4 - (padded.length % 4)) % 4;
-  return atob(padded + "=".repeat(pad));
+function decodeSegment<T>(segment: string): T {
+  return JSON.parse(new TextDecoder().decode(base64urlToBuf(segment))) as T;
+}
+
+/** The signing input (`header.body`), with iat / exp stamped on the body. */
+function signingInput(
+  header: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  expiresInSeconds: number,
+): string {
+  const now = Math.floor(Date.now() / 1000);
+  return `${encodeSegment(header)}.${encodeSegment({
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds,
+  })}`;
+}
+
+/** Split a compact JWT into what was signed, the body and the signature. */
+function splitJwt(token: string) {
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("Invalid JWT format");
+  const [header, body, sig] = parts;
+  return {
+    input: utf8.encode(`${header}.${body}`),
+    body,
+    signature: base64urlToBuf(sig),
+  };
+}
+
+function assertNotExpired(payload: { exp: number }) {
+  if (payload.exp < Math.floor(Date.now() / 1000))
+    throw new Error("JWT expired");
 }
 
 async function importKey(secret: string): Promise<CryptoKey> {
   if (!secret) throw new Error("JWT secret is not set");
   return crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(secret),
+    utf8.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"],
   );
 }
+
+// ── HS256 session token ───────────────────────────────────────────────────────
 
 export interface JWTPayload {
   sub: string;
@@ -41,50 +72,77 @@ export async function signJWT(
   secret: string,
   expiresInSeconds: number,
 ): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = encodeBase64url({ alg: "HS256", typ: "JWT" });
-  const body = encodeBase64url({
-    ...payload,
-    iat: now,
-    exp: now + expiresInSeconds,
-  });
-  const message = `${header}.${body}`;
-
-  const key = await importKey(secret);
+  const input = signingInput(
+    { alg: "HS256", typ: "JWT" },
+    payload,
+    expiresInSeconds,
+  );
   const sig = await crypto.subtle.sign(
     "HMAC",
-    key,
-    new TextEncoder().encode(message),
+    await importKey(secret),
+    utf8.encode(input),
   );
-  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-
-  return `${message}.${sigB64}`;
+  return `${input}.${bufToBase64url(sig)}`;
 }
 
-// RS256 signing — kept for backward compatibility with existing OIDC clients
-export async function signIdTokenRS256(
+export async function verifyJWT(
+  token: string,
+  secret: string,
+): Promise<JWTPayload> {
+  const { input, body, signature } = splitJwt(token);
+  const valid = await crypto.subtle.verify(
+    "HMAC",
+    await importKey(secret),
+    signature,
+    input,
+  );
+  if (!valid) throw new Error("Invalid JWT signature");
+  const payload = decodeSegment<JWTPayload>(body);
+  assertNotExpired(payload);
+  return payload;
+}
+
+// ── RS256 ID and logout tokens ────────────────────────────────────────────────
+
+async function signRS256(
+  typ: string,
   payload: Record<string, unknown>,
   privateKey: CryptoKey,
   kid: string,
   expiresInSeconds: number,
 ): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = encodeBase64url({ alg: "RS256", typ: "JWT", kid });
-  const body = encodeBase64url({
-    ...payload,
-    iat: now,
-    exp: now + expiresInSeconds,
-  });
-  const message = `${header}.${body}`;
+  const input = signingInput(
+    { alg: "RS256", typ, kid },
+    payload,
+    expiresInSeconds,
+  );
   const sig = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     privateKey,
-    new TextEncoder().encode(message),
+    utf8.encode(input),
   );
-  return `${message}.${bufToBase64url(sig)}`;
+  return `${input}.${bufToBase64url(sig)}`;
+}
+
+// RS256 signing — kept for backward compatibility with existing OIDC clients
+export function signIdTokenRS256(
+  payload: Record<string, unknown>,
+  privateKey: CryptoKey,
+  kid: string,
+  expiresInSeconds: number,
+): Promise<string> {
+  return signRS256("JWT", payload, privateKey, kid, expiresInSeconds);
+}
+
+// OIDC Back-Channel Logout token: typ "logout+jwt", so RPs can tell it apart
+// from an ID token.
+export function signLogoutTokenRS256(
+  payload: Record<string, unknown>,
+  privateKey: CryptoKey,
+  kid: string,
+  expiresInSeconds: number,
+): Promise<string> {
+  return signRS256("logout+jwt", payload, privateKey, kid, expiresInSeconds);
 }
 
 /**
@@ -97,41 +155,15 @@ export async function verifyIdTokenRS256(
   token: string,
   publicKey: CryptoKey,
 ): Promise<Record<string, unknown>> {
-  const parts = token.split(".");
-  if (parts.length !== 3) throw new Error("Invalid JWT format");
-  const [headerB64, bodyB64, sigB64] = parts;
+  const { input, body, signature } = splitJwt(token);
   const valid = await crypto.subtle.verify(
     "RSASSA-PKCS1-v1_5",
     publicKey,
-    base64urlToBuf(sigB64),
-    new TextEncoder().encode(`${headerB64}.${bodyB64}`),
+    signature,
+    input,
   );
   if (!valid) throw new Error("Invalid JWT signature");
-  return JSON.parse(decodeBase64url(bodyB64)) as Record<string, unknown>;
-}
-
-// OIDC Back-Channel Logout token: RS256, typ "logout+jwt". Same signing path
-// as the ID token but with the logout media type so RPs can tell them apart.
-export async function signLogoutTokenRS256(
-  payload: Record<string, unknown>,
-  privateKey: CryptoKey,
-  kid: string,
-  expiresInSeconds: number,
-): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const header = encodeBase64url({ alg: "RS256", typ: "logout+jwt", kid });
-  const body = encodeBase64url({
-    ...payload,
-    iat: now,
-    exp: now + expiresInSeconds,
-  });
-  const message = `${header}.${body}`;
-  const sig = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    privateKey,
-    new TextEncoder().encode(message),
-  );
-  return `${message}.${bufToBase64url(sig)}`;
+  return decodeSegment<Record<string, unknown>>(body);
 }
 
 // ── ML-DSA-65 access token (RFC 9068 at+JWT, post-quantum) ────────────────────
@@ -182,71 +214,25 @@ export function signAccessToken(
   kid: string,
   expiresInSeconds: number,
 ): string {
-  const now = Math.floor(Date.now() / 1000);
-  const header = encodeBase64url({ alg: "ML-DSA-65", typ: "at+JWT", kid });
-  const body = encodeBase64url({
-    ...payload,
-    iat: now,
-    exp: now + expiresInSeconds,
-  });
-  const msg = new TextEncoder().encode(`${header}.${body}`);
+  const input = signingInput(
+    { alg: "ML-DSA-65", typ: "at+JWT", kid },
+    payload,
+    expiresInSeconds,
+  );
   // @noble/post-quantum >= 0.6 takes (message, secretKey).
-  const sig = ml_dsa65.sign(msg, secretKey);
-  return `${header}.${body}.${bufToBase64url(sig)}`;
+  const sig = ml_dsa65.sign(utf8.encode(input), secretKey);
+  return `${input}.${bufToBase64url(sig)}`;
 }
 
 export function verifyAccessToken(
   token: string,
   publicKey: Uint8Array,
 ): AccessTokenPayload {
-  const parts = token.split(".");
-  if (parts.length !== 3) throw new Error("Invalid JWT format");
-  const [headerB64, bodyB64, sigB64] = parts;
-
-  const msg = new TextEncoder().encode(`${headerB64}.${bodyB64}`);
-  const sig = base64urlToBuf(sigB64);
-
+  const { input, body, signature } = splitJwt(token);
   // @noble/post-quantum >= 0.6 takes (signature, message, publicKey).
-  if (!ml_dsa65.verify(sig, msg, publicKey))
+  if (!ml_dsa65.verify(signature, input, publicKey))
     throw new Error("Invalid JWT signature");
-
-  const payload = JSON.parse(
-    new TextDecoder().decode(base64urlToBuf(bodyB64)),
-  ) as AccessTokenPayload;
-
-  if (payload.exp < Math.floor(Date.now() / 1000))
-    throw new Error("JWT expired");
-
-  return payload;
-}
-
-export async function verifyJWT(
-  token: string,
-  secret: string,
-): Promise<JWTPayload> {
-  const parts = token.split(".");
-  if (parts.length !== 3) throw new Error("Invalid JWT format");
-
-  const [headerB64, bodyB64, sigB64] = parts;
-  const message = `${headerB64}.${bodyB64}`;
-
-  const key = await importKey(secret);
-  const sigPadded = sigB64.replace(/-/g, "+").replace(/_/g, "/");
-  const sigBin = atob(sigPadded + "=".repeat((4 - (sigPadded.length % 4)) % 4));
-  const sig = new Uint8Array(sigBin.length);
-  for (let i = 0; i < sigBin.length; i++) sig[i] = sigBin.charCodeAt(i);
-
-  const valid = await crypto.subtle.verify(
-    "HMAC",
-    key,
-    sig,
-    new TextEncoder().encode(message),
-  );
-  if (!valid) throw new Error("Invalid JWT signature");
-
-  const payload = JSON.parse(decodeBase64url(bodyB64)) as JWTPayload;
-  if (payload.exp < Math.floor(Date.now() / 1000))
-    throw new Error("JWT expired");
-
+  const payload = decodeSegment<AccessTokenPayload>(body);
+  assertNotExpired(payload);
   return payload;
 }
