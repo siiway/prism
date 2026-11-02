@@ -1,14 +1,14 @@
-// Ruleset evaluation (shared/notificationRules.ts) and validation of saved
-// rules (worker/lib/notificationRules.ts).
+// Ruleset evaluation (src/shared/notificationRules.ts) and validation of saved
+// rules (src/worker/lib/notificationRules.ts).
 
 import { describe, expect, test } from "bun:test";
 import {
   traceRuleset,
   type NotificationRule,
   type RuleSendChannel,
-} from "../shared/notificationRules";
-import { buildRuleContext } from "../shared/ruleExpression";
-import { sanitizeRulesArray } from "../worker/lib/notificationRules";
+} from "../src/shared/notificationRules";
+import { buildRuleContext } from "../src/shared/ruleExpression";
+import { sanitizeRulesArray } from "../src/worker/lib/notificationRules";
 
 const EVENTS = ["app.created", "security.passkey_added", "connection.login"];
 

@@ -35,7 +35,7 @@ English text:
 `invite_used_up`; compare against it, since codes don't change when wording
 does. `params` is present when the message has blanks to fill (a field name,
 a limit, a URL). The web UI translates each code into the reader's language
-from its locale files (`apiErrors.<code>` in `src/i18n/`), so the text a
+from its locale files (`apiErrors.<code>` in `src/web/i18n/`), so the text a
 person sees and the code a program sees never drift apart.
 
 Successful writes answer with data, or `{ "ok": true }` when there is nothing

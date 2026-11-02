@@ -5,11 +5,11 @@ import {
   createDomain,
   parseDomainInput,
   verifiedParentDomain,
-} from "../worker/lib/domains";
-import { runReverification } from "../worker/cron/reverify";
-import { checkMemberAdd } from "../worker/lib/teamRequirements";
-import { setConfigValue } from "../worker/lib/config";
-import type { DomainRow } from "../worker/types";
+} from "../src/worker/lib/domains";
+import { runReverification } from "../src/worker/cron/reverify";
+import { checkMemberAdd } from "../src/worker/lib/teamRequirements";
+import { setConfigValue } from "../src/worker/lib/config";
+import type { DomainRow } from "../src/worker/types";
 import { d1, migratedDatabase } from "./setup/d1";
 
 let sqlite: Database;

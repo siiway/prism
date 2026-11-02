@@ -38,7 +38,7 @@ for backwards compatibility and read in the absence of a ruleset.
 | `team.member_added` / `_removed`        | You were added to or removed from a team         |
 | `oauth.consent_granted` / `_revoked`    | OAuth consent granted to or revoked from an app  |
 
-The set is mirrored in `worker/lib/notifications.ts → USER_NOTIFICATION_EVENTS`.
+The set is mirrored in `src/worker/lib/notifications.ts → USER_NOTIFICATION_EVENTS`.
 Webhooks subscribe to the same names — this catalogue is the single source of
 truth for "things you can be notified about."
 
@@ -104,7 +104,7 @@ each rule has its own page with a visual expression builder, a raw expression
 editor, the action, its place in the order, and a live test against a made-up
 event. The ruleset page's **Trace** runs every rule against a made-up event and
 shows which matched and where the notification would go; it uses the same
-evaluator as dispatch (`shared/notificationRules.ts`).
+evaluator as dispatch (`src/shared/notificationRules.ts`).
 
 ### Rule shape
 
@@ -140,7 +140,7 @@ evaluator as dispatch (`shared/notificationRules.ts`).
 
 The syntax follows Cloudflare's Rules language, cut down to what a notification
 carries. The parser, type checks and evaluator are in
-`shared/ruleExpression.ts`, shared by the Worker and the frontend.
+`src/shared/ruleExpression.ts`, shared by the Worker and the frontend.
 
 ```
 event.category eq "security" and not ip.src in {10.0.0.0/8 192.168.0.0/16}

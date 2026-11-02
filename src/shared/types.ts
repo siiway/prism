@@ -3,8 +3,8 @@
 // These are pure data shapes — the site configuration record, the capability
 // vocabularies, the notification-rule format — with no dependency on the
 // Cloudflare runtime or the DOM. Both tsconfig projects include this
-// directory and both tiers re-export from here (worker/types.ts,
-// src/types.ts, src/lib/api.ts), so a field added on one side cannot go
+// directory and both tiers re-export from here (src/worker/types.ts,
+// src/web/types.ts, src/web/lib/api.ts), so a field added on one side cannot go
 // missing on the other the way it did while each tier kept its own copy.
 
 export type CaptchaProvider =
@@ -250,7 +250,7 @@ export interface SiteConfig {
   default_team_profile_show_sub_teams: boolean;
   /** Site-wide fallback for the per-team capability set, same shape as
    *  {@link TeamRow.role_permissions}. Sits between a team's own overrides
-   *  and the built-in defaults in worker/lib/teamGroups.ts — operators can
+   *  and the built-in defaults in src/worker/lib/teamGroups.ts — operators can
    *  shift the default posture for every team that hasn't customised it.
    *  Keys absent here fall through to the built-ins. */
   default_team_role_permissions: TeamRolePermissions;
@@ -262,7 +262,7 @@ export interface SiteConfig {
    *  bound a link shared to thousands of people; this does. */
   team_invite_registration_rate_per_hour: number;
   /** Capabilities granted to restricted accounts, over the built-in
-   *  defaults in worker/lib/userCapabilities.ts (which deny everything but
+   *  defaults in src/worker/lib/userCapabilities.ts (which deny everything but
    *  account security). Keys absent here fall through to those defaults. */
   restricted_user_capabilities: RestrictedCapabilities;
   /** How long a pending registration may sit unfinished before the reaper

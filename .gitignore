@@ -41,6 +41,6 @@ docs/.vitepress/dist
 docs/.vitepress/cache
 
 # pow
-pow/target
+src/pow/target
 public/pow-wasm
 public/pow.wasm

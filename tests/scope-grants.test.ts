@@ -4,7 +4,7 @@ import {
   heldScopes,
   parseScopeList,
   stripGrant,
-} from "../worker/lib/scopeGrants";
+} from "../src/worker/lib/scopeGrants";
 
 describe("parseScopeList", () => {
   test("reads JSON arrays and space-separated lists", () => {

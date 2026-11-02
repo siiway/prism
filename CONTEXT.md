@@ -131,7 +131,7 @@ A single-use recovery code that substitutes for a 2FA factor.
 ## Scopes & tokens
 
 **Platform scope**:
-A scope from the fixed vocabulary in `shared/scopes.ts` (`openid`, `profile`,
+A scope from the fixed vocabulary in `src/shared/scopes.ts` (`openid`, `profile`,
 `teams:read`, …).
 
 **Bound team scope**:

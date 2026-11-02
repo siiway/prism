@@ -5,7 +5,7 @@
 // memory on essentially every request, and a policy is a long document (capped
 // at LEGAL_MAX_BYTES) that the overwhelming majority of requests never render
 // — paying to read it on that hot path is the wrong trade. See
-// worker/db/migrations/0061_legal_documents.sql.
+// src/worker/db/migrations/0061_legal_documents.sql.
 
 /** The fixed set of documents, addressed by slug. The slug is what the
  *  /legal/:doc endpoint and the /privacy, /terms pages use. */

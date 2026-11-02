@@ -1,13 +1,13 @@
 // Notification ruleset evaluation, shared by the Worker (dispatch) and the
 // frontend (the ruleset page's trace). Validation of what users save lives
-// in worker/lib/notificationRules.ts.
+// in src/worker/lib/notificationRules.ts.
 //
 // A ruleset is an ordered array of NotificationRule. When an event fires the
 // rules are walked top to bottom; every rule that matches applies its action,
 // and the result is the deduped list of destinations to deliver to.
 //
 // A rule matches when all of these hold:
-//   • match.expression (shared/ruleExpression.ts) is true for the event. An
+//   • match.expression (src/shared/ruleExpression.ts) is true for the event. An
 //     empty or missing expression matches every event.
 //   • match.event, a legacy glob ("*", "app.*", "security.totp_enabled"),
 //     matches the event name. New rules use an expression instead.

@@ -261,15 +261,15 @@ def build_wasm() -> None:
     step("Checking Rust toolchain")
     ensure_rust()
 
-    step("Building PoW WASM (pow/src/lib.rs)")
+    step("Building PoW WASM (src/pow/src/lib.rs)")
     run(
         "cargo", "build",
         "--target", "wasm32-unknown-unknown",
         "--release",
-        cwd=ROOT / "pow",
+        cwd=ROOT / "src" / "pow",
     )
 
-    src = ROOT / "pow" / "target" / "wasm32-unknown-unknown" / "release" / "prism_pow.wasm"
+    src = ROOT / "src" / "pow" / "target" / "wasm32-unknown-unknown" / "release" / "prism_pow.wasm"
     dst = ROOT / "public" / "pow.wasm"
     if src.exists():
         shutil.copy2(src, dst)
@@ -317,7 +317,7 @@ def build_frontend(pm: str) -> None:
     # a deploy-ready dist/prism/wrangler.json with paths relative to that
     # directory; we copy it to wrangler.json at the project root with the
     # paths rewritten so `wrangler deploy` (which prefers .json over .jsonc)
-    # ships the Vite-built bundle instead of re-bundling worker/index.ts.
+    # ships the Vite-built bundle instead of re-bundling src/worker/index.ts.
     import json as _json
     step("Generating deploy-ready wrangler.json")
     dist_cfg = ROOT / "dist" / "prism" / "wrangler.json"
@@ -327,7 +327,7 @@ def build_frontend(pm: str) -> None:
         cfg["main"] = "dist/prism/index.js"
         if "assets" in cfg and isinstance(cfg["assets"], dict):
             cfg["assets"]["directory"] = "./dist/client"
-        # migrations_dir is emitted as "../../worker/db/migrations" — correct
+        # migrations_dir is emitted as "../../src/worker/db/migrations" — correct
         # from dist/prism/, but two levels above the repo once the config sits
         # at the root, where wrangler reports "No migrations present".
         for db in cfg.get("d1_databases") or []:

@@ -3,7 +3,7 @@
 // One list in one place. App-scope validation (routes/apps.ts), the OAuth
 // authorize/consent path (routes/oauth.ts), personal access tokens
 // (routes/user.ts), OIDC discovery (routes/wellknown.ts) and the app
-// permissions picker (src/pages/apps/AppDetail.tsx) all derive from it, so a
+// permissions picker (src/web/pages/apps/AppDetail.tsx) all derive from it, so a
 // new scope is added exactly once.
 
 export const PLATFORM_SCOPES: string[] = [
@@ -51,7 +51,7 @@ export const PLATFORM_SCOPES: string[] = [
 
 /** Scopes an app may request directly. Bound team scopes (`team:<id>:...`)
  *  are validated separately against the team the token is bound to — see
- *  UNBOUND_TEAM_SCOPES in worker/lib/scopes.ts. */
+ *  UNBOUND_TEAM_SCOPES in src/worker/lib/scopes.ts. */
 export const APP_REQUESTABLE_SCOPES: string[] = PLATFORM_SCOPES.filter(
   (s) => !s.startsWith("team:"),
 );

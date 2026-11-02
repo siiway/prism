@@ -101,22 +101,28 @@ bun run deploy   # 类型检查 + 构建前端 + wrangler 部署
 
 ```text
 prism/
-├── worker/                  # Cloudflare Worker（后端）
-│   ├── index.ts             # Hono 应用入口
-│   ├── types.ts             # 共享 TypeScript 类型
-│   ├── db/migrations/       # D1 SQL 迁移文件
-│   ├── lib/                 # 加密、JWT、TOTP、WebAuthn、邮件、配置
-│   ├── middleware/          # 认证、验证码、限流
-│   ├── cron/                # 定时任务（域名重新验证等）
-│   └── routes/              # init、auth、oauth、apps、domains、connections、user、admin
-├── src/                     # React 前端
-│   ├── App.tsx              # 路由 + 守卫
-│   ├── components/          # 布局、主题、验证码
-│   ├── pages/               # 所有页面组件
-│   ├── lib/                 # API 客户端、PoW 求解器
-│   └── store/               # Zustand 认证状态
-├── pow/                     # Rust PoW WASM crate
-│   └── src/lib.rs
+├── src/
+│   ├── worker/              # Cloudflare Worker（后端）
+│   │   ├── index.ts         # Hono 应用入口
+│   │   ├── ssr.ts           # Web 应用的服务端渲染
+│   │   ├── db/migrations/   # D1 SQL 迁移文件
+│   │   ├── lib/             # 加密、JWT、TOTP、WebAuthn、邮件、配置
+│   │   ├── middleware/      # 认证、验证码、限流
+│   │   ├── cron/            # 定时任务（域名重新验证等）
+│   │   └── routes/          # init、auth、oauth、apps、domains、connections、user、admin
+│   ├── web/                 # React 前端
+│   │   ├── entry-client.tsx # 浏览器入口
+│   │   ├── entry-server.tsx # 服务端渲染入口
+│   │   ├── routes.tsx       # 路由 + 守卫
+│   │   ├── components/      # 布局、主题、验证码
+│   │   ├── pages/           # 所有页面组件
+│   │   ├── lib/             # API 客户端、PoW 求解器
+│   │   ├── i18n/            # 翻译（en、zh）
+│   │   └── store/           # Zustand 认证状态
+│   ├── shared/              # 两端共用：API 类型、输入限制、权限范围、规则语言
+│   └── pow/                 # Rust PoW WASM crate
+│       └── src/lib.rs
+├── tests/                   # bun test 测试
 ├── scripts/                 # 跨平台构建脚本
 │   ├── build.sh
 │   ├── build.ps1

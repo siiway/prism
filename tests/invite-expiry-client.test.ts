@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   absoluteInviteExpiry,
   relativeInviteExpiry,
-} from "../src/lib/inviteExpiry";
+} from "../src/web/lib/inviteExpiry";
 
 describe("invite expiry input", () => {
   test("calculates relative calendar units in the browser", () => {

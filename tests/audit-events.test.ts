@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AUDIT_EVENT_CATALOG, parseEvents } from "../src/lib/auditEvents";
+import { AUDIT_EVENT_CATALOG, parseEvents } from "../src/web/lib/auditEvents";
 
 describe("audit event catalog", () => {
   test("includes team invite and member-group writes", () => {

@@ -211,7 +211,7 @@ that has already loaded from the wrong host cannot be redirected without
 reloading the page, so the choice has to be right before the browser commits.
 
 **Proof-of-work** (`pow`) requires no third-party service. The Rust→WASM solver
-in `pow/` runs ~10× faster than the JS fallback. Difficulty 20 takes ~0.1–2 s
+in `src/pow/` runs ~10× faster than the JS fallback. Difficulty 20 takes ~0.1–2 s
 depending on device. Values above 24 may time out on low-end mobile devices.
 PoW is single-use and replay-protected via the `pow_used` table. For a
 self-hosted proof-of-work option with a polished widget, consider the `cap`

@@ -74,8 +74,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            pow/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('pow/Cargo.lock') }}
+            src/pow/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('src/pow/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
 
@@ -93,8 +93,8 @@ jobs:
 
       - name: Build PoW WASM
         run: |
-          cargo build --release --target wasm32-unknown-unknown --manifest-path pow/Cargo.toml
-          cp pow/target/wasm32-unknown-unknown/release/prism_pow.wasm public/pow.wasm
+          cargo build --release --target wasm32-unknown-unknown --manifest-path src/pow/Cargo.toml
+          cp src/pow/target/wasm32-unknown-unknown/release/prism_pow.wasm public/pow.wasm
 
       - name: Build
         run: bash scripts/build.sh --skip-wasm

@@ -1,7 +1,7 @@
 // Zustand language-mode store, the counterpart of store/theme.
 //
 // The explicit choice lives in the prism_lang cookie so the server renders
-// in it (worker/ssr.ts reads the cookie; the browser-side detector reads it
+// in it (src/worker/ssr.ts reads the cookie; the browser-side detector reads it
 // too). "system" is the absence of the cookie: the server then follows
 // Accept-Language and the client the browser's language list.
 

@@ -22,7 +22,7 @@ function staticStatements(): Array<{ where: string; sql: string }> {
   const re =
     /\.prepare\(\s*(?:"((?:[^"\\]|\\.)*)"|`((?:[^`\\]|\\.)*)`)\s*,?\s*\)/g;
   const out: Array<{ where: string; sql: string }> = [];
-  for (const file of workerSources(join(root, "worker"))) {
+  for (const file of workerSources(join(root, "src", "worker"))) {
     const src = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
     for (const m of src.matchAll(re)) {
       const raw = m[1] ?? m[2];

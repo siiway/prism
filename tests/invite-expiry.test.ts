@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   MAX_INVITE_EXPIRY_SECONDS,
   parseInviteExpiry,
-} from "../worker/lib/inviteExpiry";
+} from "../src/worker/lib/inviteExpiry";
 
 describe("team invite expiry", () => {
   test("accepts an absolute future Unix timestamp", () => {

@@ -1,6 +1,6 @@
 // Request and response shapes of the Prism API. The Worker builds them and
 // the client reads them, so both import from here. The frontend re-exports
-// everything through src/lib/api.
+// everything through src/web/lib/api.
 
 import type {
   CapMode,
@@ -347,7 +347,7 @@ export interface SessionInfo {
   created_at: number;
   expires_at: number;
   is_current: boolean;
-  // Full Cloudflare geolocation (JSON string, worker/lib/geo.ts GeoInfo) for
+  // Full Cloudflare geolocation (JSON string, src/worker/lib/geo.ts GeoInfo) for
   // the IP the session was created from. Null on non-Cloudflare paths (e.g.
   // local dev) or until the first authenticated request has recorded it.
   ip_geo: string | null;
@@ -411,7 +411,7 @@ export interface JoinRequirements {
   forced_by_site: { require_2fa: boolean; require_verified_email: boolean };
 }
 
-// RestrictedCapability — see shared/types.ts.
+// RestrictedCapability — see src/shared/types.ts.
 
 /** Whether the signed-in account is operating under invite-registration
  *  restrictions, and what it would take to lift them. */
@@ -505,7 +505,7 @@ export interface Team {
   updated_at: number;
 }
 
-// TeamCapability / TeamRolePermissions — see shared/types.ts.
+// TeamCapability / TeamRolePermissions — see src/shared/types.ts.
 
 /** A group definition as managed on the team. */
 export interface TeamGroup {
@@ -1086,7 +1086,7 @@ export interface AuditEvent {
   resource_name: string | null;
   ip: string | null;
   user_agent: string | null;
-  // JSON snapshot of the request's Cloudflare geolocation (worker/lib/geo.ts).
+  // JSON snapshot of the request's Cloudflare geolocation (src/worker/lib/geo.ts).
   ip_geo: string | null;
   metadata: string;
   created_at: number;
@@ -1520,13 +1520,13 @@ export interface NotifDiscordConnection {
   username: string | null;
 }
 
-// Notification rule shapes — see shared/types.ts.
+// Notification rule shapes — see src/shared/types.ts.
 
 // ─── Rule-engine ruleset ─────────────────────────────────────────────────────
 //
 // A ruleset is an ordered list of rules; the active one replaces the
 // per-event NotificationRules at dispatch. The shapes are shared with the
-// Worker: see shared/notificationRules.ts and shared/ruleExpression.ts.
+// Worker: see src/shared/notificationRules.ts and src/shared/ruleExpression.ts.
 
 export type {
   NotificationLevel,

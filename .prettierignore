@@ -7,7 +7,7 @@ THIRD_PARTY_LICENSES
 .wrangler
 wrangler.json
 worker-configuration.d.ts
-pow/target
+src/pow/target
 public/pow-wasm
 public/pow.wasm
 public/vendor

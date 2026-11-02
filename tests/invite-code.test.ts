@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { inviteCodeFrom } from "../src/lib/inviteCode";
+import { inviteCodeFrom } from "../src/web/lib/inviteCode";
 
 describe("inviteCodeFrom", () => {
   test("takes the code out of a pasted invite link", () => {

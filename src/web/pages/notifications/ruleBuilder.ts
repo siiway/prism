@@ -1,6 +1,6 @@
 // The expression builder's model: OR-ed groups of AND-ed conditions, each a
 // field, an operator and the value as typed. Converts to and from the
-// expression tree in shared/ruleExpression.ts. Expressions that don't fit
+// expression tree in src/shared/ruleExpression.ts. Expressions that don't fit
 // this shape (e.g. `not (a or b)`) can only be edited as text.
 
 import {

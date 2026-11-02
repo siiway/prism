@@ -74,7 +74,7 @@ export function d1(db: Database): D1Database {
   return new SqliteD1(db) as unknown as D1Database;
 }
 
-const migrationsDir = join(import.meta.dir, "../../worker/db/migrations");
+const migrationsDir = join(import.meta.dir, "../../src/worker/db/migrations");
 
 /** An in-memory database with every migration applied. */
 export function migratedDatabase(): Database {

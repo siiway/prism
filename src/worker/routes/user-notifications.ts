@@ -230,7 +230,7 @@ app.put("/me/notifications", async (c) => {
 // ─── Notification rulesets (rule-engine presets) ─────────────────────────────
 //
 // A ruleset is an ordered list of NotificationRule entries — see
-// worker/lib/notificationRules.ts for the rule shape and the evaluator.
+// src/worker/lib/notificationRules.ts for the rule shape and the evaluator.
 // At most one ruleset per user is `is_active`; activating one
 // automatically deactivates any other. When a ruleset is active it drives
 // dispatch; otherwise the legacy per-event rules in

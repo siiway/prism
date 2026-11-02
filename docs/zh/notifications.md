@@ -29,7 +29,7 @@ Prism 在与安全相关的事件上向用户推送通知 — 应用变更、域
 | `team.member_added` / `_removed`        | 你被加入 / 移出团队                  |
 | `oauth.consent_granted` / `_revoked`    | 你授予 / 撤销了对某应用的 OAuth 授权 |
 
-事件清单与 `worker/lib/notifications.ts → USER_NOTIFICATION_EVENTS` 一致。Webhook 使用同一组名称 — 这就是「能被通知什么」的唯一权威列表。
+事件清单与 `src/worker/lib/notifications.ts → USER_NOTIFICATION_EVENTS` 一致。Webhook 使用同一组名称 — 这就是「能被通知什么」的唯一权威列表。
 
 ## 等级
 
@@ -74,7 +74,7 @@ Prism 在与安全相关的事件上向用户推送通知 — 应用变更、域
 
 规则集是一组按顺序的规则。事件触发时，引擎从上向下遍历，执行每条匹配规则的操作，最后产出去重后的投递列表。同一时间只能启用一个规则集；启用期间它会取代扁平偏好。
 
-在界面中，每个规则集都有自己的页面（**通知 → 规则集**），每条规则也有自己的页面：可视化表达式生成器、表达式文本编辑器、操作、在顺序中的位置，以及针对虚构事件的实时测试。规则集页面的 **追踪** 会用虚构事件运行所有规则，显示哪些规则匹配以及通知会发往何处；它与实际分发使用同一个求值器（`shared/notificationRules.ts`）。
+在界面中，每个规则集都有自己的页面（**通知 → 规则集**），每条规则也有自己的页面：可视化表达式生成器、表达式文本编辑器、操作、在顺序中的位置，以及针对虚构事件的实时测试。规则集页面的 **追踪** 会用虚构事件运行所有规则，显示哪些规则匹配以及通知会发往何处；它与实际分发使用同一个求值器（`src/shared/notificationRules.ts`）。
 
 ### 规则结构
 
@@ -108,7 +108,7 @@ Prism 在与安全相关的事件上向用户推送通知 — 应用变更、域
 
 ### 规则表达式
 
-语法沿用 Cloudflare Rules 语言，并精简为通知所携带的信息。解析器、类型检查和求值器位于 `shared/ruleExpression.ts`，由 Worker 与前端共用。
+语法沿用 Cloudflare Rules 语言，并精简为通知所携带的信息。解析器、类型检查和求值器位于 `src/shared/ruleExpression.ts`，由 Worker 与前端共用。
 
 ```
 event.category eq "security" and not ip.src in {10.0.0.0/8 192.168.0.0/16}

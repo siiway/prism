@@ -37,7 +37,7 @@ Copy the `database_id` into `wrangler.jsonc`:
     "binding": "DB",
     "database_name": "prism-db",
     "database_id": "<paste here>",
-    "migrations_dir": "worker/db/migrations"
+    "migrations_dir": "src/worker/db/migrations"
   }
 ]
 ```
@@ -153,7 +153,7 @@ initialized. Subsequent visits go directly to the login page.
 ## 7. (Optional) Build PoW WASM
 
 The proof-of-work bot protection has a pure-JS fallback but runs ~10× faster
-with the WASM module compiled from `pow/src/lib.rs`.
+with the WASM module compiled from `src/pow/src/lib.rs`.
 
 ```bash
 cd pow

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import teamsRoutes from "../worker/routes/teams";
-import publicTeamsRoutes from "../worker/routes/public-teams";
-import { signJWT } from "../worker/lib/jwt";
-import { SESSION_COOKIE } from "../worker/lib/cookies";
+import teamsRoutes from "../src/worker/routes/teams";
+import publicTeamsRoutes from "../src/worker/routes/public-teams";
+import { signJWT } from "../src/worker/lib/jwt";
+import { SESSION_COOKIE } from "../src/worker/lib/cookies";
 import { d1, executionCtx, MemoryKv } from "./setup/d1";
 
 const jwtSecret = "test-jwt-secret-team";

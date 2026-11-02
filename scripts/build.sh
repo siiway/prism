@@ -147,12 +147,12 @@ if [ "$SKIP_WASM" = false ]; then
   step "Checking Rust toolchain"
   ensure_rust
 
-  step "Building PoW WASM (pow/src/lib.rs)"
-  cd "$ROOT/pow"
+  step "Building PoW WASM (src/pow/src/lib.rs)"
+  cd "$ROOT/src/pow"
   cargo build --target wasm32-unknown-unknown --release
   cd "$ROOT"
 
-  WASM_SRC="$ROOT/pow/target/wasm32-unknown-unknown/release/prism_pow.wasm"
+  WASM_SRC="$ROOT/src/pow/target/wasm32-unknown-unknown/release/prism_pow.wasm"
   WASM_DST="$ROOT/public/pow.wasm"
   if [ -f "$WASM_SRC" ]; then
     cp "$WASM_SRC" "$WASM_DST"
@@ -205,7 +205,7 @@ if [ "$SKIP_FRONTEND" = false ]; then
   # Wrangler's automatic deploy step (Cloudflare Workers Builds, or a manual
   # `wrangler deploy` from the project root) reads wrangler.{toml,json,jsonc}.
   # If we left only the source-based wrangler.jsonc, wrangler would re-bundle
-  # worker/index.ts and skip Vite's SSR work entirely.
+  # src/worker/index.ts and skip Vite's SSR work entirely.
   #
   # Solution: copy that emitted config into wrangler.json at the project
   # root (wrangler picks .json over .jsonc when both exist) and rewrite every
@@ -213,10 +213,10 @@ if [ "$SKIP_FRONTEND" = false ]; then
   #
   # migrations_dir is one of them, and it is the easiest to forget because
   # nothing fails until a deploy actually reaches the migration step: Vite
-  # emits "../../worker/db/migrations", which is correct from dist/prism/ but
+  # emits "../../src/worker/db/migrations", which is correct from dist/prism/ but
   # points two levels *above* the repo once the config sits at the root. On a
   # CI runner with the checkout at /opt/buildhome/repo that resolves to
-  # /opt/worker/db/migrations and wrangler reports "No migrations present".
+  # /opt/src/worker/db/migrations and wrangler reports "No migrations present".
   step "Generating deploy-ready wrangler.json"
   if [ -f dist/prism/wrangler.json ]; then
     sed \

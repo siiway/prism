@@ -1691,7 +1691,7 @@ app.patch("/me/team/:teamId/members/:userId/role", async (c) => {
   const target = await getMember(c.env.DB, teamId, userId);
   if (!target) return c.json({ error: "member_not_found" }, 404);
 
-  // Mirror the dashboard guards in worker/routes/teams.ts so an app with
+  // Mirror the dashboard guards in src/worker/routes/teams.ts so an app with
   // `team:<id>:member:write` can never escalate beyond what the granting
   // user could do at the dashboard.
   if (target.role === "owner")

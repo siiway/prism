@@ -8,7 +8,7 @@
   // See scripts/build.sh — it copies the generated config back here so a
   // plain `wrangler deploy` from the build directory picks up the right
   // bundle without needing custom flags in the Cloudflare dashboard.
-  "main": "worker/index.ts",
+  "main": "src/worker/index.ts",
   "compatibility_date": "2024-11-01",
   // Keep global fetch on public Internet routing, including for this zone, so
   // same-zone requests cannot bypass Cloudflare's front door and its controls.
@@ -20,8 +20,8 @@
   // aliasing both to an empty stub keeps them out of the bundle without losing
   // any reachable functionality.
   "alias": {
-    "esbuild": "./worker/lib/stubs/empty.js",
-    "javascript-obfuscator": "./worker/lib/stubs/empty.js",
+    "esbuild": "./src/worker/lib/stubs/empty.js",
+    "javascript-obfuscator": "./src/worker/lib/stubs/empty.js",
   },
   "assets": {
     "directory": "./dist/client",
@@ -42,7 +42,7 @@
       "binding": "DB",
       "database_name": "prism-db",
       "database_id": "5790c075-635c-470f-a166-8b9f145ec311",
-      "migrations_dir": "worker/db/migrations",
+      "migrations_dir": "src/worker/db/migrations",
     },
   ],
   // KV Namespaces

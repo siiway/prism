@@ -1,6 +1,6 @@
 // The API answers with stable error codes, never English sentences, and the
-// client translates every code it can receive (src/i18n, apiErrors.<code>).
-// See worker/lib/apiError.ts. These checks read the worker source, so a new
+// client translates every code it can receive (src/web/i18n, apiErrors.<code>).
+// See src/worker/lib/apiError.ts. These checks read the worker source, so a new
 // `c.json({ error: "Something broke" })` fails here instead of reaching a
 // Chinese-speaking user as English.
 //
@@ -11,9 +11,9 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import en from "../src/i18n/en.json";
-import zh from "../src/i18n/zh.json";
-import { createApiClient, ApiError } from "../src/lib/api";
+import en from "../src/web/i18n/en.json";
+import zh from "../src/web/i18n/zh.json";
+import { createApiClient, ApiError } from "../src/web/lib/api";
 
 const CODE = /^[a-z][a-z0-9_]*$/;
 const CODE_TEMPLATE = /^[a-z][a-z0-9_]*\$\{[^}]+\}$/;
@@ -31,7 +31,7 @@ function sources(dir: string): { file: string; text: string }[] {
   return out;
 }
 
-const worker = sources("worker");
+const worker = sources("src/worker");
 const read = (path: string) =>
   worker.find((f) => f.file.replace(/\\/g, "/").endsWith(path))!.text;
 

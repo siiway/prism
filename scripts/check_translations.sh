@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_translations.sh — verify all translation keys used in src/ exist in every locale file.
+# check_translations.sh — verify all translation keys used in src/web/ exist in every locale file.
 #
 # Exit codes:
 #   0  all keys present
@@ -15,8 +15,8 @@ set -euo pipefail
 export LC_ALL=C
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC_DIR="$ROOT/src"
-I18N_DIR="$ROOT/src/i18n"
+SRC_DIR="$ROOT/src/web"
+I18N_DIR="$ROOT/src/web/i18n"
 LOCALES=("en" "zh")
 
 # ── Detect Python ──────────────────────────────────────────────────────────────
@@ -144,8 +144,8 @@ dynamic_tmp=$(mktemp)
 extract_dynamic_keys "$SRC_DIR" > "$dynamic_tmp" 2>/dev/null || true
 dynamic_count=$(grep -c . "$dynamic_tmp" 2>/dev/null | tr -d ' \r' || echo 0)
 
-printf "  Found ${CYAN}%s${RESET} literal key(s) in src/\n" "$used_count"
-printf "  Found ${CYAN}%s${RESET} template literal usage(s) in src/\n" "$dynamic_count"
+printf "  Found ${CYAN}%s${RESET} literal key(s) in src/web/\n" "$used_count"
+printf "  Found ${CYAN}%s${RESET} template literal usage(s) in src/web/\n" "$dynamic_count"
 
 total_errors=0
 total_warnings=0

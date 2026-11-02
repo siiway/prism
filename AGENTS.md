@@ -37,7 +37,7 @@
 - API errors are codes: `c.json({ error: "team_not_found" }, 404)`, with
   `params` for anything to fill in, as in
   `{ error: "field_required", params: { field: "name" } }`. Add the code's
-  text to `apiErrors` in both `src/i18n/en.json` and `src/i18n/zh.json`.
+  text to `apiErrors` in both `src/web/i18n/en.json` and `src/web/i18n/zh.json`.
   Never send an English sentence
   or a `message` field; `tests/api-error-codes.test.ts` fails if you do. The
   exception is OAuth/OIDC protocol `error_description`, which the RFCs define

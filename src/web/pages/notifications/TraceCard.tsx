@@ -1,6 +1,6 @@
 // Trace: run the ruleset against a made-up event and see what each rule did
 // and where the notification would go. Uses the same evaluator as dispatch
-// (shared/notificationRules.ts), so what it shows is what would happen.
+// (src/shared/notificationRules.ts), so what it shows is what would happen.
 
 import {
   Text,

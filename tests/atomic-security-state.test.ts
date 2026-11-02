@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { verifyClientAssertion } from "../worker/lib/clientAssertion";
-import { verifyDpopProof } from "../worker/lib/dpop";
-import { claimReplayValue } from "../worker/lib/securityState";
-import { rateLimit } from "../worker/middleware/rateLimit";
-import type { OAuthAppRow } from "../worker/types";
+import { verifyClientAssertion } from "../src/worker/lib/clientAssertion";
+import { verifyDpopProof } from "../src/worker/lib/dpop";
+import { claimReplayValue } from "../src/worker/lib/securityState";
+import { rateLimit } from "../src/worker/middleware/rateLimit";
+import type { OAuthAppRow } from "../src/worker/types";
 import { d1 } from "./setup/d1";
 
 const migration = await Bun.file(
-  "worker/db/migrations/0073_atomic_security_state.sql",
+  "src/worker/db/migrations/0073_atomic_security_state.sql",
 ).text();
 const encoder = new TextEncoder();
 const endpoint = "https://prism.example/oauth/token";

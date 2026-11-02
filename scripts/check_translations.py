@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # ///
 """
-Check that every translation key used in src/ exists in all locale files.
+Check that every translation key used in src/web/ exists in all locale files.
 
 Exit codes:
   0  all keys present
@@ -25,8 +25,8 @@ for _stream in (sys.stdout, sys.stderr):
 # ── Config ─────────────────────────────────────────────────────────────────────
 
 ROOT       = Path(__file__).resolve().parent.parent
-SRC_DIR    = ROOT / "src"
-I18N_DIR   = ROOT / "src" / "i18n"
+SRC_DIR    = ROOT / "src" / "web"
+I18N_DIR   = ROOT / "src" / "web" / "i18n"
 LOCALES    = ["en", "zh"]
 SRC_GLOBS  = ["*.ts", "*.tsx"]  # passed to Path.rglob()
 
@@ -117,8 +117,8 @@ def main() -> int:
 
     # Extract keys from source
     used_keys, dynamic_keys = extract_keys(SRC_DIR, SRC_GLOBS)
-    print(f"  Found {CYAN(str(len(used_keys)))} literal key(s) in src/")
-    print(f"  Found {CYAN(str(len(dynamic_keys)))} template literal usage(s) in src/")
+    print(f"  Found {CYAN(str(len(used_keys)))} literal key(s) in src/web/")
+    print(f"  Found {CYAN(str(len(dynamic_keys)))} template literal usage(s) in src/web/")
 
     errors = 0
     warnings = 0

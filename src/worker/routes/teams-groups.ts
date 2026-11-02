@@ -33,7 +33,7 @@ const app = new Hono<AppEnv>();
 //
 // Groups are pure labels — they never widen what anyone can do inside Prism.
 // What they *do* affect is downstream authorization, which is why who may
-// hand them out is itself configurable (see worker/lib/teamGroups.ts) and why
+// hand them out is itself configurable (see src/worker/lib/teamGroups.ts) and why
 // every mutation here is audited.
 
 /** Shared preamble for the group endpoints: the caller's effective role plus

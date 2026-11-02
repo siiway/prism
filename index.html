@@ -45,7 +45,7 @@
          import: Vite only injects JS-imported CSS once the module runs, so
          in dev the server-rendered page painted unstyled (default margins,
          no box-sizing reset) before snapping into place. -->
-    <link rel="stylesheet" href="/src/index.css" />
+    <link rel="stylesheet" href="/src/web/index.css" />
 
     <!-- Resolve color scheme synchronously before paint and refresh the
          prism_color_scheme cookie. An explicit user choice saved by the
@@ -94,6 +94,6 @@
   <body>
     <div id="root"><!--app-html--></div>
     <!--app-state-->
-    <script type="module" src="/src/entry-client.tsx"></script>
+    <script type="module" src="/src/web/entry-client.tsx"></script>
   </body>
 </html>

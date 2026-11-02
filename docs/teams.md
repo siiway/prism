@@ -610,7 +610,7 @@ under `/api/oauth/me/team/:teamId/...`.
 | `team:member:write`        | `team:<id>:member:write`        | Add/remove members and change roles            |
 | `team:member:profile:read` | `team:<id>:member:profile:read` | Read a member's profile through the team scope |
 
-Two extra rules at consent time (see `worker/routes/oauth.ts:830-859`):
+Two extra rules at consent time (see `src/worker/routes/oauth.ts:830-859`):
 
 - The user must be `owner`, `co-owner`, or `admin` of the chosen team.
 - `team:delete` additionally requires `owner` or `co-owner` — admins can grant

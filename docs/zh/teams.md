@@ -382,7 +382,7 @@ OAuth 应用可以直接在团队下创建（**Teams → \<team\> → Apps → N
 | `team:member:write`        | `team:<id>:member:write`        | 添加/移除成员、改角色           |
 | `team:member:profile:read` | `team:<id>:member:profile:read` | 通过团队 scope 读取某成员的资料 |
 
-同意时还有两条额外限制（`worker/routes/oauth.ts:830-859`）：
+同意时还有两条额外限制（`src/worker/routes/oauth.ts:830-859`）：
 
 - 用户必须是所选团队的 `owner`、`co-owner` 或 `admin`。
 - `team:delete` 还要求 `owner` 或 `co-owner` — admin 能授予读写，但只有真能解散团队的人才能授予删除权。

@@ -33,7 +33,7 @@ export interface AuditInput {
   resourceName?: string | null;
   ip?: string | null;
   userAgent?: string | null;
-  /** JSON snapshot of the request's Cloudflare geolocation (worker/lib/geo.ts
+  /** JSON snapshot of the request's Cloudflare geolocation (src/worker/lib/geo.ts
    *  geoJson). Populated automatically by auditRequestMeta. */
   geo?: string | null;
   metadata?: unknown;

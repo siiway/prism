@@ -1,4 +1,4 @@
-// Worker-side glue between an incoming Request and src/entry-server.tsx.
+// Worker-side glue between an incoming Request and src/web/entry-server.tsx.
 //
 // Responsibilities:
 //   1. Pull the prebuilt index.html template from the ASSETS binding (so
@@ -14,7 +14,7 @@ import type { Context } from "hono";
 // type-resolution here. Vite resolves the module at bundle time, and the
 // runtime contract is documented inline below.
 // @ts-expect-error -- JSX module bundled by Vite, not type-checked here.
-import { render as _render } from "../src/entry-server";
+import { render as _render } from "../web/entry-server";
 import { readSessionCookie } from "./lib/cookies";
 import { verifyJWT } from "./lib/jwt";
 import { getConfigValue, getJwtSecret } from "./lib/config";

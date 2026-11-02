@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import { sha256Hex } from "../worker/lib/crypto";
+import { sha256Hex } from "../src/worker/lib/crypto";
 import {
   clearSocialOAuthCookie,
   readSocialOAuthCookie,
@@ -9,23 +9,23 @@ import {
   setSessionCookie,
   setSocialOAuthCookie,
   SOCIAL_OAUTH_COOKIE,
-} from "../worker/lib/cookies";
+} from "../src/worker/lib/cookies";
 import {
   consumeSocialOAuthState,
   openSocialOAuthInviteToken,
   sealSocialOAuthInviteToken,
   SOCIAL_OAUTH_STATE_TTL_SECONDS,
   storeSocialOAuthState,
-} from "../worker/lib/socialOAuthState";
-import { signJWT } from "../worker/lib/jwt";
-import connections from "../worker/routes/connections";
+} from "../src/worker/lib/socialOAuthState";
+import { signJWT } from "../src/worker/lib/jwt";
+import connections from "../src/worker/routes/connections";
 import { d1, executionCtx, MemoryKv } from "./setup/d1";
 
 const migration = await Bun.file(
-  "worker/db/migrations/0071_social_oauth_states.sql",
+  "src/worker/db/migrations/0071_social_oauth_states.sql",
 ).text();
 const atomicSecurityMigration = await Bun.file(
-  "worker/db/migrations/0073_atomic_security_state.sql",
+  "src/worker/db/migrations/0073_atomic_security_state.sql",
 ).text();
 const state = "s".repeat(32);
 const now = Math.floor(Date.now() / 1000);

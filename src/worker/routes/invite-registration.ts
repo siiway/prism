@@ -2,7 +2,7 @@
 //
 // A team the site admin has authorised can hand out invite links that create
 // accounts rather than only admitting existing ones. Accounts minted here are
-// restricted (see worker/lib/userCapabilities.ts).
+// restricted (see src/worker/lib/userCapabilities.ts).
 //
 // The flow is deliberately two-phase:
 //

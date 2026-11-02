@@ -5,7 +5,7 @@ import {
   signLogoutTokenRS256,
   verifyIdTokenRS256,
   verifyJWT,
-} from "../worker/lib/jwt";
+} from "../src/worker/lib/jwt";
 
 const secret = "test-secret";
 const b64url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");

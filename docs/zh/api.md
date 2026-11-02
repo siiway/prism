@@ -21,7 +21,7 @@ description: Prism REST API — 认证、OAuth、应用、团队、域名、GPG�
 { "error": "field_required", "params": { "field": "name" } }
 ```
 
-`error` 是小写错误码，例如 `team_not_found`、`forbidden` 或 `invite_used_up`；请据此判断，错误码不会因措辞调整而改变。当提示需要填入内容（字段名、上限、URL 等）时会附带 `params`。Web 界面会根据语言文件（`src/i18n/` 中的 `apiErrors.<code>`）把错误码翻译成读者的语言，因此用户看到的文字与程序看到的错误码始终一致。
+`error` 是小写错误码，例如 `team_not_found`、`forbidden` 或 `invite_used_up`；请据此判断，错误码不会因措辞调整而改变。当提示需要填入内容（字段名、上限、URL 等）时会附带 `params`。Web 界面会根据语言文件（`src/web/i18n/` 中的 `apiErrors.<code>`）把错误码翻译成读者的语言，因此用户看到的文字与程序看到的错误码始终一致。
 
 成功的写操作返回数据，没有可返回的内容时返回 `{ "ok": true }`；不再提供用于显示的 `message` 字段。
 

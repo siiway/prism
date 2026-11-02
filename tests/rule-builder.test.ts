@@ -1,4 +1,4 @@
-// The expression builder's model (src/pages/notifications/ruleBuilder.ts):
+// The expression builder's model (src/web/pages/notifications/ruleBuilder.ts):
 // groups of conditions to expressions and back.
 
 import { describe, expect, test } from "bun:test";
@@ -7,11 +7,11 @@ import {
   groupsToExpr,
   type Condition,
   type Groups,
-} from "../src/pages/notifications/ruleBuilder";
+} from "../src/web/pages/notifications/ruleBuilder";
 import {
   parseRuleExpression,
   printRuleExpression,
-} from "../shared/ruleExpression";
+} from "../src/shared/ruleExpression";
 
 const c = (
   field: Condition["field"],

@@ -1,4 +1,4 @@
-// Notification rule expressions (shared/ruleExpression.ts): parsing, type
+// Notification rule expressions (src/shared/ruleExpression.ts): parsing, type
 // checks, limits, canonical printing and evaluation.
 
 import { describe, expect, test } from "bun:test";
@@ -10,7 +10,7 @@ import {
   printRuleExpression,
   wildcardMatch,
   type RuleContext,
-} from "../shared/ruleExpression";
+} from "../src/shared/ruleExpression";
 
 function parse(src: string) {
   const r = parseRuleExpression(src);

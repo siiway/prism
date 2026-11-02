@@ -6,12 +6,12 @@ import {
   checkLoginTotpLimit,
   invalidLoginRateLimitConfig,
   type LoginRateLimitConfig,
-} from "../worker/lib/loginRateLimit";
-import { getConfig } from "../worker/lib/config";
+} from "../src/worker/lib/loginRateLimit";
+import { getConfig } from "../src/worker/lib/config";
 import { d1 } from "./setup/d1";
 
 const migration = await Bun.file(
-  "worker/db/migrations/0073_atomic_security_state.sql",
+  "src/worker/db/migrations/0073_atomic_security_state.sql",
 ).text();
 
 const defaults: LoginRateLimitConfig = {

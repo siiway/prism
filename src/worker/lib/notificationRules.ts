@@ -1,6 +1,6 @@
 // Validation for notification rulesets users save. The rule shapes and the
-// evaluator live in shared/notificationRules.ts (the frontend's trace runs
-// the same code); expressions are in shared/ruleExpression.ts.
+// evaluator live in src/shared/notificationRules.ts (the frontend's trace runs
+// the same code); expressions are in src/shared/ruleExpression.ts.
 
 import type { CodedError } from "./apiError";
 import {

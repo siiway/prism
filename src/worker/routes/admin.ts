@@ -1665,7 +1665,7 @@ app.get("/stats", async (c) => {
 });
 
 // The platform audit log is now served by /api/audit/platform/* (see
-// worker/routes/audit.ts — Transparent Platform Control).
+// src/worker/routes/audit.ts — Transparent Platform Control).
 
 // ─── Login error log ──────────────────────────────────────────────────────────
 

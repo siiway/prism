@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Check that every translation key used in src/ exists in all locale files.
+    Check that every translation key used in src/web/ exists in all locale files.
 
 .DESCRIPTION
-    Scans src/**/*.ts and src/**/*.tsx for t("key") / t('key') calls,
-    then verifies each key exists in every src/i18n/<locale>.json file.
+    Scans src/web/**/*.ts and src/web/**/*.tsx for t("key") / t('key') calls,
+    then verifies each key exists in every src/web/i18n/<locale>.json file.
     Also reports cross-locale drift (keys present in one file but not another).
 
 .OUTPUTS
@@ -21,8 +21,8 @@ $ErrorActionPreference = 'Stop'
 # ── Config ────────────────────────────────────────────────────────────────────
 
 $Root    = Split-Path -Parent $PSScriptRoot
-$SrcDir  = Join-Path $Root 'src'
-$I18nDir = Join-Path $Root 'src\i18n'
+$SrcDir  = Join-Path $Root 'src\web'
+$I18nDir = Join-Path $Root 'src\web\i18n'
 $Locales = @('en', 'zh')
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
@@ -127,10 +127,10 @@ foreach ($name in $Locales) {
 $usedKeys, $dynamicKeys = Get-UsedKeys -SrcDir $SrcDir
 Write-Host "  Found " -NoNewline
 Write-Host "$($usedKeys.Count)" -ForegroundColor Cyan -NoNewline
-Write-Host " literal key(s) in src/"
+Write-Host " literal key(s) in src/web/"
 Write-Host "  Found " -NoNewline
 Write-Host "$($dynamicKeys.Count)" -ForegroundColor Cyan -NoNewline
-Write-Host " template literal usage(s) in src/"
+Write-Host " template literal usage(s) in src/web/"
 
 $totalErrors   = 0
 $totalWarnings = 0

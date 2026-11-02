@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import proxyRoutes from "../worker/routes/proxy";
+import proxyRoutes from "../src/worker/routes/proxy";
 
 const originalFetch = globalThis.fetch;
 

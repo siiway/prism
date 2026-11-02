@@ -36,7 +36,7 @@ wrangler d1 create prism-db
     "binding": "DB",
     "database_name": "prism-db",
     "database_id": "<paste here>",
-    "migrations_dir": "worker/db/migrations"
+    "migrations_dir": "src/worker/db/migrations"
   }
 ]
 ```
@@ -132,7 +132,7 @@ Vite 监听 `http://localhost:5173`。[Cloudflare Vite 插件](https://developer
 
 ## 7. （可选）编译 PoW WASM
 
-PoW 防机器人有纯 JS 兜底，但用 `pow/src/lib.rs` 编译出的 WASM 模块快约 10 倍。
+PoW 防机器人有纯 JS 兜底，但用 `src/pow/src/lib.rs` 编译出的 WASM 模块快约 10 倍。
 
 ```bash
 cd pow

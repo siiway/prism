@@ -101,21 +101,28 @@ bun run deploy   # type-checks + builds frontend + wrangler deploy
 
 ```text
 prism/
-├── worker/                  # Cloudflare Worker (backend)
-│   ├── index.ts             # Hono app entry point
-│   ├── types.ts             # Shared TypeScript types
-│   ├── db/migrations/       # D1 SQL migrations
-│   ├── lib/                 # crypto, jwt, totp, webauthn, email, config
-│   ├── middleware/          # auth, captcha, rateLimit
-│   └── routes/              # init, auth, oauth, apps, domains, connections, user, admin
-├── src/                     # React frontend
-│   ├── App.tsx              # Router + guards
-│   ├── components/          # Layout, ThemeProvider, Captcha
-│   ├── pages/               # All page components
-│   ├── lib/                 # API client, PoW solver
-│   └── store/               # Zustand auth store
-├── pow/                     # Rust PoW WASM crate
-│   └── src/lib.rs
+├── src/
+│   ├── worker/              # Cloudflare Worker (backend)
+│   │   ├── index.ts         # Hono app entry point
+│   │   ├── ssr.ts           # Server-side rendering of the web app
+│   │   ├── db/migrations/   # D1 SQL migrations
+│   │   ├── lib/             # crypto, jwt, totp, webauthn, email, config
+│   │   ├── middleware/      # auth, captcha, rateLimit
+│   │   ├── cron/            # scheduled jobs (domain re-verification etc.)
+│   │   └── routes/          # init, auth, oauth, apps, domains, connections, user, admin
+│   ├── web/                 # React frontend
+│   │   ├── entry-client.tsx # Browser entry
+│   │   ├── entry-server.tsx # Server render entry
+│   │   ├── routes.tsx       # Router + guards
+│   │   ├── components/      # Layout, ThemeProvider, Captcha
+│   │   ├── pages/           # All page components
+│   │   ├── lib/             # API client, PoW solver
+│   │   ├── i18n/            # Translations (en, zh)
+│   │   └── store/           # Zustand auth store
+│   ├── shared/              # Used by both: API types, limits, scopes, rule language
+│   └── pow/                 # Rust PoW WASM crate
+│       └── src/lib.rs
+├── tests/                   # bun test suites
 ├── scripts/                 # Cross-platform build scripts
 │   ├── build.sh
 │   ├── build.ps1

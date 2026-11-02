@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { render } from "../src/entry-server";
-import type { ApiFetcher, UserProfile } from "../src/lib/api";
+import { render } from "../src/web/entry-server";
+import type { ApiFetcher, UserProfile } from "../src/web/lib/api";
 
 const TEMPLATE = [
   "<!doctype html><html><head><!--app-head--></head>",

@@ -1,4 +1,4 @@
-// Client-side hydration entry. Counterpart to src/entry-server.tsx.
+// Client-side hydration entry. Counterpart to src/web/entry-server.tsx.
 //
 // We do NOT call createRoot here — the worker has already streamed the
 // rendered HTML, so we hydrate that DOM in place. Initial query cache,

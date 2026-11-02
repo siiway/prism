@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveSelfConvert } from "../worker/lib/userCapabilities";
+import { resolveSelfConvert } from "../src/worker/lib/userCapabilities";
 
 // Just enough of D1 for one `SELECT … FROM teams WHERE id = ?`.
 function db(row: Record<string, unknown> | null) {

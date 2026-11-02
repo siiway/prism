@@ -2,7 +2,7 @@
 //
 // Nothing here lists features by hand. The index is read from the code:
 //
-// - Pages: every lazy route in src/routes.tsx that renders inside the app
+// - Pages: every lazy route in src/web/routes.tsx that renders inside the app
 //   shell (relative path, no :id-style params). A page's title and
 //   description come from its own <PageHeader>/<FormPage>.
 // - Cards: any element with a literal id="…" and title={t("…")} in its
@@ -135,7 +135,7 @@ interface Route {
 /** Lazy routes inside the app shell: relative paths only, so the public
  *  pages (/login, /u/:name, …) stay out. */
 function readRoutes(root: string): Route[] {
-  const src = fs.readFileSync(path.join(root, "src/routes.tsx"), "utf8");
+  const src = fs.readFileSync(path.join(root, "src/web/routes.tsx"), "utf8");
   const routes: Route[] = [];
   const re =
     /(?:path:\s*"([^"]*)"|index:\s*true)(?:(?!path:|index:)[\s\S])*?import\("\.\/(pages\/[^"]+)"\)/g;
@@ -152,7 +152,7 @@ function readRoutes(root: string): Route[] {
     // expanded per section below.
     if (/:(?!tab\b)\w+/.test(full)) continue;
     const file = ["", ".tsx", ".ts"]
-      .map((ext) => path.join(root, "src", m[2] + ext))
+      .map((ext) => path.join(root, "src/web", m[2] + ext))
       .find((f) => fs.existsSync(f) && fs.statSync(f).isFile());
     // Layout routes (AdminLayout) wrap pages; they aren't one.
     if (file && !/Layout\.tsx?$/.test(file)) routes.push({ path: full, file });
@@ -237,12 +237,14 @@ function indexFile(
 }
 
 /** Local modules a page imports (its own components and shared ones in
- *  src/components), for pages assembled from them, e.g. the audit log. */
+ *  src/web/components), for pages assembled from them, e.g. the audit log. */
 function localImports(file: string, root: string, src: string): string[] {
   const out: string[] = [];
   for (const m of src.matchAll(/from "(\.{1,2}\/[^"]+)"/g)) {
     const base = path.resolve(path.dirname(file), m[1]);
-    const rel = path.relative(path.join(root, "src"), base).replace(/\\/g, "/");
+    const rel = path
+      .relative(path.join(root, "src/web"), base)
+      .replace(/\\/g, "/");
     if (/^(lib|store|i18n)\//.test(rel)) continue;
     const hit = [".tsx", ".ts"]
       .map((ext) => base + ext)
@@ -272,7 +274,7 @@ const read = (file: string) =>
   fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
 
 export function buildSearchIndex(root: string): IndexedPage[] {
-  const en = readJson(path.join(root, "src/i18n/en.json"));
+  const en = readJson(path.join(root, "src/web/i18n/en.json"));
   const pages: IndexedPage[] = [];
   for (const route of readRoutes(root)) {
     const src = read(route.file);
@@ -335,9 +337,9 @@ export function searchIndexPlugin(): Plugin {
     hotUpdate({ file, server }) {
       const rel = path.relative(root, file).replace(/\\/g, "/");
       if (
-        !rel.startsWith("src/pages/") &&
-        rel !== "src/routes.tsx" &&
-        rel !== "src/i18n/en.json"
+        !rel.startsWith("src/web/pages/") &&
+        rel !== "src/web/routes.tsx" &&
+        rel !== "src/web/i18n/en.json"
       )
         return;
       const before = last;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createApiClient, type UserProfile } from "../src/lib/api";
-import { createAuthStore } from "../src/store/auth";
+import { createApiClient, type UserProfile } from "../src/web/lib/api";
+import { createAuthStore } from "../src/web/store/auth";
 
 const user = {
   id: "user-1",

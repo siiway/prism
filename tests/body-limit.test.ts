@@ -7,8 +7,8 @@ import {
   declaredLengthExceedsLimit,
   limitStreamBytes,
   readStreamWithLimit,
-} from "../worker/lib/bodyLimit";
-import { bodySizeLimit } from "../worker/middleware/bodyLimit";
+} from "../src/worker/lib/bodyLimit";
+import { bodySizeLimit } from "../src/worker/middleware/bodyLimit";
 
 function chunkedStream(
   chunks: number[],

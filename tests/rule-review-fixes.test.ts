@@ -5,14 +5,14 @@ import {
   buildRuleContext,
   parseRuleExpression,
   wildcardMatch,
-} from "../shared/ruleExpression";
-import { traceRuleset } from "../shared/notificationRules";
-import { sanitizeRulesArray } from "../worker/lib/notificationRules";
+} from "../src/shared/ruleExpression";
+import { traceRuleset } from "../src/shared/notificationRules";
+import { sanitizeRulesArray } from "../src/worker/lib/notificationRules";
 import {
   ruleExpressionText,
   ruleToState,
   stateToRule,
-} from "../src/pages/notifications/ruleEdit";
+} from "../src/web/pages/notifications/ruleEdit";
 
 describe("inherited property names are not fields or operators", () => {
   test.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(

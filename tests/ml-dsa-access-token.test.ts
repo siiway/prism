@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
-import { signAccessToken, verifyAccessToken } from "../worker/lib/jwt";
+import { signAccessToken, verifyAccessToken } from "../src/worker/lib/jwt";
 
 const claims = () => ({
   iss: "https://prism.test",

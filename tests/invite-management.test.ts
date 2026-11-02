@@ -3,7 +3,7 @@ import {
   canManageTeamInvite,
   isInviteEnabled,
   validateInviteMaxUses,
-} from "../worker/lib/inviteManagement";
+} from "../src/worker/lib/inviteManagement";
 
 describe("invite management", () => {
   test("lets an admin manage only an invite they created", () => {

@@ -1,5 +1,5 @@
 // Auth callback handler used by /auth/callback. Auth-gating for protected
-// routes lives in src/routes.tsx as loaders that throw redirect() — that
+// routes lives in src/web/routes.tsx as loaders that throw redirect() — that
 // gives proper 302s server-side instead of an empty hydrated page.
 
 import { useNavigate } from "react-router-dom";

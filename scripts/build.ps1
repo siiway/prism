@@ -152,13 +152,13 @@ if (-not $SkipWasm) {
     Step 'Checking Rust toolchain'
     Ensure-Rust
 
-    Step 'Building PoW WASM (pow/src/lib.rs)'
-    Push-Location "$Root\pow"
+    Step 'Building PoW WASM (src/pow/src/lib.rs)'
+    Push-Location "$Root\src\pow"
     cargo build --target wasm32-unknown-unknown --release
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Pop-Location
 
-    $WasmSrc = "$Root\pow\target\wasm32-unknown-unknown\release\prism_pow.wasm"
+    $WasmSrc = "$Root\src\pow\target\wasm32-unknown-unknown\release\prism_pow.wasm"
     $WasmDst = "$Root\public\pow.wasm"
     if (Test-Path $WasmSrc) {
         Copy-Item $WasmSrc $WasmDst -Force
@@ -225,7 +225,7 @@ if (-not $SkipFrontend) {
         $cfg = Get-Content $distConfig -Raw | ConvertFrom-Json
         $cfg.main = 'dist/prism/index.js'
         if ($cfg.assets) { $cfg.assets.directory = './dist/client' }
-        # migrations_dir is emitted as '../../worker/db/migrations' — correct
+        # migrations_dir is emitted as '../../src/worker/db/migrations' — correct
         # from dist/prism/, but two levels above the repo once the config sits
         # at the root, where wrangler reports "No migrations present".
         foreach ($db in $cfg.d1_databases) {

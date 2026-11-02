@@ -1,5 +1,5 @@
 // Public-facing team profile lookup. Mirrors the user public-profile route
-// in worker/routes/users.ts: gated by site config + per-team opt-in, with
+// in src/worker/routes/users.ts: gated by site config + per-team opt-in, with
 // per-section visibility flags that fall back to site defaults. 404 is the
 // only response for missing/private teams to avoid leaking team IDs.
 

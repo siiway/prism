@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { hexToHsv, hsvToHex, normalizeHexColor } from "../src/lib/color";
+import { hexToHsv, hsvToHex, normalizeHexColor } from "../src/web/lib/color";
 
 describe("color conversion", () => {
   test("normalizes supported hex input", () => {

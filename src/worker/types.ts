@@ -397,7 +397,7 @@ export interface SocialOAuthStateRow {
   created_at: number;
 }
 
-/** A notice-board entry. See worker/db/migrations/0060_notices.sql. */
+/** A notice-board entry. See src/worker/db/migrations/0060_notices.sql. */
 export interface NoticeRow {
   id: string;
   title: string;

@@ -183,7 +183,7 @@ picks **one specific team** and Prism rewrites them in place — `team:read`
 becomes `team:<team-id>:read` — and only that bound form lives in the issued
 token. The token can only act on that one team.
 
-Two extra rules at consent time (`worker/routes/oauth.ts:830-859`):
+Two extra rules at consent time (`src/worker/routes/oauth.ts:830-859`):
 
 - The user must be `owner`, `co-owner`, or `admin` of the chosen team.
   **Effective role counts** — an admin inherited from an ancestor team can

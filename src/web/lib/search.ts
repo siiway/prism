@@ -5,7 +5,7 @@
 //   build time (vite/searchIndex.ts).
 // - Admin pages come from the admin sidebar's own definitions.
 // - Data (apps, teams, users, …) comes from GET /api/search, one request
-//   that runs every lookup server-side (worker/routes/search.ts).
+//   that runs every lookup server-side (src/worker/routes/search.ts).
 //
 // Every built-in label is matched in all languages and shown in the
 // current one, so "通行密钥" finds Passkeys in the English UI and vice versa.

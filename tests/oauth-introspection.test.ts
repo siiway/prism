@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import oauthRoutes from "../worker/routes/oauth";
+import oauthRoutes from "../src/worker/routes/oauth";
 import { d1, executionCtx } from "./setup/d1";
 
 let sqlite: Database;

@@ -3,7 +3,7 @@ import {
   isBlockedHost,
   safeFetch,
   validateOutboundUrl,
-} from "../worker/lib/safeFetch";
+} from "../src/worker/lib/safeFetch";
 
 const originalFetch = globalThis.fetch;
 

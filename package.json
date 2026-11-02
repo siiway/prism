@@ -15,8 +15,8 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "format": "prettier -c worker src shared docs tests",
-    "format:fix": "prettier -w worker src shared docs tests"
+    "format": "prettier -c src docs tests",
+    "format:fix": "prettier -w src docs tests"
   },
   "dependencies": {
     "@cap.js/wasm": "^0.0.7",

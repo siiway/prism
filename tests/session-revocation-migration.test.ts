@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 
 const migration = await Bun.file(
-  "worker/db/migrations/0072_revoke_exposed_sessions.sql",
+  "src/worker/db/migrations/0072_revoke_exposed_sessions.sql",
 ).text();
 
 describe("cookie-only session migration", () => {
