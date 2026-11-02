@@ -21,6 +21,7 @@ description: 运行时配置键，以及 Wrangler 绑定、环境变量和密钥
 | `require_email_verification` | boolean | `false`                         | 在邮箱验证完成前阻止登录                  |
 | `accent_color`               | string  | `"#0078d4"`                     | 主品牌色（十六进制）                      |
 | `custom_css`                 | string  | `""`                            | 作为 `<style>` 块注入每个页面             |
+| `show_powered_by`            | boolean | `true`                          | 在页脚显示“由 Prism 驱动”源代码链接       |
 | `disable_user_create_team`   | boolean | `false`                         | 隐藏“新建团队”——仅管理员可创建团队        |
 | `disable_user_create_app`    | boolean | `false`                         | 隐藏“新建应用”——仅管理员可创建 OAuth 应用 |
 | `allow_alt_email_login`      | boolean | `true`                          | 允许用户使用任意已验证的次要邮箱登录      |

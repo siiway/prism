@@ -213,6 +213,7 @@ app.patch("/config", async (c) => {
     "sudo_mode_ttl_minutes",
     "require_captcha_for_2fa",
     "enable_public_profiles",
+    "show_powered_by",
     "default_profile_show_display_name",
     "default_profile_show_avatar",
     "default_profile_show_email",

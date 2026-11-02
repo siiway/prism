@@ -2412,6 +2412,10 @@
     },
     "githubReadmeTokenPlaceholder": "ghp_…（可选）",
     "customCssPlaceholder": ":root { /* 自定义样式 */ }",
+    "poweredByCredit": "页脚署名",
+    "poweredByCreditDesc": "在每个页面底部显示“由 Prism 驱动”及源代码链接。",
+    "choiceShown": "显示",
+    "choiceHidden": "隐藏",
     "avatarProxyCacheOff": "关闭",
     "requireEmailVerificationDesc": "设为必需时，新账号注册后不会直接登录，而是收到一封验证邮件。",
     "allowAltEmailLoginDesc": "用户未自行设置时的默认值。",
@@ -2931,7 +2935,8 @@
     "lastUpdated": "最后更新于 {{date}}",
     "notPublished": "此页面尚未发布。",
     "backHome": "首页",
-    "goBack": "返回"
+    "goBack": "返回",
+    "poweredBy": "由 Prism 驱动"
   },
   "search": {
     "button": "搜索",

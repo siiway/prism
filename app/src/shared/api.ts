@@ -72,6 +72,8 @@ export interface SitePublicConfig {
   has_privacy_policy: boolean;
   /** Whether the operator has published Terms of Service. */
   has_terms_of_service: boolean;
+  /** Whether the footer shows the "Powered by Prism" source link. */
+  show_powered_by: boolean;
   initialized: boolean;
   r2_enabled: boolean;
   tg_notify_source_slug: string;

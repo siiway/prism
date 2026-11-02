@@ -176,6 +176,9 @@ export interface SiteConfig {
    *  /api/users/:username endpoint returns 404 regardless of any user's
    *  individual opt-in. */
   enable_public_profiles: boolean;
+  /** Show the "Powered by Prism" link to the source repository in the
+   *  footer of every page. */
+  show_powered_by: boolean;
   /** Defaults for users who have not explicitly set a per-field preference.
    *  Changing these propagates to every user with a NULL preference. */
   default_profile_show_display_name: boolean;

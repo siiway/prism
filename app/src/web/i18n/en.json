@@ -2412,6 +2412,10 @@
     },
     "githubReadmeTokenPlaceholder": "ghp_… (optional)",
     "customCssPlaceholder": ":root { /* custom styles */ }",
+    "poweredByCredit": "Footer credit",
+    "poweredByCreditDesc": "A \"Powered by Prism\" link to the source code at the bottom of every page.",
+    "choiceShown": "Shown",
+    "choiceHidden": "Hidden",
     "avatarProxyCacheOff": "Off",
     "requireEmailVerificationDesc": "When required, new accounts are sent a verification email instead of being signed in right away.",
     "allowAltEmailLoginDesc": "The default for users who haven't chosen for themselves.",
@@ -2931,7 +2935,8 @@
     "lastUpdated": "Last updated {{date}}",
     "notPublished": "This page has not been published yet.",
     "backHome": "Home",
-    "goBack": "Go back"
+    "goBack": "Go back",
+    "poweredBy": "Powered by Prism"
   },
   "search": {
     "button": "Search",

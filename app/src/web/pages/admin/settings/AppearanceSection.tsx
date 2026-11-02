@@ -1,8 +1,9 @@
-// Settings → Appearance: the accent colour and custom CSS.
+// Settings → Appearance: the accent colour, custom CSS and footer credit.
 
 import { Field, Textarea } from "@fluentui/react-components";
 import { useTranslation } from "react-i18next";
 import { ColorPickerInput } from "../../../components/ColorPickerInput";
+import { Segmented } from "../../../components/Segmented";
 import {
   SettingsBody,
   SettingsCard,
@@ -12,7 +13,7 @@ import { type SectionProps } from "./shared";
 
 export function AppearanceSection({ draft }: SectionProps) {
   const { t } = useTranslation();
-  const { get, set } = draft;
+  const { get, set, flag } = draft;
 
   return (
     <SettingsCard id="admin.cardTheme" title={t("admin.cardTheme")}>
@@ -32,6 +33,20 @@ export function AppearanceSection({ draft }: SectionProps) {
           />
         </Field>
       </SettingsBody>
+      <SettingsRow
+        label={t("admin.poweredByCredit")}
+        description={t("admin.poweredByCreditDesc")}
+      >
+        <Segmented
+          label={t("admin.poweredByCredit")}
+          value={flag("show_powered_by", true)}
+          options={[
+            { value: true, label: t("admin.choiceShown") },
+            { value: false, label: t("admin.choiceHidden") },
+          ]}
+          onChange={(v) => set("show_powered_by", v)}
+        />
+      </SettingsRow>
     </SettingsCard>
   );
 }
