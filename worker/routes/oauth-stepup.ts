@@ -8,7 +8,6 @@ import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { hashSecret, hashLookupCandidate } from "../lib/secretCrypto";
 import { randomBase64url, verifyPkce } from "../lib/crypto";
-import { parseBasicAuth } from "../lib/basicAuth";
 import { verifyAnyTotp } from "../lib/totp";
 import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
@@ -20,7 +19,11 @@ import {
   redirectUriMatchesRegistered,
 } from "../lib/redirectUri";
 import type { OAuthAppRow, Variables } from "../types";
-import { buildConsentAppSummary, clientSecretValid } from "../lib/oauthClients";
+import {
+  authenticateClient,
+  buildConsentAppSummary,
+  readOAuthBody,
+} from "../lib/oauthClients";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -61,44 +64,19 @@ const MAX_2FA_STATE_LEN = 512;
 // prompt: the user-facing URL only carries an opaque `challenge_id`, so a
 // phisher who controls only a URL cannot inject arbitrary action text.
 app.post("/2fa/challenges", async (c) => {
-  const contentType = c.req.header("Content-Type") ?? "";
-  let params: Record<string, string>;
-  // Stash the raw require_captcha separately because JSON might encode it as
-  // a real boolean while form bodies always send strings.
-  let rawRequireCaptcha: unknown;
-  if (contentType.includes("application/json")) {
-    const body = await c.req.json<Record<string, unknown>>();
-    rawRequireCaptcha = body.require_captcha;
-    params = Object.fromEntries(
-      Object.entries(body).map(([k, v]) => [k, v == null ? "" : String(v)]),
-    );
-  } else {
-    const text = await c.req.text();
-    params = Object.fromEntries(new URLSearchParams(text));
-    rawRequireCaptcha = params.require_captcha;
-  }
+  const { params, json } = await readOAuthBody(c);
+  // JSON may carry require_captcha as a real boolean; a form sends a string.
+  const rawRequireCaptcha: unknown = json
+    ? json.require_captcha
+    : params.require_captcha;
 
-  let { client_id: clientId, client_secret: clientSecret } = params;
-  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
-  if (basicAuth) {
-    clientId = basicAuth.clientId;
-    clientSecret = basicAuth.clientSecret;
-  }
-
-  if (!clientId) {
-    return c.json({ error: "invalid_request" }, 400);
-  }
-
-  const oauthApp = await c.env.DB.prepare(
-    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
-  )
-    .bind(clientId)
-    .first<OAuthAppRow>();
-  if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
-
-  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) {
-    return c.json({ error: "invalid_client" }, 401);
-  }
+  const auth = await authenticateClient(c, params);
+  if (!auth.ok)
+    return auth.badRequest
+      ? c.json({ error: "invalid_request" }, 400)
+      : c.json({ error: "invalid_client" }, 401);
+  const oauthApp = auth.app;
+  const clientId = oauthApp.client_id;
 
   const { redirect_uri, action, nonce, code_challenge, code_challenge_method } =
     params;
@@ -524,37 +502,19 @@ app.post("/2fa/sudo/revoke", requireAuth, async (c) => {
 // clients) or HTTP Basic / client_secret (confidential clients), mirroring
 // the /token endpoint.
 app.post("/2fa/verify", async (c) => {
-  const contentType = c.req.header("Content-Type") ?? "";
-  let params: Record<string, string>;
-  if (contentType.includes("application/json")) {
-    params = await c.req.json<Record<string, string>>();
-  } else {
-    const text = await c.req.text();
-    params = Object.fromEntries(new URLSearchParams(text));
-  }
-
+  const { params } = await readOAuthBody(c);
   const { code, redirect_uri, code_verifier } = params;
-  let { client_id: clientId, client_secret: clientSecret } = params;
-  const basicAuth = parseBasicAuth(c.req.header("Authorization"));
-  if (basicAuth) {
-    clientId = basicAuth.clientId;
-    clientSecret = basicAuth.clientSecret;
-  }
-
-  if (!code || !clientId || !redirect_uri) {
+  if (!code || !redirect_uri) {
     return c.json({ error: "invalid_request" }, 400);
   }
 
-  const oauthApp = await c.env.DB.prepare(
-    "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
-  )
-    .bind(clientId)
-    .first<OAuthAppRow>();
-  if (!oauthApp) return c.json({ error: "invalid_client" }, 401);
-
-  if (!(await clientSecretValid(c.env, oauthApp, clientSecret))) {
-    return c.json({ error: "invalid_client" }, 401);
-  }
+  const auth = await authenticateClient(c, params);
+  if (!auth.ok)
+    return auth.badRequest
+      ? c.json({ error: "invalid_request" }, 400)
+      : c.json({ error: "invalid_client" }, 401);
+  const oauthApp = auth.app;
+  const clientId = oauthApp.client_id;
 
   const codeLookup = await hashLookupCandidate(c.env, code);
   if (!codeLookup) return c.json({ error: "invalid_grant" }, 400);

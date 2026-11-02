@@ -727,7 +727,7 @@ Content-Type: application/json
 | Field                                     | Required                    | Description                                                                                                                                 |
 | ----------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `client_id`                               | yes (in Basic or body)      | Your OAuth app's client ID                                                                                                                  |
-| `client_secret`                           | confidential clients        | In Basic auth or body                                                                                                                       |
+| `client_secret`                           | confidential clients        | In Basic auth or body. A `private_key_jwt` client sends `client_assertion` instead, as at the token endpoint                                |
 | `redirect_uri`                            | yes                         | Must be registered on the OAuth app                                                                                                         |
 | `action`                                  | recommended                 | Human-readable description (≤ 200 chars) of what the user is confirming. Shown verbatim on the Prism page and echoed in the verify response |
 | `nonce`                                   | optional                    | App-defined opaque value (≤ 256 chars), echoed back. Bind it to the operation (e.g. an order ID)                                            |
@@ -782,7 +782,7 @@ Content-Type: application/x-www-form-urlencoded
 code=THE_CODE&client_id=YOUR_CLIENT_ID&redirect_uri=…&code_verifier=PKCE_VERIFIER
 ```
 
-Confidential clients send `client_secret` in the body or via HTTP Basic. Public clients use PKCE only.
+Confidential clients send `client_secret` in the body or via HTTP Basic, or a `client_assertion` if they registered `private_key_jwt`. Public clients use PKCE only.
 
 #### Response
 

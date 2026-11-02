@@ -651,14 +651,14 @@ Content-Type: application/json
 }
 ```
 
-| 字段                                      | 是否必填               | 说明                                                                                        |
-| ----------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------- |
-| `client_id`                               | 必填（Basic 或请求体） | OAuth 应用的 client ID                                                                      |
-| `client_secret`                           | 机密客户端必填         | 通过 Basic 或请求体提供                                                                     |
-| `redirect_uri`                            | 必填                   | 必须已在应用上注册                                                                          |
-| `action`                                  | 推荐                   | 用户要确认的操作的人类可读描述（≤ 200 字符）。在 Prism 页面原样展示，并在 verify 响应中回传 |
-| `nonce`                                   | 可选                   | 应用自定义的不透明值（≤ 256 字符），原样回传。建议绑定到具体操作（如订单 ID）               |
-| `code_challenge`, `code_challenge_method` | 公开客户端必填         | PKCE — 见授权码流程                                                                         |
+| 字段                                      | 是否必填               | 说明                                                                                                  |
+| ----------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------- |
+| `client_id`                               | 必填（Basic 或请求体） | OAuth 应用的 client ID                                                                                |
+| `client_secret`                           | 机密客户端必填         | 通过 Basic 或请求体提供。注册为 `private_key_jwt` 的客户端改为发送 `client_assertion`，与令牌端点相同 |
+| `redirect_uri`                            | 必填                   | 必须已在应用上注册                                                                                    |
+| `action`                                  | 推荐                   | 用户要确认的操作的人类可读描述（≤ 200 字符）。在 Prism 页面原样展示，并在 verify 响应中回传           |
+| `nonce`                                   | 可选                   | 应用自定义的不透明值（≤ 256 字符），原样回传。建议绑定到具体操作（如订单 ID）                         |
+| `code_challenge`, `code_challenge_method` | 公开客户端必填         | PKCE — 见授权码流程                                                                                   |
 
 #### 响应
 
@@ -709,7 +709,7 @@ Content-Type: application/x-www-form-urlencoded
 code=THE_CODE&client_id=YOUR_CLIENT_ID&redirect_uri=…&code_verifier=PKCE_VERIFIER
 ```
 
-机密客户端可用 `client_secret`（请求体）或 HTTP Basic 认证。公开客户端仅依靠 PKCE。
+机密客户端可用 `client_secret`（请求体）或 HTTP Basic 认证；注册为 `private_key_jwt` 的客户端发送 `client_assertion`。公开客户端仅依靠 PKCE。
 
 #### 响应
 
