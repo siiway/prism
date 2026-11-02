@@ -89,7 +89,7 @@ export async function issueCapChallenge(
     challengeDifficulty: opts.challengeDifficulty,
     // Instrumentation obfuscation is pinned to the default (level 3), which
     // never invokes the Node-only esbuild/javascript-obfuscator code paths —
-    // see the wrangler.jsonc alias note.
+    // see the alias note in vite.config.ts.
     instrumentation: opts.instrumentation,
   });
 }
