@@ -10,28 +10,6 @@ function hostnameMatchesDomain(hostname: string, domain: string): boolean {
   return hostname === domain || hostname.endsWith(`.${domain}`);
 }
 
-/**
- * Normalize a user-entered domain: tolerate a pasted URL
- * ("https://Example.COM/path" → "example.com"), stray path segments,
- * surrounding whitespace, uppercase, and a trailing DNS-root dot.
- * Returns the cleaned domain; validation against the domain regex still
- * happens at the call site.
- */
-export function normalizeDomainInput(raw: string): string {
-  let domain = raw.trim().toLowerCase();
-  if (domain.includes("://")) {
-    try {
-      domain = new URL(domain).hostname;
-    } catch {
-      /* not a parseable URL — fall through with the raw value */
-    }
-  } else {
-    // Strip any path/query the user pasted alongside the bare host
-    domain = domain.split(/[/?#]/)[0];
-  }
-  return domain.replace(/\.+$/, "");
-}
-
 function isLocalhostHostname(hostname: string): boolean {
   return (
     hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"

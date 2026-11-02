@@ -16,7 +16,7 @@ import {
 import { getMLDSAKey } from "../lib/mldsa";
 import { verifyAccessToken } from "../lib/jwt";
 import { randomBase64url, randomId } from "../lib/crypto";
-import { normalizeDomainInput } from "../lib/domainVerify";
+import { createDomain, parseDomainInput, verifyDomain } from "../lib/domains";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { readPage, likePattern } from "../lib/pagination";
 import { validateRedirectUriForRegistration } from "../lib/redirectUri";
@@ -38,7 +38,7 @@ import {
   listEffectiveTeamMemberships,
   dissolveTeam,
 } from "../lib/teams";
-import type { OAuthAppRow, Variables } from "../types";
+import type { DomainRow, OAuthAppRow, Variables } from "../types";
 import { verifyDpopProof } from "../lib/dpop";
 import { REQUESTABLE_SCOPES } from "../lib/scopes";
 import { challengeStepUp, deriveAcr } from "../lib/stepUp";
@@ -559,11 +559,8 @@ app.post("/me/domains", async (c) => {
       400,
     );
 
-  // Tolerate pasted URLs / whitespace / trailing dots, then validate
-  const domain = normalizeDomainInput(body.domain);
-  const domainRegex = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
-  if (!domainRegex.test(domain))
-    return c.json({ error: "domain_invalid" }, 400);
+  const domain = parseDomainInput(body.domain);
+  if (!domain) return c.json({ error: "domain_invalid" }, 400);
 
   const existing = await c.env.DB.prepare(
     "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
@@ -572,26 +569,12 @@ app.post("/me/domains", async (c) => {
     .first();
   if (existing) return c.json({ error: "domain_exists" }, 409);
 
-  const verificationToken = randomBase64url(24);
-  const id = randomId();
-  const now = Math.floor(Date.now() / 1000);
-
-  await c.env.DB.prepare(
-    "INSERT INTO domains (id, user_id, domain, verification_token, created_at) VALUES (?, ?, ?, ?, ?)",
-  )
-    .bind(id, resolved.userId, domain, verificationToken, now)
-    .run();
-
-  return c.json(
-    {
-      id,
-      domain,
-      verification_token: verificationToken,
-      txt_record: `_prism-verify.${domain}`,
-      txt_value: `prism-verify=${verificationToken}`,
-    },
-    201,
-  );
+  const created = await createDomain(c.env.DB, {
+    userId: resolved.userId,
+    teamId: null,
+    domain,
+  });
+  return c.json(created, 201);
 });
 
 // DELETE /api/oauth/me/domains/:domain — remove a domain (requires domains:write)
@@ -604,13 +587,11 @@ app.delete("/me/domains/:domain", async (c) => {
     "SELECT id FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
   )
     .bind(resolved.userId, domain)
-    .first();
+    .first<{ id: string }>();
 
   if (!row) return c.json({ error: "domain_not_found" }, 404);
 
-  await c.env.DB.prepare("DELETE FROM domains WHERE id = ?")
-    .bind((row as { id: string }).id)
-    .run();
+  await c.env.DB.prepare("DELETE FROM domains WHERE id = ?").bind(row.id).run();
 
   return c.json({ ok: true });
 });
@@ -1100,48 +1081,21 @@ app.post("/me/domains/:domain/verify", async (c) => {
   const resolved = await resolveBearerToken(c, "domains:write");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
 
-  const domain = c.req.param("domain");
   const row = await c.env.DB.prepare(
-    "SELECT id, verification_token, verified FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
+    "SELECT * FROM domains WHERE user_id = ? AND domain = ? AND team_id IS NULL",
   )
-    .bind(resolved.userId, domain)
-    .first<{ id: string; verification_token: string; verified: number }>();
+    .bind(resolved.userId, c.req.param("domain"))
+    .first<DomainRow>();
 
   if (!row) return c.json({ error: "domain_not_found" }, 404);
   if (row.verified === 1) return c.json({ verified: true });
 
-  // DNS TXT lookup via Cloudflare DNS-over-HTTPS
-  let verified: boolean;
-  try {
-    const resp = await fetch(
-      `https://cloudflare-dns.com/dns-query?name=_prism-verify.${domain}&type=TXT`,
-      { headers: { Accept: "application/dns-json" } },
-    );
-    const data = await resp.json<{ Answer?: { data: string }[] }>();
-    const expected = `"prism-verify=${row.verification_token}"`;
-    verified = (data.Answer ?? []).some(
-      (a) => a.data === expected || a.data === expected.slice(1, -1),
-    );
-  } catch {
-    return c.json({ error: "dns_lookup_failed" }, 502);
-  }
-
-  if (!verified)
+  // Over this API a domain is proved by its DNS TXT record (or a verified
+  // parent domain), so the answer stays a plain verified / not-found.
+  const outcome = await verifyDomain(c.env.DB, row, "dns-txt");
+  if (!outcome.verified)
     return c.json({ error: "txt_record_not_found", verified: false }, 422);
-
-  const now = Math.floor(Date.now() / 1000);
-  const config = await import("../lib/config").then((m) =>
-    m.getConfig(c.env.DB),
-  );
-  const reverifyDays = config.domain_reverify_days ?? 30;
-
-  await c.env.DB.prepare(
-    "UPDATE domains SET verified = 1, verified_at = ?, next_reverify_at = ? WHERE id = ?",
-  )
-    .bind(now, now + reverifyDays * 86400, row.id)
-    .run();
-
-  return c.json({ verified: true, verified_at: now });
+  return c.json({ verified: true, verified_at: outcome.verified_at });
 });
 
 // POST /api/oauth/me/teams/:id/members — add a team member (requires teams:write, owner or admin)

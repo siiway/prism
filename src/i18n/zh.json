@@ -3228,7 +3228,6 @@
     "discovery_fetch_failed": "无法获取发现文档：{{detail}}",
     "discovery_http_error": "发现端点返回 HTTP {{status}}。",
     "discovery_incomplete": "发现文档缺少授权、令牌或用户信息端点。",
-    "dns_lookup_failed": "DNS 查询失败。",
     "domain_adder_owns_it": "添加该域名的人已以个人身份拥有它。",
     "domain_already_yours": "你已以个人身份拥有该域名。",
     "domain_exists": "该域名已添加。",

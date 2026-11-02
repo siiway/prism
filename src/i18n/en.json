@@ -3228,7 +3228,6 @@
     "discovery_fetch_failed": "Couldn't fetch the discovery document: {{detail}}",
     "discovery_http_error": "The discovery endpoint answered with HTTP {{status}}.",
     "discovery_incomplete": "The discovery document is missing the authorization, token or userinfo endpoint.",
-    "dns_lookup_failed": "The DNS lookup failed.",
     "domain_adder_owns_it": "The person who added this domain already owns it personally.",
     "domain_already_yours": "You already own this domain personally.",
     "domain_exists": "This domain has already been added.",
