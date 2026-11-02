@@ -3,7 +3,6 @@
 
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
-import { getIp } from "../lib/clientIp";
 import { randomId, randomBase64url } from "../lib/crypto";
 import {
   emailConfigFromSite,
@@ -11,11 +10,7 @@ import {
   verifyEmailTemplate,
 } from "../lib/email";
 import { hashSecret, isHashedSecret } from "../lib/secretCrypto";
-import {
-  verifyCaptchaToken,
-  extractCaptchaSubmission,
-} from "../middleware/captcha";
-import type { TurnstileVariant } from "../lib/turnstile";
+import { captchaRefusal } from "../middleware/captcha";
 import { requireAuth } from "../middleware/auth";
 import type { Variables } from "../types";
 
@@ -25,30 +20,9 @@ const app = new Hono<AppEnv>();
 // ─── Inbound email verification (user sends email to us) ─────────────────────
 
 app.post("/email-verify-code", requireAuth, async (c) => {
-  const body = await c.req
-    .json<{
-      captcha_token?: string;
-      captcha_variant?: TurnstileVariant;
-      pow_challenge?: string;
-      pow_nonce?: number;
-    }>()
-    .catch(
-      (): {
-        captcha_token?: string;
-        captcha_variant?: TurnstileVariant;
-        pow_challenge?: string;
-        pow_nonce?: number;
-      } => ({}),
-    );
-  const ip = getIp(c);
-  const captchaOk = await verifyCaptchaToken(
-    c.env.DB,
-    extractCaptchaSubmission(body),
-    ip,
-    c.env,
-  );
-  if (!captchaOk.success)
-    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 403);
+  const body: unknown = await c.req.json().catch(() => ({}));
+  const captchaErr = await captchaRefusal(c, body);
+  if (captchaErr) return c.json({ error: captchaErr }, 403);
 
   const authUser = c.get("user");
 
@@ -75,19 +49,9 @@ app.post("/email-verify-code", requireAuth, async (c) => {
     // Legacy unmigrated plaintext row — return as-is so the user can
     // continue with the same code. Migration will hash it later.
     code = storedCode;
-  } else if (storedCode) {
-    // Already hashed: we can't recover the plaintext, so generate a
-    // fresh code and overwrite. (Rare path: only triggers if the user
-    // previously requested a code, then SECRETS_KEY was rotated /
-    // migration ran.)
-    code = randomId(12);
-    const newStored = await hashSecret(c.env, code);
-    await c.env.DB.prepare(
-      "UPDATE users SET email_verify_code = ? WHERE id = ?",
-    )
-      .bind(newStored, user.id)
-      .run();
   } else {
+    // No code yet, or a hashed one whose plaintext can't be recovered:
+    // issue a fresh code.
     code = randomId(12);
     const newStored = await hashSecret(c.env, code);
     await c.env.DB.prepare(
@@ -147,30 +111,9 @@ app.post("/check-email-verification", requireAuth, async (c) => {
 });
 
 app.post("/resend-verify-email", requireAuth, async (c) => {
-  const body = await c.req
-    .json<{
-      captcha_token?: string;
-      captcha_variant?: TurnstileVariant;
-      pow_challenge?: string;
-      pow_nonce?: number;
-    }>()
-    .catch(
-      (): {
-        captcha_token?: string;
-        captcha_variant?: TurnstileVariant;
-        pow_challenge?: string;
-        pow_nonce?: number;
-      } => ({}),
-    );
-  const ip = getIp(c);
-  const captchaOk = await verifyCaptchaToken(
-    c.env.DB,
-    extractCaptchaSubmission(body),
-    ip,
-    c.env,
-  );
-  if (!captchaOk.success)
-    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 403);
+  const body: unknown = await c.req.json().catch(() => ({}));
+  const captchaErr = await captchaRefusal(c, body);
+  if (captchaErr) return c.json({ error: captchaErr }, 403);
 
   const authUser = c.get("user");
 

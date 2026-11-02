@@ -10,6 +10,7 @@
 
 import type { CaptchaProvider } from "../../shared/types";
 import { getConfig } from "../lib/config";
+import { getIp } from "../lib/clientIp";
 import { verifyPowChallenge } from "../lib/pow";
 import { verifyGeetest, type GeetestOutput } from "../lib/geetest";
 import { verifyCapToken } from "../lib/cap";
@@ -259,4 +260,21 @@ export async function verifyCaptchaToken(
     default:
       return { success: true };
   }
+}
+
+/**
+ * Check the captcha fields of a request body. Returns null when they pass
+ * (or no captcha is enabled), otherwise the error code to answer with.
+ */
+export async function captchaRefusal(
+  c: { env: Env; req: { header: (h: string) => string | undefined } },
+  body: unknown,
+): Promise<string | null> {
+  const result = await verifyCaptchaToken(
+    c.env.DB,
+    extractCaptchaSubmission(body),
+    getIp(c),
+    c.env,
+  );
+  return result.success ? null : (result.error ?? "captcha_failed");
 }

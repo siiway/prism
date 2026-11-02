@@ -56,12 +56,12 @@ function readFilters(c: {
   };
 }
 
-async function queryEvents(
-  env: Env,
+/** The WHERE clause selecting one scope's events that match the filters. */
+function eventWhere(
   scope: AuditScope,
   scopeId: string | null,
   f: EventFilters,
-): Promise<{ events: AuditEventRow[]; total: number }> {
+): { clause: string; args: unknown[] } {
   const where: string[] = ["scope = ?"];
   const args: unknown[] = [scope];
   if (scopeId === null) where.push("scope_id IS NULL");
@@ -69,31 +69,29 @@ async function queryEvents(
     where.push("scope_id = ?");
     args.push(scopeId);
   }
-  if (f.from !== undefined) {
-    where.push("created_at >= ?");
-    args.push(f.from);
+  const filters: Array<[string, unknown]> = [
+    ["created_at >= ?", f.from],
+    ["created_at <= ?", f.to],
+    ["action = ?", f.action],
+    ["actor_id = ?", f.actorId],
+    ["resource_type = ?", f.resourceType],
+    ["resource_id = ?", f.resourceId],
+  ];
+  for (const [cond, value] of filters) {
+    if (value === undefined) continue;
+    where.push(cond);
+    args.push(value);
   }
-  if (f.to !== undefined) {
-    where.push("created_at <= ?");
-    args.push(f.to);
-  }
-  if (f.action) {
-    where.push("action = ?");
-    args.push(f.action);
-  }
-  if (f.actorId) {
-    where.push("actor_id = ?");
-    args.push(f.actorId);
-  }
-  if (f.resourceType) {
-    where.push("resource_type = ?");
-    args.push(f.resourceType);
-  }
-  if (f.resourceId) {
-    where.push("resource_id = ?");
-    args.push(f.resourceId);
-  }
-  const clause = where.join(" AND ");
+  return { clause: where.join(" AND "), args };
+}
+
+async function queryEvents(
+  env: Env,
+  scope: AuditScope,
+  scopeId: string | null,
+  f: EventFilters,
+): Promise<{ events: AuditEventRow[]; total: number }> {
+  const { clause, args } = eventWhere(scope, scopeId, f);
   const offset = (f.page - 1) * PAGE_SIZE;
 
   const [{ results }, countRow] = await Promise.all([
@@ -126,40 +124,10 @@ async function exportEvents(
   scopeId: string | null,
   f: EventFilters,
 ): Promise<AuditEventRow[]> {
-  const where: string[] = ["scope = ?"];
-  const args: unknown[] = [scope];
-  if (scopeId === null) where.push("scope_id IS NULL");
-  else {
-    where.push("scope_id = ?");
-    args.push(scopeId);
-  }
-  if (f.from !== undefined) {
-    where.push("created_at >= ?");
-    args.push(f.from);
-  }
-  if (f.to !== undefined) {
-    where.push("created_at <= ?");
-    args.push(f.to);
-  }
-  if (f.action) {
-    where.push("action = ?");
-    args.push(f.action);
-  }
-  if (f.actorId) {
-    where.push("actor_id = ?");
-    args.push(f.actorId);
-  }
-  if (f.resourceType) {
-    where.push("resource_type = ?");
-    args.push(f.resourceType);
-  }
-  if (f.resourceId) {
-    where.push("resource_id = ?");
-    args.push(f.resourceId);
-  }
+  const { clause, args } = eventWhere(scope, scopeId, f);
 
   const { results } = await env.DB.prepare(
-    `SELECT * FROM audit_events WHERE ${where.join(" AND ")}
+    `SELECT * FROM audit_events WHERE ${clause}
       ORDER BY created_at DESC, id DESC LIMIT ?`,
   )
     .bind(...args, EXPORT_LIMIT)

@@ -30,10 +30,7 @@ import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { getIp } from "../lib/clientIp";
 import { rateLimitIp } from "../middleware/rateLimit";
-import {
-  verifyCaptchaToken,
-  extractCaptchaSubmission,
-} from "../middleware/captcha";
+import { captchaRefusal } from "../middleware/captcha";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import {
@@ -215,14 +212,8 @@ app.post("/auth/register-with-invite", async (c) => {
   // Unexemptible defence #2: captcha / proof-of-work. Explicitly never
   // exemptible — the whole point of the exemption mechanism is to cut
   // outbound email, not to weaken bot resistance.
-  const captchaOk = await verifyCaptchaToken(
-    c.env.DB,
-    extractCaptchaSubmission(body),
-    ip,
-    c.env,
-  );
-  if (!captchaOk.success)
-    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 400);
+  const captchaErr = await captchaRefusal(c, body);
+  if (captchaErr) return c.json({ error: captchaErr }, 400);
 
   if (!body.invite_token)
     return c.json(

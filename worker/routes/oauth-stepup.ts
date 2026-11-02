@@ -9,14 +9,10 @@ import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { hashSecret, hashLookupCandidate } from "../lib/secretCrypto";
 import { randomBase64url, verifyPkce } from "../lib/crypto";
 import { parseBasicAuth } from "../lib/basicAuth";
-import { getIp } from "../lib/clientIp";
 import { verifyAnyTotp } from "../lib/totp";
 import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
-import {
-  verifyCaptchaToken,
-  extractCaptchaSubmission,
-} from "../middleware/captcha";
+import { captchaRefusal } from "../middleware/captcha";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { computeIsVerified } from "../lib/domainVerify";
 import {
@@ -357,14 +353,7 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
     (config.require_captcha_for_2fa || challenge.require_captcha === 1) &&
     config.captcha_providers.some((p) => p !== "none");
   if (captchaRequired && body.decision === "approve") {
-    const ip = getIp(c);
-    const captchaResult = await verifyCaptchaToken(
-      c.env.DB,
-      extractCaptchaSubmission(body),
-      ip,
-      c.env,
-    );
-    if (!captchaResult.success) {
+    if (await captchaRefusal(c, body)) {
       return c.json(
         {
           error: "captcha_failed",

@@ -26,10 +26,7 @@ import {
   finishPasskeyRegistration,
   rowToPasskey,
 } from "../lib/webauthn";
-import {
-  verifyCaptchaToken,
-  extractCaptchaSubmission,
-} from "../middleware/captcha";
+import { captchaRefusal } from "../middleware/captcha";
 import type { TurnstileVariant } from "../lib/turnstile";
 import { issuePowChallenge } from "../lib/pow";
 import { issueCapChallenge, redeemCapChallenge } from "../lib/cap";
@@ -104,14 +101,8 @@ app.post("/register", async (c) => {
     usedInvite = result.invite;
   }
 
-  const captchaOk = await verifyCaptchaToken(
-    c.env.DB,
-    extractCaptchaSubmission(body),
-    ip,
-    c.env,
-  );
-  if (!captchaOk.success)
-    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 400);
+  const captchaErr = await captchaRefusal(c, body);
+  if (captchaErr) return c.json({ error: captchaErr }, 400);
 
   if (!body.email || !body.username || !body.password)
     return c.json(
@@ -239,13 +230,8 @@ app.post("/login", async (c) => {
   // credential-attempt budget and pushing a legitimate user into "Too many
   // requests". Captcha tokens are single-use, so the client must submit a fresh
   // one on each attempt — including the TOTP follow-up step below.
-  const captchaOk = await verifyCaptchaToken(
-    c.env.DB,
-    extractCaptchaSubmission(body),
-    ip,
-    c.env,
-  );
-  if (!captchaOk.success) {
+  const captchaErr = await captchaRefusal(c, body);
+  if (captchaErr) {
     c.executionCtx.waitUntil(
       logLoginError(
         c.env.DB,
@@ -257,7 +243,7 @@ app.post("/login", async (c) => {
         {},
       ).catch(() => {}),
     );
-    return c.json({ error: captchaOk.error ?? "captcha_failed" }, 400);
+    return c.json({ error: captchaErr }, 400);
   }
 
   // Brute-force guard: only credential attempts that cleared captcha count
