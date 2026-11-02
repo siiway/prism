@@ -489,9 +489,9 @@ app.post("/me/avatar", async (c) => {
   const r2 = c.env.R2_ASSETS;
   const user = c.get("user");
   const formData = await c.req.formData();
-  const file = formData.get("avatar") as unknown as File | null;
+  const file: unknown = formData.get("avatar");
 
-  if (!file)
+  if (!(file instanceof File))
     return c.json(
       { error: "field_required", params: { field: "avatar" } },
       400,
@@ -533,9 +533,9 @@ app.post("/me/readme", async (c) => {
   const user = c.get("user");
   const maxBytes = await getConfigValue(c.env.DB, "profile_readme_max_bytes");
   const formData = await c.req.formData();
-  const file = formData.get("readme") as unknown as File | null;
+  const file: unknown = formData.get("readme");
 
-  if (!file)
+  if (!(file instanceof File))
     return c.json(
       { error: "field_required", params: { field: "readme" } },
       400,
@@ -1385,6 +1385,31 @@ app.get("/me/notifications", async (c) => {
   });
 });
 
+/** The well-formed `{ <idKey>: string, level: "brief" | "full" }` entries of
+ *  one notification channel's list; anything else is dropped. */
+function channelEntries<K extends "email_id" | "connection_id">(
+  list: unknown,
+  idKey: K,
+): Array<Record<K, string> & { level: "brief" | "full" }> {
+  if (!Array.isArray(list)) return [];
+  const out: Array<Record<K, string> & { level: "brief" | "full" }> = [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object") continue;
+    const id = (entry as Record<string, unknown>)[idKey];
+    const level = (entry as Record<string, unknown>).level;
+    if (
+      typeof id === "string" &&
+      id.length > 0 &&
+      (level === "brief" || level === "full")
+    ) {
+      out.push({ [idKey]: id, level } as Record<K, string> & {
+        level: "brief" | "full";
+      });
+    }
+  }
+  return out;
+}
+
 /**
  * Strip every field that isn't a known event / channel / level. Returns a
  * cleaned NotificationRules object. Shared between the prefs PUT and the
@@ -1401,56 +1426,12 @@ function sanitizeNotificationRules(input: unknown): NotificationRules | null {
     const cleaned: NonNullable<(typeof valid)[string]> = {};
 
     const r = rule as { email?: unknown; tg?: unknown; discord?: unknown };
-    if (Array.isArray(r.email)) {
-      const emailEntries: typeof cleaned.email = [];
-      for (const entry of r.email) {
-        const { email_id, level } = entry as unknown as Record<string, unknown>;
-        if (
-          typeof email_id === "string" &&
-          email_id.length > 0 &&
-          (level === "brief" || level === "full")
-        ) {
-          emailEntries.push({ email_id, level });
-        }
-      }
-      if (emailEntries.length) cleaned.email = emailEntries;
-    }
-
-    if (Array.isArray(r.tg)) {
-      const tgEntries: typeof cleaned.tg = [];
-      for (const entry of r.tg) {
-        const { connection_id, level } = entry as unknown as Record<
-          string,
-          unknown
-        >;
-        if (
-          typeof connection_id === "string" &&
-          connection_id.length > 0 &&
-          (level === "brief" || level === "full")
-        ) {
-          tgEntries.push({ connection_id, level });
-        }
-      }
-      if (tgEntries.length) cleaned.tg = tgEntries;
-    }
-
-    if (Array.isArray(r.discord)) {
-      const discordEntries: typeof cleaned.discord = [];
-      for (const entry of r.discord) {
-        const { connection_id, level } = entry as unknown as Record<
-          string,
-          unknown
-        >;
-        if (
-          typeof connection_id === "string" &&
-          connection_id.length > 0 &&
-          (level === "brief" || level === "full")
-        ) {
-          discordEntries.push({ connection_id, level });
-        }
-      }
-      if (discordEntries.length) cleaned.discord = discordEntries;
-    }
+    const email = channelEntries(r.email, "email_id");
+    if (email.length) cleaned.email = email;
+    const tg = channelEntries(r.tg, "connection_id");
+    if (tg.length) cleaned.tg = tg;
+    const discord = channelEntries(r.discord, "connection_id");
+    if (discord.length) cleaned.discord = discord;
 
     valid[ev] = cleaned;
   }
