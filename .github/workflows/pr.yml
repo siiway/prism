@@ -1,7 +1,8 @@
 name: PR
 
 # Pull-request checks: the prek hooks from app/prek.toml, both the pre-commit and
-# pre-push stages over every file, then a build. Nothing is deployed from a pull request, and this
+# pre-push stages over every file, then a build and a check that NOTICE.md
+# matches it. Nothing is deployed from a pull request, and this
 # workflow references no secrets, so fork PRs run it the same as branch PRs.
 # Production is deployed by deploy.yml on push to main.
 #
@@ -45,3 +46,5 @@ jobs:
         run: bunx prek run -c prek.toml --all-files --hook-stage pre-push --color=always
       - name: Build
         run: bunx vite build
+      - name: NOTICE.md lists what the build ships
+        run: bun scripts/notice.ts --check

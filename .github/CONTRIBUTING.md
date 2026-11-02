@@ -29,6 +29,8 @@ bun run check
 
 Use `bun run format:fix` to apply prettier.
 
+If you add, remove or update a dependency, run `bun run notice` to regenerate `NOTICE.md`. CI fails when it doesn't match the build.
+
 2. Your commit message should only contain ASCII characters and should be clean. e.g,
 
 ```text

@@ -8,6 +8,7 @@
     "prepare": "bun scripts/hooks.ts",
     "setup": "bun scripts/setup.ts",
     "build": "bun scripts/build.ts",
+    "notice": "vite build && bun scripts/notice.ts",
     "deploy": "bun scripts/deploy.ts",
     "lint": "bun --bun eslint .",
     "typecheck": "tsc -p src/web && tsc -p src/worker && tsc -p scripts && tsc -p tests",
