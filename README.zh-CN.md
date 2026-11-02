@@ -68,19 +68,4 @@ setup 会登录你的 Cloudflare 账号、询问你的 URL、创建数据库和�
 
 ## 许可证
 
-GNU 通用公共许可证 3.0，详见 [LICENSE](./LICENSE)。
-
-### 图标
-
-本项目使用 Microsoft 的 [fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons) 作为图标库。
-详见 [THIRD_PARTY_LICENSES/fluentui-system-icons](./THIRD_PARTY_LICENSES/fluentui-system-icons)。
-
-### FluentUI
-
-本项目使用 Microsoft 的 [fluentui](https://github.com/microsoft/fluentui) 作为 UI 框架。
-详见 [THIRD_PARTY_LICENSES/fluentui](./THIRD_PARTY_LICENSES/fluentui)。
-
-### worker-mailer
-
-本项目使用 zou-yu 的 [worker-mailer](https://github.com/zou-yu/worker-mailer/blob/main/LICENSE) 处理邮件发送。
-详见 [THIRD_PARTY_LICENSES/worker-mailer](./THIRD_PARTY_LICENSES/worker-mailer)。
+GNU 通用公共许可证 3.0，详见 [LICENSE](./LICENSE)。第三方许可证见 [NOTICE.md](./NOTICE.md)。

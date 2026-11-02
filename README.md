@@ -68,19 +68,4 @@ To work on Prism itself, see [CONTRIBUTING.md](./.github/CONTRIBUTING.md).
 
 ## License
 
-GNU General Public License 3.0. See [LICENSE](./LICENSE) for details.
-
-### Icon
-
-This project uses Microsoft's [fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons) for its icons.
-See [THIRD_PARTY_LICENSES/fluentui-system-icons](./THIRD_PARTY_LICENSES/fluentui-system-icons) for details.
-
-### FluentUI
-
-This project uses Microsoft's [fluentui](https://github.com/microsoft/fluentui) for its UI.
-See [THIRD_PARTY_LICENSES/fluentui](./THIRD_PARTY_LICENSES/fluentui) for details.
-
-### worker-mailer
-
-This project uses zou-yu's [worker-mailer](https://github.com/zou-yu/worker-mailer/blob/main/LICENSE) for its UI.
-See [THIRD_PARTY_LICENSES/worker-mailer](./THIRD_PARTY_LICENSES/worker-mailer) for details.
+GNU General Public License 3.0, see [LICENSE](./LICENSE). Third-party licenses are in [NOTICE.md](./NOTICE.md).
