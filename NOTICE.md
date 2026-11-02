@@ -212,7 +212,7 @@ This software is provided by the copyright holders and contributors “as is” 
 
 ## Apache-2.0
 
-- [@cap.js/wasm](https://www.npmjs.com/package/@cap.js/wasm) 0.0.7 (no license file in the package)
+- [@cap.js/wasm](https://www.npmjs.com/package/@cap.js/wasm) 0.0.8 (no license file in the package)
 - [@cap.js/widget](https://www.npmjs.com/package/@cap.js/widget) 0.1.58: Copyright 2025 Tiago
 - [capjs-core](https://www.npmjs.com/package/capjs-core) 0.1.6: Copyright 2025 Tiago
 
