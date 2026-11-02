@@ -32,8 +32,10 @@ import { solvePoW } from "../lib/pow";
 // (`connect-src`/`script-src`) blocks and that a self-hosted identity platform
 // should not have. The WASM (the common path) is emitted same-origin and
 // content-hashed by Vite. pako is only a fallback for browsers without
-// `DecompressionStream`; its UMD build can't be resolved through pako's exports
-// map, so it's vendored as a static asset in public/vendor (see the Cap effect).
+// `DecompressionStream`. The widget loads it with a <script> tag and reads
+// `window.pako`, which needs pako's UMD build, and pako's exports map only
+// hands Vite the ESM one. So public/vendor holds a checked-in copy of
+// pako 3.0.1's dist/browser/pako_inflate.umd.min.js (see the Cap effect).
 import capWasmUrl from "@cap.js/wasm/browser/cap_wasm_bg.wasm?url";
 
 const CAP_PAKO_FALLBACK_URL = "/vendor/pako_inflate.min.js";
