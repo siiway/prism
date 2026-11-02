@@ -17,16 +17,19 @@ import {
   WRANGLER_CONFIG,
   ask,
   bold,
-  closePrompts,
+  bunx,
+  cloudflareApi,
   confirm,
   dim,
   fail,
   info,
+  lastJson,
   ok,
   parseArgs,
   readWranglerConfig,
   run,
   step,
+  warn,
   wrangler,
 } from "./lib.ts";
 
@@ -77,50 +80,122 @@ if (!account && user.accounts.length === 1) account = user.accounts[0];
 if (!account) {
   if (user.accounts.length === 0) fail("this login has no Cloudflare accounts");
   user.accounts.forEach((a, i) => info(`${i + 1}. ${a.name} ${dim(a.id)}`));
-  const pick = Number(await ask("Which account?", "1"));
+  const pick = Number(ask("Which account?", "1"));
   account = user.accounts[pick - 1] ?? fail("no such account");
 }
 ok(`account: ${account.name}`);
 if (config.account_id !== account.id)
   change(["account_id"], account.id, "account");
 
-const auth = authHeaders();
-const api = `https://api.cloudflare.com/client/v4/accounts/${account.id}`;
+const client = cloudflareApi();
 
 // ── Worker name and URL ───────────────────────────────────────────────────────
 step("Naming the Worker");
-const name = await ask("Worker name:", config.name ?? "prism");
-if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(name)) {
-  fail("use lowercase letters, digits and dashes");
+let name: string;
+for (;;) {
+  name = ask("Worker name:", config.name ?? "prism");
+  if (/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(name)) break;
+  warn("use lowercase letters, digits and dashes");
 }
 if (name !== config.name) change(["name"], name, "worker name");
 
-info("The public URL is where people will reach Prism: a domain on this");
-info(
-  "account (https://auth.example.com) or https://<name>.<subdomain>.workers.dev.",
-);
-const enteredUrl = (await ask("Public URL:", config.vars?.APP_URL)).replace(
-  /\/+$/,
-  "",
-);
-let appUrl: string;
-let host: string;
-try {
-  const url = new URL(enteredUrl);
+// The workers.dev subdomain belongs to the account, so the Worker's address is
+// known before its first deploy. New accounts may not have one yet.
+const subdomainRes = await request("GET", "/workers/subdomain");
+const subdomain = subdomainRes.json?.success
+  ? (subdomainRes.json.result as { subdomain: string }).subdomain
+  : undefined;
+const workersDevUrl = (sub: string) => `https://${name}.${sub}.workers.dev`;
+
+// A custom domain must be on a zone in this account. null when the
+// credentials may not list zones, such as an API token without Zone:Read.
+type Zone = { name: string; status: string };
+const zones = await listZones();
+if (!zones) warn("can't list this account's zones, so domains aren't checked");
+const zoneOf = (host: string) =>
+  zones
+    ?.filter((z) => host === z.name || host.endsWith(`.${z.name}`))
+    .sort((a, b) => b.name.length - a.name.length)[0];
+
+type Target = { appUrl: string; host: string; subdomain?: string };
+/** Check an entered URL; returns what is wrong with it as a string. */
+function parseTarget(entered: string): Target | string {
+  if (!entered) return "enter the public URL";
+  let url: URL;
+  try {
+    const withScheme = entered.includes("://") ? entered : `https://${entered}`;
+    url = new URL(withScheme.replace(/\/+$/, ""));
+  } catch {
+    return `not an https:// origin: ${entered}`;
+  }
   // Only a bare origin: APP_URL gets paths appended for OAuth callbacks and
   // issuer metadata, so a path, query, fragment or credentials would break
   // them.
   if (url.protocol !== "https:" || url.href !== `${url.origin}/`) {
-    throw new Error();
+    return `not an https:// origin: ${entered}`;
   }
-  appUrl = url.origin;
-  host = url.hostname;
-} catch {
-  fail(`not an https:// origin: ${enteredUrl}`);
+  const host = url.hostname;
+  if (host.endsWith(".workers.dev")) {
+    const [, worker, sub] =
+      host.match(/^([^.]+)\.([^.]+)\.workers\.dev$/) ?? [];
+    if (worker !== name || !sub || (subdomain && sub !== subdomain)) {
+      return `this Worker's workers.dev URL is ${workersDevUrl(subdomain ?? "<subdomain>")}`;
+    }
+    return { appUrl: url.origin, host, subdomain: sub };
+  }
+  if (zones && !zoneOf(host)) {
+    return `${host} is not on a domain in this Cloudflare account`;
+  }
+  return { appUrl: url.origin, host };
+}
+
+info("The public URL is where people will reach Prism: a domain on this");
+info("account, such as auth.example.com, or a workers.dev address.");
+if (subdomain) {
+  info(
+    `This Worker's workers.dev address is ${bold(workersDevUrl(subdomain))}.`,
+  );
+} else {
+  info("This account has no workers.dev subdomain yet. To use workers.dev,");
+  info(`enter ${workersDevUrl("<subdomain>")} and setup registers it.`);
+}
+if (zones?.length) {
+  const shown = zones.slice(0, 10).map((z) => z.name);
+  if (zones.length > shown.length) shown.push(`${zones.length - 10} more`);
+  info(`Domains on this account: ${shown.join(", ")}`);
+}
+// Suggest the saved URL only if it still fits this account and Worker name.
+const saved = config.vars?.APP_URL ? parseTarget(config.vars.APP_URL) : "";
+const suggestedUrl =
+  typeof saved === "object"
+    ? saved.appUrl
+    : subdomain
+      ? workersDevUrl(subdomain)
+      : undefined;
+let target: Target;
+for (;;) {
+  const result = parseTarget(ask("Public URL:", suggestedUrl));
+  if (typeof result === "object") {
+    target = result;
+    break;
+  }
+  warn(result);
+}
+const { appUrl, host } = target;
+const isWorkersDev = !!target.subdomain;
+if (target.subdomain && !subdomain) {
+  const sub = target.subdomain;
+  await create("workers.dev subdomain", sub, () =>
+    cf("PUT", "/workers/subdomain", { subdomain: sub }),
+  );
+}
+const zone = zoneOf(host);
+if (zone && zone.status !== "active") {
+  warn(`${zone.name} is ${zone.status}; ${host} works once the zone is active`);
 }
 if (appUrl !== config.vars?.APP_URL)
   change(["vars", "APP_URL"], appUrl, "APP_URL");
-const routes = host.endsWith(".workers.dev")
+const routes = isWorkersDev
   ? undefined
   : [{ pattern: host, custom_domain: true }];
 if (JSON.stringify(routes) !== JSON.stringify(config.routes)) {
@@ -210,7 +285,7 @@ if (config.r2_buckets?.length) {
     "R2 holds uploaded avatars and app icons too big to keep in the database.",
   );
   info("Without it, uploads are limited to small images.");
-  if (await confirm("Use an R2 bucket?", false)) {
+  if (confirm("Use an R2 bucket?", false)) {
     const bucketName = `${name}-assets`;
     if (await exists(`/r2/buckets/${bucketName}`)) {
       ok(`found ${bucketName}`);
@@ -250,7 +325,7 @@ if (store && (await hasSecret(store))) {
 } else {
   info("A key in a Secrets Store encrypts OAuth client secrets, captcha and");
   info("mail passwords, and lets Prism store tokens as keyed hashes.");
-  if (await confirm("Create the key?", true)) {
+  if (confirm("Create the key?", true)) {
     store ??= stores[0];
     if (store) {
       ok(`using store ${store.name}`);
@@ -317,6 +392,11 @@ if (edits.length === 0) {
     info(dim("--dry-run: not written"));
   } else {
     writeFileSync(WRANGLER_CONFIG, text);
+    // The edits drop trailing commas; keep the file as the format check wants.
+    bunx("prettier", ["--write", WRANGLER_CONFIG], {
+      capture: true,
+      allowFail: true,
+    });
     ok("written");
   }
 }
@@ -326,62 +406,37 @@ step("Deploying");
 const deploy = [join(ROOT, "scripts", "deploy.ts"), "--yes"];
 if (dryRun) {
   run(process.execPath, deploy, { dryRun });
-} else if (await confirm("Build, migrate the database and deploy now?", true)) {
-  closePrompts();
+} else if (confirm("Build, migrate the database and deploy now?", true)) {
   run(process.execPath, deploy);
   console.log(`\n${bold("Done.")} Open ${appUrl} to create the admin account.`);
 } else {
   info("Deploy later with: bun run deploy");
 }
-closePrompts();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** wrangler may print warnings before its JSON; parse from the first brace. */
-function lastJson(stdout: string): unknown {
-  const start = stdout.indexOf("{");
-  if (start < 0) fail(`expected JSON from wrangler, got: ${stdout}`);
-  return JSON.parse(stdout.slice(start));
-}
-
-/** Reuse wrangler's credentials for direct Cloudflare API calls. */
-function authHeaders(): Record<string, string> {
-  const res = wrangler(["auth", "token", "--json"], { capture: true });
-  const cred = lastJson(res.stdout) as {
-    type: string;
-    token?: string;
-    key?: string;
-    email?: string;
-  };
-  if (cred.token) return { Authorization: `Bearer ${cred.token}` };
-  if (cred.key && cred.email)
-    return { "X-Auth-Key": cred.key, "X-Auth-Email": cred.email };
-  return fail("could not read wrangler's credentials");
-}
-
-async function request(method: string, path: string, body?: unknown) {
-  const res = await fetch(api + path, {
-    method,
-    headers: { ...auth, "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const json = (await res.json().catch(() => null)) as {
-    success?: boolean;
-    result?: unknown;
-    errors?: { code: number; message: string }[];
-  } | null;
-  return { status: res.status, json };
-}
-
-async function cf<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const { status, json } = await request(method, path, body);
-  if (!json?.success) {
-    const why =
-      json?.errors?.map((e) => `${e.message} (${e.code})`).join("; ") ??
-      `HTTP ${status}`;
-    fail(`${method} ${path}: ${why}`);
+/** All zones in the account, or null if these credentials can't list them. */
+async function listZones(): Promise<Zone[] | null> {
+  const all: Zone[] = [];
+  for (let page = 1; ; page++) {
+    const { json } = await client.request(
+      "GET",
+      `/zones?account.id=${account!.id}&per_page=50&page=${page}`,
+    );
+    if (!json?.success) return null;
+    const batch = json.result as Zone[];
+    all.push(...batch);
+    if (batch.length < 50) return all;
   }
-  return json.result as T;
+}
+
+/** API requests relative to the account. */
+function request(method: string, path: string, body?: unknown) {
+  return client.request(method, `/accounts/${account!.id}${path}`, body);
+}
+
+function cf<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return client.call<T>(method, `/accounts/${account!.id}${path}`, body);
 }
 
 async function exists(path: string): Promise<boolean> {

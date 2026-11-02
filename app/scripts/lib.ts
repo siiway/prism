@@ -3,9 +3,8 @@
 //   bun run setup | build | deploy
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { parse } from "jsonc-parser";
 
 export const ROOT = resolve(import.meta.dirname, "..");
@@ -48,8 +47,8 @@ type RunOptions = { dryRun?: boolean; capture?: boolean; allowFail?: boolean };
 
 /**
  * Run a program directly (no shell). Output goes to the terminal unless
- * `capture` is set, in which case stdout is returned. Exits on failure unless
- * `allowFail` is set.
+ * `capture` is set: then stdout is returned and stderr (banners, warnings)
+ * is shown only if the command fails. Exits on failure unless `allowFail`.
  */
 export function run(cmd: string, args: string[], opts: RunOptions = {}) {
   const shown = [cmd === process.execPath ? "bun" : cmd, ...args].join(" ");
@@ -59,11 +58,21 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}) {
   }
   const res = spawnSync(cmd, args, {
     cwd: ROOT,
-    stdio: opts.capture ? ["inherit", "pipe", "inherit"] : "inherit",
+    stdio: opts.capture ? ["inherit", "pipe", "pipe"] : "inherit",
     encoding: "utf8",
   });
+  // Ctrl+C while the child had the terminal stops us too, even if allowFail.
+  // 0xC000013A is Windows' STATUS_CONTROL_C_EXIT.
+  if (
+    res.signal === "SIGINT" ||
+    res.status === 130 ||
+    res.status === 0xc000013a
+  ) {
+    process.exit(130);
+  }
   const success = res.status === 0;
   if (!success && !opts.allowFail) {
+    if (opts.capture && res.stderr) process.stderr.write(res.stderr);
     fail(`command failed: ${shown}`);
   }
   return { ok: success, stdout: res.stdout ?? "" };
@@ -88,6 +97,96 @@ export function wrangler(args: string[], opts: RunOptions = {}) {
   return bunx("wrangler", args, opts);
 }
 
+/** wrangler may print warnings before its JSON; parse from the first brace. */
+export function lastJson(stdout: string): unknown {
+  const start = stdout.indexOf("{");
+  if (start < 0) fail(`expected JSON from wrangler, got: ${stdout}`);
+  return JSON.parse(stdout.slice(start));
+}
+
+type ApiResponse = {
+  success?: boolean;
+  result?: unknown;
+  errors?: { code: number; message: string }[];
+} | null;
+
+/**
+ * A Cloudflare API client signed in with wrangler's credentials: its OAuth
+ * login, or CLOUDFLARE_API_TOKEN in CI. Paths are relative to /client/v4.
+ */
+export function cloudflareApi() {
+  const res = wrangler(["auth", "token", "--json"], { capture: true });
+  const cred = lastJson(res.stdout) as {
+    token?: string;
+    key?: string;
+    email?: string;
+  };
+  const auth: Record<string, string> = cred.token
+    ? { Authorization: `Bearer ${cred.token}` }
+    : cred.key && cred.email
+      ? { "X-Auth-Key": cred.key, "X-Auth-Email": cred.email }
+      : fail("could not read wrangler's credentials");
+
+  async function request(method: string, path: string, body?: unknown) {
+    let res: Response;
+    try {
+      res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+        method,
+        headers: { ...auth, "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        // D1 stops a query after 30 s, so this only trips on a stalled
+        // connection.
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (err) {
+      const e = err as Error;
+      fail(
+        `${method} ${path}: ${e.name === "TimeoutError" ? "no response from Cloudflare in 60 s" : e.message}`,
+      );
+    }
+    const json = (await res.json().catch(() => null)) as ApiResponse;
+    return { status: res.status, json };
+  }
+
+  /** The errors in a failed response, as one line. */
+  const why = (status: number, json: ApiResponse) =>
+    json?.errors?.map((e) => `${e.message} (${e.code})`).join("; ") ||
+    `HTTP ${status}`;
+
+  /** Like request, but exits with the API's errors unless it succeeds. */
+  async function call<T>(method: string, path: string, body?: unknown) {
+    const { status, json } = await request(method, path, body);
+    if (!json?.success) fail(`${method} ${path}: ${why(status, json)}`);
+    return json.result as T;
+  }
+
+  return { request, call, why };
+}
+
+/** A one-line progress bar on a terminal; one line per item otherwise. */
+export function progress(total: number) {
+  const tty = process.stdout.isTTY;
+  const width = 24;
+  return {
+    update(done: number, label: string) {
+      if (!tty) {
+        if (label) info(label);
+        return;
+      }
+      const filled = Math.round((width * done) / total);
+      const bar = "█".repeat(filled) + dim("░".repeat(width - filled));
+      const head = `    ${bar} ${String(done).padStart(String(total).length)}/${total} `;
+      // Keep it on one line, or \r can't redraw it.
+      const room = (process.stdout.columns || 80) - (head.length - 8) - 1;
+      const text = label.length > room ? `${label.slice(0, room - 1)}…` : label;
+      process.stdout.write(`\r\x1b[K${head}${dim(text)}`);
+    },
+    done() {
+      if (tty) process.stdout.write("\r\x1b[K");
+    },
+  };
+}
+
 export type WranglerConfig = {
   name?: string;
   account_id?: string;
@@ -97,6 +196,8 @@ export type WranglerConfig = {
     binding: string;
     database_name: string;
     database_id?: string;
+    migrations_dir?: string;
+    migrations_table?: string;
   }[];
   kv_namespaces?: { binding: string; id?: string }[];
   r2_buckets?: { binding: string; bucket_name: string }[];
@@ -145,29 +246,44 @@ export function parseArgs(
   return { flags, options };
 }
 
-let rl: ReturnType<typeof createInterface> | undefined;
+// Prompts read stdin synchronously, one byte at a time, and never open a
+// stream on it. A stream (readline) keeps taking keystrokes after it is
+// closed on Windows, so wrangler's own prompts in a child process would get
+// no input. Bun's prompt() can't tell Ctrl+C from an empty answer.
+function readLine(): string {
+  const bytes: number[] = [];
+  const byte = Buffer.alloc(1);
+  for (;;) {
+    let n: number;
+    try {
+      n = readSync(0, byte, 0, 1, null);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EAGAIN") continue;
+      throw err;
+    }
+    // Nothing read: Ctrl+C (Windows) or Ctrl+D.
+    if (n === 0) {
+      console.log();
+      process.exit(130);
+    }
+    if (byte[0] === 0x0a) break;
+    bytes.push(byte[0]);
+  }
+  return Buffer.from(bytes).toString("utf8").replace(/\r$/, "");
+}
 
 /** Ask a question on the terminal. Returns `fallback` when the answer is empty. */
-export async function ask(question: string, fallback = ""): Promise<string> {
+export function ask(question: string, fallback = ""): string {
   if (!process.stdin.isTTY) {
     fail(`no terminal to answer "${question}" on`);
   }
-  rl ??= createInterface({ input: process.stdin, output: process.stdout });
   const hint = fallback ? dim(` [${fallback}]`) : "";
-  const answer = (await rl.question(`    ${question}${hint} `)).trim();
-  return answer || fallback;
+  process.stdout.write(`    ${question}${hint} `);
+  return readLine().trim() || fallback;
 }
 
-export async function confirm(
-  question: string,
-  fallback: boolean,
-): Promise<boolean> {
-  const answer = await ask(`${question} ${fallback ? "[Y/n]" : "[y/N]"}`);
+export function confirm(question: string, fallback: boolean): boolean {
+  const answer = ask(`${question} ${fallback ? "[Y/n]" : "[y/N]"}`);
   if (!answer) return fallback;
   return /^y(es)?$/i.test(answer);
-}
-
-export function closePrompts() {
-  rl?.close();
-  rl = undefined;
 }
