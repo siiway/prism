@@ -132,10 +132,10 @@ app.post("/gpg-login", async (c) => {
 
   // Load the user's GPG keys
   const { results: gpgKeys } = await c.env.DB.prepare(
-    "SELECT id, public_key, key_id FROM user_gpg_keys WHERE user_id = ?",
+    "SELECT id, public_key FROM user_gpg_keys WHERE user_id = ?",
   )
     .bind(user.id)
-    .all<{ id: string; public_key: string; key_id: string }>();
+    .all<{ id: string; public_key: string }>();
 
   if (gpgKeys.length === 0) {
     c.executionCtx.waitUntil(
@@ -237,20 +237,16 @@ app.post("/gpg-login", async (c) => {
   // Consume the challenge (one-time use)
   await c.env.KV_CACHE.delete(`gpg:challenge:${challenge}`);
 
-  // Update last_used_at on the matching key
-  if (verifyResult.signerKeyId) {
-    const matchedKey = gpgKeys.find((k) =>
-      k.key_id.endsWith(verifyResult.signerKeyId!),
-    );
-    if (matchedKey) {
-      c.executionCtx.waitUntil(
-        c.env.DB.prepare(
-          "UPDATE user_gpg_keys SET last_used_at = ? WHERE id = ?",
+  // Update last_used_at on the row holding the signing key
+  if (verifyResult.signerIndex !== null) {
+    c.executionCtx.waitUntil(
+      c.env.DB.prepare("UPDATE user_gpg_keys SET last_used_at = ? WHERE id = ?")
+        .bind(
+          Math.floor(Date.now() / 1000),
+          gpgKeys[verifyResult.signerIndex].id,
         )
-          .bind(Math.floor(Date.now() / 1000), matchedKey.id)
-          .run(),
-      );
-    }
+        .run(),
+    );
   }
 
   const ttl = gpgLoginConfig.session_ttl_days * 24 * 60 * 60;

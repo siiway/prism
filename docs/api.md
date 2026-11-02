@@ -189,14 +189,21 @@ returns `{ "totp_required": true }`; resubmit the same message with `totp_code`.
 ### Managing keys
 
 `GET`, `POST` and `DELETE /api/user/gpg[/:id]` manage the signed-in user's keys.
-`POST` takes an ASCII-armored or binary `public_key` and optional `name`; RSA,
-EdDSA and ML-DSA keys are supported.
+`POST` takes an ASCII-armored `public_key` and optional `name`; RSA, EdDSA and
+ML-DSA keys are supported. A `public_key` holding several keys (concatenated
+blocks, or one block from `gpg --export --armor key1 key2`) is split into one
+key per entry, up to 20 distinct keys (`400 gpg_too_many_keys` beyond that).
+Repeated keys and keys already registered are skipped; with several keys,
+`name` gets a `#1`, `#2`… suffix. The response is
+`{ "keys": [...], "added": <count>, "skipped": <count> }`, or `409 key_exists`
+when every key was already there.
 
 `GET /users/:username.gpg` is a public lookup that returns the user's keys as
 armored blocks (`application/pgp-keys`).
 
 With OAuth: `GET /api/oauth/me/gpg-keys` (`gpg:read`), `POST` and
-`DELETE /api/oauth/me/gpg-keys/:id` (`gpg:write`).
+`DELETE /api/oauth/me/gpg-keys/:id` (`gpg:write`). `POST` splits keys the same
+way; its response also carries the first added key's fields at the top level.
 
 ## Sessions
 

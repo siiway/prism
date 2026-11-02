@@ -3055,6 +3055,7 @@
     "github_login_missing": "未设置 GitHub 用户名。",
     "github_no_readme": "该 GitHub 用户没有个人主页 README。",
     "github_source_needs_account": "请选择已关联的 GitHub 账号或填写 GitHub 用户名。",
+    "gpg_too_many_keys": "每次最多添加 {{max}} 个密钥。",
     "group_color_invalid": "颜色必须是 #1a2b3c 这样的十六进制值。",
     "group_not_assignable": "你不能分配或移除分组“{{group}}”。",
     "group_not_found": "未找到该分组。",
