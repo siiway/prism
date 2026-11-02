@@ -538,3 +538,35 @@ async function deliverGeneral(
   const res = await safeFetch(url, init);
   return summarizeResponse(res);
 }
+
+/** Platform audit entry for a site-admin action, stamped `site_admin: true`
+ *  (and also written to the team's own log when the resource is a team), so
+ *  it lands in the Transparent Platform Control log and fans out to platform
+ *  webhooks. */
+export function auditAdmin(
+  c: Context<{ Bindings: Env; Variables: Variables }>,
+  action: string,
+  resourceType: string | null,
+  resourceId: string | null,
+  metadata: unknown,
+  resourceName: string | null = null,
+): void {
+  const targets: AuditTarget[] = [PLATFORM_AUDIT];
+  if (resourceType === "team" && resourceId) {
+    targets.push({ scope: "team", scopeId: resourceId });
+  }
+  auditRequestAction(
+    c,
+    {
+      action,
+      resourceType,
+      resourceId,
+      resourceName,
+      metadata:
+        metadata && typeof metadata === "object"
+          ? { ...(metadata as Record<string, unknown>), site_admin: true }
+          : { value: metadata, site_admin: true },
+    },
+    targets,
+  );
+}
