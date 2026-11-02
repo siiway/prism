@@ -14,7 +14,7 @@ export interface MLDSAKey {
 }
 
 async function deriveKid(publicKey: Uint8Array): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", publicKey);
+  const hash = await crypto.subtle.digest("SHA-256", new Uint8Array(publicKey));
   return bufToBase64url(new Uint8Array(hash)).slice(0, 22);
 }
 

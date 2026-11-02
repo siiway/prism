@@ -117,7 +117,7 @@ export async function finishPasskeyAuthentication(
   });
 }
 
-function base64urlToUint8Array(str: string): Uint8Array {
+function base64urlToUint8Array(str: string): Uint8Array<ArrayBuffer> {
   const padded = str.replace(/-/g, "+").replace(/_/g, "/");
   const pad = (4 - (padded.length % 4)) % 4;
   const bin = atob(padded + "=".repeat(pad));

@@ -46,6 +46,8 @@ function user(sentinel: string): UserProfile {
     profile_readme_source_meta: null,
     profile_readme_synced_at: null,
     github_readme_token_set: false,
+    notify_on_auto_authorization: false,
+    gpg_require_2fa: false,
   };
 }
 

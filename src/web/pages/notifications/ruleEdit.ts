@@ -114,7 +114,9 @@ export type RuleStateError = "match" | "action";
 export function stateToRule(
   id: string,
   s: RuleEditState,
-): { rule: NotificationRule; error?: undefined } | { error: RuleStateError } {
+):
+  | { rule: NotificationRule; error?: undefined }
+  | { rule?: undefined; error: RuleStateError } {
   const m = matchExpression(s.match);
   if (m.error) return { error: "match" };
   const a = s.action;

@@ -2,12 +2,12 @@
 // bun:sqlite, KV over a Map, and an ExecutionContext that swallows the
 // background work handed to waitUntil.
 
-import { Database } from "bun:sqlite";
+import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 class SqliteD1Statement {
-  private values: unknown[] = [];
+  private values: SQLQueryBindings[] = [];
 
   constructor(
     private readonly db: Database,
@@ -15,7 +15,7 @@ class SqliteD1Statement {
   ) {}
 
   bind(...values: unknown[]) {
-    this.values = values;
+    this.values = values as SQLQueryBindings[];
     return this;
   }
 

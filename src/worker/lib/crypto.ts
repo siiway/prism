@@ -8,7 +8,7 @@ export function bytesToHex(buf: ArrayBuffer | Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(hex.length >> 1);
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
@@ -32,7 +32,7 @@ export function bufToBase64url(buf: ArrayBuffer | Uint8Array): string {
 }
 
 /** Decode base64url (padding optional). Throws on malformed input. */
-export function base64urlToBuf(str: string): Uint8Array {
+export function base64urlToBuf(str: string): Uint8Array<ArrayBuffer> {
   const padded = str.replace(/-/g, "+").replace(/_/g, "/");
   const pad = (4 - (padded.length % 4)) % 4;
   const bin = atob(padded + "=".repeat(pad));
@@ -42,7 +42,7 @@ export function base64urlToBuf(str: string): Uint8Array {
 }
 
 /** Like `base64urlToBuf`, but returns null instead of throwing. */
-export function tryBase64urlToBuf(str: string): Uint8Array | null {
+export function tryBase64urlToBuf(str: string): Uint8Array<ArrayBuffer> | null {
   try {
     return base64urlToBuf(str);
   } catch {
@@ -63,7 +63,10 @@ export function decodeBase64urlJson<T>(segment: string): T | null {
 // PBKDF2 password hashing
 const PBKDF2_ITERATIONS = 100_000;
 
-async function pbkdf2(password: string, salt: Uint8Array): Promise<string> {
+async function pbkdf2(
+  password: string,
+  salt: Uint8Array<ArrayBuffer>,
+): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     encoder.encode(password),

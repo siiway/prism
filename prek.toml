@@ -84,6 +84,16 @@ always_run = true
 stages = ["pre-push"]
 
 [[repos.hooks]]
+id = "typecheck-tests"
+name = "typecheck (tests)"
+entry = "bunx"
+args = ["tsc", "-p", "tests", "--noEmit"]
+language = "system"
+pass_filenames = false
+always_run = true
+stages = ["pre-push"]
+
+[[repos.hooks]]
 id = "test"
 name = "tests"
 entry = "bun"

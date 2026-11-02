@@ -6,7 +6,8 @@ export class BodySizeLimitError extends Error {
 }
 
 export type BoundedBody =
-  { exceeded: true; bytes: null } | { exceeded: false; bytes: Uint8Array };
+  | { exceeded: true; bytes: null }
+  | { exceeded: false; bytes: Uint8Array<ArrayBuffer> };
 
 /** Return true only for a syntactically valid Content-Length above the cap. */
 export function declaredLengthExceedsLimit(
@@ -72,7 +73,8 @@ export async function readStreamWithLimit(
     }
 
     if (chunks.length === 1 && chunks[0].byteLength === total) {
-      return { exceeded: false, bytes: chunks[0] };
+      // A fetched body's chunks are never backed by a SharedArrayBuffer.
+      return { exceeded: false, bytes: chunks[0] as Uint8Array<ArrayBuffer> };
     }
 
     const bytes = new Uint8Array(total);

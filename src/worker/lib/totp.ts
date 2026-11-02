@@ -26,7 +26,7 @@ export function generateTotpSecret(): string {
   return result;
 }
 
-function base32ToBytes(secret: string): Uint8Array {
+function base32ToBytes(secret: string): Uint8Array<ArrayBuffer> {
   const clean = secret.toUpperCase().replace(/[^A-Z2-7]/g, "");
   const bytes = new Uint8Array(Math.floor((clean.length * 5) / 8));
   let bits = 0;
@@ -45,7 +45,10 @@ function base32ToBytes(secret: string): Uint8Array {
   return bytes;
 }
 
-async function hotp(secret: Uint8Array, counter: bigint): Promise<number> {
+async function hotp(
+  secret: Uint8Array<ArrayBuffer>,
+  counter: bigint,
+): Promise<number> {
   const key = await crypto.subtle.importKey(
     "raw",
     secret,
