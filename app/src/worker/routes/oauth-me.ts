@@ -316,63 +316,32 @@ app.get("/me/gpg-keys", async (c) => {
   return c.json({ keys: results });
 });
 
-// POST /api/oauth/me/gpg-keys — add a GPG key (requires gpg:write)
+// POST /api/oauth/me/gpg-keys — add GPG key(s) (requires gpg:write). A paste
+// holding several keys is split into one row per key.
 app.post("/me/gpg-keys", async (c) => {
   const resolved = await resolveBearerToken(c, "gpg:write");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
   const capErr = await guardCapability(c.env.DB, resolved.userId, "gpg:manage");
   if (capErr) return c.json({ error: capErr }, 403);
 
-  const { parseArmoredPublicKey } = await import("../lib/gpg");
+  const { addGpgKeys } = await import("../lib/gpg");
   const body = await c.req.json<{ public_key: string; name?: string }>();
-  if (!body.public_key)
+  if (!body.public_key || typeof body.public_key !== "string")
     return c.json(
       { error: "field_required", params: { field: "public_key" } },
       400,
     );
 
-  let parsed: Awaited<ReturnType<typeof parseArmoredPublicKey>>;
-  try {
-    parsed = await parseArmoredPublicKey(body.public_key);
-  } catch {
-    return c.json({ error: "pgp_key_invalid" }, 400);
-  }
-
-  const name = (body.name?.trim() || parsed.uids[0] || parsed.keyId).slice(
-    0,
-    128,
+  const result = await addGpgKeys(
+    c.env.DB,
+    resolved.userId,
+    body.public_key,
+    body.name,
   );
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM user_gpg_keys WHERE user_id = ? AND fingerprint = ?",
-  )
-    .bind(resolved.userId, parsed.fingerprint)
-    .first();
-  if (existing) return c.json({ error: "key_exists" }, 409);
-
-  const id = randomId();
-  const now = Math.floor(Date.now() / 1000);
-  await c.env.DB.prepare(
-    "INSERT INTO user_gpg_keys (id, user_id, fingerprint, key_id, name, public_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  )
-    .bind(
-      id,
-      resolved.userId,
-      parsed.fingerprint,
-      parsed.keyId,
-      name,
-      body.public_key.trim(),
-      now,
-    )
-    .run();
-
-  return c.json({
-    id,
-    fingerprint: parsed.fingerprint,
-    key_id: parsed.keyId,
-    name,
-    created_at: now,
-    last_used_at: null,
-  });
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  const { keys, added, skipped } = result;
+  // The first key stays at the top level for clients that expect one.
+  return c.json({ ...keys[0], keys, added, skipped });
 });
 
 // DELETE /api/oauth/me/gpg-keys/:id — remove a GPG key (requires gpg:write)
