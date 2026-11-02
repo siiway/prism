@@ -3,6 +3,7 @@
 
 import type { Context } from "hono";
 import type { CodedError } from "./apiError";
+import { auditRequestMeta, recordAudit, type AuditInput } from "./audit";
 import { getConfigValue } from "./config";
 import type { TeamMemberRow, TeamRow, Variables } from "../types";
 
@@ -458,4 +459,47 @@ export async function dissolveTeam(
 
     await db.prepare("DELETE FROM teams WHERE id = ?").bind(id).run();
   }
+}
+
+// Record a team-scope audit event (Transparent Team Control).
+export function auditTeam(
+  c: Context<AppEnv>,
+  teamId: string,
+  action: string,
+  opts: {
+    resourceType?: string;
+    resourceId?: string | null;
+    resourceName?: string | null;
+    metadata?: unknown;
+  } = {},
+): void {
+  const actor = c.get("user");
+  const meta = auditRequestMeta(c);
+  // An action taken through the site-admin override is the site acting on the
+  // team, not one of its members — say so in the entry, or the team's own log
+  // would show an outsider's change as if a member had made it.
+  const elevated = actedAsSiteAdmin(c, teamId);
+  const metadata = opts.metadata ?? {};
+  const base = {
+    action,
+    actorId: actor.id,
+    actorName: actor.username,
+    resourceType: opts.resourceType ?? "team",
+    resourceId: opts.resourceId ?? teamId,
+    resourceName: opts.resourceName ?? null,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+    geo: meta.geo,
+    metadata:
+      elevated && metadata && typeof metadata === "object"
+        ? { ...(metadata as Record<string, unknown>), site_admin: true }
+        : elevated
+          ? { site_admin: true }
+          : metadata,
+  };
+  const events: AuditInput[] = [{ ...base, scope: "team", scopeId: teamId }];
+  if (elevated) {
+    events.push({ ...base, scope: "platform" as const, scopeId: null });
+  }
+  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, events));
 }
