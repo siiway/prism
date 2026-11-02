@@ -75,12 +75,6 @@ interface KeyPair {
 
 let cachedKeys: Promise<KeyPair> | null = null;
 
-/** Reset cached keys — used by tests and the admin "I rotated the master
- *  key" flow. Not exported elsewhere because the binding is read-only. */
-export function resetSecretsKeyCache(): void {
-  cachedKeys = null;
-}
-
 async function getKeys(env: Env): Promise<KeyPair> {
   if (!env.SECRETS_KEY) {
     throw new Error("SECRETS_KEY binding is not configured");
@@ -281,23 +275,6 @@ export async function hashLookupCandidate(
   if (looksLikeStoredSecret(candidate)) return null;
   if (!env.SECRETS_KEY) return candidate;
   return hmacTag(env, candidate);
-}
-
-/** Constant-time comparison: hashes the candidate and compares to the
- *  stored hash. Falls back to direct string compare when the stored
- *  value is legacy plaintext, so verification still works on rows that
- *  haven't been migrated yet. */
-export async function timingSafeHashEqual(
-  env: Env,
-  stored: string | null | undefined,
-  candidate: string,
-): Promise<boolean> {
-  if (!stored || !candidate) return false;
-  // Legacy plaintext rows compare directly against the raw candidate.
-  const actual = isHashedSecret(stored)
-    ? ((await hashSecret(env, candidate)) ?? "")
-    : candidate;
-  return timingSafeStrEqual(stored, actual);
 }
 
 /** Constant-time comparison helper that decrypts the stored value first.

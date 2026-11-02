@@ -134,25 +134,6 @@ export async function signLogoutTokenRS256(
   return `${message}.${bufToBase64url(sig)}`;
 }
 
-// ML-DSA-65 OIDC ID token signing (post-quantum, typ: "JWT" per OIDC spec)
-export function signIdToken(
-  payload: Record<string, unknown>,
-  secretKey: Uint8Array,
-  kid: string,
-  expiresInSeconds: number,
-): string {
-  const now = Math.floor(Date.now() / 1000);
-  const header = encodeBase64url({ alg: "ML-DSA-65", typ: "JWT", kid });
-  const body = encodeBase64url({
-    ...payload,
-    iat: now,
-    exp: now + expiresInSeconds,
-  });
-  const msg = new TextEncoder().encode(`${header}.${body}`);
-  const sig = ml_dsa65.sign(secretKey, msg);
-  return `${header}.${body}.${bufToBase64url(sig)}`;
-}
-
 // ── ML-DSA-65 access token (RFC 9068 at+JWT, post-quantum) ────────────────────
 
 export interface AccessTokenPayload {

@@ -300,12 +300,6 @@ export async function decryptConfigSecrets(
   return config;
 }
 
-/** Convenience: getConfig + decryptConfigSecrets in one call. */
-export async function getDecryptedConfig(env: Env): Promise<SiteConfig> {
-  const config = await getConfig(env.DB);
-  return decryptConfigSecrets(env, config);
-}
-
 /**
  * Pre-encrypt sensitive keys in an admin config-update payload. Returns
  * a new object with sensitive values replaced by their ciphertext; the

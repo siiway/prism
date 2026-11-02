@@ -223,23 +223,3 @@ export function SkeletonSettingsPage({
     </div>
   );
 }
-
-export function SkeletonFormCard({ rows = 4 }: { rows?: number }) {
-  const styles = useStyles();
-  return (
-    <Skeleton>
-      <div className={styles.card}>
-        {Array.from({ length: rows }).map((_, i) => (
-          <div
-            key={i}
-            style={{ display: "flex", flexDirection: "column", gap: 6 }}
-          >
-            <SkeletonItem style={{ width: "25%", height: 13 }} />
-            <SkeletonItem style={{ width: "100%", height: 32 }} />
-          </div>
-        ))}
-        <SkeletonItem style={{ width: 100, height: 32 }} />
-      </div>
-    </Skeleton>
-  );
-}

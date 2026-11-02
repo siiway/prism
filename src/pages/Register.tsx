@@ -29,14 +29,7 @@ import { useAuthStore } from "../store/auth";
 
 const useStyles = makeStyles({
   form: { display: "flex", flexDirection: "column", gap: "12px" },
-  row: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "12px",
-    "@media (max-width: 480px)": {
-      gridTemplateColumns: "1fr",
-    },
-  },
+
   footer: { textAlign: "center" },
 });
 

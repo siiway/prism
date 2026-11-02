@@ -59,9 +59,6 @@ interface ResolvedToken {
 const GITHUB_API = "https://api.github.com";
 const MAX_TOKEN_FAILURES = 3;
 
-/** Threshold we use to cap 401 retries (exported so admin/UI can show it). */
-export const GITHUB_TOKEN_FAILURE_LIMIT = MAX_TOKEN_FAILURES;
-
 /** Build the ordered cascade of tokens to try for a given profile owner.
  *  Unauthenticated comes first so we don't burn token budget on routine
  *  fetches; tokens are escalated to only when the unauth tier hits its
@@ -90,16 +87,6 @@ async function resolveTokens(
   }
 
   return out;
-}
-
-/** Single-tier resolve, used by the manual-sync endpoint where we don't
- *  want fall-through retry behaviour to mask a config issue. */
-export async function pickGithubToken(
-  env: Env,
-  ownerUserId: string,
-): Promise<string | null> {
-  const tiers = await resolveTokens(env, ownerUserId);
-  return tiers[0]?.token ?? null;
 }
 
 /** Issue the request to GitHub. Honours `If-None-Match` for conditional GETs. */

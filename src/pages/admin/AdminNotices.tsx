@@ -44,7 +44,7 @@ const PAGE_SIZE = 20;
 
 const useStyles = makeStyles({
   banner: { marginBottom: "12px" },
-  badges: { display: "flex", gap: "4px", flexWrap: "wrap" },
+
   pin: { color: tokens.colorNeutralForeground3, flexShrink: 0 },
   muted: { color: tokens.colorNeutralForeground3 },
   name: {

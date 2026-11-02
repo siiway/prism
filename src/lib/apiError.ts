@@ -6,11 +6,6 @@
 
 import { ApiError } from "./api";
 
-/** The error code, or null for something that isn't an API failure. */
-export function apiErrorCode(err: unknown): string | null {
-  return err instanceof ApiError ? err.code : null;
-}
-
 /** Text for a failed request: the API error, translated, or `fallback` for
  *  anything else (a network failure, a bug). */
 export function apiErrorText(err: unknown, fallback: string): string {

@@ -45,24 +45,6 @@ const useStyles = makeStyles({
     // overflowing the page
     overflowX: "auto",
   },
-  tokenRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "10px 12px",
-    background: tokens.colorNeutralBackground3,
-    borderRadius: "4px",
-    fontFamily: "monospace",
-    fontSize: tokens.fontSizeBase200,
-    marginTop: "8px",
-    wordBreak: "break-all",
-  },
-  scopeGrid: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: "8px",
-    marginTop: "4px",
-  },
 });
 
 export function Tokens() {

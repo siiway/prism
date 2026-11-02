@@ -26,7 +26,6 @@ import type {
   InviteRegistrationExemptions,
   RestrictedCapabilities,
   RestrictedCapability,
-  UserRow,
 } from "../types";
 
 // ─── Capability resolution ───────────────────────────────────────────────────
@@ -414,11 +413,4 @@ export function syntheticEmail(userId: string): string {
  *  conversion requires it. */
 export function isSyntheticEmail(email: string): boolean {
   return email.endsWith("@users.invalid");
-}
-
-/** Convenience: does this account still lack a real, verified address? */
-export function needsRealEmail(
-  user: Pick<UserRow, "email" | "email_verified">,
-): boolean {
-  return isSyntheticEmail(user.email) || user.email_verified !== 1;
 }

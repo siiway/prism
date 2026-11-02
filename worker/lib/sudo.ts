@@ -42,12 +42,3 @@ export async function grantSudo(
     expirationTtl: ttl,
   });
 }
-
-export async function revokeSudo(
-  kv: KVNamespace,
-  userId: string,
-  sessionId: string,
-  clientId: string,
-): Promise<void> {
-  await kv.delete(sudoKvKey(userId, sessionId, clientId));
-}

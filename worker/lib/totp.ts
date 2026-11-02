@@ -72,16 +72,6 @@ async function hotp(secret: Uint8Array, counter: bigint): Promise<number> {
   return code % 1_000_000;
 }
 
-export async function generateTotp(
-  secret: string,
-  timestampMs = Date.now(),
-): Promise<string> {
-  const counter = BigInt(Math.floor(timestampMs / 30_000));
-  const secretBytes = base32ToBytes(secret);
-  const code = await hotp(secretBytes, counter);
-  return code.toString().padStart(6, "0");
-}
-
 /**
  * Which time step a code matches at, or null when it matches none in the
  * accepted window. Callers that need single-use semantics record the returned
@@ -103,15 +93,6 @@ export async function matchTotpCounter(
     if (code.toString().padStart(6, "0") === normalized) return step;
   }
   return null;
-}
-
-export async function verifyTotp(
-  token: string,
-  secret: string,
-  window = 1,
-  timestampMs = Date.now(),
-): Promise<boolean> {
-  return (await matchTotpCounter(token, secret, window, timestampMs)) !== null;
 }
 
 export function generateBackupCodes(count = 10): string[] {

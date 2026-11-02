@@ -47,7 +47,7 @@ const useStyles = makeStyles({
     gap: "8px",
     flexWrap: "wrap",
   },
-  muted: { color: tokens.colorNeutralForeground3 },
+
   mono: {
     fontFamily: tokens.fontFamilyMonospace,
     fontSize: tokens.fontSizeBase200,

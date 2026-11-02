@@ -40,8 +40,6 @@ export const USER_NOTIFICATION_EVENTS = [
   "oauth.consent_revoked",
 ] as const;
 
-export type UserNotificationEvent = (typeof USER_NOTIFICATION_EVENTS)[number];
-
 /** Per-event detail level. Absent key = off (not subscribed). */
 export type NotificationLevel = "brief" | "full";
 export type NotificationPrefsMap = Record<string, NotificationLevel>;

@@ -42,14 +42,6 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "12px",
   },
-  row: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "12px",
-    "@media (max-width: 600px)": {
-      gridTemplateColumns: "1fr",
-    },
-  },
 });
 
 export function Init() {
