@@ -6,7 +6,6 @@ import {
   Avatar,
   Badge,
   Link as FluentLink,
-  Spinner,
   Text,
   Title2,
   makeStyles,
@@ -16,81 +15,34 @@ import {
   AppsRegular,
   CalendarRegular,
   DocumentTextRegular,
-  EarthRegular,
   GlobeRegular,
   KeyRegular,
   MailRegular,
   PeopleRegular,
   PlugConnectedRegular,
-  ShieldRegular,
 } from "@fluentui/react-icons";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../lib/api";
-import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
 import { renderMarkdown } from "../lib/markdown";
 import { CopyButton } from "../components/CopyButton";
+import {
+  PublicAppRow,
+  PublicChip,
+  PublicDivider,
+  PublicDomains,
+  PublicField,
+  PublicHeader,
+  PublicPage,
+  PublicPageFallback,
+  PublicSection,
+} from "../components/PublicPage";
 
 const useStyles = makeStyles({
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "center",
-    background: tokens.colorNeutralBackground1,
-    padding: "32px 16px",
-    boxSizing: "border-box",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "560px",
-    padding: "32px",
-    borderRadius: "8px",
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground2,
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-  },
-  header: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "12px",
-  },
-  field: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    color: tokens.colorNeutralForeground2,
-  },
-  divider: {
-    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    margin: "8px 0",
-  },
-  sectionTitle: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    color: tokens.colorNeutralForeground2,
-    fontSize: tokens.fontSizeBase200,
-    fontWeight: tokens.fontWeightSemibold,
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-  },
-  appRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    padding: "10px 12px",
-    borderRadius: "6px",
-    border: `1px solid ${tokens.colorNeutralStroke2}`,
-    background: tokens.colorNeutralBackground3,
-  },
-  appInfo: { flex: 1, minWidth: 0 },
+  muted: { color: tokens.colorNeutralForeground3 },
+  facts: { display: "flex", flexDirection: "column", gap: "8px" },
   gpgRow: {
     padding: "10px 12px",
     borderRadius: "6px",
@@ -100,6 +52,7 @@ const useStyles = makeStyles({
     flexDirection: "column",
     gap: "2px",
   },
+  gpgName: { display: "flex", alignItems: "center", gap: "4px" },
   fingerprint: {
     fontFamily: "monospace",
     fontSize: tokens.fontSizeBase200,
@@ -166,39 +119,13 @@ export function PublicProfile() {
   const { username = "" } = useParams<{ username: string }>();
   const { t, i18n } = useTranslation();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, error } = useQuery({
     queryKey: ["public-profile", username],
     queryFn: () => api.getPublicProfile(username),
     retry: false,
   });
 
-  if (isLoading) {
-    return (
-      <div className={styles.page}>
-        <Spinner size="large" />
-      </div>
-    );
-  }
-
-  if (error || !data) {
-    const isNotFound = error instanceof ApiError && error.status === 404;
-    return (
-      <div className={styles.page}>
-        <div className={styles.card}>
-          <Title2>
-            {isNotFound
-              ? t("publicProfile.notFoundTitle")
-              : t("publicProfile.errorTitle")}
-          </Title2>
-          <Text style={{ color: tokens.colorNeutralForeground3 }}>
-            {isNotFound
-              ? t("publicProfile.notFoundDesc")
-              : apiErrorText(error, t("publicProfile.errorDesc"))}
-          </Text>
-        </div>
-      </div>
-    );
-  }
+  if (!data) return <PublicPageFallback error={error} ns="publicProfile" />;
 
   const p = data.profile;
   const hasAnyAdditionalSection =
@@ -210,262 +137,154 @@ export function PublicProfile() {
     !!p.readme;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
-        <div className={styles.header}>
-          <Avatar
-            name={p.display_name ?? p.username}
-            image={p.avatar_url ? { src: p.avatar_url } : undefined}
-            size={96}
-          />
-          <div style={{ textAlign: "center" }}>
-            {p.display_name && (
-              <Title2 block style={{ marginBottom: 4 }}>
-                {p.display_name}
-              </Title2>
-            )}
-            <Text size={300} style={{ color: tokens.colorNeutralForeground3 }}>
-              @{p.username}
-            </Text>
-          </div>
-          <Badge appearance="tint" color="informative" icon={<GlobeRegular />}>
-            {t("publicProfile.publicProfileBadge")}
-          </Badge>
+    <PublicPage>
+      <PublicHeader>
+        <Avatar
+          name={p.display_name ?? p.username}
+          image={p.avatar_url ? { src: p.avatar_url } : undefined}
+          size={96}
+        />
+        <div style={{ textAlign: "center" }}>
+          {p.display_name && (
+            <Title2 block style={{ marginBottom: 4 }}>
+              {p.display_name}
+            </Title2>
+          )}
+          <Text size={300} className={styles.muted}>
+            @{p.username}
+          </Text>
         </div>
+        <Badge appearance="tint" color="informative" icon={<GlobeRegular />}>
+          {t("publicProfile.publicProfileBadge")}
+        </Badge>
+      </PublicHeader>
 
-        {(p.email || p.joined_at) && (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
-          >
-            {p.email && (
-              <div className={styles.field}>
-                <MailRegular />
-                <Text style={{ wordBreak: "break-all" }}>{p.email}</Text>
-              </div>
-            )}
-            {p.joined_at && (
-              <div className={styles.field}>
-                <CalendarRegular />
-                <Text>
-                  {t("publicProfile.joinedOn", {
-                    date: new Date(p.joined_at * 1000).toLocaleDateString(
-                      i18n.resolvedLanguage,
-                    ),
-                  })}
+      {(p.email || p.joined_at) && (
+        <div className={styles.facts}>
+          {p.email && (
+            <PublicField icon={<MailRegular />}>
+              <Text style={{ wordBreak: "break-all" }}>{p.email}</Text>
+            </PublicField>
+          )}
+          {p.joined_at && (
+            <PublicField icon={<CalendarRegular />}>
+              <Text>
+                {t("publicProfile.joinedOn", {
+                  date: new Date(p.joined_at * 1000).toLocaleDateString(
+                    i18n.resolvedLanguage,
+                  ),
+                })}
+              </Text>
+            </PublicField>
+          )}
+        </div>
+      )}
+
+      {hasAnyAdditionalSection && <PublicDivider />}
+
+      {p.readme && <ReadmeSection readme={p.readme} />}
+
+      {p.gpg_keys && p.gpg_keys.length > 0 && (
+        <PublicSection
+          icon={<KeyRegular />}
+          title={t("publicProfile.gpgKeysHeading", {
+            count: p.gpg_keys.length,
+          })}
+        >
+          <Text size={200} className={styles.muted}>
+            <FluentLink
+              href={`/users/${encodeURIComponent(p.username)}.gpg`}
+              target="_blank"
+              rel="noopener"
+            >
+              {t("publicProfile.gpgKeysDownload")}
+            </FluentLink>
+            {" · "}
+            <span className={styles.fingerprint}>/users/{p.username}.gpg</span>
+          </Text>
+          {p.gpg_keys.map((k) => (
+            <div key={k.fingerprint} className={styles.gpgRow}>
+              <div className={styles.gpgName}>
+                <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>
+                  {k.name}
                 </Text>
-              </div>
-            )}
-          </div>
-        )}
-
-        {hasAnyAdditionalSection && <div className={styles.divider} />}
-
-        {p.readme && <ReadmeSection readme={p.readme} />}
-
-        {p.gpg_keys && p.gpg_keys.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className={styles.sectionTitle}>
-              <KeyRegular />
-              {t("publicProfile.gpgKeysHeading", {
-                count: p.gpg_keys.length,
-              })}
-            </div>
-            <Text size={200} style={{ color: tokens.colorNeutralForeground3 }}>
-              <FluentLink
-                href={`/users/${encodeURIComponent(p.username)}.gpg`}
-                target="_blank"
-                rel="noopener"
-              >
-                {t("publicProfile.gpgKeysDownload")}
-              </FluentLink>
-              {" · "}
-              <span className={styles.fingerprint}>
-                /users/{p.username}.gpg
-              </span>
-            </Text>
-            {p.gpg_keys.map((k) => (
-              <div key={k.fingerprint} className={styles.gpgRow}>
-                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <Text weight="semibold" style={{ flex: 1, minWidth: 0 }}>
-                    {k.name}
-                  </Text>
-                  <CopyButton
-                    text={k.fingerprint}
-                    label={t("publicProfile.copyFingerprint")}
-                  />
-                </div>
-                <Text className={styles.fingerprint}>{k.fingerprint}</Text>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {p.owned_apps && p.owned_apps.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className={styles.sectionTitle}>
-              <AppsRegular />
-              {t("publicProfile.ownedAppsHeading", {
-                count: p.owned_apps.length,
-              })}
-            </div>
-            {p.owned_apps.map((a) => (
-              <div key={a.client_id} className={styles.appRow}>
-                <Avatar
-                  image={a.icon_url ? { src: a.icon_url } : undefined}
-                  name={a.name}
-                  size={32}
-                  shape="square"
+                <CopyButton
+                  text={k.fingerprint}
+                  label={t("publicProfile.copyFingerprint")}
                 />
-                <div className={styles.appInfo}>
-                  <Text weight="semibold" block>
-                    {a.name}
-                  </Text>
-                  {a.description && (
-                    <Text
-                      size={200}
-                      block
-                      style={{
-                        color: tokens.colorNeutralForeground3,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {a.description}
-                    </Text>
-                  )}
-                </div>
               </div>
-            ))}
-          </div>
-        )}
+              <Text className={styles.fingerprint}>{k.fingerprint}</Text>
+            </div>
+          ))}
+        </PublicSection>
+      )}
 
-        {p.joined_teams && p.joined_teams.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className={styles.sectionTitle}>
-              <PeopleRegular />
-              {t("publicProfile.joinedTeamsHeading", {
-                count: p.joined_teams.length,
-              })}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-              }}
-            >
-              {p.joined_teams.map((team) => (
-                <Link
-                  key={team.id}
-                  to={`/t/${encodeURIComponent(team.id)}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "6px 10px",
-                    border: `1px solid ${tokens.colorNeutralStroke1}`,
-                    borderRadius: 6,
-                    textDecoration: "none",
-                    color: "inherit",
-                    background: tokens.colorNeutralBackground3,
-                  }}
-                >
-                  <Avatar
-                    name={team.name}
-                    image={
-                      team.avatar_url ? { src: team.avatar_url } : undefined
-                    }
-                    size={20}
-                  />
-                  <Text size={300}>{team.name}</Text>
-                  <Text
-                    size={100}
-                    style={{ color: tokens.colorNeutralForeground3 }}
-                  >
-                    · {team.role}
-                  </Text>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
+      {p.owned_apps && p.owned_apps.length > 0 && (
+        <PublicSection
+          icon={<AppsRegular />}
+          title={t("publicProfile.ownedAppsHeading", {
+            count: p.owned_apps.length,
+          })}
+        >
+          {p.owned_apps.map((a) => (
+            <PublicAppRow
+              key={a.client_id}
+              name={a.name}
+              iconUrl={a.icon_url}
+              sub={a.description}
+            />
+          ))}
+        </PublicSection>
+      )}
 
-        {p.domains && p.domains.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className={styles.sectionTitle}>
-              <EarthRegular />
-              {t("publicProfile.domainsHeading", {
-                count: p.domains.length,
-              })}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-              }}
-            >
-              {p.domains.map((d) => (
-                <Badge
-                  key={d.domain}
-                  appearance="tint"
-                  color="success"
-                  icon={<ShieldRegular />}
-                >
-                  {d.domain}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
+      {p.joined_teams && p.joined_teams.length > 0 && (
+        <PublicSection
+          icon={<PeopleRegular />}
+          title={t("publicProfile.joinedTeamsHeading", {
+            count: p.joined_teams.length,
+          })}
+          wrap
+        >
+          {p.joined_teams.map((team) => (
+            <PublicChip
+              key={team.id}
+              to={`/t/${encodeURIComponent(team.id)}`}
+              name={team.name}
+              avatarUrl={team.avatar_url}
+              label={<Text size={300}>{team.name}</Text>}
+              detail={`· ${team.role}`}
+            />
+          ))}
+        </PublicSection>
+      )}
 
-        {/* Authorized apps section */}
-        {p.authorized_apps && p.authorized_apps.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className={styles.sectionTitle}>
-              <PlugConnectedRegular />
-              {t("publicProfile.authorizedAppsHeading", {
-                count: p.authorized_apps.length,
-              })}
-            </div>
-            {p.authorized_apps.map((a) => (
-              <div key={a.client_id} className={styles.appRow}>
-                <Avatar
-                  image={a.icon_url ? { src: a.icon_url } : undefined}
-                  name={a.name}
-                  size={32}
-                  shape="square"
-                />
-                <div className={styles.appInfo}>
-                  <Text weight="semibold" block>
-                    {a.name}
-                  </Text>
-                  {a.website_url && (
-                    <Text
-                      size={200}
-                      block
-                      style={{
-                        color: tokens.colorNeutralForeground3,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {a.website_url}
-                    </Text>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+      {p.domains && p.domains.length > 0 && (
+        <PublicDomains
+          domains={p.domains}
+          title={t("publicProfile.domainsHeading", {
+            count: p.domains.length,
+          })}
+        />
+      )}
+
+      {p.authorized_apps && p.authorized_apps.length > 0 && (
+        <PublicSection
+          icon={<PlugConnectedRegular />}
+          title={t("publicProfile.authorizedAppsHeading", {
+            count: p.authorized_apps.length,
+          })}
+        >
+          {p.authorized_apps.map((a) => (
+            <PublicAppRow
+              key={a.client_id}
+              name={a.name}
+              iconUrl={a.icon_url}
+              sub={a.website_url}
+            />
+          ))}
+        </PublicSection>
+      )}
+    </PublicPage>
   );
 }
 
@@ -486,17 +305,16 @@ function ReadmeSection({ readme }: { readme: string }) {
     };
   }, [readme]);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div className={styles.sectionTitle}>
-        <DocumentTextRegular />
-        {t("publicProfile.readmeHeading")}
-      </div>
+    <PublicSection
+      icon={<DocumentTextRegular />}
+      title={t("publicProfile.readmeHeading")}
+    >
       <div
         className={styles.readme}
         // html is the output of marked + DOMPurify with our hardened
         // configuration in lib/markdown.ts; safe to inject.
         dangerouslySetInnerHTML={{ __html: html }}
       />
-    </div>
+    </PublicSection>
   );
 }
