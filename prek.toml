@@ -1,14 +1,91 @@
 # Configuration file for `prek`, a git hook framework written in Rust.
 # See https://prek.j178.dev for more information.
 #:schema https://www.schemastore.org/prek.json
+#
+# Every hook runs a program directly (no `sh -c`), so it works the same under
+# Git Bash, PowerShell and GUI clients on Windows. It needs `bun` on PATH.
+#
+# Install both hook types once:
+#   prek install --hook-type pre-commit --hook-type pre-push
+
+[[repos]]
+repo = "builtin"
+
+[[repos.hooks]]
+id = "check-merge-conflict"
+stages = ["pre-commit"]
+
+[[repos.hooks]]
+id = "detect-private-key"
+stages = ["pre-commit"]
+exclude = '^src/web/i18n/'
+
+[[repos.hooks]]
+id = "check-added-large-files"
+stages = ["pre-commit"]
 
 [[repos]]
 repo = "local"
 
+# ── pre-commit: fast, rewrites files ──────────────────────────────────────────
+
 [[repos.hooks]]
 id = "prettier"
 name = "prettier (format whole repo)"
-entry = "sh -c 'bunx prettier -w . && git add -u'"
+entry = "bunx"
+args = ["prettier", "-w", "."]
+language = "system"
+stages = ["pre-commit"]
+pass_filenames = false
+always_run = true
+
+[[repos.hooks]]
+id = "restage"
+name = "restage formatted files"
+entry = "git"
+args = ["add", "-u"]
+language = "system"
+stages = ["pre-commit"]
+pass_filenames = false
+always_run = true
+
+[[repos.hooks]]
+id = "eslint"
+name = "eslint"
+entry = "bunx"
+args = ["eslint"]
+files = '\.(tsx?|jsx?|mjs|cjs)$'
+language = "system"
+stages = ["pre-commit"]
+
+# ── pre-push: slower checks that CI also runs ─────────────────────────────────
+
+[[repos.hooks]]
+id = "typecheck-app"
+name = "typecheck (app)"
+entry = "bunx"
+args = ["tsc", "-p", "tsconfig.app.json", "--noEmit"]
 language = "system"
 pass_filenames = false
 always_run = true
+stages = ["pre-push"]
+
+[[repos.hooks]]
+id = "typecheck-worker"
+name = "typecheck (worker)"
+entry = "bunx"
+args = ["tsc", "-p", "tsconfig.worker.json", "--noEmit"]
+language = "system"
+pass_filenames = false
+always_run = true
+stages = ["pre-push"]
+
+[[repos.hooks]]
+id = "test"
+name = "tests"
+entry = "bun"
+args = ["run", "test"]
+language = "system"
+pass_filenames = false
+always_run = true
+stages = ["pre-push"]

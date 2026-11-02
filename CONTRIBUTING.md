@@ -27,3 +27,11 @@ implement <stuff you implemented>
 fix <bug you fixed>
 add <feature>
 ```
+
+## Git hooks
+
+[prek](https://prek.j178.dev) runs prettier and eslint on commit, and the typechecks and tests on push. Install it, then enable the hooks once (needs `bun` on your PATH, on Windows too):
+
+```bash
+prek install --hook-type pre-commit --hook-type pre-push
+```
