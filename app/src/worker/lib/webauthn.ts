@@ -9,7 +9,6 @@ import {
 } from "@simplewebauthn/server";
 import type {
   AuthenticationResponseJSON,
-  AuthenticatorTransportFuture,
   RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 import type { PasskeyRow } from "../types";
@@ -21,7 +20,7 @@ export interface StoredPasskey {
   counter: number;
   deviceType: string;
   backedUp: boolean;
-  transports: AuthenticatorTransportFuture[];
+  transports: string[];
   name: string | null;
 }
 
@@ -33,7 +32,7 @@ export function rowToPasskey(row: PasskeyRow): StoredPasskey {
     counter: row.counter,
     deviceType: row.device_type,
     backedUp: row.backed_up === 1,
-    transports: JSON.parse(row.transports) as AuthenticatorTransportFuture[],
+    transports: JSON.parse(row.transports) as string[],
     name: row.name,
   };
 }
