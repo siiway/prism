@@ -8,17 +8,19 @@
 // new code needs it in place.
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   ROOT,
+  cloudflareApi,
   confirm,
-  closePrompts,
+  dim,
   fail,
   info,
   isCI,
   ok,
   parseArgs,
+  progress,
   readWranglerConfig,
   run,
   step,
@@ -61,6 +63,9 @@ if (migrationsOnly && !migrate) {
 }
 
 const config = readWranglerConfig();
+// Some wrangler commands ignore account_id in the config and ask which account
+// to use when the login has more than one.
+if (config.account_id) process.env.CLOUDFLARE_ACCOUNT_ID ??= config.account_id;
 const database =
   options.get("--database") ??
   config.d1_databases?.[0]?.database_name ??
@@ -102,12 +107,88 @@ if (build) {
   warn("instead of deploying the Vite build. Run without --skip-build.");
 }
 
-// ── Confirm ───────────────────────────────────────────────────────────────────
+// ── Pending migrations ────────────────────────────────────────────────────────
+// Applied straight through the D1 API, the way `wrangler d1 migrations apply
+// --remote` does it: each file runs as one query together with its row in the
+// migrations table. Doing it here lets us show progress instead of
+// wrangler's tables.
+let pending: string[] = [];
+let applyMigrations = async () => {};
 if (migrate) {
   step("Pending migrations");
-  wrangler(["d1", "migrations", "list", database, "--remote"], {
-    allowFail: true,
-  });
+  const db =
+    config.d1_databases?.find(
+      (d) => d.database_name === database || d.binding === database,
+    ) ?? fail(`${database} is not a D1 database in wrangler.jsonc`);
+  if (!db.database_id)
+    fail(`${database} has no database_id; run bun run setup`);
+  const api = cloudflareApi();
+  const accountId = await resolveAccount(api);
+  process.env.CLOUDFLARE_ACCOUNT_ID = accountId;
+  const d1 = `/accounts/${accountId}/d1/database/${db.database_id}/query`;
+  const query = async (sql: string) => {
+    const { status, json } = await api.request("POST", d1, { sql });
+    const results = (json?.result ?? []) as { success?: boolean }[];
+    if (!json?.success || results.some((r) => r.success === false)) {
+      throw new Error(api.why(status, json));
+    }
+    return results as { results: Record<string, unknown>[] }[];
+  };
+
+  const table = `"${(db.migrations_table ?? "d1_migrations").replace(/"/g, '""')}"`;
+  const dir = join(ROOT, db.migrations_dir ?? "migrations");
+  let applied: Set<unknown>;
+  try {
+    const [res] = await query(`SELECT name FROM ${table} ORDER BY id`);
+    applied = new Set(res.results.map((row) => row.name));
+  } catch (err) {
+    // A new database has no migrations table yet.
+    if (!/no such table/i.test((err as Error).message)) {
+      fail(`could not read the applied migrations: ${(err as Error).message}`);
+    }
+    applied = new Set();
+  }
+  pending = readdirSync(dir)
+    .filter((file) => file.endsWith(".sql") && !applied.has(file))
+    .sort();
+
+  if (pending.length === 0) {
+    ok("none; the database is up to date");
+  } else {
+    info(
+      `${pending.length} to apply${applied.size ? "" : " to a new database"}:`,
+    );
+    for (const name of pending.slice(0, 8)) info(dim(name));
+    if (pending.length > 8) info(dim(`and ${pending.length - 8} more`));
+  }
+
+  applyMigrations = async () => {
+    await query(`CREATE TABLE IF NOT EXISTS ${table}(
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT UNIQUE,
+      applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );`);
+    const bar = progress(pending.length);
+    for (const [i, name] of pending.entries()) {
+      bar.update(i, name);
+      // Checkouts on Windows may have CRLF; the files are LF in git.
+      const sql = readFileSync(join(dir, name), "utf8").replace(/\r\n/g, "\n");
+      try {
+        await query(
+          `${sql}\nINSERT INTO ${table} (name)\nvalues ('${name.replace(/'/g, "''")}');`,
+        );
+      } catch (err) {
+        bar.done();
+        fail(
+          `${name} failed: ${(err as Error).message}\n` +
+            `The ${i} before it are applied. Fix it and deploy again.`,
+        );
+      }
+    }
+    bar.update(pending.length, "");
+    bar.done();
+    ok(`${pending.length} applied`);
+  };
 }
 
 // A CI run was approved by the commit that triggered it. Anything else without
@@ -121,20 +202,19 @@ if (!flags.has("--yes") && !dryRun) {
     }
     const target = migrationsOnly
       ? "migrations only"
-      : migrate
+      : pending.length > 0
         ? "migrations + deploy"
         : "deploy only";
-    const yes = await confirm(`Apply to PRODUCTION (${target})?`, false);
-    closePrompts();
+    const yes = confirm(`Apply to PRODUCTION (${target})?`, false);
     if (!yes) fail("aborted");
   }
 }
 
 // ── Migrate and publish ───────────────────────────────────────────────────────
-if (migrate) {
+if (pending.length > 0) {
   step("Applying migrations");
-  wrangler(["d1", "migrations", "apply", database, "--remote"], { dryRun });
-  if (!dryRun) ok("migrations applied");
+  if (dryRun) info(`would apply ${pending.length} migrations`);
+  else await applyMigrations();
 }
 
 const done = (msg: string) =>
@@ -148,3 +228,19 @@ if (migrationsOnly) {
 step("Deploying");
 wrangler(["deploy"], { dryRun });
 done("Deploy complete.");
+
+/**
+ * The account to deploy to: CLOUDFLARE_ACCOUNT_ID, then account_id in
+ * wrangler.jsonc, then the login's only account.
+ */
+async function resolveAccount(
+  api: ReturnType<typeof cloudflareApi>,
+): Promise<string> {
+  const id = process.env.CLOUDFLARE_ACCOUNT_ID || config.account_id;
+  if (id) return id;
+  const accounts = await api.call<{ id: string }[]>("GET", "/accounts");
+  if (accounts.length === 1) return accounts[0].id;
+  return fail(
+    "this login can use several accounts; set account_id in wrangler.jsonc",
+  );
+}
