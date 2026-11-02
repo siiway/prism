@@ -2447,65 +2447,36 @@ app.post("/token", async (c) => {
     const scopes = JSON.parse(codeRow.scopes) as string[];
     const resources = parseResources(codeRow.resource);
     const hasOffline = scopes.includes("offline_access");
-    const atTtl =
-      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
-    const rtTtl =
-      (user.refresh_token_ttl_days ?? config.refresh_token_ttl_days) *
-      24 *
-      60 *
-      60;
+    const { atTtl, rtTtl } = tokenTtls(user, config);
     const refreshToken = hasOffline ? randomBase64url(48) : null;
 
     const jti = randomId();
-    let accessToken: string;
-    if (oauthApp.use_jwt_tokens) {
-      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
-      accessToken = signAccessToken(
-        {
-          iss: c.env.APP_URL,
-          sub: user.id,
-          aud: extractAud(scopes, c.env.APP_URL, resources),
-          client_id: clientId,
-          jti,
-          scope: scopes.join(" "),
-          ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
-          ...accessAuthClaims(codeRow.auth_time, codeRow.amr),
-        },
-        mldsaKey.secretKey,
-        mldsaKey.kid,
-        atTtl,
-      );
-    } else {
-      accessToken = randomBase64url(48);
-    }
-
-    // Store the HMAC-keyed hash of the bearer values so a D1 leak doesn't
-    // surrender every active session. JWT access tokens are also hashed
-    // here even though they're verified by signature (lookup uses the jti
-    // column) — keeps the column shape uniform and lets revocation match
-    // the supplied JWT via the OR-pattern.
-    const storedAccess = await hashSecret(c.env, accessToken);
-    const storedRefresh = await hashSecret(c.env, refreshToken);
-    await c.env.DB.prepare(
-      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, auth_time, amr, expires_at, refresh_expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        jti,
-        storedAccess,
-        storedRefresh,
-        clientId,
-        user.id,
-        JSON.stringify(scopes),
-        codeRow.resource,
-        dpopJkt,
-        codeRow.auth_time,
-        codeRow.amr,
-        now + atTtl,
-        hasOffline ? now + rtTtl : null,
-        now,
-      )
-      .run();
+    const accessToken = await mintAccessToken(c, oauthApp, {
+      sub: user.id,
+      clientId,
+      jti,
+      scopes,
+      resources,
+      dpopJkt,
+      authTime: codeRow.auth_time,
+      amr: codeRow.amr,
+      ttl: atTtl,
+    });
+    await insertOAuthToken(c.env, {
+      id: jti,
+      accessToken,
+      refreshToken,
+      clientId,
+      userId: user.id,
+      scopes,
+      resource: codeRow.resource,
+      dpopJkt,
+      authTime: codeRow.auth_time,
+      amr: codeRow.amr,
+      expiresAt: now + atTtl,
+      refreshExpiresAt: hasOffline ? now + rtTtl : null,
+      now,
+    });
 
     const response: Record<string, unknown> = {
       access_token: accessToken,
@@ -2592,30 +2563,19 @@ app.post("/token", async (c) => {
 
     const scopes = JSON.parse(tokenRow.scopes) as string[];
     const resources = parseResources(tokenRow.resource);
-    const atTtl =
-      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
+    const { atTtl } = tokenTtls(user, config);
 
-    let newAccessToken: string;
-    if (oauthApp.use_jwt_tokens) {
-      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
-      newAccessToken = signAccessToken(
-        {
-          iss: c.env.APP_URL,
-          sub: tokenRow.user_id,
-          aud: extractAud(scopes, c.env.APP_URL, resources),
-          client_id: tokenRow.client_id,
-          jti: tokenRow.id,
-          scope: scopes.join(" "),
-          ...(effJkt ? { cnf: { jkt: effJkt } } : {}),
-          ...accessAuthClaims(tokenRow.auth_time, tokenRow.amr),
-        },
-        mldsaKey.secretKey,
-        mldsaKey.kid,
-        atTtl,
-      );
-    } else {
-      newAccessToken = randomBase64url(48);
-    }
+    const newAccessToken = await mintAccessToken(c, oauthApp, {
+      sub: tokenRow.user_id,
+      clientId: tokenRow.client_id,
+      jti: tokenRow.id,
+      scopes,
+      resources,
+      dpopJkt: effJkt,
+      authTime: tokenRow.auth_time,
+      amr: tokenRow.amr,
+      ttl: atTtl,
+    });
 
     const storedNewAccess = await hashSecret(c.env, newAccessToken);
 
@@ -2761,57 +2721,32 @@ app.post("/token", async (c) => {
     const scopes = JSON.parse(dc.scopes) as string[];
     const resources = parseResources(dc.resource);
     const hasOffline = scopes.includes("offline_access");
-    const atTtl =
-      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
-    const rtTtl =
-      (user.refresh_token_ttl_days ?? config.refresh_token_ttl_days) *
-      24 *
-      60 *
-      60;
+    const { atTtl, rtTtl } = tokenTtls(user, config);
     const refreshToken = hasOffline ? randomBase64url(48) : null;
 
     const jti = randomId();
-    let accessToken: string;
-    if (oauthApp.use_jwt_tokens) {
-      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
-      accessToken = signAccessToken(
-        {
-          iss: c.env.APP_URL,
-          sub: user.id,
-          aud: extractAud(scopes, c.env.APP_URL, resources),
-          client_id: clientId,
-          jti,
-          scope: scopes.join(" "),
-          ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
-        },
-        mldsaKey.secretKey,
-        mldsaKey.kid,
-        atTtl,
-      );
-    } else {
-      accessToken = randomBase64url(48);
-    }
-
-    const storedAccess = await hashSecret(c.env, accessToken);
-    const storedRefresh = await hashSecret(c.env, refreshToken);
-    await c.env.DB.prepare(
-      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, expires_at, refresh_expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        jti,
-        storedAccess,
-        storedRefresh,
-        clientId,
-        user.id,
-        JSON.stringify(scopes),
-        dc.resource,
-        dpopJkt,
-        now + atTtl,
-        hasOffline ? now + rtTtl : null,
-        now,
-      )
-      .run();
+    const accessToken = await mintAccessToken(c, oauthApp, {
+      sub: user.id,
+      clientId,
+      jti,
+      scopes,
+      resources,
+      dpopJkt,
+      ttl: atTtl,
+    });
+    await insertOAuthToken(c.env, {
+      id: jti,
+      accessToken,
+      refreshToken,
+      clientId,
+      userId: user.id,
+      scopes,
+      resource: dc.resource,
+      dpopJkt,
+      expiresAt: now + atTtl,
+      refreshExpiresAt: hasOffline ? now + rtTtl : null,
+      now,
+    });
 
     const response: Record<string, unknown> = {
       access_token: accessToken,
@@ -2924,48 +2859,32 @@ app.post("/token", async (c) => {
     if (!user || !user.is_active)
       return c.json({ error: "invalid_grant" }, 400);
 
-    const atTtl =
-      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60;
+    const { atTtl } = tokenTtls(user, config);
     const resourceJson = serializeResources(resources);
     const jti = randomId();
-    let accessToken: string;
-    if (oauthApp.use_jwt_tokens) {
-      const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
-      accessToken = signAccessToken(
-        {
-          iss: c.env.APP_URL,
-          sub: user.id,
-          aud: extractAud(newScopes, c.env.APP_URL, resources),
-          client_id: clientId,
-          jti,
-          scope: newScopes.join(" "),
-          ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
-        },
-        mldsaKey.secretKey,
-        mldsaKey.kid,
-        atTtl,
-      );
-    } else {
-      accessToken = randomBase64url(48);
-    }
-    const storedAccess = await hashSecret(c.env, accessToken);
+    const accessToken = await mintAccessToken(c, oauthApp, {
+      sub: user.id,
+      clientId,
+      jti,
+      scopes: newScopes,
+      resources,
+      dpopJkt,
+      ttl: atTtl,
+    });
     // Exchanged tokens are not refreshable (no refresh_token issued).
-    await c.env.DB.prepare(
-      `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, expires_at, refresh_expires_at, created_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-    )
-      .bind(
-        jti,
-        storedAccess,
-        clientId,
-        user.id,
-        JSON.stringify(newScopes),
-        resourceJson,
-        dpopJkt,
-        now + atTtl,
-        now,
-      )
-      .run();
+    await insertOAuthToken(c.env, {
+      id: jti,
+      accessToken,
+      refreshToken: null,
+      clientId,
+      userId: user.id,
+      scopes: newScopes,
+      resource: resourceJson,
+      dpopJkt,
+      expiresAt: now + atTtl,
+      refreshExpiresAt: null,
+      now,
+    });
 
     return c.json({
       access_token: accessToken,
@@ -6076,6 +5995,103 @@ function deriveAcr(amr: string[]): string {
 
 /** RFC 9470 authentication-context claims for a JWT access token, from the
  *  authorizing session's auth_time + amr (stored on the code/token). */
+/** Access- and refresh-token lifetimes in seconds: the user's own override,
+ *  else the site default. */
+function tokenTtls(
+  user: UserRow,
+  config: { access_token_ttl_minutes: number; refresh_token_ttl_days: number },
+): { atTtl: number; rtTtl: number } {
+  return {
+    atTtl:
+      (user.access_token_ttl_minutes ?? config.access_token_ttl_minutes) * 60,
+    rtTtl:
+      (user.refresh_token_ttl_days ?? config.refresh_token_ttl_days) * 86400,
+  };
+}
+
+/** A new access token for the grant: an ML-DSA-signed at+JWT when the app
+ *  uses JWT tokens, otherwise an opaque random value. */
+async function mintAccessToken(
+  c: Context<AppEnv>,
+  app: OAuthAppRow,
+  t: {
+    sub: string;
+    clientId: string;
+    jti: string;
+    scopes: string[];
+    resources: string[];
+    dpopJkt: string | null;
+    authTime?: number | null;
+    amr?: string | null;
+    ttl: number;
+  },
+): Promise<string> {
+  if (!app.use_jwt_tokens) return randomBase64url(48);
+  const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
+  return signAccessToken(
+    {
+      iss: c.env.APP_URL,
+      sub: t.sub,
+      aud: extractAud(t.scopes, c.env.APP_URL, t.resources),
+      client_id: t.clientId,
+      jti: t.jti,
+      scope: t.scopes.join(" "),
+      ...(t.dpopJkt ? { cnf: { jkt: t.dpopJkt } } : {}),
+      ...accessAuthClaims(t.authTime ?? null, t.amr ?? null),
+    },
+    mldsaKey.secretKey,
+    mldsaKey.kid,
+    t.ttl,
+  );
+}
+
+/** Insert a newly issued grant into oauth_tokens.
+ *
+ *  The bearer values are stored as their HMAC-keyed hash so a D1 leak doesn't
+ *  surrender every active session. JWT access tokens are hashed too even
+ *  though they're verified by signature (lookup uses the jti column) — keeps
+ *  the column shape uniform and lets revocation match the supplied JWT via
+ *  the OR-pattern. */
+async function insertOAuthToken(
+  env: Env,
+  t: {
+    id: string;
+    accessToken: string;
+    refreshToken: string | null;
+    clientId: string;
+    userId: string;
+    scopes: string[];
+    resource: string | null;
+    dpopJkt: string | null;
+    authTime?: number | null;
+    amr?: string | null;
+    expiresAt: number;
+    refreshExpiresAt: number | null;
+    now: number;
+  },
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, auth_time, amr, expires_at, refresh_expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      t.id,
+      await hashSecret(env, t.accessToken),
+      await hashSecret(env, t.refreshToken),
+      t.clientId,
+      t.userId,
+      JSON.stringify(t.scopes),
+      t.resource,
+      t.dpopJkt,
+      t.authTime ?? null,
+      t.amr ?? null,
+      t.expiresAt,
+      t.refreshExpiresAt,
+      t.now,
+    )
+    .run();
+}
+
 function accessAuthClaims(
   authTime: number | null,
   amrJson: string | null,
