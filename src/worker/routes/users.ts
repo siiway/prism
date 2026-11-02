@@ -10,6 +10,7 @@ import { optionalAuth } from "../middleware/auth";
 import { getConfig } from "../lib/config";
 import { getGithubReadmeFromCache } from "../lib/githubReadme";
 import { proxyImageUrl } from "../lib/proxyImage";
+import { listPublicApps, listPublicDomains } from "../lib/publicProfile";
 import type { UserRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -82,6 +83,15 @@ app.get("/:username", optionalAuth, async (c) => {
     config.default_profile_show_readme,
   );
 
+  // Joined teams: only public teams. With the user's master flag on, every
+  // team they haven't hidden (team_members.show_on_profile NULL = follow
+  // master, 0 = hidden, 1 = shown). With it off, only teams they pinned
+  // explicitly, so a user can keep the section private but still show one or
+  // two.
+  const shownTeams = showJoinedTeams
+    ? "(tm.show_on_profile IS NULL OR tm.show_on_profile = 1)"
+    : "tm.show_on_profile = 1";
+
   // Each related-table query is gated by its own visibility flag so we don't
   // hit the DB for sections nobody can see.
   const [gpgKeys, authorizedApps, ownedApps, domains, joinedTeams] =
@@ -117,75 +127,27 @@ app.get("/:username", optionalAuth, async (c) => {
             }>()
         : Promise.resolve(null),
       showOwnedApps
-        ? c.env.DB.prepare(
-            `SELECT id, client_id, name, description, icon_url, website_url, created_at
-           FROM oauth_apps
-           WHERE owner_id = ? AND team_id IS NULL AND is_active = 1
-           ORDER BY created_at ASC`,
-          )
-            .bind(row.id)
-            .all<{
-              id: string;
-              client_id: string;
-              name: string;
-              description: string;
-              icon_url: string | null;
-              website_url: string | null;
-              created_at: number;
-            }>()
+        ? listPublicApps(c.env, { userId: row.id })
         : Promise.resolve(null),
       showDomains
-        ? c.env.DB.prepare(
-            `SELECT domain, verified_at
-           FROM domains
-           WHERE user_id = ? AND team_id IS NULL AND verified = 1
-           ORDER BY verified_at ASC`,
-          )
-            .bind(row.id)
-            .all<{ domain: string; verified_at: number | null }>()
+        ? listPublicDomains(c.env.DB, { userId: row.id })
         : Promise.resolve(null),
-      // Joined teams: only public teams, gated by both the user's master flag
-      // and any per-team override on team_members.show_on_profile (NULL =
-      // follow master, 0 = explicitly hidden, 1 = explicitly shown — also
-      // overrides a master-off).
-      showJoinedTeams
-        ? c.env.DB.prepare(
-            `SELECT t.id, t.name, t.avatar_url, tm.role, tm.show_on_profile
+      c.env.DB.prepare(
+        `SELECT t.id, t.name, t.avatar_url, tm.role
            FROM team_members tm
            JOIN teams t ON t.id = tm.team_id
-           WHERE tm.user_id = ?
-             AND t.profile_is_public = 1
-             AND (tm.show_on_profile IS NULL OR tm.show_on_profile = 1)
-           ORDER BY tm.joined_at ASC`,
-          )
-            .bind(row.id)
-            .all<{
-              id: string;
-              name: string;
-              avatar_url: string | null;
-              role: string;
-              show_on_profile: number | null;
-            }>()
-        : // Even when the master toggle is off, surface any team the user
-          // *explicitly* opted into. Lets a user keep their joined-teams
-          // section private by default but still pin one or two.
-          c.env.DB.prepare(
-            `SELECT t.id, t.name, t.avatar_url, tm.role, tm.show_on_profile
-           FROM team_members tm
-           JOIN teams t ON t.id = tm.team_id
-           WHERE tm.user_id = ?
-             AND t.profile_is_public = 1
-             AND tm.show_on_profile = 1
-           ORDER BY tm.joined_at ASC`,
-          )
-            .bind(row.id)
-            .all<{
-              id: string;
-              name: string;
-              avatar_url: string | null;
-              role: string;
-              show_on_profile: number | null;
-            }>(),
+          WHERE tm.user_id = ?
+            AND t.profile_is_public = 1
+            AND ${shownTeams}
+          ORDER BY tm.joined_at ASC`,
+      )
+        .bind(row.id)
+        .all<{
+          id: string;
+          name: string;
+          avatar_url: string | null;
+          role: string;
+        }>(),
     ]);
 
   return c.json({
@@ -198,13 +160,7 @@ app.get("/:username", optionalAuth, async (c) => {
       unproxied_avatar_url: showAvatar ? row.avatar_url : null,
       email: showEmail ? row.email : null,
       joined_at: showJoinedAt ? row.created_at : null,
-      gpg_keys:
-        gpgKeys?.results.map((k) => ({
-          fingerprint: k.fingerprint,
-          key_id: k.key_id,
-          name: k.name,
-          created_at: k.created_at,
-        })) ?? null,
+      gpg_keys: gpgKeys?.results ?? null,
       authorized_apps: authorizedApps
         ? await Promise.all(
             authorizedApps.results.map(async (a) => ({
@@ -220,47 +176,25 @@ app.get("/:username", optionalAuth, async (c) => {
             })),
           )
         : null,
-      owned_apps: ownedApps
-        ? await Promise.all(
-            ownedApps.results.map(async (a) => ({
-              id: a.id,
-              client_id: a.client_id,
-              name: a.name,
-              description: a.description,
-              icon_url: await proxyImageUrl(
-                c.env.APP_URL,
-                c.env.DB,
-                a.icon_url,
-              ),
-              website_url: a.website_url,
-              created_at: a.created_at,
-            })),
-          )
-        : null,
-      domains:
-        domains?.results.map((d) => ({
-          domain: d.domain,
-          verified_at: d.verified_at,
-        })) ?? null,
+      owned_apps: ownedApps,
+      domains,
       // joined_teams is null only when there's nothing to show AND the
       // master toggle says hide. When master is on but the user has
       // 0 visible teams, return [] (so the UI can render an empty section).
       joined_teams:
-        showJoinedTeams || (joinedTeams?.results.length ?? 0) > 0
-          ? joinedTeams
-            ? await Promise.all(
-                joinedTeams.results.map(async (t) => ({
-                  id: t.id,
-                  name: t.name,
-                  avatar_url: await proxyImageUrl(
-                    c.env.APP_URL,
-                    c.env.DB,
-                    t.avatar_url,
-                  ),
-                  role: t.role,
-                })),
-              )
-            : []
+        showJoinedTeams || joinedTeams.results.length > 0
+          ? await Promise.all(
+              joinedTeams.results.map(async (t) => ({
+                id: t.id,
+                name: t.name,
+                avatar_url: await proxyImageUrl(
+                  c.env.APP_URL,
+                  c.env.DB,
+                  t.avatar_url,
+                ),
+                role: t.role,
+              })),
+            )
           : null,
       // Raw markdown — the client sanitizes and rewrites images through the
       // proxy when rendering. We never render server-side, so no XSS surface

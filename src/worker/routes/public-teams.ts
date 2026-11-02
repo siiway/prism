@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { optionalAuth } from "../middleware/auth";
 import { getConfig } from "../lib/config";
 import { proxyImageUrl } from "../lib/proxyImage";
+import { listPublicApps, listPublicDomains } from "../lib/publicProfile";
 import type { TeamRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -188,32 +189,10 @@ app.get("/:id", optionalAuth, async (c) => {
             .first<{ n: number }>()
         : Promise.resolve(null),
       showApps
-        ? c.env.DB.prepare(
-            `SELECT id, client_id, name, description, icon_url, website_url, created_at
-           FROM oauth_apps
-           WHERE team_id = ? AND is_active = 1
-           ORDER BY created_at ASC`,
-          )
-            .bind(team.id)
-            .all<{
-              id: string;
-              client_id: string;
-              name: string;
-              description: string;
-              icon_url: string | null;
-              website_url: string | null;
-              created_at: number;
-            }>()
+        ? listPublicApps(c.env, { teamId: team.id })
         : Promise.resolve(null),
       showDomains
-        ? c.env.DB.prepare(
-            `SELECT domain, verified_at
-           FROM domains
-           WHERE team_id = ? AND verified = 1
-           ORDER BY verified_at ASC`,
-          )
-            .bind(team.id)
-            .all<{ domain: string; verified_at: number | null }>()
+        ? listPublicDomains(c.env.DB, { teamId: team.id })
         : Promise.resolve(null),
       membersPromise,
       subTeamsPromise,
@@ -253,28 +232,8 @@ app.get("/:id", optionalAuth, async (c) => {
               }
             : null,
       member_count: memberCountRow?.n ?? null,
-      apps: apps
-        ? await Promise.all(
-            apps.results.map(async (a) => ({
-              id: a.id,
-              client_id: a.client_id,
-              name: a.name,
-              description: a.description,
-              icon_url: await proxyImageUrl(
-                c.env.APP_URL,
-                c.env.DB,
-                a.icon_url,
-              ),
-              website_url: a.website_url,
-              created_at: a.created_at,
-            })),
-          )
-        : null,
-      domains:
-        domains?.results.map((d) => ({
-          domain: d.domain,
-          verified_at: d.verified_at,
-        })) ?? null,
+      apps,
+      domains,
       members: members
         ? await Promise.all(
             members.results.map(async (m) => ({
