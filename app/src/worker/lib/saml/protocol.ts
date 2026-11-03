@@ -13,7 +13,8 @@ import {
   type Element,
 } from "@xmldom/xmldom";
 import { randomId } from "../crypto";
-import { bytesToBase64, keyInfo, signElement, type SamlSigner } from "./sign";
+import { keyInfo, signElement, type SamlSigner } from "./sign";
+import { bytesToBase64 } from "./x509";
 import { NS, el, serializeDocument, type XmlElement } from "./xml";
 
 export const NAMEID_PERSISTENT =

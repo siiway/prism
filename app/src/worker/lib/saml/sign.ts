@@ -3,7 +3,7 @@
 
 import { getRsaKeyPair } from "../config";
 import { canonicalize, el, type XmlElement } from "./xml";
-import { selfSignedCertificate } from "./x509";
+import { bytesToBase64, selfSignedCertificate } from "./x509";
 
 const C14N = "http://www.w3.org/2001/10/xml-exc-c14n#";
 const ENVELOPED = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
@@ -11,13 +11,6 @@ const RSA_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
 const SHA256 = "http://www.w3.org/2001/04/xmlenc#sha256";
 
 const utf8 = new TextEncoder();
-
-export function bytesToBase64(bytes: Uint8Array): string {
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000)
-    s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
 
 export interface SamlSigner {
   privateKey: CryptoKey;

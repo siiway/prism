@@ -128,9 +128,16 @@ export async function selfSignedCertificate(
   return seq(tbs, algorithm, tlv(0x03, new Uint8Array([0]), signature));
 }
 
+export function bytesToBase64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
 /** PEM text for DER certificate bytes, as operators paste it into SPs. */
 export function toPem(der: Uint8Array): string {
-  const b64 = btoa(String.fromCharCode(...der));
+  const b64 = bytesToBase64(der);
   const lines = b64.match(/.{1,64}/g) ?? [];
   return `-----BEGIN CERTIFICATE-----\n${lines.join("\n")}\n-----END CERTIFICATE-----\n`;
 }

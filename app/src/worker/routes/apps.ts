@@ -1731,14 +1731,25 @@ app.put("/:id/saml", async (c) => {
   if (taken) return c.json({ error: "saml_entity_id_taken" }, 409);
 
   const now = Math.floor(Date.now() / 1000);
-  await c.env.DB.prepare(
-    `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign, created_at, updated_at)
+  try {
+    await c.env.DB.prepare(
+      `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(app_id) DO UPDATE SET entity_id = excluded.entity_id, acs_urls = excluded.acs_urls,
        name_id_format = excluded.name_id_format, sign = excluded.sign, updated_at = excluded.updated_at`,
-  )
-    .bind(id, entityId, JSON.stringify(acsUrls), nameIdFormat, sign, now, now)
-    .run();
+    )
+      .bind(id, entityId, JSON.stringify(acsUrls), nameIdFormat, sign, now, now)
+      .run();
+  } catch (err) {
+    // Another app saved the same entity ID since the check above.
+    if (
+      /UNIQUE constraint failed: saml_service_providers\.entity_id/.test(
+        String(err),
+      )
+    )
+      return c.json({ error: "saml_entity_id_taken" }, 409);
+    throw err;
+  }
 
   auditAppLifecycle(c, "app.update", {
     id,

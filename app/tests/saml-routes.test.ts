@@ -261,6 +261,103 @@ describe("SAML SSO", () => {
     expect(info.next).toBe("continue");
   });
 
+  test("an OAuth consent that covers SAML's scopes goes straight on", async () => {
+    sqlite.run(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES ('c1', 'u1', 'client-1', '["openid","profile","email"]', 0, 1)`,
+    );
+    const token = await startSso();
+    const cookie = await sessionCookie();
+    const info = await (
+      await call(`/api/saml/requests/${token}`, { headers: { Cookie: cookie } })
+    ).json<Body>();
+    expect(info.next).toBe("continue");
+  });
+
+  test("approving adds to the shared consent and never forgets Always", async () => {
+    const consent = () =>
+      sqlite
+        .query(
+          "SELECT scopes, auto_authorize FROM oauth_consents WHERE user_id = 'u1'",
+        )
+        .get() as { scopes: string; auto_authorize: number };
+    // Remembered for OAuth, but without email: SAML asks again.
+    sqlite.run(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES ('c1', 'u1', 'client-1', '["openid","profile"]', 0, 1)`,
+    );
+    const cookie = await sessionCookie();
+    let token = await startSso();
+    const info = await (
+      await call(`/api/saml/requests/${token}`, { headers: { Cookie: cookie } })
+    ).json<Body>();
+    expect(info.next).toBe("consent");
+
+    // Once: the remembered OAuth consent stays exactly as it was.
+    await call(
+      `/api/saml/requests/${token}`,
+      json({ action: "approve", authorization_mode: "once" }, cookie),
+    );
+    expect(JSON.parse(consent().scopes)).toEqual(["openid", "profile"]);
+    expect(consent().auto_authorize).toBe(1);
+
+    // Always: SAML's scopes join OAuth's.
+    token = await startSso();
+    await call(
+      `/api/saml/requests/${token}`,
+      json({ action: "approve", authorization_mode: "always" }, cookie),
+    );
+    expect(JSON.parse(consent().scopes)).toEqual([
+      "openid",
+      "profile",
+      "email",
+    ]);
+    expect(consent().auto_authorize).toBe(1);
+  });
+
+  test("assertions carry the account as it is now, not the session's copy", async () => {
+    sqlite.run(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES ('c1', 'u1', 'client-1', '["profile","email"]', 0, 1)`,
+    );
+    sqlite.run("UPDATE saml_service_providers SET name_id_format = 'email'");
+    const cookie = await sessionCookie(); // minted with alice@example.com
+    // Since then: a new primary email, and a name with a character XML forbids.
+    sqlite.run(
+      "UPDATE users SET email = 'alice@new.example', display_name = 'Ali\u0001ce'",
+    );
+    const token = await startSso();
+    const res = await call(
+      `/api/saml/requests/${token}`,
+      json({ action: "approve" }, cookie),
+    );
+    expect(res.status).toBe(200);
+    const samlResponse = (await res.json<Body>()).saml_response;
+    expect(Buffer.from(samlResponse, "base64").toString("utf8")).not.toContain(
+      "\u0001",
+    );
+    const doc = parseResponse(samlResponse);
+    expect(doc.getElementsByTagNameNS("*", "NameID")[0].textContent).toBe(
+      "alice@new.example",
+    );
+    const attrs = Object.fromEntries(
+      Array.from(doc.getElementsByTagNameNS("*", "Attribute")).map((a) => [
+        a.getAttribute("Name"),
+        a.getElementsByTagNameNS("*", "AttributeValue")[0].textContent,
+      ]),
+    );
+    expect(attrs.email).toBe("alice@new.example");
+    expect(attrs.name).toBe("Alice");
+
+    // An email that's no longer verified can't be the NameID.
+    sqlite.run("UPDATE users SET email_verified = 0");
+    const next = await startSso();
+    const info = await (
+      await call(`/api/saml/requests/${next}`, { headers: { Cookie: cookie } })
+    ).json<Body>();
+    expect(info.error).toBe("saml_email_unverified");
+  });
+
   test("IsPassive without a session is declined with NoPassive", async () => {
     const token = await startSso('IsPassive="true"');
     const info = await (await call(`/api/saml/requests/${token}`)).json<Body>();

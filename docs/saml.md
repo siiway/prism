@@ -55,9 +55,11 @@ Attribute names use the `basic` name format. Choose the app's scopes on its
 - Responses go only to an ACS URL registered for the app, using the HTTP-POST
   binding. Prism doesn't check signatures on requests.
 - Consent works as it does for OAuth. People approve an app the first time,
-  and **Always authorize** skips the question afterwards. First-party apps
-  never ask. The app's [access whitelist](app-access-whitelist.md) applies,
-  and the app appears under the user's connected apps.
+  and **Always authorize** skips the question afterwards. An **Always
+  authorize** given at the app's OAuth sign-in also covers SAML, as long as it
+  includes the scopes SAML releases. First-party apps never ask. The app's
+  [access whitelist](app-access-whitelist.md) applies, and the app appears
+  under the user's connected apps.
 - `ForceAuthn` makes the user sign in again. `IsPassive` gets a `NoPassive`
   response if the user would have to sign in or approve the app first.
 - A request for a different NameID format than the one configured gets an

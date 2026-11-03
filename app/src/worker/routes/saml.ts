@@ -228,10 +228,33 @@ interface Evaluation {
   error?: string;
   scopes: string[];
   session?: { created_at: number; amr: string[] };
+  /** The signed-in user as stored now. The session token's copy of email,
+   *  username and name is a snapshot from sign-in, and an assertion must
+   *  never carry an address the user has since given up. */
+  account?: AuthUser;
+  /** Scopes the user's stored consent for this app already holds. */
+  consentedScopes?: string[];
 }
 
-function sameScopes(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((s) => b.includes(s));
+async function currentAccount(
+  db: D1Database,
+  user: AuthUser,
+): Promise<AuthUser | null> {
+  const row = await db
+    .prepare(
+      "SELECT email, username, display_name, avatar_url, email_verified FROM users WHERE id = ? AND is_active = 1",
+    )
+    .bind(user.id)
+    .first<{
+      email: string;
+      username: string;
+      display_name: string;
+      avatar_url: string | null;
+      email_verified: number;
+    }>();
+  return row
+    ? { ...user, ...row, email_verified: row.email_verified === 1 }
+    : null;
 }
 
 /**
@@ -254,14 +277,17 @@ async function evaluate(
   if (!nameIdPolicyAllows(pending.name_id_format, sp.name_id_format))
     return decline("InvalidNameIDPolicy");
 
-  const user = c.get("user");
+  const sessionUser = c.get("user");
+  const [user, row] = sessionUser
+    ? await Promise.all([
+        currentAccount(c.env.DB, sessionUser),
+        c.env.DB.prepare("SELECT created_at, amr FROM sessions WHERE id = ?")
+          .bind(c.get("sessionId"))
+          .first<{ created_at: number; amr: string | null }>(),
+      ])
+    : [null, null];
   if (!user) return passive ? decline("NoPassive") : { next: "login", scopes };
 
-  const row = await c.env.DB.prepare(
-    "SELECT created_at, amr FROM sessions WHERE id = ?",
-  )
-    .bind(c.get("sessionId"))
-    .first<{ created_at: number; amr: string | null }>();
   const session = {
     created_at: row?.created_at ?? 0,
     amr: row?.amr ? (JSON.parse(row.amr) as string[]) : [],
@@ -280,11 +306,17 @@ async function evaluate(
   if (denied)
     return passive
       ? decline("RequestDenied")
-      : { next: "consent", error: denied, scopes, session };
+      : { next: "consent", error: denied, scopes, session, account: user };
   if (sp.name_id_format === "email" && !(user.email && user.email_verified))
     return passive
       ? decline("RequestDenied")
-      : { next: "consent", error: "saml_email_unverified", scopes, session };
+      : {
+          next: "consent",
+          error: "saml_email_unverified",
+          scopes,
+          session,
+          account: user,
+        };
 
   if (!app.is_first_party) {
     const consent = await c.env.DB.prepare(
@@ -292,15 +324,20 @@ async function evaluate(
     )
       .bind(user.id, app.client_id)
       .first<{ scopes: string; auto_authorize: number }>();
+    // The row is shared with OAuth, whose scopes add openid and the like:
+    // a remembered consent counts when it covers what SAML releases.
+    const consentedScopes = consent
+      ? (JSON.parse(consent.scopes) as string[])
+      : [];
     const remembered =
       consent?.auto_authorize === 1 &&
-      sameScopes(JSON.parse(consent.scopes) as string[], scopes);
+      scopes.every((s) => consentedScopes.includes(s));
     if (!remembered)
       return passive
         ? decline("NoPassive")
-        : { next: "consent", scopes, session };
+        : { next: "consent", scopes, session, account: user, consentedScopes };
   }
-  return { next: "continue", scopes, session };
+  return { next: "continue", scopes, session, account: user };
 }
 
 function destination(c: Context<AppEnv>, loaded: Loaded): Destination {
@@ -330,7 +367,7 @@ samlApiRoutes.get("/requests/:token", async (c) => {
     error: ev.error ?? null,
     scopes: ev.scopes,
     name_id_format: loaded.sp.name_id_format,
-    user: c.get("user") ?? null,
+    user: ev.account ?? c.get("user") ?? null,
   });
 });
 
@@ -383,21 +420,28 @@ samlApiRoutes.post("/requests/:token", async (c) => {
       ),
     );
 
-  const approved = user as AuthUser;
+  const approved = ev.account as AuthUser;
   const now = Math.floor(Date.now() / 1000);
   if (ev.next === "consent") {
     const autoAuthorize =
       body.authorization_mode === "always" && !app.is_first_party ? 1 : 0;
+    // The consent row is shared with OAuth. Add SAML's scopes to it rather
+    // than replace them, and never turn "Always authorize" off: a one-time
+    // approval leaves a remembered consent (and its scopes) as it was.
+    const scopes = [...new Set([...(ev.consentedScopes ?? []), ...ev.scopes])];
     await c.env.DB.prepare(
       `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
        VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(user_id, client_id) DO UPDATE SET scopes = excluded.scopes, granted_at = excluded.granted_at, auto_authorize = excluded.auto_authorize`,
+       ON CONFLICT(user_id, client_id) DO UPDATE SET
+         scopes = CASE WHEN excluded.auto_authorize = 1 OR auto_authorize = 0 THEN excluded.scopes ELSE scopes END,
+         auto_authorize = MAX(auto_authorize, excluded.auto_authorize),
+         granted_at = excluded.granted_at`,
     )
       .bind(
         randomId(),
         approved.id,
         app.client_id,
-        JSON.stringify(ev.scopes),
+        JSON.stringify(scopes),
         now,
         autoAuthorize,
       )

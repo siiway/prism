@@ -47,8 +47,9 @@ SAML，这类应用也可以借助 Prism 完成登录。
 - 响应只通过 HTTP-POST 绑定发送到为该应用注册的 ACS URL。Prism 不校验请求上的
   签名。
 - 授权同意的流程与 OAuth 相同。用户首次使用时批准应用，之后 **始终授权** 即可跳过
-  该询问。第一方应用从不询问。应用的[访问白名单](app-access-whitelist.md) 依然
-  生效，应用会出现在用户的已授权应用中。
+  该询问。在应用的 OAuth 登录中选择的 **始终授权** 同样适用于 SAML，只要其中
+  包含 SAML 发送的范围。第一方应用从不询问。应用的
+  [访问白名单](app-access-whitelist.md) 依然生效，应用会出现在用户的已授权应用中。
 - `ForceAuthn` 会要求用户重新登录。若用户需要先登录或批准应用，`IsPassive` 会得到
   一个 `NoPassive` 响应。
 - 如果请求的 NameID 格式与配置的不同，将收到 `InvalidNameIDPolicy` 响应。

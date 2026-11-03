@@ -55,8 +55,16 @@ function prefixOf(name: string): Prefix {
   return prefix as Prefix;
 }
 
+// Characters XML 1.0 doesn't allow at all, even escaped: C0 controls other
+// than tab, LF and CR, lone surrogates, U+FFFE and U+FFFF. User text (a
+// display name) could hold them, and one would make the whole signed
+// document unparseable, so they're dropped.
+const NOT_XML_CHAR =
+  /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
+
 function escapeText(s: string): string {
   return s
+    .replace(NOT_XML_CHAR, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -65,6 +73,7 @@ function escapeText(s: string): string {
 
 function escapeAttr(s: string): string {
   return s
+    .replace(NOT_XML_CHAR, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/"/g, "&quot;")
