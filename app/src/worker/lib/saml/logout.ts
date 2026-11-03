@@ -14,9 +14,11 @@
 // on. SPs never see the token: an SP's LogoutResponse finds its logout by
 // InResponseTo, the ID of the LogoutRequest only that SP got.
 //
-// A sign-out another site asks for (an SP's LogoutRequest, whose signature
-// Prism can't check, or end_session without a matching id_token_hint) could
-// be forged by any page, so the user confirms it on /logout first. Only that
+// A sign-out another site asks for (an SP's LogoutRequest without its
+// signing certificate on file, or end_session without a matching
+// id_token_hint) could be forged by any page, so the user confirms it on
+// /logout first. With the certificate, the request must be signed, and is
+// then trusted as is (verify.ts). Only that
 // page's same-site request can confirm: the session cookie is SameSite=Lax
 // and CORS admits no other origin.
 //
@@ -35,6 +37,7 @@ import {
 } from "./protocol";
 import { idpEndpoints } from "./serviceProviders";
 import { getSamlSigner } from "./sign";
+import { base64ToBytes } from "./x509";
 
 /** How long a logout may take, visits to every SP included. */
 export const LOGOUT_TTL_SECONDS = 600;
@@ -49,7 +52,7 @@ interface Participant {
   session_index: string;
 }
 
-/** A saml_logouts row (see migration 0087). */
+/** A saml_logouts row (see migrations 0087 and 0088). */
 export interface LogoutRow {
   token_hash: string;
   origin_app_id: string | null;
@@ -63,6 +66,8 @@ export interface LogoutRow {
   current_request_id: string | null;
   status: LogoutStatus;
   finish_url: string | null;
+  /** 1 when the SP's LogoutRequest that started it was validly signed. */
+  verified: number;
   created_at: number;
   expires_at: number;
 }
@@ -136,8 +141,8 @@ async function insertLogout(
   await db
     .prepare(
       `INSERT INTO saml_logouts (token_hash, origin_app_id, origin_request_id, origin_relay_state,
-         origin_name_id, started, pending, finish_url, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         origin_name_id, started, pending, finish_url, verified, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       await sha256Hex(token),
@@ -148,6 +153,7 @@ async function insertLogout(
       fields.started ?? 0,
       fields.pending ?? "[]",
       fields.finish_url ?? null,
+      fields.verified ?? 0,
       now,
       now + LOGOUT_TTL_SECONDS,
     )
@@ -180,6 +186,8 @@ export async function startIdpLogout(
  * Park an SP's LogoutRequest until the /logout page picks it up. The
  * request itself may have come as a cross-site POST, which carries no
  * session cookie, so who is signed in is only checked from the page.
+ * `verified`: it was signed with the SP's certificate on file, so the
+ * page signs the user out without asking.
  */
 export async function startSpLogout(
   db: D1Database,
@@ -188,6 +196,7 @@ export async function startSpLogout(
     requestId: string;
     relayState: string | null;
     nameId: string;
+    verified: boolean;
   },
 ): Promise<string> {
   const token = await insertLogout(db, {
@@ -195,6 +204,7 @@ export async function startSpLogout(
     origin_request_id: origin.requestId,
     origin_relay_state: origin.relayState,
     origin_name_id: origin.nameId,
+    verified: origin.verified ? 1 : 0,
   });
   return logoutPageUrl(token);
 }
@@ -257,8 +267,8 @@ export type BeginOutcome = "confirm" | "end" | "keep" | "raced";
 /**
  * Begin a logout another site asked for, from the /logout page, where the
  * browser's session is known. It ends the session only once the user
- * confirms (`action`); with no session, or for someone else, there's
- * nothing to ask.
+ * confirms (`action`), or straight away for an SP's signed request; with
+ * no session, or for someone else, there's nothing to ask.
  */
 export async function beginLogout(
   db: D1Database,
@@ -285,7 +295,8 @@ export async function beginLogout(
         .bind(session.sessionId, row.origin_app_id, nameId)
         .first());
     if (!known) status = "UnknownPrincipal";
-    else if (action === null) return "confirm";
+    // The SP's signature shows it really asked: no question.
+    else if (action === null && !row.verified) return "confirm";
     else if (action === "cancel") {
       status = "RequestDenied";
       // Still signed in, so not on to the app's signed-out page.
@@ -322,6 +333,8 @@ interface SloTarget {
   entity_id: string;
   slo_url: string | null;
   slo_binding: SloBinding;
+  /** Base64 DER; null when none is on file. */
+  signing_cert: string | null;
 }
 
 async function sloTarget(
@@ -330,7 +343,7 @@ async function sloTarget(
 ): Promise<SloTarget | null> {
   return db
     .prepare(
-      "SELECT entity_id, slo_url, slo_binding FROM saml_service_providers WHERE app_id = ?",
+      "SELECT entity_id, slo_url, slo_binding, signing_cert FROM saml_service_providers WHERE app_id = ?",
     )
     .bind(appId)
     .first<SloTarget>();
@@ -430,12 +443,15 @@ export async function nextLogoutMessage(
 
 /**
  * An SP's LogoutResponse to the LogoutRequest Prism sent it. False when it
- * isn't the answer this logout is waiting for.
+ * isn't the answer this logout is waiting for. With the SP's signing
+ * certificate on file, only a validly signed answer (`verify`, given the
+ * DER certificate) confirms the logout; any other counts as unconfirmed.
  */
 export async function recordLogoutResponse(
   db: D1Database,
   row: LogoutRow,
   response: LogoutResponse,
+  verify: (certificate: Uint8Array) => Promise<boolean>,
 ): Promise<boolean> {
   if (!row.current_app_id || !row.current_request_id) return false;
   const sp = await sloTarget(db, row.current_app_id);
@@ -445,7 +461,10 @@ export async function recordLogoutResponse(
     response.inResponseTo !== row.current_request_id
   )
     return false;
-  const status = response.success ? row.status : partial(row.status);
+  const confirmed =
+    response.success &&
+    (!sp.signing_cert || (await verify(base64ToBytes(sp.signing_cert))));
+  const status = confirmed ? row.status : partial(row.status);
   const saved = await db
     .prepare(
       `UPDATE saml_logouts SET current_app_id = NULL, current_request_id = NULL, status = ?

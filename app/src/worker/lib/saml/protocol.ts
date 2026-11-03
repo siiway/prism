@@ -3,9 +3,11 @@
 // build signed Responses for the HTTP-POST binding, build signed logout
 // messages for either binding, and describe the IdP in metadata.
 //
-// Signatures on incoming messages are not verified. A request only names where the
-// response goes, and Prism sends it only to an ACS URL registered for that
-// service provider, which is what keeps assertions from reaching anyone else.
+// Signatures on AuthnRequests are not verified. A request only names where
+// the response goes, and Prism sends it only to an ACS URL registered for
+// that service provider, which is what keeps assertions from reaching anyone
+// else. Logout messages are verified when the SP's signing certificate is on
+// file (see verify.ts).
 
 import {
   DOMParser,
@@ -232,7 +234,7 @@ function instant(seconds: number): string {
 const newId = () => `_${randomId(20)}`;
 
 /** Allowed clock skew between Prism and the SP for NotBefore. */
-const SKEW_SECONDS = 60;
+export const SKEW_SECONDS = 60;
 /** How long an assertion may be presented; the POST happens right away. */
 const ASSERTION_TTL_SECONDS = 300;
 
@@ -434,12 +436,23 @@ export async function buildErrorResponse(
 
 // ─── Single Logout ───────────────────────────────────────────────────────────
 
+/** Seconds since the epoch of an xs:dateTime attribute; null if absent or
+ *  unreadable. */
+function timeAttr(e: Element, name: string): number | null {
+  const ms = Date.parse(e.getAttribute(name) ?? "");
+  return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
+}
+
 export interface LogoutRequest {
   id: string;
   issuer: string;
   /** Who to sign out: the NameID the SP got in its assertion. */
   nameId: string;
   destination: string | null;
+  issueInstant: number | null;
+  notOnOrAfter: number | null;
+  /** The message's root element, which a signature has to cover. */
+  root: Element;
 }
 
 export function parseLogoutRequest(xml: string): LogoutRequest {
@@ -452,7 +465,29 @@ export function parseLogoutRequest(xml: string): LogoutRequest {
     issuer,
     nameId,
     destination: root.getAttribute("Destination") || null,
+    issueInstant: timeAttr(root, "IssueInstant"),
+    notOnOrAfter: timeAttr(root, "NotOnOrAfter"),
+    root,
   };
+}
+
+/** How old a signed LogoutRequest may be, so a copy can't be replayed later
+ *  to sign someone out without asking. */
+const LOGOUT_REQUEST_MAX_AGE_SECONDS = 300;
+
+/** Whether a LogoutRequest was issued just now and hasn't expired. */
+export function logoutRequestIsFresh(
+  request: LogoutRequest,
+  now = Math.floor(Date.now() / 1000),
+): boolean {
+  const issued = request.issueInstant;
+  if (issued === null) return false;
+  if (issued > now + SKEW_SECONDS) return false;
+  if (issued < now - LOGOUT_REQUEST_MAX_AGE_SECONDS - SKEW_SECONDS)
+    return false;
+  return (
+    request.notOnOrAfter === null || now < request.notOnOrAfter + SKEW_SECONDS
+  );
 }
 
 export interface LogoutResponse {
@@ -460,6 +495,8 @@ export interface LogoutResponse {
   inResponseTo: string | null;
   destination: string | null;
   success: boolean;
+  /** The message's root element, which a signature has to cover. */
+  root: Element;
 }
 
 export function parseLogoutResponse(xml: string): LogoutResponse {
@@ -471,6 +508,7 @@ export function parseLogoutResponse(xml: string): LogoutResponse {
     inResponseTo: root.getAttribute("InResponseTo") || null,
     destination: root.getAttribute("Destination") || null,
     success: code?.getAttribute("Value") === STATUS + "Success",
+    root,
   };
 }
 

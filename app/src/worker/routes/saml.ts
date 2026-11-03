@@ -57,6 +57,7 @@ import {
   buildSuccessResponse,
   decodePostBinding,
   decodeRedirectBinding,
+  logoutRequestIsFresh,
   nameIdPolicyAllows,
   parseAuthnRequest,
   parseLogoutRequest,
@@ -84,6 +85,12 @@ import {
   startSpLogout,
 } from "../lib/saml/logout";
 import { getSamlSigner } from "../lib/saml/sign";
+import {
+  verifyPostSignature,
+  verifyRedirectSignature,
+} from "../lib/saml/verify";
+import { base64ToBytes } from "../lib/saml/x509";
+import type { Element } from "@xmldom/xmldom";
 import type { AuthUser, OAuthAppRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -281,6 +288,9 @@ async function receiveLogout(
   message: {
     field: "SAMLRequest" | "SAMLResponse";
     xml: () => Promise<string>;
+    /** Whether the message (whose root is given) is signed by the SP's
+     *  certificate (DER), the way its binding signs. */
+    signedBy: (root: Element, certificate: Uint8Array) => Promise<boolean>;
   },
   relayState: string | null,
 ) {
@@ -295,20 +305,38 @@ async function receiveLogout(
       if (request.destination && request.destination !== sloUrl)
         throw new SamlError("saml_request_invalid");
       const sp = await c.env.DB.prepare(
-        `SELECT sp.app_id, sp.slo_url FROM saml_service_providers sp
+        `SELECT sp.app_id, sp.slo_url, sp.signing_cert FROM saml_service_providers sp
          JOIN oauth_apps a ON a.id = sp.app_id
          WHERE sp.entity_id = ? AND a.is_active = 1`,
       )
         .bind(request.issuer)
-        .first<{ app_id: string; slo_url: string | null }>();
+        .first<{
+          app_id: string;
+          slo_url: string | null;
+          signing_cert: string | null;
+        }>();
       if (!sp) throw new SamlError("saml_unknown_sp");
       // Nowhere registered to send the answer.
       if (!sp.slo_url) throw new SamlError("saml_slo_not_configured");
+      // With the SP's certificate on file, only a signed request counts:
+      // addressed here (SAML Bindings §3.4.5.2 / §3.5.5.2), issued just
+      // now, and signed with that certificate.
+      if (
+        sp.signing_cert &&
+        (request.destination !== sloUrl ||
+          !logoutRequestIsFresh(request) ||
+          !(await message.signedBy(
+            request.root,
+            base64ToBytes(sp.signing_cert),
+          )))
+      )
+        throw new SamlError("saml_signature_invalid");
       const page = await startSpLogout(c.env.DB, {
         appId: sp.app_id,
         requestId: request.id,
         relayState,
         nameId: request.nameId,
+        verified: !!sp.signing_cert,
       });
       return c.redirect(page, 303);
     }
@@ -319,7 +347,12 @@ async function receiveLogout(
     // The answer to Prism's LogoutRequest names it by ID. Back on /logout,
     // the browser's cookie says which logout to move on.
     const row = await loadLogoutAwaiting(c.env.DB, response.inResponseTo);
-    if (!row || !(await recordLogoutResponse(c.env.DB, row, response)))
+    if (
+      !row ||
+      !(await recordLogoutResponse(c.env.DB, row, response, (certificate) =>
+        message.signedBy(response.root, certificate),
+      ))
+    )
       throw new SamlError("saml_logout_expired");
     return c.redirect("/logout", 303);
   } catch (err) {
@@ -333,11 +366,17 @@ samlProtocolRoutes.get("/slo", async (c) => {
   const response = c.req.query("SAMLResponse");
   const value = request ?? response;
   if (!value) return logoutErrorPage(c, "saml_request_invalid");
+  const field = request ? "SAMLRequest" : "SAMLResponse";
+  // The signature covers the query as sent, before any decoding.
+  const url = c.req.url;
+  const query = url.includes("?") ? url.slice(url.indexOf("?") + 1) : "";
   return receiveLogout(
     c,
     {
-      field: request ? "SAMLRequest" : "SAMLResponse",
+      field,
       xml: () => decodeRedirectBinding(value),
+      signedBy: (_root, certificate) =>
+        verifyRedirectSignature(query, field, certificate),
     },
     c.req.query("RelayState") ?? null,
   );
@@ -355,6 +394,7 @@ samlProtocolRoutes.post("/slo", async (c) => {
     {
       field: request ? "SAMLRequest" : "SAMLResponse",
       xml: async () => decodePostBinding(value),
+      signedBy: verifyPostSignature,
     },
     body.get("RelayState"),
   );

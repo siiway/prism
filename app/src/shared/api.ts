@@ -1389,6 +1389,9 @@ export interface SamlServiceProvider {
   /** SingleLogoutService URL; null when the SP has no single logout. */
   slo_url: string | null;
   slo_binding: SamlSloBinding;
+  /** The SP's signing certificate (PEM), to verify its logout messages;
+   *  null when none is on file. */
+  signing_cert: string | null;
   updated_at: number;
 }
 

@@ -47,7 +47,13 @@ import {
   SLO_BINDINGS,
 } from "../lib/saml/serviceProviders";
 import { getSamlSigner } from "../lib/saml/sign";
-import { toPem } from "../lib/saml/x509";
+import { isUsableCertificate } from "../lib/saml/verify";
+import {
+  base64ToBytes,
+  bytesToBase64,
+  certificateFromText,
+  toPem,
+} from "../lib/saml/x509";
 import type {
   OAuthAppRow,
   AppScopeDefinitionRow,
@@ -1619,6 +1625,9 @@ function samlView(row: SamlSpRow | null) {
         sign: row.sign,
         slo_url: row.slo_url,
         slo_binding: row.slo_binding,
+        signing_cert: row.signing_cert
+          ? toPem(base64ToBytes(row.signing_cert))
+          : null,
         updated_at: row.updated_at,
       }
     : null;
@@ -1670,6 +1679,7 @@ app.put("/:id/saml", async (c) => {
       sign?: unknown;
       slo_url?: unknown;
       slo_binding?: unknown;
+      signing_cert?: unknown;
     }>()
     .catch(() => ({}) as Record<string, unknown>);
 
@@ -1751,6 +1761,17 @@ app.put("/:id/saml", async (c) => {
       },
       400,
     );
+  // The SP's signing certificate is optional too: with it, its logout
+  // messages must be signed. PEM or the bare base64 from its metadata.
+  const certText =
+    typeof body.signing_cert === "string" ? body.signing_cert.trim() : "";
+  let signingCert: string | null = null;
+  if (certText) {
+    const der = certificateFromText(certText);
+    if (!der || !(await isUsableCertificate(der)))
+      return c.json({ error: "saml_certificate_invalid" }, 400);
+    signingCert = bytesToBase64(der);
+  }
 
   const taken = await c.env.DB.prepare(
     "SELECT app_id FROM saml_service_providers WHERE entity_id = ? AND app_id != ?",
@@ -1763,11 +1784,12 @@ app.put("/:id/saml", async (c) => {
   try {
     await c.env.DB.prepare(
       `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign,
-       slo_url, slo_binding, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       slo_url, slo_binding, signing_cert, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(app_id) DO UPDATE SET entity_id = excluded.entity_id, acs_urls = excluded.acs_urls,
        name_id_format = excluded.name_id_format, sign = excluded.sign, slo_url = excluded.slo_url,
-       slo_binding = excluded.slo_binding, updated_at = excluded.updated_at`,
+       slo_binding = excluded.slo_binding, signing_cert = excluded.signing_cert,
+       updated_at = excluded.updated_at`,
     )
       .bind(
         id,
@@ -1777,6 +1799,7 @@ app.put("/:id/saml", async (c) => {
         sign,
         sloUrl || null,
         sloBinding,
+        signingCert,
         now,
         now,
       )

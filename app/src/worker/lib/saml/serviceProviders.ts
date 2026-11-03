@@ -16,6 +16,8 @@ export interface SamlSpRow {
   /** SingleLogoutService URL; null when the SP has no single logout. */
   slo_url: string | null;
   slo_binding: SloBinding;
+  /** Base64 DER of the SP's signing certificate; null when none. */
+  signing_cert: string | null;
   created_at: number;
   updated_at: number;
 }

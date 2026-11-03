@@ -26,6 +26,9 @@ Prism.
    - **Single logout URL** (optional): the app's SingleLogoutService URL,
      and the binding its metadata lists for it. See
      [Single logout](#single-logout).
+   - **Signing certificate** (optional, with single logout): the certificate
+     the app signs its logout messages with, from its metadata, as PEM or
+     base64. It must hold an RSA key, or an EC key on P-256, P-384 or P-521.
 3. Give the app Prism's details from the same tab. Usually the metadata URL is
    enough:
 
@@ -79,9 +82,16 @@ Apps with a single logout URL are signed out together:
 - Signing out of such an app signs the user out of Prism, then out of the
   other apps with single logout that they signed in to with SAML in the same
   browser session. Then the app gets its LogoutResponse.
-- Prism doesn't check signatures on logout requests, so any site could send
-  one. Before one ends the Prism session, Prism asks the user. If they stay
-  signed in, the app gets a `RequestDenied` response.
+- Without the app's signing certificate, Prism can't tell who sent a logout
+  request, so any site could send one. Before one ends the Prism session,
+  Prism asks the user. If they stay signed in, the app gets a
+  `RequestDenied` response.
+- With the app's signing certificate, its logout requests must be signed
+  with it (RSA or ECDSA, with SHA-256 or stronger), carry a `Destination` of Prism's
+  single logout URL, and be no more than 5 minutes old. Prism refuses any
+  other request, and signs the user out without asking for one that passes.
+  The app's logout responses must be signed too, or Prism counts the logout
+  as not confirmed (`PartialLogout`).
 - Signing out of Prism, from the account menu or through OIDC
   `end_session`, signs the user out of those apps before going on.
 - The browser visits each app in turn. If an app doesn't answer, the app that

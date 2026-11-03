@@ -53,6 +53,8 @@ interface SamlForm {
   sign: SamlSignMode;
   slo_url: string;
   slo_binding: SamlSloBinding;
+  /** PEM (or bare base64) text. */
+  signing_cert: string;
 }
 
 const EMPTY: SamlForm = {
@@ -62,6 +64,7 @@ const EMPTY: SamlForm = {
   sign: "assertion",
   slo_url: "",
   slo_binding: "redirect",
+  signing_cert: "",
 };
 
 function toBody(f: SamlForm): SamlUpdateBody {
@@ -75,6 +78,7 @@ function toBody(f: SamlForm): SamlUpdateBody {
     sign: f.sign,
     slo_url: f.slo_url.trim() || null,
     slo_binding: f.slo_binding,
+    signing_cert: f.signing_cert.trim() || null,
   };
 }
 
@@ -126,6 +130,7 @@ export function SamlTab({ app, showMsg }: Props) {
         sign: saml.sign,
         slo_url: saml.slo_url ?? "",
         slo_binding: saml.slo_binding,
+        signing_cert: saml.signing_cert ?? "",
       }
     : EMPTY;
   const form: SamlForm = { ...base, ...edits };
@@ -331,6 +336,21 @@ export function SamlTab({ app, showMsg }: Props) {
                       { value: "post", label: t("apps.saml.bindingPost") },
                     ]}
                     onChange={(v) => set("slo_binding", v)}
+                  />
+                </Field>
+              )}
+              {form.slo_url.trim() !== "" && (
+                <Field
+                  label={t("apps.saml.signingCert")}
+                  hint={t("apps.saml.signingCertHint")}
+                >
+                  <Textarea
+                    value={form.signing_cert}
+                    onChange={(_, d) => set("signing_cert", d.value)}
+                    placeholder={t("apps.saml.signingCertPlaceholder")}
+                    rows={4}
+                    resize="vertical"
+                    textarea={{ className: styles.monoInput }}
                   />
                 </Field>
               )}

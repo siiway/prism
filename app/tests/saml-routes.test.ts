@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { createPublicKey, createVerify } from "node:crypto";
+import { createPrivateKey, createPublicKey, createVerify } from "node:crypto";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { DOMParser } from "@xmldom/xmldom";
 import { Hono } from "hono";
@@ -16,6 +16,7 @@ import { getRsaKeyPair } from "../src/worker/lib/config";
 import { signIdTokenRS256, signJWT } from "../src/worker/lib/jwt";
 import { samlApiRoutes, samlProtocolRoutes } from "../src/worker/routes/saml";
 import { SAML_LOGOUT_COOKIE, SESSION_COOKIE } from "../src/worker/lib/cookies";
+import { selfSignedCertificate, toPem } from "../src/worker/lib/saml/x509";
 import { d1, executionCtx, migratedDatabase, MemoryKv } from "./setup/d1";
 import type {
   AppSamlInfo,
@@ -1027,9 +1028,293 @@ describe("single logout", () => {
     );
     expect((await step("nope")).status).toBe(404);
   });
+
+  describe("with the SP's signing certificate on file", () => {
+    let spKey: CryptoKey;
+    let spKeyPem: string;
+
+    beforeEach(async () => {
+      const keys = (await crypto.subtle.generateKey(
+        {
+          name: "RSASSA-PKCS1-v1_5",
+          modulusLength: 2048,
+          publicExponent: new Uint8Array([1, 0, 1]),
+          hash: "SHA-256",
+        },
+        true,
+        ["sign", "verify"],
+      )) as CryptoKeyPair;
+      spKey = keys.privateKey;
+      spKeyPem = createPrivateKey({
+        key: Buffer.from(
+          await crypto.subtle.exportKey("pkcs8", keys.privateKey),
+        ),
+        format: "der",
+        type: "pkcs8",
+      })
+        .export({ format: "pem", type: "pkcs8" })
+        .toString();
+      const cert = await selfSignedCertificate(
+        keys.publicKey,
+        keys.privateKey,
+        "sp.example",
+      );
+      sqlite.run(
+        "UPDATE saml_service_providers SET signing_cert = ? WHERE app_id = 'a1'",
+        [Buffer.from(cert).toString("base64")],
+      );
+    });
+
+    const iso = (seconds: number) =>
+      new Date(seconds * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+
+    function freshRequest(nameId = "u1", issuedAgo = 0) {
+      const id = `_signed${++logoutCount}`;
+      const now = Math.floor(Date.now() / 1000) - issuedAgo;
+      return {
+        id,
+        xml: `<samlp:LogoutRequest xmlns:samlp="${SAMLP}" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${id}" Version="2.0" IssueInstant="${iso(now)}" Destination="https://prism.example/saml/slo"><saml:Issuer>${SP}</saml:Issuer><saml:NameID>${nameId}</saml:NameID></samlp:LogoutRequest>`,
+      };
+    }
+
+    /** The HTTP-Redirect binding, its query string signed with the key. */
+    async function redirectQuery(
+      field: "SAMLRequest" | "SAMLResponse",
+      xml: string,
+      key = spKey,
+    ) {
+      const signed = `${field}=${deflate(xml)}&RelayState=rs1&SigAlg=${encodeURIComponent("http://www.w3.org/2001/04/xmldsig-more#rsa-sha256")}`;
+      const signature = Buffer.from(
+        await crypto.subtle.sign(
+          "RSASSA-PKCS1-v1_5",
+          key,
+          new TextEncoder().encode(signed),
+        ),
+      ).toString("base64");
+      return `${signed}&Signature=${encodeURIComponent(signature)}`;
+    }
+
+    /** An enveloped XML signature, the HTTP-POST binding's. */
+    function signXml(xml: string) {
+      const sig = new SignedXml({
+        privateKey: spKeyPem,
+        canonicalizationAlgorithm: "http://www.w3.org/2001/10/xml-exc-c14n#",
+        signatureAlgorithm: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+      });
+      sig.addReference({
+        xpath: "/*",
+        digestAlgorithm: "http://www.w3.org/2001/04/xmlenc#sha256",
+        transforms: [
+          "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
+          "http://www.w3.org/2001/10/xml-exc-c14n#",
+        ],
+      });
+      sig.computeSignature(xml, {
+        location: {
+          reference: "/*/*[local-name()='Issuer']",
+          action: "after",
+        },
+      });
+      return sig.getSignedXml();
+    }
+
+    const postSlo = (field: string, xml: string) =>
+      call("/saml/slo", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          [field]: Buffer.from(xml).toString("base64"),
+        }).toString(),
+      });
+
+    const sessionAlive = () =>
+      sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get() !== null;
+
+    test("an unsigned, stale or wrongly signed request is refused", async () => {
+      const refused = "/logout?error=saml_signature_invalid";
+      let res = await call(
+        `/saml/slo?SAMLRequest=${deflate(freshRequest().xml)}`,
+      );
+      expect(res.headers.get("Location")).toBe(refused);
+
+      res = await call(
+        `/saml/slo?${await redirectQuery("SAMLRequest", freshRequest("u1", 3600).xml)}`,
+      );
+      expect(res.headers.get("Location")).toBe(refused);
+
+      const other = (await crypto.subtle.generateKey(
+        {
+          name: "RSASSA-PKCS1-v1_5",
+          modulusLength: 2048,
+          publicExponent: new Uint8Array([1, 0, 1]),
+          hash: "SHA-256",
+        },
+        false,
+        ["sign", "verify"],
+      )) as CryptoKeyPair;
+      res = await call(
+        `/saml/slo?${await redirectQuery("SAMLRequest", freshRequest().xml, other.privateKey)}`,
+      );
+      expect(res.headers.get("Location")).toBe(refused);
+
+      // Signed, but its NameID changed afterwards.
+      res = await postSlo(
+        "SAMLRequest",
+        signXml(freshRequest().xml).replace(">u1<", ">u2<"),
+      );
+      expect(res.headers.get("Location")).toBe(refused);
+    });
+
+    test("a signed request (Redirect) signs out without asking", async () => {
+      const cookie = await sessionCookie();
+      const request = freshRequest();
+      const token = pageToken(
+        await call(
+          `/saml/slo?${await redirectQuery("SAMLRequest", request.xml)}`,
+        ),
+      );
+      const done = await step(token, cookie);
+      expect(sessionAlive()).toBe(false);
+      if (done.body.kind !== "redirect") throw new Error("expected a redirect");
+      const reply = await readRedirect(done.body.url, "SAMLResponse");
+      expect(reply.relayState).toBe("rs1");
+      expect(reply.doc.documentElement.getAttribute("InResponseTo")).toBe(
+        request.id,
+      );
+      expect(statusCodes(reply.doc)).toEqual(["Success"]);
+    });
+
+    test("a signed request (POST) signs out without asking, but only its user", async () => {
+      const cookie = await sessionCookie();
+      // Someone else: nothing ends.
+      let token = pageToken(
+        await postSlo("SAMLRequest", signXml(freshRequest("u2").xml)),
+      );
+      let done = await step(token, cookie);
+      expect(sessionAlive()).toBe(true);
+      if (done.body.kind !== "redirect") throw new Error("expected a redirect");
+      expect(
+        statusCodes((await readRedirect(done.body.url, "SAMLResponse")).doc),
+      ).toEqual(["Requester", "UnknownPrincipal"]);
+
+      token = pageToken(
+        await postSlo("SAMLRequest", signXml(freshRequest().xml)),
+      );
+      done = await step(token, cookie);
+      expect(done.body.kind).toBe("redirect");
+      expect(sessionAlive()).toBe(false);
+    });
+
+    test("only a signed answer confirms the SP signed out", async () => {
+      // The CRM (no certificate) starts it; the wiki has one.
+      const cookie = await sessionCookie();
+      await wikiSignIn(cookie);
+      const run = async (
+        answer: (id: string) => Response | Promise<Response>,
+      ) => {
+        const token = pageToken(
+          await call(`/saml/slo?SAMLRequest=${logoutRequest("u1", SP2).query}`),
+        );
+        expect((await step(token, cookie)).body.kind).toBe("confirm");
+        const first = await step(token, cookie, "confirm");
+        if (first.body.kind !== "redirect")
+          throw new Error("expected a redirect");
+        const sent = await readRedirect(first.body.url, "SAMLRequest");
+        const id = sent.doc.documentElement.getAttribute("ID")!;
+        expect((await answer(id)).headers.get("Location")).toBe("/logout");
+        const last = await step(null, boundCookie(first.res));
+        if (last.body.kind !== "post") throw new Error("expected a POST");
+        const xml = Buffer.from(
+          last.body.fields.SAMLResponse,
+          "base64",
+        ).toString("utf8");
+        return statusCodes(
+          new DOMParser().parseFromString(
+            xml,
+            "text/xml",
+          ) as unknown as Document,
+        );
+      };
+      const response = (id: string) =>
+        `<samlp:LogoutResponse xmlns:samlp="${SAMLP}" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_resp${++logoutCount}" Version="2.0" IssueInstant="${iso(Math.floor(Date.now() / 1000))}" Destination="https://prism.example/saml/slo" InResponseTo="${id}"><saml:Issuer>${SP}</saml:Issuer><samlp:Status><samlp:StatusCode Value="${STATUS}Success"/></samlp:Status></samlp:LogoutResponse>`;
+
+      // Unsigned: counted as not confirmed.
+      expect(
+        await run((id) =>
+          call(`/saml/slo?SAMLResponse=${deflate(response(id))}`),
+        ),
+      ).toEqual(["Success", "PartialLogout"]);
+
+      // Signed: confirmed.
+      await sessionCookie();
+      await wikiSignIn(cookie);
+      expect(
+        await run(async (id) =>
+          call(
+            `/saml/slo?${await redirectQuery("SAMLResponse", response(id))}`,
+          ),
+        ),
+      ).toEqual(["Success"]);
+    });
+  });
 });
 
 describe("single logout settings", () => {
+  test("saves an optional signing certificate, PEM or base64", async () => {
+    app.route("/api/apps", appsRoutes);
+    const cookie = await sessionCookie();
+    const put = (body: unknown) =>
+      call("/api/apps/a1/saml", { ...json(body, cookie), method: "PUT" });
+    const base = {
+      entity_id: SP,
+      acs_urls: [ACS],
+      slo_url: "https://sp.example/slo",
+    };
+    const keys = (await crypto.subtle.generateKey(
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["sign", "verify"],
+    )) as CryptoKeyPair;
+    const cert = await selfSignedCertificate(
+      keys.publicKey,
+      keys.privateKey,
+      "sp.example",
+    );
+
+    let res = await put({
+      ...base,
+      signing_cert: "-----BEGIN CERTIFICATE-----\nnope",
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "saml_certificate_invalid" });
+
+    res = await put({
+      ...base,
+      signing_cert: Buffer.from(cert).toString("base64"),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json<Body>()).saml?.signing_cert).toBe(toPem(cert));
+    expect(
+      (
+        sqlite
+          .query(
+            "SELECT signing_cert FROM saml_service_providers WHERE app_id = 'a1'",
+          )
+          .get() as { signing_cert: string }
+      ).signing_cert,
+    ).toBe(Buffer.from(cert).toString("base64"));
+
+    res = await put({ ...base, signing_cert: toPem(cert) });
+    expect((await res.json<Body>()).saml?.signing_cert).toBe(toPem(cert));
+    res = await put({ ...base, signing_cert: "" });
+    expect((await res.json<Body>()).saml?.signing_cert).toBeNull();
+  });
+
   test("saves an optional single logout URL and binding", async () => {
     app.route("/api/apps", appsRoutes);
     const cookie = await sessionCookie();
