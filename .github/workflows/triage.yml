@@ -1,0 +1,88 @@
+name: Triage
+
+# Labels and assigns new pull requests and issues:
+# - PRs get path labels from labeler.yml, kept in sync as files change, and a
+#   type label from the conventional title (feat -> enhancement, fix -> bug,
+#   docs -> documentation), updated when the title's type changes.
+# - A new PR or issue is assigned to its author when the author can be
+#   assigned here and nobody is assigned yet. The issue forms already add
+#   bug / enhancement.
+#
+# This runs on `pull_request_target` so it can label PRs from forks, which a
+# `pull_request` token can't. It never checks out or runs PR code; it only
+# reads the PR's metadata and file list through the API. Keep it that way.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+  issues:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - if: github.event_name == 'pull_request_target'
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          sync-labels: true
+
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { action, changes } = context.payload;
+            const item = context.payload.pull_request ?? context.payload.issue;
+            const ref = { ...context.repo, issue_number: item.number };
+
+            // Type label from a conventional title: <type>(<scope>)!: <subject>
+            const TYPE_LABELS = {
+              feat: "enhancement",
+              fix: "bug",
+              docs: "documentation",
+            };
+            const typeLabel = (title) =>
+              TYPE_LABELS[/^(\w+)(?:\([^)]*\))?!?:/.exec(title ?? "")?.[1]];
+
+            // On open, and when an edit changes the title. Other edits and
+            // pushes leave it alone, so a label a maintainer removed stays
+            // removed.
+            const pr = context.payload.pull_request;
+            const titleEdit = action === "edited" && changes?.title;
+            if (pr && (action === "opened" || titleEdit)) {
+              const next = typeLabel(pr.title);
+              const prev = titleEdit ? typeLabel(changes.title.from) : undefined;
+              if (prev && prev !== next)
+                await github.rest.issues
+                  .removeLabel({ ...ref, name: prev })
+                  .catch((e) => {
+                    if (e.status !== 404) throw e;
+                  });
+              if (next && next !== prev)
+                await github.rest.issues.addLabels({ ...ref, labels: [next] });
+            }
+
+            // Assign the author of a new PR or issue, if nobody is assigned
+            // by now (the event payload can be stale) and GitHub lets the
+            // author be assigned in this repository.
+            if (action !== "opened") return;
+            const { data: current } = await github.rest.issues.get(ref);
+            if (current.assignees.length > 0) return;
+            try {
+              await github.rest.issues.checkUserCanBeAssigned({
+                ...context.repo,
+                assignee: item.user.login,
+              });
+            } catch (e) {
+              if (e.status === 404) return;
+              throw e;
+            }
+            await github.rest.issues.addAssignees({
+              ...ref,
+              assignees: [item.user.login],
+            });
