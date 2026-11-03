@@ -380,7 +380,6 @@ samlApiRoutes.post("/requests/:token", async (c) => {
         dest,
         action === "decline" ? ev.status! : "RequestDenied",
         signer,
-        sp.sign,
       ),
     );
 

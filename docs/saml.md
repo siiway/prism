@@ -22,6 +22,7 @@ Prism.
      ID, which never changes, or the email address, which works only for
      accounts with a verified email.
    - **Signature**: what Prism signs. Most apps want the assertion signed.
+     Error responses are always signed.
 3. Give the app Prism's details from the same tab. Usually the metadata URL is
    enough:
 

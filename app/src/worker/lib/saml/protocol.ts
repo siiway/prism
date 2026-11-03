@@ -391,18 +391,17 @@ export async function buildSuccessResponse(
   return encodeResponse(response);
 }
 
-/** A Response that reports a failure and carries no assertion. Signed when
- *  the SP gets signed responses, so it can trust the status too. */
+/** A Response that reports a failure and carries no assertion. Always
+ *  signed, whatever the app's signing mode: SPs act on a NoPassive answer
+ *  (and carry on signed out) only when the response is signed. */
 export async function buildErrorResponse(
   dest: Destination,
   status: Exclude<SamlStatus, "Success">,
   signer: SamlSigner,
-  sign: SignMode,
   now = Math.floor(Date.now() / 1000),
 ): Promise<string> {
-  let response = responseElement(dest, now, status, null);
-  if (sign !== "assertion") response = await signElement(response, signer);
-  return encodeResponse(response);
+  const response = responseElement(dest, now, status, null);
+  return encodeResponse(await signElement(response, signer));
 }
 
 // ─── Metadata ────────────────────────────────────────────────────────────────

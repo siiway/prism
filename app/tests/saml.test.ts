@@ -203,11 +203,9 @@ describe("responses", () => {
     });
   });
 
-  test("error responses carry the nested status and no assertion", async () => {
+  test("error responses are signed and carry the nested status, no assertion", async () => {
     const signer = await signerPromise;
-    const xml = decode(
-      await buildErrorResponse(dest, "NoPassive", signer, "both"),
-    );
+    const xml = decode(await buildErrorResponse(dest, "NoPassive", signer));
     const doc = parse(xml);
     const codes = Array.from(doc.getElementsByTagNameNS("*", "StatusCode")).map(
       (c) => c.getAttribute("Value"),
