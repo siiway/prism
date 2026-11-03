@@ -15,7 +15,7 @@ import oauthRoutes from "../src/worker/routes/oauth";
 import { getRsaKeyPair } from "../src/worker/lib/config";
 import { signIdTokenRS256, signJWT } from "../src/worker/lib/jwt";
 import { samlApiRoutes, samlProtocolRoutes } from "../src/worker/routes/saml";
-import { SESSION_COOKIE } from "../src/worker/lib/cookies";
+import { SAML_LOGOUT_COOKIE, SESSION_COOKIE } from "../src/worker/lib/cookies";
 import { d1, executionCtx, migratedDatabase, MemoryKv } from "./setup/d1";
 import type {
   AppSamlInfo,
@@ -727,18 +727,28 @@ describe("single logout", () => {
     return url.searchParams.get("token")!;
   }
 
+  /** The cookie a response binds a begun logout to this browser with. */
+  function boundCookie(res: Response): string {
+    const set = res.headers.get("Set-Cookie") ?? "";
+    const match = new RegExp(`${SAML_LOGOUT_COOKIE}=([^;]+)`).exec(set);
+    expect(match).not.toBeNull();
+    return `${SAML_LOGOUT_COOKIE}=${match![1]}`;
+  }
+
   type Step =
     | { kind: "confirm"; app: { name: string; icon_url: string | null } | null }
     | { kind: "redirect"; url: string }
     | { kind: "post"; url: string; fields: Record<string, string> };
+  /** A step of the /logout page: `token` from its URL, or null for the
+   *  logout the browser's cookie names. */
   const step = async (
-    token: string,
+    token: string | null,
     cookie?: string,
     action?: "confirm" | "cancel",
   ) => {
     const res = await call(
-      `/api/saml/logouts/${token}`,
-      json({ action }, cookie),
+      "/api/saml/logout",
+      json({ token: token ?? undefined, action }, cookie),
     );
     return {
       status: res.status,
@@ -837,9 +847,11 @@ describe("single logout", () => {
     expect(
       sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get(),
     ).toBeNull();
+    // From now on the logout is this browser's; the CRM never sees its token.
+    const bound = boundCookie(first.res);
     if (first.body.kind !== "post") throw new Error("expected a POST");
     expect(first.body.url).toBe(SLO2);
-    expect(first.body.fields.RelayState).toBe(token);
+    expect(first.body.fields.RelayState).toBeUndefined();
     const xml = Buffer.from(first.body.fields.SAMLRequest, "base64").toString(
       "utf8",
     );
@@ -867,17 +879,26 @@ describe("single logout", () => {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
           SAMLResponse: Buffer.from(xml).toString("base64"),
-          RelayState: token,
         }).toString(),
       });
     const stray = await answer(logoutResponse(requestId, SP));
     expect(stray.headers.get("Location")).toBe(
       "/logout?error=saml_logout_expired",
     );
-    expect(pageToken(await answer(logoutResponse(requestId, SP2)))).toBe(token);
+    const back = await answer(logoutResponse(requestId, SP2));
+    expect(back.status).toBe(303);
+    expect(back.headers.get("Location")).toBe("/logout");
+
+    // Only this browser moves it on: not the token alone, nor with another
+    // logout's cookie.
+    expect((await step(token)).status).toBe(404);
+    expect((await step(token, `${SAML_LOGOUT_COOKIE}=other`)).status).toBe(404);
 
     // Last, the wiki gets its LogoutResponse, signed in the query string.
-    const last = await step(token);
+    const last = await step(null, bound);
+    expect(last.res.headers.get("Set-Cookie")).toContain(
+      `${SAML_LOGOUT_COOKIE}=;`,
+    );
     if (last.body.kind !== "redirect") throw new Error("expected a redirect");
     expect(last.body.url.startsWith(`${SLO1}?SAMLResponse=`)).toBe(true);
     const reply = await readRedirect(last.body.url, "SAMLResponse");
@@ -888,7 +909,7 @@ describe("single logout", () => {
     expect(statusCodes(reply.doc)).toEqual(["Success"]);
 
     // And that's the end of it.
-    expect((await step(token)).status).toBe(404);
+    expect((await step(null, bound)).status).toBe(404);
   });
 
   test("an SP that never answers makes it a partial logout", async () => {
@@ -899,9 +920,10 @@ describe("single logout", () => {
       await call(`/saml/slo?SAMLRequest=${request.query}`),
     );
     expect((await step(token, cookie)).body.kind).toBe("confirm");
-    expect((await step(token, cookie, "confirm")).body.kind).toBe("post");
+    const first = await step(token, cookie, "confirm");
+    expect(first.body.kind).toBe("post");
     // Back on the page without the CRM's answer.
-    const last = await step(token);
+    const last = await step(null, boundCookie(first.res));
     if (last.body.kind !== "redirect") throw new Error("expected a redirect");
     const reply = await readRedirect(last.body.url, "SAMLResponse");
     expect(reply.relayState).toBeNull();
@@ -960,22 +982,21 @@ describe("single logout", () => {
       method: "POST",
       headers: { Cookie: cookie },
     });
-    const { saml_logout } = await out.json<{ saml_logout: string }>();
-    const token = new URL(saml_logout, "https://x").searchParams.get("token")!;
+    expect(await out.json()).toEqual({ ok: true, saml_logout: "/logout" });
+    const bound = boundCookie(out);
+    // Nobody else can move it on.
+    expect((await step(null)).status).toBe(404);
 
-    const first = await step(token);
+    const first = await step(null, bound);
     if (first.body.kind !== "redirect") throw new Error("expected a redirect");
     const sent = await readRedirect(first.body.url, "SAMLRequest");
-    expect(sent.relayState).toBe(token);
+    expect(sent.relayState).toBeNull();
     const id = sent.doc.documentElement.getAttribute("ID")!;
-    expect(
-      pageToken(
-        await call(
-          `/saml/slo?SAMLResponse=${deflate(logoutResponse(id, SP))}&RelayState=${token}`,
-        ),
-      ),
-    ).toBe(token);
-    expect((await step(token)).body).toEqual({
+    const back = await call(
+      `/saml/slo?SAMLResponse=${deflate(logoutResponse(id, SP))}`,
+    );
+    expect(back.headers.get("Location")).toBe("/logout");
+    expect((await step(null, bound)).body).toEqual({
       kind: "redirect",
       url: "/login",
     });
@@ -999,7 +1020,7 @@ describe("single logout", () => {
       "/logout?error=saml_slo_not_configured",
     );
     res = await call(
-      `/saml/slo?SAMLResponse=${deflate(logoutResponse("_x", SP2))}&RelayState=nope`,
+      `/saml/slo?SAMLResponse=${deflate(logoutResponse("_x", SP2))}`,
     );
     expect(res.headers.get("Location")).toBe(
       "/logout?error=saml_logout_expired",
@@ -1078,11 +1099,11 @@ describe("OIDC end_session", () => {
     expect(sessionAlive()).toBe(true);
 
     const token = url.searchParams.get("token")!;
-    const ask = await call(`/api/saml/logouts/${token}`, json({}, cookie));
+    const ask = await call("/api/saml/logout", json({ token }, cookie));
     expect(await ask.json()).toEqual({ kind: "confirm", app: null });
     const done = await call(
-      `/api/saml/logouts/${token}`,
-      json({ action: "confirm" }, cookie),
+      "/api/saml/logout",
+      json({ token, action: "confirm" }, cookie),
     );
     expect(await done.json()).toEqual({
       kind: "redirect",
@@ -1100,8 +1121,8 @@ describe("OIDC end_session", () => {
       "token",
     )!;
     const done = await call(
-      `/api/saml/logouts/${token}`,
-      json({ action: "cancel" }, cookie),
+      "/api/saml/logout",
+      json({ token, action: "cancel" }, cookie),
     );
     expect(await done.json()).toEqual({ kind: "redirect", url: "/" });
     expect(sessionAlive()).toBe(true);

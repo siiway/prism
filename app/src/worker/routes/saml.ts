@@ -17,7 +17,7 @@
 //   GET  /api/saml/requests/:token   what the page should do next
 //   POST /api/saml/requests/:token   approve / deny / decline; returns the
 //                                    Response to post
-//   POST /api/saml/logouts/:token    move a browser sign-out on (see
+//   POST /api/saml/logout            move a browser sign-out on (see
 //                                    lib/saml/logout.ts), once the user
 //                                    confirms one another site asked
 //                                    for; returns the next
@@ -30,7 +30,12 @@
 import { Hono, type Context } from "hono";
 import { optionalAuth } from "../middleware/auth";
 import { deliverBackChannelLogout } from "../lib/backchannelLogout";
-import { clearSessionCookie } from "../lib/cookies";
+import {
+  clearSamlLogoutCookie,
+  clearSessionCookie,
+  readSamlLogoutCookie,
+  setSamlLogoutCookie,
+} from "../lib/cookies";
 import { checkAccessWhitelist } from "../lib/appAccess";
 import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
 import { randomBase64url, randomId, sha256Hex } from "../lib/crypto";
@@ -70,7 +75,8 @@ import {
 import {
   beginLogout,
   loadLogout,
-  logoutPageUrl,
+  loadLogoutAwaiting,
+  LOGOUT_TTL_SECONDS,
   nextLogoutMessage,
   recordLogoutResponse,
   recordSamlSession,
@@ -310,12 +316,12 @@ async function receiveLogout(
     const response = parseLogoutResponse(xml);
     if (response.destination && response.destination !== sloUrl)
       throw new SamlError("saml_request_invalid");
-    // Prism sent the logout's token as RelayState, and the SP echoes it.
-    const token = relayState ?? "";
-    const row = await loadLogout(c.env.DB, token);
+    // The answer to Prism's LogoutRequest names it by ID. Back on /logout,
+    // the browser's cookie says which logout to move on.
+    const row = await loadLogoutAwaiting(c.env.DB, response.inResponseTo);
     if (!row || !(await recordLogoutResponse(c.env.DB, row, response)))
       throw new SamlError("saml_logout_expired");
-    return c.redirect(logoutPageUrl(token), 303);
+    return c.redirect("/logout", 303);
   } catch (err) {
     if (err instanceof SamlError) return logoutErrorPage(c, err.code);
     throw err;
@@ -739,18 +745,28 @@ async function endSession(c: Context<AppEnv>) {
   clearSessionCookie(c);
 }
 
-samlApiRoutes.post("/logouts/:token", async (c) => {
-  const token = c.req.param("token");
+/**
+ * `token`: a logout another site asked for, from the /logout page URL.
+ * Without one, the logout this browser began (its cookie). A begun logout
+ * moves on only with that cookie: the SPs it visits never see its token,
+ * and no one else can move it on or read its messages.
+ */
+samlApiRoutes.post("/logout", async (c) => {
+  const body = await c.req
+    .json<{ token?: unknown; action?: unknown }>()
+    .catch(() => ({}) as { token?: unknown; action?: unknown });
+  const bound = readSamlLogoutCookie(c);
+  const token =
+    typeof body.token === "string" && body.token ? body.token : (bound ?? "");
+  const expired = () => c.json({ error: "saml_logout_expired" }, 404);
   let row = await loadLogout(c.env.DB, token);
-  if (!row) return c.json({ error: "saml_logout_expired" }, 404);
+  if (!row) return expired();
+  let begunHere = false;
 
   // Another site asked for this sign-out. This request is same-site, so
   // the session cookie is here (an SP's cross-site POST had none), and only
   // this page can send it: the user confirms before the session ends.
   if (!row.started) {
-    const body = await c.req
-      .json<{ action?: unknown }>()
-      .catch(() => ({}) as { action?: unknown });
     const action =
       body.action === "confirm" || body.action === "cancel"
         ? body.action
@@ -776,13 +792,24 @@ samlApiRoutes.post("/logouts/:token", async (c) => {
         : null;
       return c.json({ kind: "confirm", app: app ?? null });
     }
-    if (outcome === "end") await endSession(c);
-    // Another tab began it first: carry on from where that left it.
-    if (outcome === "raced") row = await loadLogout(c.env.DB, token);
-    if (!row) return c.json({ error: "saml_logout_expired" }, 404);
-  }
+    if (outcome === "raced") {
+      // Another tab of this browser began it first: carry on from where
+      // that left it.
+      if (bound !== token) return expired();
+      row = await loadLogout(c.env.DB, token);
+      if (!row) return expired();
+    } else {
+      if (outcome === "end") await endSession(c);
+      begunHere = true;
+    }
+  } else if (bound !== token) return expired();
 
-  const message = await nextLogoutMessage(c.env, token, row);
-  if (!message) return c.json({ error: "saml_logout_expired" }, 409);
-  return c.json(message);
+  const next = await nextLogoutMessage(c.env, row);
+  if (!next) return c.json({ error: "saml_logout_expired" }, 409);
+  if (next.done) {
+    if (bound === token) clearSamlLogoutCookie(c);
+  } else if (begunHere)
+    // Begun here, with SPs to visit: from now on it's this browser's.
+    setSamlLogoutCookie(c, token, LOGOUT_TTL_SECONDS);
+  return c.json(next.message);
 });

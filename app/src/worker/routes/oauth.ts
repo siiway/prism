@@ -64,8 +64,12 @@ import {
 } from "../lib/resource";
 import { verifyDpopProof } from "../lib/dpop";
 import { deliverBackChannelLogout } from "../lib/backchannelLogout";
-import { startIdpLogout, startUnverifiedLogout } from "../lib/saml/logout";
-import { clearSessionCookie } from "../lib/cookies";
+import {
+  LOGOUT_TTL_SECONDS,
+  startIdpLogout,
+  startUnverifiedLogout,
+} from "../lib/saml/logout";
+import { clearSessionCookie, setSamlLogoutCookie } from "../lib/cookies";
 import meRoutes from "./oauth-me";
 import {
   DEVICE_GRANT_TYPE,
@@ -2822,17 +2826,19 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
       sessionId ?? null,
     );
   // SAML Single Logout: the session's SPs are visited first, on the way to
-  // the target. Read before the session (and its SAML sign-ins) are gone.
+  // the target, by this browser (the cookie). Read before the session (and
+  // its SAML sign-ins) are gone.
   const samlLogout = sessionId
     ? await startIdpLogout(c.env.DB, sessionId, target)
     : null;
+  if (samlLogout) setSamlLogoutCookie(c, samlLogout, LOGOUT_TTL_SECONDS);
   if (sessionId)
     await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
       .bind(sessionId)
       .run();
   clearSessionCookie(c);
 
-  return c.redirect(samlLogout ? `${c.env.APP_URL}${samlLogout}` : target, 302);
+  return c.redirect(samlLogout ? `${c.env.APP_URL}/logout` : target, 302);
 }
 
 app.get("/end_session", optionalAuth, handleEndSession);

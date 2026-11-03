@@ -80,7 +80,9 @@ export function Logout() {
   const { t } = useTranslation();
   const siteName = useSiteName();
 
-  const token = params.get("token") ?? "";
+  // A logout another site asked for; without one, the logout this browser
+  // began (the API knows it by cookie).
+  const token = params.get("token");
   const linkError = params.get("error");
   const [failure, setFailure] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
@@ -102,7 +104,7 @@ export function Logout() {
   };
 
   useEffect(() => {
-    if (!token || linkError || started.current) return;
+    if (linkError || started.current) return;
     started.current = true;
     // Out of the effect body, so the state updates don't run during render.
     queueMicrotask(() => void advance());
@@ -113,9 +115,7 @@ export function Logout() {
     failure ??
     (linkError
       ? t(`apiErrors.${linkError}`, { defaultValue: t("logout.errorBody") })
-      : !token
-        ? t("apiErrors.saml_logout_expired")
-        : null);
+      : null);
 
   if (errorText)
     return (

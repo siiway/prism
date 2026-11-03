@@ -4,9 +4,9 @@ import { Hono } from "hono";
 import { getConfig } from "../lib/config";
 import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
-import { clearSessionCookie } from "../lib/cookies";
+import { clearSessionCookie, setSamlLogoutCookie } from "../lib/cookies";
 import { deliverBackChannelLogout } from "../lib/backchannelLogout";
-import { startIdpLogout } from "../lib/saml/logout";
+import { LOGOUT_TTL_SECONDS, startIdpLogout } from "../lib/saml/logout";
 import {
   hashPassword,
   randomId,
@@ -422,14 +422,16 @@ app.post("/logout", requireAuth, async (c) => {
   // OIDC Back-Channel Logout: notify the user's clients that this session ended.
   if (user)
     await deliverBackChannelLogout(c.env, c.executionCtx, user.id, sessionId);
-  // SAML Single Logout goes through the browser: the page to visit next,
-  // read before the session (and its SAML sign-ins) are gone.
+  // SAML Single Logout goes through the browser, this one (the cookie), on
+  // the page to visit next. Read before the session (and its SAML sign-ins)
+  // are gone.
   const samlLogout = await startIdpLogout(c.env.DB, sessionId, "/login");
+  if (samlLogout) setSamlLogoutCookie(c, samlLogout, LOGOUT_TTL_SECONDS);
   await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
     .bind(sessionId)
     .run();
   clearSessionCookie(c);
-  return c.json({ ok: true, saml_logout: samlLogout });
+  return c.json({ ok: true, saml_logout: samlLogout ? "/logout" : null });
 });
 
 // ─── Email verification ───────────────────────────────────────────────────────

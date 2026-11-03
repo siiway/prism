@@ -9,6 +9,11 @@
 // /logout page moves on to the next. At the end the SP that started it gets
 // its LogoutResponse, or the browser goes where Prism's sign-out goes.
 //
+// Once begun, a logout belongs to the browser it began in: an HttpOnly
+// cookie holds its token, and only a request carrying that cookie moves it
+// on. SPs never see the token: an SP's LogoutResponse finds its logout by
+// InResponseTo, the ID of the LogoutRequest only that SP got.
+//
 // A sign-out another site asks for (an SP's LogoutRequest, whose signature
 // Prism can't check, or end_session without a matching id_token_hint) could
 // be forged by any page, so the user confirms it on /logout first. Only that
@@ -32,7 +37,7 @@ import { idpEndpoints } from "./serviceProviders";
 import { getSamlSigner } from "./sign";
 
 /** How long a logout may take, visits to every SP included. */
-const LOGOUT_TTL_SECONDS = 600;
+export const LOGOUT_TTL_SECONDS = 600;
 
 export type LogoutStatus =
   "Success" | "PartialLogout" | "UnknownPrincipal" | "RequestDenied";
@@ -152,8 +157,10 @@ async function insertLogout(
 
 /**
  * The user is signing out of Prism in the browser. Call before the session
- * row goes. Returns the /logout page that tells the session's SPs and
- * then sends the browser to `finishUrl`, or null when there are none.
+ * row goes. Returns the token of a logout, already begun, that tells the
+ * session's SPs and then sends the browser to `finishUrl`, or null when
+ * there are none. The caller binds it to the browser and sends the browser
+ * to /logout.
  */
 export async function startIdpLogout(
   db: D1Database,
@@ -162,12 +169,11 @@ export async function startIdpLogout(
 ): Promise<string | null> {
   const list = await participants(db, sessionId, null);
   if (list.length === 0) return null;
-  const token = await insertLogout(db, {
+  return insertLogout(db, {
     started: 1,
     pending: JSON.stringify(list),
     finish_url: finishUrl,
   });
-  return logoutPageUrl(token);
 }
 
 /**
@@ -219,6 +225,20 @@ export async function loadLogout(
       "SELECT * FROM saml_logouts WHERE token_hash = ? AND expires_at > ?",
     )
     .bind(await sha256Hex(token), Math.floor(Date.now() / 1000))
+    .first<LogoutRow>();
+}
+
+/** The logout waiting for the answer to the LogoutRequest with this ID. */
+export async function loadLogoutAwaiting(
+  db: D1Database,
+  requestId: string | null,
+): Promise<LogoutRow | null> {
+  if (!requestId) return null;
+  return db
+    .prepare(
+      "SELECT * FROM saml_logouts WHERE current_request_id = ? AND expires_at > ?",
+    )
+    .bind(requestId, Math.floor(Date.now() / 1000))
     .first<LogoutRow>();
 }
 
@@ -318,14 +338,13 @@ async function sloTarget(
 
 /**
  * Move the logout on: the next SP's LogoutRequest, then the LogoutResponse
- * for the SP that started it (or the finish URL). Null when another tab
- * moved it on first, or it's already over.
+ * for the SP that started it (or the finish URL), `done` once the logout is
+ * over. Null when another tab moved it on first, or it's already over.
  */
 export async function nextLogoutMessage(
   env: Env,
-  token: string,
   row: LogoutRow,
-): Promise<OutgoingMessage | null> {
+): Promise<{ message: OutgoingMessage; done: boolean } | null> {
   const db = env.DB;
   const { entityId } = idpEndpoints(env.APP_URL);
   // Coming back here without the last SP's answer: it didn't confirm.
@@ -362,14 +381,15 @@ export async function nextLogoutMessage(
       )
       .run();
     if (!moved.meta.changes) return null;
-    return encodeLogoutMessage(element, {
+    const message = await encodeLogoutMessage(element, {
       field: "SAMLRequest",
       binding: sp.slo_binding,
       url: sp.slo_url,
-      // The SP echoes it, which is how its answer finds this logout.
-      relayState: token,
+      // No RelayState: the answer finds this logout by InResponseTo.
+      relayState: null,
       signer: await getSamlSigner(env),
     });
+    return { message, done: false };
   }
 
   // Every SP visited: finish, once.
@@ -383,8 +403,8 @@ export async function nextLogoutMessage(
 
   if (fromSp(row) && row.origin_app_id) {
     const origin = await sloTarget(db, row.origin_app_id);
-    if (origin?.slo_url)
-      return encodeLogoutMessage(
+    if (origin?.slo_url) {
+      const message = await encodeLogoutMessage(
         logoutResponseElement({
           idpEntityId: entityId,
           destination: origin.slo_url,
@@ -399,8 +419,13 @@ export async function nextLogoutMessage(
           signer: await getSamlSigner(env),
         },
       );
+      return { message, done: true };
+    }
   }
-  return { kind: "redirect", url: row.finish_url ?? "/logged-out" };
+  return {
+    message: { kind: "redirect", url: row.finish_url ?? "/logged-out" },
+    done: true,
+  };
 }
 
 /**

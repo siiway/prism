@@ -1422,7 +1422,7 @@ export interface AdminSamlSetting {
 
 export type SamlUpdateBody = Omit<SamlServiceProvider, "updated_at">;
 
-/** POST /saml/logouts/:token — the next step of a browser sign-out: ask
+/** POST /saml/logout — the next step of a browser sign-out: ask
  *  the user (another site asked for it), a URL to go to (HTTP-Redirect, or
  *  the end) or a form to post (HTTP-POST). */
 export type SamlLogoutStep =

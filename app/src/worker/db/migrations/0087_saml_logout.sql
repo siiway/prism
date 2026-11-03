@@ -24,8 +24,9 @@ CREATE INDEX IF NOT EXISTS idx_saml_sessions_app ON saml_sessions(app_id);
 -- A browser sign-out in progress: the browser visits each SP in turn, and
 -- the one that started it (if an SP did) gets the LogoutResponse at the end.
 --
--- token_hash: SHA-256 (hex) of the token in the /logout page URL, also sent
---   to SPs as RelayState so their LogoutResponses find the row.
+-- token_hash: SHA-256 (hex) of the logout's token: in the /logout page URL
+--   until the logout begins, then in a cookie of the browser it began in.
+--   SPs never get it.
 -- origin_app_id: the app that asked for the sign-out (an SP, or an OIDC
 --   client through end_session); null when the user signed out of Prism.
 -- origin_request_id, origin_relay_state, origin_name_id: an SP's
@@ -59,3 +60,7 @@ CREATE TABLE IF NOT EXISTS saml_logouts (
 
 CREATE INDEX IF NOT EXISTS idx_saml_logouts_expires
   ON saml_logouts(expires_at);
+
+-- An SP's LogoutResponse finds its logout by InResponseTo.
+CREATE INDEX IF NOT EXISTS idx_saml_logouts_current_request
+  ON saml_logouts(current_request_id);

@@ -928,12 +928,13 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       { action, authorization_mode: authorizationMode },
       getToken(),
     ),
-  /** `action` answers a "confirm" step. */
-  samlLogoutStep: (token: string, action?: "confirm" | "cancel") =>
+  /** `token`: a logout another site asked for (from the page URL); null
+   *  for the one this browser began. `action` answers a "confirm" step. */
+  samlLogoutStep: (token: string | null, action?: "confirm" | "cancel") =>
     request<SamlLogoutStep>(
       "POST",
-      `/saml/logouts/${encodeURIComponent(token)}`,
-      { action },
+      "/saml/logout",
+      { token: token ?? undefined, action },
       getToken(),
     ),
 
