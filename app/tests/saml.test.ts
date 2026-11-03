@@ -267,7 +267,14 @@ describe("AuthnRequest", () => {
 
   test("rejects DTDs, malformed XML and other messages", () => {
     expect(
-      code(() => parseAuthnRequest(`<!DOCTYPE x [<!ENTITY a "b">]>${request}`)),
+      code(() =>
+        parseAuthnRequest(
+          request.replace(
+            '<?xml version="1.0"?>',
+            '<?xml version="1.0"?><!DOCTYPE samlp:AuthnRequest [<!ENTITY a "b">]>',
+          ),
+        ),
+      ),
     ).toBe("saml_request_invalid");
     expect(code(() => parseAuthnRequest("<samlp:AuthnRequest"))).toBe(
       "saml_request_invalid",

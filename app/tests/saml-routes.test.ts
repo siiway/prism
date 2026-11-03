@@ -88,17 +88,21 @@ async function sessionCookie(createdAt = Math.floor(Date.now() / 1000)) {
   return `${SESSION_COOKIE}=${jwt}`;
 }
 
-function authnRequest(attrs = "", issuer = SP): string {
-  const xml = `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_req42" Version="2.0" IssueInstant="2026-11-02T10:00:00Z" ${attrs}><saml:Issuer>${issuer}</saml:Issuer></samlp:AuthnRequest>`;
+/** A fresh AuthnRequest ID per request: Prism refuses a repeated one. */
+let requestCount = 0;
+const nextRequestId = () => `_req${++requestCount}`;
+
+function authnRequest(attrs = "", issuer = SP, id = nextRequestId()): string {
+  const xml = `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${id}" Version="2.0" IssueInstant="2026-11-02T10:00:00Z" ${attrs}><saml:Issuer>${issuer}</saml:Issuer></samlp:AuthnRequest>`;
   return encodeURIComponent(
     Buffer.from(deflateRawSync(xml)).toString("base64"),
   );
 }
 
 /** Send an AuthnRequest (redirect binding); returns the parked token. */
-async function startSso(attrs = ""): Promise<string> {
+async function startSso(attrs = "", id?: string): Promise<string> {
   const res = await call(
-    `/saml/sso?SAMLRequest=${authnRequest(attrs)}&RelayState=back-to-page`,
+    `/saml/sso?SAMLRequest=${authnRequest(attrs, SP, id)}&RelayState=back-to-page`,
   );
   expect(res.status).toBe(303);
   const location = new URL(res.headers.get("Location")!, "https://x");
@@ -152,6 +156,41 @@ describe("SAML SSO", () => {
     await startSso('Destination="https://prism.example/saml/sso"');
   });
 
+  test("the same AuthnRequest twice starts only one sign-in", async () => {
+    await startSso("", "_dup");
+    const res = await call(
+      `/saml/sso?SAMLRequest=${authnRequest("", SP, "_dup")}&RelayState=back-to-page`,
+    );
+    expect(res.headers.get("Location")).toBe(
+      "/saml/authorize?error=saml_request_used",
+    );
+  });
+
+  test("refuses an oversized POST binding body before parsing it", async () => {
+    const res = await call("/saml/sso", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `SAMLRequest=${"A".repeat(200 * 1024)}`,
+    });
+    expect(res.headers.get("Location")).toBe(
+      "/saml/authorize?error=saml_request_invalid",
+    );
+  });
+
+  test("accepts the POST binding", async () => {
+    const xml = `<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_post1" Version="2.0" IssueInstant="2026-11-02T10:00:00Z"><saml:Issuer>${SP}</saml:Issuer></samlp:AuthnRequest>`;
+    const res = await call("/saml/sso", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        SAMLRequest: Buffer.from(xml).toString("base64"),
+        RelayState: "rs",
+      }).toString(),
+    });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("Location")).toStartWith("/saml/authorize?request=");
+  });
+
   test("a blocked account can't approve, but can send a refusal", async () => {
     sqlite.run("UPDATE oauth_apps SET access_whitelist_enabled = 1");
     const token = await startSso();
@@ -184,7 +223,7 @@ describe("SAML SSO", () => {
   });
 
   test("consent, then a signed assertion for the registered ACS", async () => {
-    const token = await startSso();
+    const token = await startSso("", "_req42");
     const cookie = await sessionCookie();
 
     const info = await (
@@ -392,6 +431,20 @@ describe("SAML SSO", () => {
       json({ action: "approve" }, stale),
     );
     expect(res.status).toBe(409);
+  });
+
+  test("ForceAuthn doesn't accept a session from the same second", async () => {
+    const token = await startSso('ForceAuthn="true"');
+    const { created_at } = sqlite
+      .query("SELECT created_at FROM saml_requests")
+      .get() as { created_at: number };
+    const sameSecond = await sessionCookie(created_at);
+    const info = await (
+      await call(`/api/saml/requests/${token}`, {
+        headers: { Cookie: sameSecond },
+      })
+    ).json<Body>();
+    expect(info.next).toBe("reauth");
   });
 
   test("a NameID format other than the configured one is declined", async () => {

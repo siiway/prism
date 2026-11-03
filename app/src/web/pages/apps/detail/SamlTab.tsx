@@ -212,7 +212,7 @@ export function SamlTab({ app, showMsg }: Props) {
                   <Input
                     value={form.entity_id}
                     onChange={(_, d) => set("entity_id", d.value)}
-                    placeholder="https://app.example.com/saml/metadata"
+                    placeholder={t("apps.saml.entityIdPlaceholder")}
                     input={{ className: styles.monoInput }}
                   />
                 </Field>
@@ -224,7 +224,7 @@ export function SamlTab({ app, showMsg }: Props) {
                   <Textarea
                     value={form.acs_text}
                     onChange={(_, d) => set("acs_text", d.value)}
-                    placeholder="https://app.example.com/saml/acs"
+                    placeholder={t("apps.saml.acsUrlsPlaceholder")}
                     rows={3}
                     resize="vertical"
                     textarea={{ className: styles.monoInput }}

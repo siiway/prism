@@ -24,7 +24,7 @@ import { Hono, type Context } from "hono";
 import { optionalAuth } from "../middleware/auth";
 import { checkAccessWhitelist } from "../lib/appAccess";
 import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
-import { randomBase64url, randomId } from "../lib/crypto";
+import { randomBase64url, randomId, sha256Hex } from "../lib/crypto";
 import { computeIsVerified } from "../lib/domainVerify";
 import {
   deliverUserEmailNotifications,
@@ -62,23 +62,28 @@ type AppEnv = { Bindings: Env; Variables: Variables };
 
 /** How long a parked request waits for the user (sign-in included). */
 const REQUEST_TTL_SECONDS = 600;
+/** A form-encoded POST binding body: the 32 KiB SAMLRequest limit, its
+ *  encoding overhead and RelayState fit well within this. */
+const MAX_POST_BODY = 128 * 1024;
 /** RelayState is opaque to Prism and echoed back; the spec suggests 80
  *  bytes, real SPs send more, so only absurd values are refused. */
 const MAX_RELAY_STATE = 2048;
 
+/** A saml_requests row (see migration 0085). */
 interface PendingRequest {
+  token_hash: string;
   app_id: string;
   /** AuthnRequest ID, echoed as InResponseTo. */
   request_id: string;
   acs_url: string;
   relay_state: string | null;
   name_id_format: string | null;
-  force_authn: boolean;
-  is_passive: boolean;
+  force_authn: number;
+  is_passive: number;
   created_at: number;
+  expires_at: number;
+  consumed_at: number | null;
 }
-
-const requestKey = (token: string) => `saml_req:${token}`;
 
 // ─── Protocol endpoints ──────────────────────────────────────────────────────
 
@@ -136,19 +141,34 @@ async function receiveRequest(
       throw new SamlError("saml_binding_unsupported");
 
     const token = randomBase64url(32);
-    const pending: PendingRequest = {
-      app_id: sp.app_id,
-      request_id: request.id,
-      acs_url: acsUrl,
-      relay_state: relayState || null,
-      name_id_format: request.nameIdFormat,
-      force_authn: request.forceAuthn,
-      is_passive: request.isPassive,
-      created_at: Math.floor(Date.now() / 1000),
-    };
-    await c.env.KV_CACHE.put(requestKey(token), JSON.stringify(pending), {
-      expirationTtl: REQUEST_TTL_SECONDS,
-    });
+    const now = Math.floor(Date.now() / 1000);
+    // An expired row for the same ID no longer counts as a replay.
+    await c.env.DB.prepare(
+      "DELETE FROM saml_requests WHERE app_id = ? AND request_id = ? AND expires_at <= ?",
+    )
+      .bind(sp.app_id, request.id, now)
+      .run();
+    const stored = await c.env.DB.prepare(
+      `INSERT INTO saml_requests (token_hash, app_id, request_id, acs_url, relay_state,
+         name_id_format, force_authn, is_passive, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(app_id, request_id) DO NOTHING`,
+    )
+      .bind(
+        await sha256Hex(token),
+        sp.app_id,
+        request.id,
+        acsUrl,
+        relayState || null,
+        request.nameIdFormat,
+        request.forceAuthn ? 1 : 0,
+        request.isPassive ? 1 : 0,
+        now,
+        now + REQUEST_TTL_SECONDS,
+      )
+      .run();
+    // The same AuthnRequest again (a retry or a replay): one sign-in each.
+    if (!stored.meta.changes) throw new SamlError("saml_request_used");
     return c.redirect(
       `/saml/authorize?request=${encodeURIComponent(token)}`,
       303,
@@ -169,18 +189,43 @@ samlProtocolRoutes.get("/sso", async (c) => {
   );
 });
 
-samlProtocolRoutes.post("/sso", async (c) => {
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.parseBody();
-  } catch {
-    return errorPage(c, "saml_request_invalid");
+/** The request body as text, or null once it passes `max` bytes. The
+ *  endpoint is unauthenticated, so nothing larger is buffered. */
+async function readBoundedText(
+  req: Request,
+  max: number,
+): Promise<string | null> {
+  if (Number(req.headers.get("Content-Length") ?? 0) > max) return null;
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
   }
-  const value = body.SAMLRequest;
-  if (typeof value !== "string" || !value)
-    return errorPage(c, "saml_request_invalid");
-  const relayState =
-    typeof body.RelayState === "string" ? body.RelayState : null;
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+samlProtocolRoutes.post("/sso", async (c) => {
+  const text = await readBoundedText(c.req.raw, MAX_POST_BODY);
+  if (text === null) return errorPage(c, "saml_request_invalid");
+  const body = new URLSearchParams(text);
+  const value = body.get("SAMLRequest");
+  if (!value) return errorPage(c, "saml_request_invalid");
+  const relayState = body.get("RelayState");
   return receiveRequest(c, async () => decodePostBinding(value), relayState);
 });
 
@@ -190,7 +235,6 @@ export const samlApiRoutes = new Hono<AppEnv>();
 samlApiRoutes.use("*", optionalAuth);
 
 interface Loaded {
-  token: string;
   pending: PendingRequest;
   app: OAuthAppRow;
   sp: SamlSpRow;
@@ -200,9 +244,14 @@ async function loadRequest(
   c: Context<AppEnv>,
 ): Promise<Loaded | { error: string }> {
   const token = c.req.param("token") ?? "";
-  const raw = token ? await c.env.KV_CACHE.get(requestKey(token)) : null;
-  if (!raw) return { error: "saml_request_expired" };
-  const pending = JSON.parse(raw) as PendingRequest;
+  const pending = token
+    ? await c.env.DB.prepare(
+        "SELECT * FROM saml_requests WHERE token_hash = ? AND expires_at > ? AND consumed_at IS NULL",
+      )
+        .bind(await sha256Hex(token), Math.floor(Date.now() / 1000))
+        .first<PendingRequest>()
+    : null;
+  if (!pending) return { error: "saml_request_expired" };
   const [app, sp] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ? AND is_active = 1")
       .bind(pending.app_id)
@@ -215,7 +264,7 @@ async function loadRequest(
   // arrived; or the ACS URL was removed from its list.
   if (!app || !sp || !parseAcsUrls(sp).includes(pending.acs_url))
     return { error: "saml_unknown_sp" };
-  return { token, pending, app, sp };
+  return { pending, app, sp };
 }
 
 type Next = "login" | "reauth" | "consent" | "continue" | "decline";
@@ -267,7 +316,7 @@ async function evaluate(
   { pending, app, sp }: Loaded,
 ): Promise<Evaluation> {
   const scopes = releasedScopes(app);
-  const passive = pending.is_passive;
+  const passive = pending.is_passive === 1;
   const decline = (status: Evaluation["status"]): Evaluation => ({
     next: "decline",
     status,
@@ -292,8 +341,9 @@ async function evaluate(
     created_at: row?.created_at ?? 0,
     amr: row?.amr ? (JSON.parse(row.amr) as string[]) : [],
   };
-  // ForceAuthn: the user must sign in again after the request arrived.
-  if (pending.force_authn && session.created_at < pending.created_at)
+  // ForceAuthn: the user must sign in again after the request arrived. A
+  // session from the same second can't be told apart, so it isn't enough.
+  if (pending.force_authn === 1 && session.created_at <= pending.created_at)
     return passive ? decline("NoPassive") : { next: "reauth", scopes };
 
   // Accounts that may not use the app see why on the page (and can send the
@@ -399,29 +449,48 @@ samlApiRoutes.post("/requests/:token", async (c) => {
     (action === "approve" && (ev.next === "consent" || ev.next === "continue"));
   if (!allowed) return c.json({ error: "saml_request_state" }, 409);
 
-  // One answer per request: consume it before building the response, so a
-  // double submit can't produce two assertions.
-  await c.env.KV_CACHE.delete(requestKey(loaded.token));
   const signer = await getSamlSigner(c.env);
   const dest = destination(c, loaded);
-  const reply = (samlResponse: string) =>
-    c.json({
-      acs_url: pending.acs_url,
-      saml_response: samlResponse,
-      relay_state: pending.relay_state,
-    });
-
-  if (action !== "approve")
-    return reply(
-      await buildErrorResponse(
+  const now = Math.floor(Date.now() / 1000);
+  const approved = action === "approve" ? (ev.account as AuthUser) : null;
+  const samlResponse = approved
+    ? await buildSuccessResponse(
+        dest,
+        {
+          nameId: {
+            format: sp.name_id_format,
+            value: sp.name_id_format === "email" ? approved.email : approved.id,
+          },
+          attributes: await samlAttributes(c.env.DB, approved, ev.scopes),
+          authnInstant: ev.session?.created_at ?? now,
+          amr: ev.session?.amr ?? [],
+        },
+        signer,
+        sp.sign,
+      )
+    : await buildErrorResponse(
         dest,
         action === "decline" ? ev.status! : "RequestDenied",
         signer,
-      ),
-    );
+      );
 
-  const approved = ev.account as AuthUser;
-  const now = Math.floor(Date.now() / 1000);
+  // One answer per request, claimed in a single write once the response is
+  // built: a failure above leaves the request to retry, and of two
+  // concurrent submits only one gets a response.
+  const claim = await c.env.DB.prepare(
+    "UPDATE saml_requests SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL",
+  )
+    .bind(now, pending.token_hash)
+    .run();
+  if (!claim.meta.changes)
+    return c.json({ error: "saml_request_expired" }, 404);
+  const reply = c.json({
+    acs_url: pending.acs_url,
+    saml_response: samlResponse,
+    relay_state: pending.relay_state,
+  });
+  if (!approved) return reply;
+
   if (ev.next === "consent") {
     const autoAuthorize =
       body.authorization_mode === "always" && !app.is_first_party ? 1 : 0;
@@ -447,21 +516,6 @@ samlApiRoutes.post("/requests/:token", async (c) => {
       )
       .run();
   }
-
-  const samlResponse = await buildSuccessResponse(
-    dest,
-    {
-      nameId: {
-        format: sp.name_id_format,
-        value: sp.name_id_format === "email" ? approved.email : approved.id,
-      },
-      attributes: await samlAttributes(c.env.DB, approved, ev.scopes),
-      authnInstant: ev.session?.created_at ?? now,
-      amr: ev.session?.amr ?? [],
-    },
-    signer,
-    sp.sign,
-  );
 
   // The same notice and audit trail as an OAuth authorization: a consent
   // the user just gave always notifies; a remembered one only on opt-in.
@@ -522,5 +576,5 @@ samlApiRoutes.post("/requests/:token", async (c) => {
   ];
   c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, events));
 
-  return reply(samlResponse);
+  return reply;
 });

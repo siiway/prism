@@ -57,4 +57,13 @@ export async function sweepExpiredOAuthCodes(db: D1Database): Promise<void> {
     )
     .bind(now, BATCH_SIZE)
     .run();
+  await db
+    .prepare(
+      `DELETE FROM saml_requests
+        WHERE token_hash IN (
+          SELECT token_hash FROM saml_requests WHERE expires_at <= ? LIMIT ?
+        )`,
+    )
+    .bind(now, BATCH_SIZE)
+    .run();
 }
