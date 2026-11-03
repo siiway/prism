@@ -243,6 +243,15 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
         })),
     },
     {
+      // A browser sign-out: confirms one another site asked for, then
+      // visits each SAML app in turn. Public, since the session ends on the
+      // way.
+      path: "/logout",
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/Logout").then((m) => ({ Component: m.Logout })),
+    },
+    {
       // OIDC RP-Initiated Logout landing page (public — the session is already
       // ended by the time the browser lands here).
       path: "/logged-out",

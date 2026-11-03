@@ -25,7 +25,8 @@ export async function sweepExpiredSessions(db: D1Database): Promise<void> {
 
 /**
  * Sweep expired short-lived OAuth artifacts: authorization codes, RFC 8628
- * device codes, and browser-bound social-login state. All are already refused
+ * device codes, browser-bound social-login state, and SAML sign-in requests
+ * and single logouts in progress. All are already refused
  * once expired; this just keeps their tables from accumulating dead rows.
  */
 export async function sweepExpiredOAuthCodes(db: D1Database): Promise<void> {
@@ -62,6 +63,15 @@ export async function sweepExpiredOAuthCodes(db: D1Database): Promise<void> {
       `DELETE FROM saml_requests
         WHERE token_hash IN (
           SELECT token_hash FROM saml_requests WHERE expires_at <= ? LIMIT ?
+        )`,
+    )
+    .bind(now, BATCH_SIZE)
+    .run();
+  await db
+    .prepare(
+      `DELETE FROM saml_logouts
+        WHERE token_hash IN (
+          SELECT token_hash FROM saml_logouts WHERE expires_at <= ? LIMIT ?
         )`,
     )
     .bind(now, BATCH_SIZE)

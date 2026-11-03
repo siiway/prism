@@ -1,0 +1,432 @@
+// SAML Single Logout, identity-provider side, and the browser sign-outs
+// it rides on.
+//
+// Prism remembers which SPs each of its sessions signed in to (saml_sessions).
+// When the session ends in the browser, by signing out of Prism, through
+// OIDC end_session, or because one SP sent a LogoutRequest, the browser
+// visits every other SP with a single logout URL in turn: Prism sends a
+// LogoutRequest, the SP answers with a LogoutResponse at /saml/slo, and the
+// /logout page moves on to the next. At the end the SP that started it gets
+// its LogoutResponse, or the browser goes where Prism's sign-out goes.
+//
+// A sign-out another site asks for (an SP's LogoutRequest, whose signature
+// Prism can't check, or end_session without a matching id_token_hint) could
+// be forged by any page, so the user confirms it on /logout first. Only that
+// page's same-site request can confirm: the session cookie is SameSite=Lax
+// and CORS admits no other origin.
+//
+// Sessions that end without a browser (expiry, revocation from another
+// device) can't reach SPs this way; their rows just go with the session.
+
+import { randomBase64url, sha256Hex } from "../crypto";
+import {
+  encodeLogoutMessage,
+  logoutRequestElement,
+  logoutResponseElement,
+  type LogoutResponse,
+  type NameIdFormat,
+  type OutgoingMessage,
+  type SloBinding,
+} from "./protocol";
+import { idpEndpoints } from "./serviceProviders";
+import { getSamlSigner } from "./sign";
+
+/** How long a logout may take, visits to every SP included. */
+const LOGOUT_TTL_SECONDS = 600;
+
+export type LogoutStatus =
+  "Success" | "PartialLogout" | "UnknownPrincipal" | "RequestDenied";
+
+interface Participant {
+  app_id: string;
+  name_id: string;
+  name_id_format: NameIdFormat;
+  session_index: string;
+}
+
+/** A saml_logouts row (see migration 0087). */
+export interface LogoutRow {
+  token_hash: string;
+  origin_app_id: string | null;
+  origin_request_id: string | null;
+  origin_relay_state: string | null;
+  origin_name_id: string | null;
+  started: number;
+  /** JSON Participant[]. */
+  pending: string;
+  current_app_id: string | null;
+  current_request_id: string | null;
+  status: LogoutStatus;
+  finish_url: string | null;
+  created_at: number;
+  expires_at: number;
+}
+
+/** The SessionIndex of a Prism session's sign-ins to one SP. Stable, so a
+ *  later assertion names the same SP session; derived, so it doesn't give
+ *  away the session ID. */
+export async function samlSessionIndex(
+  sessionId: string,
+  appId: string,
+): Promise<string> {
+  const hash = await sha256Hex(`saml-session:${sessionId}:${appId}`);
+  return `_${hash.slice(0, 40)}`;
+}
+
+/** Remember that a Prism session signed in to an SP. */
+export async function recordSamlSession(
+  db: D1Database,
+  s: Omit<Participant, "app_id"> & { app_id: string; session_id: string },
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO saml_sessions (session_id, app_id, name_id, name_id_format, session_index, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(session_id, app_id) DO UPDATE SET name_id = excluded.name_id,
+         name_id_format = excluded.name_id_format, session_index = excluded.session_index,
+         created_at = excluded.created_at`,
+    )
+    .bind(
+      s.session_id,
+      s.app_id,
+      s.name_id,
+      s.name_id_format,
+      s.session_index,
+      Math.floor(Date.now() / 1000),
+    )
+    .run();
+}
+
+/** The SPs a session signed in to that have a single logout URL, oldest
+ *  first, leaving out the SP that started the logout (if one did). */
+async function participants(
+  db: D1Database,
+  sessionId: string,
+  exceptAppId: string | null,
+): Promise<Participant[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT s.app_id, s.name_id, s.name_id_format, s.session_index
+       FROM saml_sessions s
+       JOIN saml_service_providers sp ON sp.app_id = s.app_id
+       JOIN oauth_apps a ON a.id = s.app_id
+       WHERE s.session_id = ? AND s.app_id != ? AND a.is_active = 1
+         AND sp.slo_url IS NOT NULL AND sp.slo_url != ''
+       ORDER BY s.created_at`,
+    )
+    .bind(sessionId, exceptAppId ?? "")
+    .all<Participant>();
+  return results;
+}
+
+export const logoutPageUrl = (token: string) =>
+  `/logout?token=${encodeURIComponent(token)}`;
+
+async function insertLogout(
+  db: D1Database,
+  fields: Partial<LogoutRow>,
+): Promise<string> {
+  const token = randomBase64url(32);
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `INSERT INTO saml_logouts (token_hash, origin_app_id, origin_request_id, origin_relay_state,
+         origin_name_id, started, pending, finish_url, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      await sha256Hex(token),
+      fields.origin_app_id ?? null,
+      fields.origin_request_id ?? null,
+      fields.origin_relay_state ?? null,
+      fields.origin_name_id ?? null,
+      fields.started ?? 0,
+      fields.pending ?? "[]",
+      fields.finish_url ?? null,
+      now,
+      now + LOGOUT_TTL_SECONDS,
+    )
+    .run();
+  return token;
+}
+
+/**
+ * The user is signing out of Prism in the browser. Call before the session
+ * row goes. Returns the /logout page that tells the session's SPs and
+ * then sends the browser to `finishUrl`, or null when there are none.
+ */
+export async function startIdpLogout(
+  db: D1Database,
+  sessionId: string,
+  finishUrl: string,
+): Promise<string | null> {
+  const list = await participants(db, sessionId, null);
+  if (list.length === 0) return null;
+  const token = await insertLogout(db, {
+    started: 1,
+    pending: JSON.stringify(list),
+    finish_url: finishUrl,
+  });
+  return logoutPageUrl(token);
+}
+
+/**
+ * Park an SP's LogoutRequest until the /logout page picks it up. The
+ * request itself may have come as a cross-site POST, which carries no
+ * session cookie, so who is signed in is only checked from the page.
+ */
+export async function startSpLogout(
+  db: D1Database,
+  origin: {
+    appId: string;
+    requestId: string;
+    relayState: string | null;
+    nameId: string;
+  },
+): Promise<string> {
+  const token = await insertLogout(db, {
+    origin_app_id: origin.appId,
+    origin_request_id: origin.requestId,
+    origin_relay_state: origin.relayState,
+    origin_name_id: origin.nameId,
+  });
+  return logoutPageUrl(token);
+}
+
+/**
+ * Park an OIDC end_session request that didn't prove which app sent it,
+ * for the user to confirm on the /logout page. `appId` names the app the
+ * browser goes back to, when there is one.
+ */
+export async function startUnverifiedLogout(
+  db: D1Database,
+  opts: { appId: string | null; finishUrl: string },
+): Promise<string> {
+  const token = await insertLogout(db, {
+    origin_app_id: opts.appId,
+    finish_url: opts.finishUrl,
+  });
+  return logoutPageUrl(token);
+}
+
+export async function loadLogout(
+  db: D1Database,
+  token: string,
+): Promise<LogoutRow | null> {
+  if (!token) return null;
+  return db
+    .prepare(
+      "SELECT * FROM saml_logouts WHERE token_hash = ? AND expires_at > ?",
+    )
+    .bind(await sha256Hex(token), Math.floor(Date.now() / 1000))
+    .first<LogoutRow>();
+}
+
+/** Whether an SP's LogoutRequest started this logout (and gets an answer). */
+const fromSp = (row: LogoutRow) => row.origin_request_id !== null;
+
+/**
+ * - "confirm": ask the user first; nothing has changed.
+ * - "end": begun; the caller ends the Prism session now.
+ * - "keep": begun without ending anything: nobody was signed in, the SP's
+ *   request named someone else, or the user said no.
+ * - "raced": another tab began it first.
+ */
+export type BeginOutcome = "confirm" | "end" | "keep" | "raced";
+
+/**
+ * Begin a logout another site asked for, from the /logout page, where the
+ * browser's session is known. It ends the session only once the user
+ * confirms (`action`); with no session, or for someone else, there's
+ * nothing to ask.
+ */
+export async function beginLogout(
+  db: D1Database,
+  row: LogoutRow,
+  session: { sessionId: string; userId: string; email: string | null } | null,
+  action: "confirm" | "cancel" | null,
+): Promise<BeginOutcome> {
+  let status: LogoutStatus = "Success";
+  let list: Participant[] = [];
+  let finishUrl = row.finish_url;
+  let outcome: BeginOutcome = "keep";
+  if (session) {
+    // An SP's request names whom to sign out; end_session means whoever is
+    // signed in.
+    const nameId = row.origin_name_id ?? "";
+    const known =
+      !fromSp(row) ||
+      nameId === session.userId ||
+      (!!session.email && nameId === session.email) ||
+      !!(await db
+        .prepare(
+          "SELECT 1 FROM saml_sessions WHERE session_id = ? AND app_id = ? AND name_id = ?",
+        )
+        .bind(session.sessionId, row.origin_app_id, nameId)
+        .first());
+    if (!known) status = "UnknownPrincipal";
+    else if (action === null) return "confirm";
+    else if (action === "cancel") {
+      status = "RequestDenied";
+      // Still signed in, so not on to the app's signed-out page.
+      finishUrl = "/";
+    } else {
+      list = await participants(
+        db,
+        session.sessionId,
+        fromSp(row) ? row.origin_app_id : null,
+      );
+      outcome = "end";
+    }
+  }
+  // Nobody signed in: there is nothing left to end, which is a success.
+  const claim = await db
+    .prepare(
+      "UPDATE saml_logouts SET started = 1, pending = ?, status = ?, finish_url = ? WHERE token_hash = ? AND started = 0",
+    )
+    .bind(JSON.stringify(list), status, finishUrl, row.token_hash)
+    .run();
+  if (!claim.meta.changes) return "raced";
+  row.started = 1;
+  row.pending = JSON.stringify(list);
+  row.status = status;
+  row.finish_url = finishUrl;
+  return outcome;
+}
+
+/** A status that also records one SP not confirming its logout. */
+const partial = (status: LogoutStatus): LogoutStatus =>
+  status === "Success" ? "PartialLogout" : status;
+
+interface SloTarget {
+  entity_id: string;
+  slo_url: string | null;
+  slo_binding: SloBinding;
+}
+
+async function sloTarget(
+  db: D1Database,
+  appId: string,
+): Promise<SloTarget | null> {
+  return db
+    .prepare(
+      "SELECT entity_id, slo_url, slo_binding FROM saml_service_providers WHERE app_id = ?",
+    )
+    .bind(appId)
+    .first<SloTarget>();
+}
+
+/**
+ * Move the logout on: the next SP's LogoutRequest, then the LogoutResponse
+ * for the SP that started it (or the finish URL). Null when another tab
+ * moved it on first, or it's already over.
+ */
+export async function nextLogoutMessage(
+  env: Env,
+  token: string,
+  row: LogoutRow,
+): Promise<OutgoingMessage | null> {
+  const db = env.DB;
+  const { entityId } = idpEndpoints(env.APP_URL);
+  // Coming back here without the last SP's answer: it didn't confirm.
+  let status = row.current_request_id ? partial(row.status) : row.status;
+  const pending = JSON.parse(row.pending) as Participant[];
+
+  for (let next = pending.shift(); next; next = pending.shift()) {
+    const sp = await sloTarget(db, next.app_id);
+    // Its single logout URL was removed since it signed in.
+    if (!sp?.slo_url) {
+      status = partial(status);
+      continue;
+    }
+    const { id, element } = logoutRequestElement({
+      idpEntityId: entityId,
+      spEntityId: sp.entity_id,
+      destination: sp.slo_url,
+      nameId: { format: next.name_id_format, value: next.name_id },
+      sessionIndex: next.session_index,
+    });
+    const moved = await db
+      .prepare(
+        `UPDATE saml_logouts SET pending = ?, current_app_id = ?, current_request_id = ?, status = ?
+         WHERE token_hash = ? AND pending = ? AND current_request_id IS ?`,
+      )
+      .bind(
+        JSON.stringify(pending),
+        next.app_id,
+        id,
+        status,
+        row.token_hash,
+        row.pending,
+        row.current_request_id,
+      )
+      .run();
+    if (!moved.meta.changes) return null;
+    return encodeLogoutMessage(element, {
+      field: "SAMLRequest",
+      binding: sp.slo_binding,
+      url: sp.slo_url,
+      // The SP echoes it, which is how its answer finds this logout.
+      relayState: token,
+      signer: await getSamlSigner(env),
+    });
+  }
+
+  // Every SP visited: finish, once.
+  const done = await db
+    .prepare(
+      "DELETE FROM saml_logouts WHERE token_hash = ? AND pending = ? AND current_request_id IS ?",
+    )
+    .bind(row.token_hash, row.pending, row.current_request_id)
+    .run();
+  if (!done.meta.changes) return null;
+
+  if (fromSp(row) && row.origin_app_id) {
+    const origin = await sloTarget(db, row.origin_app_id);
+    if (origin?.slo_url)
+      return encodeLogoutMessage(
+        logoutResponseElement({
+          idpEntityId: entityId,
+          destination: origin.slo_url,
+          inResponseTo: row.origin_request_id!,
+          status,
+        }),
+        {
+          field: "SAMLResponse",
+          binding: origin.slo_binding,
+          url: origin.slo_url,
+          relayState: row.origin_relay_state,
+          signer: await getSamlSigner(env),
+        },
+      );
+  }
+  return { kind: "redirect", url: row.finish_url ?? "/logged-out" };
+}
+
+/**
+ * An SP's LogoutResponse to the LogoutRequest Prism sent it. False when it
+ * isn't the answer this logout is waiting for.
+ */
+export async function recordLogoutResponse(
+  db: D1Database,
+  row: LogoutRow,
+  response: LogoutResponse,
+): Promise<boolean> {
+  if (!row.current_app_id || !row.current_request_id) return false;
+  const sp = await sloTarget(db, row.current_app_id);
+  if (
+    !sp ||
+    response.issuer !== sp.entity_id ||
+    response.inResponseTo !== row.current_request_id
+  )
+    return false;
+  const status = response.success ? row.status : partial(row.status);
+  const saved = await db
+    .prepare(
+      `UPDATE saml_logouts SET current_app_id = NULL, current_request_id = NULL, status = ?
+       WHERE token_hash = ? AND current_request_id = ?`,
+    )
+    .bind(status, row.token_hash, row.current_request_id)
+    .run();
+  return saved.meta.changes > 0;
+}

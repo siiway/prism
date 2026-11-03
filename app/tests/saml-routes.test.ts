@@ -1,16 +1,20 @@
 // SAML IdP routes end to end: an SP's AuthnRequest, the sign-in page's API,
-// and the signed Response, against a migrated database.
+// and the signed Response; single logout; against a migrated database.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { deflateRawSync } from "node:zlib";
+import { createPublicKey, createVerify } from "node:crypto";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { DOMParser } from "@xmldom/xmldom";
 import { Hono } from "hono";
 import { SignedXml } from "xml-crypto";
 import adminRoutes from "../src/worker/routes/admin";
 import appsRoutes from "../src/worker/routes/apps";
+import authRoutes from "../src/worker/routes/auth";
+import oauthRoutes from "../src/worker/routes/oauth";
+import { getRsaKeyPair } from "../src/worker/lib/config";
+import { signIdTokenRS256, signJWT } from "../src/worker/lib/jwt";
 import { samlApiRoutes, samlProtocolRoutes } from "../src/worker/routes/saml";
-import { signJWT } from "../src/worker/lib/jwt";
 import { SESSION_COOKIE } from "../src/worker/lib/cookies";
 import { d1, executionCtx, migratedDatabase, MemoryKv } from "./setup/d1";
 import type {
@@ -651,5 +655,540 @@ describe("admin overrides", () => {
     res = await send("/api/admin/apps/a1/saml", "PATCH", { override: null });
     expect(await res.json()).toEqual({ override: null, inherited: false });
     expect(await outcome()).toBe("saml_disabled_user");
+  });
+});
+
+describe("single logout", () => {
+  const SP2 = "https://crm.example/metadata";
+  const SLO1 = "https://sp.example/slo";
+  const SLO2 = "https://crm.example/slo";
+  const SAMLP = "urn:oasis:names:tc:SAML:2.0:protocol";
+  const STATUS = "urn:oasis:names:tc:SAML:2.0:status:";
+
+  beforeEach(() => {
+    app.route("/api/auth", authRoutes);
+    const now = Math.floor(Date.now() / 1000);
+    sqlite.run(
+      "UPDATE saml_service_providers SET slo_url = ?, slo_binding = 'redirect' WHERE app_id = 'a1'",
+      [SLO1],
+    );
+    sqlite.run(
+      `INSERT INTO oauth_apps (id, owner_id, name, description, client_id, client_secret, redirect_uris, allowed_scopes, created_at, updated_at)
+       VALUES ('a2', 'u1', 'CRM', '', 'client-2', 'secret', '[]', '[]', ?, ?)`,
+      [now, now],
+    );
+    sqlite.run(
+      `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign, slo_url, slo_binding, created_at, updated_at)
+       VALUES ('a2', ?, '["https://crm.example/acs"]', 'persistent', 'assertion', ?, 'post', ?, ?)`,
+      [SP2, SLO2, now, now],
+    );
+  });
+
+  /** Signed in to the CRM in session s1, as an SSO approval would record. */
+  const crmSession = () =>
+    sqlite.run(
+      `INSERT INTO saml_sessions (session_id, app_id, name_id, name_id_format, session_index, created_at)
+       VALUES ('s1', 'a2', 'u1', 'persistent', '_crm-session', 1)`,
+    );
+
+  /** Sign in to the wiki (a1) through SSO in session s1. */
+  async function wikiSignIn(cookie: string) {
+    const token = await startSso();
+    const res = await call(
+      `/api/saml/requests/${token}`,
+      json({ action: "approve", authorization_mode: "once" }, cookie),
+    );
+    expect(res.status).toBe(200);
+    return res.json<Body>();
+  }
+
+  const deflate = (xml: string) =>
+    encodeURIComponent(Buffer.from(deflateRawSync(xml)).toString("base64"));
+
+  let logoutCount = 0;
+  function logoutRequest(nameId: string, issuer = SP) {
+    const id = `_logout${++logoutCount}`;
+    const xml = `<samlp:LogoutRequest xmlns:samlp="${SAMLP}" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${id}" Version="2.0" IssueInstant="2026-11-02T10:00:00Z" Destination="https://prism.example/saml/slo"><saml:Issuer>${issuer}</saml:Issuer><saml:NameID>${nameId}</saml:NameID></samlp:LogoutRequest>`;
+    return { id, query: deflate(xml) };
+  }
+
+  const logoutResponse = (
+    inResponseTo: string,
+    issuer: string,
+    status = "Success",
+  ) =>
+    `<samlp:LogoutResponse xmlns:samlp="${SAMLP}" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_resp${++logoutCount}" Version="2.0" IssueInstant="2026-11-02T10:00:00Z" InResponseTo="${inResponseTo}"><saml:Issuer>${issuer}</saml:Issuer><samlp:Status><samlp:StatusCode Value="${STATUS}${status}"/></samlp:Status></samlp:LogoutResponse>`;
+
+  /** The logout page's token, from a redirect to it. */
+  function pageToken(res: Response): string {
+    expect(res.status).toBe(303);
+    const url = new URL(res.headers.get("Location")!, "https://x");
+    expect(url.pathname).toBe("/logout");
+    return url.searchParams.get("token")!;
+  }
+
+  type Step =
+    | { kind: "confirm"; app: { name: string; icon_url: string | null } | null }
+    | { kind: "redirect"; url: string }
+    | { kind: "post"; url: string; fields: Record<string, string> };
+  const step = async (
+    token: string,
+    cookie?: string,
+    action?: "confirm" | "cancel",
+  ) => {
+    const res = await call(
+      `/api/saml/logouts/${token}`,
+      json({ action }, cookie),
+    );
+    return {
+      status: res.status,
+      res,
+      body: await res.json<Step & { error?: string }>(),
+    };
+  };
+
+  async function metadataCert() {
+    const metadata = await (await call("/saml/metadata")).text();
+    const b64 = new DOMParser()
+      .parseFromString(metadata, "text/xml")
+      .getElementsByTagNameNS(DSIG, "X509Certificate")[0].textContent!;
+    return `-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----`;
+  }
+
+  /** A redirect-binding message: its XML, after checking the query signature. */
+  async function readRedirect(url: string, field: string) {
+    const parsed = new URL(url);
+    const raw = parsed.search.slice(1);
+    const signed = raw.slice(0, raw.indexOf("&Signature="));
+    expect(parsed.searchParams.get("SigAlg")).toBe(
+      "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+    );
+    const ok = createVerify("RSA-SHA256")
+      .update(signed)
+      .verify(
+        createPublicKey(await metadataCert()),
+        parsed.searchParams.get("Signature")!,
+        "base64",
+      );
+    expect(ok).toBe(true);
+    const xml = inflateRawSync(
+      Buffer.from(parsed.searchParams.get(field)!, "base64"),
+    ).toString("utf8");
+    return {
+      doc: new DOMParser().parseFromString(
+        xml,
+        "text/xml",
+      ) as unknown as Document,
+      relayState: parsed.searchParams.get("RelayState"),
+    };
+  }
+
+  const statusCodes = (doc: Document) =>
+    Array.from(doc.getElementsByTagNameNS(SAMLP, "StatusCode")).map((e) =>
+      e.getAttribute("Value")!.replace(STATUS, ""),
+    );
+
+  test("an SSO sign-in is remembered with its SessionIndex", async () => {
+    const cookie = await sessionCookie();
+    const body = await wikiSignIn(cookie);
+    const index = parseResponse(body.saml_response)
+      .getElementsByTagNameNS("*", "AuthnStatement")[0]
+      .getAttribute("SessionIndex");
+    const row = sqlite
+      .query(
+        "SELECT * FROM saml_sessions WHERE session_id = 's1' AND app_id = 'a1'",
+      )
+      .get() as { name_id: string; session_index: string };
+    expect(row.name_id).toBe("u1");
+    expect(row.session_index).toBe(index!);
+    expect(index).not.toContain("s1");
+  });
+
+  test("an SP's logout visits the other SPs, then answers it", async () => {
+    const cookie = await sessionCookie();
+    await wikiSignIn(cookie);
+    crmSession();
+
+    const request = logoutRequest("u1");
+    const token = pageToken(
+      await call(`/saml/slo?SAMLRequest=${request.query}&RelayState=rs1`),
+    );
+    // Cross-site, the request had no cookie: nothing ends until the page.
+    expect(
+      sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get(),
+    ).not.toBeNull();
+
+    // Anyone could have sent that request, so the page asks first, and
+    // nothing has ended yet.
+    const ask = await step(token, cookie);
+    expect(ask.body).toEqual({
+      kind: "confirm",
+      app: { name: "Wiki", icon_url: null },
+    });
+    expect(
+      sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get(),
+    ).not.toBeNull();
+
+    // Confirmed, the page's same-site call ends the session and sends the
+    // CRM a signed LogoutRequest by POST.
+    const first = await step(token, cookie, "confirm");
+    expect(first.status).toBe(200);
+    expect(first.res.headers.get("Set-Cookie")).toContain("Max-Age=0");
+    expect(
+      sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get(),
+    ).toBeNull();
+    if (first.body.kind !== "post") throw new Error("expected a POST");
+    expect(first.body.url).toBe(SLO2);
+    expect(first.body.fields.RelayState).toBe(token);
+    const xml = Buffer.from(first.body.fields.SAMLRequest, "base64").toString(
+      "utf8",
+    );
+    const doc = new DOMParser().parseFromString(
+      xml,
+      "text/xml",
+    ) as unknown as Document;
+    expect(doc.documentElement.localName).toBe("LogoutRequest");
+    expect(doc.documentElement.getAttribute("Destination")).toBe(SLO2);
+    expect(doc.getElementsByTagNameNS("*", "NameID")[0].textContent).toBe("u1");
+    expect(doc.getElementsByTagNameNS("*", "SessionIndex")[0].textContent).toBe(
+      "_crm-session",
+    );
+    const verifier = new SignedXml({ publicCert: await metadataCert() });
+    verifier.loadSignature(
+      doc.getElementsByTagNameNS(DSIG, "Signature")[0].toString(),
+    );
+    expect(verifier.checkSignature(xml)).toBe(true);
+
+    // The CRM answers; a stray answer from someone else doesn't count.
+    const requestId = doc.documentElement.getAttribute("ID")!;
+    const answer = (xml: string) =>
+      call("/saml/slo", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          SAMLResponse: Buffer.from(xml).toString("base64"),
+          RelayState: token,
+        }).toString(),
+      });
+    const stray = await answer(logoutResponse(requestId, SP));
+    expect(stray.headers.get("Location")).toBe(
+      "/logout?error=saml_logout_expired",
+    );
+    expect(pageToken(await answer(logoutResponse(requestId, SP2)))).toBe(token);
+
+    // Last, the wiki gets its LogoutResponse, signed in the query string.
+    const last = await step(token);
+    if (last.body.kind !== "redirect") throw new Error("expected a redirect");
+    expect(last.body.url.startsWith(`${SLO1}?SAMLResponse=`)).toBe(true);
+    const reply = await readRedirect(last.body.url, "SAMLResponse");
+    expect(reply.relayState).toBe("rs1");
+    expect(reply.doc.documentElement.getAttribute("InResponseTo")).toBe(
+      request.id,
+    );
+    expect(statusCodes(reply.doc)).toEqual(["Success"]);
+
+    // And that's the end of it.
+    expect((await step(token)).status).toBe(404);
+  });
+
+  test("an SP that never answers makes it a partial logout", async () => {
+    const cookie = await sessionCookie();
+    crmSession();
+    const request = logoutRequest("u1");
+    const token = pageToken(
+      await call(`/saml/slo?SAMLRequest=${request.query}`),
+    );
+    expect((await step(token, cookie)).body.kind).toBe("confirm");
+    expect((await step(token, cookie, "confirm")).body.kind).toBe("post");
+    // Back on the page without the CRM's answer.
+    const last = await step(token);
+    if (last.body.kind !== "redirect") throw new Error("expected a redirect");
+    const reply = await readRedirect(last.body.url, "SAMLResponse");
+    expect(reply.relayState).toBeNull();
+    expect(statusCodes(reply.doc)).toEqual(["Success", "PartialLogout"]);
+  });
+
+  test("a logout for someone else ends nothing", async () => {
+    const cookie = await sessionCookie();
+    crmSession();
+    const token = pageToken(
+      await call(`/saml/slo?SAMLRequest=${logoutRequest("u2").query}`),
+    );
+    const last = await step(token, cookie);
+    expect(last.res.headers.get("Set-Cookie")).toBeNull();
+    expect(
+      sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get(),
+    ).not.toBeNull();
+    if (last.body.kind !== "redirect") throw new Error("expected a redirect");
+    const reply = await readRedirect(last.body.url, "SAMLResponse");
+    expect(statusCodes(reply.doc)).toEqual(["Requester", "UnknownPrincipal"]);
+  });
+
+  test("staying signed in tells the SP no", async () => {
+    const cookie = await sessionCookie();
+    crmSession();
+    const token = pageToken(
+      await call(`/saml/slo?SAMLRequest=${logoutRequest("u1").query}`),
+    );
+    expect((await step(token, cookie)).body.kind).toBe("confirm");
+    const last = await step(token, cookie, "cancel");
+    expect(last.res.headers.get("Set-Cookie")).toBeNull();
+    expect(
+      sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get(),
+    ).not.toBeNull();
+    if (last.body.kind !== "redirect") throw new Error("expected a redirect");
+    // Straight back to the wiki: the CRM wasn't visited.
+    expect(last.body.url.startsWith(`${SLO1}?`)).toBe(true);
+    const reply = await readRedirect(last.body.url, "SAMLResponse");
+    expect(statusCodes(reply.doc)).toEqual(["Responder", "RequestDenied"]);
+  });
+
+  test("nobody signed in: answered without asking", async () => {
+    const token = pageToken(
+      await call(`/saml/slo?SAMLRequest=${logoutRequest("u1").query}`),
+    );
+    const last = await step(token);
+    if (last.body.kind !== "redirect") throw new Error("expected a redirect");
+    const reply = await readRedirect(last.body.url, "SAMLResponse");
+    expect(statusCodes(reply.doc)).toEqual(["Success"]);
+  });
+
+  test("signing out of Prism visits the session's SPs, then goes on", async () => {
+    const cookie = await sessionCookie();
+    await wikiSignIn(cookie);
+    const out = await call("/api/auth/logout", {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    const { saml_logout } = await out.json<{ saml_logout: string }>();
+    const token = new URL(saml_logout, "https://x").searchParams.get("token")!;
+
+    const first = await step(token);
+    if (first.body.kind !== "redirect") throw new Error("expected a redirect");
+    const sent = await readRedirect(first.body.url, "SAMLRequest");
+    expect(sent.relayState).toBe(token);
+    const id = sent.doc.documentElement.getAttribute("ID")!;
+    expect(
+      pageToken(
+        await call(
+          `/saml/slo?SAMLResponse=${deflate(logoutResponse(id, SP))}&RelayState=${token}`,
+        ),
+      ),
+    ).toBe(token);
+    expect((await step(token)).body).toEqual({
+      kind: "redirect",
+      url: "/login",
+    });
+  });
+
+  test("no SP to tell: signing out goes straight on", async () => {
+    const cookie = await sessionCookie();
+    const out = await call("/api/auth/logout", {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    expect(await out.json()).toEqual({ ok: true, saml_logout: null });
+  });
+
+  test("refuses SPs without a single logout URL, and unknown logouts", async () => {
+    sqlite.run(
+      "UPDATE saml_service_providers SET slo_url = NULL WHERE app_id = 'a1'",
+    );
+    let res = await call(`/saml/slo?SAMLRequest=${logoutRequest("u1").query}`);
+    expect(res.headers.get("Location")).toBe(
+      "/logout?error=saml_slo_not_configured",
+    );
+    res = await call(
+      `/saml/slo?SAMLResponse=${deflate(logoutResponse("_x", SP2))}&RelayState=nope`,
+    );
+    expect(res.headers.get("Location")).toBe(
+      "/logout?error=saml_logout_expired",
+    );
+    expect((await step("nope")).status).toBe(404);
+  });
+});
+
+describe("single logout settings", () => {
+  test("saves an optional single logout URL and binding", async () => {
+    app.route("/api/apps", appsRoutes);
+    const cookie = await sessionCookie();
+    const put = (body: unknown) =>
+      call("/api/apps/a1/saml", { ...json(body, cookie), method: "PUT" });
+    const base = { entity_id: SP, acs_urls: [ACS] };
+
+    let res = await put({ ...base, slo_url: "http://sp.example/slo" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "field_invalid",
+      params: { field: "slo_url" },
+    });
+    res = await put({
+      ...base,
+      slo_url: "https://sp.example/slo",
+      slo_binding: "soap",
+    });
+    expect(res.status).toBe(400);
+
+    res = await put({
+      ...base,
+      slo_url: "https://sp.example/slo",
+      slo_binding: "post",
+    });
+    expect(res.status).toBe(200);
+    const info = await (
+      await call("/api/apps/a1/saml", { headers: { Cookie: cookie } })
+    ).json<Body>();
+    expect(info.saml?.slo_url).toBe("https://sp.example/slo");
+    expect(info.saml?.slo_binding).toBe("post");
+    expect(info.idp.slo_url).toBe("https://prism.example/saml/slo");
+
+    // Empty turns it off.
+    res = await put({ ...base, slo_url: "  " });
+    expect((await res.json<Body>()).saml?.slo_url).toBeNull();
+  });
+});
+
+describe("OIDC end_session", () => {
+  beforeEach(() => {
+    app.route("/api/oauth", oauthRoutes);
+  });
+
+  const sessionAlive = () =>
+    sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get() !== null;
+
+  async function idToken(sub: string, sid: string | null = "s1") {
+    const keys = await getRsaKeyPair(env.KV_SESSIONS);
+    return signIdTokenRS256(
+      { iss: env.APP_URL, sub, aud: "client-1", ...(sid ? { sid } : {}) },
+      keys.privateKey,
+      keys.kid,
+      3600,
+    );
+  }
+
+  test("a plain link only asks; the user confirms on the page", async () => {
+    const cookie = await sessionCookie();
+    const res = await call("/api/oauth/end_session", {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(302);
+    const url = new URL(res.headers.get("Location")!);
+    expect(url.origin + url.pathname).toBe("https://prism.example/logout");
+    expect(res.headers.get("Set-Cookie")).toBeNull();
+    expect(sessionAlive()).toBe(true);
+
+    const token = url.searchParams.get("token")!;
+    const ask = await call(`/api/saml/logouts/${token}`, json({}, cookie));
+    expect(await ask.json()).toEqual({ kind: "confirm", app: null });
+    const done = await call(
+      `/api/saml/logouts/${token}`,
+      json({ action: "confirm" }, cookie),
+    );
+    expect(await done.json()).toEqual({
+      kind: "redirect",
+      url: "https://prism.example/logged-out",
+    });
+    expect(sessionAlive()).toBe(false);
+  });
+
+  test("staying signed in goes home, still signed in", async () => {
+    const cookie = await sessionCookie();
+    const res = await call("/api/oauth/end_session", {
+      headers: { Cookie: cookie },
+    });
+    const token = new URL(res.headers.get("Location")!).searchParams.get(
+      "token",
+    )!;
+    const done = await call(
+      `/api/saml/logouts/${token}`,
+      json({ action: "cancel" }, cookie),
+    );
+    expect(await done.json()).toEqual({ kind: "redirect", url: "/" });
+    expect(sessionAlive()).toBe(true);
+  });
+
+  test("only a hint from this session, of an app still allowed, skips the question", async () => {
+    const cookie = await sessionCookie();
+    const asks = async (hint: string) => {
+      const res = await call(`/api/oauth/end_session?id_token_hint=${hint}`, {
+        headers: { Cookie: cookie },
+      });
+      return new URL(res.headers.get("Location")!).pathname === "/logout";
+    };
+    const consent = () =>
+      sqlite.run(
+        `INSERT OR REPLACE INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+         VALUES ('c1', 'u1', 'client-1', '["openid"]', 1, 0)`,
+      );
+
+    // Someone else's token, a token from another session or one without a
+    // session, and a token of an app the user revoked (no consent): all ask.
+    consent();
+    expect(await asks(await idToken("u2"))).toBe(true);
+    expect(await asks(await idToken("u1", "s-old"))).toBe(true);
+    expect(await asks(await idToken("u1", null))).toBe(true);
+    sqlite.run("DELETE FROM oauth_consents");
+    expect(await asks(await idToken("u1"))).toBe(true);
+    expect(sessionAlive()).toBe(true);
+
+    // This session's token, from an app the user still allows: no question.
+    consent();
+    const res = await call(
+      `/api/oauth/end_session?id_token_hint=${await idToken("u1")}`,
+      { headers: { Cookie: cookie } },
+    );
+    expect(res.headers.get("Location")).toBe(
+      "https://prism.example/logged-out",
+    );
+    expect(sessionAlive()).toBe(false);
+  });
+});
+
+describe("signing out without asking, first-party only", () => {
+  test("other apps' hints then ask; a first-party app's doesn't", async () => {
+    app.route("/api/oauth", oauthRoutes);
+    sqlite.run(
+      "INSERT OR REPLACE INTO site_config (key, value, updated_at) VALUES ('silent_logout_first_party_only', 'true', 0)",
+    );
+    sqlite.run(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES ('c1', 'u1', 'client-1', '["openid"]', 1, 0)`,
+    );
+    const cookie = await sessionCookie();
+    const keys = await getRsaKeyPair(env.KV_SESSIONS);
+    const hint = await signIdTokenRS256(
+      { iss: env.APP_URL, sub: "u1", aud: "client-1", sid: "s1" },
+      keys.privateKey,
+      keys.kid,
+      3600,
+    );
+    const endSession = () =>
+      call(`/api/oauth/end_session?id_token_hint=${hint}`, {
+        headers: { Cookie: cookie },
+      });
+
+    let res = await endSession();
+    expect(new URL(res.headers.get("Location")!).pathname).toBe("/logout");
+
+    sqlite.run("UPDATE oauth_apps SET is_first_party = 1 WHERE id = 'a1'");
+    res = await endSession();
+    expect(res.headers.get("Location")).toBe(
+      "https://prism.example/logged-out",
+    );
+  });
+});
+
+describe("OIDC end_session by POST", () => {
+  test("a cross-site POST comes back as a GET, where the cookie is", async () => {
+    app.route("/api/oauth", oauthRoutes);
+    const res = await call("/api/oauth/end_session", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "id_token_hint=abc&state=xyz&ignored=1",
+    });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("Location")).toBe(
+      "https://prism.example/api/oauth/end_session?id_token_hint=abc&state=xyz",
+    );
   });
 });

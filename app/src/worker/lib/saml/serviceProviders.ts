@@ -4,7 +4,7 @@
 import { getConfigValue } from "../config";
 import { getGroupsForUserByTeam } from "../teamGroups";
 import type { AuthUser, OAuthAppRow } from "../../types";
-import type { NameIdFormat, SignMode } from "./protocol";
+import type { NameIdFormat, SignMode, SloBinding } from "./protocol";
 
 export interface SamlSpRow {
   app_id: string;
@@ -13,6 +13,9 @@ export interface SamlSpRow {
   acs_urls: string;
   name_id_format: NameIdFormat;
   sign: SignMode;
+  /** SingleLogoutService URL; null when the SP has no single logout. */
+  slo_url: string | null;
+  slo_binding: SloBinding;
   created_at: number;
   updated_at: number;
 }
@@ -23,6 +26,7 @@ export const SIGN_MODES: readonly SignMode[] = [
   "response",
   "both",
 ];
+export const SLO_BINDINGS: readonly SloBinding[] = ["redirect", "post"];
 export const MAX_ACS_URLS = 10;
 export const MAX_ENTITY_ID_LENGTH = 1024;
 export const MAX_ACS_URL_LENGTH = 2048;
@@ -46,11 +50,13 @@ export function idpEndpoints(appUrl: string) {
     entityId: `${base}/saml/metadata`,
     metadataUrl: `${base}/saml/metadata`,
     ssoUrl: `${base}/saml/sso`,
+    sloUrl: `${base}/saml/slo`,
   };
 }
 
-/** An ACS URL Prism may post assertions to: absolute https, or http on a
- *  loopback host for local development; no fragment, no credentials. */
+/** An ACS (or single logout) URL Prism may send messages to: absolute
+ *  https, or http on a loopback host for local development; no fragment,
+ *  no credentials. */
 export function isValidAcsUrl(value: string): boolean {
   if (value.length > MAX_ACS_URL_LENGTH) return false;
   let url: URL;

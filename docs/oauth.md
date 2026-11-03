@@ -493,7 +493,13 @@ GET /api/oauth/end_session?id_token_hint=<ID_TOKEN>&post_logout_redirect_uri=<UR
 Ends the user's Prism session. If `post_logout_redirect_uri` exactly matches one
 registered on the client (`post_logout_redirect_uris`), the browser is sent
 there with `state`; otherwise it lands on Prism's signed-out page.
-`id_token_hint` identifies the client and is recommended.
+
+Send the `id_token_hint` from the user's current sign-in. It identifies the
+client. Since any site could link here, Prism signs the user out without
+asking only when the hint was issued to them in this browser session (its
+`sid`) and they still allow the app. A site admin can limit this to first-party
+apps. Otherwise it asks first, and if the user
+stays signed in, they go to Prism's home page instead.
 
 ## Back-Channel Logout
 

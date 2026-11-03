@@ -1378,6 +1378,7 @@ export interface DeviceVerifyInfo {
 
 export type SamlNameIdFormat = "persistent" | "email";
 export type SamlSignMode = "assertion" | "response" | "both";
+export type SamlSloBinding = "redirect" | "post";
 
 /** An app's SAML service-provider settings. */
 export interface SamlServiceProvider {
@@ -1385,6 +1386,9 @@ export interface SamlServiceProvider {
   acs_urls: string[];
   name_id_format: SamlNameIdFormat;
   sign: SamlSignMode;
+  /** SingleLogoutService URL; null when the SP has no single logout. */
+  slo_url: string | null;
+  slo_binding: SamlSloBinding;
   updated_at: number;
 }
 
@@ -1400,6 +1404,7 @@ export interface AppSamlInfo {
     entity_id: string;
     metadata_url: string;
     sso_url: string;
+    slo_url: string;
     /** PEM. */
     certificate: string;
   };
@@ -1416,6 +1421,18 @@ export interface AdminSamlSetting {
 }
 
 export type SamlUpdateBody = Omit<SamlServiceProvider, "updated_at">;
+
+/** POST /saml/logouts/:token — the next step of a browser sign-out: ask
+ *  the user (another site asked for it), a URL to go to (HTTP-Redirect, or
+ *  the end) or a form to post (HTTP-POST). */
+export type SamlLogoutStep =
+  | {
+      kind: "confirm";
+      /** The app that asked, when known. */
+      app: { name: string; icon_url: string | null } | null;
+    }
+  | { kind: "redirect"; url: string }
+  | { kind: "post"; url: string; fields: Record<string, string> };
 
 /** GET /saml/requests/:token — what the sign-in page does next. */
 export interface SamlRequestInfo {

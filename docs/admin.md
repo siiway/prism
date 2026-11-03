@@ -37,6 +37,10 @@ Site name, description and icon, plus an optional **security contact** and
 - **Sudo mode** — after a successful 2FA step-up, further challenges from the
   same app skip the TOTP/passkey prompt for this many minutes. `0` disables it.
   See [OAuth → Step-up 2FA](oauth.md#step-up-2fa).
+- **Sign out without asking** — which apps may sign people out through OIDC
+  `end_session` without a confirmation: any app they allowed, or first-party
+  apps only. Either way, the app needs an ID token from the same browser
+  session. See [OAuth → RP-Initiated Logout](oauth.md#rp-initiated-logout).
 - **Captcha on 2FA step-up** — require a captcha for every step-up.
 - **Login rate limits** — allowance and window for login attempts per IP, per
   email or username, and for TOTP submissions.

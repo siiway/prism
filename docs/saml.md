@@ -23,6 +23,9 @@ Prism.
      accounts with a verified email.
    - **Signature**: what Prism signs. Most apps want the assertion signed.
      Error responses are always signed.
+   - **Single logout URL** (optional): the app's SingleLogoutService URL,
+     and the binding its metadata lists for it. See
+     [Single logout](#single-logout).
 3. Give the app Prism's details from the same tab. Usually the metadata URL is
    enough:
 
@@ -30,10 +33,11 @@ Prism.
 | ---------------------------- | ----------------------------------------- |
 | Metadata URL / IdP entity ID | `https://your-prism-domain/saml/metadata` |
 | Single sign-on URL           | `https://your-prism-domain/saml/sso`      |
+| Single logout URL            | `https://your-prism-domain/saml/slo`      |
 | Signing certificate          | Download it from the SAML tab             |
 
-The single sign-on URL accepts both the HTTP-Redirect and the HTTP-POST
-binding.
+The single sign-on and single logout URLs accept both the HTTP-Redirect and
+the HTTP-POST binding.
 
 ## Attributes
 
@@ -64,10 +68,30 @@ Attribute names use the `basic` name format. Choose the app's scopes on its
   response if the user would have to sign in or approve the app first.
 - A request for a different NameID format than the one configured gets an
   `InvalidNameIDPolicy` response.
-- Single logout isn't supported.
 
 The certificate is self-signed and valid until 2049. It wraps the key that
 also signs Prism's ID tokens.
+
+## Single logout
+
+Apps with a single logout URL are signed out together:
+
+- Signing out of such an app signs the user out of Prism, then out of the
+  other apps with single logout that they signed in to with SAML in the same
+  browser session. Then the app gets its LogoutResponse.
+- Prism doesn't check signatures on logout requests, so any site could send
+  one. Before one ends the Prism session, Prism asks the user. If they stay
+  signed in, the app gets a `RequestDenied` response.
+- Signing out of Prism, from the account menu or through OIDC
+  `end_session`, signs the user out of those apps before going on.
+- The browser visits each app in turn. If an app doesn't answer, the app that
+  started the logout is told it was partial (`PartialLogout`).
+- A logout request for someone other than the user signed in to Prism signs
+  nobody out, and gets an `UnknownPrincipal` response.
+- Prism signs its logout messages: the XML with HTTP-POST, the query string
+  with HTTP-Redirect.
+- A session that ends without the browser, by expiring or being signed out
+  from another device, doesn't reach the apps.
 
 ## Turning SAML off
 

@@ -2,7 +2,7 @@
 
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { getConfig, getRsaKeyPair } from "../lib/config";
+import { getConfig, getConfigValue, getRsaKeyPair } from "../lib/config";
 import { hashSecret, hashLookupCandidate } from "../lib/secretCrypto";
 import { getMLDSAKey } from "../lib/mldsa";
 import {
@@ -64,6 +64,7 @@ import {
 } from "../lib/resource";
 import { verifyDpopProof } from "../lib/dpop";
 import { deliverBackChannelLogout } from "../lib/backchannelLogout";
+import { startIdpLogout, startUnverifiedLogout } from "../lib/saml/logout";
 import { clearSessionCookie } from "../lib/cookies";
 import meRoutes from "./oauth-me";
 import {
@@ -2709,6 +2710,26 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
   const state = get("state");
   let clientIdHint = get("client_id");
 
+  // A form POST from the app's site carries no session cookie (it is
+  // SameSite=Lax), so it would look signed out already. Come back as a GET,
+  // a top-level navigation the cookie does ride along on.
+  if (c.req.method === "POST" && !c.get("user")) {
+    const again = new URLSearchParams();
+    for (const k of [
+      "id_token_hint",
+      "post_logout_redirect_uri",
+      "state",
+      "client_id",
+    ]) {
+      const v = get(k);
+      if (v) again.set(k, v);
+    }
+    return c.redirect(`${c.env.APP_URL}/api/oauth/end_session?${again}`, 303);
+  }
+  // Whom and which Prism session a verified id_token_hint was issued for.
+  let hint: { sub: string; sid: string } | null = null;
+  let hintClientId: string | null = null;
+
   // Prefer the client identity from a verified id_token_hint. An expired hint
   // is still accepted (the session is ending); an unverifiable one is ignored.
   if (idTokenHint) {
@@ -2719,37 +2740,26 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
       if (typeof aud === "string") clientIdHint = aud;
       else if (Array.isArray(aud) && typeof aud[0] === "string")
         clientIdHint = aud[0];
+      hintClientId = clientIdHint ?? null;
+      if (typeof payload.sub === "string" && typeof payload.sid === "string")
+        hint = { sub: payload.sub, sid: payload.sid };
     } catch {
       /* ignore an unverifiable hint */
     }
   }
 
-  // End the current session (if the browser presented one) and clear the cookie.
-  const sessionId = c.get("sessionId");
-  const endingUser = c.get("user");
-  // OIDC Back-Channel Logout: notify the user's clients before the session row
-  // is gone (delivery reads only ids we already hold).
-  if (endingUser)
-    await deliverBackChannelLogout(
-      c.env,
-      c.executionCtx,
-      endingUser.id,
-      sessionId ?? null,
-    );
-  if (sessionId)
-    await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
-      .bind(sessionId)
-      .run();
-  clearSessionCookie(c);
-
-  // Only redirect to a post_logout_redirect_uri that the identified client has
-  // registered — otherwise the endpoint would be an open redirect.
+  // Where the browser goes once signed out. Only a post_logout_redirect_uri
+  // that the identified client has registered — otherwise the endpoint would
+  // be an open redirect; else the built-in signed-out page.
+  let target = `${c.env.APP_URL}/logged-out`;
+  // The app the browser goes back to, named when the user is asked.
+  let targetAppId: string | null = null;
   if (postLogoutRedirectUri && clientIdHint) {
     const appRow = await c.env.DB.prepare(
-      "SELECT post_logout_redirect_uris FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+      "SELECT id, post_logout_redirect_uris FROM oauth_apps WHERE client_id = ? AND is_active = 1",
     )
       .bind(clientIdHint)
-      .first<{ post_logout_redirect_uris: string }>();
+      .first<{ id: string; post_logout_redirect_uris: string }>();
     let allowList: string[] = [];
     if (appRow) {
       try {
@@ -2763,12 +2773,66 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
     if (allowList.includes(postLogoutRedirectUri)) {
       const url = new URL(postLogoutRedirectUri);
       if (state) url.searchParams.set("state", state);
-      return c.redirect(url.toString(), 302);
+      target = url.toString();
+      targetAppId = appRow!.id;
     }
   }
 
-  // No (valid) redirect target: land on the built-in signed-out page.
-  return c.redirect(`${c.env.APP_URL}/logged-out`, 302);
+  const sessionId = c.get("sessionId");
+  const endingUser = c.get("user");
+  // Any page can link here, so a sign-out is only a request unless its
+  // id_token_hint belongs to this very session: issued to this user, in this
+  // browser session (sid), for an app that is still active and that the user
+  // hasn't revoked. Anything else, the user confirms on the /logout page
+  // (OpenID Connect RP-Initiated Logout §2). An ID token from another
+  // session, or one that leaked, signs nobody out. A site admin can keep
+  // this to first-party apps.
+  const firstPartyOnly =
+    (await getConfigValue(c.env.DB, "silent_logout_first_party_only")) === true;
+  const fromThisSession =
+    !!endingUser &&
+    !!sessionId &&
+    hint?.sub === endingUser.id &&
+    hint.sid === sessionId &&
+    !!hintClientId &&
+    !!(await c.env.DB.prepare(
+      `SELECT 1 FROM oauth_apps a
+       WHERE a.client_id = ? AND a.is_active = 1
+         AND (a.is_first_party = 1 OR (? = 0 AND EXISTS (
+           SELECT 1 FROM oauth_consents c WHERE c.client_id = a.client_id AND c.user_id = ?)))`,
+    )
+      .bind(hintClientId, firstPartyOnly ? 1 : 0, endingUser.id)
+      .first());
+  if (endingUser && sessionId && !fromThisSession) {
+    const page = await startUnverifiedLogout(c.env.DB, {
+      appId: targetAppId,
+      finishUrl: target,
+    });
+    return c.redirect(`${c.env.APP_URL}${page}`, 302);
+  }
+
+  // End the current session (if the browser presented one) and clear the cookie.
+  // OIDC Back-Channel Logout: notify the user's clients before the session row
+  // is gone (delivery reads only ids we already hold).
+  if (endingUser)
+    await deliverBackChannelLogout(
+      c.env,
+      c.executionCtx,
+      endingUser.id,
+      sessionId ?? null,
+    );
+  // SAML Single Logout: the session's SPs are visited first, on the way to
+  // the target. Read before the session (and its SAML sign-ins) are gone.
+  const samlLogout = sessionId
+    ? await startIdpLogout(c.env.DB, sessionId, target)
+    : null;
+  if (sessionId)
+    await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
+      .bind(sessionId)
+      .run();
+  clearSessionCookie(c);
+
+  return c.redirect(samlLogout ? `${c.env.APP_URL}${samlLogout}` : target, 302);
 }
 
 app.get("/end_session", optionalAuth, handleEndSession);

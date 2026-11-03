@@ -214,6 +214,7 @@ app.patch("/config", async (c) => {
     "disable_user_create_team",
     "disable_user_create_app",
     "saml_enabled",
+    "silent_logout_first_party_only",
     "disable_ssr",
     "sudo_mode_ttl_minutes",
     "require_captcha_for_2fa",

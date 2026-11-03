@@ -20,6 +20,7 @@ import type {
   OAuthApp,
   SamlNameIdFormat,
   SamlSignMode,
+  SamlSloBinding,
   SamlUpdateBody,
 } from "../../../lib/api";
 import { apiErrorText } from "../../../lib/apiError";
@@ -50,6 +51,8 @@ interface SamlForm {
   acs_text: string;
   name_id_format: SamlNameIdFormat;
   sign: SamlSignMode;
+  slo_url: string;
+  slo_binding: SamlSloBinding;
 }
 
 const EMPTY: SamlForm = {
@@ -57,6 +60,8 @@ const EMPTY: SamlForm = {
   acs_text: "",
   name_id_format: "persistent",
   sign: "assertion",
+  slo_url: "",
+  slo_binding: "redirect",
 };
 
 function toBody(f: SamlForm): SamlUpdateBody {
@@ -68,6 +73,8 @@ function toBody(f: SamlForm): SamlUpdateBody {
       .filter(Boolean),
     name_id_format: f.name_id_format,
     sign: f.sign,
+    slo_url: f.slo_url.trim() || null,
+    slo_binding: f.slo_binding,
   };
 }
 
@@ -117,6 +124,8 @@ export function SamlTab({ app, showMsg }: Props) {
         acs_text: saml.acs_urls.join("\n"),
         name_id_format: saml.name_id_format,
         sign: saml.sign,
+        slo_url: saml.slo_url ?? "",
+        slo_binding: saml.slo_binding,
       }
     : EMPTY;
   const form: SamlForm = { ...base, ...edits };
@@ -295,6 +304,36 @@ export function SamlTab({ app, showMsg }: Props) {
                   onChange={(v) => set("sign", v)}
                 />
               </Field>
+              <Field
+                label={t("apps.saml.sloUrl")}
+                hint={t("apps.saml.sloUrlHint")}
+              >
+                <Input
+                  value={form.slo_url}
+                  onChange={(_, d) => set("slo_url", d.value)}
+                  placeholder={t("apps.saml.sloUrlPlaceholder")}
+                  input={{ className: styles.monoInput }}
+                />
+              </Field>
+              {form.slo_url.trim() !== "" && (
+                <Field
+                  label={t("apps.saml.sloBinding")}
+                  hint={t("apps.saml.sloBindingHint")}
+                >
+                  <Segmented
+                    label={t("apps.saml.sloBinding")}
+                    value={form.slo_binding}
+                    options={[
+                      {
+                        value: "redirect",
+                        label: t("apps.saml.bindingRedirect"),
+                      },
+                      { value: "post", label: t("apps.saml.bindingPost") },
+                    ]}
+                    onChange={(v) => set("slo_binding", v)}
+                  />
+                </Field>
+              )}
             </div>
           </SettingsBody>
           <SaveFooter
@@ -320,6 +359,7 @@ export function SamlTab({ app, showMsg }: Props) {
             [t("apps.saml.metadataUrl"), data.idp.metadata_url],
             [t("apps.saml.idpEntityId"), data.idp.entity_id],
             [t("apps.saml.ssoUrl"), data.idp.sso_url],
+            [t("apps.saml.idpSloUrl"), data.idp.slo_url],
           ] as const
         ).map(([label, value]) => (
           <SettingsRow

@@ -433,7 +433,9 @@ https://your-prism-domain/api/oauth/authorize?client_id=<CLIENT_ID>&request_uri=
 GET /api/oauth/end_session?id_token_hint=<ID_TOKEN>&post_logout_redirect_uri=<URI>&state=<STATE>
 ```
 
-结束用户的 Prism 会话。如果 `post_logout_redirect_uri` 与客户端注册的某一项（`post_logout_redirect_uris`）完全匹配，浏览器会带 `state` 跳转到该地址；否则落到 Prism 的已登出页面。`id_token_hint` 用于标识客户端，建议提供。
+结束用户的 Prism 会话。如果 `post_logout_redirect_uri` 与客户端注册的某一项（`post_logout_redirect_uris`）完全匹配，浏览器会带 `state` 跳转到该地址；否则落到 Prism 的已登出页面。
+
+请提供用户本次登录得到的 `id_token_hint`，它用于标识客户端。由于任何网站都可以链接到此地址，只有当该令牌是在当前浏览器会话中签发给该用户的（见其 `sid`），且用户仍允许该应用时，Prism 才会直接将其登出；站点管理员可以将此限制为仅第一方应用。否则会先询问用户；若用户选择保持登录，则会前往 Prism 首页。
 
 ## 后端通道登出
 

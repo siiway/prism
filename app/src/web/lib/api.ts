@@ -117,6 +117,7 @@ import type {
   SamlUpdateBody,
   SamlRequestInfo,
   SamlPostback,
+  SamlLogoutStep,
 } from "../../shared/api";
 
 export type {
@@ -471,8 +472,15 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
   login: (body: LoginBody) =>
     request<LoginResponse>("POST", "/auth/login", body),
   /** Revoke the cookie-authenticated session and clear its cookie. */
+  /** `saml_logout`: a page to visit next, which signs the user out of the
+   *  SAML apps of this session before going on to /login. */
   logout: () =>
-    request<{ ok: true }>("POST", "/auth/logout", undefined, getToken()),
+    request<{ ok: true; saml_logout: string | null }>(
+      "POST",
+      "/auth/logout",
+      undefined,
+      getToken(),
+    ),
   verifyEmail: (token: string) =>
     request<{ ok: true }>(
       "GET",
@@ -918,6 +926,14 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       "POST",
       `/saml/requests/${encodeURIComponent(token)}`,
       { action, authorization_mode: authorizationMode },
+      getToken(),
+    ),
+  /** `action` answers a "confirm" step. */
+  samlLogoutStep: (token: string, action?: "confirm" | "cancel") =>
+    request<SamlLogoutStep>(
+      "POST",
+      `/saml/logouts/${encodeURIComponent(token)}`,
+      { action },
       getToken(),
     ),
 

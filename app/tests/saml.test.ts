@@ -68,6 +68,7 @@ const content: AssertionContent = {
     empty: [],
   },
   authnInstant: 1_800_000_000,
+  sessionIndex: "_session1",
   amr: ["pwd"],
 };
 
@@ -316,11 +317,12 @@ describe("AuthnRequest", () => {
 });
 
 describe("metadata", () => {
-  test("names the SSO endpoints and the signing certificate", async () => {
+  test("names the SSO and SLO endpoints and the signing certificate", async () => {
     const signer = await signerPromise;
     const xml = buildIdpMetadata({
       entityId: "https://prism.example/saml/metadata",
       ssoUrl: "https://prism.example/saml/sso",
+      sloUrl: "https://prism.example/saml/slo",
       certificate: signer.certificate,
     });
     const doc = parse(xml);
@@ -331,6 +333,13 @@ describe("metadata", () => {
       doc.getElementsByTagNameNS("*", "SingleSignOnService"),
     ).map((e) => e.getAttribute("Binding"));
     expect(sso).toHaveLength(2);
+    const slo = Array.from(
+      doc.getElementsByTagNameNS("*", "SingleLogoutService"),
+    ).map((e) => e.getAttribute("Location"));
+    expect(slo).toEqual([
+      "https://prism.example/saml/slo",
+      "https://prism.example/saml/slo",
+    ]);
     const certText = doc.getElementsByTagNameNS(DSIG, "X509Certificate")[0]
       .textContent!;
     expect(new X509Certificate(Buffer.from(certText, "base64")).subject).toBe(

@@ -32,7 +32,7 @@ import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
-import type { NameIdFormat, SignMode } from "../lib/saml/protocol";
+import type { NameIdFormat, SignMode, SloBinding } from "../lib/saml/protocol";
 import {
   MAX_ACS_URLS,
   NAME_ID_FORMATS,
@@ -44,6 +44,7 @@ import {
   releasedScopes,
   type SamlSpRow,
   samlBlock,
+  SLO_BINDINGS,
 } from "../lib/saml/serviceProviders";
 import { getSamlSigner } from "../lib/saml/sign";
 import { toPem } from "../lib/saml/x509";
@@ -1616,6 +1617,8 @@ function samlView(row: SamlSpRow | null) {
         acs_urls: parseAcsUrls(row),
         name_id_format: row.name_id_format,
         sign: row.sign,
+        slo_url: row.slo_url,
+        slo_binding: row.slo_binding,
         updated_at: row.updated_at,
       }
     : null;
@@ -1642,6 +1645,7 @@ app.get("/:id/saml", async (c) => {
       entity_id: idp.entityId,
       metadata_url: idp.metadataUrl,
       sso_url: idp.ssoUrl,
+      slo_url: idp.sloUrl,
       certificate: toPem(signer.certificate),
     },
     released_scopes: releasedScopes(row),
@@ -1664,6 +1668,8 @@ app.put("/:id/saml", async (c) => {
       acs_urls?: unknown;
       name_id_format?: unknown;
       sign?: unknown;
+      slo_url?: unknown;
+      slo_binding?: unknown;
     }>()
     .catch(() => ({}) as Record<string, unknown>);
 
@@ -1729,6 +1735,23 @@ app.put("/:id/saml", async (c) => {
       400,
     );
 
+  // Single logout is optional: an empty URL turns it off.
+  const sloUrl = typeof body.slo_url === "string" ? body.slo_url.trim() : "";
+  if (sloUrl && !isValidAcsUrl(sloUrl))
+    return c.json(
+      { error: "field_invalid", params: { field: "slo_url" } },
+      400,
+    );
+  const sloBinding = body.slo_binding ?? "redirect";
+  if (!SLO_BINDINGS.includes(sloBinding as SloBinding))
+    return c.json(
+      {
+        error: "field_one_of",
+        params: { field: "slo_binding", values: SLO_BINDINGS.join(", ") },
+      },
+      400,
+    );
+
   const taken = await c.env.DB.prepare(
     "SELECT app_id FROM saml_service_providers WHERE entity_id = ? AND app_id != ?",
   )
@@ -1739,12 +1762,24 @@ app.put("/:id/saml", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   try {
     await c.env.DB.prepare(
-      `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign,
+       slo_url, slo_binding, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(app_id) DO UPDATE SET entity_id = excluded.entity_id, acs_urls = excluded.acs_urls,
-       name_id_format = excluded.name_id_format, sign = excluded.sign, updated_at = excluded.updated_at`,
+       name_id_format = excluded.name_id_format, sign = excluded.sign, slo_url = excluded.slo_url,
+       slo_binding = excluded.slo_binding, updated_at = excluded.updated_at`,
     )
-      .bind(id, entityId, JSON.stringify(acsUrls), nameIdFormat, sign, now, now)
+      .bind(
+        id,
+        entityId,
+        JSON.stringify(acsUrls),
+        nameIdFormat,
+        sign,
+        sloUrl || null,
+        sloBinding,
+        now,
+        now,
+      )
       .run();
   } catch (err) {
     // Another app saved the same entity ID since the check above.

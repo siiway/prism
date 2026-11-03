@@ -18,15 +18,18 @@ SAML，这类应用也可以借助 Prism 完成登录。
    - **NameID**：应用用来标识用户的方式。可选择永不变化的 Prism 用户 ID，或邮箱地址
      （仅对已验证邮箱的账户有效）。
    - **签名**：Prism 签名的内容。大多数应用希望签名断言。错误响应始终签名。
+   - **单点登出 URL**（可选）：应用的 SingleLogoutService URL，以及应用元数据中为其
+     列出的绑定。参见[单点登出](#单点登出)。
 3. 在同一标签页中，把 Prism 的信息提供给应用。通常只需元数据 URL：
 
 | 设置                     | 值                                        |
 | ------------------------ | ----------------------------------------- |
 | 元数据 URL / IdP 实体 ID | `https://your-prism-domain/saml/metadata` |
 | 单点登录 URL             | `https://your-prism-domain/saml/sso`      |
+| 单点登出 URL             | `https://your-prism-domain/saml/slo`      |
 | 签名证书                 | 从 SAML 标签页下载                        |
 
-单点登录 URL 同时支持 HTTP-Redirect 和 HTTP-POST 绑定。
+单点登录 URL 和单点登出 URL 均同时支持 HTTP-Redirect 和 HTTP-POST 绑定。
 
 ## 属性
 
@@ -53,10 +56,25 @@ SAML，这类应用也可以借助 Prism 完成登录。
 - `ForceAuthn` 会要求用户重新登录。若用户需要先登录或批准应用，`IsPassive` 会得到
   一个 `NoPassive` 响应。
 - 如果请求的 NameID 格式与配置的不同，将收到 `InvalidNameIDPolicy` 响应。
-- 不支持单点登出。
 
 该证书为自签名证书，有效期至 2049 年。它封装了同时用于签名 Prism ID token 的
 密钥。
+
+## 单点登出
+
+设置了单点登出 URL 的应用会一同登出：
+
+- 从这样的应用登出时，用户会从 Prism 登出，然后从同一浏览器会话中通过 SAML 登录过、
+  且设置了单点登出的其他应用登出。最后该应用收到 LogoutResponse。
+- Prism 不校验登出请求上的签名，因此任何网站都可能发送登出请求。在登出请求结束 Prism
+  会话之前，Prism 会先询问用户。若用户选择保持登录，应用会收到 `RequestDenied` 响应。
+- 从 Prism 登出（通过账户菜单或 OIDC `end_session`）时，会先从这些应用登出，再继续。
+- 浏览器依次访问每个应用。若有应用未应答，发起登出的应用会得知登出不完整
+  （`PartialLogout`）。
+- 若登出请求针对的并非当前登录 Prism 的用户，则不会登出任何人，并收到
+  `UnknownPrincipal` 响应。
+- Prism 会签名其登出消息：HTTP-POST 绑定签名 XML，HTTP-Redirect 绑定签名查询字符串。
+- 不经过浏览器结束的会话（过期，或从其他设备登出）不会通知到应用。
 
 ## 关闭 SAML
 

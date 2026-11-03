@@ -1,8 +1,9 @@
-// SAML 2.0 Web Browser SSO, identity-provider side: decode AuthnRequests
-// (HTTP-Redirect and HTTP-POST bindings), build signed Responses for the
-// HTTP-POST binding, and describe the IdP in metadata.
+// SAML 2.0 Web Browser SSO and Single Logout, identity-provider side: decode
+// AuthnRequests and logout messages (HTTP-Redirect and HTTP-POST bindings),
+// build signed Responses for the HTTP-POST binding, build signed logout
+// messages for either binding, and describe the IdP in metadata.
 //
-// AuthnRequest signatures are not verified. A request only names where the
+// Signatures on incoming messages are not verified. A request only names where the
 // response goes, and Prism sends it only to an ACS URL registered for that
 // service provider, which is what keeps assertions from reaching anyone else.
 
@@ -35,7 +36,9 @@ export type SamlStatus =
   | "Responder"
   | "RequestDenied"
   | "NoPassive"
-  | "InvalidNameIDPolicy";
+  | "InvalidNameIDPolicy"
+  | "PartialLogout"
+  | "UnknownPrincipal";
 
 export type NameIdFormat = "persistent" | "email";
 export type SignMode = "assertion" | "response" | "both";
@@ -155,7 +158,12 @@ function childElement(
 
 const xmlBool = (v: string | null) => v === "true" || v === "1";
 
-export function parseAuthnRequest(xml: string): AuthnRequest {
+/** The root of a SAML protocol message, which must be samlp:<localName>,
+ *  with its ID and Issuer checked. */
+function parseMessage(
+  xml: string,
+  localName: string,
+): { root: Element; id: string; issuer: string } {
   // No DTDs at all: SAML never needs one, and refusing them rules out
   // entity-expansion tricks whatever the parser would do with them.
   if (/<!DOCTYPE/i.test(xml)) throw new SamlError("saml_request_invalid");
@@ -169,11 +177,7 @@ export function parseAuthnRequest(xml: string): AuthnRequest {
     throw new SamlError("saml_request_invalid");
   }
   const root = doc.documentElement;
-  if (
-    !root ||
-    root.namespaceURI !== NS.samlp ||
-    root.localName !== "AuthnRequest"
-  )
+  if (!root || root.namespaceURI !== NS.samlp || root.localName !== localName)
     throw new SamlError("saml_request_unsupported");
   const id = root.getAttribute("ID") ?? "";
   if (
@@ -186,6 +190,11 @@ export function parseAuthnRequest(xml: string): AuthnRequest {
 
   const issuer = childElement(root, NS.saml, "Issuer")?.textContent?.trim();
   if (!issuer) throw new SamlError("saml_request_invalid");
+  return { root, id, issuer };
+}
+
+export function parseAuthnRequest(xml: string): AuthnRequest {
+  const { root, id, issuer } = parseMessage(xml, "AuthnRequest");
   const policy = childElement(root, NS.samlp, "NameIDPolicy");
 
   return {
@@ -248,15 +257,30 @@ export interface AssertionContent {
   authnInstant: number;
   /** RFC 8176 methods of the session, to pick an AuthnContextClassRef. */
   amr: string[];
+  /** Names this sign-in in the SP's session, for single logout. */
+  sessionIndex: string;
+}
+
+/** The top-level code a second-level status goes under. */
+function topStatus(status: SamlStatus): SamlStatus {
+  switch (status) {
+    case "Success":
+    case "Requester":
+    case "Responder":
+      return status;
+    // The logout went through, just not everywhere.
+    case "PartialLogout":
+      return "Success";
+    case "InvalidNameIDPolicy":
+    case "UnknownPrincipal":
+      return "Requester";
+    default:
+      return "Responder";
+  }
 }
 
 function statusElement(status: SamlStatus): XmlElement {
-  const top =
-    status === "Success" || status === "Requester" || status === "Responder"
-      ? status
-      : status === "InvalidNameIDPolicy"
-        ? "Requester"
-        : "Responder";
+  const top = topStatus(status);
   return el(
     "samlp:Status",
     {},
@@ -337,7 +361,10 @@ function assertionElement(
     ),
     el(
       "saml:AuthnStatement",
-      { AuthnInstant: instant(content.authnInstant), SessionIndex: newId() },
+      {
+        AuthnInstant: instant(content.authnInstant),
+        SessionIndex: content.sessionIndex,
+      },
       el(
         "saml:AuthnContext",
         {},
@@ -405,11 +432,172 @@ export async function buildErrorResponse(
   return encodeResponse(await signElement(response, signer));
 }
 
+// ─── Single Logout ───────────────────────────────────────────────────────────
+
+export interface LogoutRequest {
+  id: string;
+  issuer: string;
+  /** Who to sign out: the NameID the SP got in its assertion. */
+  nameId: string;
+  destination: string | null;
+}
+
+export function parseLogoutRequest(xml: string): LogoutRequest {
+  const { root, id, issuer } = parseMessage(xml, "LogoutRequest");
+  // An EncryptedID can't be read without an SP-side key Prism never has.
+  const nameId = childElement(root, NS.saml, "NameID")?.textContent?.trim();
+  if (!nameId) throw new SamlError("saml_request_invalid");
+  return {
+    id,
+    issuer,
+    nameId,
+    destination: root.getAttribute("Destination") || null,
+  };
+}
+
+export interface LogoutResponse {
+  issuer: string;
+  inResponseTo: string | null;
+  destination: string | null;
+  success: boolean;
+}
+
+export function parseLogoutResponse(xml: string): LogoutResponse {
+  const { root, issuer } = parseMessage(xml, "LogoutResponse");
+  const status = childElement(root, NS.samlp, "Status");
+  const code = status && childElement(status, NS.samlp, "StatusCode");
+  return {
+    issuer,
+    inResponseTo: root.getAttribute("InResponseTo") || null,
+    destination: root.getAttribute("Destination") || null,
+    success: code?.getAttribute("Value") === STATUS + "Success",
+  };
+}
+
+/** A LogoutRequest from Prism to an SP, and its ID. */
+export function logoutRequestElement(opts: {
+  idpEntityId: string;
+  spEntityId: string;
+  destination: string;
+  nameId: { format: NameIdFormat; value: string };
+  sessionIndex: string;
+  now?: number;
+}): { id: string; element: XmlElement } {
+  const now = opts.now ?? Math.floor(Date.now() / 1000);
+  const id = newId();
+  const element = el(
+    "samlp:LogoutRequest",
+    {
+      ID: id,
+      Version: "2.0",
+      IssueInstant: instant(now),
+      Destination: opts.destination,
+      NotOnOrAfter: instant(now + ASSERTION_TTL_SECONDS),
+    },
+    el("saml:Issuer", {}, opts.idpEntityId),
+    el(
+      "saml:NameID",
+      {
+        Format: NAMEID_FORMAT_URIS[opts.nameId.format],
+        SPNameQualifier:
+          opts.nameId.format === "persistent" ? opts.spEntityId : undefined,
+      },
+      opts.nameId.value,
+    ),
+    el("samlp:SessionIndex", {}, opts.sessionIndex),
+  );
+  return { id, element };
+}
+
+/** A LogoutResponse from Prism to the SP that asked for the logout. */
+export function logoutResponseElement(opts: {
+  idpEntityId: string;
+  destination: string;
+  inResponseTo: string;
+  status: SamlStatus;
+  now?: number;
+}): XmlElement {
+  const now = opts.now ?? Math.floor(Date.now() / 1000);
+  return el(
+    "samlp:LogoutResponse",
+    {
+      ID: newId(),
+      Version: "2.0",
+      IssueInstant: instant(now),
+      Destination: opts.destination,
+      InResponseTo: opts.inResponseTo,
+    },
+    el("saml:Issuer", {}, opts.idpEntityId),
+    statusElement(opts.status),
+  );
+}
+
+export type SloBinding = "redirect" | "post";
+
+/** How the browser delivers a message: follow a URL (HTTP-Redirect) or
+ *  submit a form (HTTP-POST). */
+export type OutgoingMessage =
+  | { kind: "redirect"; url: string }
+  | { kind: "post"; url: string; fields: Record<string, string> };
+
+async function deflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
+  const out = await new Response(
+    new Blob([bytes as Uint8Array<ArrayBuffer>])
+      .stream()
+      .pipeThrough(new CompressionStream("deflate-raw")),
+  ).arrayBuffer();
+  return new Uint8Array(out);
+}
+
+const SIG_ALG_RSA_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
+
+/**
+ * A logout message, signed, ready for the browser to carry to `url`. With
+ * the HTTP-POST binding the XML carries an enveloped signature; with
+ * HTTP-Redirect the query string is signed (SAML Bindings §3.4.4.1), since
+ * an XML signature wouldn't survive the deflate.
+ */
+export async function encodeLogoutMessage(
+  element: XmlElement,
+  opts: {
+    field: "SAMLRequest" | "SAMLResponse";
+    binding: SloBinding;
+    url: string;
+    relayState: string | null;
+    signer: SamlSigner;
+  },
+): Promise<OutgoingMessage> {
+  if (opts.binding === "post") {
+    const signed = await signElement(element, opts.signer);
+    const fields: Record<string, string> = {
+      [opts.field]: encodeResponse(signed),
+    };
+    if (opts.relayState) fields.RelayState = opts.relayState;
+    return { kind: "post", url: opts.url, fields };
+  }
+  const deflated = await deflateRaw(utf8.encode(serializeDocument(element)));
+  let query = `${opts.field}=${encodeURIComponent(bytesToBase64(deflated))}`;
+  if (opts.relayState)
+    query += `&RelayState=${encodeURIComponent(opts.relayState)}`;
+  query += `&SigAlg=${encodeURIComponent(SIG_ALG_RSA_SHA256)}`;
+  const signature = new Uint8Array(
+    await crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      opts.signer.privateKey,
+      utf8.encode(query),
+    ),
+  );
+  query += `&Signature=${encodeURIComponent(bytesToBase64(signature))}`;
+  const sep = opts.url.includes("?") ? "&" : "?";
+  return { kind: "redirect", url: `${opts.url}${sep}${query}` };
+}
+
 // ─── Metadata ────────────────────────────────────────────────────────────────
 
 export function buildIdpMetadata(opts: {
   entityId: string;
   ssoUrl: string;
+  sloUrl: string;
   certificate: Uint8Array;
 }): string {
   return serializeDocument(
@@ -423,6 +611,14 @@ export function buildIdpMetadata(opts: {
           protocolSupportEnumeration: NS.samlp,
         },
         el("md:KeyDescriptor", { use: "signing" }, keyInfo(opts.certificate)),
+        el("md:SingleLogoutService", {
+          Binding: BINDING_REDIRECT,
+          Location: opts.sloUrl,
+        }),
+        el("md:SingleLogoutService", {
+          Binding: BINDING_POST,
+          Location: opts.sloUrl,
+        }),
         el("md:NameIDFormat", {}, NAMEID_PERSISTENT),
         el("md:NameIDFormat", {}, NAMEID_EMAIL),
         el("md:SingleSignOnService", {

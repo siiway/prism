@@ -6,6 +6,7 @@ import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
 import { clearSessionCookie } from "../lib/cookies";
 import { deliverBackChannelLogout } from "../lib/backchannelLogout";
+import { startIdpLogout } from "../lib/saml/logout";
 import {
   hashPassword,
   randomId,
@@ -421,11 +422,14 @@ app.post("/logout", requireAuth, async (c) => {
   // OIDC Back-Channel Logout: notify the user's clients that this session ended.
   if (user)
     await deliverBackChannelLogout(c.env, c.executionCtx, user.id, sessionId);
+  // SAML Single Logout goes through the browser: the page to visit next,
+  // read before the session (and its SAML sign-ins) are gone.
+  const samlLogout = await startIdpLogout(c.env.DB, sessionId, "/login");
   await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
     .bind(sessionId)
     .run();
   clearSessionCookie(c);
-  return c.json({ ok: true });
+  return c.json({ ok: true, saml_logout: samlLogout });
 });
 
 // ─── Email verification ───────────────────────────────────────────────────────
