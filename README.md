@@ -7,6 +7,7 @@ A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare W
 ## Features
 
 - **OAuth 2.0 + OpenID Connect** — authorization code + PKCE, RS256 ID tokens, introspection / revocation, UserInfo, Discovery, JWKS
+- **SAML 2.0 identity provider** — sign in to apps that only speak SAML: metadata, signed assertions, per-app ACS URLs and NameID
 - **Step-up 2FA** — server-initiated, action-pinned re-confirmation with sudo grace windows for sensitive operations
 - **Social & federated login** — GitHub, Google, Microsoft, Discord, Telegram, X, Cloudflare, Generic OIDC, Generic OAuth 2 — multiple sources of the same type
 - **Multi-factor auth** — multiple TOTP authenticators per account, passkeys (WebAuthn), GPG keys (incl. ML-DSA), backup codes

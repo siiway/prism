@@ -32,6 +32,20 @@ import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
+import type { NameIdFormat, SignMode } from "../lib/saml/protocol";
+import {
+  MAX_ACS_URLS,
+  NAME_ID_FORMATS,
+  SIGN_MODES,
+  idpEndpoints,
+  isValidAcsUrl,
+  isValidEntityId,
+  parseAcsUrls,
+  releasedScopes,
+  type SamlSpRow,
+} from "../lib/saml/serviceProviders";
+import { getSamlSigner } from "../lib/saml/sign";
+import { toPem } from "../lib/saml/x509";
 import type {
   OAuthAppRow,
   AppScopeDefinitionRow,
@@ -1585,6 +1599,179 @@ app.delete("/:id/access-rules/:ruleId", async (c) => {
     .bind(ruleId, id)
     .run();
   if (!result.meta.changes) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
+
+// ─── SAML service provider ───────────────────────────────────────────────────
+//
+// An app can also be a SAML 2.0 service provider. These endpoints edit its
+// SP side and show what to give the SP: Prism's IdP endpoints and signing
+// certificate. Sign-in itself is in routes/saml.ts.
+
+function samlView(row: SamlSpRow | null) {
+  return row
+    ? {
+        entity_id: row.entity_id,
+        acs_urls: parseAcsUrls(row),
+        name_id_format: row.name_id_format,
+        sign: row.sign,
+        updated_at: row.updated_at,
+      }
+    : null;
+}
+
+// GET /:id/saml — the app's SP settings (null when SAML is off) and the IdP
+// details to give the SP
+app.get("/:id/saml", async (c) => {
+  const id = c.req.param("id");
+  const row = await loadApp(c, id, false);
+  if (row instanceof Response) return row;
+
+  const sp = await c.env.DB.prepare(
+    "SELECT * FROM saml_service_providers WHERE app_id = ?",
+  )
+    .bind(id)
+    .first<SamlSpRow>();
+  const signer = await getSamlSigner(c.env);
+  const idp = idpEndpoints(c.env.APP_URL);
+  return c.json({
+    saml: samlView(sp),
+    idp: {
+      entity_id: idp.entityId,
+      metadata_url: idp.metadataUrl,
+      sso_url: idp.ssoUrl,
+      certificate: toPem(signer.certificate),
+    },
+    released_scopes: releasedScopes(row),
+  });
+});
+
+// PUT /:id/saml — turn SAML on for the app, or update its SP settings
+app.put("/:id/saml", async (c) => {
+  const id = c.req.param("id");
+  const row = await loadApp(c, id, true);
+  if (row instanceof Response) return row;
+
+  const body = await c.req
+    .json<{
+      entity_id?: unknown;
+      acs_urls?: unknown;
+      name_id_format?: unknown;
+      sign?: unknown;
+    }>()
+    .catch(() => ({}) as Record<string, unknown>);
+
+  const entityId =
+    typeof body.entity_id === "string" ? body.entity_id.trim() : "";
+  if (!entityId)
+    return c.json(
+      { error: "field_required", params: { field: "entity_id" } },
+      400,
+    );
+  if (!isValidEntityId(entityId))
+    return c.json(
+      { error: "field_invalid", params: { field: "entity_id" } },
+      400,
+    );
+
+  const acsUrls = Array.isArray(body.acs_urls)
+    ? [
+        ...new Set(
+          body.acs_urls
+            .filter((u): u is string => typeof u === "string")
+            .map((u) => u.trim())
+            .filter(Boolean),
+        ),
+      ]
+    : [];
+  if (acsUrls.length === 0)
+    return c.json(
+      { error: "field_required", params: { field: "acs_urls" } },
+      400,
+    );
+  if (acsUrls.length > MAX_ACS_URLS)
+    return c.json(
+      {
+        error: "field_max_items",
+        params: { field: "acs_urls", max: MAX_ACS_URLS },
+      },
+      400,
+    );
+  const badAcs = acsUrls.find((u) => !isValidAcsUrl(u));
+  if (badAcs)
+    return c.json(
+      { error: "saml_acs_url_invalid", params: { url: badAcs } },
+      400,
+    );
+
+  const nameIdFormat = body.name_id_format ?? "persistent";
+  if (!NAME_ID_FORMATS.includes(nameIdFormat as NameIdFormat))
+    return c.json(
+      {
+        error: "field_one_of",
+        params: { field: "name_id_format", values: NAME_ID_FORMATS.join(", ") },
+      },
+      400,
+    );
+  const sign = body.sign ?? "assertion";
+  if (!SIGN_MODES.includes(sign as SignMode))
+    return c.json(
+      {
+        error: "field_one_of",
+        params: { field: "sign", values: SIGN_MODES.join(", ") },
+      },
+      400,
+    );
+
+  const taken = await c.env.DB.prepare(
+    "SELECT app_id FROM saml_service_providers WHERE entity_id = ? AND app_id != ?",
+  )
+    .bind(entityId, id)
+    .first<{ app_id: string }>();
+  if (taken) return c.json({ error: "saml_entity_id_taken" }, 409);
+
+  const now = Math.floor(Date.now() / 1000);
+  await c.env.DB.prepare(
+    `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(app_id) DO UPDATE SET entity_id = excluded.entity_id, acs_urls = excluded.acs_urls,
+       name_id_format = excluded.name_id_format, sign = excluded.sign, updated_at = excluded.updated_at`,
+  )
+    .bind(id, entityId, JSON.stringify(acsUrls), nameIdFormat, sign, now, now)
+    .run();
+
+  auditAppLifecycle(c, "app.update", {
+    id,
+    name: row.name,
+    owner_id: row.owner_id,
+    team_id: row.team_id,
+  });
+  const saved = await c.env.DB.prepare(
+    "SELECT * FROM saml_service_providers WHERE app_id = ?",
+  )
+    .bind(id)
+    .first<SamlSpRow>();
+  return c.json({ saml: samlView(saved) });
+});
+
+// DELETE /:id/saml — turn SAML off for the app
+app.delete("/:id/saml", async (c) => {
+  const id = c.req.param("id");
+  const row = await loadApp(c, id, true);
+  if (row instanceof Response) return row;
+
+  const result = await c.env.DB.prepare(
+    "DELETE FROM saml_service_providers WHERE app_id = ?",
+  )
+    .bind(id)
+    .run();
+  if (!result.meta.changes) return c.json({ error: "not_found" }, 404);
+  auditAppLifecycle(c, "app.update", {
+    id,
+    name: row.name,
+    owner_id: row.owner_id,
+    team_id: row.team_id,
+  });
   return c.json({ ok: true });
 });
 

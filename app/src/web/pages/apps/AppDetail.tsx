@@ -1,4 +1,4 @@
-// OAuth app detail page: a header, four tabs of settings cards, and the
+// OAuth app detail page: a header, tabs of settings cards, and the
 // form state they share. Each card saves its own section (see detail/shared).
 
 import {
@@ -42,6 +42,7 @@ import { OverviewTab } from "./detail/OverviewTab";
 import { SignInTab } from "./detail/SignInTab";
 import { PermissionsTab } from "./detail/PermissionsTab";
 import { AccessTab } from "./detail/AccessTab";
+import { SamlTab } from "./detail/SamlTab";
 import { ModerationTab } from "./detail/ModerationTab";
 import { BackButton, DetailHeader } from "../../components/DetailHeader";
 
@@ -50,6 +51,7 @@ const TABS = [
   "sign-in",
   "permissions",
   "access",
+  "saml",
   "moderation",
 ] as const;
 type TabId = (typeof TABS)[number];
@@ -68,6 +70,9 @@ const CARD_TAB: Record<string, TabId> = {
   "scope-definitions": "permissions",
   "scope-access": "permissions",
   access: "access",
+  saml: "saml",
+  "saml-idp": "saml",
+  "saml-attributes": "saml",
 };
 
 const useStyles = makeStyles({
@@ -345,6 +350,7 @@ export function AppDetail() {
           <Tab value="sign-in">{t("apps.tabSignIn")}</Tab>
           <Tab value="permissions">{t("apps.permissionsTab")}</Tab>
           <Tab value="access">{t("apps.tabAccess")}</Tab>
+          <Tab value="saml">{t("apps.tabSaml")}</Tab>
           {canModerate && (
             <Tab value="moderation">{t("apps.moderation.tab")}</Tab>
           )}
@@ -369,6 +375,7 @@ export function AppDetail() {
       {tab === "access" && (
         <AccessTab app={app} formApi={formApi} showMsg={showMsg} />
       )}
+      {tab === "saml" && <SamlTab app={app} showMsg={showMsg} />}
       {tab === "moderation" && (
         <ModerationTab app={app} formApi={formApi} showMsg={showMsg} />
       )}

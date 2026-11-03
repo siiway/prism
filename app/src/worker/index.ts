@@ -42,6 +42,7 @@ import { readerRoutes as legalRoutes } from "./routes/legal";
 import auditRoutes from "./routes/audit";
 import searchRoutes from "./routes/search";
 import proxyRoutes from "./routes/proxy";
+import { samlApiRoutes, samlProtocolRoutes } from "./routes/saml";
 import { ssrHandler } from "./ssr";
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -98,7 +99,11 @@ app.route("/api/admin", adminRoutes);
 app.route("/api/audit", auditRoutes);
 app.route("/api/search", searchRoutes);
 app.route("/api/proxy/image", proxyRoutes);
+app.route("/api/saml", samlApiRoutes);
 app.route("/.well-known", wellknownRoutes);
+// SAML protocol endpoints (metadata, SSO). Other /saml/* paths, such as the
+// /saml/authorize page, fall through to the SPA.
+app.route("/saml", samlProtocolRoutes);
 app.route("/", publicRoutes);
 
 app.notFound(async (c) => {

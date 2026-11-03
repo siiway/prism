@@ -233,6 +233,16 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
         })),
     },
     {
+      // SAML sign-in. No auth loader: the page sends the user to /login
+      // itself, because an IsPassive request must be answered without one.
+      path: "/saml/authorize",
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/saml/SamlAuthorize").then((m) => ({
+          Component: m.SamlAuthorize,
+        })),
+    },
+    {
       // OIDC RP-Initiated Logout landing page (public — the session is already
       // ended by the time the browser lands here).
       path: "/logged-out",

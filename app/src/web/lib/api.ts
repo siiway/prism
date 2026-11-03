@@ -111,6 +111,11 @@ import type {
   AppScopeDefinition,
   AppScopeAccessRule,
   AppAccessRule,
+  AppSamlInfo,
+  SamlServiceProvider,
+  SamlUpdateBody,
+  SamlRequestInfo,
+  SamlPostback,
 } from "../../shared/api";
 
 export type {
@@ -874,6 +879,44 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       "DELETE",
       `/apps/${appId}/access-rules/${ruleId}`,
       undefined,
+      getToken(),
+    ),
+
+  // ─── App SAML service provider ──────────────────────────────────────────
+  getAppSaml: (appId: string) =>
+    request<AppSamlInfo>("GET", `/apps/${appId}/saml`, undefined, getToken()),
+  updateAppSaml: (appId: string, body: SamlUpdateBody) =>
+    request<{ saml: SamlServiceProvider }>(
+      "PUT",
+      `/apps/${appId}/saml`,
+      body,
+      getToken(),
+    ),
+  deleteAppSaml: (appId: string) =>
+    request<{ ok: true }>(
+      "DELETE",
+      `/apps/${appId}/saml`,
+      undefined,
+      getToken(),
+    ),
+
+  // ─── SAML sign-in page ──────────────────────────────────────────────────
+  getSamlRequest: (token: string) =>
+    request<SamlRequestInfo>(
+      "GET",
+      `/saml/requests/${encodeURIComponent(token)}`,
+      undefined,
+      getToken(),
+    ),
+  samlDecision: (
+    token: string,
+    action: "approve" | "deny" | "decline",
+    authorizationMode?: "once" | "always",
+  ) =>
+    request<SamlPostback>(
+      "POST",
+      `/saml/requests/${encodeURIComponent(token)}`,
+      { action, authorization_mode: authorizationMode },
       getToken(),
     ),
 

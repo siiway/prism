@@ -226,6 +226,7 @@ EdDSA 和 ML-DSA 密钥。包含多个密钥的 `public_key`（多个块拼接�
 | `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:id/scope-definitions[/:scope]`   | 导出的 scope                                                                                                |
 | `GET` / `POST` / `DELETE`           | `/api/apps/:id/scope-access-rules[/:ruleId]` | 谁可以添加或请求应用的 scope                                                                                |
 | `GET` / `POST` / `DELETE`           | `/api/apps/:id/access-rules[/:ruleId]`       | [访问白名单](app-access-whitelist.md)                                                                       |
+| `GET` / `PUT` / `DELETE`            | `/api/apps/:id/saml`                         | [SAML](saml.md) 设置，以及要提供给应用的身份提供方信息                                                      |
 | `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:appId/webhooks[/:id]`            | [应用通知](app-notifications.md)                                                                            |
 
 应用密钥为只写：仅在创建应用或轮换其密钥时返回生成的密钥。其他情况下只会得到 `has_client_secret`。

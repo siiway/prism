@@ -622,6 +622,7 @@
     "tabOverview": "Overview",
     "tabSignIn": "Sign-in",
     "tabAccess": "Access",
+    "tabSaml": "SAML",
     "openWebsite": "Website",
     "normalViewNotOwner": "You can't manage this app with your own permissions.",
     "credentialsDesc": "Give these to your app's OAuth library.",
@@ -674,6 +675,49 @@
       "officialDesc": "Marks the app as made by this site's operators.",
       "firstPartyDesc": "Trusted like the site itself; skips some consent prompts.",
       "transferTitle": "Transfer"
+    },
+    "saml": {
+      "title": "SAML",
+      "desc": "Let people sign in to this app with SAML 2.0, with this site as the identity provider.",
+      "guide": "SAML guide",
+      "on": "On",
+      "off": "SAML is off for this app.",
+      "setUp": "Set up SAML",
+      "entityId": "Service provider entity ID",
+      "entityIdHint": "Also called Audience URI or SP Issuer. It must match the Issuer in the app's requests.",
+      "acsUrls": "Assertion Consumer Service URLs",
+      "acsUrlsHint": "Where the SAML response is posted, one per line. The first is used when a request doesn't name one.",
+      "nameId": "NameID",
+      "nameIdPersistent": "User ID",
+      "nameIdEmail": "Email address",
+      "nameIdHint": "How the app identifies the person. Email works only for accounts with a verified email.",
+      "sign": "Signature",
+      "signAssertion": "Assertion",
+      "signResponse": "Response",
+      "signBoth": "Both",
+      "signHint": "What gets signed. Most apps want the assertion signed.",
+      "saved": "SAML settings saved",
+      "turnOff": "Turn off",
+      "turnOffTitle": "Turn off SAML?",
+      "turnOffBody": "{{appName}} can no longer sign people in with SAML. Its OAuth settings stay as they are.",
+      "turnedOff": "SAML turned off",
+      "idpTitle": "Identity provider details",
+      "idpDesc": "Give the app the metadata URL, or enter these in its SAML settings.",
+      "metadataUrl": "Metadata URL",
+      "idpEntityId": "Identity provider entity ID",
+      "ssoUrl": "Single sign-on URL",
+      "certificate": "Signing certificate",
+      "certificateDesc": "X.509, PEM",
+      "downloadCertificate": "Download",
+      "attributesTitle": "Attributes",
+      "attributesDesc": "What the app receives about the person. More attributes come with the profile, email and teams:read scopes under Sign-in.",
+      "attributesOnlyUid": "Only the user ID is sent. Allow profile, email or teams:read under Sign-in to send more.",
+      "attrUid": "User ID, always sent",
+      "attrUsername": "Username",
+      "attrName": "Display name",
+      "attrEmail": "Email address, only when verified",
+      "attrTeams": "IDs of the teams the person is in",
+      "attrGroups": "Member groups, as team-id:group-slug"
     }
   },
   "domains": {
@@ -1404,6 +1448,14 @@
       "sudoActiveDesc": "You confirmed with {{appName}} in the last {{minutes}} minutes, so no code is needed this time.",
       "footerNote": "Confirming sends a one-time verification back to {{appName}}. It does not grant any new account access."
     }
+  },
+  "saml": {
+    "title": "Sign in to {{appName}}",
+    "sharing": "{{appName}} will receive:",
+    "signingIn": "Signing you in to {{appName}}…",
+    "errorTitle": "Can't sign in",
+    "errorBody": "Something went wrong with this sign-in. Go back to the app and try again.",
+    "returnToApp": "Back to {{appName}}"
   },
   "admin": {
     "backToAccount": "Back to account",
@@ -3286,6 +3338,16 @@
     "verification_method_invalid": "Unknown verification method.",
     "webhook_not_found": "Webhook not found.",
     "websocket_required": "This endpoint needs a WebSocket connection.",
-    "wrong_password": "The password is incorrect."
+    "wrong_password": "The password is incorrect.",
+    "saml_request_invalid": "The app sent a SAML request that couldn't be read. Go back to the app and try again.",
+    "saml_request_unsupported": "This SAML message isn't supported. Only sign-in requests are.",
+    "saml_unknown_sp": "This app isn't set up for SAML sign-in here.",
+    "saml_acs_mismatch": "The app asked to send the sign-in to an address that isn't registered for it.",
+    "saml_binding_unsupported": "The app asked for a SAML binding that isn't supported. Responses use HTTP-POST.",
+    "saml_request_expired": "This sign-in request has expired. Go back to the app and start again.",
+    "saml_request_state": "This sign-in request can't be completed that way. Reload the page and try again.",
+    "saml_email_unverified": "This app identifies you by email. Verify your email address first.",
+    "saml_entity_id_taken": "Another app already uses this entity ID.",
+    "saml_acs_url_invalid": "{{url}} isn't a valid ACS URL. Use https (http only for localhost), without a fragment."
   }
 }

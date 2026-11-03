@@ -622,6 +622,7 @@
     "tabOverview": "概览",
     "tabSignIn": "登录",
     "tabAccess": "访问",
+    "tabSaml": "SAML",
     "openWebsite": "网站",
     "normalViewNotOwner": "你无法以自身权限管理此应用。",
     "credentialsDesc": "在应用的 OAuth 库中填写这些凭据。",
@@ -674,6 +675,49 @@
       "officialDesc": "将应用标记为本站运营方出品。",
       "firstPartyDesc": "与本站同等信任，可跳过部分授权提示。",
       "transferTitle": "转移"
+    },
+    "saml": {
+      "title": "SAML",
+      "desc": "允许用户通过 SAML 2.0 登录此应用，由本站作为身份提供方。",
+      "guide": "SAML 指南",
+      "on": "已开启",
+      "off": "此应用未开启 SAML。",
+      "setUp": "设置 SAML",
+      "entityId": "服务提供方实体 ID",
+      "entityIdHint": "也称为 Audience URI 或 SP Issuer，必须与应用请求中的 Issuer 一致。",
+      "acsUrls": "断言消费服务（ACS）URL",
+      "acsUrlsHint": "SAML 响应的提交地址，每行一个。请求未指定时使用第一个。",
+      "nameId": "NameID",
+      "nameIdPersistent": "用户 ID",
+      "nameIdEmail": "邮箱地址",
+      "nameIdHint": "应用识别用户的方式。邮箱仅适用于已验证邮箱的账户。",
+      "sign": "签名",
+      "signAssertion": "断言",
+      "signResponse": "响应",
+      "signBoth": "两者",
+      "signHint": "需要签名的内容。大多数应用要求对断言签名。",
+      "saved": "SAML 设置已保存",
+      "turnOff": "关闭",
+      "turnOffTitle": "关闭 SAML？",
+      "turnOffBody": "{{appName}} 将无法再通过 SAML 让用户登录，其 OAuth 设置保持不变。",
+      "turnedOff": "SAML 已关闭",
+      "idpTitle": "身份提供方信息",
+      "idpDesc": "将元数据 URL 提供给应用，或在其 SAML 设置中填写以下信息。",
+      "metadataUrl": "元数据 URL",
+      "idpEntityId": "身份提供方实体 ID",
+      "ssoUrl": "单点登录 URL",
+      "certificate": "签名证书",
+      "certificateDesc": "X.509，PEM 格式",
+      "downloadCertificate": "下载",
+      "attributesTitle": "属性",
+      "attributesDesc": "应用获得的用户信息。在“登录”中允许 profile、email 和 teams:read 权限范围可提供更多属性。",
+      "attributesOnlyUid": "仅发送用户 ID。在“登录”中允许 profile、email 或 teams:read 以发送更多信息。",
+      "attrUid": "用户 ID，始终发送",
+      "attrUsername": "用户名",
+      "attrName": "显示名称",
+      "attrEmail": "邮箱地址，仅在已验证时发送",
+      "attrTeams": "用户所在团队的 ID",
+      "attrGroups": "身份组，格式为 团队 ID:身份组标识"
     }
   },
   "domains": {
@@ -1404,6 +1448,14 @@
       "sudoActiveDesc": "你在 {{minutes}} 分钟内已在 {{appName}} 确认过，本次无需验证码。",
       "footerNote": "确认会向 {{appName}} 发回一次性验证结果,不会授予任何新的账户权限。"
     }
+  },
+  "saml": {
+    "title": "登录 {{appName}}",
+    "sharing": "{{appName}} 将获得：",
+    "signingIn": "正在登录 {{appName}}…",
+    "errorTitle": "无法登录",
+    "errorBody": "本次登录出现问题。请返回应用重试。",
+    "returnToApp": "返回 {{appName}}"
   },
   "admin": {
     "backToAccount": "返回账户",
@@ -3286,6 +3338,16 @@
     "verification_method_invalid": "未知的验证方式。",
     "webhook_not_found": "未找到该 Webhook。",
     "websocket_required": "此端点需要 WebSocket 连接。",
-    "wrong_password": "密码错误。"
+    "wrong_password": "密码错误。",
+    "saml_request_invalid": "应用发送的 SAML 请求无法读取。请返回应用重试。",
+    "saml_request_unsupported": "不支持此 SAML 消息，仅支持登录请求。",
+    "saml_unknown_sp": "此应用未在本站设置 SAML 登录。",
+    "saml_acs_mismatch": "应用要求将登录结果发送到一个未为其注册的地址。",
+    "saml_binding_unsupported": "应用请求了不支持的 SAML 绑定方式。响应仅使用 HTTP-POST。",
+    "saml_request_expired": "此登录请求已过期。请返回应用重新开始。",
+    "saml_request_state": "无法以此方式完成此登录请求。请刷新页面重试。",
+    "saml_email_unverified": "此应用通过邮箱识别你。请先验证你的邮箱地址。",
+    "saml_entity_id_taken": "已有其他应用使用此实体 ID。",
+    "saml_acs_url_invalid": "{{url}} 不是有效的 ACS URL。请使用 https（仅 localhost 可用 http），且不含片段。"
   }
 }

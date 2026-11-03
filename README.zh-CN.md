@@ -7,6 +7,7 @@
 ## 功能特性
 
 - **OAuth 2.0 + OpenID Connect** — 授权码 + PKCE、RS256 ID Token、令牌内省 / 撤销、UserInfo、Discovery、JWKS
+- **SAML 2.0 身份提供方** — 登录仅支持 SAML 的应用：元数据、签名断言、按应用配置 ACS URL 与 NameID
 - **步骤提升 2FA** — 服务端发起、行动钉死的二次确认；为高风险操作提供 sudo 宽限期
 - **社交与联邦登录** — GitHub、Google、Microsoft、Discord、Telegram、X、Cloudflare，Generic OIDC、Generic OAuth 2 — 同一类型可多源
 - **多因素认证** — 单账号多 TOTP 认证器、Passkey（WebAuthn）、GPG 公钥（含 ML-DSA）、备用码

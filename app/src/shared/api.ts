@@ -1376,6 +1376,54 @@ export interface DeviceVerifyInfo {
   user_code: string;
 }
 
+export type SamlNameIdFormat = "persistent" | "email";
+export type SamlSignMode = "assertion" | "response" | "both";
+
+/** An app's SAML service-provider settings. */
+export interface SamlServiceProvider {
+  entity_id: string;
+  acs_urls: string[];
+  name_id_format: SamlNameIdFormat;
+  sign: SamlSignMode;
+  updated_at: number;
+}
+
+/** GET /apps/:id/saml */
+export interface AppSamlInfo {
+  /** null while SAML is off for the app. */
+  saml: SamlServiceProvider | null;
+  /** What to give the service provider. */
+  idp: {
+    entity_id: string;
+    metadata_url: string;
+    sso_url: string;
+    /** PEM. */
+    certificate: string;
+  };
+  /** The app's allowed scopes whose attributes SAML carries. */
+  released_scopes: string[];
+}
+
+export type SamlUpdateBody = Omit<SamlServiceProvider, "updated_at">;
+
+/** GET /saml/requests/:token — what the sign-in page does next. */
+export interface SamlRequestInfo {
+  app: OAuthAuthorizeInfo["app"];
+  next: "login" | "reauth" | "consent" | "continue" | "decline";
+  /** An API error code: why this account can't sign in to the app. */
+  error: string | null;
+  scopes: string[];
+  name_id_format: SamlNameIdFormat;
+  user: OAuthAuthorizeInfo["user"] | null;
+}
+
+/** The Response to POST to the service provider. */
+export interface SamlPostback {
+  acs_url: string;
+  saml_response: string;
+  relay_state: string | null;
+}
+
 export interface AdminStats {
   users: number;
   teams: number;
