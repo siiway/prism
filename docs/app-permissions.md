@@ -204,9 +204,10 @@ App B is the _consumer_: it requests App A's permission scopes during OAuth.
 
 ### 1. Add the scope to `allowed_scopes`
 
-In the App B dashboard → Settings, under **App Permissions**, enter App A's
-`client_id` and select the inner scope, then click **Add**. This registers
-`app:<App_A_client_id>:<inner_scope>` in App B's `allowed_scopes`.
+On App B's **Permissions** tab, in the **Scopes** card, choose **Another
+app's scope**, enter App A's `client_id` and the inner scope, then click
+**Add** and save. This registers `app:<App_A_client_id>:<inner_scope>` in
+App B's `allowed_scopes`.
 
 Or via API:
 
