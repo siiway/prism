@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in Prism doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security issues go to a [private advisory](https://github.com/siiway/prism/security/advisories/new), not here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The commit you deployed (`git rev-parse --short HEAD` in your checkout).
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Sign-in, registration or 2FA
+        - OAuth / OpenID Connect
+        - Apps
+        - Teams
+        - Domains
+        - Notifications or webhooks
+        - Admin panel
+        - Setup or deploy
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Browser console errors, `wrangler tail` output, or the entry from Admin > Login errors. Remove tokens, secrets and personal data first.
+      render: text

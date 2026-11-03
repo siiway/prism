@@ -1,0 +1,26 @@
+# Path labels for pull requests, applied by triage.yml. The config is read from
+# the base branch, so a PR can't change its own labels by editing this file.
+
+app:
+  - changed-files:
+      - any-glob-to-any-file: "app/**"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "README*.md", ".github/*.md"]
+
+i18n:
+  - changed-files:
+      - any-glob-to-any-file: "app/src/web/i18n/**"
+
+database:
+  - changed-files:
+      - any-glob-to-any-file: "app/src/worker/db/migrations/**"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: [".github/workflows/**", "app/prek.toml"]
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ["**/package.json", "**/bun.lock"]

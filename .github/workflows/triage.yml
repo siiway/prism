@@ -1,0 +1,80 @@
+name: Triage
+
+# Labels and assigns new pull requests and issues:
+# - PRs get path labels (labeler.yml) and a type label from the conventional
+#   title (feat -> enhancement, fix -> bug, docs -> documentation, deps ->
+#   dependencies). A collaborator's PR is assigned to its author.
+# - Issues opened by a collaborator are assigned to their author; the issue
+#   forms already add bug / enhancement.
+#
+# This runs on `pull_request_target` so it can label PRs from forks, which a
+# `pull_request` token can't. It never checks out or runs PR code; it only
+# reads the PR's metadata and file list through the API. Keep it that way.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+  issues:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  pull-request:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+
+      # Not on new pushes: a label a maintainer removed stays removed.
+      - if: github.event.action != 'synchronize'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const issue = { ...context.repo, issue_number: pr.number };
+
+            // <type>(<scope>)!: <subject>
+            const m = /^(\w+)(?:\(([^)]*)\))?!?:/.exec(pr.title);
+            const type = m?.[1].toLowerCase();
+            const scope = m?.[2]?.toLowerCase();
+            const labels = [];
+            if (type === "feat") labels.push("enhancement");
+            if (type === "fix") labels.push("bug");
+            if (type === "docs") labels.push("documentation");
+            if (scope === "deps") labels.push("dependencies");
+            if (labels.length)
+              await github.rest.issues.addLabels({ ...issue, labels });
+
+            const collaborator = ["OWNER", "MEMBER", "COLLABORATOR"].includes(
+              pr.author_association,
+            );
+            if (collaborator && pr.assignees.length === 0)
+              await github.rest.issues.addAssignees({
+                ...issue,
+                assignees: [pr.user.login],
+              });
+
+  issue:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const collaborator = ["OWNER", "MEMBER", "COLLABORATOR"].includes(
+              issue.author_association,
+            );
+            if (collaborator && issue.assignees.length === 0)
+              await github.rest.issues.addAssignees({
+                ...context.repo,
+                issue_number: issue.number,
+                assignees: [issue.user.login],
+              });
