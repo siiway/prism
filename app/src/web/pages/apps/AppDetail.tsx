@@ -49,9 +49,9 @@ import { BackButton, DetailHeader } from "../../components/DetailHeader";
 const TABS = [
   "overview",
   "sign-in",
+  "saml",
   "permissions",
   "access",
-  "saml",
   "moderation",
 ] as const;
 type TabId = (typeof TABS)[number];
@@ -348,9 +348,9 @@ export function AppDetail() {
         >
           <Tab value="overview">{t("apps.tabOverview")}</Tab>
           <Tab value="sign-in">{t("apps.tabSignIn")}</Tab>
+          <Tab value="saml">{t("apps.tabSaml")}</Tab>
           <Tab value="permissions">{t("apps.permissionsTab")}</Tab>
           <Tab value="access">{t("apps.tabAccess")}</Tab>
-          <Tab value="saml">{t("apps.tabSaml")}</Tab>
           {canModerate && (
             <Tab value="moderation">{t("apps.moderation.tab")}</Tab>
           )}
@@ -369,13 +369,13 @@ export function AppDetail() {
         />
       )}
       {tab === "sign-in" && <SignInTab formApi={formApi} />}
+      {tab === "saml" && <SamlTab app={app} showMsg={showMsg} />}
       {tab === "permissions" && (
         <PermissionsTab app={app} formApi={formApi} showMsg={showMsg} />
       )}
       {tab === "access" && (
         <AccessTab app={app} formApi={formApi} showMsg={showMsg} />
       )}
-      {tab === "saml" && <SamlTab app={app} showMsg={showMsg} />}
       {tab === "moderation" && (
         <ModerationTab app={app} formApi={formApi} showMsg={showMsg} />
       )}

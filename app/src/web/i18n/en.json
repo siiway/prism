@@ -681,7 +681,13 @@
       "desc": "Let people sign in to this app with SAML 2.0, with this site as the identity provider.",
       "guide": "SAML guide",
       "on": "On",
-      "off": "SAML is off for this app.",
+      "getStarted": {
+        "title": "Sign in with SAML",
+        "desc": "For apps that only support SAML 2.0, as many SaaS tools do. People sign in with their {{siteName}} account, and {{siteName}} is the identity provider.",
+        "step1": "Enter the app's entity ID and ACS URL.",
+        "step2": "Give the app the metadata URL shown on this tab.",
+        "step3": "People choose single sign-on in the app and approve it here."
+      },
       "setUp": "Set up SAML",
       "entityId": "Service provider entity ID",
       "entityIdPlaceholder": "https://app.example.com/saml/metadata",

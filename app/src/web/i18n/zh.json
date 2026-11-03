@@ -681,7 +681,13 @@
       "desc": "允许用户通过 SAML 2.0 登录此应用，由本站作为身份提供方。",
       "guide": "SAML 指南",
       "on": "已开启",
-      "off": "此应用未开启 SAML。",
+      "getStarted": {
+        "title": "使用 SAML 登录",
+        "desc": "适用于只支持 SAML 2.0 的应用，许多 SaaS 工具都是如此。用户使用其 {{siteName}} 账户登录，{{siteName}} 作为身份提供方。",
+        "step1": "填写应用的实体 ID 和 ACS URL。",
+        "step2": "把本标签页显示的元数据 URL 提供给应用。",
+        "step3": "用户在应用中选择单点登录，并在此处批准。"
+      },
       "setUp": "设置 SAML",
       "entityId": "服务提供方实体 ID",
       "entityIdPlaceholder": "https://app.example.com/saml/metadata",

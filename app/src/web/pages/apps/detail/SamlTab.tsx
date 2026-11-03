@@ -9,7 +9,6 @@ import {
   Field,
   Input,
   Link,
-  Text,
   Textarea,
 } from "@fluentui/react-components";
 import { ArrowDownloadRegular } from "@fluentui/react-icons";
@@ -26,6 +25,8 @@ import { apiErrorText } from "../../../lib/apiError";
 import { useApi } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { CopyButton } from "../../../components/CopyButton";
+import { GetStartedPanel } from "../../../components/GetStartedPanel";
+import { SamlArt } from "../../../components/Illustrations";
 import { Segmented } from "../../../components/Segmented";
 import {
   SaveFooter,
@@ -96,6 +97,7 @@ export function SamlTab({ app, showMsg }: Props) {
   const styles = useDetailStyles();
   const { t, i18n } = useTranslation();
   const { confirm, confirmDialog } = useConfirm();
+  const { data: site } = useQuery({ queryKey: ["site"], queryFn: api.site });
 
   const { data, isLoading } = useQuery({
     queryKey: ["app-saml", app.id],
@@ -161,6 +163,37 @@ export function SamlTab({ app, showMsg }: Props) {
     : "https://prism.wss.moe/saml";
   const released = new Set(data.released_scopes);
 
+  const guideLink = (
+    <Link href={guideUrl} target="_blank" rel="noreferrer">
+      {t("apps.saml.guide")}
+    </Link>
+  );
+
+  if (!editing) {
+    const siteName = site?.site_name ?? "Prism";
+    return (
+      <GetStartedPanel
+        art={<SamlArt />}
+        title={t("apps.saml.getStarted.title")}
+        description={
+          <>
+            {t("apps.saml.getStarted.desc", { siteName })} {guideLink}
+          </>
+        }
+        steps={[
+          t("apps.saml.getStarted.step1"),
+          t("apps.saml.getStarted.step2"),
+          t("apps.saml.getStarted.step3"),
+        ]}
+        action={
+          <Button appearance="primary" onClick={() => setSettingUp(true)}>
+            {t("apps.saml.setUp")}
+          </Button>
+        }
+      />
+    );
+  }
+
   return (
     <>
       <SettingsCard
@@ -175,10 +208,7 @@ export function SamlTab({ app, showMsg }: Props) {
         }
         description={
           <>
-            {t("apps.saml.desc")}{" "}
-            <Link href={guideUrl} target="_blank" rel="noreferrer">
-              {t("apps.saml.guide")}
-            </Link>
+            {t("apps.saml.desc")} {guideLink}
           </>
         }
         action={
@@ -189,155 +219,135 @@ export function SamlTab({ app, showMsg }: Props) {
           )
         }
       >
-        {!editing ? (
+        <>
           <SettingsBody>
             <div className={styles.form}>
-              <Text className={styles.muted}>{t("apps.saml.off")}</Text>
-              <div>
-                <Button appearance="primary" onClick={() => setSettingUp(true)}>
-                  {t("apps.saml.setUp")}
-                </Button>
-              </div>
+              <Field
+                label={t("apps.saml.entityId")}
+                hint={t("apps.saml.entityIdHint")}
+                required
+              >
+                <Input
+                  value={form.entity_id}
+                  onChange={(_, d) => set("entity_id", d.value)}
+                  placeholder={t("apps.saml.entityIdPlaceholder")}
+                  input={{ className: styles.monoInput }}
+                />
+              </Field>
+              <Field
+                label={t("apps.saml.acsUrls")}
+                hint={t("apps.saml.acsUrlsHint")}
+                required
+              >
+                <Textarea
+                  value={form.acs_text}
+                  onChange={(_, d) => set("acs_text", d.value)}
+                  placeholder={t("apps.saml.acsUrlsPlaceholder")}
+                  rows={3}
+                  resize="vertical"
+                  textarea={{ className: styles.monoInput }}
+                />
+              </Field>
+              <Field
+                label={t("apps.saml.nameId")}
+                hint={t("apps.saml.nameIdHint")}
+              >
+                <Segmented
+                  label={t("apps.saml.nameId")}
+                  value={form.name_id_format}
+                  options={[
+                    {
+                      value: "persistent",
+                      label: t("apps.saml.nameIdPersistent"),
+                    },
+                    { value: "email", label: t("apps.saml.nameIdEmail") },
+                  ]}
+                  onChange={(v) => set("name_id_format", v)}
+                />
+              </Field>
+              <Field label={t("apps.saml.sign")} hint={t("apps.saml.signHint")}>
+                <Segmented
+                  label={t("apps.saml.sign")}
+                  value={form.sign}
+                  options={[
+                    {
+                      value: "assertion",
+                      label: t("apps.saml.signAssertion"),
+                    },
+                    { value: "response", label: t("apps.saml.signResponse") },
+                    { value: "both", label: t("apps.saml.signBoth") },
+                  ]}
+                  onChange={(v) => set("sign", v)}
+                />
+              </Field>
             </div>
           </SettingsBody>
-        ) : (
-          <>
-            <SettingsBody>
-              <div className={styles.form}>
-                <Field
-                  label={t("apps.saml.entityId")}
-                  hint={t("apps.saml.entityIdHint")}
-                  required
-                >
-                  <Input
-                    value={form.entity_id}
-                    onChange={(_, d) => set("entity_id", d.value)}
-                    placeholder={t("apps.saml.entityIdPlaceholder")}
-                    input={{ className: styles.monoInput }}
-                  />
-                </Field>
-                <Field
-                  label={t("apps.saml.acsUrls")}
-                  hint={t("apps.saml.acsUrlsHint")}
-                  required
-                >
-                  <Textarea
-                    value={form.acs_text}
-                    onChange={(_, d) => set("acs_text", d.value)}
-                    placeholder={t("apps.saml.acsUrlsPlaceholder")}
-                    rows={3}
-                    resize="vertical"
-                    textarea={{ className: styles.monoInput }}
-                  />
-                </Field>
-                <Field
-                  label={t("apps.saml.nameId")}
-                  hint={t("apps.saml.nameIdHint")}
-                >
-                  <Segmented
-                    label={t("apps.saml.nameId")}
-                    value={form.name_id_format}
-                    options={[
-                      {
-                        value: "persistent",
-                        label: t("apps.saml.nameIdPersistent"),
-                      },
-                      { value: "email", label: t("apps.saml.nameIdEmail") },
-                    ]}
-                    onChange={(v) => set("name_id_format", v)}
-                  />
-                </Field>
-                <Field
-                  label={t("apps.saml.sign")}
-                  hint={t("apps.saml.signHint")}
-                >
-                  <Segmented
-                    label={t("apps.saml.sign")}
-                    value={form.sign}
-                    options={[
-                      {
-                        value: "assertion",
-                        label: t("apps.saml.signAssertion"),
-                      },
-                      { value: "response", label: t("apps.saml.signResponse") },
-                      { value: "both", label: t("apps.saml.signBoth") },
-                    ]}
-                    onChange={(v) => set("sign", v)}
-                  />
-                </Field>
-              </div>
-            </SettingsBody>
-            <SaveFooter
-              dirty={dirty}
-              saving={saving}
-              disabled={!complete}
-              onDiscard={() => {
-                setEdits({});
-                setSettingUp(false);
-              }}
-              onSave={() => void save()}
-            />
-          </>
-        )}
+          <SaveFooter
+            dirty={dirty}
+            saving={saving}
+            disabled={!complete}
+            onDiscard={() => {
+              setEdits({});
+              setSettingUp(false);
+            }}
+            onSave={() => void save()}
+          />
+        </>
       </SettingsCard>
 
-      {editing && (
-        <SettingsCard
-          id="saml-idp"
-          title={t("apps.saml.idpTitle")}
-          description={t("apps.saml.idpDesc")}
-        >
-          {(
-            [
-              [t("apps.saml.metadataUrl"), data.idp.metadata_url],
-              [t("apps.saml.idpEntityId"), data.idp.entity_id],
-              [t("apps.saml.ssoUrl"), data.idp.sso_url],
-            ] as const
-          ).map(([label, value]) => (
-            <SettingsRow
-              key={label}
-              label={label}
-              description={<span className={styles.mono}>{value}</span>}
-            >
-              <CopyButton text={value} />
-            </SettingsRow>
-          ))}
+      <SettingsCard
+        id="saml-idp"
+        title={t("apps.saml.idpTitle")}
+        description={t("apps.saml.idpDesc")}
+      >
+        {(
+          [
+            [t("apps.saml.metadataUrl"), data.idp.metadata_url],
+            [t("apps.saml.idpEntityId"), data.idp.entity_id],
+            [t("apps.saml.ssoUrl"), data.idp.sso_url],
+          ] as const
+        ).map(([label, value]) => (
           <SettingsRow
-            label={t("apps.saml.certificate")}
-            description={t("apps.saml.certificateDesc")}
+            key={label}
+            label={label}
+            description={<span className={styles.mono}>{value}</span>}
           >
-            <CopyButton text={data.idp.certificate} />
-            <Button
-              size="small"
-              icon={<ArrowDownloadRegular />}
-              onClick={() => downloadPem(data.idp.certificate)}
-            >
-              {t("apps.saml.downloadCertificate")}
-            </Button>
+            <CopyButton text={value} />
           </SettingsRow>
-        </SettingsCard>
-      )}
-
-      {editing && (
-        <SettingsCard
-          id="saml-attributes"
-          title={t("apps.saml.attributesTitle")}
-          description={t("apps.saml.attributesDesc")}
+        ))}
+        <SettingsRow
+          label={t("apps.saml.certificate")}
+          description={t("apps.saml.certificateDesc")}
         >
-          {ATTRIBUTES.filter((a) => !a.scope || released.has(a.scope)).map(
-            (a) => (
-              <SettingsRow
-                key={a.name}
-                label={<span className={styles.monoLabel}>{a.name}</span>}
-                description={t(a.key)}
-              />
-            ),
-          )}
-          {released.size === 0 && (
-            <SettingsEmpty>{t("apps.saml.attributesOnlyUid")}</SettingsEmpty>
-          )}
-        </SettingsCard>
-      )}
+          <CopyButton text={data.idp.certificate} />
+          <Button
+            size="small"
+            icon={<ArrowDownloadRegular />}
+            onClick={() => downloadPem(data.idp.certificate)}
+          >
+            {t("apps.saml.downloadCertificate")}
+          </Button>
+        </SettingsRow>
+      </SettingsCard>
+
+      <SettingsCard
+        id="saml-attributes"
+        title={t("apps.saml.attributesTitle")}
+        description={t("apps.saml.attributesDesc")}
+      >
+        {ATTRIBUTES.filter((a) => !a.scope || released.has(a.scope)).map(
+          (a) => (
+            <SettingsRow
+              key={a.name}
+              label={<span className={styles.monoLabel}>{a.name}</span>}
+              description={t(a.key)}
+            />
+          ),
+        )}
+        {released.size === 0 && (
+          <SettingsEmpty>{t("apps.saml.attributesOnlyUid")}</SettingsEmpty>
+        )}
+      </SettingsCard>
       {confirmDialog}
     </>
   );
