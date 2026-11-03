@@ -152,6 +152,9 @@ export interface SiteConfig {
   gpg_challenge_prefix: string; // extra lines inserted after the site header in the GPG challenge text
   disable_user_create_team: boolean;
   disable_user_create_app: boolean;
+  /** Whether apps may sign people in with SAML. Off stops SAML sign-in for
+   *  every app but keeps their settings. */
+  saml_enabled: boolean;
   /** When true, the worker skips server-side rendering and returns the
    *  bare index.html template for every non-API page, letting the client
    *  bundle hydrate on its own. Useful for debugging SSR-only bugs or

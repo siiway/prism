@@ -34,6 +34,7 @@ import {
 } from "../../../components/Settings";
 import { Segmented } from "../../../components/Segmented";
 import { SkeletonSettingsCard } from "../../../components/Skeletons";
+import { AdminSamlCard } from "../AdminSamlCard";
 import type { UserTabProps } from "./types";
 import { clientI18n } from "../../../i18n/init";
 import { PASSWORD_MIN_LENGTH } from "../../../../shared/limits";
@@ -719,6 +720,7 @@ export function OverviewTab(props: UserTabProps) {
       {props.user.origin_team_id && <RestrictionCard {...props} />}
       <SecurityCard {...props} />
       <EmailsCard {...props} />
+      <AdminSamlCard target="user" id={props.userId} showMsg={props.showMsg} />
       <DeleteCard {...props} />
     </>
   );

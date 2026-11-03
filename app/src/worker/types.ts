@@ -115,6 +115,9 @@ export interface PasskeyRow {
 }
 
 export interface OAuthAppRow {
+  /** Site-admin SAML override: 1 allow, 0 stop, null = the owner's
+   *  setting. Optional: absent until migration 0086 runs. */
+  saml_override?: number | null;
   id: string;
   owner_id: string;
   name: string;

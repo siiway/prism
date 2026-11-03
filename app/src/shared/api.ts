@@ -1392,6 +1392,9 @@ export interface SamlServiceProvider {
 export interface AppSamlInfo {
   /** null while SAML is off for the app. */
   saml: SamlServiceProvider | null;
+  /** Set when a site admin turned SAML off for the app, its owner or the
+   *  site: sign-in doesn't work and the settings can't be saved. */
+  disabled: "saml_disabled" | "saml_disabled_user" | "saml_disabled_app" | null;
   /** What to give the service provider. */
   idp: {
     entity_id: string;
@@ -1402,6 +1405,14 @@ export interface AppSamlInfo {
   };
   /** The app's allowed scopes whose attributes SAML carries. */
   released_scopes: string[];
+}
+
+/** GET/PATCH /admin/{users,apps}/:id/saml — a site admin's override. */
+export interface AdminSamlSetting {
+  /** null follows the level above. */
+  override: boolean | null;
+  /** What following the level above currently means. */
+  inherited: boolean;
 }
 
 export type SamlUpdateBody = Omit<SamlServiceProvider, "updated_at">;

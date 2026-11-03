@@ -53,6 +53,7 @@ import {
   parseAcsUrls,
   releasedScopes,
   samlAttributes,
+  samlBlock,
   type SamlSpRow,
 } from "../lib/saml/serviceProviders";
 import { getSamlSigner } from "../lib/saml/sign";
@@ -124,13 +125,15 @@ async function receiveRequest(
       throw new SamlError("saml_request_invalid");
 
     const sp = await c.env.DB.prepare(
-      `SELECT sp.* FROM saml_service_providers sp
+      `SELECT sp.*, a.owner_id, a.saml_override FROM saml_service_providers sp
        JOIN oauth_apps a ON a.id = sp.app_id
        WHERE sp.entity_id = ? AND a.is_active = 1`,
     )
       .bind(request.issuer)
-      .first<SamlSpRow>();
+      .first<SamlSpRow & { owner_id: string; saml_override: number | null }>();
     if (!sp) throw new SamlError("saml_unknown_sp");
+    const blocked = await samlBlock(c.env.DB, sp);
+    if (blocked) throw new SamlError(blocked);
 
     const acsUrls = parseAcsUrls(sp);
     const acsUrl = request.acsUrl ?? acsUrls[0];
@@ -264,6 +267,9 @@ async function loadRequest(
   // arrived; or the ACS URL was removed from its list.
   if (!app || !sp || !parseAcsUrls(sp).includes(pending.acs_url))
     return { error: "saml_unknown_sp" };
+  // Or an admin turned SAML off for the app, its owner or the site.
+  const blocked = await samlBlock(c.env.DB, app);
+  if (blocked) return { error: blocked };
   return { pending, app, sp };
 }
 

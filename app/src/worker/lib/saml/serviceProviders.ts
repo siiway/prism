@@ -1,6 +1,7 @@
 // SAML service providers: the SP side of an app, what Prism tells SPs about
 // itself, and which user attributes an SP receives.
 
+import { getConfigValue } from "../config";
 import { getGroupsForUserByTeam } from "../teamGroups";
 import type { AuthUser, OAuthAppRow } from "../../types";
 import type { NameIdFormat, SignMode } from "./protocol";
@@ -121,4 +122,50 @@ export async function samlAttributes(
     );
   }
   return attrs;
+}
+
+export type SamlBlock =
+  "saml_disabled" | "saml_disabled_user" | "saml_disabled_app";
+
+/** An admin override as stored: 1 allow, 0 stop, null = the level above. */
+export function samlOverrideValue(
+  v: number | null | undefined,
+): boolean | null {
+  return v === 1 ? true : v === 0 ? false : null;
+}
+
+/** What an app owner (a user, or a team's user row) gets: an admin's
+ *  override for them, and the site setting it otherwise follows. */
+export async function samlOwnerSetting(
+  db: D1Database,
+  ownerId: string,
+): Promise<{ override: boolean | null; inherited: boolean }> {
+  const [siteOn, owner] = await Promise.all([
+    getConfigValue(db, "saml_enabled"),
+    db
+      .prepare("SELECT saml_override FROM users WHERE id = ?")
+      .bind(ownerId)
+      .first<{ saml_override: number | null }>(),
+  ]);
+  return {
+    override: samlOverrideValue(owner?.saml_override),
+    inherited: siteOn !== false,
+  };
+}
+
+/**
+ * Why an app can't use SAML right now, as an API error code, or null when
+ * it can. Site admins decide with overrides: the app's beats its owner's,
+ * which beats the saml_enabled site setting.
+ */
+export async function samlBlock(
+  db: D1Database,
+  app: { owner_id: string; saml_override?: number | null },
+): Promise<SamlBlock | null> {
+  if (app.saml_override === 1) return null;
+  if (app.saml_override === 0) return "saml_disabled_app";
+  const owner = await samlOwnerSetting(db, app.owner_id);
+  if (owner.override === false) return "saml_disabled_user";
+  if (owner.override === null && !owner.inherited) return "saml_disabled";
+  return null;
 }

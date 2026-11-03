@@ -79,6 +79,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   gpg_challenge_prefix: "",
   disable_user_create_team: false,
   disable_user_create_app: false,
+  saml_enabled: true,
   disable_ssr: false,
   tg_notify_source_slug: "",
   discord_notify_source_slug: "",

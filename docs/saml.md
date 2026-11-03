@@ -68,3 +68,15 @@ Attribute names use the `basic` name format. Choose the app's scopes on its
 
 The certificate is self-signed and valid until 2049. It wraps the key that
 also signs Prism's ID tokens.
+
+## Turning SAML off
+
+Site admins decide which apps may use SAML:
+
+- **Admin → Settings → Users & teams → SAML** sets the site default.
+- A user's or team's admin page overrides it for the apps they own.
+- An app's **Moderation** tab overrides both for that app.
+
+Each override can follow the level above, allow SAML or stop it. While SAML
+is stopped for an app, sign-in from it fails and its owner can't change its
+SAML settings, but the settings are kept for when it's allowed again.

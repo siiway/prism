@@ -43,6 +43,7 @@ import {
   parseAcsUrls,
   releasedScopes,
   type SamlSpRow,
+  samlBlock,
 } from "../lib/saml/serviceProviders";
 import { getSamlSigner } from "../lib/saml/sign";
 import { toPem } from "../lib/saml/x509";
@@ -1636,6 +1637,7 @@ app.get("/:id/saml", async (c) => {
   const idp = idpEndpoints(c.env.APP_URL);
   return c.json({
     saml: samlView(sp),
+    disabled: await samlBlock(c.env.DB, row),
     idp: {
       entity_id: idp.entityId,
       metadata_url: idp.metadataUrl,
@@ -1651,6 +1653,10 @@ app.put("/:id/saml", async (c) => {
   const id = c.req.param("id");
   const row = await loadApp(c, id, true);
   if (row instanceof Response) return row;
+  // Turned off by a site admin, for this app, its owner or the site.
+  // Turning SAML off for the app (DELETE) still works.
+  const blocked = await samlBlock(c.env.DB, row);
+  if (blocked) return c.json({ error: blocked }, 403);
 
   const body = await c.req
     .json<{

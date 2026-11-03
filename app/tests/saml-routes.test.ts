@@ -7,6 +7,7 @@ import { deflateRawSync } from "node:zlib";
 import { DOMParser } from "@xmldom/xmldom";
 import { Hono } from "hono";
 import { SignedXml } from "xml-crypto";
+import adminRoutes from "../src/worker/routes/admin";
 import appsRoutes from "../src/worker/routes/apps";
 import { samlApiRoutes, samlProtocolRoutes } from "../src/worker/routes/saml";
 import { signJWT } from "../src/worker/lib/jwt";
@@ -532,5 +533,123 @@ describe("app SAML settings", () => {
       await call("/api/apps/a1/saml", { headers: { Cookie: cookie } })
     ).json<Body>();
     expect(after.saml).toBeNull();
+  });
+});
+
+describe("admin overrides", () => {
+  const siteSaml = (on: boolean) =>
+    sqlite.run(
+      "INSERT OR REPLACE INTO site_config (key, value, updated_at) VALUES ('saml_enabled', ?, 0)",
+      [JSON.stringify(on)],
+    );
+  const owner = (v: number | null) =>
+    sqlite.run("UPDATE users SET saml_override = ? WHERE id = 'u1'", [v]);
+  const appOverride = (v: number | null) =>
+    sqlite.run("UPDATE oauth_apps SET saml_override = ? WHERE id = 'a1'", [v]);
+  /** Where a fresh AuthnRequest ends up: a token, or an error code. */
+  const outcome = async () => {
+    const res = await call(
+      `/saml/sso?SAMLRequest=${authnRequest()}&RelayState=back-to-page`,
+    );
+    const location = new URL(res.headers.get("Location")!, "https://x");
+    return location.searchParams.get("error") ?? "ok";
+  };
+
+  beforeEach(() => {
+    app.route("/api/apps", appsRoutes);
+    app.route("/api/admin", adminRoutes);
+  });
+
+  test("the app's override beats the owner's, which beats the site's", async () => {
+    expect(await outcome()).toBe("ok");
+    siteSaml(false);
+    expect(await outcome()).toBe("saml_disabled");
+    owner(1);
+    expect(await outcome()).toBe("ok");
+    appOverride(0);
+    expect(await outcome()).toBe("saml_disabled_app");
+
+    siteSaml(true);
+    appOverride(null);
+    owner(0);
+    expect(await outcome()).toBe("saml_disabled_user");
+    appOverride(1);
+    expect(await outcome()).toBe("ok");
+    // The metadata never depends on it: some app may be allowed.
+    siteSaml(false);
+    expect((await call("/saml/metadata")).status).toBe(200);
+  });
+
+  test("a stop also blocks pending sign-ins and saving settings", async () => {
+    const token = await startSso();
+    appOverride(0);
+    const pending = await call(`/api/saml/requests/${token}`);
+    expect(pending.status).toBe(404);
+    expect((await pending.json<Body>()).error).toBe("saml_disabled_app");
+
+    const cookie = await sessionCookie();
+    const info = await (
+      await call("/api/apps/a1/saml", { headers: { Cookie: cookie } })
+    ).json<Body>();
+    expect(info.disabled).toBe("saml_disabled_app");
+    expect(info.saml?.entity_id).toBe(SP); // kept
+    const res = await call("/api/apps/a1/saml", {
+      ...json(
+        {
+          entity_id: SP,
+          acs_urls: [ACS],
+          name_id_format: "persistent",
+          sign: "assertion",
+        },
+        cookie,
+      ),
+      method: "PUT",
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json<Body>()).error).toBe("saml_disabled_app");
+  });
+
+  test("a team's override covers the apps it owns", async () => {
+    sqlite.run(
+      "INSERT INTO users (id, email, username, display_name, kind, created_at, updated_at) VALUES ('t1', 'team-t1@teams.invalid', 'team:t1', 'Team', 'team', 0, 0)",
+    );
+    sqlite.run("UPDATE oauth_apps SET owner_id = 't1'");
+    sqlite.run("UPDATE users SET saml_override = 0 WHERE id = 't1'");
+    expect(await outcome()).toBe("saml_disabled_user");
+  });
+
+  test("only site admins set overrides, and GET says what they follow", async () => {
+    const cookie = await sessionCookie();
+    const send = (path: string, method: string, body?: unknown) =>
+      call(path, {
+        ...(body === undefined
+          ? { headers: { Cookie: cookie } }
+          : json(body, cookie)),
+        method,
+      });
+
+    expect(
+      (await send("/api/admin/apps/a1/saml", "PATCH", { override: false }))
+        .status,
+    ).toBe(403);
+    sqlite.run("UPDATE users SET role = 'admin'");
+    expect(
+      (await send("/api/admin/users/u1/saml", "PATCH", { override: "no" }))
+        .status,
+    ).toBe(400);
+
+    // The owner is stopped; the app follows it until it's allowed itself.
+    let res = await send("/api/admin/users/u1/saml", "PATCH", {
+      override: false,
+    });
+    expect(await res.json()).toEqual({ override: false, inherited: true });
+    res = await send("/api/admin/apps/a1/saml", "GET");
+    expect(await res.json()).toEqual({ override: null, inherited: false });
+    res = await send("/api/admin/apps/a1/saml", "PATCH", { override: true });
+    expect(await res.json()).toEqual({ override: true, inherited: false });
+    expect(await outcome()).toBe("ok");
+    res = await send("/api/admin/apps/a1/saml", "PATCH", { override: null });
+    expect(await res.json()).toEqual({ override: null, inherited: false });
+    expect(await outcome()).toBe("saml_disabled_user");
   });
 });

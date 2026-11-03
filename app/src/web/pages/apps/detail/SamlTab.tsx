@@ -9,6 +9,7 @@ import {
   Field,
   Input,
   Link,
+  MessageBar,
   Textarea,
 } from "@fluentui/react-components";
 import { ArrowDownloadRegular } from "@fluentui/react-icons";
@@ -169,6 +170,9 @@ export function SamlTab({ app, showMsg }: Props) {
     </Link>
   );
 
+  // Turned off by a site admin, for this app, its owner or the site.
+  const disabled = data.disabled;
+
   if (!editing) {
     const siteName = site?.site_name ?? "Prism";
     return (
@@ -186,9 +190,15 @@ export function SamlTab({ app, showMsg }: Props) {
           t("apps.saml.getStarted.step3"),
         ]}
         action={
-          <Button appearance="primary" onClick={() => setSettingUp(true)}>
-            {t("apps.saml.setUp")}
-          </Button>
+          disabled ? (
+            <MessageBar intent="warning">
+              {t(`apiErrors.${disabled}`)}
+            </MessageBar>
+          ) : (
+            <Button appearance="primary" onClick={() => setSettingUp(true)}>
+              {t("apps.saml.setUp")}
+            </Button>
+          )
         }
       />
     );
@@ -196,6 +206,11 @@ export function SamlTab({ app, showMsg }: Props) {
 
   return (
     <>
+      {disabled && (
+        <MessageBar intent="warning">
+          {t(`apiErrors.${disabled}`)} {t("apps.saml.disabledKept")}
+        </MessageBar>
+      )}
       <SettingsCard
         id="saml"
         title={t("apps.saml.title")}
@@ -285,7 +300,7 @@ export function SamlTab({ app, showMsg }: Props) {
           <SaveFooter
             dirty={dirty}
             saving={saving}
-            disabled={!complete}
+            disabled={!complete || !!disabled}
             onDiscard={() => {
               setEdits({});
               setSettingUp(false);

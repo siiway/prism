@@ -111,6 +111,7 @@ import type {
   AppScopeDefinition,
   AppScopeAccessRule,
   AppAccessRule,
+  AdminSamlSetting,
   AppSamlInfo,
   SamlServiceProvider,
   SamlUpdateBody,
@@ -1278,6 +1279,24 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       "GET",
       "/admin/migrate-recovery-codes-status",
       undefined,
+      getToken(),
+    ),
+  adminSaml: (kind: "users" | "apps", id: string) =>
+    request<AdminSamlSetting>(
+      "GET",
+      `/admin/${kind}/${encodeURIComponent(id)}/saml`,
+      undefined,
+      getToken(),
+    ),
+  adminSetSaml: (
+    kind: "users" | "apps",
+    id: string,
+    override: boolean | null,
+  ) =>
+    request<AdminSamlSetting>(
+      "PATCH",
+      `/admin/${kind}/${encodeURIComponent(id)}/saml`,
+      { override },
       getToken(),
     ),
   adminSetInviteRegistration: (
