@@ -3429,6 +3429,7 @@
     "transfer_to_restricted": "Ownership can't go to an account registered through a team invite.",
     "txt_record_not_found": "The TXT record wasn't found. DNS changes can take a while to appear.",
     "unauthorized": "Sign in to continue.",
+    "unauthorized_client": "This app isn't allowed to use this grant type.",
     "unauthorized_whitelist": "This app only lets approved accounts sign in.",
     "unknown": "Something went wrong ({{code}}).",
     "unsupported_grant_type": "This grant type isn't supported.",

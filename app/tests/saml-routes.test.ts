@@ -2039,3 +2039,169 @@ describe("OIDC end_session by POST", () => {
     );
   });
 });
+
+describe("other apps' permissions", () => {
+  const SCOPE = "app:client-2:read_notes";
+
+  beforeEach(() => {
+    app.route("/api/oauth", oauthRoutes);
+    const now = Math.floor(Date.now() / 1000);
+    // Notes (a2) exports read_notes; the Wiki (a1, the SAML app) holds it.
+    sqlite.run(
+      `INSERT INTO oauth_apps (id, owner_id, name, description, client_id, client_secret, redirect_uris, allowed_scopes, created_at, updated_at)
+       VALUES ('a2', 'u1', 'Notes', '', 'client-2', 'secret-2', '[]', '[]', ?, ?)`,
+      [now, now],
+    );
+    sqlite.run(
+      `INSERT INTO app_scope_definitions (id, app_id, scope, title, description, created_at, updated_at)
+       VALUES ('d1', 'a2', 'read_notes', 'Read notes', 'See your notes', ?, ?)`,
+      [now, now],
+    );
+    sqlite.run("UPDATE oauth_apps SET allowed_scopes = ? WHERE id = 'a1'", [
+      JSON.stringify(["openid", "profile", "email", SCOPE]),
+    ]);
+  });
+
+  const basic = (id: string, secret: string) =>
+    `Basic ${Buffer.from(`${id}:${secret}`).toString("base64")}`;
+
+  /** Sign in to the Wiki; returns the SAMLResponse it received. */
+  async function signIn(): Promise<string> {
+    const cookie = await sessionCookie();
+    const token = await startSso();
+    const body = await (
+      await call(
+        `/api/saml/requests/${token}`,
+        json({ action: "approve", authorization_mode: "once" }, cookie),
+      )
+    ).json<Body>();
+    return body.saml_response;
+  }
+
+  const trade = (assertion: string, client = basic("client-1", "secret")) =>
+    call("/api/oauth/token", {
+      method: "POST",
+      headers: {
+        Authorization: client,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:saml2-bearer",
+        assertion,
+      }),
+    });
+
+  const introspect = async (token: string, client: string) =>
+    (
+      await call("/api/oauth/introspect", {
+        method: "POST",
+        headers: {
+          Authorization: client,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ token }),
+      })
+    ).json<Record<string, unknown>>();
+
+  test("the consent screen lists them apart from the account details", async () => {
+    const cookie = await sessionCookie();
+    const token = await startSso();
+    const info = await (
+      await call(`/api/saml/requests/${token}`, { headers: { Cookie: cookie } })
+    ).json<Body>();
+    expect(info.next).toBe("consent");
+    expect(info.scopes).toEqual(["profile", "email"]);
+    expect(info.app_scopes).toMatchObject([
+      { scope: SCOPE, app_name: "Notes", scope_title: "Read notes" },
+    ]);
+  });
+
+  test("the app trades its assertion for an access token, once", async () => {
+    const response = await signIn();
+    const res = await trade(response);
+    expect(res.status).toBe(200);
+    const body = await res.json<Record<string, string | number>>();
+    expect(body).toMatchObject({ token_type: "Bearer", scope: SCOPE });
+    // Opaque: a JWT would show the Wiki the Prism user ID.
+    expect(String(body.access_token).split(".")).toHaveLength(1);
+
+    // The Wiki knows the user by its own ID; Notes, by the account.
+    const own = await introspect(
+      String(body.access_token),
+      basic("client-1", "secret"),
+    );
+    expect(own).toMatchObject({ active: true, sub: subjectId("a1") });
+    expect(JSON.stringify(own)).not.toContain('"u1"');
+    const target = await introspect(
+      String(body.access_token),
+      basic("client-2", "secret-2"),
+    );
+    expect(target).toMatchObject({ active: true, sub: "u1" });
+
+    // Each assertion works once.
+    const again = await trade(response);
+    expect(again.status).toBe(400);
+    expect((await again.json<Body>()).error).toBe("invalid_grant");
+    // The consent remembers the permission alongside the account details.
+    const consent = sqlite
+      .query("SELECT scopes FROM oauth_consents WHERE client_id = 'client-1'")
+      .get() as { scopes: string };
+    expect(JSON.parse(consent.scopes)).toContain(SCOPE);
+  });
+
+  test("the assertion alone works too, base64url-encoded", async () => {
+    const xml = Buffer.from(await signIn(), "base64").toString("utf8");
+    const assertion = xml.match(/<saml:Assertion[\s\S]*<\/saml:Assertion>/)![0];
+    const res = await trade(Buffer.from(assertion).toString("base64url"));
+    expect(res.status).toBe(200);
+  });
+
+  test("only the app it was issued to, unchanged and with its credentials", async () => {
+    const response = await signIn();
+    // Another app, even the target.
+    let res = await trade(response, basic("client-2", "secret-2"));
+    expect(res.status).toBe(400);
+    // Tampered with.
+    const xml = Buffer.from(response, "base64").toString("utf8");
+    res = await trade(
+      Buffer.from(xml.replace("Alice", "Mallory")).toString("base64"),
+    );
+    expect(res.status).toBe(400);
+    // Without the app's secret.
+    sqlite.run("UPDATE oauth_apps SET is_public = 1 WHERE id = 'a1'");
+    res = await trade(response, basic("client-1", ""));
+    expect(res.status).toBe(400);
+    expect((await res.json<Body>()).error).toBe("unauthorized_client");
+    // The untouched assertion still works for the app.
+    sqlite.run("UPDATE oauth_apps SET is_public = 0 WHERE id = 'a1'");
+    expect((await trade(response)).status).toBe(200);
+  });
+
+  test("revoking the app first leaves nothing to trade", async () => {
+    const response = await signIn();
+    sqlite.run("DELETE FROM oauth_consents WHERE client_id = 'client-1'");
+    const res = await trade(response);
+    expect(res.status).toBe(400);
+    expect((await res.json<Body>()).error).toBe("invalid_grant");
+  });
+
+  test("a permission the target app refuses isn't released", async () => {
+    sqlite.run(
+      `INSERT INTO app_scope_access_rules (id, app_id, rule_type, target_id, created_at)
+       VALUES ('r1', 'a2', 'app_deny', 'client-1', 0)`,
+    );
+    const response = await signIn();
+    expect(
+      sqlite.query("SELECT 1 FROM saml_assertion_grants").get(),
+    ).toBeNull();
+    expect((await trade(response)).status).toBe(400);
+  });
+
+  test("a sign-in without them leaves nothing to trade", async () => {
+    sqlite.run(
+      "UPDATE oauth_apps SET allowed_scopes = '[\"profile\"]' WHERE id = 'a1'",
+    );
+    const response = await signIn();
+    expect((await trade(response)).status).toBe(400);
+  });
+});

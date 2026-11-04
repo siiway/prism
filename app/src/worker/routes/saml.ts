@@ -45,6 +45,10 @@ import {
   buildConsentAppSummary,
   recordAppAuthorization,
 } from "../lib/oauthClients";
+import {
+  resolveRequestedScopes,
+  type ResolvedAppScope,
+} from "../lib/requestedScopes";
 import { endBrowserSession } from "../lib/session";
 import {
   checkAppAuthorizationAllowed,
@@ -60,6 +64,7 @@ import {
   decodeRedirectBinding,
   logoutRequestIsFresh,
   nameIdPolicyAllows,
+  newSamlId,
   parseAuthnRequest,
   parseLogoutRequest,
   parseLogoutResponse,
@@ -67,6 +72,7 @@ import {
   type SamlStatus,
 } from "../lib/saml/protocol";
 import {
+  allowedScopesOf,
   getServiceProvider,
   idpEndpoints,
   parseAcsUrls,
@@ -92,6 +98,7 @@ import {
   profileSummary,
   type SamlProfileRow,
 } from "../lib/saml/profiles";
+import { crossAppScopes, recordAssertionGrant } from "../lib/saml/bearer";
 import { getSamlSigner } from "../lib/saml/sign";
 import {
   verifyPostSignature,
@@ -448,7 +455,10 @@ interface Evaluation {
   status?: Exclude<SamlStatus, "Success">;
   /** A reason the user can't sign in to this app, shown on the page. */
   error?: string;
+  /** What the assertion releases, with other apps' permissions. */
   scopes: string[];
+  /** Those permissions, as the consent screen shows them. */
+  appScopes: ResolvedAppScope[];
   session?: { created_at: number; amr: string[] };
   /** The signed-in user as stored now. The session token's copy of email,
    *  username and name is a snapshot from sign-in, and an assertion must
@@ -506,12 +516,24 @@ async function evaluate(
   c: Context<AppEnv>,
   { pending, app, sp }: Loaded,
 ): Promise<Evaluation> {
-  const scopes = releasedScopes(app);
+  // Other apps' permissions among the app's scopes go with the assertion,
+  // which the app trades for an access token (lib/saml/bearer.ts). Those
+  // the target app no longer allows it are left out.
+  const allowed = allowedScopesOf(app);
+  const { appScopes } = await resolveRequestedScopes(
+    c.env.DB,
+    c.env.APP_URL,
+    crossAppScopes(allowed),
+    allowed,
+    app.client_id,
+  );
+  const scopes = [...releasedScopes(app), ...appScopes.map((a) => a.scope)];
   const passive = pending.is_passive === 1;
   const decline = (status: Evaluation["status"]): Evaluation => ({
     next: "decline",
     status,
     scopes,
+    appScopes,
   });
 
   if (!nameIdPolicyAllows(pending.name_id_format, sp.name_id_format))
@@ -527,7 +549,9 @@ async function evaluate(
       ])
     : [null, null];
   if (!current)
-    return passive ? decline("NoPassive") : { next: "login", scopes };
+    return passive
+      ? decline("NoPassive")
+      : { next: "login", scopes, appScopes };
 
   const { account: user, restriction } = current;
   const session = {
@@ -537,7 +561,9 @@ async function evaluate(
   // ForceAuthn: the user must sign in again after the request arrived. A
   // session from the same second can't be told apart, so it isn't enough.
   if (pending.force_authn === 1 && session.created_at <= pending.created_at)
-    return passive ? decline("NoPassive") : { next: "reauth", scopes };
+    return passive
+      ? decline("NoPassive")
+      : { next: "reauth", scopes, appScopes };
 
   // Whether the account may use the app; the SAML profile the app gets,
   // chosen at the first sign-in to it; and the user's stored consent
@@ -567,12 +593,14 @@ async function evaluate(
           next: "consent",
           error: refusal ?? "saml_email_unverified",
           scopes,
+          appScopes,
           session,
           account: user,
         };
 
   const base = {
     scopes,
+    appScopes,
     session,
     account: user,
     profile,
@@ -632,7 +660,8 @@ samlApiRoutes.get("/requests/:token", async (c) => {
     app: await buildConsentAppSummary(c.env, app, verified),
     next: ev.next,
     error: ev.error ?? null,
-    scopes: ev.scopes,
+    scopes: releasedScopes(app),
+    app_scopes: ev.appScopes,
     name_id_format: loaded.sp.name_id_format,
     user: ev.account ?? c.get("user") ?? null,
     profile: ev.profile ? profileSummary(ev.profile) : null,
@@ -708,10 +737,12 @@ samlApiRoutes.post("/requests/:token", async (c) => {
       ? approved.email
       : subjectId
     : "";
+  const assertionId = newSamlId();
   const samlResponse = approved
     ? await buildSuccessResponse(
         dest,
         {
+          assertionId,
           nameId: { format: sp.name_id_format, value: nameIdValue },
           attributes: await samlAttributes(
             c.env.DB,
@@ -731,6 +762,25 @@ samlApiRoutes.post("/requests/:token", async (c) => {
         action === "decline" ? ev.status! : "RequestDenied",
         signer,
       );
+
+  // Other apps' permissions: the app may trade this assertion for an
+  // access token. Recorded before the response goes out, or the app could
+  // try before it's there.
+  const appScopes = crossAppScopes(ev.scopes);
+  if (approved && appScopes.length > 0)
+    await recordAssertionGrant(
+      c.env.DB,
+      {
+        appId: app.id,
+        assertionId,
+        userId: approved.id,
+        subject: subjectId,
+        scopes: appScopes,
+        authTime: ev.session?.created_at ?? null,
+        amr: ev.session?.amr ?? [],
+      },
+      now,
+    );
 
   // One answer per request, claimed in a single write once the response is
   // built: a failure above leaves the request to retry, and of two

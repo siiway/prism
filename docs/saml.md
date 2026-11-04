@@ -66,9 +66,9 @@ SAML profile for the app, never their Prism user ID:
 | `groups`           | The app allows `teams:read`. Member groups, as `team-id:group-slug` |
 
 Attribute names use the `basic` name format. Choose the app's scopes on its
-**Permissions** tab. SAML sign-in ignores the app's other scopes, including
-[other apps' permissions](app-permissions.md): those need an access token, so
-sign in with OAuth for them.
+**Permissions** tab. SAML sign-in ignores the app's other scopes, except
+[other apps' permissions](app-permissions.md#app-b-with-saml): the app trades
+the assertion for an access token with those.
 
 ## How sign-in works
 

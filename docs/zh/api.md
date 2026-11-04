@@ -306,26 +306,26 @@ OAuth 令牌等价端点：`GET /api/oauth/me/social-connections`（`social:read
 
 流程说明参见 [OAuth / OIDC 指南](oauth.md)。
 
-| 方法                 | 路径                                      | 说明                             |
-| -------------------- | ----------------------------------------- | -------------------------------- |
-| `GET`                | `/api/oauth/authorize`                    | 授权页面的应用信息和请求的 scope |
-| `POST`               | `/api/oauth/authorize`                    | 批准或拒绝                       |
-| `POST`               | `/api/oauth/par`                          | 推送授权请求（RFC 9126）         |
-| `POST`               | `/api/oauth/register`                     | 动态客户端注册（RFC 7591）       |
-| `GET`/`PUT`/`DELETE` | `/api/oauth/register/:client_id`          | 客户端管理（RFC 7592）           |
-| `POST`               | `/api/oauth/token`                        | 授权码、刷新、设备和令牌交换授权 |
-| `POST`               | `/api/oauth/device_authorization`         | 设备授权（RFC 8628）             |
-| `GET` / `POST`       | `/api/oauth/userinfo`                     | OIDC UserInfo                    |
-| `POST`               | `/api/oauth/introspect`                   | RFC 7662                         |
-| `POST`               | `/api/oauth/revoke`                       | RFC 7009                         |
-| `GET` / `POST`       | `/api/oauth/end_session`                  | RP 发起的登出                    |
-| `GET`                | `/.well-known/openid-configuration`       | OpenID Connect Discovery         |
-| `GET`                | `/.well-known/oauth-authorization-server` | RFC 8414 元数据                  |
-| `GET`                | `/.well-known/oauth-protected-resource`   | RFC 9728 元数据                  |
-| `GET`                | `/.well-known/webfinger`                  | 颁发者发现                       |
-| `GET`                | `/.well-known/jwks.json`                  | 公共签名密钥                     |
-| `GET`                | `/.well-known/security.txt`               | 配置安全联系人时                 |
-| `GET`                | `/.well-known/change-password`            | 重定向到修改密码页面             |
+| 方法                 | 路径                                      | 说明                                         |
+| -------------------- | ----------------------------------------- | -------------------------------------------- |
+| `GET`                | `/api/oauth/authorize`                    | 授权页面的应用信息和请求的 scope             |
+| `POST`               | `/api/oauth/authorize`                    | 批准或拒绝                                   |
+| `POST`               | `/api/oauth/par`                          | 推送授权请求（RFC 9126）                     |
+| `POST`               | `/api/oauth/register`                     | 动态客户端注册（RFC 7591）                   |
+| `GET`/`PUT`/`DELETE` | `/api/oauth/register/:client_id`          | 客户端管理（RFC 7592）                       |
+| `POST`               | `/api/oauth/token`                        | 授权码、刷新、设备、令牌交换和 SAML 断言授权 |
+| `POST`               | `/api/oauth/device_authorization`         | 设备授权（RFC 8628）                         |
+| `GET` / `POST`       | `/api/oauth/userinfo`                     | OIDC UserInfo                                |
+| `POST`               | `/api/oauth/introspect`                   | RFC 7662                                     |
+| `POST`               | `/api/oauth/revoke`                       | RFC 7009                                     |
+| `GET` / `POST`       | `/api/oauth/end_session`                  | RP 发起的登出                                |
+| `GET`                | `/.well-known/openid-configuration`       | OpenID Connect Discovery                     |
+| `GET`                | `/.well-known/oauth-authorization-server` | RFC 8414 元数据                              |
+| `GET`                | `/.well-known/oauth-protected-resource`   | RFC 9728 元数据                              |
+| `GET`                | `/.well-known/webfinger`                  | 颁发者发现                                   |
+| `GET`                | `/.well-known/jwks.json`                  | 公共签名密钥                                 |
+| `GET`                | `/.well-known/security.txt`               | 配置安全联系人时                             |
+| `GET`                | `/.well-known/change-password`            | 重定向到修改密码页面                         |
 
 ### 加强 2FA
 

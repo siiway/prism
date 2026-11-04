@@ -158,15 +158,12 @@ function childElement(
 
 const xmlBool = (v: string | null) => v === "true" || v === "1";
 
-/** The root of a SAML protocol message, which must be samlp:<localName>,
- *  with its ID and Issuer checked. */
-function parseMessage(
-  xml: string,
-  localName: string,
-): { root: Element; id: string; issuer: string } {
+/** The root element of a SAML document Prism received; null if it isn't
+ *  well-formed XML. */
+export function parseSamlXml(xml: string): Element | null {
   // No DTDs at all: SAML never needs one, and refusing them rules out
   // entity-expansion tricks whatever the parser would do with them.
-  if (/<!DOCTYPE/i.test(xml)) throw new SamlError("saml_request_invalid");
+  if (/<!DOCTYPE/i.test(xml)) return null;
   let doc: Document;
   try {
     doc = new DOMParser({
@@ -174,10 +171,20 @@ function parseMessage(
       locator: false,
     }).parseFromString(xml, "text/xml");
   } catch {
-    throw new SamlError("saml_request_invalid");
+    return null;
   }
-  const root = doc.documentElement;
-  if (!root || root.namespaceURI !== NS.samlp || root.localName !== localName)
+  return doc.documentElement ?? null;
+}
+
+/** The root of a SAML protocol message, which must be samlp:<localName>,
+ *  with its ID and Issuer checked. */
+function parseMessage(
+  xml: string,
+  localName: string,
+): { root: Element; id: string; issuer: string } {
+  const root = parseSamlXml(xml);
+  if (root === null) throw new SamlError("saml_request_invalid");
+  if (root.namespaceURI !== NS.samlp || root.localName !== localName)
     throw new SamlError("saml_request_unsupported");
   const id = root.getAttribute("ID") ?? "";
   if (
@@ -229,12 +236,12 @@ function instant(seconds: number): string {
 }
 
 /** IDs are xs:ID (an NCName), so they can't start with a digit. */
-const newId = () => `_${randomId(20)}`;
+export const newSamlId = () => `_${randomId(20)}`;
 
 /** Allowed clock skew between Prism and the SP for NotBefore. */
 const SKEW_SECONDS = 60;
 /** How long an assertion may be presented; the POST happens right away. */
-const ASSERTION_TTL_SECONDS = 300;
+export const ASSERTION_TTL_SECONDS = 300;
 
 const PASSWORD_PROTECTED =
   "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport";
@@ -250,6 +257,8 @@ export interface Destination {
 }
 
 export interface AssertionContent {
+  /** The assertion's ID; a new one when absent. */
+  assertionId?: string;
   nameId: { format: NameIdFormat; value: string };
   /** Attribute name → values; empty lists are left out. */
   attributes: Record<string, string[]>;
@@ -301,7 +310,7 @@ function responseElement(
   return el(
     "samlp:Response",
     {
-      ID: newId(),
+      ID: newSamlId(),
       Version: "2.0",
       IssueInstant: instant(now),
       Destination: dest.acsUrl,
@@ -324,7 +333,11 @@ function assertionElement(
   );
   return el(
     "saml:Assertion",
-    { ID: newId(), Version: "2.0", IssueInstant: instant(now) },
+    {
+      ID: content.assertionId ?? newSamlId(),
+      Version: "2.0",
+      IssueInstant: instant(now),
+    },
     el("saml:Issuer", {}, dest.idpEntityId),
     el(
       "saml:Subject",
@@ -510,7 +523,7 @@ export function logoutRequestElement(opts: {
   now?: number;
 }): { id: string; element: XmlElement } {
   const now = opts.now ?? Math.floor(Date.now() / 1000);
-  const id = newId();
+  const id = newSamlId();
   const element = el(
     "samlp:LogoutRequest",
     {
@@ -539,7 +552,7 @@ export function logoutResponseElement(opts: {
   return el(
     "samlp:LogoutResponse",
     {
-      ID: newId(),
+      ID: newSamlId(),
       Version: "2.0",
       IssueInstant: instant(now),
       Destination: opts.destination,

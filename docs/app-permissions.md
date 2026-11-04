@@ -24,9 +24,10 @@ app:<App_A_client_id>:<inner_scope>
 
 For example: `app:prism_xxxxx:read_posts`
 
-App B must sign people in with OAuth, since the permissions come as an access
-token. [SAML](saml.md) sign-in issues none and ignores these scopes. App A can
-use either: it checks App B's tokens with its own client credentials.
+The permissions come as an access token. App B can sign people in with OAuth
+or [SAML](saml.md): with SAML, it trades the assertion for the token (see
+[App B with SAML](#app-b-with-saml)). App A can use either too: it checks App
+B's tokens with its own client credentials.
 
 ---
 
@@ -154,9 +155,13 @@ Response:
   "scope": "openid profile app:prism_xxxxx:read_posts",
   "client_id": "prism_appB_clientid",
   "sub": "usr_abc123",
+  "saml_uid": "k3j9x0v2q8m1",
   "exp": 1741568400
 }
 ```
+
+`saml_uid` is there when the user has signed in to App A with SAML: their ID
+at App A, as in its `uid` attribute.
 
 Node.js example:
 
@@ -274,6 +279,42 @@ const res = await fetch("https://appa.example/api/posts", {
 
 App A's server introspects the token (step 3 of App A's guide above) and
 serves the response if the scope is present.
+
+### App B with SAML
+
+Add the scope to App B's `allowed_scopes` as in step 1. SAML can't ask for
+less, so every sign-in releases all of them, and the consent screen lists
+them under the account details.
+
+Right after a sign-in, App B's server trades the assertion it received for an
+access token (RFC 7522), within 5 minutes:
+
+```http
+POST /api/oauth/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(App_B_client_id:App_B_client_secret)>
+
+grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer
+&assertion=<the SAMLResponse value, or the assertion alone>
+```
+
+The assertion goes as Prism sent it, base64 or base64url. Each one works
+once, and only for App B with its client secret. An optional `scope`
+narrows the token.
+
+```json
+{
+  "access_token": "...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "app:prism_xxxxx:read_posts"
+}
+```
+
+There's no refresh token: trade the next sign-in's assertion when it
+expires. The token is opaque. Introspected by App B, its `sub` is App B's ID
+for the user (the `uid` attribute); App A sees the same `sub` as for any
+other token.
 
 ---
 

@@ -21,7 +21,7 @@ app:<应用A的client_id>:<内部范围>
 
 例如：`app:prism_xxxxx:read_posts`
 
-应用 B 必须使用 OAuth 让用户登录，因为这些权限以访问令牌的形式授予。[SAML](saml.md) 登录不签发访问令牌，也会忽略这些范围。应用 A 两种方式都可以使用：它用自己的客户端凭据验证应用 B 的令牌。
+这些权限以访问令牌的形式授予。应用 B 可以使用 OAuth 或 [SAML](saml.md) 让用户登录：使用 SAML 时，它用断言换取令牌（参见[使用 SAML 的应用 B](#app-b-with-saml)）。应用 A 同样两种方式都可以使用：它用自己的客户端凭据验证应用 B 的令牌。
 
 ---
 
@@ -143,9 +143,12 @@ token=<access_token>
   "scope": "openid profile app:prism_xxxxx:read_posts",
   "client_id": "prism_appB_clientid",
   "sub": "usr_abc123",
+  "saml_uid": "k3j9x0v2q8m1",
   "exp": 1741568400
 }
 ```
+
+用户使用 SAML 登录过应用 A 时，响应中会有 `saml_uid`：用户在应用 A 的 ID，与其 `uid` 属性相同。
 
 Node.js 示例：
 
@@ -254,6 +257,34 @@ const res = await fetch("https://appa.example/api/posts", {
 ```
 
 应用 A 的服务端对令牌进行自省（参见应用 A 指南的第 3 步），确认权限范围后返回响应。
+
+### 使用 SAML 的应用 B {#app-b-with-saml}
+
+按第 1 步将范围添加到应用 B 的 `allowed_scopes`。SAML 无法只请求其中一部分，因此每次登录都会发送全部范围，授权同意页面会将它们列在账户信息下方。
+
+登录完成后，应用 B 的服务端需在 5 分钟内用收到的断言换取访问令牌（RFC 7522）：
+
+```http
+POST /api/oauth/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic <base64(App_B_client_id:App_B_client_secret)>
+
+grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer
+&assertion=<SAMLResponse 的值，或单独的断言>
+```
+
+断言按 Prism 发送时的原样提交，使用 base64 或 base64url 编码。每个断言只能使用一次，且只能由持有客户端密钥的应用 B 使用。可选的 `scope` 参数可缩小令牌的范围。
+
+```json
+{
+  "access_token": "...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "app:prism_xxxxx:read_posts"
+}
+```
+
+不签发刷新令牌：令牌过期后，用下次登录的断言重新换取。该令牌是不透明令牌。应用 B 自省时，`sub` 是应用 B 中该用户的 ID（即 `uid` 属性）；应用 A 看到的 `sub` 与其他令牌相同。
 
 ---
 

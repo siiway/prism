@@ -31,6 +31,7 @@ import { postForm } from "../../lib/postForm";
 import { scopeLabel } from "../../lib/scopeLabels";
 import { useSiteName } from "../../lib/useSiteName";
 import { AuthShell } from "../../components/AuthShell";
+import { AppScopeList } from "../../components/AppScopeList";
 import { AuthFailure, AuthWaiting } from "../../components/AuthStatus";
 import { OAuthConsentHeader } from "../../components/OAuthConsentHeader";
 import { ProfileChoice } from "./ProfileChoice";
@@ -236,6 +237,7 @@ export function SamlAuthorize() {
           ))}
         </div>
       </div>
+      <AppScopeList appName={data.app.name} scopes={data.app_scopes} />
       {profilePicker}
       {data.profile?.kind === "shared" && (
         <Text size={200} className={styles.muted}>

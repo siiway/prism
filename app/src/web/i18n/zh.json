@@ -3429,6 +3429,7 @@
     "transfer_to_restricted": "不能将所有权转给通过团队邀请注册的账号。",
     "txt_record_not_found": "未找到 TXT 记录。DNS 变更可能需要一段时间才能生效。",
     "unauthorized": "请先登录。",
+    "unauthorized_client": "此应用无权使用该授权类型。",
     "unauthorized_whitelist": "此应用仅允许获批的账号登录。",
     "unknown": "出错了（{{code}}）。",
     "unsupported_grant_type": "不支持该授权类型。",

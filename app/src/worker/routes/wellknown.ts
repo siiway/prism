@@ -57,6 +57,7 @@ function providerMetadata(base: string) {
       "refresh_token",
       "urn:ietf:params:oauth:grant-type:device_code",
       "urn:ietf:params:oauth:grant-type:token-exchange",
+      "urn:ietf:params:oauth:grant-type:saml2-bearer",
     ],
     // RFC 9207 — the authorization response carries an `iss` parameter.
     authorization_response_iss_parameter_supported: true,

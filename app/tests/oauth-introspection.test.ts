@@ -42,6 +42,7 @@ beforeEach(() => {
   sqlite = new Database(":memory:");
   sqlite.exec(`
     CREATE TABLE oauth_apps (
+      id TEXT NOT NULL,
       client_id TEXT PRIMARY KEY,
       client_secret TEXT NOT NULL,
       is_public INTEGER NOT NULL DEFAULT 0,
@@ -54,6 +55,7 @@ beforeEach(() => {
       access_token TEXT NOT NULL UNIQUE,
       client_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
+      subject TEXT,
       scopes TEXT NOT NULL,
       resource TEXT,
       dpop_jkt TEXT,
@@ -68,14 +70,22 @@ beforeEach(() => {
       kind TEXT NOT NULL DEFAULT 'user',
       is_active INTEGER NOT NULL DEFAULT 1
     );
+
+    CREATE TABLE saml_profiles (id TEXT PRIMARY KEY, name_id TEXT NOT NULL);
+    CREATE TABLE saml_profile_apps (
+      app_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      PRIMARY KEY (app_id, user_id)
+    );
   `);
 
   const insertApp = sqlite.prepare(
-    "INSERT INTO oauth_apps (client_id, client_secret) VALUES (?, ?)",
+    "INSERT INTO oauth_apps (id, client_id, client_secret) VALUES (?, ?, ?)",
   );
-  insertApp.run("workbench", "workbench-secret");
-  insertApp.run("glint", "glint-secret");
-  insertApp.run("unrelated", "unrelated-secret");
+  insertApp.run("app-workbench", "workbench", "workbench-secret");
+  insertApp.run("app-glint", "glint", "glint-secret");
+  insertApp.run("app-unrelated", "unrelated", "unrelated-secret");
   sqlite.run("INSERT INTO users (id) VALUES ('user-id')");
 
   const now = Math.floor(Date.now() / 1000);
@@ -113,6 +123,36 @@ describe("OAuth token introspection authorization", () => {
       sub: "user-id",
       aud: ["https://prism.example", "glint"],
     });
+  });
+
+  test("gives a resource app that uses SAML its ID for the user", async () => {
+    sqlite.run(
+      "INSERT INTO saml_profiles (id, name_id) VALUES ('p1', 'glint-uid')",
+    );
+    sqlite.run(
+      "INSERT INTO saml_profile_apps (app_id, user_id, profile_id) VALUES ('app-glint', 'user-id', 'p1')",
+    );
+    const body = await (await introspect("glint", "glint-secret")).json();
+    expect(body).toMatchObject({ sub: "user-id", saml_uid: "glint-uid" });
+  });
+
+  test("shows a SAML app its own token by its ID for the user", async () => {
+    sqlite.run(
+      "UPDATE oauth_tokens SET subject = 'workbench-uid' WHERE id = 'token-id'",
+    );
+    const own = await (
+      await introspect("workbench", "workbench-secret")
+    ).json();
+    expect(own).toMatchObject({
+      sub: "workbench-uid",
+      username: "workbench-uid",
+      saml_uid: "workbench-uid",
+    });
+    expect(JSON.stringify(own)).not.toContain("user-id");
+    // The resource app still gets the account it acts on.
+    const target = await (await introspect("glint", "glint-secret")).json();
+    expect(target).toMatchObject({ sub: "user-id" });
+    expect(target).not.toHaveProperty("saml_uid");
   });
 
   test("includes stored resource indicators in the audience", async () => {
