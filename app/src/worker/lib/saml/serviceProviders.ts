@@ -201,13 +201,22 @@ export function getServiceProvider(
  *  app's allowed scopes: SAML has no way to ask for less per request. */
 const SAML_SCOPES = ["profile", "email", "teams:read"];
 
-export function releasedScopes(app: Pick<OAuthAppRow, "allowed_scopes">) {
-  let allowed: string[] = [];
+/** The app's allowed scopes; none if they can't be read. */
+export function allowedScopesOf(
+  app: Pick<OAuthAppRow, "allowed_scopes">,
+): string[] {
   try {
-    allowed = JSON.parse(app.allowed_scopes) as string[];
+    const value = JSON.parse(app.allowed_scopes) as unknown;
+    return Array.isArray(value)
+      ? value.filter((v): v is string => typeof v === "string")
+      : [];
   } catch {
-    allowed = [];
+    return [];
   }
+}
+
+export function releasedScopes(app: Pick<OAuthAppRow, "allowed_scopes">) {
+  const allowed = allowedScopesOf(app);
   return SAML_SCOPES.filter((s) => allowed.includes(s));
 }
 

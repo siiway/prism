@@ -1451,7 +1451,11 @@ export interface SamlRequestInfo {
   next: "login" | "reauth" | "consent" | "profile" | "continue" | "decline";
   /** An API error code: why this account can't sign in to the app. */
   error: string | null;
+  /** The account details the assertion carries. */
   scopes: string[];
+  /** Other apps' permissions: the app trades the assertion for an access
+   *  token with them. */
+  app_scopes: OAuthAuthorizeInfo["app_scopes"];
   name_id_format: SamlNameIdFormat;
   user: OAuthAuthorizeInfo["user"] | null;
   /** The SAML profile the app gets for the user, once chosen. */

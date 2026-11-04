@@ -69,13 +69,15 @@ export async function sweepExpiredOAuthCodes(db: D1Database): Promise<void> {
         )
         .bind(now, BATCH_SIZE),
     ),
-    db
-      .prepare(
-        `DELETE FROM saml_logout_requests
-          WHERE rowid IN (
-            SELECT rowid FROM saml_logout_requests WHERE expires_at <= ? LIMIT ?
-          )`,
-      )
-      .bind(now, BATCH_SIZE),
+    ...["saml_logout_requests", "saml_assertion_grants"].map((table) =>
+      db
+        .prepare(
+          `DELETE FROM ${table}
+            WHERE rowid IN (
+              SELECT rowid FROM ${table} WHERE expires_at <= ? LIMIT ?
+            )`,
+        )
+        .bind(now, BATCH_SIZE),
+    ),
   ]);
 }

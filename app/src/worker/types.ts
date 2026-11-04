@@ -336,6 +336,9 @@ export interface OAuthTokenRow {
   previous_refresh_token: string | null;
   client_id: string;
   user_id: string;
+  /** The ID the token's own client knows the user by, when that isn't
+   *  user_id: a SAML app's ID for them. Null for every other token. */
+  subject: string | null;
   scopes: string; // JSON string[]
   /** RFC 8707 resource indicators the grant was issued for, JSON string[] or
    *  null. Preserved so a refresh keeps the same audience. */

@@ -45,6 +45,10 @@ import {
   buildConsentAppSummary,
   recordAppAuthorization,
 } from "../lib/oauthClients";
+import {
+  resolveRequestedScopes,
+  type ResolvedAppScope,
+} from "../lib/requestedScopes";
 import { endBrowserSession } from "../lib/session";
 import {
   checkAppAuthorizationAllowed,
@@ -60,6 +64,7 @@ import {
   decodeRedirectBinding,
   logoutRequestIsFresh,
   nameIdPolicyAllows,
+  newSamlId,
   parseAuthnRequest,
   parseLogoutRequest,
   parseLogoutResponse,
@@ -67,6 +72,7 @@ import {
   type SamlStatus,
 } from "../lib/saml/protocol";
 import {
+  allowedScopesOf,
   getServiceProvider,
   idpEndpoints,
   parseAcsUrls,
@@ -92,6 +98,7 @@ import {
   profileSummary,
   type SamlProfileRow,
 } from "../lib/saml/profiles";
+import { assertionGrantStatement, crossAppScopes } from "../lib/saml/bearer";
 import { getSamlSigner } from "../lib/saml/sign";
 import {
   verifyPostSignature,
@@ -448,14 +455,15 @@ interface Evaluation {
   status?: Exclude<SamlStatus, "Success">;
   /** A reason the user can't sign in to this app, shown on the page. */
   error?: string;
+  /** What the assertion releases, with other apps' permissions. */
   scopes: string[];
+  /** Those permissions, as the consent screen shows them. */
+  appScopes: ResolvedAppScope[];
   session?: { created_at: number; amr: string[] };
   /** The signed-in user as stored now. The session token's copy of email,
    *  username and name is a snapshot from sign-in, and an assertion must
    *  never carry an address the user has since given up. */
   account?: AuthUser;
-  /** Scopes the user's stored consent for this app already holds. */
-  consentedScopes?: string[];
   /** The SAML profile the app gets for the user, once chosen. */
   profile?: SamlProfileRow | null;
   /** Before one is chosen: the user's shared profiles to pick from. */
@@ -506,12 +514,24 @@ async function evaluate(
   c: Context<AppEnv>,
   { pending, app, sp }: Loaded,
 ): Promise<Evaluation> {
-  const scopes = releasedScopes(app);
+  // Other apps' permissions among the app's scopes go with the assertion,
+  // which the app trades for an access token (lib/saml/bearer.ts). Those
+  // the target app no longer allows it are left out.
+  const allowed = allowedScopesOf(app);
+  const { appScopes } = await resolveRequestedScopes(
+    c.env.DB,
+    c.env.APP_URL,
+    crossAppScopes(allowed),
+    allowed,
+    app.client_id,
+  );
+  const scopes = [...releasedScopes(app), ...appScopes.map((a) => a.scope)];
   const passive = pending.is_passive === 1;
   const decline = (status: Evaluation["status"]): Evaluation => ({
     next: "decline",
     status,
     scopes,
+    appScopes,
   });
 
   if (!nameIdPolicyAllows(pending.name_id_format, sp.name_id_format))
@@ -527,7 +547,9 @@ async function evaluate(
       ])
     : [null, null];
   if (!current)
-    return passive ? decline("NoPassive") : { next: "login", scopes };
+    return passive
+      ? decline("NoPassive")
+      : { next: "login", scopes, appScopes };
 
   const { account: user, restriction } = current;
   const session = {
@@ -537,7 +559,9 @@ async function evaluate(
   // ForceAuthn: the user must sign in again after the request arrived. A
   // session from the same second can't be told apart, so it isn't enough.
   if (pending.force_authn === 1 && session.created_at <= pending.created_at)
-    return passive ? decline("NoPassive") : { next: "reauth", scopes };
+    return passive
+      ? decline("NoPassive")
+      : { next: "reauth", scopes, appScopes };
 
   // Whether the account may use the app; the SAML profile the app gets,
   // chosen at the first sign-in to it; and the user's stored consent
@@ -567,12 +591,14 @@ async function evaluate(
           next: "consent",
           error: refusal ?? "saml_email_unverified",
           scopes,
+          appScopes,
           session,
           account: user,
         };
 
   const base = {
     scopes,
+    appScopes,
     session,
     account: user,
     profile,
@@ -590,9 +616,7 @@ async function evaluate(
       consent?.auto_authorize === 1 &&
       scopes.every((s) => consentedScopes.includes(s));
     if (!remembered)
-      return passive
-        ? decline("NoPassive")
-        : { next: "consent", ...base, consentedScopes };
+      return passive ? decline("NoPassive") : { next: "consent", ...base };
   }
   // With shared profiles to pick from, the user chooses which one the app
   // gets, and keeps it. A passive request can't ask, and must not choose
@@ -632,7 +656,8 @@ samlApiRoutes.get("/requests/:token", async (c) => {
     app: await buildConsentAppSummary(c.env, app, verified),
     next: ev.next,
     error: ev.error ?? null,
-    scopes: ev.scopes,
+    scopes: releasedScopes(app),
+    app_scopes: ev.appScopes,
     name_id_format: loaded.sp.name_id_format,
     user: ev.account ?? c.get("user") ?? null,
     profile: ev.profile ? profileSummary(ev.profile) : null,
@@ -708,10 +733,12 @@ samlApiRoutes.post("/requests/:token", async (c) => {
       ? approved.email
       : subjectId
     : "";
+  const assertionId = newSamlId();
   const samlResponse = approved
     ? await buildSuccessResponse(
         dest,
         {
+          assertionId,
           nameId: { format: sp.name_id_format, value: nameIdValue },
           attributes: await samlAttributes(
             c.env.DB,
@@ -731,6 +758,57 @@ samlApiRoutes.post("/requests/:token", async (c) => {
         action === "decline" ? ev.status! : "RequestDenied",
         signer,
       );
+
+  // The consent row is shared with OAuth. SAML's scopes are added to the
+  // ones it holds as written (not as read earlier), and "Always authorize"
+  // is never turned off: a one-time approval leaves a remembered consent
+  // (and its scopes) as it was.
+  const consent =
+    approved && ev.next === "consent"
+      ? c.env.DB.prepare(
+          `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, client_id) DO UPDATE SET
+             scopes = CASE WHEN excluded.auto_authorize = 1 OR oauth_consents.auto_authorize = 0
+               THEN (SELECT json_group_array(value) FROM (
+                 SELECT value FROM json_each(oauth_consents.scopes)
+                 UNION ALL SELECT value FROM json_each(excluded.scopes)
+                   WHERE value NOT IN (SELECT value FROM json_each(oauth_consents.scopes))))
+               ELSE oauth_consents.scopes END,
+             auto_authorize = MAX(oauth_consents.auto_authorize, excluded.auto_authorize),
+             granted_at = excluded.granted_at`,
+        ).bind(
+          randomId(),
+          approved.id,
+          app.client_id,
+          JSON.stringify(ev.scopes),
+          now,
+          body.authorization_mode === "always" && !app.is_first_party ? 1 : 0,
+        )
+      : null;
+
+  // Other apps' permissions: the app may trade this assertion for an
+  // access token, while the consent holds. Both are written before the
+  // response goes out, and a failure fails the sign-in, which the user
+  // can retry: the app must not get an assertion it can't trade.
+  const appScopes = crossAppScopes(ev.scopes);
+  const grant =
+    approved && appScopes.length > 0
+      ? assertionGrantStatement(
+          c.env.DB,
+          {
+            appId: app.id,
+            assertionId,
+            userId: approved.id,
+            subject: subjectId,
+            scopes: appScopes,
+            authTime: ev.session?.created_at ?? null,
+            amr: ev.session?.amr ?? [],
+          },
+          now,
+        )
+      : null;
+  if (grant) await c.env.DB.batch(consent ? [consent, grant] : [grant]);
 
   // One answer per request, claimed in a single write once the response is
   // built: a failure above leaves the request to retry, and of two
@@ -752,14 +830,6 @@ samlApiRoutes.post("/requests/:token", async (c) => {
   // The request is used up: whatever fails from here on, the SP still gets
   // its response, or the user would be left with no way to sign in.
   try {
-    const autoAuthorize =
-      body.authorization_mode === "always" && !app.is_first_party ? 1 : 0;
-    // The consent row is shared with OAuth. Add SAML's scopes to it rather
-    // than replace them, and never turn "Always authorize" off: a one-time
-    // approval leaves a remembered consent (and its scopes) as it was.
-    const consentScopes = [
-      ...new Set([...(ev.consentedScopes ?? []), ...ev.scopes]),
-    ];
     await Promise.all([
       // So signing out of Prism can sign the user out of this SP too.
       sessionId &&
@@ -770,24 +840,8 @@ samlApiRoutes.post("/requests/:token", async (c) => {
           name_id_format: sp.name_id_format,
           session_index: sessionIndex,
         }),
-      ev.next === "consent" &&
-        c.env.DB.prepare(
-          `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(user_id, client_id) DO UPDATE SET
-           scopes = CASE WHEN excluded.auto_authorize = 1 OR auto_authorize = 0 THEN excluded.scopes ELSE scopes END,
-           auto_authorize = MAX(auto_authorize, excluded.auto_authorize),
-           granted_at = excluded.granted_at`,
-        )
-          .bind(
-            randomId(),
-            approved.id,
-            app.client_id,
-            JSON.stringify(consentScopes),
-            now,
-            autoAuthorize,
-          )
-          .run(),
+      // Written with the assertion's grant already, when there is one.
+      !grant && consent?.run(),
     ]);
 
     // The same notice and audit trail as an OAuth authorization.

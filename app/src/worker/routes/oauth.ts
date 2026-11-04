@@ -27,7 +27,6 @@ import {
   redirectUriMatchesRegistered,
 } from "../lib/redirectUri";
 import {
-  parseAppScope,
   canClientIntrospectToken,
   parseUnboundTeamScope,
   parseBoundTeamScope,
@@ -64,6 +63,15 @@ import {
 } from "../lib/resource";
 import { verifyDpopProof } from "../lib/dpop";
 import { startUnverifiedLogout } from "../lib/saml/logout";
+import {
+  SAML2_BEARER_GRANT_TYPE,
+  consumeAssertionGrant,
+  findAssertionGrant,
+  signedAssertionId,
+} from "../lib/saml/bearer";
+import { boundProfile } from "../lib/saml/profiles";
+import { samlBlock } from "../lib/saml/serviceProviders";
+import { getSamlSigner } from "../lib/saml/sign";
 import { endBrowserSession } from "../lib/session";
 import meRoutes from "./oauth-me";
 import {
@@ -76,7 +84,7 @@ import {
   recordAppAuthorization,
   verifyAppPkce,
 } from "../lib/oauthClients";
-import { REQUESTABLE_SCOPES } from "../lib/scopes";
+import { resolveRequestedScopes } from "../lib/requestedScopes";
 import { deriveAcr } from "../lib/stepUp";
 import stepUpRoutes from "./oauth-stepup";
 import registrationRoutes from "./oauth-registration";
@@ -260,231 +268,6 @@ export function generateUserCode(): string {
  *  characters (so hyphens, spaces, and casing the user typed don't matter). */
 function normalizeUserCode(input: string): string {
   return input.toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-
-// ─── Scope helpers ───────────────────────────────────────────────────────────
-
-/**
- * Resolves requested scopes against what the app is allowed to request.
- * Regular platform scopes are checked against REQUESTABLE_SCOPES.
- * App-delegation scopes (app:<client_id>:<inner_scope>) are accepted when:
- *   - the inner scope is non-empty (it may be a platform scope OR an
- *     app-defined identifier registered in app_scope_definitions, e.g.
- *     `read_posts`)
- *   - the full scope string is listed in the app's allowed_scopes
- *   - the referenced target app exists and is active (DB check)
- *   - the target app's access rules permit the requesting client
- * Returns [validScopes, resolvedAppScopes] where resolvedAppScopes carries
- * the target app name/icon for the consent UI.
- */
-/** Why a requested scope was filtered out of the consent screen. Surfaced
- *  back to the user so they can see what an app asked for vs what was granted. */
-export type RejectedScopeReason =
-  /** Not registered in the app's `allowed_scopes` whitelist. */
-  | "not_allowed"
-  /** Unknown / malformed scope (not a platform scope, team scope, or `app:*` form). */
-  | "unknown"
-  /** Cross-app `app:*` scope, but the target app's owner has explicitly denied
-   *  this requesting app via `app_deny` or omitted it from an `app_allow` list. */
-  | "app_denied"
-  /** Cross-app `app:*` scope, but the target app no longer exists / is inactive. */
-  | "target_missing";
-
-async function resolveRequestedScopes(
-  db: D1Database,
-  appUrl: string,
-  requestedScopes: string[],
-  allowedScopes: string[],
-  requestingClientId: string,
-): Promise<{
-  scopes: string[];
-  appScopes: Array<{
-    scope: string;
-    client_id: string;
-    inner_scope: string;
-    app_name: string;
-    app_icon_url: string | null;
-    scope_title: string | null;
-    scope_desc: string | null;
-  }>;
-  rejected: Array<{ scope: string; reason: RejectedScopeReason }>;
-}> {
-  const regular: string[] = [];
-  const appScopeRequests: string[] = [];
-  const rejected: Array<{ scope: string; reason: RejectedScopeReason }> = [];
-
-  for (const s of requestedScopes) {
-    const parsed = parseAppScope(s);
-    if (parsed) {
-      // Cross-app scope: inner part may be a platform scope OR an app-defined
-      // identifier (registered via app_scope_definitions). parseAppScope
-      // already enforces non-empty clientId and non-empty innerScope.
-      if (!allowedScopes.includes(s)) {
-        rejected.push({ scope: s, reason: "not_allowed" });
-      } else {
-        appScopeRequests.push(s);
-      }
-      continue;
-    }
-    if (REQUESTABLE_SCOPES.has(s) || UNBOUND_TEAM_SCOPES.has(s)) {
-      if (!allowedScopes.includes(s)) {
-        rejected.push({ scope: s, reason: "not_allowed" });
-      } else {
-        regular.push(s);
-      }
-    } else {
-      rejected.push({ scope: s, reason: "unknown" });
-    }
-  }
-
-  if (appScopeRequests.length === 0) {
-    return { scopes: regular, appScopes: [], rejected };
-  }
-
-  // Batch-lookup unique target client_ids
-  const targetClientIds = [
-    ...new Set(appScopeRequests.map((s) => parseAppScope(s)!.clientId)),
-  ];
-  const targetApps = await Promise.all(
-    targetClientIds.map((cid) =>
-      db
-        .prepare(
-          "SELECT id, client_id, name, icon_url FROM oauth_apps WHERE client_id = ? AND is_active = 1",
-        )
-        .bind(cid)
-        .first<{
-          id: string;
-          client_id: string;
-          name: string;
-          icon_url: string | null;
-        }>(),
-    ),
-  );
-  const appsMap = new Map(
-    targetApps
-      .filter(Boolean)
-      .map((a) => [a!.client_id, a!] as [string, typeof a & {}]),
-  );
-
-  // Check app-level access rules for each target app and requesting app's client_id
-  // We need the requesting app's client_id — it's derived from the app row itself (passed in as appAllowedScopes parent)
-  // but we don't have it here. We'll filter in the caller or pass it in.
-  // For now, resolve per-target-app rules inline.
-
-  const appScopes: Array<{
-    scope: string;
-    client_id: string;
-    inner_scope: string;
-    app_name: string;
-    app_icon_url: string | null;
-    scope_title: string | null;
-    scope_desc: string | null;
-  }> = [];
-
-  // Batch-lookup scope definitions and access rules per target app
-  const targetAppIds = [...appsMap.values()].map((a) => a.id);
-  const [scopeDefsResult, accessRulesResult] = await Promise.all([
-    targetAppIds.length
-      ? db
-          .prepare(
-            `SELECT app_id, scope, title, description FROM app_scope_definitions WHERE app_id IN (${targetAppIds.map(() => "?").join(",")})`,
-          )
-          .bind(...targetAppIds)
-          .all<{
-            app_id: string;
-            scope: string;
-            title: string;
-            description: string;
-          }>()
-      : Promise.resolve({
-          results: [] as {
-            app_id: string;
-            scope: string;
-            title: string;
-            description: string;
-          }[],
-        }),
-    targetAppIds.length
-      ? db
-          .prepare(
-            `SELECT app_id, rule_type, target_id FROM app_scope_access_rules WHERE app_id IN (${targetAppIds.map(() => "?").join(",")}) AND rule_type IN ('app_allow','app_deny')`,
-          )
-          .bind(...targetAppIds)
-          .all<{ app_id: string; rule_type: string; target_id: string }>()
-      : Promise.resolve({
-          results: [] as {
-            app_id: string;
-            rule_type: string;
-            target_id: string;
-          }[],
-        }),
-  ]);
-
-  // Build lookup maps
-  const scopeDefsMap = new Map<
-    string,
-    Map<string, { title: string; description: string }>
-  >();
-  for (const d of scopeDefsResult.results) {
-    if (!scopeDefsMap.has(d.app_id)) scopeDefsMap.set(d.app_id, new Map());
-    scopeDefsMap
-      .get(d.app_id)!
-      .set(d.scope, { title: d.title, description: d.description });
-  }
-
-  const accessRulesMap = new Map<
-    string,
-    { allowList: string[]; denyList: string[] }
-  >();
-  for (const r of accessRulesResult.results) {
-    if (!accessRulesMap.has(r.app_id))
-      accessRulesMap.set(r.app_id, { allowList: [], denyList: [] });
-    const entry = accessRulesMap.get(r.app_id)!;
-    if (r.rule_type === "app_allow") entry.allowList.push(r.target_id);
-    else if (r.rule_type === "app_deny") entry.denyList.push(r.target_id);
-  }
-
-  for (const s of appScopeRequests) {
-    const parsed = parseAppScope(s)!;
-    const target = appsMap.get(parsed.clientId);
-    if (!target) {
-      rejected.push({ scope: s, reason: "target_missing" });
-      continue;
-    }
-
-    // Check app-level access rules (requesting app's client_id vs target app's rules)
-    const rules = accessRulesMap.get(target.id);
-    if (rules) {
-      if (rules.denyList.includes(requestingClientId)) {
-        rejected.push({ scope: s, reason: "app_denied" });
-        continue;
-      }
-      if (
-        rules.allowList.length > 0 &&
-        !rules.allowList.includes(requestingClientId)
-      ) {
-        rejected.push({ scope: s, reason: "app_denied" });
-        continue;
-      }
-    }
-
-    const def = scopeDefsMap.get(target.id)?.get(parsed.innerScope);
-    appScopes.push({
-      scope: s,
-      client_id: parsed.clientId,
-      inner_scope: parsed.innerScope,
-      app_name: target.name,
-      app_icon_url: await proxyImageUrl(appUrl, db, target.icon_url),
-      scope_title: def?.title ?? null,
-      scope_desc: def?.description ?? null,
-    });
-  }
-
-  return {
-    scopes: [...regular, ...appScopes.map((a) => a.scope)],
-    appScopes,
-    rejected,
-  };
 }
 
 // ─── Authorization endpoint ───────────────────────────────────────────────────
@@ -2048,8 +1831,13 @@ app.post("/token", async (c) => {
     const { atTtl } = tokenTtls(user, config);
     const resourceJson = serializeResources(resources);
     const jti = randomId();
+    // A client that knows the user by its own ID for them (a SAML app) keeps
+    // knowing them by it; a target app gets the token as it would any other.
+    const carriedSubject =
+      subject.clientId === clientId ? subject.subject : null;
     const accessToken = await mintAccessToken(c, oauthApp, {
       sub: user.id,
+      subject: carriedSubject,
       clientId,
       jti,
       scopes: newScopes,
@@ -2064,6 +1852,7 @@ app.post("/token", async (c) => {
       refreshToken: null,
       clientId,
       userId: user.id,
+      subject: carriedSubject,
       scopes: newScopes,
       resource: resourceJson,
       dpopJkt,
@@ -2078,6 +1867,140 @@ app.post("/token", async (c) => {
       token_type: dpopJkt ? "DPoP" : "Bearer",
       expires_in: atTtl,
       scope: newScopes.join(" "),
+    });
+  }
+
+  // ── SAML 2.0 bearer assertion (RFC 7522) ─────────────────────────────────
+  // A SAML app trades the assertion it was just given for an access token
+  // with the other apps' permissions the user approved (lib/saml/bearer.ts).
+  if (grant_type === SAML2_BEARER_GRANT_TYPE) {
+    const now = Math.floor(Date.now() / 1000);
+    // The assertion passes through the browser: only the app itself, with
+    // its credentials, may trade it.
+    if (oauthApp.is_public)
+      return c.json(
+        {
+          error: "unauthorized_client",
+          error_description: "client authentication is required",
+        },
+        400,
+      );
+    if (!params.assertion)
+      return c.json(
+        {
+          error: "invalid_request",
+          error_description: "assertion is required",
+        },
+        400,
+      );
+    const signer = await getSamlSigner(c.env);
+    const assertionId = await signedAssertionId(
+      params.assertion,
+      signer.certificate,
+    );
+    // An admin may have turned SAML off for the app since it signed in.
+    if (!assertionId || (await samlBlock(c.env.DB, oauthApp)))
+      return c.json({ error: "invalid_grant" }, 400);
+    // Everything is checked before the assertion is used up, so a request
+    // that fails here can be retried with it.
+    const grant = await findAssertionGrant(
+      c.env.DB,
+      oauthApp.id,
+      assertionId,
+      now,
+    );
+    if (!grant)
+      return c.json(
+        {
+          error: "invalid_grant",
+          error_description: "assertion is invalid, expired or already used",
+        },
+        400,
+      );
+
+    // The user hasn't revoked the app since (first-party apps need no
+    // consent). Whether they approved these scopes once or always, the
+    // assertion's record says what they approved.
+    const consentHolds = async () =>
+      !!oauthApp.is_first_party ||
+      !!(await c.env.DB.prepare(
+        "SELECT 1 FROM oauth_consents WHERE user_id = ? AND client_id = ?",
+      )
+        .bind(grant.user_id, clientId)
+        .first());
+    if (!(await consentHolds())) return c.json({ error: "invalid_grant" }, 400);
+
+    // What was approved, less what the app may no longer ask for and what
+    // the target apps no longer allow it (or that are gone); or less still
+    // when the app asks for less.
+    const { scopes: granted } = await resolveRequestedScopes(
+      c.env.DB,
+      c.env.APP_URL,
+      JSON.parse(grant.scopes) as string[],
+      JSON.parse(oauthApp.allowed_scopes) as string[],
+      clientId,
+    );
+    const requested = (params.scope ?? "").split(" ").filter(Boolean);
+    if (requested.some((s) => !granted.includes(s)))
+      return c.json({ error: "invalid_scope" }, 400);
+    const scopes = requested.length ? requested : granted;
+    if (scopes.length === 0) return c.json({ error: "invalid_grant" }, 400);
+
+    const user = await c.env.DB.prepare(
+      "SELECT * FROM users WHERE id = ? AND kind = 'user'",
+    )
+      .bind(grant.user_id)
+      .first<UserRow>();
+    if (!user || !user.is_active)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    // Of two concurrent requests, one gets the token.
+    if (!(await consumeAssertionGrant(c.env.DB, grant, now)))
+      return c.json({ error: "invalid_grant" }, 400);
+
+    const { atTtl } = tokenTtls(user, config);
+    const jti = randomId();
+    const accessToken = await mintAccessToken(c, oauthApp, {
+      sub: user.id,
+      subject: grant.subject,
+      clientId,
+      jti,
+      scopes,
+      resources: [],
+      dpopJkt,
+      ttl: atTtl,
+    });
+    // No refresh token: the app trades a new assertion at its next sign-in.
+    await insertOAuthToken(c.env, {
+      id: jti,
+      accessToken,
+      refreshToken: null,
+      clientId,
+      userId: user.id,
+      subject: grant.subject,
+      scopes,
+      resource: null,
+      dpopJkt,
+      authTime: grant.auth_time,
+      amr: grant.amr,
+      expiresAt: now + atTtl,
+      refreshExpiresAt: null,
+      now,
+    });
+    // Revoking the app deletes the consent, then its tokens: if that ran
+    // since the check above, this token may have missed the delete.
+    if (!(await consentHolds())) {
+      await c.env.DB.prepare("DELETE FROM oauth_tokens WHERE id = ?")
+        .bind(jti)
+        .run();
+      return c.json({ error: "invalid_grant" }, 400);
+    }
+
+    return c.json({
+      access_token: accessToken,
+      token_type: dpopJkt ? "DPoP" : "Bearer",
+      expires_in: atTtl,
+      scope: scopes.join(" "),
     });
   }
 
@@ -2573,17 +2496,28 @@ app.post("/introspect", async (c) => {
   if (!canClientIntrospectToken(tokenRow.client_id, caller.client_id, scopes))
     return c.json({ active: false });
 
+  // The token's own client sees the user by the ID it knows them by: a
+  // SAML app's token never shows it the Prism user ID. Any calling app that
+  // signs the user in with SAML also gets its ID for them there (the uid
+  // attribute), to find them among its users.
+  const ownSubject =
+    tokenRow.client_id === caller.client_id ? tokenRow.subject : null;
+  const samlUid =
+    ownSubject ??
+    (await boundProfile(c.env.DB, caller.id, tokenRow.user_id))?.name_id;
+  const sub = ownSubject ?? tokenRow.user_id;
   return c.json({
     active: true,
     scope: scopes.join(" "),
     client_id: tokenRow.client_id,
-    username: tokenRow.user_id,
+    username: sub,
     // RFC 7662 §2.2: DPoP-bound tokens are token_type "DPoP" and carry the
     // key thumbprint in cnf (RFC 9449 §7); everything else is Bearer.
     token_type: tokenRow.dpop_jkt ? "DPoP" : "Bearer",
     exp: tokenRow.expires_at,
     iat: tokenRow.created_at,
-    sub: tokenRow.user_id,
+    sub,
+    ...(samlUid ? { saml_uid: samlUid } : {}),
     aud: extractAud(scopes, c.env.APP_URL, parseResources(tokenRow.resource)),
     iss: c.env.APP_URL,
     ...(tokenRow.dpop_jkt ? { cnf: { jkt: tokenRow.dpop_jkt } } : {}),
@@ -2783,10 +2717,16 @@ app.post("/end_session", optionalAuth, handleEndSession);
 async function lookupAccessToken(
   c: Context<AppEnv>,
   token: string,
-): Promise<{ userId: string; scopes: string[]; clientId: string } | null> {
+): Promise<{
+  userId: string;
+  subject: string | null;
+  scopes: string[];
+  clientId: string;
+} | null> {
   const now = Math.floor(Date.now() / 1000);
   let tokenRow: {
     user_id: string;
+    subject: string | null;
     scopes: string;
     expires_at: number;
     client_id: string;
@@ -2797,7 +2737,7 @@ async function lookupAccessToken(
       const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
       const payload = verifyAccessToken(token, mldsaKey.publicKey);
       tokenRow = await c.env.DB.prepare(
-        "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE id = ?",
+        "SELECT user_id, subject, scopes, expires_at, client_id FROM oauth_tokens WHERE id = ?",
       )
         .bind(payload.jti)
         .first();
@@ -2808,7 +2748,7 @@ async function lookupAccessToken(
     const lookup = await hashLookupCandidate(c.env, token);
     if (!lookup) return null;
     tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
+      "SELECT user_id, subject, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
     )
       .bind(token, lookup)
       .first();
@@ -2824,6 +2764,7 @@ async function lookupAccessToken(
 
   return {
     userId: tokenRow.user_id,
+    subject: tokenRow.subject,
     scopes: JSON.parse(tokenRow.scopes) as string[],
     clientId: tokenRow.client_id,
   };
@@ -3012,6 +2953,10 @@ async function mintAccessToken(
   app: OAuthAppRow,
   t: {
     sub: string;
+    /** The ID the client knows the user by, when it isn't `sub` (a SAML
+     *  app's): the token is then opaque, since a JWT would show the client
+     *  the Prism user ID. */
+    subject?: string | null;
     clientId: string;
     jti: string;
     scopes: string[];
@@ -3022,7 +2967,7 @@ async function mintAccessToken(
     ttl: number;
   },
 ): Promise<string> {
-  if (!app.use_jwt_tokens) return randomBase64url(48);
+  if (!app.use_jwt_tokens || t.subject) return randomBase64url(48);
   const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
   return signAccessToken(
     {
@@ -3056,6 +3001,8 @@ async function insertOAuthToken(
     refreshToken: string | null;
     clientId: string;
     userId: string;
+    /** See OAuthTokenRow.subject. */
+    subject?: string | null;
     scopes: string[];
     resource: string | null;
     dpopJkt: string | null;
@@ -3067,8 +3014,8 @@ async function insertOAuthToken(
   },
 ): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, scopes, resource, dpop_jkt, auth_time, amr, expires_at, refresh_expires_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO oauth_tokens (id, access_token, refresh_token, client_id, user_id, subject, scopes, resource, dpop_jkt, auth_time, amr, expires_at, refresh_expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       t.id,
@@ -3076,6 +3023,7 @@ async function insertOAuthToken(
       await hashSecret(env, t.refreshToken),
       t.clientId,
       t.userId,
+      t.subject ?? null,
       JSON.stringify(t.scopes),
       t.resource,
       t.dpopJkt,

@@ -340,7 +340,7 @@ See the [OAuth / OIDC Guide](oauth.md) for the walkthrough.
 | `POST`               | `/api/oauth/par`                          | Pushed Authorization Requests (RFC 9126)             |
 | `POST`               | `/api/oauth/register`                     | Dynamic Client Registration (RFC 7591)               |
 | `GET`/`PUT`/`DELETE` | `/api/oauth/register/:client_id`          | Client management (RFC 7592)                         |
-| `POST`               | `/api/oauth/token`                        | Code, refresh, device and token-exchange grants      |
+| `POST`               | `/api/oauth/token`                        | Code, refresh, device, token-exchange, SAML grants   |
 | `POST`               | `/api/oauth/device_authorization`         | Device Authorization Grant (RFC 8628)                |
 | `GET` / `POST`       | `/api/oauth/userinfo`                     | OIDC UserInfo                                        |
 | `POST`               | `/api/oauth/introspect`                   | RFC 7662                                             |
