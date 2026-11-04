@@ -1,6 +1,7 @@
 // OAuth client helpers shared by the authorization server's endpoints:
 // grant-type identifiers, reading a request body, client authentication,
-// and the app summary shown on consent screens.
+// and the app summary shown on consent screens. The app summary and the
+// notice and audit trail of an authorization serve SAML sign-ins too.
 
 import type { Context } from "hono";
 import { timingSafeSecretEqual } from "./secretCrypto";
@@ -10,6 +11,11 @@ import {
   CLIENT_ASSERTION_TYPE,
   verifyClientAssertion,
 } from "./clientAssertion";
+import { auditRequestMeta, recordAudit, type AuditInput } from "./audit";
+import {
+  deliverUserEmailNotifications,
+  notificationActorMetaFromHeaders,
+} from "./notifications";
 import { proxyImageUrl } from "./proxyImage";
 import type { OAuthAppRow, Variables } from "../types";
 
@@ -174,4 +180,80 @@ export async function authenticateClient(
     method: app.is_public ? "none" : "client_secret",
     usedBasic,
   };
+}
+
+/**
+ * A user authorized an app (an OAuth code, or a SAML assertion): email the
+ * user, and record it in the user's audit log and in the app owner's.
+ * `auto`: no consent was asked for (a remembered one, or a first-party
+ * app), which only notifies when the user opted in. `protocol` is noted in
+ * the audit metadata, for sign-ins that aren't OAuth.
+ */
+export async function recordAppAuthorization(
+  c: Context<AppEnv>,
+  opts: {
+    user: { id: string; username: string };
+    app: OAuthAppRow;
+    scopes: string[];
+    auto: boolean;
+    protocol?: "saml";
+  },
+): Promise<void> {
+  const { user, app, scopes, protocol } = opts;
+  let notify = !opts.auto;
+  if (!notify && !app.is_first_party) {
+    const prefs = await c.env.DB.prepare(
+      "SELECT notify_on_auto_authorization FROM users WHERE id = ?",
+    )
+      .bind(user.id)
+      .first<{ notify_on_auto_authorization: number }>();
+    notify = prefs?.notify_on_auto_authorization === 1;
+  }
+  if (notify)
+    c.executionCtx.waitUntil(
+      deliverUserEmailNotifications(
+        c.env,
+        user.id,
+        "oauth.consent_granted",
+        {
+          app_name: app.name,
+          scopes,
+          ...notificationActorMetaFromHeaders(c.req.raw.headers),
+        },
+        c.env.APP_URL,
+      ).catch(() => {}),
+    );
+
+  // Transparent Control: the authorizing user sees the authorization in
+  // their own log; the app's owner (user or team) sees it as an
+  // app-authorization.
+  const meta = auditRequestMeta(c);
+  const base = {
+    actorId: user.id,
+    actorName: user.username,
+    resourceType: "app",
+    resourceId: app.id,
+    resourceName: app.name,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+    geo: meta.geo,
+  };
+  const via = protocol ? { protocol } : {};
+  const events: AuditInput[] = [
+    {
+      ...base,
+      scope: "user",
+      scopeId: user.id,
+      action: "oauth.authorize",
+      metadata: { scopes, client_id: app.client_id, ...via },
+    },
+    {
+      ...base,
+      scope: app.team_id ? "team" : "user",
+      scopeId: app.team_id ?? app.owner_id,
+      action: "app.authorized",
+      metadata: { scopes, user_id: user.id, ...via },
+    },
+  ];
+  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, events));
 }

@@ -2,7 +2,7 @@
 
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { getConfig, getRsaKeyPair } from "../lib/config";
+import { getConfig, getConfigValue, getRsaKeyPair } from "../lib/config";
 import { hashSecret, hashLookupCandidate } from "../lib/secretCrypto";
 import { getMLDSAKey } from "../lib/mldsa";
 import {
@@ -41,12 +41,9 @@ import {
   getRestrictionState,
 } from "../lib/userCapabilities";
 import { getGroupsForUserByTeam } from "../lib/teamGroups";
-import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
-import {
-  getEffectiveMember,
-  ROLE_RANK,
-  listEffectiveTeamMemberships,
-} from "../lib/teams";
+import { recordAudit, auditRequestMeta } from "../lib/audit";
+import { getEffectiveMember, listEffectiveTeamMemberships } from "../lib/teams";
+import { checkAccessWhitelist } from "../lib/appAccess";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -57,7 +54,6 @@ import type {
   OAuthDeviceCodeRow,
   OAuthTokenRow,
   UserRow,
-  AppAccessRuleRow,
   Variables,
 } from "../types";
 import {
@@ -67,8 +63,8 @@ import {
   parseResources,
 } from "../lib/resource";
 import { verifyDpopProof } from "../lib/dpop";
-import { deliverBackChannelLogout } from "../lib/backchannelLogout";
-import { clearSessionCookie } from "../lib/cookies";
+import { startUnverifiedLogout } from "../lib/saml/logout";
+import { endBrowserSession } from "../lib/session";
 import meRoutes from "./oauth-me";
 import {
   DEVICE_GRANT_TYPE,
@@ -77,6 +73,7 @@ import {
   authenticateClient,
   buildConsentAppSummary,
   readOAuthBody,
+  recordAppAuthorization,
 } from "../lib/oauthClients";
 import { REQUESTABLE_SCOPES } from "../lib/scopes";
 import { deriveAcr } from "../lib/stepUp";
@@ -712,45 +709,6 @@ app.patch("/consents/:clientId", requireAuth, async (c) => {
 
   return c.json({ ok: true });
 });
-
-/** Check if the given user is allowed by the app's access whitelist rules.
- *  Returns null if allowed, or an error message string if denied. */
-async function checkAccessWhitelist(
-  db: D1Database,
-  app: OAuthAppRow,
-  userId: string,
-): Promise<string | null> {
-  if (!app.access_whitelist_enabled) return null;
-
-  const { results } = await db
-    .prepare(
-      "SELECT rule_type, target_id, min_role FROM app_access_rules WHERE app_id = ?",
-    )
-    .bind(app.id)
-    .all<AppAccessRuleRow>();
-
-  if (results.length === 0) return "unauthorized_whitelist";
-
-  const teamRules = results.filter((r) => r.rule_type === "team");
-  const userRules = results.filter((r) => r.rule_type === "user");
-
-  if (userRules.some((r) => r.target_id === userId)) return null;
-
-  if (teamRules.length > 0) {
-    const memberships = await listEffectiveTeamMemberships(db, userId);
-    const membershipByTeam = new Map(
-      memberships.map((m) => [m.team.id, m.role]),
-    );
-    for (const rule of teamRules) {
-      const role = membershipByTeam.get(rule.target_id);
-      if (!role) continue;
-      const minRank = ROLE_RANK[rule.min_role ?? "member"] ?? 0;
-      if ((ROLE_RANK[role] ?? 0) >= minRank) return null;
-    }
-  }
-
-  return "unauthorized_whitelist";
-}
 
 // GET /api/oauth/authorize — redirect browser to SPA consent page
 app.get("/authorize", (c) => {
@@ -1435,39 +1393,6 @@ app.post("/authorize", requireAuth, async (c) => {
       .run();
   }
 
-  // Send notification:
-  // - Always for manual authorization
-  // - For auto-authorization (skipping consent UI), only if the user opted in via notify_on_auto_authorization
-  // Note: isAutoAuthorized is derived on the server from DB consent records and request state,
-  // preventing client-side spoofing.
-  let shouldNotify = !isAutoAuthorized;
-  if (isAutoAuthorized && !oauthApp.is_first_party) {
-    const u = await c.env.DB.prepare(
-      "SELECT notify_on_auto_authorization FROM users WHERE id = ?",
-    )
-      .bind(user.id)
-      .first<{ notify_on_auto_authorization: number }>();
-    if (u?.notify_on_auto_authorization === 1) {
-      shouldNotify = true;
-    }
-  }
-
-  if (shouldNotify) {
-    c.executionCtx.waitUntil(
-      deliverUserEmailNotifications(
-        c.env,
-        user.id,
-        "oauth.consent_granted",
-        {
-          app_name: oauthApp.name,
-          scopes: boundScopes,
-          ...notificationActorMetaFromHeaders(c.req.raw.headers),
-        },
-        c.env.APP_URL,
-      ).catch(() => {}),
-    );
-  }
-
   // Issue authorization code (10 minute TTL). Stored as keyed-HMAC hash
   // so a D1 leak doesn't surrender redeemable codes.
   const code = randomBase64url(32);
@@ -1541,43 +1466,14 @@ app.post("/authorize", requireAuth, async (c) => {
     }).catch(() => {}),
   );
 
-  // Transparent Control: the authorizing user sees the authorization in their
-  // own log; the app's owner (user or team) sees it as an app-authorization.
-  {
-    const meta = auditRequestMeta(c);
-    const events: AuditInput[] = [
-      {
-        scope: "user",
-        scopeId: user.id,
-        action: "oauth.authorize",
-        actorId: user.id,
-        actorName: user.username,
-        resourceType: "app",
-        resourceId: oauthApp.id,
-        resourceName: oauthApp.name,
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-        geo: meta.geo,
-        metadata: { scopes: boundScopes, client_id: oauthApp.client_id },
-      },
-    ];
-    const appAuth = {
-      action: "app.authorized",
-      actorId: user.id,
-      actorName: user.username,
-      resourceType: "app",
-      resourceId: oauthApp.id,
-      resourceName: oauthApp.name,
-      ip: meta.ip,
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata: { scopes: boundScopes, user_id: user.id },
-    };
-    if (oauthApp.team_id)
-      events.push({ ...appAuth, scope: "team", scopeId: oauthApp.team_id });
-    else events.push({ ...appAuth, scope: "user", scopeId: oauthApp.owner_id });
-    c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, events));
-  }
+  // Notice and audit trail. isAutoAuthorized is derived on the server from
+  // DB consent records and request state, preventing client-side spoofing.
+  await recordAppAuthorization(c, {
+    user,
+    app: oauthApp,
+    scopes: boundScopes,
+    auto: !!isAutoAuthorized,
+  });
 
   return c.json({ redirect: url.toString() });
 });
@@ -2752,6 +2648,26 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
   const state = get("state");
   let clientIdHint = get("client_id");
 
+  // A form POST from the app's site carries no session cookie (it is
+  // SameSite=Lax), so it would look signed out already. Come back as a GET,
+  // a top-level navigation the cookie does ride along on.
+  if (c.req.method === "POST" && !c.get("user")) {
+    const again = new URLSearchParams();
+    for (const k of [
+      "id_token_hint",
+      "post_logout_redirect_uri",
+      "state",
+      "client_id",
+    ]) {
+      const v = get(k);
+      if (v) again.set(k, v);
+    }
+    return c.redirect(`${c.env.APP_URL}/api/oauth/end_session?${again}`, 303);
+  }
+  // Whom and which Prism session a verified id_token_hint was issued for.
+  let hint: { sub: string; sid: string } | null = null;
+  let hintClientId: string | null = null;
+
   // Prefer the client identity from a verified id_token_hint. An expired hint
   // is still accepted (the session is ending); an unverifiable one is ignored.
   if (idTokenHint) {
@@ -2762,37 +2678,26 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
       if (typeof aud === "string") clientIdHint = aud;
       else if (Array.isArray(aud) && typeof aud[0] === "string")
         clientIdHint = aud[0];
+      hintClientId = clientIdHint ?? null;
+      if (typeof payload.sub === "string" && typeof payload.sid === "string")
+        hint = { sub: payload.sub, sid: payload.sid };
     } catch {
       /* ignore an unverifiable hint */
     }
   }
 
-  // End the current session (if the browser presented one) and clear the cookie.
-  const sessionId = c.get("sessionId");
-  const endingUser = c.get("user");
-  // OIDC Back-Channel Logout: notify the user's clients before the session row
-  // is gone (delivery reads only ids we already hold).
-  if (endingUser)
-    await deliverBackChannelLogout(
-      c.env,
-      c.executionCtx,
-      endingUser.id,
-      sessionId ?? null,
-    );
-  if (sessionId)
-    await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
-      .bind(sessionId)
-      .run();
-  clearSessionCookie(c);
-
-  // Only redirect to a post_logout_redirect_uri that the identified client has
-  // registered — otherwise the endpoint would be an open redirect.
+  // Where the browser goes once signed out. Only a post_logout_redirect_uri
+  // that the identified client has registered — otherwise the endpoint would
+  // be an open redirect; else the built-in signed-out page.
+  let target = `${c.env.APP_URL}/logged-out`;
+  // The app the browser goes back to, named when the user is asked.
+  let targetAppId: string | null = null;
   if (postLogoutRedirectUri && clientIdHint) {
     const appRow = await c.env.DB.prepare(
-      "SELECT post_logout_redirect_uris FROM oauth_apps WHERE client_id = ? AND is_active = 1",
+      "SELECT id, post_logout_redirect_uris FROM oauth_apps WHERE client_id = ? AND is_active = 1",
     )
       .bind(clientIdHint)
-      .first<{ post_logout_redirect_uris: string }>();
+      .first<{ id: string; post_logout_redirect_uris: string }>();
     let allowList: string[] = [];
     if (appRow) {
       try {
@@ -2806,12 +2711,53 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
     if (allowList.includes(postLogoutRedirectUri)) {
       const url = new URL(postLogoutRedirectUri);
       if (state) url.searchParams.set("state", state);
-      return c.redirect(url.toString(), 302);
+      target = url.toString();
+      targetAppId = appRow!.id;
     }
   }
 
-  // No (valid) redirect target: land on the built-in signed-out page.
-  return c.redirect(`${c.env.APP_URL}/logged-out`, 302);
+  const sessionId = c.get("sessionId");
+  const endingUser = c.get("user");
+  // Any page can link here, so a sign-out is only a request unless its
+  // id_token_hint belongs to this very session: issued to this user, in this
+  // browser session (sid), for an app that is still active and that the user
+  // hasn't revoked. Anything else, the user confirms on the /logout page
+  // (OpenID Connect RP-Initiated Logout §2). An ID token from another
+  // session, or one that leaked, signs nobody out. A site admin can keep
+  // this to first-party apps.
+  const fromThisSession =
+    !!endingUser &&
+    !!sessionId &&
+    hint?.sub === endingUser.id &&
+    hint.sid === sessionId &&
+    !!hintClientId &&
+    !!(await c.env.DB.prepare(
+      `SELECT 1 FROM oauth_apps a
+       WHERE a.client_id = ? AND a.is_active = 1
+         AND (a.is_first_party = 1 OR (? = 0 AND EXISTS (
+           SELECT 1 FROM oauth_consents c WHERE c.client_id = a.client_id AND c.user_id = ?)))`,
+    )
+      .bind(
+        hintClientId,
+        (await getConfigValue(c.env.DB, "silent_logout_first_party_only")) ===
+          true
+          ? 1
+          : 0,
+        endingUser.id,
+      )
+      .first());
+  if (endingUser && sessionId && !fromThisSession) {
+    const page = await startUnverifiedLogout(c.env.DB, {
+      appId: targetAppId,
+      finishUrl: target,
+    });
+    return c.redirect(`${c.env.APP_URL}${page}`, 302);
+  }
+
+  // End the current session (if the browser presented one), by way of its
+  // SAML apps.
+  const next = await endBrowserSession(c, target);
+  return c.redirect(next === target ? next : `${c.env.APP_URL}${next}`, 302);
 }
 
 app.get("/end_session", optionalAuth, handleEndSession);

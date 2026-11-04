@@ -46,6 +46,23 @@ export function TeamsSection({ draft }: SectionProps) {
         ))}
       </SettingsCard>
       <SettingsCard
+        id="admin.cardSaml"
+        title={t("admin.cardSaml")}
+        description={t("admin.cardSamlDesc")}
+      >
+        <SettingsRow label={t("admin.samlEnabled")}>
+          <Segmented
+            label={t("admin.samlEnabled")}
+            value={flag("saml_enabled", true)}
+            options={[
+              { value: false, label: t("admin.choiceNotAllowed") },
+              { value: true, label: t("admin.choiceAllowed") },
+            ]}
+            onChange={(v) => set("saml_enabled", v)}
+          />
+        </SettingsRow>
+      </SettingsCard>
+      <SettingsCard
         id="admin.cardTeamRequirements"
         title={t("admin.cardTeamRequirements")}
         description={t("admin.teamJoinRequirementsHint")}

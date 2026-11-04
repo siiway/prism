@@ -1,6 +1,10 @@
 // Admin routes: site config, user management, app moderation, audit log
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import {
+  samlOverrideValue,
+  samlOwnerSetting,
+} from "../lib/saml/serviceProviders";
 import {
   encryptConfigUpdates,
   getConfig,
@@ -209,6 +213,8 @@ app.patch("/config", async (c) => {
     "gpg_challenge_prefix",
     "disable_user_create_team",
     "disable_user_create_app",
+    "saml_enabled",
+    "silent_logout_first_party_only",
     "disable_ssr",
     "sudo_mode_ttl_minutes",
     "require_captcha_for_2fa",
@@ -1394,6 +1400,117 @@ app.delete("/teams/:id", async (c) => {
 
   auditAdmin(c, "admin.team.delete", "team", id, {}, team.name);
   return c.json({ ok: true });
+});
+
+// ─── SAML overrides (site-admin controls) ───────────────────────────────────
+
+// Overrides of the saml_enabled site setting, for one owner (a user, or a
+// team's user row) or one app: allowed, stopped, or null to follow the level
+// above. GET also says what null currently means. Stopping keeps the apps'
+// SAML settings.
+
+/** The override in a PATCH body, or a 400. */
+async function readSamlOverride(
+  c: Context<AppEnv>,
+): Promise<{ override: boolean | null } | { error: Response }> {
+  const body = await c.req
+    .json<{ override?: unknown }>()
+    .catch(() => ({}) as { override?: unknown });
+  return body.override === null || typeof body.override === "boolean"
+    ? { override: body.override }
+    : {
+        error: c.json(
+          { error: "field_must_be_boolean", params: { field: "override" } },
+          400,
+        ),
+      };
+}
+
+const storedOverride = (v: boolean | null) => (v === null ? null : v ? 1 : 0);
+
+app.get("/users/:id/saml", async (c) => {
+  const id = c.req.param("id");
+  const user = await c.env.DB.prepare("SELECT id FROM users WHERE id = ?")
+    .bind(id)
+    .first();
+  if (!user) return c.json({ error: "user_not_found" }, 404);
+  return c.json(await samlOwnerSetting(c.env.DB, id));
+});
+
+app.patch("/users/:id/saml", async (c) => {
+  const id = c.req.param("id");
+  const user = await c.env.DB.prepare(
+    "SELECT username, display_name, kind FROM users WHERE id = ?",
+  )
+    .bind(id)
+    .first<{ username: string; display_name: string; kind: string }>();
+  if (!user) return c.json({ error: "user_not_found" }, 404);
+  const read = await readSamlOverride(c);
+  if ("error" in read) return read.error;
+  const { override } = read;
+
+  await c.env.DB.prepare(
+    "UPDATE users SET saml_override = ?, updated_at = ? WHERE id = ?",
+  )
+    .bind(storedOverride(override), Math.floor(Date.now() / 1000), id)
+    .run();
+  // A team's row is the team, so it goes on the team's log too.
+  const isTeam = user.kind === "team";
+  auditAdmin(
+    c,
+    isTeam ? "admin.team.saml" : "admin.user.saml",
+    isTeam ? "team" : "user",
+    id,
+    { override },
+    isTeam ? user.display_name : user.username,
+  );
+  return c.json(await samlOwnerSetting(c.env.DB, id));
+});
+
+/** An app's override, and what it follows without one. */
+async function appSamlSetting(
+  db: D1Database,
+  row: { owner_id: string; saml_override?: number | null },
+) {
+  const owner = await samlOwnerSetting(db, row.owner_id);
+  return {
+    override: samlOverrideValue(row.saml_override),
+    inherited: owner.override ?? owner.inherited,
+  };
+}
+
+app.get("/apps/:id/saml", async (c) => {
+  const row = await c.env.DB.prepare(
+    "SELECT owner_id, saml_override FROM oauth_apps WHERE id = ?",
+  )
+    .bind(c.req.param("id"))
+    .first<{ owner_id: string; saml_override: number | null }>();
+  if (!row) return c.json({ error: "app_not_found" }, 404);
+  return c.json(await appSamlSetting(c.env.DB, row));
+});
+
+app.patch("/apps/:id/saml", async (c) => {
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare(
+    "SELECT name, owner_id FROM oauth_apps WHERE id = ?",
+  )
+    .bind(id)
+    .first<{ name: string; owner_id: string }>();
+  if (!row) return c.json({ error: "app_not_found" }, 404);
+  const read = await readSamlOverride(c);
+  if ("error" in read) return read.error;
+  const { override } = read;
+
+  const stored = storedOverride(override);
+  await c.env.DB.prepare(
+    "UPDATE oauth_apps SET saml_override = ?, updated_at = ? WHERE id = ?",
+  )
+    .bind(stored, Math.floor(Date.now() / 1000), id)
+    .run();
+  auditAdmin(c, "admin.app.saml", "app", id, { override }, row.name);
+  return c.json(
+    await appSamlSetting(c.env.DB, { ...row, saml_override: stored }),
+  );
 });
 
 // ─── Invite registration (site-admin controls) ───────────────────────────────

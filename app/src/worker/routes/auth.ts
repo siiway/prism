@@ -4,8 +4,6 @@ import { Hono } from "hono";
 import { getConfig } from "../lib/config";
 import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
-import { clearSessionCookie } from "../lib/cookies";
-import { deliverBackChannelLogout } from "../lib/backchannelLogout";
 import {
   hashPassword,
   randomId,
@@ -37,7 +35,7 @@ import {
   logLoginError,
 } from "../lib/loginRateLimit";
 import { requireAuth } from "../middleware/auth";
-import { issueSession } from "../lib/session";
+import { endBrowserSession, issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import {
   deliverUserEmailNotifications,
@@ -415,18 +413,11 @@ app.post("/login", async (c) => {
 
 // ─── Logout ──────────────────────────────────────────────────────────────────
 
-app.post("/logout", requireAuth, async (c) => {
-  const sessionId = c.get("sessionId");
-  const user = c.get("user");
-  // OIDC Back-Channel Logout: notify the user's clients that this session ended.
-  if (user)
-    await deliverBackChannelLogout(c.env, c.executionCtx, user.id, sessionId);
-  await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
-    .bind(sessionId)
-    .run();
-  clearSessionCookie(c);
-  return c.json({ ok: true });
-});
+// `next`: the page to go to, /logout first when the session's SAML apps are
+// signed out on the way.
+app.post("/logout", requireAuth, async (c) =>
+  c.json({ ok: true, next: await endBrowserSession(c, "/login") }),
+);
 
 // ─── Email verification ───────────────────────────────────────────────────────
 

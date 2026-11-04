@@ -2,16 +2,24 @@
 // IP-history entry, the HttpOnly cookie and the user's own audit entry. Every
 // sign-in path (password, passkey, GPG, 2FA, social, invite registration,
 // first-run setup) goes through issueSession so none of them can skip a step.
+// Ending one in the browser (sign-out, OIDC end_session, SAML single logout)
+// goes through endBrowserSession, likewise.
 
 import type { Context } from "hono";
 import { auditRequestMeta, recordAudit } from "./audit";
 import { getIp } from "./clientIp";
 import { getJwtSecret } from "./config";
-import { setSessionCookie } from "./cookies";
+import { deliverBackChannelLogout } from "./backchannelLogout";
+import {
+  clearSessionCookie,
+  setSamlLogoutCookie,
+  setSessionCookie,
+} from "./cookies";
 import { randomId, sha256Hex } from "./crypto";
 import { geoJson, recordSessionIp } from "./geo";
 import { signJWT } from "./jwt";
 import { proxyImageUrl } from "./proxyImage";
+import { startIdpLogout } from "./saml/logout";
 import type { UserRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -89,4 +97,39 @@ export async function issueSession(
       metadata: {},
     }),
   );
+}
+
+/**
+ * End the browser's Prism session, as signing out does. Before the row (and
+ * its SAML sign-ins) goes: OIDC Back-Channel Logout tells the user's
+ * clients, and, given `finishUrl`, a SAML Single Logout is started that this
+ * browser (the cookie) carries to the session's SPs. Then the row and the
+ * cookie go. Returns where the browser goes next: /logout when there are
+ * SPs to visit, else `finishUrl`. Without `finishUrl` (a logout already
+ * under way that visits the SPs) no new one starts.
+ */
+export async function endBrowserSession(
+  c: Context<AppEnv>,
+  finishUrl: string,
+): Promise<string>;
+export async function endBrowserSession(c: Context<AppEnv>): Promise<void>;
+export async function endBrowserSession(
+  c: Context<AppEnv>,
+  finishUrl?: string,
+): Promise<string | void> {
+  const sessionId = c.get("sessionId");
+  const user = c.get("user");
+  const [, samlLogout] = await Promise.all([
+    user && deliverBackChannelLogout(c.env, c.executionCtx, user.id, sessionId),
+    sessionId && finishUrl !== undefined
+      ? startIdpLogout(c.env.DB, sessionId, finishUrl)
+      : null,
+  ]);
+  if (samlLogout) setSamlLogoutCookie(c, samlLogout);
+  if (sessionId)
+    await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
+      .bind(sessionId)
+      .run();
+  clearSessionCookie(c);
+  return samlLogout ? "/logout" : finishUrl;
 }

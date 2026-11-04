@@ -249,6 +249,7 @@ All endpoints require authentication. See the [OAuth / OIDC Guide](oauth.md) and
 | `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:id/scope-definitions[/:scope]`   | Exported scopes                                                                                                       |
 | `GET` / `POST` / `DELETE`           | `/api/apps/:id/scope-access-rules[/:ruleId]` | Who may add or request the app's scopes                                                                               |
 | `GET` / `POST` / `DELETE`           | `/api/apps/:id/access-rules[/:ruleId]`       | [Access whitelist](app-access-whitelist.md)                                                                           |
+| `GET` / `PUT` / `DELETE`            | `/api/apps/:id/saml`                         | [SAML](saml.md) settings, and the IdP details to give the app                                                         |
 | `GET` / `POST` / `PATCH` / `DELETE` | `/api/apps/:appId/webhooks[/:id]`            | [App notifications](app-notifications.md)                                                                             |
 
 App secrets are write-only: the generated secret is returned only when an app is

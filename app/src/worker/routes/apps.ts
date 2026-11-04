@@ -32,6 +32,17 @@ import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
+import {
+  getServiceProvider,
+  idpEndpoints,
+  parseAcsUrls,
+  parseSpSettings,
+  releasedScopes,
+  type SamlSpRow,
+  samlBlock,
+} from "../lib/saml/serviceProviders";
+import { getSamlSigner } from "../lib/saml/sign";
+import { base64ToBytes, toPem } from "../lib/saml/x509";
 import type {
   OAuthAppRow,
   AppScopeDefinitionRow,
@@ -1585,6 +1596,149 @@ app.delete("/:id/access-rules/:ruleId", async (c) => {
     .bind(ruleId, id)
     .run();
   if (!result.meta.changes) return c.json({ error: "not_found" }, 404);
+  return c.json({ ok: true });
+});
+
+// ─── SAML service provider ───────────────────────────────────────────────────
+//
+// An app can also be a SAML 2.0 service provider. These endpoints edit its
+// SP side and show what to give the SP: Prism's IdP endpoints and signing
+// certificate. Sign-in itself is in routes/saml.ts.
+
+function samlView(row: SamlSpRow | null) {
+  return row
+    ? {
+        entity_id: row.entity_id,
+        acs_urls: parseAcsUrls(row),
+        name_id_format: row.name_id_format,
+        sign: row.sign,
+        slo_url: row.slo_url,
+        slo_binding: row.slo_binding,
+        signing_cert: row.signing_cert
+          ? toPem(base64ToBytes(row.signing_cert))
+          : null,
+        updated_at: row.updated_at,
+      }
+    : null;
+}
+
+// GET /:id/saml — the app's SP settings (null when SAML is off) and the IdP
+// details to give the SP
+app.get("/:id/saml", async (c) => {
+  const id = c.req.param("id");
+  const row = await loadApp(c, id, false);
+  if (row instanceof Response) return row;
+
+  const [sp, signer, disabled] = await Promise.all([
+    getServiceProvider(c.env.DB, id),
+    getSamlSigner(c.env),
+    samlBlock(c.env.DB, row),
+  ]);
+  const idp = idpEndpoints(c.env.APP_URL);
+  return c.json({
+    saml: samlView(sp),
+    disabled,
+    idp: {
+      entity_id: idp.entityId,
+      metadata_url: idp.metadataUrl,
+      sso_url: idp.ssoUrl,
+      slo_url: idp.sloUrl,
+      certificate: toPem(signer.certificate),
+    },
+    released_scopes: releasedScopes(row),
+  });
+});
+
+// PUT /:id/saml — turn SAML on for the app, or update its SP settings
+app.put("/:id/saml", async (c) => {
+  const id = c.req.param("id");
+  const row = await loadApp(c, id, true);
+  if (row instanceof Response) return row;
+  // Turned off by a site admin, for this app, its owner or the site.
+  // Turning SAML off for the app (DELETE) still works.
+  const blocked = await samlBlock(c.env.DB, row);
+  if (blocked) return c.json({ error: blocked }, 403);
+
+  const body = await c.req
+    .json<{
+      entity_id?: unknown;
+      acs_urls?: unknown;
+      name_id_format?: unknown;
+      sign?: unknown;
+      slo_url?: unknown;
+      slo_binding?: unknown;
+      signing_cert?: unknown;
+    }>()
+    .catch(() => ({}) as Record<string, unknown>);
+
+  const parsed = await parseSpSettings(body);
+  if ("error" in parsed) return c.json(parsed, 400);
+  const s = parsed.value;
+
+  const now = Math.floor(Date.now() / 1000);
+  let saved: SamlSpRow | null;
+  try {
+    saved = await c.env.DB.prepare(
+      `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign,
+       slo_url, slo_binding, signing_cert, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(app_id) DO UPDATE SET entity_id = excluded.entity_id, acs_urls = excluded.acs_urls,
+       name_id_format = excluded.name_id_format, sign = excluded.sign, slo_url = excluded.slo_url,
+       slo_binding = excluded.slo_binding, signing_cert = excluded.signing_cert,
+       updated_at = excluded.updated_at
+     RETURNING *`,
+    )
+      .bind(
+        id,
+        s.entity_id,
+        JSON.stringify(s.acs_urls),
+        s.name_id_format,
+        s.sign,
+        s.slo_url,
+        s.slo_binding,
+        s.signing_cert,
+        now,
+        now,
+      )
+      .first<SamlSpRow>();
+  } catch (err) {
+    // Another app uses the same entity ID.
+    if (
+      /UNIQUE constraint failed: saml_service_providers\.entity_id/.test(
+        String(err),
+      )
+    )
+      return c.json({ error: "saml_entity_id_taken" }, 409);
+    throw err;
+  }
+
+  auditAppLifecycle(c, "app.update", {
+    id,
+    name: row.name,
+    owner_id: row.owner_id,
+    team_id: row.team_id,
+  });
+  return c.json({ saml: samlView(saved) });
+});
+
+// DELETE /:id/saml — turn SAML off for the app
+app.delete("/:id/saml", async (c) => {
+  const id = c.req.param("id");
+  const row = await loadApp(c, id, true);
+  if (row instanceof Response) return row;
+
+  const result = await c.env.DB.prepare(
+    "DELETE FROM saml_service_providers WHERE app_id = ?",
+  )
+    .bind(id)
+    .run();
+  if (!result.meta.changes) return c.json({ error: "not_found" }, 404);
+  auditAppLifecycle(c, "app.update", {
+    id,
+    name: row.name,
+    owner_id: row.owner_id,
+    team_id: row.team_id,
+  });
   return c.json({ ok: true });
 });
 

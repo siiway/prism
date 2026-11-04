@@ -1,4 +1,4 @@
-// OAuth app detail page: a header, four tabs of settings cards, and the
+// OAuth app detail page: a header, tabs of settings cards, and the
 // form state they share. Each card saves its own section (see detail/shared).
 
 import {
@@ -39,15 +39,17 @@ import {
   type Section,
 } from "./detail/form";
 import { OverviewTab } from "./detail/OverviewTab";
-import { SignInTab } from "./detail/SignInTab";
+import { OAuthTab } from "./detail/OAuthTab";
 import { PermissionsTab } from "./detail/PermissionsTab";
 import { AccessTab } from "./detail/AccessTab";
+import { SamlTab } from "./detail/SamlTab";
 import { ModerationTab } from "./detail/ModerationTab";
 import { BackButton, DetailHeader } from "../../components/DetailHeader";
 
 const TABS = [
   "overview",
-  "sign-in",
+  "oauth",
+  "saml",
   "permissions",
   "access",
   "moderation",
@@ -56,18 +58,21 @@ type TabId = (typeof TABS)[number];
 
 // Card anchors, so /apps/:id#scopes opens the tab that holds the card.
 const CARD_TAB: Record<string, TabId> = {
-  credentials: "overview",
-  endpoints: "overview",
+  credentials: "oauth",
+  endpoints: "oauth",
   details: "overview",
   ownership: "overview",
   delete: "overview",
-  redirects: "sign-in",
-  "sign-out": "sign-in",
-  scopes: "sign-in",
-  "client-auth": "sign-in",
+  redirects: "oauth",
+  "sign-out": "oauth",
+  "client-auth": "oauth",
+  scopes: "permissions",
   "scope-definitions": "permissions",
   "scope-access": "permissions",
   access: "access",
+  saml: "saml",
+  "saml-idp": "saml",
+  "saml-attributes": "saml",
 };
 
 const useStyles = makeStyles({
@@ -112,7 +117,9 @@ export function AppDetail() {
 
   // ── Tabs ───────────────────────────────────────────────────────────────────
   const hashTab = CARD_TAB[location.hash.slice(1)];
-  const paramTab = params.get("tab") as TabId | null;
+  // ?tab=sign-in is what the OAuth tab used to be called.
+  const rawTab = params.get("tab");
+  const paramTab = (rawTab === "sign-in" ? "oauth" : rawTab) as TabId | null;
   // Opened from the admin app list: back leads there.
   const fromAdmin =
     (location.state as { from?: string } | null)?.from === "admin-apps";
@@ -217,6 +224,8 @@ export function AppDetail() {
         await api.updateApp(app.id, payloadFor(section, form));
         await qc.invalidateQueries({ queryKey: ["app", app.id] });
         await qc.invalidateQueries({ queryKey: ["apps"] });
+        // The SAML tab lists the attributes the allowed scopes release.
+        void qc.invalidateQueries({ queryKey: ["app-saml", app.id] });
         setEdits((e) => {
           const next = { ...e };
           for (const [k, value] of sent)
@@ -342,7 +351,8 @@ export function AppDetail() {
           onTabSelect={(_, d) => selectTab(d.value as TabId)}
         >
           <Tab value="overview">{t("apps.tabOverview")}</Tab>
-          <Tab value="sign-in">{t("apps.tabSignIn")}</Tab>
+          <Tab value="oauth">{t("apps.tabOAuth")}</Tab>
+          <Tab value="saml">{t("apps.tabSaml")}</Tab>
           <Tab value="permissions">{t("apps.permissionsTab")}</Tab>
           <Tab value="access">{t("apps.tabAccess")}</Tab>
           {canModerate && (
@@ -354,7 +364,10 @@ export function AppDetail() {
       <SettingsToast message={message} />
 
       {tab === "overview" && (
-        <OverviewTab
+        <OverviewTab app={app} formApi={formApi} showMsg={showMsg} />
+      )}
+      {tab === "oauth" && (
+        <OAuthTab
           app={app}
           formApi={formApi}
           newSecret={newSecret}
@@ -362,7 +375,7 @@ export function AppDetail() {
           showMsg={showMsg}
         />
       )}
-      {tab === "sign-in" && <SignInTab formApi={formApi} />}
+      {tab === "saml" && <SamlTab app={app} showMsg={showMsg} />}
       {tab === "permissions" && (
         <PermissionsTab app={app} formApi={formApi} showMsg={showMsg} />
       )}

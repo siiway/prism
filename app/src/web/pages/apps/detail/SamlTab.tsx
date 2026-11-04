@@ -1,0 +1,431 @@
+// SAML: let the app sign people in with SAML 2.0 as well as OAuth. Prism is
+// the identity provider; this tab holds the app's service-provider settings,
+// the IdP details to enter on the SP side, and the attributes it receives.
+// Saved through its own endpoint (/apps/:id/saml), not the app form.
+
+import {
+  Badge,
+  Button,
+  Field,
+  Input,
+  Link,
+  MessageBar,
+  Textarea,
+} from "@fluentui/react-components";
+import { ArrowDownloadRegular } from "@fluentui/react-icons";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import type {
+  AppSamlInfo,
+  OAuthApp,
+  SamlNameIdFormat,
+  SamlSignMode,
+  SamlSloBinding,
+  SamlUpdateBody,
+} from "../../../lib/api";
+import { apiErrorText } from "../../../lib/apiError";
+import { docsUrl } from "../../../lib/docsUrl";
+import { useSiteName } from "../../../lib/useSiteName";
+import { useApi } from "../../../lib/api-context";
+import { useConfirm } from "../../../lib/useConfirm";
+import { CopyButton } from "../../../components/CopyButton";
+import { GetStartedPanel } from "../../../components/GetStartedPanel";
+import { SamlArt } from "../../../components/Illustrations";
+import { Segmented } from "../../../components/Segmented";
+import {
+  SaveFooter,
+  SettingsBody,
+  SettingsCard,
+  SettingsEmpty,
+  SettingsRow,
+} from "../../../components/Settings";
+import { SkeletonSettingsCard } from "../../../components/Skeletons";
+import { useDetailStyles } from "./styles";
+
+interface Props {
+  app: OAuthApp;
+  showMsg: (type: "success" | "error", text: string) => void;
+}
+
+interface SamlForm {
+  entity_id: string;
+  /** Raw textarea text, one URL per line. */
+  acs_text: string;
+  name_id_format: SamlNameIdFormat;
+  sign: SamlSignMode;
+  slo_url: string;
+  slo_binding: SamlSloBinding;
+  /** PEM (or bare base64) text. */
+  signing_cert: string;
+}
+
+const EMPTY: SamlForm = {
+  entity_id: "",
+  acs_text: "",
+  name_id_format: "persistent",
+  sign: "assertion",
+  slo_url: "",
+  slo_binding: "redirect",
+  signing_cert: "",
+};
+
+function toBody(f: SamlForm): SamlUpdateBody {
+  return {
+    entity_id: f.entity_id.trim(),
+    acs_urls: f.acs_text
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    name_id_format: f.name_id_format,
+    sign: f.sign,
+    slo_url: f.slo_url.trim() || null,
+    slo_binding: f.slo_binding,
+    // It only checks logout messages, so it goes with single logout.
+    signing_cert: (f.slo_url.trim() && f.signing_cert.trim()) || null,
+  };
+}
+
+// Attribute name → its description key, and the scope that releases it.
+const ATTRIBUTES: Array<{ name: string; scope: string | null; key: string }> = [
+  { name: "uid", scope: null, key: "apps.saml.attrUid" },
+  { name: "username", scope: "profile", key: "apps.saml.attrUsername" },
+  { name: "name", scope: "profile", key: "apps.saml.attrName" },
+  { name: "email", scope: "email", key: "apps.saml.attrEmail" },
+  { name: "teams", scope: "teams:read", key: "apps.saml.attrTeams" },
+  { name: "groups", scope: "teams:read", key: "apps.saml.attrGroups" },
+];
+
+function downloadPem(pem: string) {
+  const url = URL.createObjectURL(
+    new Blob([pem], { type: "application/x-pem-file" }),
+  );
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "prism-saml.pem";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function SamlTab({ app, showMsg }: Props) {
+  const api = useApi();
+  const qc = useQueryClient();
+  const styles = useDetailStyles();
+  const { t, i18n } = useTranslation();
+  const { confirm, confirmDialog } = useConfirm();
+  const siteName = useSiteName();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["app-saml", app.id],
+    queryFn: () => api.getAppSaml(app.id),
+  });
+  const [edits, setEdits] = useState<Partial<SamlForm>>({});
+  const [settingUp, setSettingUp] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  if (isLoading || !data) return <SkeletonSettingsCard rows={4} />;
+
+  const saml = data.saml;
+  const base: SamlForm = saml
+    ? {
+        entity_id: saml.entity_id,
+        acs_text: saml.acs_urls.join("\n"),
+        name_id_format: saml.name_id_format,
+        sign: saml.sign,
+        slo_url: saml.slo_url ?? "",
+        slo_binding: saml.slo_binding,
+        signing_cert: saml.signing_cert ?? "",
+      }
+    : EMPTY;
+  const form: SamlForm = { ...base, ...edits };
+  const set = <K extends keyof SamlForm>(key: K, value: SamlForm[K]) =>
+    setEdits((e) => ({ ...e, [key]: value }));
+  const body = toBody(form);
+  const dirty = !saml || JSON.stringify(body) !== JSON.stringify(toBody(base));
+  const complete = body.entity_id !== "" && body.acs_urls.length > 0;
+  const editing = !!saml || settingUp;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const { saml: saved } = await api.updateAppSaml(app.id, body);
+      qc.setQueryData<AppSamlInfo>(
+        ["app-saml", app.id],
+        (d) => d && { ...d, saml: saved },
+      );
+      setEdits({});
+      setSettingUp(false);
+      showMsg("success", t("apps.saml.saved"));
+    } catch (err) {
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const turnOff = async () => {
+    const ok = await confirm({
+      title: t("apps.saml.turnOffTitle"),
+      body: t("apps.saml.turnOffBody", { appName: app.name }),
+      confirmLabel: t("apps.saml.turnOff"),
+    });
+    if (!ok) return;
+    try {
+      await api.deleteAppSaml(app.id);
+      await qc.invalidateQueries({ queryKey: ["app-saml", app.id] });
+      setEdits({});
+      showMsg("success", t("apps.saml.turnedOff"));
+    } catch (err) {
+      showMsg("error", apiErrorText(err, t("common.saveFailed")));
+    }
+  };
+
+  const guideUrl = docsUrl(i18n.language, "saml");
+  const released = new Set(data.released_scopes);
+
+  const guideLink = (
+    <Link href={guideUrl} target="_blank" rel="noreferrer">
+      {t("apps.saml.guide")}
+    </Link>
+  );
+
+  // Turned off by a site admin, for this app, its owner or the site.
+  const disabled = data.disabled;
+
+  if (!editing) {
+    return (
+      <GetStartedPanel
+        art={<SamlArt />}
+        title={t("apps.saml.getStarted.title")}
+        description={
+          <>
+            {t("apps.saml.getStarted.desc", { siteName })} {guideLink}
+          </>
+        }
+        steps={[
+          t("apps.saml.getStarted.step1"),
+          t("apps.saml.getStarted.step2"),
+          t("apps.saml.getStarted.step3"),
+        ]}
+        action={
+          disabled ? (
+            <MessageBar intent="warning">
+              {t(`apiErrors.${disabled}`)}
+            </MessageBar>
+          ) : (
+            <Button appearance="primary" onClick={() => setSettingUp(true)}>
+              {t("apps.saml.setUp")}
+            </Button>
+          )
+        }
+      />
+    );
+  }
+
+  return (
+    <>
+      {disabled && (
+        <MessageBar intent="warning">
+          {t(`apiErrors.${disabled}`)} {t("apps.saml.disabledKept")}
+        </MessageBar>
+      )}
+      <SettingsCard
+        id="saml"
+        title={t("apps.saml.title")}
+        badge={
+          saml && (
+            <Badge appearance="tint" color="success">
+              {t("apps.saml.on")}
+            </Badge>
+          )
+        }
+        description={
+          <>
+            {t("apps.saml.desc")} {guideLink}
+          </>
+        }
+        action={
+          saml && (
+            <Button size="small" onClick={() => void turnOff()}>
+              {t("apps.saml.turnOff")}
+            </Button>
+          )
+        }
+      >
+        <SettingsBody>
+          <div className={styles.form}>
+            <Field
+              label={t("apps.saml.entityId")}
+              hint={t("apps.saml.entityIdHint")}
+              required
+            >
+              <Input
+                value={form.entity_id}
+                onChange={(_, d) => set("entity_id", d.value)}
+                placeholder={t("apps.saml.entityIdPlaceholder")}
+                input={{ className: styles.monoInput }}
+              />
+            </Field>
+            <Field
+              label={t("apps.saml.acsUrls")}
+              hint={t("apps.saml.acsUrlsHint")}
+              required
+            >
+              <Textarea
+                value={form.acs_text}
+                onChange={(_, d) => set("acs_text", d.value)}
+                placeholder={t("apps.saml.acsUrlsPlaceholder")}
+                rows={3}
+                resize="vertical"
+                textarea={{ className: styles.monoInput }}
+              />
+            </Field>
+            <Field
+              label={t("apps.saml.nameId")}
+              hint={t("apps.saml.nameIdHint")}
+            >
+              <Segmented
+                label={t("apps.saml.nameId")}
+                value={form.name_id_format}
+                options={[
+                  {
+                    value: "persistent",
+                    label: t("apps.saml.nameIdPersistent"),
+                  },
+                  { value: "email", label: t("apps.saml.nameIdEmail") },
+                ]}
+                onChange={(v) => set("name_id_format", v)}
+              />
+            </Field>
+            <Field label={t("apps.saml.sign")} hint={t("apps.saml.signHint")}>
+              <Segmented
+                label={t("apps.saml.sign")}
+                value={form.sign}
+                options={[
+                  {
+                    value: "assertion",
+                    label: t("apps.saml.signAssertion"),
+                  },
+                  { value: "response", label: t("apps.saml.signResponse") },
+                  { value: "both", label: t("apps.saml.signBoth") },
+                ]}
+                onChange={(v) => set("sign", v)}
+              />
+            </Field>
+            <Field
+              label={t("apps.saml.sloUrl")}
+              hint={t("apps.saml.sloUrlHint")}
+            >
+              <Input
+                value={form.slo_url}
+                onChange={(_, d) => set("slo_url", d.value)}
+                placeholder={t("apps.saml.sloUrlPlaceholder")}
+                input={{ className: styles.monoInput }}
+              />
+            </Field>
+            {form.slo_url.trim() !== "" && (
+              <>
+                <Field
+                  label={t("apps.saml.sloBinding")}
+                  hint={t("apps.saml.sloBindingHint")}
+                >
+                  <Segmented
+                    label={t("apps.saml.sloBinding")}
+                    value={form.slo_binding}
+                    options={[
+                      {
+                        value: "redirect",
+                        label: t("apps.saml.bindingRedirect"),
+                      },
+                      { value: "post", label: t("apps.saml.bindingPost") },
+                    ]}
+                    onChange={(v) => set("slo_binding", v)}
+                  />
+                </Field>
+                <Field
+                  label={t("apps.saml.signingCert")}
+                  hint={t("apps.saml.signingCertHint")}
+                >
+                  <Textarea
+                    value={form.signing_cert}
+                    onChange={(_, d) => set("signing_cert", d.value)}
+                    placeholder={t("apps.saml.signingCertPlaceholder")}
+                    rows={4}
+                    resize="vertical"
+                    textarea={{ className: styles.monoInput }}
+                  />
+                </Field>
+              </>
+            )}
+          </div>
+        </SettingsBody>
+        <SaveFooter
+          dirty={dirty}
+          saving={saving}
+          disabled={!complete || !!disabled}
+          onDiscard={() => {
+            setEdits({});
+            setSettingUp(false);
+          }}
+          onSave={() => void save()}
+        />
+      </SettingsCard>
+
+      <SettingsCard
+        id="saml-idp"
+        title={t("apps.saml.idpTitle")}
+        description={t("apps.saml.idpDesc")}
+      >
+        {(
+          [
+            [t("apps.saml.metadataUrl"), data.idp.metadata_url],
+            [t("apps.saml.idpEntityId"), data.idp.entity_id],
+            [t("apps.saml.ssoUrl"), data.idp.sso_url],
+            [t("apps.saml.idpSloUrl"), data.idp.slo_url],
+          ] as const
+        ).map(([label, value]) => (
+          <SettingsRow
+            key={label}
+            label={label}
+            description={<span className={styles.mono}>{value}</span>}
+          >
+            <CopyButton text={value} />
+          </SettingsRow>
+        ))}
+        <SettingsRow
+          label={t("apps.saml.certificate")}
+          description={t("apps.saml.certificateDesc")}
+        >
+          <CopyButton text={data.idp.certificate} />
+          <Button
+            size="small"
+            icon={<ArrowDownloadRegular />}
+            onClick={() => downloadPem(data.idp.certificate)}
+          >
+            {t("apps.saml.downloadCertificate")}
+          </Button>
+        </SettingsRow>
+      </SettingsCard>
+
+      <SettingsCard
+        id="saml-attributes"
+        title={t("apps.saml.attributesTitle")}
+        description={t("apps.saml.attributesDesc")}
+      >
+        {ATTRIBUTES.filter((a) => !a.scope || released.has(a.scope)).map(
+          (a) => (
+            <SettingsRow
+              key={a.name}
+              label={<span className={styles.monoLabel}>{a.name}</span>}
+              description={t(a.key)}
+            />
+          ),
+        )}
+        {released.size === 0 && (
+          <SettingsEmpty>{t("apps.saml.attributesOnlyUid")}</SettingsEmpty>
+        )}
+      </SettingsCard>
+      {confirmDialog}
+    </>
+  );
+}

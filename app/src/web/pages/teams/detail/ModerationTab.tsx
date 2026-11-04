@@ -1,6 +1,7 @@
-// Moderation (site admins, admin view only): whether this team may mint
-// accounts through invite links, and the staged dissolution that removes the
-// accounts it minted. Both are site-admin actions, audited server-side.
+// Moderation (site admins, admin view only): whether this team's apps may
+// use SAML, whether it may mint accounts through invite links, and the staged
+// dissolution that removes the accounts it minted. All are site-admin
+// actions, audited server-side.
 
 import {
   Badge,
@@ -28,6 +29,7 @@ import {
   SettingsRow,
 } from "../../../components/Settings";
 import { Select } from "../../../components/Select";
+import { AdminSamlCard } from "../../admin/AdminSamlCard";
 import type { TeamTabProps } from "./types";
 
 const useStyles = makeStyles({
@@ -94,6 +96,9 @@ export function ModerationTab({ team, showMsg }: TeamTabProps) {
 
   return (
     <>
+      {/* A team owns its apps through its user row, which has the team's id. */}
+      <AdminSamlCard target="team" id={team.id} showMsg={showMsg} />
+
       <SettingsCard
         id="invite-registration"
         title={t("teams.moderation.inviteTitle")}

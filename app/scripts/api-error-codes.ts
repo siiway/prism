@@ -71,9 +71,16 @@ export function workerErrorCodes(worker = workerSources()): Set<string> {
       /\berror:\s*[\w.]+\s*\?\?\s*"([a-z][a-z0-9_]*)"/g,
     ))
       codes.add(m[1]);
+    // SAML request failures are thrown as SamlError codes.
+    for (const m of src.matchAll(/new SamlError\("([a-z][a-z0-9_]*)"\)/g))
+      codes.add(m[1]);
   }
-  // Capability denials and outbound-URL checks return bare codes.
-  for (const path of ["lib/userCapabilities.ts", "lib/safeFetch.ts"])
+  // Capability denials, outbound-URL checks and SAML blocks return bare codes.
+  for (const path of [
+    "lib/userCapabilities.ts",
+    "lib/safeFetch.ts",
+    "lib/saml/serviceProviders.ts",
+  ])
     for (const m of stripComments(read(path)).matchAll(
       /return "([a-z][a-z0-9_]*)";/g,
     ))

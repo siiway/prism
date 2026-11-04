@@ -317,3 +317,33 @@ export function ConnectedAppsArt() {
     </svg>
   );
 }
+
+/** An app and the identity provider with a signed assertion passing
+ *  between them: SAML single sign-on. */
+export function SamlArt() {
+  return (
+    <svg viewBox="0 0 240 150" aria-hidden>
+      <path d="M88 75 h64" style={dashed} />
+      <rect x="22" y="40" width="64" height="70" rx="8" style={panel} />
+      <rect x="34" y="54" width="40" height="6" rx="3" style={bar} />
+      <rect x="34" y="66" width="28" height="6" rx="3" style={bar} />
+      <rect x="34" y="88" width="40" height="12" rx="3" style={bar} />
+      <rect x="154" y="40" width="64" height="70" rx="8" style={panel} />
+      <circle cx="186" cy="64" r="10" style={bar} />
+      <rect x="166" y="84" width="40" height="12" rx="3" style={accent} />
+      <rect
+        x="176"
+        y="88.5"
+        width="20"
+        height="3"
+        rx="1.5"
+        style={onAccentFill}
+      />
+      <path d="M104 50 h22 l9 9 v35 h-31 z" style={panel} />
+      <rect x="110" y="64" width="18" height="4" rx="2" style={bar} />
+      <rect x="110" y="72" width="12" height="4" rx="2" style={bar} />
+      <circle cx="134" cy="92" r="10" style={accent} />
+      <path d="M129.5 92 l3 3 l6 -6.5" style={onAccent} />
+    </svg>
+  );
+}

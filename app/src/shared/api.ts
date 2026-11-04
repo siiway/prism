@@ -1376,6 +1376,115 @@ export interface DeviceVerifyInfo {
   user_code: string;
 }
 
+export type SamlNameIdFormat = "persistent" | "email";
+export type SamlSignMode = "assertion" | "response" | "both";
+export type SamlSloBinding = "redirect" | "post";
+/** Why an app can't use SAML: a site admin turned it off for the site, the
+ *  app's owner or the app. */
+export type SamlBlock =
+  "saml_disabled" | "saml_disabled_user" | "saml_disabled_app";
+
+/** An app's SAML service-provider settings. */
+export interface SamlServiceProvider {
+  entity_id: string;
+  acs_urls: string[];
+  name_id_format: SamlNameIdFormat;
+  sign: SamlSignMode;
+  /** SingleLogoutService URL; null when the SP has no single logout. */
+  slo_url: string | null;
+  slo_binding: SamlSloBinding;
+  /** The SP's signing certificate (PEM), to verify its logout messages;
+   *  null when none is on file. */
+  signing_cert: string | null;
+  updated_at: number;
+}
+
+/** GET /apps/:id/saml */
+export interface AppSamlInfo {
+  /** null while SAML is off for the app. */
+  saml: SamlServiceProvider | null;
+  /** Set when a site admin turned SAML off for the app, its owner or the
+   *  site: sign-in doesn't work and the settings can't be saved. */
+  disabled: SamlBlock | null;
+  /** What to give the service provider. */
+  idp: {
+    entity_id: string;
+    metadata_url: string;
+    sso_url: string;
+    slo_url: string;
+    /** PEM. */
+    certificate: string;
+  };
+  /** The app's allowed scopes whose attributes SAML carries. */
+  released_scopes: string[];
+}
+
+/** GET/PATCH /admin/{users,apps}/:id/saml — a site admin's override. */
+export interface AdminSamlSetting {
+  /** null follows the level above. */
+  override: boolean | null;
+  /** What following the level above currently means. */
+  inherited: boolean;
+}
+
+export type SamlUpdateBody = Omit<SamlServiceProvider, "updated_at">;
+
+/** POST /saml/logout — the next step of a browser sign-out: ask
+ *  the user (another site asked for it), a URL to go to (HTTP-Redirect, or
+ *  the end) or a form to post (HTTP-POST). */
+export type SamlLogoutStep =
+  | {
+      kind: "confirm";
+      /** The app that asked, when known. */
+      app: { name: string; icon_url: string | null } | null;
+    }
+  | { kind: "redirect"; url: string }
+  | { kind: "post"; url: string; fields: Record<string, string> };
+
+/** GET /saml/requests/:token — what the sign-in page does next. */
+export interface SamlRequestInfo {
+  app: OAuthAuthorizeInfo["app"];
+  /** "profile": only the SAML profile is asked for; consent is settled. */
+  next: "login" | "reauth" | "consent" | "profile" | "continue" | "decline";
+  /** An API error code: why this account can't sign in to the app. */
+  error: string | null;
+  scopes: string[];
+  name_id_format: SamlNameIdFormat;
+  user: OAuthAuthorizeInfo["user"] | null;
+  /** The SAML profile the app gets for the user, once chosen. */
+  profile: SamlProfileSummary | null;
+  /** Before one is chosen: the user's shared profiles to pick from. Empty
+   *  means the app gets a new per-app profile without asking. */
+  profile_choices: SamlProfileSummary[];
+}
+
+/** "app": made for one app at the first sign-in to it. "shared": made by
+ *  the user, and usable for any number of apps. */
+export type SamlProfileKind = "app" | "shared";
+
+export interface SamlProfileSummary {
+  id: string;
+  kind: SamlProfileKind;
+  /** A shared profile's name; null for a per-app one. */
+  name: string | null;
+  /** The ID apps receive (persistent NameID and uid). */
+  name_id: string;
+}
+
+/** One of the user's SAML profiles, with the apps that get it. */
+export interface SamlProfile extends SamlProfileSummary {
+  apps: { id: string; name: string; icon_url: string | null }[];
+  created_at: number;
+  updated_at: number;
+}
+
+/** The Response to POST to the service provider. */
+export interface SamlPostback {
+  acs_url: string;
+  saml_response: string;
+  relay_state: string | null;
+}
+
 export interface AdminStats {
   users: number;
   teams: number;

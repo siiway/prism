@@ -112,6 +112,7 @@ export default withMermaid(
               items: [
                 { text: "API Reference", link: "/api" },
                 { text: "OAuth / OIDC Guide", link: "/oauth" },
+                { text: "SAML Guide", link: "/saml" },
                 { text: "Teams", link: "/teams" },
                 { text: "Notifications", link: "/notifications" },
                 { text: "Audit Logs", link: "/audit-logs" },
@@ -184,6 +185,7 @@ export default withMermaid(
               items: [
                 { text: "API 参考", link: "/zh/api" },
                 { text: "OAuth / OIDC 指南", link: "/zh/oauth" },
+                { text: "SAML 指南", link: "/zh/saml" },
                 { text: "团队", link: "/zh/teams" },
                 { text: "通知", link: "/zh/notifications" },
                 { text: "审核日志", link: "/zh/audit-logs" },

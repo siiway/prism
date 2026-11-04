@@ -8,6 +8,7 @@ import {
   SettingsCard,
   SettingsRow,
 } from "../../../components/Settings";
+import { Segmented } from "../../../components/Segmented";
 import { useSettingsStyles } from "./styles";
 import { NumberInput } from "./fields";
 import { useSettingRows, type SectionProps } from "./shared";
@@ -47,7 +48,7 @@ const LOGIN_RATE_LIMITS = [
 export function AuthSection({ draft }: SectionProps) {
   const { t } = useTranslation();
   const styles = useSettingsStyles();
-  const { get, set, num } = draft;
+  const { get, set, num, flag } = draft;
   const { numberRow, required, unit } = useSettingRows(draft);
 
   return (
@@ -70,6 +71,20 @@ export function AuthSection({ draft }: SectionProps) {
           unit: unit.minutes,
           min: 0,
         })}
+        <SettingsRow
+          label={t("admin.silentLogout")}
+          description={t("admin.silentLogoutHint")}
+        >
+          <Segmented
+            label={t("admin.silentLogout")}
+            value={flag("silent_logout_first_party_only")}
+            options={[
+              { value: false, label: t("admin.silentLogoutApps") },
+              { value: true, label: t("admin.silentLogoutFirstParty") },
+            ]}
+            onChange={(v) => set("silent_logout_first_party_only", v)}
+          />
+        </SettingsRow>
       </SettingsCard>
       <SettingsCard
         id="admin.cardSignInProtection"

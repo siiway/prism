@@ -24,6 +24,7 @@ import {
   SettingsFooter,
   SettingsRow,
 } from "../../../components/Settings";
+import { AdminSamlCard } from "../../admin/AdminSamlCard";
 import type { AppFormApi } from "./form";
 
 const useStyles = makeStyles({
@@ -161,6 +162,8 @@ export function ModerationTab({ app, formApi, showMsg }: Props) {
           </SettingsRow>
         ))}
       </SettingsCard>
+
+      <AdminSamlCard target="app" id={app.id} showMsg={showMsg} />
 
       <SettingsCard
         id="transfer"

@@ -233,6 +233,25 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
         })),
     },
     {
+      // SAML sign-in. No auth loader: the page sends the user to /login
+      // itself, because an IsPassive request must be answered without one.
+      path: "/saml/authorize",
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/saml/SamlAuthorize").then((m) => ({
+          Component: m.SamlAuthorize,
+        })),
+    },
+    {
+      // A browser sign-out: confirms one another site asked for, then
+      // visits each SAML app in turn. Public, since the session ends on the
+      // way.
+      path: "/logout",
+      errorElement: <ErrorElement />,
+      lazy: () =>
+        import("./pages/Logout").then((m) => ({ Component: m.Logout })),
+    },
+    {
       // OIDC RP-Initiated Logout landing page (public — the session is already
       // ended by the time the browser lands here).
       path: "/logged-out",
@@ -480,6 +499,39 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
           lazy: () =>
             import("./pages/ConnectedApps").then((m) => ({
               Component: m.ConnectedApps,
+            })),
+        },
+        {
+          path: "saml-profiles",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/samlProfiles/SamlProfiles").then((m) => ({
+              Component: m.SamlProfiles,
+            })),
+        },
+        {
+          path: "saml-profiles/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/samlProfiles/SamlProfileNew").then((m) => ({
+              Component: m.SamlProfileNew,
+            })),
+        },
+        {
+          path: "saml-profiles/:id",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/samlProfiles/SamlProfileDetail").then((m) => ({
+              Component: perRecord(m.SamlProfileDetail),
             })),
         },
         {

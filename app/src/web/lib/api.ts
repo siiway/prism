@@ -111,6 +111,14 @@ import type {
   AppScopeDefinition,
   AppScopeAccessRule,
   AppAccessRule,
+  AdminSamlSetting,
+  AppSamlInfo,
+  SamlServiceProvider,
+  SamlUpdateBody,
+  SamlRequestInfo,
+  SamlPostback,
+  SamlLogoutStep,
+  SamlProfile,
 } from "../../shared/api";
 
 export type {
@@ -464,9 +472,16 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
   login: (body: LoginBody) =>
     request<LoginResponse>("POST", "/auth/login", body),
-  /** Revoke the cookie-authenticated session and clear its cookie. */
+  /** Revoke the cookie-authenticated session and clear its cookie.
+   *  `next`: the page to go to (/logout first when the session's SAML apps
+   *  are signed out on the way, then /login). */
   logout: () =>
-    request<{ ok: true }>("POST", "/auth/logout", undefined, getToken()),
+    request<{ ok: true; next: string }>(
+      "POST",
+      "/auth/logout",
+      undefined,
+      getToken(),
+    ),
   verifyEmail: (token: string) =>
     request<{ ok: true }>(
       "GET",
@@ -877,6 +892,99 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       getToken(),
     ),
 
+  // ─── App SAML service provider ──────────────────────────────────────────
+  getAppSaml: (appId: string) =>
+    request<AppSamlInfo>("GET", `/apps/${appId}/saml`, undefined, getToken()),
+  updateAppSaml: (appId: string, body: SamlUpdateBody) =>
+    request<{ saml: SamlServiceProvider }>(
+      "PUT",
+      `/apps/${appId}/saml`,
+      body,
+      getToken(),
+    ),
+  deleteAppSaml: (appId: string) =>
+    request<{ ok: true }>(
+      "DELETE",
+      `/apps/${appId}/saml`,
+      undefined,
+      getToken(),
+    ),
+
+  // ─── SAML sign-in page ──────────────────────────────────────────────────
+  getSamlRequest: (token: string) =>
+    request<SamlRequestInfo>(
+      "GET",
+      `/saml/requests/${encodeURIComponent(token)}`,
+      undefined,
+      getToken(),
+    ),
+  /** `profile`: on a first sign-in, the shared profile the app gets
+   *  (its id), or "new" for a new per-app profile. */
+  samlDecision: (
+    token: string,
+    action: "approve" | "deny" | "decline",
+    authorizationMode?: "once" | "always",
+    profile?: string,
+  ) =>
+    request<SamlPostback>(
+      "POST",
+      `/saml/requests/${encodeURIComponent(token)}`,
+      { action, authorization_mode: authorizationMode, profile },
+      getToken(),
+    ),
+  listSamlProfiles: () =>
+    request<{ profiles: SamlProfile[] }>(
+      "GET",
+      "/saml/profiles",
+      undefined,
+      getToken(),
+    ),
+  getSamlProfile: (id: string) =>
+    request<{ profile: SamlProfile }>(
+      "GET",
+      `/saml/profiles/${encodeURIComponent(id)}`,
+      undefined,
+      getToken(),
+    ),
+  createSamlProfile: (name: string) =>
+    request<{ profile: SamlProfile }>(
+      "POST",
+      "/saml/profiles",
+      { name },
+      getToken(),
+    ),
+  renameSamlProfile: (id: string, name: string) =>
+    request<{ profile: SamlProfile }>(
+      "PATCH",
+      `/saml/profiles/${encodeURIComponent(id)}`,
+      { name },
+      getToken(),
+    ),
+  /** Turn a per-app profile into a shared one; it keeps its ID. */
+  shareSamlProfile: (id: string, name: string) =>
+    request<{ profile: SamlProfile }>(
+      "POST",
+      `/saml/profiles/${encodeURIComponent(id)}/share`,
+      { name },
+      getToken(),
+    ),
+  deleteSamlProfile: (id: string) =>
+    request<{ ok: true }>(
+      "DELETE",
+      `/saml/profiles/${encodeURIComponent(id)}`,
+      undefined,
+      getToken(),
+    ),
+  /** `token`: a logout another site asked for (from the page URL); null
+   *  for the one this browser began. `action` answers a "confirm" step. */
+  samlLogoutStep: (token: string | null, action?: "confirm" | "cancel") =>
+    request<SamlLogoutStep>(
+      "POST",
+      "/saml/logout",
+      { token: token ?? undefined, action },
+      getToken(),
+    ),
+
   // ─── Domains ─────────────────────────────────────────────────────────────
   listDomains: (params: { page?: number; limit?: number; q?: string } = {}) => {
     const search = new URLSearchParams();
@@ -1235,6 +1343,24 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       "GET",
       "/admin/migrate-recovery-codes-status",
       undefined,
+      getToken(),
+    ),
+  adminSaml: (kind: "users" | "apps", id: string) =>
+    request<AdminSamlSetting>(
+      "GET",
+      `/admin/${kind}/${encodeURIComponent(id)}/saml`,
+      undefined,
+      getToken(),
+    ),
+  adminSetSaml: (
+    kind: "users" | "apps",
+    id: string,
+    override: boolean | null,
+  ) =>
+    request<AdminSamlSetting>(
+      "PATCH",
+      `/admin/${kind}/${encodeURIComponent(id)}/saml`,
+      { override },
       getToken(),
     ),
   adminSetInviteRegistration: (

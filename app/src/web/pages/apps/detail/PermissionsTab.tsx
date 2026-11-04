@@ -1,5 +1,6 @@
-// Permissions: the scopes this app offers to other apps, and who may use
-// them. Everything here saves as soon as it changes.
+// Permissions: the scopes this app may request, which it saves with its own
+// footer; then the scopes it offers to other apps and who may use them, which
+// save as soon as they change.
 
 import {
   Button,
@@ -48,6 +49,7 @@ import { SkeletonSettingsCard } from "../../../components/Skeletons";
 import { CopyButton } from "../../../components/CopyButton";
 import { useDetailStyles } from "./styles";
 import type { AppFormApi } from "./form";
+import { ScopesCard } from "./ScopesCard";
 
 type RuleType = AppScopeAccessRule["rule_type"];
 const RULE_TYPES: RuleType[] = [
@@ -249,6 +251,7 @@ export function PermissionsTab({ app, formApi, showMsg }: Props) {
   if (defsLoading || rulesLoading)
     return (
       <>
+        <ScopesCard formApi={formApi} />
         <SkeletonSettingsCard rows={3} />
         <SkeletonSettingsCard rows={2} />
       </>
@@ -256,6 +259,7 @@ export function PermissionsTab({ app, formApi, showMsg }: Props) {
 
   return (
     <>
+      <ScopesCard formApi={formApi} />
       <SettingsCard
         id="scope-definitions"
         title={t("apps.scopeDefsTitle")}

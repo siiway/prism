@@ -1,5 +1,5 @@
-// Overview: what a developer needs to wire the app up (credentials and
-// endpoints), the app's public details, who owns it, and deletion.
+// Overview: the app's public details, who owns it, and deletion. Protocol
+// settings live on the OAuth and SAML tabs.
 
 import {
   Button,
@@ -12,15 +12,12 @@ import {
   Dropdown,
   Field,
   Input,
-  Link,
-  MessageBar,
   Option,
   Spinner,
   Textarea,
 } from "@fluentui/react-components";
 import {
   DeleteRegular,
-  EyeOffRegular,
   PeopleRegular,
   PersonRegular,
 } from "@fluentui/react-icons";
@@ -30,7 +27,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { type OAuthApp } from "../../../lib/api";
 import { apiErrorText } from "../../../lib/apiError";
-import { useApi, useAppOrigin } from "../../../lib/api-context";
+import { useApi } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { ImageUrlInput } from "../../../components/ImageUrlInput";
 import {
@@ -39,44 +36,24 @@ import {
   SettingsRow,
 } from "../../../components/Settings";
 import { SectionFooter } from "./shared";
-import { CopyButton } from "../../../components/CopyButton";
 import { useDetailStyles } from "./styles";
 import { type AppFormApi } from "./form";
-
-const ENDPOINTS: [string, string][] = [
-  ["Discovery", "/.well-known/openid-configuration"],
-  ["Authorization", "/api/oauth/authorize"],
-  ["Token", "/api/oauth/token"],
-  ["UserInfo", "/api/oauth/userinfo"],
-  ["End session", "/api/oauth/end_session"],
-];
 
 interface Props {
   app: OAuthApp;
   formApi: AppFormApi;
-  /** A secret just created or rotated; shown once. */
-  newSecret: string;
-  setNewSecret: (secret: string) => void;
   showMsg: (type: "success" | "error", text: string) => void;
 }
 
-export function OverviewTab({
-  app,
-  formApi,
-  newSecret,
-  setNewSecret,
-  showMsg,
-}: Props) {
+export function OverviewTab({ app, formApi, showMsg }: Props) {
   const api = useApi();
-  const appOrigin = useAppOrigin();
   const styles = useDetailStyles();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { confirm, confirmDialog } = useConfirm();
   const { form, set } = formApi;
 
-  const [rotating, setRotating] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveTeamId, setMoveTeamId] = useState("");
   const [moving, setMoving] = useState(false);
@@ -90,30 +67,6 @@ export function OverviewTab({
     (tm) =>
       (tm.role === "owner" || tm.role === "admin") && tm.id !== app.team_id,
   );
-
-  // A first secret is harmless to create; replacing one breaks whatever
-  // still uses it, so that asks first.
-  const rotate = async () => {
-    if (
-      app.has_client_secret &&
-      !(await confirm({
-        title: t("apps.rotateSecretConfirmTitle"),
-        body: t("apps.rotateSecretConfirmBody"),
-        confirmLabel: t("apps.rotateSecret"),
-      }))
-    )
-      return;
-    setRotating(true);
-    try {
-      const res = await api.rotateSecret(app.id);
-      setNewSecret(res.client_secret);
-      await qc.invalidateQueries({ queryKey: ["app", app.id] });
-    } catch (err) {
-      showMsg("error", apiErrorText(err, t("common.saveFailed")));
-    } finally {
-      setRotating(false);
-    }
-  };
 
   const moveToTeam = async () => {
     if (!moveTeamId) return;
@@ -172,94 +125,8 @@ export function OverviewTab({
     }
   };
 
-  const guideUrl = i18n.language.startsWith("zh")
-    ? "https://prism.wss.moe/zh/oauth"
-    : "https://prism.wss.moe/oauth";
-
   return (
     <>
-      <SettingsCard
-        id="credentials"
-        title={t("apps.clientCredentials")}
-        description={t("apps.credentialsDesc")}
-      >
-        <SettingsRow
-          label={t("apps.clientId")}
-          description={<span className={styles.mono}>{app.client_id}</span>}
-        >
-          <CopyButton text={app.client_id} label={t("common.copyClientId")} />
-        </SettingsRow>
-        <SettingsRow
-          label={t("apps.clientSecret")}
-          description={
-            app.is_public
-              ? t("apps.secretPublic")
-              : app.has_client_secret
-                ? t("apps.secretSet")
-                : t("apps.secretNone")
-          }
-        >
-          {!app.is_public && (
-            <Button size="small" disabled={rotating} onClick={rotate}>
-              {rotating ? (
-                <Spinner size="tiny" />
-              ) : app.has_client_secret ? (
-                t("apps.rotateSecret")
-              ) : (
-                t("apps.generateSecret")
-              )}
-            </Button>
-          )}
-        </SettingsRow>
-        {newSecret && (
-          <SettingsBody>
-            <MessageBar intent="warning">
-              {t("apps.saveSecretWarning")}
-            </MessageBar>
-            <div className={styles.secret}>
-              <span className={styles.secretText}>{newSecret}</span>
-              <CopyButton text={newSecret} />
-              <Button
-                size="small"
-                appearance="subtle"
-                icon={<EyeOffRegular />}
-                onClick={() => setNewSecret("")}
-              >
-                {t("apps.hideSecret")}
-              </Button>
-            </div>
-          </SettingsBody>
-        )}
-      </SettingsCard>
-
-      <SettingsCard
-        id="endpoints"
-        title={t("apps.oauthEndpoints")}
-        description={
-          <>
-            {t("apps.endpointsDesc")}{" "}
-            <Link href={guideUrl} target="_blank" rel="noreferrer">
-              {t("apps.oauthOidcGuide")}
-            </Link>
-          </>
-        }
-      >
-        {ENDPOINTS.map(([label, path]) => (
-          <SettingsRow
-            key={path}
-            label={label}
-            description={
-              <span className={styles.mono}>
-                {appOrigin}
-                {path}
-              </span>
-            }
-          >
-            <CopyButton text={`${appOrigin}${path}`} />
-          </SettingsRow>
-        ))}
-      </SettingsCard>
-
       <SettingsCard
         id="details"
         title={t("apps.detailsTitle")}

@@ -195,7 +195,7 @@ async function requireAppScope(
 
 ### 1. 将范围加入 `allowed_scopes`
 
-在应用 B 的仪表盘 → 设置中，在 **应用权限** 区域输入应用 A 的 `client_id` 并选择内部范围，然后点击 **添加**。这会将 `app:<应用A的client_id>:<内部范围>` 注册到应用 B 的 `allowed_scopes` 中。
+在应用 B 的 **权限** 标签页中，于 **权限范围** 卡片选择 **其他应用的权限范围**，输入应用 A 的 `client_id` 和内部范围，点击 **添加** 并保存。这会将 `app:<应用A的client_id>:<内部范围>` 注册到应用 B 的 `allowed_scopes` 中。
 
 或通过 API：
 

@@ -31,6 +31,7 @@ import {
   LockClosedRegular,
   NavigationRegular,
   PeopleRegular,
+  PersonAccountsRegular,
   PersonRegular,
   SearchRegular,
   SettingsRegular,
@@ -500,15 +501,18 @@ export function Layout() {
   const handleSignOut = async () => {
     if (busy) return;
     setBusy(t("account.signingOut"));
+    // SAML apps signed in with this session are signed out on the way,
+    // through the browser, when the server says so.
+    let next = "/login";
     try {
-      await api.logout();
+      next = (await api.logout()).next;
     } catch {
       /* best effort: local state must still be cleared */
     }
     clearAuth();
     await qc.clear();
     setBusy(null);
-    navigate("/login", { replace: true });
+    navigate(next, { replace: true });
   };
 
   const closeSidebar = () => setSidebarOpen(false);
@@ -708,6 +712,12 @@ export function Layout() {
                 to="/connected-apps"
                 icon={LockClosedRegular}
                 label={t("nav.connectedApps")}
+                onNavigate={closeSidebar}
+              />
+              <NavItem
+                to="/saml-profiles"
+                icon={PersonAccountsRegular}
+                label={t("nav.samlProfiles")}
                 onNavigate={closeSidebar}
               />
 

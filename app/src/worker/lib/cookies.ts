@@ -6,9 +6,11 @@
 // (CLI, third-party tools, in-flight tabs) keep working.
 
 import type { Context } from "hono";
+import { LOGOUT_TTL_SECONDS } from "./saml/logout";
 
 export const SESSION_COOKIE = "__Host-prism_session";
 export const SOCIAL_OAUTH_COOKIE = "__Host-prism_oauth";
+export const SAML_LOGOUT_COOKIE = "__Host-prism_logout";
 
 export function setSessionCookie(
   c: Context,
@@ -77,6 +79,32 @@ export function clearSocialOAuthCookie(c: Context): void {
   c.header(
     "Set-Cookie",
     `${SOCIAL_OAUTH_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,
+    { append: true },
+  );
+}
+
+/**
+ * Tie a browser sign-out in progress (lib/saml/logout.ts) to this browser:
+ * the cookie holds the logout's token, and only a request that carries it
+ * can move the logout on. One at a time; a newer one replaces it.
+ */
+export function setSamlLogoutCookie(c: Context, token: string): void {
+  c.header(
+    "Set-Cookie",
+    `${SAML_LOGOUT_COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${LOGOUT_TTL_SECONDS}`,
+    { append: true },
+  );
+  c.header("Cache-Control", "no-store");
+}
+
+export function readSamlLogoutCookie(c: Context): string | null {
+  return readCookie(c, SAML_LOGOUT_COOKIE);
+}
+
+export function clearSamlLogoutCookie(c: Context): void {
+  c.header(
+    "Set-Cookie",
+    `${SAML_LOGOUT_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,
     { append: true },
   );
 }
