@@ -1593,6 +1593,27 @@ describe("SAML profiles", () => {
     expect(subjectIdOrNull("a1")).toBeNull();
   });
 
+  test("a shared profile deleted after the page loaded can't be chosen", async () => {
+    const cookie = await sessionCookie();
+    const gone = await createShared(cookie, "Gone");
+    const token = await start(SP);
+    expect((await info(token, cookie)).profile_choices).toHaveLength(1);
+    expect((await profilesApi(cookie, "DELETE", `/${gone.id}`)).status).toBe(
+      200,
+    );
+    const res = await call(
+      `/api/saml/requests/${token}`,
+      json({ action: "approve", profile: gone.id }, cookie),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "field_invalid",
+      params: { field: "profile" },
+    });
+    // The request is still open: the user can choose again.
+    expect(await approve(token, cookie, "new")).not.toBe(gone.name_id);
+  });
+
   test("a per-app profile can become shared, keeping its ID", async () => {
     const cookie = await sessionCookie();
     const wikiId = await approve(await start(SP), cookie);

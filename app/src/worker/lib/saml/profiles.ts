@@ -72,14 +72,6 @@ export async function bindProfile(
   if (existing) return existing;
 
   const now = Math.floor(Date.now() / 1000);
-  const bind = (profileId: string) =>
-    db
-      .prepare(
-        `INSERT INTO saml_profile_apps (app_id, user_id, profile_id, created_at)
-         VALUES (?, ?, ?, ?) ON CONFLICT(app_id, user_id) DO NOTHING`,
-      )
-      .bind(appId, userId, profileId, now);
-
   let made: string | null = null;
   if (choice === "new") {
     made = randomId();
@@ -90,19 +82,30 @@ export async function bindProfile(
            VALUES (?, ?, ?, ?, NULL, ?, ?)`,
         )
         .bind(made, userId, randomId(16), appId, now, now),
-      bind(made),
+      db
+        .prepare(
+          `INSERT INTO saml_profile_apps (app_id, user_id, profile_id, created_at)
+           VALUES (?, ?, ?, ?) ON CONFLICT(app_id, user_id) DO NOTHING`,
+        )
+        .bind(appId, userId, made, now),
     ]);
   } else {
-    const shared = await db
+    // One statement that binds the shared profile only if it's still there:
+    // a delete running alongside (which spares profiles in use) either
+    // comes first, and this binds nothing, or finds it bound and keeps it.
+    await db
       .prepare(
-        "SELECT id FROM saml_profiles WHERE id = ? AND user_id = ? AND app_id IS NULL",
+        `INSERT INTO saml_profile_apps (app_id, user_id, profile_id, created_at)
+         SELECT ?, ?, id, ? FROM saml_profiles
+         WHERE id = ? AND user_id = ? AND app_id IS NULL
+         ON CONFLICT(app_id, user_id) DO NOTHING`,
       )
-      .bind(choice, userId)
-      .first<{ id: string }>();
-    if (!shared) return null;
-    await bind(shared.id).run();
+      .bind(appId, userId, now, choice, userId)
+      .run();
   }
 
+  // Null when the choice was no shared profile of the user's (and nothing
+  // was bound before).
   const bound = await boundProfile(db, appId, userId);
   // Another sign-in chose first: drop the profile made for this one.
   if (made && bound?.id !== made)
