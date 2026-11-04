@@ -239,11 +239,18 @@ const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 const DEVICE_CODE_TTL_SECONDS = 600;
 const DEVICE_POLL_INTERVAL_SECONDS = 5;
 
-function generateUserCode(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(8));
+export function generateUserCode(): string {
+  // Each letter takes the low 5 bits of a random byte, and values past the
+  // end of the 20-letter alphabet are drawn again. A plain `byte % 20` would
+  // favour the first 16 letters (256 isn't a multiple of 20).
   let code = "";
-  for (const b of bytes)
-    code += USER_CODE_ALPHABET[b % USER_CODE_ALPHABET.length];
+  while (code.length < 8) {
+    for (const b of crypto.getRandomValues(new Uint8Array(16))) {
+      const i = b & 0x1f;
+      if (i < USER_CODE_ALPHABET.length && code.length < 8)
+        code += USER_CODE_ALPHABET[i];
+    }
+  }
   // Display form groups the halves with a hyphen (WDJB-MJHT); the hyphen is
   // cosmetic and stripped on lookup.
   return `${code.slice(0, 4)}-${code.slice(4)}`;

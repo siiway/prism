@@ -1,5 +1,5 @@
 // Image reverse proxy — streams external images through the worker.
-// SVGs are sanitized to remove script execution vectors before being served.
+// SVGs are rebuilt from an allowlist (lib/svgSanitize) before being served.
 //
 // The proxy is no longer an open relay: instead of accepting an arbitrary
 // URL on the request, it looks up an opaque id in image_proxy_mappings.
@@ -20,6 +20,7 @@ import {
 import { isBlockedHost, safeFetch } from "../lib/safeFetch";
 import { registerImageProxyMapping } from "../lib/proxyImage";
 import { getConfig } from "../lib/config";
+import { SvgRejectedError, sanitizeSvg } from "../lib/svgSanitize";
 import { requireAuth } from "../middleware/auth";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -34,52 +35,15 @@ const ALLOWED_TYPES = new Set([
   "image/svg+xml",
 ]);
 
-/**
- * Sanitize an SVG string by stripping all known script execution vectors:
- *  - <script> elements
- *  - event-handler attributes (on*)
- *  - javascript: pseudo-URLs in href/src/xlink:href
- *  - <foreignObject> (can embed arbitrary HTML)
- *  - <use> with external (non-fragment) hrefs (prevents sprite-sheet injection)
- */
-function sanitizeSvg(raw: string): string {
-  return (
-    raw
-      .replace(/<!DOCTYPE[\s\S]*?>/gi, "")
-      .replace(/<!ENTITY[\s\S]*?>/gi, "")
-      // Remove <script> blocks
-      .replace(/<script[\s\S]*?<\/script\s*>/gi, "")
-      // Remove inline event handlers  on*="..."  on*='...'
-      .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s/>]*)/gi, "")
-      // Neutralise javascript: in href / src / xlink:href
-      .replace(
-        /((?:xlink:)?href|src)\s*=\s*["']\s*javascript:[^"']*/gi,
-        '$1=""',
-      )
-      // Remove <foreignObject> (embeds HTML)
-      .replace(/<foreignObject[\s\S]*?<\/foreignObject\s*>/gi, "")
-      .replace(
-        /<(?:iframe|object|embed|audio|video|image)\b[\s\S]*?(?:<\/\w+\s*>|\/?>)/gi,
-        "",
-      )
-      .replace(/<style[\s\S]*?<\/style\s*>/gi, "")
-      // Remove <use> references to external resources (keep fragment-only refs)
-      .replace(
-        /<use([^>]+)(?:xlink:href|href)\s*=\s*["'](?!#)[^"']*["']/gi,
-        (_, attrs) =>
-          `<use${attrs
-            .replace(/xlink:href\s*=\s*["'][^"']*["']/gi, "")
-            .replace(/href\s*=\s*["'][^"']*["']/gi, "")}`,
-      )
-  );
-}
-
 function responseHeaders(contentType: string, ttl: number): Headers {
   return new Headers({
     "Content-Type": contentType,
     "Cache-Control": `public, max-age=${ttl}`,
     "X-Content-Type-Options": "nosniff",
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+    // sandbox: an image opened directly is its own opaque origin, so even
+    // markup the SVG sanitizer missed couldn't act as the app.
+    "Content-Security-Policy":
+      "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     "Access-Control-Allow-Origin": "*",
     "Cross-Origin-Resource-Policy": "cross-origin",
   });
@@ -281,9 +245,14 @@ app.get("/:id", async (c) => {
     if (captured.exceeded) {
       return c.json({ error: "avatar_too_large" }, 400);
     }
-    const bytes = new TextEncoder().encode(
-      sanitizeSvg(new TextDecoder().decode(captured.bytes)),
-    );
+    let svg: string;
+    try {
+      svg = sanitizeSvg(new TextDecoder().decode(captured.bytes));
+    } catch (err) {
+      if (!(err instanceof SvgRejectedError)) throw err;
+      return c.json({ error: "upstream_image_unreadable" }, 502);
+    }
+    const bytes = new TextEncoder().encode(svg);
     if (bytes.byteLength <= cacheMaxBytes)
       c.executionCtx.waitUntil(
         writeCached(c, id, bytes, ct, config.avatar_proxy_cache_mode, ttl),
