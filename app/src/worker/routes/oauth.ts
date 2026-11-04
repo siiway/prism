@@ -65,7 +65,8 @@ import { verifyDpopProof } from "../lib/dpop";
 import { startUnverifiedLogout } from "../lib/saml/logout";
 import {
   SAML2_BEARER_GRANT_TYPE,
-  redeemAssertionGrant,
+  consumeAssertionGrant,
+  findAssertionGrant,
   signedAssertionId,
 } from "../lib/saml/bearer";
 import { boundProfile } from "../lib/saml/profiles";
@@ -1900,7 +1901,9 @@ app.post("/token", async (c) => {
     // An admin may have turned SAML off for the app since it signed in.
     if (!assertionId || (await samlBlock(c.env.DB, oauthApp)))
       return c.json({ error: "invalid_grant" }, 400);
-    const grant = await redeemAssertionGrant(
+    // Everything is checked before the assertion is used up, so a request
+    // that fails here can be retried with it.
+    const grant = await findAssertionGrant(
       c.env.DB,
       oauthApp.id,
       assertionId,
@@ -1915,21 +1918,27 @@ app.post("/token", async (c) => {
         400,
       );
 
-    // What was approved, less what the app may no longer ask for or the
-    // user has since revoked; or less still when the app asks for less.
-    const allowed = JSON.parse(oauthApp.allowed_scopes) as string[];
-    const consent = oauthApp.is_first_party
-      ? null
-      : await c.env.DB.prepare(
-          "SELECT scopes FROM oauth_consents WHERE user_id = ? AND client_id = ?",
-        )
-          .bind(grant.user_id, clientId)
-          .first<{ scopes: string }>();
-    const consented = consent ? (JSON.parse(consent.scopes) as string[]) : [];
-    const granted = (JSON.parse(grant.scopes) as string[]).filter(
-      (s) =>
-        allowed.includes(s) &&
-        (oauthApp.is_first_party || consented.includes(s)),
+    // The user hasn't revoked the app since (first-party apps need no
+    // consent). Whether they approved these scopes once or always, the
+    // assertion's record says what they approved.
+    const consentHolds = async () =>
+      !!oauthApp.is_first_party ||
+      !!(await c.env.DB.prepare(
+        "SELECT 1 FROM oauth_consents WHERE user_id = ? AND client_id = ?",
+      )
+        .bind(grant.user_id, clientId)
+        .first());
+    if (!(await consentHolds())) return c.json({ error: "invalid_grant" }, 400);
+
+    // What was approved, less what the app may no longer ask for and what
+    // the target apps no longer allow it (or that are gone); or less still
+    // when the app asks for less.
+    const { scopes: granted } = await resolveRequestedScopes(
+      c.env.DB,
+      c.env.APP_URL,
+      JSON.parse(grant.scopes) as string[],
+      JSON.parse(oauthApp.allowed_scopes) as string[],
+      clientId,
     );
     const requested = (params.scope ?? "").split(" ").filter(Boolean);
     if (requested.some((s) => !granted.includes(s)))
@@ -1943,6 +1952,10 @@ app.post("/token", async (c) => {
       .bind(grant.user_id)
       .first<UserRow>();
     if (!user || !user.is_active)
+      return c.json({ error: "invalid_grant" }, 400);
+
+    // Of two concurrent requests, one gets the token.
+    if (!(await consumeAssertionGrant(c.env.DB, grant, now)))
       return c.json({ error: "invalid_grant" }, 400);
 
     const { atTtl } = tokenTtls(user, config);
@@ -1974,6 +1987,14 @@ app.post("/token", async (c) => {
       refreshExpiresAt: null,
       now,
     });
+    // Revoking the app deletes the consent, then its tokens: if that ran
+    // since the check above, this token may have missed the delete.
+    if (!(await consentHolds())) {
+      await c.env.DB.prepare("DELETE FROM oauth_tokens WHERE id = ?")
+        .bind(jti)
+        .run();
+      return c.json({ error: "invalid_grant" }, 400);
+    }
 
     return c.json({
       access_token: accessToken,

@@ -30,9 +30,9 @@ const MAX_ENCODED_ASSERTION = 256 * 1024;
 export const crossAppScopes = (scopes: string[]) =>
   scopes.filter((s) => parseAppScope(s) !== null);
 
-/** Record an assertion that releases other apps' permissions, so the app
- *  can trade it for an access token. */
-export async function recordAssertionGrant(
+/** The statement that records an assertion releasing other apps'
+ *  permissions, so the app can trade it for an access token. */
+export function assertionGrantStatement(
   db: D1Database,
   grant: {
     appId: string;
@@ -44,8 +44,8 @@ export async function recordAssertionGrant(
     amr: string[];
   },
   now = Math.floor(Date.now() / 1000),
-): Promise<void> {
-  await db
+): D1PreparedStatement {
+  return db
     .prepare(
       `INSERT INTO saml_assertion_grants
          (app_id, assertion_id, user_id, subject, scopes, auth_time, amr, expires_at)
@@ -60,8 +60,7 @@ export async function recordAssertionGrant(
       grant.authTime,
       grant.amr.length ? JSON.stringify(grant.amr) : null,
       now + ASSERTION_TTL_SECONDS,
-    )
-    .run();
+    );
 }
 
 function elementChildren(parent: Element, ns: string, localName: string) {
@@ -135,9 +134,9 @@ export interface AssertionGrantRow {
   consumed_at: number | null;
 }
 
-/** Use up the grant recorded for this app's assertion; null when there is
- *  none, it expired, or it was used. */
-export function redeemAssertionGrant(
+/** The grant recorded for this app's assertion while it can be traded;
+ *  null when there is none, it expired, or it was used. */
+export function findAssertionGrant(
   db: D1Database,
   appId: string,
   assertionId: string,
@@ -145,10 +144,25 @@ export function redeemAssertionGrant(
 ): Promise<AssertionGrantRow | null> {
   return db
     .prepare(
-      `UPDATE saml_assertion_grants SET consumed_at = ?1
-       WHERE app_id = ?2 AND assertion_id = ?3 AND consumed_at IS NULL AND expires_at > ?1
-       RETURNING *`,
+      `SELECT * FROM saml_assertion_grants
+       WHERE app_id = ? AND assertion_id = ? AND consumed_at IS NULL AND expires_at > ?`,
     )
-    .bind(now, appId, assertionId)
+    .bind(appId, assertionId, now)
     .first<AssertionGrantRow>();
+}
+
+/** Use up a grant; false when another request just did, or it expired. */
+export async function consumeAssertionGrant(
+  db: D1Database,
+  grant: Pick<AssertionGrantRow, "app_id" | "assertion_id">,
+  now = Math.floor(Date.now() / 1000),
+): Promise<boolean> {
+  const result = await db
+    .prepare(
+      `UPDATE saml_assertion_grants SET consumed_at = ?1
+       WHERE app_id = ?2 AND assertion_id = ?3 AND consumed_at IS NULL AND expires_at > ?1`,
+    )
+    .bind(now, grant.app_id, grant.assertion_id)
+    .run();
+  return result.meta.changes === 1;
 }

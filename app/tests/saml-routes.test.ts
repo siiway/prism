@@ -2177,6 +2177,69 @@ describe("other apps' permissions", () => {
     expect((await trade(response)).status).toBe(200);
   });
 
+  test("a permission approved once is traded even with an older 'always'", async () => {
+    // Always authorized before the Wiki held the permission.
+    sqlite.run(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES ('c1', 'u1', 'client-1', '["openid","profile","email"]', 0, 1)`,
+    );
+    const res = await trade(await signIn());
+    expect(res.status).toBe(200);
+    expect((await res.json<Body & { scope: string }>()).scope).toBe(SCOPE);
+    // The remembered consent stays as it was.
+    const consent = sqlite
+      .query("SELECT scopes, auto_authorize FROM oauth_consents")
+      .get() as { scopes: string; auto_authorize: number };
+    expect(consent.auto_authorize).toBe(1);
+    expect(JSON.parse(consent.scopes)).not.toContain(SCOPE);
+  });
+
+  test("approving keeps the scopes the consent already held", async () => {
+    sqlite.run(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES ('c1', 'u1', 'client-1', '["openid","teams:read"]', 0, 0)`,
+    );
+    await signIn();
+    const consent = sqlite.query("SELECT scopes FROM oauth_consents").get() as {
+      scopes: string;
+    };
+    expect(new Set(JSON.parse(consent.scopes))).toEqual(
+      new Set(["openid", "teams:read", "profile", "email", SCOPE]),
+    );
+  });
+
+  test("a failed trade leaves the assertion to retry", async () => {
+    const response = await signIn();
+    const res = await call("/api/oauth/token", {
+      method: "POST",
+      headers: {
+        Authorization: basic("client-1", "secret"),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:saml2-bearer",
+        assertion: response,
+        scope: "app:client-2:write_notes",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json<Body>()).error).toBe("invalid_scope");
+    expect((await trade(response)).status).toBe(200);
+  });
+
+  test("the target app's changes since sign-in count", async () => {
+    let response = await signIn();
+    sqlite.run(
+      `INSERT INTO app_scope_access_rules (id, app_id, rule_type, target_id, created_at)
+       VALUES ('r1', 'a2', 'app_deny', 'client-1', 0)`,
+    );
+    expect((await trade(response)).status).toBe(400);
+    sqlite.run("DELETE FROM app_scope_access_rules");
+    response = await signIn();
+    sqlite.run("UPDATE oauth_apps SET is_active = 0 WHERE id = 'a2'");
+    expect((await trade(response)).status).toBe(400);
+  });
+
   test("revoking the app first leaves nothing to trade", async () => {
     const response = await signIn();
     sqlite.run("DELETE FROM oauth_consents WHERE client_id = 'client-1'");
