@@ -87,6 +87,7 @@ import {
 import {
   bindProfile,
   boundProfile,
+  profileKind,
   sharedProfiles,
   type SamlProfileRow,
 } from "../lib/saml/profiles";
@@ -554,17 +555,23 @@ async function evaluate(
           account: user,
         };
 
-  // The SAML profile the app gets, chosen at the first sign-in to it.
-  const profile = await boundProfile(c.env.DB, app.id, user.id);
-  const profileChoices = profile ? [] : await sharedProfiles(c.env.DB, user.id);
+  // The SAML profile the app gets, chosen at the first sign-in to it, and
+  // the user's stored consent (first-party apps need none).
+  const [profile, shared, consent] = await Promise.all([
+    boundProfile(c.env.DB, app.id, user.id),
+    sharedProfiles(c.env.DB, user.id),
+    app.is_first_party
+      ? null
+      : c.env.DB.prepare(
+          "SELECT scopes, auto_authorize FROM oauth_consents WHERE user_id = ? AND client_id = ?",
+        )
+          .bind(user.id, app.client_id)
+          .first<{ scopes: string; auto_authorize: number }>(),
+  ]);
+  const profileChoices = profile ? [] : shared;
   const base = { scopes, session, account: user, profile, profileChoices };
 
   if (!app.is_first_party) {
-    const consent = await c.env.DB.prepare(
-      "SELECT scopes, auto_authorize FROM oauth_consents WHERE user_id = ? AND client_id = ?",
-    )
-      .bind(user.id, app.client_id)
-      .first<{ scopes: string; auto_authorize: number }>();
     // The row is shared with OAuth, whose scopes add openid and the like:
     // a remembered consent counts when it covers what SAML releases.
     const consentedScopes = consent
@@ -589,7 +596,7 @@ async function evaluate(
 /** A profile as the sign-in page shows it. */
 const profileSummary = (p: SamlProfileRow) => ({
   id: p.id,
-  kind: p.app_id ? ("app" as const) : ("shared" as const),
+  kind: profileKind(p),
   name: p.name,
   name_id: p.name_id,
 });
@@ -679,12 +686,13 @@ samlApiRoutes.post("/requests/:token", async (c) => {
   // ID (SAML Core §8.3.7). The first sign-in picks the profile: `profile`
   // names a shared one, or else the app gets a new per-app profile.
   const profile = approved
-    ? await bindProfile(
+    ? (ev.profile ??
+      (await bindProfile(
         c.env.DB,
         app.id,
         approved.id,
         typeof body.profile === "string" && body.profile ? body.profile : "new",
-      )
+      )))
     : null;
   if (approved && !profile)
     return c.json(

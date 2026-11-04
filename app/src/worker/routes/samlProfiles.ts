@@ -19,7 +19,10 @@ import { randomId } from "../lib/crypto";
 import {
   MAX_PROFILE_NAME,
   MAX_SHARED_PROFILES,
+  countSharedProfiles,
+  getProfile,
   listProfiles,
+  profileKind,
   type ProfileApp,
   type SamlProfileRow,
 } from "../lib/saml/profiles";
@@ -33,7 +36,7 @@ app.use("*", requireAuth);
 function view(p: SamlProfileRow & { apps: ProfileApp[] }) {
   return {
     id: p.id,
-    kind: p.app_id ? ("app" as const) : ("shared" as const),
+    kind: profileKind(p),
     name: p.name,
     name_id: p.name_id,
     apps: p.apps,
@@ -43,9 +46,17 @@ function view(p: SamlProfileRow & { apps: ProfileApp[] }) {
 }
 
 /** The profile `id` of the signed-in user, with its apps; null if none. */
-async function findProfile(c: Context<AppEnv>, id: string) {
-  const profiles = await listProfiles(c.env.DB, c.get("user").id);
-  return profiles.find((p) => p.id === id) ?? null;
+const findProfile = (c: Context<AppEnv>, id: string) =>
+  getProfile(c.env.DB, c.get("user").id, id);
+
+/** A 409 when the user has as many shared profiles as allowed. */
+async function sharedLimit(c: Context<AppEnv>, userId: string) {
+  return (await countSharedProfiles(c.env.DB, userId)) >= MAX_SHARED_PROFILES
+    ? c.json(
+        { error: "saml_profile_limit", params: { max: MAX_SHARED_PROFILES } },
+        409,
+      )
+    : null;
 }
 
 /** A shared profile's name from the body, or an error response. */
@@ -88,26 +99,25 @@ app.post("/", async (c) => {
   const userId = c.get("user").id;
   const read = await readName(c);
   if ("error" in read) return read.error;
-  const count = await c.env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM saml_profiles WHERE user_id = ? AND app_id IS NULL",
-  )
-    .bind(userId)
-    .first<{ n: number }>();
-  if ((count?.n ?? 0) >= MAX_SHARED_PROFILES)
-    return c.json(
-      { error: "saml_profile_limit", params: { max: MAX_SHARED_PROFILES } },
-      409,
-    );
-  const id = randomId();
+  const limited = await sharedLimit(c, userId);
+  if (limited) return limited;
   const now = Math.floor(Date.now() / 1000);
+  const profile: SamlProfileRow = {
+    id: randomId(),
+    user_id: userId,
+    name_id: randomId(16),
+    app_id: null,
+    name: read.name,
+    created_at: now,
+    updated_at: now,
+  };
   await c.env.DB.prepare(
     `INSERT INTO saml_profiles (id, user_id, name_id, app_id, name, created_at, updated_at)
      VALUES (?, ?, ?, NULL, ?, ?, ?)`,
   )
-    .bind(id, userId, randomId(16), read.name, now, now)
+    .bind(profile.id, userId, profile.name_id, profile.name, now, now)
     .run();
-  const profile = await findProfile(c, id);
-  return c.json({ profile: view(profile!) }, 201);
+  return c.json({ profile: view({ ...profile, apps: [] }) }, 201);
 });
 
 app.get("/:id", async (c) => {
@@ -121,12 +131,15 @@ app.patch("/:id", async (c) => {
   if (profile.app_id) return c.json({ error: "saml_profile_per_app" }, 409);
   const read = await readName(c);
   if ("error" in read) return read.error;
+  const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(
     "UPDATE saml_profiles SET name = ?, updated_at = ? WHERE id = ? AND user_id = ?",
   )
-    .bind(read.name, Math.floor(Date.now() / 1000), profile.id, profile.user_id)
+    .bind(read.name, now, profile.id, profile.user_id)
     .run();
-  return c.json({ profile: view((await findProfile(c, profile.id))!) });
+  return c.json({
+    profile: view({ ...profile, name: read.name, updated_at: now }),
+  });
 });
 
 app.post("/:id/share", async (c) => {
@@ -136,24 +149,24 @@ app.post("/:id/share", async (c) => {
     return c.json({ error: "saml_profile_already_shared" }, 409);
   const read = await readName(c);
   if ("error" in read) return read.error;
-  const count = await c.env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM saml_profiles WHERE user_id = ? AND app_id IS NULL",
-  )
-    .bind(profile.user_id)
-    .first<{ n: number }>();
-  if ((count?.n ?? 0) >= MAX_SHARED_PROFILES)
-    return c.json(
-      { error: "saml_profile_limit", params: { max: MAX_SHARED_PROFILES } },
-      409,
-    );
+  const limited = await sharedLimit(c, profile.user_id);
+  if (limited) return limited;
   // Same row, same ID: the app it was made for keeps seeing the same user.
+  const now = Math.floor(Date.now() / 1000);
   await c.env.DB.prepare(
     `UPDATE saml_profiles SET app_id = NULL, name = ?, updated_at = ?
      WHERE id = ? AND user_id = ? AND app_id IS NOT NULL`,
   )
-    .bind(read.name, Math.floor(Date.now() / 1000), profile.id, profile.user_id)
+    .bind(read.name, now, profile.id, profile.user_id)
     .run();
-  return c.json({ profile: view((await findProfile(c, profile.id))!) });
+  return c.json({
+    profile: view({
+      ...profile,
+      app_id: null,
+      name: read.name,
+      updated_at: now,
+    }),
+  });
 });
 
 app.delete("/:id", async (c) => {

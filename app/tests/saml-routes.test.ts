@@ -117,18 +117,8 @@ async function startSso(attrs = "", id?: string): Promise<string> {
   return location.searchParams.get("request")!;
 }
 
-/** The stored ID of user u1 at an app, made at their first sign-in. */
-const subjectId = (appId: string): string =>
-  (
-    sqlite
-      .query(
-        `SELECT p.name_id FROM saml_profile_apps b JOIN saml_profiles p ON p.id = b.profile_id
-         WHERE b.app_id = ? AND b.user_id = 'u1'`,
-      )
-      .get(appId) as { name_id: string }
-  ).name_id;
-
-/** The same, or null before user u1's first sign-in to the app. */
+/** The stored ID of user u1 at an app, or null before their first sign-in
+ *  to it. */
 const subjectIdOrNull = (appId: string): string | null =>
   (
     sqlite
@@ -138,6 +128,9 @@ const subjectIdOrNull = (appId: string): string | null =>
       )
       .get(appId) as { name_id: string } | null
   )?.name_id ?? null;
+
+/** The stored ID of user u1 at an app they've signed in to. */
+const subjectId = (appId: string): string => subjectIdOrNull(appId)!;
 
 const json = (body: unknown, cookie?: string): RequestInit => ({
   method: "POST",

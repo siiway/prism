@@ -26,6 +26,25 @@ export interface SamlProfileRow {
   updated_at: number;
 }
 
+/** "app": made for one app at the first sign-in to it; "shared": made by
+ *  the user, for any number of apps. */
+export const profileKind = (p: SamlProfileRow) =>
+  p.app_id ? ("app" as const) : ("shared" as const);
+
+/** How many shared profiles the user has. */
+export async function countSharedProfiles(
+  db: D1Database,
+  userId: string,
+): Promise<number> {
+  const row = await db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM saml_profiles WHERE user_id = ? AND app_id IS NULL",
+    )
+    .bind(userId)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 /** The profile an app gets for a user, once one was chosen. */
 export async function boundProfile(
   db: D1Database,
@@ -117,6 +136,29 @@ export interface ProfileApp {
   id: string;
   name: string;
   icon_url: string | null;
+}
+
+/** One of a user's profiles, with the apps it's used for; null if none. */
+export async function getProfile(
+  db: D1Database,
+  userId: string,
+  id: string,
+): Promise<(SamlProfileRow & { apps: ProfileApp[] }) | null> {
+  const [profile, uses] = await Promise.all([
+    db
+      .prepare("SELECT * FROM saml_profiles WHERE id = ? AND user_id = ?")
+      .bind(id, userId)
+      .first<SamlProfileRow>(),
+    db
+      .prepare(
+        `SELECT a.id, a.name, a.icon_url FROM saml_profile_apps b
+         JOIN oauth_apps a ON a.id = b.app_id
+         WHERE b.profile_id = ? AND b.user_id = ? ORDER BY a.name COLLATE NOCASE`,
+      )
+      .bind(id, userId)
+      .all<ProfileApp>(),
+  ]);
+  return profile ? { ...profile, apps: uses.results } : null;
 }
 
 /** All of a user's profiles, each with the apps it's used for. */
