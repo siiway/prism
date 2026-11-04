@@ -56,8 +56,8 @@ export function AppCreate() {
         redirect_uris: form.redirect_uris.filter((u) => u.value.trim()),
       });
       await qc.invalidateQueries({ queryKey: ["apps"] });
-      // The secret is only returned once; AppDetail shows it from state.
-      navigate(`/apps/${res.app.id}`, {
+      // The secret is only returned once; the OAuth tab shows it from state.
+      navigate(`/apps/${res.app.id}?tab=oauth`, {
         replace: true,
         state: { clientSecret: res.app.client_secret },
       });

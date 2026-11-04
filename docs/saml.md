@@ -66,7 +66,7 @@ SAML profile for the app, never their Prism user ID:
 | `groups`           | The app allows `teams:read`. Member groups, as `team-id:group-slug` |
 
 Attribute names use the `basic` name format. Choose the app's scopes on its
-**Sign-in** tab.
+**Permissions** tab.
 
 ## How sign-in works
 
