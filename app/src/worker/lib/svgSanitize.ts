@@ -283,11 +283,40 @@ const RASTER_DATA_URI =
 
 const MAX_DEPTH = 256;
 
+/** Upper bound on markup, counted as `<` characters (tags, comments, CDATA)
+ *  before parsing, so a dense document can't make the parser build a huge
+ *  tree. Detailed illustrations stay well under it. */
+const MAX_TAGS = 100_000;
+
 export class SvgRejectedError extends Error {}
+
+/** Decode SVG bytes the way an XML parser would pick the encoding: a UTF-16
+ *  BOM, else the XML declaration's `encoding`, else UTF-8. */
+export function decodeSvg(bytes: Uint8Array): string {
+  let label = "utf-8";
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) label = "utf-16le";
+  else if (bytes[0] === 0xfe && bytes[1] === 0xff) label = "utf-16be";
+  else if (!(bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf)) {
+    const head = String.fromCharCode(...bytes.subarray(0, 200));
+    const declared = head.match(
+      /^<\?xml\s[^>]*?\bencoding\s*=\s*["']([A-Za-z0-9._-]+)["']/,
+    )?.[1];
+    if (declared) label = declared;
+  }
+  try {
+    return new TextDecoder(label).decode(bytes);
+  } catch {
+    throw new SvgRejectedError("encoding");
+  }
+}
 
 /** The sanitized SVG, or a SvgRejectedError when the input isn't
  *  well-formed SVG. */
 export function sanitizeSvg(raw: string): string {
+  let tags = 0;
+  for (let i = raw.indexOf("<"); i >= 0; i = raw.indexOf("<", i + 1))
+    if (++tags > MAX_TAGS) throw new SvgRejectedError("too_large");
+
   let root: Element | null;
   try {
     root = new DOMParser({

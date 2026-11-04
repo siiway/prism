@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { SvgRejectedError, sanitizeSvg } from "../src/worker/lib/svgSanitize";
+import {
+  SvgRejectedError,
+  decodeSvg,
+  sanitizeSvg,
+} from "../src/worker/lib/svgSanitize";
 
 const NS = 'xmlns="http://www.w3.org/2000/svg"';
 const XLINK = 'xmlns:xlink="http://www.w3.org/1999/xlink"';
@@ -117,5 +121,45 @@ describe("sanitizeSvg", () => {
       ),
     );
     expect(sanitizeSvg(once)).toBe(once);
+  });
+
+  test("rejects documents with too much markup before parsing", () => {
+    expect(() => sanitizeSvg(svg("<g/>".repeat(100_001)))).toThrow(
+      SvgRejectedError,
+    );
+    expect(() => sanitizeSvg(svg("<g/>".repeat(1_000)))).not.toThrow();
+  });
+});
+
+describe("decodeSvg", () => {
+  const doc = svg("<text>é</text>");
+
+  test("defaults to UTF-8 and drops a UTF-8 BOM", () => {
+    const utf8 = new TextEncoder().encode(doc);
+    expect(decodeSvg(utf8)).toBe(doc);
+    expect(decodeSvg(new Uint8Array([0xef, 0xbb, 0xbf, ...utf8]))).toBe(doc);
+  });
+
+  test("follows a UTF-16 BOM", () => {
+    const le = new Uint8Array(2 + doc.length * 2);
+    le.set([0xff, 0xfe]);
+    for (let i = 0; i < doc.length; i++) {
+      le[2 + i * 2] = doc.charCodeAt(i) & 0xff;
+      le[3 + i * 2] = doc.charCodeAt(i) >> 8;
+    }
+    expect(sanitizeSvg(decodeSvg(le))).toContain("<text>é</text>");
+  });
+
+  test("follows the XML declaration's encoding", () => {
+    const latin1 = `<?xml version="1.0" encoding="ISO-8859-1"?>${doc}`;
+    const bytes = Uint8Array.from(latin1, (ch) => ch.charCodeAt(0));
+    expect(sanitizeSvg(decodeSvg(bytes))).toContain("<text>é</text>");
+  });
+
+  test("rejects an encoding it can't decode", () => {
+    const bytes = new TextEncoder().encode(
+      `<?xml version="1.0" encoding="x-made-up"?>${doc}`,
+    );
+    expect(() => decodeSvg(bytes)).toThrow(SvgRejectedError);
   });
 });

@@ -20,7 +20,7 @@ import {
 import { isBlockedHost, safeFetch } from "../lib/safeFetch";
 import { registerImageProxyMapping } from "../lib/proxyImage";
 import { getConfig } from "../lib/config";
-import { SvgRejectedError, sanitizeSvg } from "../lib/svgSanitize";
+import { SvgRejectedError, decodeSvg, sanitizeSvg } from "../lib/svgSanitize";
 import { requireAuth } from "../middleware/auth";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -247,7 +247,7 @@ app.get("/:id", async (c) => {
     }
     let svg: string;
     try {
-      svg = sanitizeSvg(new TextDecoder().decode(captured.bytes));
+      svg = sanitizeSvg(decodeSvg(captured.bytes));
     } catch (err) {
       if (!(err instanceof SvgRejectedError)) throw err;
       return c.json({ error: "upstream_image_unreadable" }, 502);
