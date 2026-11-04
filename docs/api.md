@@ -132,6 +132,10 @@ Passkeys use the dedicated endpoints below.
 Ends the current session. Prism supports one browser session at a time;
 switching accounts means signing out and in again.
 
+Returns `{ "ok": true, "next": "/login" }`. Send the browser to `next`: when
+the session signed in to apps with SAML single logout, it's `/logout`, which
+signs the user out of them first.
+
 ### Email verification
 
 | Endpoint                                  | Purpose                                                                |
@@ -233,10 +237,10 @@ All endpoints require authentication.
 
 List endpoints accept `?page=`, `?limit=` and often `?q=`, and return `total`.
 
-## OAuth apps
+## Apps
 
-All endpoints require authentication. See the [OAuth / OIDC Guide](oauth.md) and
-[Cross-App Permissions](app-permissions.md).
+All endpoints require authentication. See the [OAuth / OIDC Guide](oauth.md),
+the [SAML Guide](saml.md) and [Cross-App Permissions](app-permissions.md).
 
 | Method                              | Path                                         | Notes                                                                                                                 |
 | ----------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -398,6 +402,22 @@ the spot: `verified` is `true` and `verified_by_parent` names that parent.
 
 List the apps the current user has authorized, or revoke one. Revoking removes
 the consent and all outstanding tokens for the app.
+
+## SAML
+
+See the [SAML Guide](saml.md).
+
+| Method                              | Path                           | Notes                                                                 |
+| ----------------------------------- | ------------------------------ | --------------------------------------------------------------------- |
+| `GET`                               | `/saml/metadata`               | Identity provider metadata                                            |
+| `GET` / `POST`                      | `/saml/sso`                    | Single sign-on, HTTP-Redirect or HTTP-POST binding                    |
+| `GET` / `POST`                      | `/saml/slo`                    | Single logout, HTTP-Redirect or HTTP-POST binding                     |
+| `GET` / `POST` / `PATCH` / `DELETE` | `/api/saml/profiles[/:id]`     | The current user's SAML profiles. Create and rename take `{ "name" }` |
+| `POST`                              | `/api/saml/profiles/:id/share` | Turn a profile made for one app into a shared one: `{ "name" }`       |
+
+A profile made for one app can't be renamed or deleted, and a shared profile
+can't be deleted while an app uses it. The other `/api/saml/*` endpoints serve
+Prism's own sign-in and sign-out pages.
 
 ## Search
 

@@ -94,6 +94,9 @@ and use **Send test email** to check it.
 - **Sub-teams** — allow or forbid team nesting, set the maximum depth (1–20,
   default 5), and choose whether membership and verified domains pass down to
   sub-teams. See [Teams → Sub-teams](teams.md#sub-teams).
+- **SAML** — whether apps may use SAML. Override it for the apps of one user
+  or team on their admin page, or for one app on its **Moderation** tab. See
+  [SAML → Turning SAML off](saml.md#turning-saml-off).
 
 ### Notifications
 
@@ -195,7 +198,7 @@ admin. Signing in as another user is not offered.
 
 ## Applications
 
-**Admin → Applications** lists every OAuth app with its owner and status.
+**Admin → Applications** lists every app with its owner and status.
 
 | Action            | Effect                                                                             |
 | ----------------- | ---------------------------------------------------------------------------------- |

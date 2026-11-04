@@ -2,7 +2,7 @@
 
 [English](./README.md)
 
-基于 Cloudflare Workers 构建的自托管 OAuth 2.0 / OpenID Connect 身份认证平台。无需服务器，几分钟内即可全球部署。
+基于 Cloudflare Workers 构建的自托管身份认证平台，适用于使用 OAuth 2.0、OpenID Connect 或 SAML 2.0 的应用。无需服务器，几分钟内即可全球部署。
 
 ## 功能特性
 
@@ -11,8 +11,8 @@
 - **步骤提升 2FA** — 服务端发起、行动钉死的二次确认；为高风险操作提供 sudo 宽限期
 - **社交与联邦登录** — GitHub、Google、Microsoft、Discord、Telegram、X、Cloudflare，Generic OIDC、Generic OAuth 2 — 同一类型可多源
 - **多因素认证** — 单账号多 TOTP 认证器、Passkey（WebAuthn）、GPG 公钥（含 ML-DSA）、备用码
-- **团队** — OAuth 应用与域名的共享所有权；角色、邀请、所有权转移、站点级加入门槛
-- **应用注册** — 用户自助创建 OAuth 应用；管理员可验证；支持跨应用 scope
+- **团队** — 应用与域名的共享所有权；角色、邀请、所有权转移、站点级加入门槛
+- **应用注册** — 用户自助创建应用（OAuth 与 SAML）；管理员可验证；支持跨应用 scope
 - **域名验证** — 每个域名可在 DNS TXT、HTML meta、`.well-known` 中任选一种，自动重新核验
 - **机器人防护** — Cloudflare Turnstile、hCaptcha、reCAPTCHA v3、极验或 Cap（工作量证明）；同时可门禁 2FA
 - **Webhook 与通知** — 用户 + 管理员 webhook、应用事件流（webhook / SSE / WebSocket）、邮件 + Telegram 通知，规则引擎做精细路由
@@ -56,13 +56,13 @@ setup 会登录你的 Cloudflare 账号、询问你的 URL、创建数据库和�
 
 - [快速开始](https://prism.wss.moe/zh/getting-started) — 完整配置流程
 - [配置说明](https://prism.wss.moe/zh/configuration) — 所有站点配置项 + Wrangler 绑定
-
 - [管理员指南](https://prism.wss.moe/zh/admin) — 用户、应用、团队与配置管理
 - [API 参考](https://prism.wss.moe/zh/api) — REST API 文档
 - [OAuth / OIDC 指南](https://prism.wss.moe/zh/oauth) — 将 Prism 作为身份提供商集成
+- [SAML 指南](https://prism.wss.moe/zh/saml) — 登录使用 SAML 2.0 的应用
 - [团队](https://prism.wss.moe/zh/teams) — 共享应用与域名的所有权
 - [通知](https://prism.wss.moe/zh/notifications) — 邮件与 Telegram 通知规则
-- [Webhook](https://prism.wss.moe/zh/webhooks) 与 [应用通知](https://prism.wss.moe/zh/app-notifications)
+- [审计日志](https://prism.wss.moe/zh/audit-logs) 与 [应用通知](https://prism.wss.moe/zh/app-notifications) — 审计 Webhook 与应用事件流
 - [跨应用权限](https://prism.wss.moe/zh/app-permissions) — 把 scope 暴露给其他应用
 - [个人访问令牌](https://prism.wss.moe/zh/personal-access-tokens) 与 [公开资料](https://prism.wss.moe/zh/public-profile)
 

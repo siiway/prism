@@ -54,7 +54,7 @@ SAML，这类应用也可以借助 Prism 完成登录。
 | `teams`            | 应用允许 `teams:read`。团队 ID                             |
 | `groups`           | 应用允许 `teams:read`。身份组，格式为 `team-id:group-slug` |
 
-属性名称使用 `basic` 名称格式。在应用的 **权限** 标签页中选择应用的 scope。
+属性名称使用 `basic` 名称格式。在应用的 **权限** 标签页中选择应用的 scope。SAML 登录会忽略应用的其他 scope，包括[其他应用的权限](app-permissions.md)：这些需要访问令牌，请改用 OAuth 登录。
 
 ## 登录流程
 

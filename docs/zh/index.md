@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Prism
   text: 身份认证，化繁为简。
-  tagline: 基于 Cloudflare Workers 的自托管 OAuth 2.0 / OpenID Connect 平台。零服务器，全球边缘。
+  tagline: 基于 Cloudflare Workers 的自托管 OAuth 2.0、OpenID Connect 与 SAML 2.0 平台。零服务器，全球边缘。
   actions:
     - theme: brand
       text: 快速开始
@@ -24,6 +24,10 @@ features:
     title: OAuth 2.0 + OpenID Connect
     details: 支持 PKCE 的授权码流程、OIDC Discovery、签名的 ID 令牌、令牌内省与撤销，以及 UserInfo。
 
+  - icon: 🧾
+    title: SAML 2.0
+    details: 登录仅支持 SAML 的应用，提供签名断言、每个应用独立的用户 ID，以及单点登出。
+
   - icon: 🌐
     title: 社交与联邦登录
     details: GitHub、Google、Microsoft、Discord、Telegram、X 和 Cloudflare，还可通过 Generic OIDC 与 OAuth 2 来源接入任意其他提供商。也支持 GPG 登录。
@@ -34,7 +38,7 @@ features:
 
   - icon: 👥
     title: 团队
-    details: OAuth 应用与已验证域名的共享所有权，支持角色、邀请、子团队和加入门槛。
+    details: 应用与已验证域名的共享所有权，支持角色、邀请、子团队和加入门槛。
 
   - icon: 🤖
     title: 机器人防护
@@ -42,7 +46,7 @@ features:
 
   - icon: 🏗️
     title: 应用注册与跨应用 Scope
-    details: 用户可注册自己的 OAuth 应用。应用可以发布权限范围，其他应用通过授权页面请求这些范围。
+    details: 用户可注册自己的应用，用于 OAuth、SAML 或两者。应用可以发布权限范围，其他应用通过授权页面请求这些范围。
 
   - icon: 🔔
     title: 审计日志与通知

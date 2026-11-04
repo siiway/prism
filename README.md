@@ -2,7 +2,7 @@
 
 [中文](./README.zh-CN.md)
 
-A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare Workers. Deploy globally in minutes with zero servers.
+A self-hosted identity platform built on Cloudflare Workers, for apps that use OAuth 2.0, OpenID Connect or SAML 2.0. Deploy globally in minutes with zero servers.
 
 ## Features
 
@@ -11,8 +11,8 @@ A self-hosted OAuth 2.0 / OpenID Connect identity platform built on Cloudflare W
 - **Step-up 2FA** — server-initiated, action-pinned re-confirmation with sudo grace windows for sensitive operations
 - **Social & federated login** — GitHub, Google, Microsoft, Discord, Telegram, X, Cloudflare, Generic OIDC, Generic OAuth 2 — multiple sources of the same type
 - **Multi-factor auth** — multiple TOTP authenticators per account, passkeys (WebAuthn), GPG keys (incl. ML-DSA), backup codes
-- **Teams** — shared ownership of OAuth apps and domains, roles, invites, transfer-ownership, site-floor join requirements
-- **App registry** — users register and manage their own OAuth apps; admins can verify; cross-app permission scopes
+- **Teams** — shared ownership of apps and domains, roles, invites, transfer-ownership, site-floor join requirements
+- **App registry** — users register and manage their own apps (OAuth and SAML); admins can verify; cross-app permission scopes
 - **Domain verification** — DNS TXT, HTML meta, or `.well-known` — pick per domain, auto re-verify
 - **Bot protection** — Cloudflare Turnstile, hCaptcha, reCAPTCHA v3, GeeTest or Cap (proof-of-work); also gates 2FA confirmations
 - **Webhooks & notifications** — user + admin webhooks, app event streams (webhook / SSE / WebSocket), email + Telegram notifications with a rule engine
@@ -56,13 +56,13 @@ To work on Prism itself, see [CONTRIBUTING.md](./.github/CONTRIBUTING.md).
 
 - [Getting Started](https://prism.wss.moe/getting-started) — full setup walkthrough
 - [Configuration](https://prism.wss.moe/configuration) — all site config keys + Wrangler bindings
-
 - [Admin Guide](https://prism.wss.moe/admin) — managing users, apps, teams, and settings
 - [API Reference](https://prism.wss.moe/api) — REST API documentation
 - [OAuth / OIDC Guide](https://prism.wss.moe/oauth) — integrating Prism as an identity provider
+- [SAML Guide](https://prism.wss.moe/saml) — signing in to apps that use SAML 2.0
 - [Teams](https://prism.wss.moe/teams) — shared ownership of apps and domains
 - [Notifications](https://prism.wss.moe/notifications) — email and Telegram notification rules
-- [Webhooks](https://prism.wss.moe/webhooks) and [App Notifications](https://prism.wss.moe/app-notifications)
+- [Audit Logs](https://prism.wss.moe/audit-logs) and [App Notifications](https://prism.wss.moe/app-notifications) — audit webhooks and app event streams
 - [Cross-App Permissions](https://prism.wss.moe/app-permissions) — exposing scopes to other apps
 - [Personal Access Tokens](https://prism.wss.moe/personal-access-tokens) and [Public Profiles](https://prism.wss.moe/public-profile)
 

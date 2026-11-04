@@ -16,22 +16,23 @@ the config API.
 
 ## General
 
-| Key                          | Type    | Default                         | Description                                                |
-| ---------------------------- | ------- | ------------------------------- | ---------------------------------------------------------- |
-| `site_name`                  | string  | `"Prism"`                       | Shown in the browser title and emails                      |
-| `site_description`           | string  | `"Federated identity platform"` | Shown on the login page                                    |
-| `site_icon_url`              | string? | `null`                          | URL to a favicon / logo                                    |
-| `allow_registration`         | boolean | `true`                          | Allow self-registration                                    |
-| `invite_only`                | boolean | `false`                         | Require an invite token to register                        |
-| `require_email_verification` | boolean | `false`                         | Block sign-in until the email is verified                  |
-| `accent_color`               | string  | `"#0078d4"`                     | Primary brand color (hex)                                  |
-| `custom_css`                 | string  | `""`                            | Injected as a `<style>` block on every page                |
-| `show_powered_by`            | boolean | `true`                          | Show the "Powered by Prism" source link in the footer      |
-| `disable_user_create_team`   | boolean | `false`                         | Hide "New team" — only admins can create teams             |
-| `disable_user_create_app`    | boolean | `false`                         | Hide "New application" — only admins can create OAuth apps |
-| `allow_alt_email_login`      | boolean | `true`                          | Let users sign in with any verified secondary email        |
-| `security_contact`           | string  | `""`                            | `mailto:` address or https URL for vulnerability reports   |
-| `security_policy_url`        | string  | `""`                            | Link to your disclosure policy                             |
+| Key                          | Type    | Default                         | Description                                                                |
+| ---------------------------- | ------- | ------------------------------- | -------------------------------------------------------------------------- |
+| `site_name`                  | string  | `"Prism"`                       | Shown in the browser title and emails                                      |
+| `site_description`           | string  | `"Federated identity platform"` | Shown on the login page                                                    |
+| `site_icon_url`              | string? | `null`                          | URL to a favicon / logo                                                    |
+| `allow_registration`         | boolean | `true`                          | Allow self-registration                                                    |
+| `invite_only`                | boolean | `false`                         | Require an invite token to register                                        |
+| `require_email_verification` | boolean | `false`                         | Block sign-in until the email is verified                                  |
+| `accent_color`               | string  | `"#0078d4"`                     | Primary brand color (hex)                                                  |
+| `custom_css`                 | string  | `""`                            | Injected as a `<style>` block on every page                                |
+| `show_powered_by`            | boolean | `true`                          | Show the "Powered by Prism" source link in the footer                      |
+| `disable_user_create_team`   | boolean | `false`                         | Hide "New team" — only admins can create teams                             |
+| `disable_user_create_app`    | boolean | `false`                         | Hide "New application" — only admins can create apps                       |
+| `saml_enabled`               | boolean | `true`                          | Let apps use [SAML](saml.md). Admins can override it per owner and per app |
+| `allow_alt_email_login`      | boolean | `true`                          | Let users sign in with any verified secondary email                        |
+| `security_contact`           | string  | `""`                            | `mailto:` address or https URL for vulnerability reports                   |
+| `security_policy_url`        | string  | `""`                            | Link to your disclosure policy                                             |
 
 When `security_contact` is set, Prism serves `/.well-known/security.txt`.
 

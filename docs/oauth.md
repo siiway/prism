@@ -3,7 +3,8 @@ title: OAuth / OIDC Guide
 description: Integrate Prism as your OAuth 2.0 / OpenID Connect provider — authorization code flow, PKCE, scopes, token exchange, and introspection.
 ---
 
-Prism is a standards-compliant OAuth 2.0 authorization server and OpenID Connect provider. Any application that supports the OAuth 2.0 authorization code flow can use Prism as its identity provider.
+Prism is a standards-compliant OAuth 2.0 authorization server and OpenID Connect provider. Any application that supports the OAuth 2.0 authorization code flow can use Prism as its identity provider. For apps that only support SAML, see
+the [SAML Guide](saml.md).
 
 ## Discovery
 
@@ -370,7 +371,7 @@ reserved address.
 ## private_key_jwt client authentication (RFC 7523)
 
 A confidential client can authenticate with a signed assertion instead of a
-shared secret. In **App Detail → Settings**, set **Token endpoint auth method**
+shared secret. On the app's **OAuth** tab, set **Token endpoint auth method**
 to `private_key_jwt` and paste a **jwks** or **jwks_uri** (or use DCR). Then, at
 the token, PAR, introspection and revocation endpoints, send:
 
@@ -503,7 +504,9 @@ GET /api/oauth/end_session?id_token_hint=<ID_TOKEN>&post_logout_redirect_uri=<UR
 
 Ends the user's Prism session. If `post_logout_redirect_uri` exactly matches one
 registered on the client (`post_logout_redirect_uris`), the browser is sent
-there with `state`; otherwise it lands on Prism's signed-out page.
+there with `state`; otherwise it lands on Prism's signed-out page. Apps the
+user signed in to with SAML single logout are signed out on the way; see
+[SAML → Single logout](saml.md#single-logout).
 
 Send the `id_token_hint` from the user's current sign-in. It identifies the
 client. Since any site could link here, Prism signs the user out without
@@ -514,7 +517,7 @@ stays signed in, they go to Prism's home page instead.
 
 ## Back-Channel Logout
 
-Register a `backchannel_logout_uri` on your client (App Detail → Settings, DCR,
+Register a `backchannel_logout_uri` on your client (the app's **OAuth** tab, DCR,
 or the app API). When the user signs out of Prism, Prism POSTs a signed
 `logout_token` to it:
 
@@ -744,9 +747,10 @@ so users sign in to Cloudflare-protected resources with their Prism account.
    https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback
    ```
 
-3. Set **Allowed scopes** to include at least `openid` and `email`, plus
-   `profile` and `teams:read` if you want those claims in policies.
-4. Set **OIDC fields** to the custom claims to embed, e.g. `["role", "teams"]`.
+3. On the app's **Permissions** tab, allow at least `openid` and `email`,
+   plus `profile` and `teams:read` if you want those claims in policies.
+4. Set `oidc_fields` to the custom claims to embed, e.g. `["role", "teams"]`,
+   through the app API (`PATCH /api/apps/:id`).
 5. Copy the **Client ID** and **Client Secret**.
 
 #### Step 2 — Add Prism as an identity provider in Cloudflare
