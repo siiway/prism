@@ -1,6 +1,6 @@
 // Admin routes: site config, user management, app moderation, audit log
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import {
   samlOverrideValue,
   samlOwnerSetting,
@@ -1409,12 +1409,21 @@ app.delete("/teams/:id", async (c) => {
 // above. GET also says what null currently means. Stopping keeps the apps'
 // SAML settings.
 
-function parseSamlOverride(body: {
-  override?: unknown;
-}): boolean | null | undefined {
+/** The override in a PATCH body, or a 400. */
+async function readSamlOverride(
+  c: Context<AppEnv>,
+): Promise<{ override: boolean | null } | { error: Response }> {
+  const body = await c.req
+    .json<{ override?: unknown }>()
+    .catch(() => ({}) as { override?: unknown });
   return body.override === null || typeof body.override === "boolean"
-    ? body.override
-    : undefined;
+    ? { override: body.override }
+    : {
+        error: c.json(
+          { error: "field_must_be_boolean", params: { field: "override" } },
+          400,
+        ),
+      };
 }
 
 const storedOverride = (v: boolean | null) => (v === null ? null : v ? 1 : 0);
@@ -1436,14 +1445,9 @@ app.patch("/users/:id/saml", async (c) => {
     .bind(id)
     .first<{ username: string; display_name: string; kind: string }>();
   if (!user) return c.json({ error: "user_not_found" }, 404);
-  const override = parseSamlOverride(
-    await c.req.json<{ override?: unknown }>().catch(() => ({})),
-  );
-  if (override === undefined)
-    return c.json(
-      { error: "field_must_be_boolean", params: { field: "override" } },
-      400,
-    );
+  const read = await readSamlOverride(c);
+  if ("error" in read) return read.error;
+  const { override } = read;
 
   await c.env.DB.prepare(
     "UPDATE users SET saml_override = ?, updated_at = ? WHERE id = ?",
@@ -1493,14 +1497,9 @@ app.patch("/apps/:id/saml", async (c) => {
     .bind(id)
     .first<{ name: string; owner_id: string }>();
   if (!row) return c.json({ error: "app_not_found" }, 404);
-  const override = parseSamlOverride(
-    await c.req.json<{ override?: unknown }>().catch(() => ({})),
-  );
-  if (override === undefined)
-    return c.json(
-      { error: "field_must_be_boolean", params: { field: "override" } },
-      400,
-    );
+  const read = await readSamlOverride(c);
+  if ("error" in read) return read.error;
+  const { override } = read;
 
   const stored = storedOverride(override);
   await c.env.DB.prepare(

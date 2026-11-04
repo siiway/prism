@@ -13,15 +13,20 @@
 
 import type { Element, Node } from "@xmldom/xmldom";
 import {
-  base64ToBytes,
   certificateKey,
+  decodeBase64,
   ecdsaSignatureFromDer,
   type EcCurve,
 } from "./x509";
+import {
+  DSIG,
+  ENVELOPED,
+  EXC_C14N,
+  byCodePoint,
+  c14nEscapeAttr as escapeAttr,
+  c14nEscapeText as escapeText,
+} from "./xml";
 
-const DSIG = "http://www.w3.org/2000/09/xmldsig#";
-const EXC_C14N = "http://www.w3.org/2001/10/xml-exc-c14n#";
-const ENVELOPED = `${DSIG}enveloped-signature`;
 const XMLNS = "http://www.w3.org/2000/xmlns/";
 
 const MORE = "http://www.w3.org/2001/04/xmldsig-more#";
@@ -116,12 +121,6 @@ async function verifyWith(
     raw as Uint8Array<ArrayBuffer>,
     bytes,
   );
-}
-
-/** Base64 as it appears in XML or a query value: whitespace allowed, and a
- *  '+' that arrived as a space put back. */
-function decodeBase64(text: string): Uint8Array<ArrayBuffer> {
-  return base64ToBytes(text.replace(/ /g, "+").replace(/\s+/g, ""));
 }
 
 function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
@@ -301,27 +300,6 @@ interface C14nOptions {
   exclude?: Node;
   /** InclusiveNamespaces PrefixList; "#default" is the default namespace. */
   inclusivePrefixes?: string[];
-}
-
-/** Code-point order, which c14n sorts by (not locale order). */
-const byCodePoint = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-
-function escapeText(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\r/g, "&#xD;");
-}
-
-function escapeAttr(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/"/g, "&quot;")
-    .replace(/\t/g, "&#x9;")
-    .replace(/\n/g, "&#xA;")
-    .replace(/\r/g, "&#xD;");
 }
 
 /** The exclusive canonical form of the subtree at `apex`. */

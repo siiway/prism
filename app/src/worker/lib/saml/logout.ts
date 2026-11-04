@@ -42,7 +42,7 @@ import { base64ToBytes } from "./x509";
 /** How long a logout may take, visits to every SP included. */
 export const LOGOUT_TTL_SECONDS = 600;
 
-export type LogoutStatus =
+type LogoutStatus =
   "Success" | "PartialLogout" | "UnknownPrincipal" | "RequestDenied";
 
 interface Participant {
@@ -86,7 +86,7 @@ export async function samlSessionIndex(
 /** Remember that a Prism session signed in to an SP. */
 export async function recordSamlSession(
   db: D1Database,
-  s: Omit<Participant, "app_id"> & { app_id: string; session_id: string },
+  s: Participant & { session_id: string },
 ): Promise<void> {
   await db
     .prepare(
@@ -129,7 +129,7 @@ async function participants(
   return results;
 }
 
-export const logoutPageUrl = (token: string) =>
+const logoutPageUrl = (token: string) =>
   `/logout?token=${encodeURIComponent(token)}`;
 
 async function insertLogout(
@@ -262,7 +262,7 @@ const fromSp = (row: LogoutRow) => row.origin_request_id !== null;
  *   request named someone else, or the user said no.
  * - "raced": another tab began it first.
  */
-export type BeginOutcome = "confirm" | "end" | "keep" | "raced";
+type BeginOutcome = "confirm" | "end" | "keep" | "raced";
 
 /**
  * Begin a logout another site asked for, from the /logout page, where the

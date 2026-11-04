@@ -29,25 +29,26 @@
 
 import { Hono, type Context } from "hono";
 import { optionalAuth } from "../middleware/auth";
-import { deliverBackChannelLogout } from "../lib/backchannelLogout";
 import {
   clearSamlLogoutCookie,
-  clearSessionCookie,
   readSamlLogoutCookie,
   setSamlLogoutCookie,
 } from "../lib/cookies";
 import { checkAccessWhitelist } from "../lib/appAccess";
-import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
+import {
+  declaredLengthExceedsLimit,
+  readStreamWithLimit,
+} from "../lib/bodyLimit";
 import { randomBase64url, randomId, sha256Hex } from "../lib/crypto";
 import { computeIsVerified } from "../lib/domainVerify";
 import {
-  deliverUserEmailNotifications,
-  notificationActorMetaFromHeaders,
-} from "../lib/notifications";
-import { buildConsentAppSummary } from "../lib/oauthClients";
+  buildConsentAppSummary,
+  recordAppAuthorization,
+} from "../lib/oauthClients";
+import { endBrowserSession } from "../lib/session";
 import {
   checkAppAuthorizationAllowed,
-  getRestrictionState,
+  type RestrictionState,
 } from "../lib/userCapabilities";
 import {
   BINDING_POST,
@@ -66,6 +67,7 @@ import {
   type SamlStatus,
 } from "../lib/saml/protocol";
 import {
+  getServiceProvider,
   idpEndpoints,
   parseAcsUrls,
   releasedScopes,
@@ -77,7 +79,6 @@ import {
   beginLogout,
   loadLogout,
   loadLogoutAwaiting,
-  LOGOUT_TTL_SECONDS,
   nextLogoutMessage,
   recordLogoutResponse,
   recordSamlSession,
@@ -87,7 +88,7 @@ import {
 import {
   bindProfile,
   boundProfile,
-  profileKind,
+  profileSummary,
   sharedProfiles,
   type SamlProfileRow,
 } from "../lib/saml/profiles";
@@ -191,31 +192,34 @@ async function receiveRequest(
 
     const token = randomBase64url(32);
     const now = Math.floor(Date.now() / 1000);
-    // An expired row for the same ID no longer counts as a replay.
-    await c.env.DB.prepare(
-      "DELETE FROM saml_requests WHERE app_id = ? AND request_id = ? AND expires_at <= ?",
-    )
-      .bind(sp.app_id, request.id, now)
-      .run();
-    const stored = await c.env.DB.prepare(
-      `INSERT INTO saml_requests (token_hash, app_id, request_id, acs_url, relay_state,
-         name_id_format, force_authn, is_passive, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(app_id, request_id) DO NOTHING`,
-    )
-      .bind(
-        await sha256Hex(token),
-        sp.app_id,
-        request.id,
-        acsUrl,
-        relayState || null,
-        request.nameIdFormat,
-        request.forceAuthn ? 1 : 0,
-        request.isPassive ? 1 : 0,
-        now,
-        now + REQUEST_TTL_SECONDS,
-      )
-      .run();
+    const db = c.env.DB;
+    const [, stored] = await db.batch([
+      // An expired row for the same ID no longer counts as a replay.
+      db
+        .prepare(
+          "DELETE FROM saml_requests WHERE app_id = ? AND request_id = ? AND expires_at <= ?",
+        )
+        .bind(sp.app_id, request.id, now),
+      db
+        .prepare(
+          `INSERT INTO saml_requests (token_hash, app_id, request_id, acs_url, relay_state,
+             name_id_format, force_authn, is_passive, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(app_id, request_id) DO NOTHING`,
+        )
+        .bind(
+          await sha256Hex(token),
+          sp.app_id,
+          request.id,
+          acsUrl,
+          relayState || null,
+          request.nameIdFormat,
+          request.forceAuthn ? 1 : 0,
+          request.isPassive ? 1 : 0,
+          now,
+          now + REQUEST_TTL_SECONDS,
+        ),
+    ]);
     // The same AuthnRequest again (a retry or a replay): one sign-in each.
     if (!stored.meta.changes) throw new SamlError("saml_request_used");
     return c.redirect(
@@ -244,28 +248,10 @@ async function readBoundedText(
   req: Request,
   max: number,
 ): Promise<string | null> {
-  if (Number(req.headers.get("Content-Length") ?? 0) > max) return null;
-  if (!req.body) return "";
-  const reader = req.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
+  if (declaredLengthExceedsLimit(req.headers.get("Content-Length"), max))
+    return null;
+  const { bytes } = await readStreamWithLimit(req.body, max);
+  return bytes && new TextDecoder().decode(bytes);
 }
 
 samlProtocolRoutes.post("/sso", async (c) => {
@@ -434,9 +420,7 @@ async function loadRequest(
     c.env.DB.prepare("SELECT * FROM oauth_apps WHERE id = ? AND is_active = 1")
       .bind(pending.app_id)
       .first<OAuthAppRow>(),
-    c.env.DB.prepare("SELECT * FROM saml_service_providers WHERE app_id = ?")
-      .bind(pending.app_id)
-      .first<SamlSpRow>(),
+    getServiceProvider(c.env.DB, pending.app_id),
   ]);
   // The app was disabled, or SAML turned off for it, since the request
   // arrived; or the ACS URL was removed from its list.
@@ -472,25 +456,39 @@ interface Evaluation {
   profileChoices?: SamlProfileRow[];
 }
 
+/** The signed-in user as stored now, and what restricts the account; null
+ *  once it's gone or disabled. */
 async function currentAccount(
   db: D1Database,
   user: AuthUser,
-): Promise<AuthUser | null> {
+): Promise<{ account: AuthUser; restriction: RestrictionState } | null> {
   const row = await db
     .prepare(
-      "SELECT email, username, display_name, avatar_url, email_verified FROM users WHERE id = ? AND is_active = 1",
+      `SELECT email, username, display_name, avatar_url, email_verified,
+         origin_team_id, origin_join_completed, converted_at
+       FROM users WHERE id = ? AND is_active = 1`,
     )
     .bind(user.id)
-    .first<{
-      email: string;
-      username: string;
-      display_name: string;
-      avatar_url: string | null;
-      email_verified: number;
-    }>();
-  return row
-    ? { ...user, ...row, email_verified: row.email_verified === 1 }
-    : null;
+    .first<
+      {
+        email: string;
+        username: string;
+        display_name: string;
+        avatar_url: string | null;
+        email_verified: number;
+      } & RestrictionState
+    >();
+  if (!row) return null;
+  const { origin_team_id, origin_join_completed, converted_at, ...fields } =
+    row;
+  return {
+    account: {
+      ...user,
+      ...fields,
+      email_verified: fields.email_verified === 1,
+    },
+    restriction: { origin_team_id, origin_join_completed, converted_at },
+  };
 }
 
 /**
@@ -514,7 +512,7 @@ async function evaluate(
     return decline("InvalidNameIDPolicy");
 
   const sessionUser = c.get("user");
-  const [user, row] = sessionUser
+  const [current, row] = sessionUser
     ? await Promise.all([
         currentAccount(c.env.DB, sessionUser),
         c.env.DB.prepare("SELECT created_at, amr FROM sessions WHERE id = ?")
@@ -522,8 +520,10 @@ async function evaluate(
           .first<{ created_at: number; amr: string | null }>(),
       ])
     : [null, null];
-  if (!user) return passive ? decline("NoPassive") : { next: "login", scopes };
+  if (!current)
+    return passive ? decline("NoPassive") : { next: "login", scopes };
 
+  const { account: user, restriction } = current;
   const session = {
     created_at: row?.created_at ?? 0,
     amr: row?.amr ? (JSON.parse(row.amr) as string[]) : [],
@@ -533,31 +533,12 @@ async function evaluate(
   if (pending.force_authn === 1 && session.created_at <= pending.created_at)
     return passive ? decline("NoPassive") : { next: "reauth", scopes };
 
-  // Accounts that may not use the app see why on the page (and can send the
-  // SP a refusal); a passive request just gets the refusal.
-  const restriction = await getRestrictionState(c.env.DB, user.id);
-  const denied =
-    (restriction &&
-      (await checkAppAuthorizationAllowed(c.env.DB, restriction, app))) ||
-    (await checkAccessWhitelist(c.env.DB, app, user.id));
-  if (denied)
-    return passive
-      ? decline("RequestDenied")
-      : { next: "consent", error: denied, scopes, session, account: user };
-  if (sp.name_id_format === "email" && !(user.email && user.email_verified))
-    return passive
-      ? decline("RequestDenied")
-      : {
-          next: "consent",
-          error: "saml_email_unverified",
-          scopes,
-          session,
-          account: user,
-        };
-
-  // The SAML profile the app gets, chosen at the first sign-in to it, and
-  // the user's stored consent (first-party apps need none).
-  const [profile, shared, consent] = await Promise.all([
+  // Whether the account may use the app; the SAML profile the app gets,
+  // chosen at the first sign-in to it; and the user's stored consent
+  // (first-party apps need none).
+  const [restricted, notListed, profile, shared, consent] = await Promise.all([
+    checkAppAuthorizationAllowed(c.env.DB, restriction, app),
+    checkAccessWhitelist(c.env.DB, app, user.id),
     boundProfile(c.env.DB, app.id, user.id),
     sharedProfiles(c.env.DB, user.id),
     app.is_first_party
@@ -568,6 +549,22 @@ async function evaluate(
           .bind(user.id, app.client_id)
           .first<{ scopes: string; auto_authorize: number }>(),
   ]);
+  // Accounts that may not use the app see why on the page (and can send the
+  // SP a refusal); a passive request just gets the refusal.
+  const refusal = restricted || notListed;
+  const emailUnverified =
+    sp.name_id_format === "email" && !(user.email && user.email_verified);
+  if (refusal || emailUnverified)
+    return passive
+      ? decline("RequestDenied")
+      : {
+          next: "consent",
+          error: refusal ?? "saml_email_unverified",
+          scopes,
+          session,
+          account: user,
+        };
+
   const profileChoices = profile ? [] : shared;
   const base = { scopes, session, account: user, profile, profileChoices };
 
@@ -593,14 +590,6 @@ async function evaluate(
   return { next: "continue", ...base };
 }
 
-/** A profile as the sign-in page shows it. */
-const profileSummary = (p: SamlProfileRow) => ({
-  id: p.id,
-  kind: profileKind(p),
-  name: p.name,
-  name_id: p.name_id,
-});
-
 function destination(c: Context<AppEnv>, loaded: Loaded): Destination {
   return {
     idpEntityId: idpEndpoints(c.env.APP_URL).entityId,
@@ -613,17 +602,19 @@ function destination(c: Context<AppEnv>, loaded: Loaded): Destination {
 samlApiRoutes.get("/requests/:token", async (c) => {
   const loaded = await loadRequest(c);
   if ("error" in loaded) return c.json({ error: loaded.error }, 404);
-  const ev = await evaluate(c, loaded);
   const { app } = loaded;
-  const isVerified = await computeIsVerified(
-    c.env.DB,
-    app.owner_id,
-    app.website_url,
-    app.redirect_uris,
-    app.team_id,
-  );
+  const [ev, summary] = await Promise.all([
+    evaluate(c, loaded),
+    computeIsVerified(
+      c.env.DB,
+      app.owner_id,
+      app.website_url,
+      app.redirect_uris,
+      app.team_id,
+    ).then((verified) => buildConsentAppSummary(c.env, app, verified)),
+  ]);
   return c.json({
-    app: await buildConsentAppSummary(c.env, app, isVerified),
+    app: summary,
     next: ev.next,
     error: ev.error ?? null,
     scopes: ev.scopes,
@@ -637,18 +628,11 @@ samlApiRoutes.get("/requests/:token", async (c) => {
 samlApiRoutes.post("/requests/:token", async (c) => {
   const body = await c.req
     .json<{
-      action?: string;
-      authorization_mode?: "once" | "always";
+      action?: unknown;
+      authorization_mode?: unknown;
       profile?: unknown;
     }>()
-    .catch(
-      () =>
-        ({}) as {
-          action?: string;
-          authorization_mode?: string;
-          profile?: unknown;
-        },
-    );
+    .catch(() => ({}) as Record<string, unknown>);
   const action = body.action;
   if (action !== "approve" && action !== "deny" && action !== "decline")
     return c.json({ error: "field_invalid", params: { field: "action" } }, 400);
@@ -673,7 +657,6 @@ samlApiRoutes.post("/requests/:token", async (c) => {
         ev.next === "continue"));
   if (!allowed) return c.json({ error: "saml_request_state" }, 409);
 
-  const signer = await getSamlSigner(c.env);
   const dest = destination(c, loaded);
   const now = Math.floor(Date.now() / 1000);
   const approved = action === "approve" ? (ev.account as AuthUser) : null;
@@ -685,15 +668,20 @@ samlApiRoutes.post("/requests/:token", async (c) => {
   // The ID of the user's SAML profile for this app, never the Prism user
   // ID (SAML Core §8.3.7). The first sign-in picks the profile: `profile`
   // names a shared one, or else the app gets a new per-app profile.
-  const profile = approved
-    ? (ev.profile ??
-      (await bindProfile(
-        c.env.DB,
-        app.id,
-        approved.id,
-        typeof body.profile === "string" && body.profile ? body.profile : "new",
-      )))
-    : null;
+  const [signer, profile] = await Promise.all([
+    getSamlSigner(c.env),
+    approved
+      ? (ev.profile ??
+        bindProfile(
+          c.env.DB,
+          app.id,
+          approved.id,
+          typeof body.profile === "string" && body.profile
+            ? body.profile
+            : "new",
+        ))
+      : null,
+  ]);
   if (approved && !profile)
     return c.json(
       { error: "field_invalid", params: { field: "profile" } },
@@ -746,117 +734,57 @@ samlApiRoutes.post("/requests/:token", async (c) => {
   });
   if (!approved) return reply;
 
-  // So signing out of Prism can sign the user out of this SP too.
-  if (sessionId)
-    await recordSamlSession(c.env.DB, {
-      session_id: sessionId,
-      app_id: app.id,
-      name_id: nameIdValue,
-      name_id_format: sp.name_id_format,
-      session_index: sessionIndex,
-    });
-
-  if (ev.next === "consent") {
-    const autoAuthorize =
-      body.authorization_mode === "always" && !app.is_first_party ? 1 : 0;
-    // The consent row is shared with OAuth. Add SAML's scopes to it rather
-    // than replace them, and never turn "Always authorize" off: a one-time
-    // approval leaves a remembered consent (and its scopes) as it was.
-    const scopes = [...new Set([...(ev.consentedScopes ?? []), ...ev.scopes])];
-    await c.env.DB.prepare(
-      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(user_id, client_id) DO UPDATE SET
-         scopes = CASE WHEN excluded.auto_authorize = 1 OR auto_authorize = 0 THEN excluded.scopes ELSE scopes END,
-         auto_authorize = MAX(auto_authorize, excluded.auto_authorize),
-         granted_at = excluded.granted_at`,
-    )
-      .bind(
-        randomId(),
-        approved.id,
-        app.client_id,
-        JSON.stringify(scopes),
-        now,
-        autoAuthorize,
-      )
-      .run();
-  }
-
-  // The same notice and audit trail as an OAuth authorization: a consent
-  // the user just gave always notifies; a remembered one only on opt-in.
-  let notify = ev.next === "consent";
-  if (!notify && !app.is_first_party) {
-    const prefs = await c.env.DB.prepare(
-      "SELECT notify_on_auto_authorization FROM users WHERE id = ?",
-    )
-      .bind(approved.id)
-      .first<{ notify_on_auto_authorization: number }>();
-    notify = prefs?.notify_on_auto_authorization === 1;
-  }
-  if (notify)
-    c.executionCtx.waitUntil(
-      deliverUserEmailNotifications(
-        c.env,
-        approved.id,
-        "oauth.consent_granted",
-        {
-          app_name: app.name,
-          scopes: ev.scopes,
-          ...notificationActorMetaFromHeaders(c.req.raw.headers),
-        },
-        c.env.APP_URL,
-      ).catch(() => {}),
-    );
-
-  const meta = auditRequestMeta(c);
-  const base = {
-    actorId: approved.id,
-    actorName: approved.username,
-    resourceType: "app",
-    resourceId: app.id,
-    resourceName: app.name,
-    ip: meta.ip,
-    userAgent: meta.userAgent,
-    geo: meta.geo,
-  };
-  const events: AuditInput[] = [
-    {
-      ...base,
-      scope: "user",
-      scopeId: approved.id,
-      action: "oauth.authorize",
-      metadata: {
-        scopes: ev.scopes,
-        client_id: app.client_id,
-        protocol: "saml",
-      },
-    },
-    {
-      ...base,
-      scope: app.team_id ? "team" : "user",
-      scopeId: app.team_id ?? app.owner_id,
-      action: "app.authorized",
-      metadata: { scopes: ev.scopes, user_id: approved.id, protocol: "saml" },
-    },
+  const autoAuthorize =
+    body.authorization_mode === "always" && !app.is_first_party ? 1 : 0;
+  // The consent row is shared with OAuth. Add SAML's scopes to it rather
+  // than replace them, and never turn "Always authorize" off: a one-time
+  // approval leaves a remembered consent (and its scopes) as it was.
+  const consentScopes = [
+    ...new Set([...(ev.consentedScopes ?? []), ...ev.scopes]),
   ];
-  c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, events));
+  await Promise.all([
+    // So signing out of Prism can sign the user out of this SP too.
+    sessionId &&
+      recordSamlSession(c.env.DB, {
+        session_id: sessionId,
+        app_id: app.id,
+        name_id: nameIdValue,
+        name_id_format: sp.name_id_format,
+        session_index: sessionIndex,
+      }),
+    ev.next === "consent" &&
+      c.env.DB.prepare(
+        `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, client_id) DO UPDATE SET
+           scopes = CASE WHEN excluded.auto_authorize = 1 OR auto_authorize = 0 THEN excluded.scopes ELSE scopes END,
+           auto_authorize = MAX(auto_authorize, excluded.auto_authorize),
+           granted_at = excluded.granted_at`,
+      )
+        .bind(
+          randomId(),
+          approved.id,
+          app.client_id,
+          JSON.stringify(consentScopes),
+          now,
+          autoAuthorize,
+        )
+        .run(),
+  ]);
+
+  // The same notice and audit trail as an OAuth authorization.
+  await recordAppAuthorization(c, {
+    user: approved,
+    app,
+    scopes: ev.scopes,
+    auto: ev.next !== "consent",
+    protocol: "saml",
+  });
 
   return reply;
 });
 
 // ─── API for the /logout page ────────────────────────────────────────────────
-
-/** End the browser's Prism session, as signing out does. */
-async function endSession(c: Context<AppEnv>) {
-  const sessionId = c.get("sessionId");
-  const user = c.get("user");
-  if (user)
-    await deliverBackChannelLogout(c.env, c.executionCtx, user.id, sessionId);
-  await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
-    .bind(sessionId)
-    .run();
-  clearSessionCookie(c);
-}
 
 /**
  * `token`: a logout another site asked for, from the /logout page URL.
@@ -867,7 +795,7 @@ async function endSession(c: Context<AppEnv>) {
 samlApiRoutes.post("/logout", async (c) => {
   const body = await c.req
     .json<{ token?: unknown; action?: unknown }>()
-    .catch(() => ({}) as { token?: unknown; action?: unknown });
+    .catch(() => ({}) as Record<string, unknown>);
   const bound = readSamlLogoutCookie(c);
   const token =
     typeof body.token === "string" && body.token ? body.token : (bound ?? "");
@@ -886,7 +814,9 @@ samlApiRoutes.post("/logout", async (c) => {
         : null;
     const user = c.get("user");
     const sessionId = c.get("sessionId");
-    const account = user ? await currentAccount(c.env.DB, user) : null;
+    const account = user
+      ? (await currentAccount(c.env.DB, user))?.account
+      : null;
     const outcome = await beginLogout(
       c.env.DB,
       row,
@@ -912,7 +842,8 @@ samlApiRoutes.post("/logout", async (c) => {
       row = await loadLogout(c.env.DB, token);
       if (!row) return expired();
     } else {
-      if (outcome === "end") await endSession(c);
+      // The SPs to visit were listed as it began.
+      if (outcome === "end") await endBrowserSession(c);
       begunHere = true;
     }
   } else if (bound !== token) return expired();
@@ -923,6 +854,6 @@ samlApiRoutes.post("/logout", async (c) => {
     if (bound === token) clearSamlLogoutCookie(c);
   } else if (begunHere)
     // Begun here, with SPs to visit: from now on it's this browser's.
-    setSamlLogoutCookie(c, token, LOGOUT_TTL_SECONDS);
+    setSamlLogoutCookie(c, token);
   return c.json(next.message);
 });

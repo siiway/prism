@@ -1379,6 +1379,10 @@ export interface DeviceVerifyInfo {
 export type SamlNameIdFormat = "persistent" | "email";
 export type SamlSignMode = "assertion" | "response" | "both";
 export type SamlSloBinding = "redirect" | "post";
+/** Why an app can't use SAML: a site admin turned it off for the site, the
+ *  app's owner or the app. */
+export type SamlBlock =
+  "saml_disabled" | "saml_disabled_user" | "saml_disabled_app";
 
 /** An app's SAML service-provider settings. */
 export interface SamlServiceProvider {
@@ -1401,7 +1405,7 @@ export interface AppSamlInfo {
   saml: SamlServiceProvider | null;
   /** Set when a site admin turned SAML off for the app, its owner or the
    *  site: sign-in doesn't work and the settings can't be saved. */
-  disabled: "saml_disabled" | "saml_disabled_user" | "saml_disabled_app" | null;
+  disabled: SamlBlock | null;
   /** What to give the service provider. */
   idp: {
     entity_id: string;

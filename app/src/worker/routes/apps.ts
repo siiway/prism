@@ -32,28 +32,17 @@ import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
 } from "../lib/notifications";
-import type { NameIdFormat, SignMode, SloBinding } from "../lib/saml/protocol";
 import {
-  MAX_ACS_URLS,
-  NAME_ID_FORMATS,
-  SIGN_MODES,
+  getServiceProvider,
   idpEndpoints,
-  isValidAcsUrl,
-  isValidEntityId,
   parseAcsUrls,
+  parseSpSettings,
   releasedScopes,
   type SamlSpRow,
   samlBlock,
-  SLO_BINDINGS,
 } from "../lib/saml/serviceProviders";
 import { getSamlSigner } from "../lib/saml/sign";
-import { isUsableCertificate } from "../lib/saml/verify";
-import {
-  base64ToBytes,
-  bytesToBase64,
-  certificateFromText,
-  toPem,
-} from "../lib/saml/x509";
+import { base64ToBytes, toPem } from "../lib/saml/x509";
 import type {
   OAuthAppRow,
   AppScopeDefinitionRow,
@@ -1640,16 +1629,15 @@ app.get("/:id/saml", async (c) => {
   const row = await loadApp(c, id, false);
   if (row instanceof Response) return row;
 
-  const sp = await c.env.DB.prepare(
-    "SELECT * FROM saml_service_providers WHERE app_id = ?",
-  )
-    .bind(id)
-    .first<SamlSpRow>();
-  const signer = await getSamlSigner(c.env);
+  const [sp, signer, disabled] = await Promise.all([
+    getServiceProvider(c.env.DB, id),
+    getSamlSigner(c.env),
+    samlBlock(c.env.DB, row),
+  ]);
   const idp = idpEndpoints(c.env.APP_URL);
   return c.json({
     saml: samlView(sp),
-    disabled: await samlBlock(c.env.DB, row),
+    disabled,
     idp: {
       entity_id: idp.entityId,
       metadata_url: idp.metadataUrl,
@@ -1683,129 +1671,38 @@ app.put("/:id/saml", async (c) => {
     }>()
     .catch(() => ({}) as Record<string, unknown>);
 
-  const entityId =
-    typeof body.entity_id === "string" ? body.entity_id.trim() : "";
-  if (!entityId)
-    return c.json(
-      { error: "field_required", params: { field: "entity_id" } },
-      400,
-    );
-  if (!isValidEntityId(entityId))
-    return c.json(
-      { error: "field_invalid", params: { field: "entity_id" } },
-      400,
-    );
-
-  const acsUrls = Array.isArray(body.acs_urls)
-    ? [
-        ...new Set(
-          body.acs_urls
-            .filter((u): u is string => typeof u === "string")
-            .map((u) => u.trim())
-            .filter(Boolean),
-        ),
-      ]
-    : [];
-  if (acsUrls.length === 0)
-    return c.json(
-      { error: "field_required", params: { field: "acs_urls" } },
-      400,
-    );
-  if (acsUrls.length > MAX_ACS_URLS)
-    return c.json(
-      {
-        error: "field_max_items",
-        params: { field: "acs_urls", max: MAX_ACS_URLS },
-      },
-      400,
-    );
-  const badAcs = acsUrls.find((u) => !isValidAcsUrl(u));
-  if (badAcs)
-    return c.json(
-      { error: "saml_acs_url_invalid", params: { url: badAcs } },
-      400,
-    );
-
-  const nameIdFormat = body.name_id_format ?? "persistent";
-  if (!NAME_ID_FORMATS.includes(nameIdFormat as NameIdFormat))
-    return c.json(
-      {
-        error: "field_one_of",
-        params: { field: "name_id_format", values: NAME_ID_FORMATS.join(", ") },
-      },
-      400,
-    );
-  const sign = body.sign ?? "assertion";
-  if (!SIGN_MODES.includes(sign as SignMode))
-    return c.json(
-      {
-        error: "field_one_of",
-        params: { field: "sign", values: SIGN_MODES.join(", ") },
-      },
-      400,
-    );
-
-  // Single logout is optional: an empty URL turns it off.
-  const sloUrl = typeof body.slo_url === "string" ? body.slo_url.trim() : "";
-  if (sloUrl && !isValidAcsUrl(sloUrl))
-    return c.json(
-      { error: "field_invalid", params: { field: "slo_url" } },
-      400,
-    );
-  const sloBinding = body.slo_binding ?? "redirect";
-  if (!SLO_BINDINGS.includes(sloBinding as SloBinding))
-    return c.json(
-      {
-        error: "field_one_of",
-        params: { field: "slo_binding", values: SLO_BINDINGS.join(", ") },
-      },
-      400,
-    );
-  // The SP's signing certificate is optional too: with it, its logout
-  // messages must be signed. PEM or the bare base64 from its metadata.
-  const certText =
-    typeof body.signing_cert === "string" ? body.signing_cert.trim() : "";
-  let signingCert: string | null = null;
-  if (certText) {
-    const der = certificateFromText(certText);
-    if (!der || !(await isUsableCertificate(der)))
-      return c.json({ error: "saml_certificate_invalid" }, 400);
-    signingCert = bytesToBase64(der);
-  }
-
-  const taken = await c.env.DB.prepare(
-    "SELECT app_id FROM saml_service_providers WHERE entity_id = ? AND app_id != ?",
-  )
-    .bind(entityId, id)
-    .first<{ app_id: string }>();
-  if (taken) return c.json({ error: "saml_entity_id_taken" }, 409);
+  const parsed = await parseSpSettings(body);
+  if ("error" in parsed) return c.json(parsed, 400);
+  const s = parsed.value;
 
   const now = Math.floor(Date.now() / 1000);
+  let saved: SamlSpRow | null;
   try {
-    await c.env.DB.prepare(
+    saved = await c.env.DB.prepare(
       `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign,
        slo_url, slo_binding, signing_cert, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(app_id) DO UPDATE SET entity_id = excluded.entity_id, acs_urls = excluded.acs_urls,
        name_id_format = excluded.name_id_format, sign = excluded.sign, slo_url = excluded.slo_url,
        slo_binding = excluded.slo_binding, signing_cert = excluded.signing_cert,
-       updated_at = excluded.updated_at`,
+       updated_at = excluded.updated_at
+     RETURNING *`,
     )
       .bind(
         id,
-        entityId,
-        JSON.stringify(acsUrls),
-        nameIdFormat,
-        sign,
-        sloUrl || null,
-        sloBinding,
-        signingCert,
+        s.entity_id,
+        JSON.stringify(s.acs_urls),
+        s.name_id_format,
+        s.sign,
+        s.slo_url,
+        s.slo_binding,
+        s.signing_cert,
         now,
         now,
       )
-      .run();
+      .first<SamlSpRow>();
   } catch (err) {
-    // Another app saved the same entity ID since the check above.
+    // Another app uses the same entity ID.
     if (
       /UNIQUE constraint failed: saml_service_providers\.entity_id/.test(
         String(err),
@@ -1821,11 +1718,6 @@ app.put("/:id/saml", async (c) => {
     owner_id: row.owner_id,
     team_id: row.team_id,
   });
-  const saved = await c.env.DB.prepare(
-    "SELECT * FROM saml_service_providers WHERE app_id = ?",
-  )
-    .bind(id)
-    .first<SamlSpRow>();
   return c.json({ saml: samlView(saved) });
 });
 

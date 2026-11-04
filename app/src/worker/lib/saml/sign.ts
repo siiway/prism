@@ -2,12 +2,16 @@
 // builds, and the key + certificate they're made with.
 
 import { getRsaKeyPair } from "../config";
-import { canonicalize, el, type XmlElement } from "./xml";
+import {
+  ENVELOPED,
+  EXC_C14N as C14N,
+  RSA_SHA256,
+  canonicalize,
+  el,
+  type XmlElement,
+} from "./xml";
 import { bytesToBase64, selfSignedCertificate } from "./x509";
 
-const C14N = "http://www.w3.org/2001/10/xml-exc-c14n#";
-const ENVELOPED = "http://www.w3.org/2000/09/xmldsig#enveloped-signature";
-const RSA_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
 const SHA256 = "http://www.w3.org/2001/04/xmlenc#sha256";
 
 const utf8 = new TextEncoder();

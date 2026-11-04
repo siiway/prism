@@ -22,7 +22,7 @@ import {
   countSharedProfiles,
   getProfile,
   listProfiles,
-  profileKind,
+  profileSummary,
   type ProfileApp,
   type SamlProfileRow,
 } from "../lib/saml/profiles";
@@ -33,17 +33,12 @@ type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 app.use("*", requireAuth);
 
-function view(p: SamlProfileRow & { apps: ProfileApp[] }) {
-  return {
-    id: p.id,
-    kind: profileKind(p),
-    name: p.name,
-    name_id: p.name_id,
-    apps: p.apps,
-    created_at: p.created_at,
-    updated_at: p.updated_at,
-  };
-}
+const view = (p: SamlProfileRow & { apps: ProfileApp[] }) => ({
+  ...profileSummary(p),
+  apps: p.apps,
+  created_at: p.created_at,
+  updated_at: p.updated_at,
+});
 
 /** The profile `id` of the signed-in user, with its apps; null if none. */
 const findProfile = (c: Context<AppEnv>, id: string) =>

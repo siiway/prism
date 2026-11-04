@@ -1093,7 +1093,7 @@ describe("single logout", () => {
       method: "POST",
       headers: { Cookie: cookie },
     });
-    expect(await out.json()).toEqual({ ok: true, saml_logout: "/logout" });
+    expect(await out.json()).toEqual({ ok: true, next: "/logout" });
     const bound = boundCookie(out);
     // Nobody else can move it on.
     expect((await step(null)).status).toBe(404);
@@ -1119,7 +1119,7 @@ describe("single logout", () => {
       method: "POST",
       headers: { Cookie: cookie },
     });
-    expect(await out.json()).toEqual({ ok: true, saml_logout: null });
+    expect(await out.json()).toEqual({ ok: true, next: "/login" });
   });
 
   test("refuses SPs without a single logout URL, and unknown logouts", async () => {

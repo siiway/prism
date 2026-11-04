@@ -6,31 +6,28 @@
 import {
   Badge,
   Button,
-  Skeleton,
-  SkeletonItem,
   Text,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  AddRegular,
-  ChevronRightRegular,
-  PersonAccountsRegular,
-} from "@fluentui/react-icons";
+import { AddRegular, PersonAccountsRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { SamlProfile } from "../../lib/api";
 import { useApi } from "../../lib/api-context";
 import { formatDate } from "../../lib/datetime";
+import {
+  DataList,
+  DataListRow,
+  DataListSkeleton,
+  type DataListColumn,
+} from "../../components/DataList";
 import { EmptyState } from "../../components/EmptyState";
 import { ListSearch } from "../../components/ListSearch";
 import { PageHeader } from "../../components/PageHeader";
 import { profileTitle } from "./profileTitle";
-
-const COLUMNS = "minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 1.4fr) 110px 20px";
-const NARROW = "@media (max-width: 768px)";
 
 const useStyles = makeStyles({
   section: {
@@ -41,62 +38,14 @@ const useStyles = makeStyles({
   },
   sectionHead: { display: "flex", flexDirection: "column", gap: "2px" },
   muted: { color: tokens.colorNeutralForeground3, fontSize: "13px" },
-  list: {
-    borderRadius: tokens.borderRadiusXLarge,
-    border: `1px solid ${tokens.colorNeutralStroke1}`,
-    background: tokens.colorNeutralBackground1,
-    overflow: "hidden",
-  },
-  head: {
-    display: "grid",
-    gridTemplateColumns: COLUMNS,
-    gap: "16px",
-    padding: "10px 16px",
-    fontSize: "12px",
-    color: tokens.colorNeutralForeground3,
-    [NARROW]: { display: "none" },
-  },
-  row: {
-    display: "grid",
-    gridTemplateColumns: COLUMNS,
-    gap: "16px",
-    alignItems: "center",
-    minHeight: "52px",
-    padding: "8px 16px",
-    boxSizing: "border-box",
-    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
-    cursor: "pointer",
-    ":hover": { background: tokens.colorNeutralBackground1Hover },
-    [NARROW]: { gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 20px" },
-  },
-  // A real link so the row works with the keyboard and "open in new tab".
-  name: {
-    color: tokens.colorNeutralForeground1,
-    fontWeight: tokens.fontWeightSemibold,
-    textDecorationLine: "none",
-    overflowWrap: "anywhere",
-    ":focus-visible": {
-      outline: `2px solid ${tokens.colorStrokeFocus2}`,
-      borderRadius: "2px",
-    },
-  },
-  id: {
-    fontFamily: tokens.fontFamilyMonospace,
-    fontSize: "12px",
-    color: tokens.colorNeutralForeground2,
+  name: { fontWeight: tokens.fontWeightSemibold },
+  ellipsis: {
+    display: "block",
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  apps: {
-    fontSize: "13px",
-    color: tokens.colorNeutralForeground2,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  secondary: { [NARROW]: { display: "none" } },
-  chevron: { fontSize: "14px", color: tokens.colorNeutralForeground3 },
+  id: { fontFamily: tokens.fontFamilyMonospace, fontSize: "12px" },
   empty: {
     padding: "16px",
     borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
@@ -139,50 +88,72 @@ export function SamlProfiles() {
     </Button>
   );
 
-  const head = (firstColumn: string) => (
-    <div className={styles.head} aria-hidden>
-      <span>{firstColumn}</span>
-      <span>{t("samlProfiles.idHeader")}</span>
-      <span>{t("samlProfiles.appsHeader")}</span>
-      <span>{t("samlProfiles.createdHeader")}</span>
-      <span />
-    </div>
-  );
+  /** The list's columns; the first names a shared profile or a per-app
+   *  one's app. */
+  const columns = (first: string): DataListColumn[] => [
+    { label: first, width: "minmax(0, 1.4fr)" },
+    { label: t("samlProfiles.idHeader"), width: "minmax(0, 1.2fr)" },
+    {
+      label: t("samlProfiles.appsHeader"),
+      width: "minmax(0, 1.4fr)",
+      secondary: true,
+    },
+    { label: t("samlProfiles.createdHeader"), width: "110px", secondary: true },
+  ];
 
-  const rows = (list: SamlProfile[], empty: string) =>
-    list.length === 0 ? (
-      <div className={styles.empty}>
-        {q ? t("samlProfiles.noMatch") : empty}
+  const section = (opts: {
+    title: string;
+    desc: string;
+    color: "informative" | "subtle";
+    first: string;
+    list: SamlProfile[];
+    empty: string;
+  }) => (
+    <section className={styles.section}>
+      <div className={styles.sectionHead}>
+        <Text weight="semibold">
+          {opts.title}{" "}
+          <Badge appearance="tint" size="small" color={opts.color}>
+            {opts.list.length}
+          </Badge>
+        </Text>
+        <Text className={styles.muted}>{opts.desc}</Text>
       </div>
-    ) : (
-      list.map((p) => (
-        <div
-          key={p.id}
-          className={styles.row}
-          onClick={() => navigate(`/saml-profiles/${p.id}`)}
-        >
-          <Link
-            to={`/saml-profiles/${p.id}`}
-            className={styles.name}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {profileTitle(p, t("samlProfiles.unknownApp"))}
-          </Link>
-          <span className={styles.id} title={p.name_id}>
-            {p.name_id}
-          </span>
-          <span className={`${styles.apps} ${styles.secondary}`}>
-            {p.apps.length > 0
-              ? p.apps.map((a) => a.name).join(", ")
-              : t("samlProfiles.unused")}
-          </span>
-          <span className={`${styles.muted} ${styles.secondary}`}>
-            {formatDate(p.created_at)}
-          </span>
-          <ChevronRightRegular className={styles.chevron} />
-        </div>
-      ))
-    );
+      <DataList columns={columns(opts.first)} linked>
+        {opts.list.length === 0 ? (
+          <div className={styles.empty}>
+            {q ? t("samlProfiles.noMatch") : opts.empty}
+          </div>
+        ) : (
+          opts.list.map((p) => (
+            <DataListRow
+              key={p.id}
+              to={`/saml-profiles/${p.id}`}
+              cells={[
+                <span className={styles.name}>
+                  {profileTitle(p, t("samlProfiles.unknownApp"))}
+                </span>,
+                <span
+                  className={`${styles.id} ${styles.ellipsis}`}
+                  title={p.name_id}
+                >
+                  {p.name_id}
+                </span>,
+                <span className={styles.ellipsis}>
+                  {p.apps.length > 0
+                    ? p.apps.map((a) => a.name).join(", ")
+                    : t("samlProfiles.unused")}
+                </span>,
+                <span className={styles.muted}>
+                  {formatDate(p.created_at)}
+                </span>,
+              ]}
+            />
+          ))
+        )}
+      </DataList>
+    </section>
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
@@ -193,19 +164,11 @@ export function SamlProfiles() {
       />
 
       {isLoading && (
-        <Skeleton aria-busy>
-          <div className={styles.list}>
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className={styles.row}>
-                <SkeletonItem size={12} style={{ width: "60%" }} />
-                <SkeletonItem size={12} style={{ width: "80%" }} />
-                <SkeletonItem size={12} style={{ width: "50%" }} />
-                <SkeletonItem size={12} style={{ width: 72 }} />
-                <span />
-              </div>
-            ))}
-          </div>
-        </Skeleton>
+        <DataListSkeleton
+          columns={columns(t("samlProfiles.nameHeader"))}
+          linked
+          rows={3}
+        />
       )}
 
       {data && all.length === 0 && (
@@ -225,39 +188,22 @@ export function SamlProfiles() {
             placeholder={t("samlProfiles.searchPlaceholder")}
           />
 
-          <section className={styles.section}>
-            <div className={styles.sectionHead}>
-              <Text weight="semibold">
-                {t("samlProfiles.sharedTitle")}{" "}
-                <Badge appearance="tint" size="small" color="informative">
-                  {shared.length}
-                </Badge>
-              </Text>
-              <Text className={styles.muted}>
-                {t("samlProfiles.sharedDesc")}
-              </Text>
-            </div>
-            <div className={styles.list}>
-              {head(t("samlProfiles.nameHeader"))}
-              {rows(shared, t("samlProfiles.noShared"))}
-            </div>
-          </section>
-
-          <section className={styles.section}>
-            <div className={styles.sectionHead}>
-              <Text weight="semibold">
-                {t("samlProfiles.appTitle")}{" "}
-                <Badge appearance="tint" size="small" color="subtle">
-                  {perApp.length}
-                </Badge>
-              </Text>
-              <Text className={styles.muted}>{t("samlProfiles.appDesc")}</Text>
-            </div>
-            <div className={styles.list}>
-              {head(t("samlProfiles.appHeader"))}
-              {rows(perApp, t("samlProfiles.noApp"))}
-            </div>
-          </section>
+          {section({
+            title: t("samlProfiles.sharedTitle"),
+            desc: t("samlProfiles.sharedDesc"),
+            color: "informative",
+            first: t("samlProfiles.nameHeader"),
+            list: shared,
+            empty: t("samlProfiles.noShared"),
+          })}
+          {section({
+            title: t("samlProfiles.appTitle"),
+            desc: t("samlProfiles.appDesc"),
+            color: "subtle",
+            first: t("samlProfiles.appHeader"),
+            list: perApp,
+            empty: t("samlProfiles.noApp"),
+          })}
         </>
       )}
     </div>

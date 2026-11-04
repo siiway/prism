@@ -15,10 +15,17 @@ import {
   type Document,
   type Element,
 } from "@xmldom/xmldom";
+import type {
+  SamlLogoutStep,
+  SamlNameIdFormat,
+  SamlSignMode,
+  SamlSloBinding,
+} from "../../../shared/api";
+import { readStreamWithLimit } from "../bodyLimit";
 import { randomId } from "../crypto";
 import { keyInfo, signElement, type SamlSigner } from "./sign";
-import { bytesToBase64 } from "./x509";
-import { NS, el, serializeDocument, type XmlElement } from "./xml";
+import { bytesToBase64, decodeBase64 } from "./x509";
+import { NS, RSA_SHA256, el, serializeDocument, type XmlElement } from "./xml";
 
 export const NAMEID_PERSISTENT =
   "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent";
@@ -27,8 +34,7 @@ export const NAMEID_EMAIL =
 const NAMEID_UNSPECIFIED =
   "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified";
 
-export const BINDING_REDIRECT =
-  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect";
+const BINDING_REDIRECT = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect";
 export const BINDING_POST = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST";
 
 const STATUS = "urn:oasis:names:tc:SAML:2.0:status:";
@@ -42,13 +48,29 @@ export type SamlStatus =
   | "PartialLogout"
   | "UnknownPrincipal";
 
-export type NameIdFormat = "persistent" | "email";
-export type SignMode = "assertion" | "response" | "both";
+export type NameIdFormat = SamlNameIdFormat;
+export type SignMode = SamlSignMode;
 
-export const NAMEID_FORMAT_URIS: Record<NameIdFormat, string> = {
+const NAMEID_FORMAT_URIS: Record<NameIdFormat, string> = {
   persistent: NAMEID_PERSISTENT,
   email: NAMEID_EMAIL,
 };
+
+/** A Subject's NameID. A persistent one is only meaningful to the SP it
+ *  was issued for, which SPNameQualifier names (SAML Core §8.3.7). */
+function nameIdElement(
+  nameId: { format: NameIdFormat; value: string },
+  spEntityId: string,
+): XmlElement {
+  return el(
+    "saml:NameID",
+    {
+      Format: NAMEID_FORMAT_URIS[nameId.format],
+      SPNameQualifier: nameId.format === "persistent" ? spEntityId : undefined,
+    },
+    nameId.value,
+  );
+}
 
 /** Coded failure, reported to the browser as an API error code. */
 export class SamlError extends Error {
@@ -66,46 +88,22 @@ const MAX_XML = 64 * 1024;
 
 function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
   if (value.length > MAX_ENCODED) throw new SamlError("saml_request_invalid");
-  // A '+' left unescaped in a query string arrives as a space.
-  const clean = value.replace(/ /g, "+").replace(/[\r\n\t]/g, "");
-  let binary: string;
   try {
-    binary = atob(clean);
+    return decodeBase64(value);
   } catch {
     throw new SamlError("saml_request_invalid");
   }
-  return Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
 }
 
 async function inflateRaw(bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
-  const reader = new Blob([bytes])
-    .stream()
-    .pipeThrough(new DecompressionStream("deflate-raw"))
-    .getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.length;
-      if (total > MAX_XML) {
-        await reader.cancel();
-        throw new SamlError("saml_request_invalid");
-      }
-      chunks.push(value);
-    }
-  } catch (err) {
-    if (err instanceof SamlError) throw err;
-    throw new SamlError("saml_request_invalid");
-  }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const c of chunks) {
-    out.set(c, offset);
-    offset += c.length;
-  }
-  return out;
+  const read = await readStreamWithLimit(
+    new Blob([bytes])
+      .stream()
+      .pipeThrough(new DecompressionStream("deflate-raw")),
+    MAX_XML,
+  ).catch(() => null);
+  if (!read?.bytes) throw new SamlError("saml_request_invalid");
+  return read.bytes;
 }
 
 function utf8Decode(bytes: Uint8Array): string {
@@ -234,7 +232,7 @@ function instant(seconds: number): string {
 const newId = () => `_${randomId(20)}`;
 
 /** Allowed clock skew between Prism and the SP for NotBefore. */
-export const SKEW_SECONDS = 60;
+const SKEW_SECONDS = 60;
 /** How long an assertion may be presented; the POST happens right away. */
 const ASSERTION_TTL_SECONDS = 300;
 
@@ -331,17 +329,7 @@ function assertionElement(
     el(
       "saml:Subject",
       {},
-      el(
-        "saml:NameID",
-        {
-          Format: NAMEID_FORMAT_URIS[content.nameId.format],
-          SPNameQualifier:
-            content.nameId.format === "persistent"
-              ? dest.spEntityId
-              : undefined,
-        },
-        content.nameId.value,
-      ),
+      nameIdElement(content.nameId, dest.spEntityId),
       el(
         "saml:SubjectConfirmation",
         { Method: "urn:oasis:names:tc:SAML:2.0:cm:bearer" },
@@ -533,15 +521,7 @@ export function logoutRequestElement(opts: {
       NotOnOrAfter: instant(now + ASSERTION_TTL_SECONDS),
     },
     el("saml:Issuer", {}, opts.idpEntityId),
-    el(
-      "saml:NameID",
-      {
-        Format: NAMEID_FORMAT_URIS[opts.nameId.format],
-        SPNameQualifier:
-          opts.nameId.format === "persistent" ? opts.spEntityId : undefined,
-      },
-      opts.nameId.value,
-    ),
+    nameIdElement(opts.nameId, opts.spEntityId),
     el("samlp:SessionIndex", {}, opts.sessionIndex),
   );
   return { id, element };
@@ -570,13 +550,11 @@ export function logoutResponseElement(opts: {
   );
 }
 
-export type SloBinding = "redirect" | "post";
+export type SloBinding = SamlSloBinding;
 
 /** How the browser delivers a message: follow a URL (HTTP-Redirect) or
  *  submit a form (HTTP-POST). */
-export type OutgoingMessage =
-  | { kind: "redirect"; url: string }
-  | { kind: "post"; url: string; fields: Record<string, string> };
+export type OutgoingMessage = Exclude<SamlLogoutStep, { kind: "confirm" }>;
 
 async function deflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
   const out = await new Response(
@@ -586,8 +564,6 @@ async function deflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
   ).arrayBuffer();
   return new Uint8Array(out);
 }
-
-const SIG_ALG_RSA_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
 
 /**
  * A logout message, signed, ready for the browser to carry to `url`. With
@@ -617,7 +593,7 @@ export async function encodeLogoutMessage(
   let query = `${opts.field}=${encodeURIComponent(bytesToBase64(deflated))}`;
   if (opts.relayState)
     query += `&RelayState=${encodeURIComponent(opts.relayState)}`;
-  query += `&SigAlg=${encodeURIComponent(SIG_ALG_RSA_SHA256)}`;
+  query += `&SigAlg=${encodeURIComponent(RSA_SHA256)}`;
   const signature = new Uint8Array(
     await crypto.subtle.sign(
       "RSASSA-PKCS1-v1_5",

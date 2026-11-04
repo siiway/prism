@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type {
+  AppSamlInfo,
   OAuthApp,
   SamlNameIdFormat,
   SamlSignMode,
@@ -24,6 +25,8 @@ import type {
   SamlUpdateBody,
 } from "../../../lib/api";
 import { apiErrorText } from "../../../lib/apiError";
+import { docsUrl } from "../../../lib/docsUrl";
+import { useSiteName } from "../../../lib/useSiteName";
 import { useApi } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { CopyButton } from "../../../components/CopyButton";
@@ -109,7 +112,7 @@ export function SamlTab({ app, showMsg }: Props) {
   const styles = useDetailStyles();
   const { t, i18n } = useTranslation();
   const { confirm, confirmDialog } = useConfirm();
-  const { data: site } = useQuery({ queryKey: ["site"], queryFn: api.site });
+  const siteName = useSiteName();
 
   const { data, isLoading } = useQuery({
     queryKey: ["app-saml", app.id],
@@ -144,8 +147,11 @@ export function SamlTab({ app, showMsg }: Props) {
   const save = async () => {
     setSaving(true);
     try {
-      await api.updateAppSaml(app.id, body);
-      await qc.invalidateQueries({ queryKey: ["app-saml", app.id] });
+      const { saml: saved } = await api.updateAppSaml(app.id, body);
+      qc.setQueryData<AppSamlInfo>(
+        ["app-saml", app.id],
+        (d) => d && { ...d, saml: saved },
+      );
       setEdits({});
       setSettingUp(false);
       showMsg("success", t("apps.saml.saved"));
@@ -173,9 +179,7 @@ export function SamlTab({ app, showMsg }: Props) {
     }
   };
 
-  const guideUrl = i18n.language.startsWith("zh")
-    ? "https://prism.wss.moe/zh/saml"
-    : "https://prism.wss.moe/saml";
+  const guideUrl = docsUrl(i18n.language, "saml");
   const released = new Set(data.released_scopes);
 
   const guideLink = (
@@ -188,7 +192,6 @@ export function SamlTab({ app, showMsg }: Props) {
   const disabled = data.disabled;
 
   if (!editing) {
-    const siteName = site?.site_name ?? "Prism";
     return (
       <GetStartedPanel
         art={<SamlArt />}
@@ -248,79 +251,79 @@ export function SamlTab({ app, showMsg }: Props) {
           )
         }
       >
-        <>
-          <SettingsBody>
-            <div className={styles.form}>
-              <Field
-                label={t("apps.saml.entityId")}
-                hint={t("apps.saml.entityIdHint")}
-                required
-              >
-                <Input
-                  value={form.entity_id}
-                  onChange={(_, d) => set("entity_id", d.value)}
-                  placeholder={t("apps.saml.entityIdPlaceholder")}
-                  input={{ className: styles.monoInput }}
-                />
-              </Field>
-              <Field
-                label={t("apps.saml.acsUrls")}
-                hint={t("apps.saml.acsUrlsHint")}
-                required
-              >
-                <Textarea
-                  value={form.acs_text}
-                  onChange={(_, d) => set("acs_text", d.value)}
-                  placeholder={t("apps.saml.acsUrlsPlaceholder")}
-                  rows={3}
-                  resize="vertical"
-                  textarea={{ className: styles.monoInput }}
-                />
-              </Field>
-              <Field
+        <SettingsBody>
+          <div className={styles.form}>
+            <Field
+              label={t("apps.saml.entityId")}
+              hint={t("apps.saml.entityIdHint")}
+              required
+            >
+              <Input
+                value={form.entity_id}
+                onChange={(_, d) => set("entity_id", d.value)}
+                placeholder={t("apps.saml.entityIdPlaceholder")}
+                input={{ className: styles.monoInput }}
+              />
+            </Field>
+            <Field
+              label={t("apps.saml.acsUrls")}
+              hint={t("apps.saml.acsUrlsHint")}
+              required
+            >
+              <Textarea
+                value={form.acs_text}
+                onChange={(_, d) => set("acs_text", d.value)}
+                placeholder={t("apps.saml.acsUrlsPlaceholder")}
+                rows={3}
+                resize="vertical"
+                textarea={{ className: styles.monoInput }}
+              />
+            </Field>
+            <Field
+              label={t("apps.saml.nameId")}
+              hint={t("apps.saml.nameIdHint")}
+            >
+              <Segmented
                 label={t("apps.saml.nameId")}
-                hint={t("apps.saml.nameIdHint")}
-              >
-                <Segmented
-                  label={t("apps.saml.nameId")}
-                  value={form.name_id_format}
-                  options={[
-                    {
-                      value: "persistent",
-                      label: t("apps.saml.nameIdPersistent"),
-                    },
-                    { value: "email", label: t("apps.saml.nameIdEmail") },
-                  ]}
-                  onChange={(v) => set("name_id_format", v)}
-                />
-              </Field>
-              <Field label={t("apps.saml.sign")} hint={t("apps.saml.signHint")}>
-                <Segmented
-                  label={t("apps.saml.sign")}
-                  value={form.sign}
-                  options={[
-                    {
-                      value: "assertion",
-                      label: t("apps.saml.signAssertion"),
-                    },
-                    { value: "response", label: t("apps.saml.signResponse") },
-                    { value: "both", label: t("apps.saml.signBoth") },
-                  ]}
-                  onChange={(v) => set("sign", v)}
-                />
-              </Field>
-              <Field
-                label={t("apps.saml.sloUrl")}
-                hint={t("apps.saml.sloUrlHint")}
-              >
-                <Input
-                  value={form.slo_url}
-                  onChange={(_, d) => set("slo_url", d.value)}
-                  placeholder={t("apps.saml.sloUrlPlaceholder")}
-                  input={{ className: styles.monoInput }}
-                />
-              </Field>
-              {form.slo_url.trim() !== "" && (
+                value={form.name_id_format}
+                options={[
+                  {
+                    value: "persistent",
+                    label: t("apps.saml.nameIdPersistent"),
+                  },
+                  { value: "email", label: t("apps.saml.nameIdEmail") },
+                ]}
+                onChange={(v) => set("name_id_format", v)}
+              />
+            </Field>
+            <Field label={t("apps.saml.sign")} hint={t("apps.saml.signHint")}>
+              <Segmented
+                label={t("apps.saml.sign")}
+                value={form.sign}
+                options={[
+                  {
+                    value: "assertion",
+                    label: t("apps.saml.signAssertion"),
+                  },
+                  { value: "response", label: t("apps.saml.signResponse") },
+                  { value: "both", label: t("apps.saml.signBoth") },
+                ]}
+                onChange={(v) => set("sign", v)}
+              />
+            </Field>
+            <Field
+              label={t("apps.saml.sloUrl")}
+              hint={t("apps.saml.sloUrlHint")}
+            >
+              <Input
+                value={form.slo_url}
+                onChange={(_, d) => set("slo_url", d.value)}
+                placeholder={t("apps.saml.sloUrlPlaceholder")}
+                input={{ className: styles.monoInput }}
+              />
+            </Field>
+            {form.slo_url.trim() !== "" && (
+              <>
                 <Field
                   label={t("apps.saml.sloBinding")}
                   hint={t("apps.saml.sloBindingHint")}
@@ -338,8 +341,6 @@ export function SamlTab({ app, showMsg }: Props) {
                     onChange={(v) => set("slo_binding", v)}
                   />
                 </Field>
-              )}
-              {form.slo_url.trim() !== "" && (
                 <Field
                   label={t("apps.saml.signingCert")}
                   hint={t("apps.saml.signingCertHint")}
@@ -353,20 +354,20 @@ export function SamlTab({ app, showMsg }: Props) {
                     textarea={{ className: styles.monoInput }}
                   />
                 </Field>
-              )}
-            </div>
-          </SettingsBody>
-          <SaveFooter
-            dirty={dirty}
-            saving={saving}
-            disabled={!complete || !!disabled}
-            onDiscard={() => {
-              setEdits({});
-              setSettingUp(false);
-            }}
-            onSave={() => void save()}
-          />
-        </>
+              </>
+            )}
+          </div>
+        </SettingsBody>
+        <SaveFooter
+          dirty={dirty}
+          saving={saving}
+          disabled={!complete || !!disabled}
+          onDiscard={() => {
+            setEdits({});
+            setSettingUp(false);
+          }}
+          onSave={() => void save()}
+        />
       </SettingsCard>
 
       <SettingsCard

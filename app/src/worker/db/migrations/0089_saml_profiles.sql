@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS saml_profiles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_saml_profiles_user ON saml_profiles(user_id);
+-- For the cascade when an app is deleted.
+CREATE INDEX IF NOT EXISTS idx_saml_profiles_app ON saml_profiles(app_id);
 
 -- The profile each app gets for a user: one per app and user, chosen at the
 -- first sign-in and kept (revoking the app included).
@@ -37,3 +39,6 @@ CREATE TABLE IF NOT EXISTS saml_profile_apps (
 
 CREATE INDEX IF NOT EXISTS idx_saml_profile_apps_profile
   ON saml_profile_apps(profile_id);
+-- A user's profiles with their apps, and the cascade when a user is deleted.
+CREATE INDEX IF NOT EXISTS idx_saml_profile_apps_user
+  ON saml_profile_apps(user_id);

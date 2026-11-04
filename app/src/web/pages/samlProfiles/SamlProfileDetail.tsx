@@ -11,7 +11,6 @@ import {
   Input,
   Spinner,
   Text,
-  Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
@@ -20,7 +19,8 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../lib/api";
+import { SAML_PROFILE_NAME_MAX_LENGTH } from "../../../shared/limits";
+import { ApiError, type SamlProfile } from "../../lib/api";
 import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { formatDate } from "../../lib/datetime";
@@ -28,7 +28,7 @@ import { setDocumentPageTitle } from "../../lib/documentTitle";
 import { useConfirm } from "../../lib/useConfirm";
 import { useToastMessage } from "../../lib/useToastMessage";
 import { CopyButton } from "../../components/CopyButton";
-import { BackButton } from "../../components/DetailHeader";
+import { BackButton, DetailHeader } from "../../components/DetailHeader";
 import { EmptyState } from "../../components/EmptyState";
 import {
   SaveFooter,
@@ -44,13 +44,6 @@ import { SkeletonSettingsCard } from "../../components/Skeletons";
 import { profileTitle } from "./profileTitle";
 
 const useStyles = makeStyles({
-  titleLine: {
-    display: "flex",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: "8px",
-  },
-  title: { overflowWrap: "anywhere" },
   idLine: { display: "flex", alignItems: "center", gap: "4px", minWidth: 0 },
   id: {
     fontFamily: tokens.fontFamilyMonospace,
@@ -94,10 +87,6 @@ export function SamlProfileDetail() {
   const nameValue = name ?? currentName;
   const [busy, setBusy] = useState<string | null>(null);
 
-  const refresh = async () => {
-    await qc.invalidateQueries({ queryKey: ["saml-profile", id] });
-    await qc.invalidateQueries({ queryKey: ["saml-profiles"] });
-  };
   const run = async (key: string, action: () => Promise<void>) => {
     if (busy) return;
     setBusy(key);
@@ -110,21 +99,22 @@ export function SamlProfileDetail() {
     }
   };
 
+  // Rename a shared profile, or share a per-app one under the name.
+  const saveName = (
+    key: "rename" | "share",
+    save: (id: string, name: string) => Promise<{ profile: SamlProfile }>,
+    done: string,
+  ) =>
+    run(key, async () => {
+      qc.setQueryData(["saml-profile", id], await save(id, nameValue.trim()));
+      void qc.invalidateQueries({ queryKey: ["saml-profiles"] });
+      setName(null);
+      showMsg("success", t(done));
+    });
   const rename = () =>
-    run("rename", async () => {
-      await api.renameSamlProfile(id, nameValue.trim());
-      await refresh();
-      setName(null);
-      showMsg("success", t("samlProfiles.renamed"));
-    });
-
+    saveName("rename", api.renameSamlProfile, "samlProfiles.renamed");
   const share = () =>
-    run("share", async () => {
-      await api.shareSamlProfile(id, nameValue.trim());
-      await refresh();
-      setName(null);
-      showMsg("success", t("samlProfiles.nowShared"));
-    });
+    saveName("share", api.shareSamlProfile, "samlProfiles.nowShared");
 
   const remove = async () => {
     if (!profile || busy) return;
@@ -171,14 +161,16 @@ export function SamlProfileDetail() {
     <SettingsPage>
       {back}
 
-      <div className={styles.titleLine}>
-        <Title2 as="h1" className={styles.title}>
-          {title}
-        </Title2>
-        <Badge appearance="tint" color={isShared ? "informative" : "subtle"}>
-          {isShared ? t("samlProfiles.kindShared") : t("samlProfiles.kindApp")}
-        </Badge>
-      </div>
+      <DetailHeader
+        title={title}
+        badges={
+          <Badge appearance="tint" color={isShared ? "informative" : "subtle"}>
+            {isShared
+              ? t("samlProfiles.kindShared")
+              : t("samlProfiles.kindApp")}
+          </Badge>
+        }
+      />
 
       <SettingsToast message={message} />
 
@@ -237,7 +229,7 @@ export function SamlProfileDetail() {
             <Field label={t("samlProfiles.nameLabel")}>
               <Input
                 value={nameValue}
-                maxLength={64}
+                maxLength={SAML_PROFILE_NAME_MAX_LENGTH}
                 onChange={(_, d) => setName(d.value)}
               />
             </Field>
@@ -263,7 +255,7 @@ export function SamlProfileDetail() {
             >
               <Input
                 value={nameValue}
-                maxLength={64}
+                maxLength={SAML_PROFILE_NAME_MAX_LENGTH}
                 onChange={(_, d) => setName(d.value)}
                 placeholder={t("samlProfiles.namePlaceholder")}
               />

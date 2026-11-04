@@ -30,6 +30,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { type OAuthApp } from "../../../lib/api";
 import { apiErrorText } from "../../../lib/apiError";
+import { docsUrl } from "../../../lib/docsUrl";
 import { useApi, useAppOrigin } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { ImageUrlInput } from "../../../components/ImageUrlInput";
@@ -172,9 +173,7 @@ export function OverviewTab({
     }
   };
 
-  const guideUrl = i18n.language.startsWith("zh")
-    ? "https://prism.wss.moe/zh/oauth"
-    : "https://prism.wss.moe/oauth";
+  const guideUrl = docsUrl(i18n.language, "oauth");
 
   return (
     <>

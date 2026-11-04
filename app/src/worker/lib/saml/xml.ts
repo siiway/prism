@@ -22,6 +22,12 @@ export const NS = {
   ds: "http://www.w3.org/2000/09/xmldsig#",
 } as const;
 
+// XML Signature algorithm URIs, for signatures Prism makes and checks.
+export const DSIG = NS.ds;
+export const EXC_C14N = "http://www.w3.org/2001/10/xml-exc-c14n#";
+export const ENVELOPED = `${DSIG}enveloped-signature`;
+export const RSA_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
+
 type Prefix = keyof typeof NS;
 
 export interface XmlElement {
@@ -32,7 +38,7 @@ export interface XmlElement {
   children?: XmlNode[];
 }
 
-export type XmlNode = XmlElement | string;
+type XmlNode = XmlElement | string;
 
 export function el(
   name: string,
@@ -62,18 +68,19 @@ function prefixOf(name: string): Prefix {
 const NOT_XML_CHAR =
   /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
 
-function escapeText(s: string): string {
+/** Text as exclusive c14n writes it. verify.ts canonicalizes XML Prism
+ *  receives with it too: digests only match byte for byte. */
+export function c14nEscapeText(s: string): string {
   return s
-    .replace(NOT_XML_CHAR, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/\r/g, "&#xD;");
 }
 
-function escapeAttr(s: string): string {
+/** An attribute value as exclusive c14n writes it. */
+export function c14nEscapeAttr(s: string): string {
   return s
-    .replace(NOT_XML_CHAR, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/"/g, "&quot;")
@@ -82,8 +89,11 @@ function escapeAttr(s: string): string {
     .replace(/\r/g, "&#xD;");
 }
 
+const escapeText = (s: string) => c14nEscapeText(s.replace(NOT_XML_CHAR, ""));
+const escapeAttr = (s: string) => c14nEscapeAttr(s.replace(NOT_XML_CHAR, ""));
+
 /** Code-point order, which is what c14n sorts by (not locale order). */
-function byCodePoint(a: string, b: string): number {
+export function byCodePoint(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 

@@ -11,39 +11,23 @@
 
 import {
   Button,
-  Spinner,
   Text,
   Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { DismissCircleRegular } from "@fluentui/react-icons";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { SamlLogoutStep } from "../lib/api";
 import { apiErrorText } from "../lib/apiError";
 import { useApi } from "../lib/api-context";
+import { postForm } from "../lib/postForm";
 import { useSiteName } from "../lib/useSiteName";
 import { AuthShell } from "../components/AuthShell";
+import { AuthFailure, AuthWaiting } from "../components/AuthStatus";
 
 const useStyles = makeStyles({
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: tokens.colorNeutralBackground1,
-    padding: "16px",
-    boxSizing: "border-box",
-  },
-  center: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "12px",
-    alignItems: "center",
-    textAlign: "center",
-  },
   text: { display: "flex", flexDirection: "column", gap: "8px" },
   actions: { display: "flex", flexDirection: "column", gap: "8px" },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -54,23 +38,8 @@ type Message = Exclude<SamlLogoutStep, { kind: "confirm" }>;
 
 /** Have the browser deliver the message. */
 function carry(step: Message) {
-  if (step.kind === "redirect") {
-    window.location.assign(step.url);
-    return;
-  }
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = step.url;
-  form.style.display = "none";
-  for (const [name, value] of Object.entries(step.fields)) {
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = name;
-    input.value = value;
-    form.appendChild(input);
-  }
-  document.body.appendChild(form);
-  form.submit();
+  if (step.kind === "redirect") window.location.assign(step.url);
+  else postForm(step.url, step.fields);
 }
 
 export function Logout() {
@@ -118,18 +87,7 @@ export function Logout() {
       : null);
 
   if (errorText)
-    return (
-      <AuthShell maxWidth={440} cardGap={24}>
-        <div className={styles.center}>
-          <DismissCircleRegular
-            fontSize={48}
-            style={{ color: tokens.colorPaletteRedForeground1 }}
-          />
-          <Title2>{t("logout.errorTitle")}</Title2>
-          <Text>{errorText}</Text>
-        </div>
-      </AuthShell>
-    );
+    return <AuthFailure title={t("logout.errorTitle")} text={errorText} />;
 
   if (confirm && !busy)
     return (
@@ -154,12 +112,5 @@ export function Logout() {
       </AuthShell>
     );
 
-  return (
-    <div className={styles.page}>
-      <div className={styles.center}>
-        <Spinner size="large" />
-        <Text className={styles.muted}>{t("logout.signingOut")}</Text>
-      </div>
-    </div>
-  );
+  return <AuthWaiting text={t("logout.signingOut")} />;
 }

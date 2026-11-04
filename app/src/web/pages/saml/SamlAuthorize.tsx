@@ -14,40 +14,28 @@
 
 import {
   Button,
-  Spinner,
   Text,
   Title2,
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import {
-  CheckmarkRegular,
-  DismissCircleRegular,
-  DismissRegular,
-} from "@fluentui/react-icons";
+import { CheckmarkRegular, DismissRegular } from "@fluentui/react-icons";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ApiError, type SamlPostback } from "../../lib/api";
+import { ApiError } from "../../lib/api";
 import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
+import { postForm } from "../../lib/postForm";
 import { scopeLabel } from "../../lib/scopeLabels";
 import { useSiteName } from "../../lib/useSiteName";
 import { AuthShell } from "../../components/AuthShell";
+import { AuthFailure, AuthWaiting } from "../../components/AuthStatus";
 import { OAuthConsentHeader } from "../../components/OAuthConsentHeader";
 import { ProfileChoice } from "./ProfileChoice";
 
 const useStyles = makeStyles({
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: tokens.colorNeutralBackground1,
-    padding: "16px",
-    boxSizing: "border-box",
-  },
   scopeList: { display: "flex", flexDirection: "column", gap: "8px" },
   scopeItem: {
     display: "flex",
@@ -71,27 +59,11 @@ const useStyles = makeStyles({
   footer: { color: tokens.colorNeutralForeground4, textAlign: "center" },
 });
 
-/** POST the Response to the service provider (HTTP-POST binding). */
-function submitPostback(p: SamlPostback) {
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = p.acs_url;
-  form.style.display = "none";
-  const fields: Record<string, string | null> = {
-    SAMLResponse: p.saml_response,
-    RelayState: p.relay_state,
-  };
-  for (const [name, value] of Object.entries(fields)) {
-    if (value === null) continue;
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = name;
-    input.value = value;
-    form.appendChild(input);
-  }
-  document.body.appendChild(form);
-  form.submit();
-}
+/** Sign-in, coming back to this page after. */
+const loginUrl = (reauth = false) =>
+  `/login?redirect=${encodeURIComponent(
+    window.location.pathname + window.location.search,
+  )}${reauth ? "&reauth=1" : ""}`;
 
 export function SamlAuthorize() {
   const api = useApi();
@@ -107,7 +79,7 @@ export function SamlAuthorize() {
   const [posting, setPosting] = useState(false);
   const started = useRef(false);
 
-  const { data, error, isLoading } = useQuery({
+  const { data, error } = useQuery({
     queryKey: ["saml-request", token],
     queryFn: () => api.getSamlRequest(token),
     enabled: !!token && !linkError,
@@ -126,23 +98,21 @@ export function SamlAuthorize() {
   ) => {
     setPosting(true);
     try {
-      submitPostback(
-        await api.samlDecision(
-          token,
-          action,
-          mode,
-          action === "approve" ? profileChoice : undefined,
-        ),
+      // The Response goes to the service provider by the HTTP-POST binding.
+      const p = await api.samlDecision(
+        token,
+        action,
+        mode,
+        action === "approve" ? profileChoice : undefined,
       );
+      postForm(p.acs_url, {
+        SAMLResponse: p.saml_response,
+        RelayState: p.relay_state,
+      });
     } catch (err) {
       setPosting(false);
       if (err instanceof ApiError && err.code === "unauthorized") {
-        navigate(
-          `/login?redirect=${encodeURIComponent(
-            window.location.pathname + window.location.search,
-          )}`,
-          { replace: true },
-        );
+        navigate(loginUrl(), { replace: true });
         return;
       }
       setFailure(apiErrorText(err, t("saml.errorBody")));
@@ -152,17 +122,11 @@ export function SamlAuthorize() {
   // Steps that need no input from the user.
   useEffect(() => {
     if (!data || started.current) return;
-    const back = encodeURIComponent(
-      window.location.pathname + window.location.search,
-    );
-    if (data.next === "login") {
-      started.current = true;
-      navigate(`/login?redirect=${back}`, { replace: true });
-    } else if (data.next === "reauth") {
-      started.current = true;
-      navigate(`/login?redirect=${back}&reauth=1`, { replace: true });
-    } else if (data.next === "continue" || data.next === "decline") {
-      started.current = true;
+    if (data.next === "consent" || data.next === "profile") return;
+    started.current = true;
+    if (data.next === "login" || data.next === "reauth")
+      navigate(loginUrl(data.next === "reauth"), { replace: true });
+    else {
       const action = data.next === "continue" ? "approve" : "decline";
       // Out of the effect body, so the decision's state updates don't run
       // during render.
@@ -182,36 +146,13 @@ export function SamlAuthorize() {
           : null);
 
   if (errorText)
-    return (
-      <AuthShell maxWidth={440} cardGap={24}>
-        <div className={styles.center}>
-          <DismissCircleRegular
-            fontSize={48}
-            style={{ color: tokens.colorPaletteRedForeground1 }}
-          />
-          <Title2>{t("saml.errorTitle")}</Title2>
-          <Text>{errorText}</Text>
-        </div>
-      </AuthShell>
-    );
+    return <AuthFailure title={t("saml.errorTitle")} text={errorText} />;
 
-  if (
-    isLoading ||
-    !data ||
-    posting ||
-    (data.next !== "consent" && data.next !== "profile")
-  )
+  if (!data || posting || (data.next !== "consent" && data.next !== "profile"))
     return (
-      <div className={styles.page}>
-        <div className={styles.center}>
-          <Spinner size="large" />
-          {data && (
-            <Text className={styles.muted}>
-              {t("saml.signingIn", { appName: data.app.name })}
-            </Text>
-          )}
-        </div>
-      </div>
+      <AuthWaiting
+        text={data && t("saml.signingIn", { appName: data.app.name })}
+      />
     );
 
   // The account may not use this app: say why, and let the user go back to
@@ -247,23 +188,21 @@ export function SamlAuthorize() {
   if (data.next === "profile")
     return (
       <AuthShell maxWidth={440} cardGap={24}>
-        <>
-          <Title2>{t("saml.title", { appName: data.app.name })}</Title2>
-          {data.user && <OAuthConsentHeader app={data.app} user={data.user} />}
-          {profilePicker}
-          <div className={styles.divider} />
-          <div className={styles.actions}>
-            <Button
-              appearance="primary"
-              onClick={() => void decide("approve", "once")}
-            >
-              {t("saml.continue")}
-            </Button>
-            <Button appearance="outline" onClick={() => void decide("deny")}>
-              {t("common.cancel")}
-            </Button>
-          </div>
-        </>
+        <Title2>{t("saml.title", { appName: data.app.name })}</Title2>
+        {data.user && <OAuthConsentHeader app={data.app} user={data.user} />}
+        {profilePicker}
+        <div className={styles.divider} />
+        <div className={styles.actions}>
+          <Button
+            appearance="primary"
+            onClick={() => void decide("approve", "once")}
+          >
+            {t("saml.continue")}
+          </Button>
+          <Button appearance="outline" onClick={() => void decide("deny")}>
+            {t("common.cancel")}
+          </Button>
+        </div>
       </AuthShell>
     );
 
@@ -279,63 +218,61 @@ export function SamlAuthorize() {
 
   return (
     <AuthShell maxWidth={440} cardGap={24}>
-      <>
-        <Title2>{t("saml.title", { appName: data.app.name })}</Title2>
-        {data.user && <OAuthConsentHeader app={data.app} user={data.user} />}
-        <div className={styles.divider} />
-        <div>
-          <Text weight="semibold" block style={{ marginBottom: 12 }}>
-            {t("saml.sharing", { appName: data.app.name })}
-          </Text>
-          <div className={styles.scopeList}>
-            {shared.map((scope) => (
-              <div key={scope} className={styles.scopeItem}>
-                <CheckmarkRegular
-                  style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }}
-                />
-                <Text size={300}>{scopeLabel(t, scope).label}</Text>
-              </div>
-            ))}
-          </div>
-        </div>
-        {profilePicker}
-        {data.profile?.kind === "shared" && (
-          <Text size={200} className={styles.muted}>
-            {t("saml.profileCurrent", {
-              appName: data.app.name,
-              name: data.profile.name,
-            })}
-          </Text>
-        )}
-        <div className={styles.divider} />
-        <div className={styles.actions}>
-          <Button
-            appearance="primary"
-            icon={<CheckmarkRegular />}
-            onClick={() => void decide("approve", "once")}
-          >
-            {t("oauth.authorize", { appName: data.app.name })}
-          </Button>
-          {!data.app.is_first_party && (
-            <Button
-              appearance="secondary"
-              onClick={() => void decide("approve", "always")}
-            >
-              {t("oauth.alwaysAuthorize", { appName: data.app.name })}
-            </Button>
-          )}
-          <Button
-            appearance="outline"
-            icon={<DismissRegular />}
-            onClick={() => void decide("deny")}
-          >
-            {t("oauth.deny")}
-          </Button>
-        </div>
-        <Text size={100} className={styles.footer}>
-          {t("oauth.footerNote", { appName: data.app.name, siteName })}
+      <Title2>{t("saml.title", { appName: data.app.name })}</Title2>
+      {data.user && <OAuthConsentHeader app={data.app} user={data.user} />}
+      <div className={styles.divider} />
+      <div>
+        <Text weight="semibold" block style={{ marginBottom: 12 }}>
+          {t("saml.sharing", { appName: data.app.name })}
         </Text>
-      </>
+        <div className={styles.scopeList}>
+          {shared.map((scope) => (
+            <div key={scope} className={styles.scopeItem}>
+              <CheckmarkRegular
+                style={{ color: tokens.colorBrandForeground1, flexShrink: 0 }}
+              />
+              <Text size={300}>{scopeLabel(t, scope).label}</Text>
+            </div>
+          ))}
+        </div>
+      </div>
+      {profilePicker}
+      {data.profile?.kind === "shared" && (
+        <Text size={200} className={styles.muted}>
+          {t("saml.profileCurrent", {
+            appName: data.app.name,
+            name: data.profile.name,
+          })}
+        </Text>
+      )}
+      <div className={styles.divider} />
+      <div className={styles.actions}>
+        <Button
+          appearance="primary"
+          icon={<CheckmarkRegular />}
+          onClick={() => void decide("approve", "once")}
+        >
+          {t("oauth.authorize", { appName: data.app.name })}
+        </Button>
+        {!data.app.is_first_party && (
+          <Button
+            appearance="secondary"
+            onClick={() => void decide("approve", "always")}
+          >
+            {t("oauth.alwaysAuthorize", { appName: data.app.name })}
+          </Button>
+        )}
+        <Button
+          appearance="outline"
+          icon={<DismissRegular />}
+          onClick={() => void decide("deny")}
+        >
+          {t("oauth.deny")}
+        </Button>
+      </div>
+      <Text size={100} className={styles.footer}>
+        {t("oauth.footerNote", { appName: data.app.name, siteName })}
+      </Text>
     </AuthShell>
   );
 }

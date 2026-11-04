@@ -41,7 +41,7 @@ import {
   getRestrictionState,
 } from "../lib/userCapabilities";
 import { getGroupsForUserByTeam } from "../lib/teamGroups";
-import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
+import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { getEffectiveMember, listEffectiveTeamMemberships } from "../lib/teams";
 import { checkAccessWhitelist } from "../lib/appAccess";
 import {
@@ -63,13 +63,8 @@ import {
   parseResources,
 } from "../lib/resource";
 import { verifyDpopProof } from "../lib/dpop";
-import { deliverBackChannelLogout } from "../lib/backchannelLogout";
-import {
-  LOGOUT_TTL_SECONDS,
-  startIdpLogout,
-  startUnverifiedLogout,
-} from "../lib/saml/logout";
-import { clearSessionCookie, setSamlLogoutCookie } from "../lib/cookies";
+import { startUnverifiedLogout } from "../lib/saml/logout";
+import { endBrowserSession } from "../lib/session";
 import meRoutes from "./oauth-me";
 import {
   DEVICE_GRANT_TYPE,
@@ -78,6 +73,7 @@ import {
   authenticateClient,
   buildConsentAppSummary,
   readOAuthBody,
+  recordAppAuthorization,
 } from "../lib/oauthClients";
 import { REQUESTABLE_SCOPES } from "../lib/scopes";
 import { deriveAcr } from "../lib/stepUp";
@@ -1397,39 +1393,6 @@ app.post("/authorize", requireAuth, async (c) => {
       .run();
   }
 
-  // Send notification:
-  // - Always for manual authorization
-  // - For auto-authorization (skipping consent UI), only if the user opted in via notify_on_auto_authorization
-  // Note: isAutoAuthorized is derived on the server from DB consent records and request state,
-  // preventing client-side spoofing.
-  let shouldNotify = !isAutoAuthorized;
-  if (isAutoAuthorized && !oauthApp.is_first_party) {
-    const u = await c.env.DB.prepare(
-      "SELECT notify_on_auto_authorization FROM users WHERE id = ?",
-    )
-      .bind(user.id)
-      .first<{ notify_on_auto_authorization: number }>();
-    if (u?.notify_on_auto_authorization === 1) {
-      shouldNotify = true;
-    }
-  }
-
-  if (shouldNotify) {
-    c.executionCtx.waitUntil(
-      deliverUserEmailNotifications(
-        c.env,
-        user.id,
-        "oauth.consent_granted",
-        {
-          app_name: oauthApp.name,
-          scopes: boundScopes,
-          ...notificationActorMetaFromHeaders(c.req.raw.headers),
-        },
-        c.env.APP_URL,
-      ).catch(() => {}),
-    );
-  }
-
   // Issue authorization code (10 minute TTL). Stored as keyed-HMAC hash
   // so a D1 leak doesn't surrender redeemable codes.
   const code = randomBase64url(32);
@@ -1503,43 +1466,14 @@ app.post("/authorize", requireAuth, async (c) => {
     }).catch(() => {}),
   );
 
-  // Transparent Control: the authorizing user sees the authorization in their
-  // own log; the app's owner (user or team) sees it as an app-authorization.
-  {
-    const meta = auditRequestMeta(c);
-    const events: AuditInput[] = [
-      {
-        scope: "user",
-        scopeId: user.id,
-        action: "oauth.authorize",
-        actorId: user.id,
-        actorName: user.username,
-        resourceType: "app",
-        resourceId: oauthApp.id,
-        resourceName: oauthApp.name,
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-        geo: meta.geo,
-        metadata: { scopes: boundScopes, client_id: oauthApp.client_id },
-      },
-    ];
-    const appAuth = {
-      action: "app.authorized",
-      actorId: user.id,
-      actorName: user.username,
-      resourceType: "app",
-      resourceId: oauthApp.id,
-      resourceName: oauthApp.name,
-      ip: meta.ip,
-      userAgent: meta.userAgent,
-      geo: meta.geo,
-      metadata: { scopes: boundScopes, user_id: user.id },
-    };
-    if (oauthApp.team_id)
-      events.push({ ...appAuth, scope: "team", scopeId: oauthApp.team_id });
-    else events.push({ ...appAuth, scope: "user", scopeId: oauthApp.owner_id });
-    c.executionCtx.waitUntil(recordAudit(c.env, c.executionCtx, events));
-  }
+  // Notice and audit trail. isAutoAuthorized is derived on the server from
+  // DB consent records and request state, preventing client-side spoofing.
+  await recordAppAuthorization(c, {
+    user,
+    app: oauthApp,
+    scopes: boundScopes,
+    auto: !!isAutoAuthorized,
+  });
 
   return c.json({ redirect: url.toString() });
 });
@@ -2815,30 +2749,10 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
     return c.redirect(`${c.env.APP_URL}${page}`, 302);
   }
 
-  // End the current session (if the browser presented one) and clear the cookie.
-  // OIDC Back-Channel Logout: notify the user's clients before the session row
-  // is gone (delivery reads only ids we already hold).
-  if (endingUser)
-    await deliverBackChannelLogout(
-      c.env,
-      c.executionCtx,
-      endingUser.id,
-      sessionId ?? null,
-    );
-  // SAML Single Logout: the session's SPs are visited first, on the way to
-  // the target, by this browser (the cookie). Read before the session (and
-  // its SAML sign-ins) are gone.
-  const samlLogout = sessionId
-    ? await startIdpLogout(c.env.DB, sessionId, target)
-    : null;
-  if (samlLogout) setSamlLogoutCookie(c, samlLogout, LOGOUT_TTL_SECONDS);
-  if (sessionId)
-    await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?")
-      .bind(sessionId)
-      .run();
-  clearSessionCookie(c);
-
-  return c.redirect(samlLogout ? `${c.env.APP_URL}/logout` : target, 302);
+  // End the current session (if the browser presented one), by way of its
+  // SAML apps.
+  const next = await endBrowserSession(c, target);
+  return c.redirect(next === target ? next : `${c.env.APP_URL}${next}`, 302);
 }
 
 app.get("/end_session", optionalAuth, handleEndSession);

@@ -7,11 +7,12 @@
 // the same ID to every app it's chosen for. A per-app profile can later be
 // turned into a shared one; it keeps its ID, so its app sees no change.
 
+import { SAML_PROFILE_NAME_MAX_LENGTH } from "../../../shared/limits";
 import { randomId } from "../crypto";
 
 /** How many shared profiles one user may have. */
 export const MAX_SHARED_PROFILES = 50;
-export const MAX_PROFILE_NAME = 64;
+export const MAX_PROFILE_NAME = SAML_PROFILE_NAME_MAX_LENGTH;
 
 /** A saml_profiles row. */
 export interface SamlProfileRow {
@@ -30,6 +31,14 @@ export interface SamlProfileRow {
  *  the user, for any number of apps. */
 export const profileKind = (p: SamlProfileRow) =>
   p.app_id ? ("app" as const) : ("shared" as const);
+
+/** A profile as the API shows it. */
+export const profileSummary = (p: SamlProfileRow) => ({
+  id: p.id,
+  kind: profileKind(p),
+  name: p.name,
+  name_id: p.name_id,
+});
 
 /** How many shared profiles the user has. */
 export async function countSharedProfiles(
@@ -77,9 +86,10 @@ export async function sharedProfiles(
 }
 
 /**
- * The profile an app gets for a user: the one chosen before, or else
- * `choice`, a new per-app profile ("new") or the id of one of the user's
- * shared profiles. Null when `choice` is neither.
+ * Bind the profile an app gets for a user, who has none yet: `choice`, a
+ * new per-app profile ("new") or the id of one of the user's shared
+ * profiles. Returns the bound profile, which is the one another sign-in
+ * chose if it got there first; null when `choice` is neither.
  */
 export async function bindProfile(
   db: D1Database,
@@ -87,9 +97,6 @@ export async function bindProfile(
   userId: string,
   choice: string,
 ): Promise<SamlProfileRow | null> {
-  const existing = await boundProfile(db, appId, userId);
-  if (existing) return existing;
-
   const now = Math.floor(Date.now() / 1000);
   let made: string | null = null;
   if (choice === "new") {

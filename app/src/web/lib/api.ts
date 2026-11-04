@@ -472,11 +472,11 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
   login: (body: LoginBody) =>
     request<LoginResponse>("POST", "/auth/login", body),
-  /** Revoke the cookie-authenticated session and clear its cookie. */
-  /** `saml_logout`: a page to visit next, which signs the user out of the
-   *  SAML apps of this session before going on to /login. */
+  /** Revoke the cookie-authenticated session and clear its cookie.
+   *  `next`: the page to go to (/logout first when the session's SAML apps
+   *  are signed out on the way, then /login). */
   logout: () =>
-    request<{ ok: true; saml_logout: string | null }>(
+    request<{ ok: true; next: string }>(
       "POST",
       "/auth/logout",
       undefined,

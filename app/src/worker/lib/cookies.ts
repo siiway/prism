@@ -6,6 +6,7 @@
 // (CLI, third-party tools, in-flight tabs) keep working.
 
 import type { Context } from "hono";
+import { LOGOUT_TTL_SECONDS } from "./saml/logout";
 
 export const SESSION_COOKIE = "__Host-prism_session";
 export const SOCIAL_OAUTH_COOKIE = "__Host-prism_oauth";
@@ -87,14 +88,10 @@ export function clearSocialOAuthCookie(c: Context): void {
  * the cookie holds the logout's token, and only a request that carries it
  * can move the logout on. One at a time; a newer one replaces it.
  */
-export function setSamlLogoutCookie(
-  c: Context,
-  token: string,
-  ttlSeconds: number,
-): void {
+export function setSamlLogoutCookie(c: Context, token: string): void {
   c.header(
     "Set-Cookie",
-    `${SAML_LOGOUT_COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${ttlSeconds}`,
+    `${SAML_LOGOUT_COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${LOGOUT_TTL_SECONDS}`,
     { append: true },
   );
   c.header("Cache-Control", "no-store");

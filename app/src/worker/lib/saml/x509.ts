@@ -147,6 +147,12 @@ export function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
 }
 
+/** Base64 as it appears in XML or a query value: whitespace allowed, and a
+ *  '+' that arrived as a space (left unescaped in a query) put back. */
+export function decodeBase64(text: string): Uint8Array<ArrayBuffer> {
+  return base64ToBytes(text.replace(/ /g, "+").replace(/\s+/g, ""));
+}
+
 // ─── Reading certificates ────────────────────────────────────────────────────
 //
 // An SP's signing certificate, like Prism's own, is only a key container:
@@ -168,7 +174,7 @@ export type EcCurve = "P-256" | "P-384" | "P-521";
 
 /** A certificate's public key: its SubjectPublicKeyInfo (DER), and what
  *  kind of key it is. */
-export type CertificateKey =
+type CertificateKey =
   | { kind: "rsa"; spki: Uint8Array }
   | { kind: "ec"; curve: EcCurve; spki: Uint8Array };
 

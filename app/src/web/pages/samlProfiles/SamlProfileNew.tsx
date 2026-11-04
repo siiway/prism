@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { SAML_PROFILE_NAME_MAX_LENGTH } from "../../../shared/limits";
 import { apiErrorText } from "../../lib/apiError";
 import { useApi } from "../../lib/api-context";
 import { FormPage } from "../../components/FormPage";
@@ -71,7 +72,7 @@ export function SamlProfileNew() {
         <Input
           autoFocus
           value={name}
-          maxLength={64}
+          maxLength={SAML_PROFILE_NAME_MAX_LENGTH}
           onChange={(_, d) => setName(d.value)}
           placeholder={t("samlProfiles.namePlaceholder")}
         />

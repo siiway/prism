@@ -501,18 +501,18 @@ export function Layout() {
   const handleSignOut = async () => {
     if (busy) return;
     setBusy(t("account.signingOut"));
-    let samlLogout: string | null = null;
+    // SAML apps signed in with this session are signed out on the way,
+    // through the browser, when the server says so.
+    let next = "/login";
     try {
-      samlLogout = (await api.logout()).saml_logout ?? null;
+      next = (await api.logout()).next;
     } catch {
       /* best effort: local state must still be cleared */
     }
     clearAuth();
     await qc.clear();
     setBusy(null);
-    // SAML apps signed in with this session are signed out on the way,
-    // through the browser; the logout page then goes on to /login.
-    navigate(samlLogout ?? "/login", { replace: true });
+    navigate(next, { replace: true });
   };
 
   const closeSidebar = () => setSidebarOpen(false);

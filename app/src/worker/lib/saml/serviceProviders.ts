@@ -2,9 +2,13 @@
 // itself, and which user attributes an SP receives.
 
 import { getConfigValue } from "../config";
+import { validateRedirectUriForRegistration } from "../redirectUri";
 import { getGroupsForUserByTeam } from "../teamGroups";
 import type { AuthUser, OAuthAppRow } from "../../types";
+import type { SamlBlock } from "../../../shared/api";
 import type { NameIdFormat, SignMode, SloBinding } from "./protocol";
+import { isUsableCertificate } from "./verify";
+import { bytesToBase64, certificateFromText } from "./x509";
 
 export interface SamlSpRow {
   app_id: string;
@@ -22,16 +26,12 @@ export interface SamlSpRow {
   updated_at: number;
 }
 
-export const NAME_ID_FORMATS: readonly NameIdFormat[] = ["persistent", "email"];
-export const SIGN_MODES: readonly SignMode[] = [
-  "assertion",
-  "response",
-  "both",
-];
-export const SLO_BINDINGS: readonly SloBinding[] = ["redirect", "post"];
-export const MAX_ACS_URLS = 10;
-export const MAX_ENTITY_ID_LENGTH = 1024;
-export const MAX_ACS_URL_LENGTH = 2048;
+const NAME_ID_FORMATS: readonly NameIdFormat[] = ["persistent", "email"];
+const SIGN_MODES: readonly SignMode[] = ["assertion", "response", "both"];
+const SLO_BINDINGS: readonly SloBinding[] = ["redirect", "post"];
+const MAX_ACS_URLS = 10;
+const MAX_ENTITY_ID_LENGTH = 1024;
+const MAX_ACS_URL_LENGTH = 2048;
 
 export function parseAcsUrls(row: Pick<SamlSpRow, "acs_urls">): string[] {
   try {
@@ -56,33 +56,142 @@ export function idpEndpoints(appUrl: string) {
   };
 }
 
-/** An ACS (or single logout) URL Prism may send messages to: absolute
- *  https, or http on a loopback host for local development; no fragment,
- *  no credentials. */
-export function isValidAcsUrl(value: string): boolean {
-  if (value.length > MAX_ACS_URL_LENGTH) return false;
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return false;
-  }
-  if (url.hash || url.username || url.password) return false;
-  if (url.protocol === "https:") return true;
+/** An ACS (or single logout) URL Prism may send messages to, by the rules
+ *  for an OAuth redirect URI: absolute https, or http on a loopback host
+ *  for local development; no fragment, no credentials. */
+function isValidAcsUrl(value: string): boolean {
   return (
-    url.protocol === "http:" &&
-    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+    value.length <= MAX_ACS_URL_LENGTH &&
+    validateRedirectUriForRegistration(value) === null
   );
 }
 
 /** An entity ID: a URI, in practice a URL or a URN, without whitespace. */
-export function isValidEntityId(value: string): boolean {
+function isValidEntityId(value: string): boolean {
   return (
     value.length > 0 &&
     value.length <= MAX_ENTITY_ID_LENGTH &&
     !/\s/.test(value) &&
     /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)
   );
+}
+
+/** The SP settings an app owner saves, checked; stored as given. */
+export interface SpSettings {
+  entity_id: string;
+  acs_urls: string[];
+  name_id_format: NameIdFormat;
+  sign: SignMode;
+  slo_url: string | null;
+  slo_binding: SloBinding;
+  /** Base64 DER; null when none is given. */
+  signing_cert: string | null;
+}
+
+/** An API error: its code, and `params` for anything to fill in. */
+type FieldError = { error: string; params?: Record<string, unknown> };
+
+/** One of `allowed`, `fallback` when absent. */
+function oneOf<T extends string>(
+  field: string,
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T,
+): { value: T } | FieldError {
+  const v = value ?? fallback;
+  return allowed.includes(v as T)
+    ? { value: v as T }
+    : { error: "field_one_of", params: { field, values: allowed.join(", ") } };
+}
+
+/** An app owner's SP settings from a request body, or why they can't be
+ *  saved. */
+export async function parseSpSettings(
+  body: Record<string, unknown>,
+): Promise<{ value: SpSettings } | FieldError> {
+  const entityId =
+    typeof body.entity_id === "string" ? body.entity_id.trim() : "";
+  if (!entityId)
+    return { error: "field_required", params: { field: "entity_id" } };
+  if (!isValidEntityId(entityId))
+    return { error: "field_invalid", params: { field: "entity_id" } };
+
+  const acsUrls = Array.isArray(body.acs_urls)
+    ? [
+        ...new Set(
+          body.acs_urls
+            .filter((u): u is string => typeof u === "string")
+            .map((u) => u.trim())
+            .filter(Boolean),
+        ),
+      ]
+    : [];
+  if (acsUrls.length === 0)
+    return { error: "field_required", params: { field: "acs_urls" } };
+  if (acsUrls.length > MAX_ACS_URLS)
+    return {
+      error: "field_max_items",
+      params: { field: "acs_urls", max: MAX_ACS_URLS },
+    };
+  const badAcs = acsUrls.find((u) => !isValidAcsUrl(u));
+  if (badAcs) return { error: "saml_acs_url_invalid", params: { url: badAcs } };
+
+  const nameIdFormat = oneOf(
+    "name_id_format",
+    body.name_id_format,
+    NAME_ID_FORMATS,
+    "persistent",
+  );
+  if ("error" in nameIdFormat) return nameIdFormat;
+  const sign = oneOf("sign", body.sign, SIGN_MODES, "assertion");
+  if ("error" in sign) return sign;
+
+  // Single logout is optional: an empty URL turns it off.
+  const sloUrl = typeof body.slo_url === "string" ? body.slo_url.trim() : "";
+  if (sloUrl && !isValidAcsUrl(sloUrl))
+    return { error: "field_invalid", params: { field: "slo_url" } };
+  const sloBinding = oneOf(
+    "slo_binding",
+    body.slo_binding,
+    SLO_BINDINGS,
+    "redirect",
+  );
+  if ("error" in sloBinding) return sloBinding;
+
+  // The SP's signing certificate is optional too: with it, its logout
+  // messages must be signed. PEM or the bare base64 from its metadata.
+  const certText =
+    typeof body.signing_cert === "string" ? body.signing_cert.trim() : "";
+  let signingCert: string | null = null;
+  if (certText) {
+    const der = certificateFromText(certText);
+    if (!der || !(await isUsableCertificate(der)))
+      return { error: "saml_certificate_invalid" };
+    signingCert = bytesToBase64(der);
+  }
+
+  return {
+    value: {
+      entity_id: entityId,
+      acs_urls: acsUrls,
+      name_id_format: nameIdFormat.value,
+      sign: sign.value,
+      slo_url: sloUrl || null,
+      slo_binding: sloBinding.value,
+      signing_cert: signingCert,
+    },
+  };
+}
+
+/** An app's SP settings; null while SAML is off for it. */
+export function getServiceProvider(
+  db: D1Database,
+  appId: string,
+): Promise<SamlSpRow | null> {
+  return db
+    .prepare("SELECT * FROM saml_service_providers WHERE app_id = ?")
+    .bind(appId)
+    .first<SamlSpRow>();
 }
 
 /** Scopes whose attributes SAML can carry. An SP gets those among the
@@ -134,9 +243,6 @@ export async function samlAttributes(
   }
   return attrs;
 }
-
-export type SamlBlock =
-  "saml_disabled" | "saml_disabled_user" | "saml_disabled_app";
 
 /** An admin override as stored: 1 allow, 0 stop, null = the level above. */
 export function samlOverrideValue(
