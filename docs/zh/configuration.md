@@ -11,22 +11,23 @@ description: 运行时配置键，以及 Wrangler 绑定、环境变量和密钥
 
 ## 通用
 
-| 键                           | 类型    | 默认值                          | 说明                                      |
-| ---------------------------- | ------- | ------------------------------- | ----------------------------------------- |
-| `site_name`                  | string  | `"Prism"`                       | 显示在浏览器标题和邮件中                  |
-| `site_description`           | string  | `"Federated identity platform"` | 显示在登录页面                            |
-| `site_icon_url`              | string? | `null`                          | 网站图标 / Logo 的 URL                    |
-| `allow_registration`         | boolean | `true`                          | 允许自助注册                              |
-| `invite_only`                | boolean | `false`                         | 注册时需要邀请令牌                        |
-| `require_email_verification` | boolean | `false`                         | 在邮箱验证完成前阻止登录                  |
-| `accent_color`               | string  | `"#0078d4"`                     | 主品牌色（十六进制）                      |
-| `custom_css`                 | string  | `""`                            | 作为 `<style>` 块注入每个页面             |
-| `show_powered_by`            | boolean | `true`                          | 在页脚显示“由 Prism 驱动”源代码链接       |
-| `disable_user_create_team`   | boolean | `false`                         | 隐藏“新建团队”——仅管理员可创建团队        |
-| `disable_user_create_app`    | boolean | `false`                         | 隐藏“新建应用”——仅管理员可创建 OAuth 应用 |
-| `allow_alt_email_login`      | boolean | `true`                          | 允许用户使用任意已验证的次要邮箱登录      |
-| `security_contact`           | string  | `""`                            | 用于漏洞报告的 `mailto:` 地址或 https URL |
-| `security_policy_url`        | string  | `""`                            | 指向你的披露政策的链接                    |
+| 键                           | 类型    | 默认值                          | 说明                                                           |
+| ---------------------------- | ------- | ------------------------------- | -------------------------------------------------------------- |
+| `site_name`                  | string  | `"Prism"`                       | 显示在浏览器标题和邮件中                                       |
+| `site_description`           | string  | `"Federated identity platform"` | 显示在登录页面                                                 |
+| `site_icon_url`              | string? | `null`                          | 网站图标 / Logo 的 URL                                         |
+| `allow_registration`         | boolean | `true`                          | 允许自助注册                                                   |
+| `invite_only`                | boolean | `false`                         | 注册时需要邀请令牌                                             |
+| `require_email_verification` | boolean | `false`                         | 在邮箱验证完成前阻止登录                                       |
+| `accent_color`               | string  | `"#0078d4"`                     | 主品牌色（十六进制）                                           |
+| `custom_css`                 | string  | `""`                            | 作为 `<style>` 块注入每个页面                                  |
+| `show_powered_by`            | boolean | `true`                          | 在页脚显示“由 Prism 驱动”源代码链接                            |
+| `disable_user_create_team`   | boolean | `false`                         | 隐藏“新建团队”——仅管理员可创建团队                             |
+| `disable_user_create_app`    | boolean | `false`                         | 隐藏“新建应用”——仅管理员可创建应用                             |
+| `saml_enabled`               | boolean | `true`                          | 允许应用使用 [SAML](saml.md)。管理员可按所有者和按应用单独设置 |
+| `allow_alt_email_login`      | boolean | `true`                          | 允许用户使用任意已验证的次要邮箱登录                           |
+| `security_contact`           | string  | `""`                            | 用于漏洞报告的 `mailto:` 地址或 https URL                      |
+| `security_policy_url`        | string  | `""`                            | 指向你的披露政策的链接                                         |
 
 当设置了 `security_contact` 时，Prism 会提供 `/.well-known/security.txt`。
 

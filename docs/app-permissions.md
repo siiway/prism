@@ -1,6 +1,6 @@
 ---
 title: Cross-App Permissions
-description: How to expose custom permission scopes from your OAuth app and how other apps can integrate with them.
+description: How to expose custom permission scopes from your app and how other apps can integrate with them.
 ---
 
 # Cross-App Permissions
@@ -23,6 +23,10 @@ app:<App_A_client_id>:<inner_scope>
 ```
 
 For example: `app:prism_xxxxx:read_posts`
+
+App B must sign people in with OAuth, since the permissions come as an access
+token. [SAML](saml.md) sign-in issues none and ignores these scopes. App A can
+use either: it checks App B's tokens with its own client credentials.
 
 ---
 

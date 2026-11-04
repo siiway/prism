@@ -3,7 +3,7 @@ title: OAuth / OIDC 指南
 description: 将 Prism 作为 OAuth 2.0 / OpenID Connect 提供商进行集成——授权码流程、PKCE、权限范围、令牌交换与内省。
 ---
 
-Prism 是一个符合标准的 OAuth 2.0 授权服务器和 OpenID Connect 提供商。任何支持 OAuth 2.0 授权码流程的应用都可以使用 Prism 作为其身份提供商。
+Prism 是一个符合标准的 OAuth 2.0 授权服务器和 OpenID Connect 提供商。任何支持 OAuth 2.0 授权码流程的应用都可以使用 Prism 作为其身份提供商。只支持 SAML 的应用请参见 [SAML 指南](saml.md)。
 
 ## Discovery
 
@@ -326,7 +326,7 @@ Content-Type: application/json
 
 ## private_key_jwt 客户端认证（RFC 7523）
 
-机密客户端可以使用签名断言代替共享密钥进行认证。在**应用详情 → 设置**中，将**令牌端点认证方式**设为 `private_key_jwt`，并填入 **jwks** 或 **jwks_uri**（或使用 DCR）。然后在令牌、PAR、内省和撤销端点上发送：
+机密客户端可以使用签名断言代替共享密钥进行认证。在应用的 **OAuth** 标签页中，将**令牌端点认证方式**设为 `private_key_jwt`，并填入 **jwks** 或 **jwks_uri**（或使用 DCR）。然后在令牌、PAR、内省和撤销端点上发送：
 
 ```text
 client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
@@ -437,13 +437,13 @@ https://your-prism-domain/api/oauth/authorize?client_id=<CLIENT_ID>&request_uri=
 GET /api/oauth/end_session?id_token_hint=<ID_TOKEN>&post_logout_redirect_uri=<URI>&state=<STATE>
 ```
 
-结束用户的 Prism 会话。如果 `post_logout_redirect_uri` 与客户端注册的某一项（`post_logout_redirect_uris`）完全匹配，浏览器会带 `state` 跳转到该地址；否则落到 Prism 的已登出页面。
+结束用户的 Prism 会话。如果 `post_logout_redirect_uri` 与客户端注册的某一项（`post_logout_redirect_uris`）完全匹配，浏览器会带 `state` 跳转到该地址；否则落到 Prism 的已登出页面。途中会让用户从通过 SAML 登录且启用单点登出的应用登出，详见 [SAML → 单点登出](saml.md#单点登出)。
 
 请提供用户本次登录得到的 `id_token_hint`，它用于标识客户端。由于任何网站都可以链接到此地址，只有当该令牌是在当前浏览器会话中签发给该用户的（见其 `sid`），且用户仍允许该应用时，Prism 才会直接将其登出；站点管理员可以将此限制为仅第一方应用。否则会先询问用户；若用户选择保持登录，则会前往 Prism 首页。
 
 ## 后端通道登出
 
-在客户端上注册 `backchannel_logout_uri`（应用详情 → 设置、DCR 或应用 API）。当用户从 Prism 登出时，Prism 会向其 POST 一个签名的 `logout_token`：
+在客户端上注册 `backchannel_logout_uri`（应用的 **OAuth** 标签页、DCR 或应用 API）。当用户从 Prism 登出时，Prism 会向其 POST 一个签名的 `logout_token`：
 
 ```http
 POST <backchannel_logout_uri>
@@ -638,8 +638,8 @@ Content-Type: application/json
    https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback
    ```
 
-3. 将 **Allowed scopes** 设置为至少包含 `openid` 和 `email`；如果希望在策略中使用 `profile` 和 `teams:read` 声明，也一并添加。
-4. 将 **OIDC fields** 设置为需要嵌入的自定义声明，例如 `["role", "teams"]`。
+3. 在应用的 **权限** 标签页中，至少允许 `openid` 和 `email`；如果希望在策略中使用 `profile` 和 `teams:read` 声明，也一并允许。
+4. 通过应用 API（`PATCH /api/apps/:id`）将 `oidc_fields` 设置为需要嵌入的自定义声明，例如 `["role", "teams"]`。
 5. 复制 **Client ID** 和 **Client Secret**。
 
 #### 第二步 — 在 Cloudflare 中添加 Prism 为身份提供商

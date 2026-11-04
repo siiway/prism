@@ -72,7 +72,7 @@ export default withMermaid(
 
         title: "Prism",
         description:
-          "Self-hosted OAuth 2.0 / OpenID Connect identity platform on Cloudflare Workers.",
+          "Self-hosted OAuth 2.0, OpenID Connect and SAML 2.0 identity platform on Cloudflare Workers.",
 
         themeConfig: {
           nav: [
@@ -84,6 +84,7 @@ export default withMermaid(
             },
             { text: "API", link: "/api", activeMatch: "^/api" },
             { text: "OAuth / OIDC", link: "/oauth", activeMatch: "^/oauth" },
+            { text: "SAML", link: "/saml", activeMatch: "^/saml" },
             {
               text: "Links",
               items: [
@@ -141,7 +142,7 @@ export default withMermaid(
 
         title: "Prism",
         description:
-          "基于 Cloudflare Workers 的自托管 OAuth 2.0 / OpenID Connect 平台。",
+          "基于 Cloudflare Workers 的自托管 OAuth 2.0、OpenID Connect 与 SAML 2.0 身份平台。",
 
         themeConfig: {
           nav: [
@@ -157,6 +158,7 @@ export default withMermaid(
               link: "/zh/oauth",
               activeMatch: "^/zh/oauth",
             },
+            { text: "SAML", link: "/zh/saml", activeMatch: "^/zh/saml" },
             {
               text: "链接",
               items: [

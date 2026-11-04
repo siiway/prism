@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Prism
   text: Identity. Simplified.
-  tagline: Self-hosted OAuth 2.0 / OpenID Connect platform on Cloudflare Workers. Zero servers, global edge.
+  tagline: Self-hosted OAuth 2.0, OpenID Connect and SAML 2.0 platform on Cloudflare Workers. Zero servers, global edge.
   actions:
     - theme: brand
       text: Get Started
@@ -24,6 +24,10 @@ features:
     title: OAuth 2.0 + OpenID Connect
     details: Authorization code flow with PKCE, OIDC Discovery, signed ID tokens, token introspection and revocation, and UserInfo.
 
+  - icon: 🧾
+    title: SAML 2.0
+    details: Sign in to apps that only speak SAML, with signed assertions, a separate user ID for each app, and single logout.
+
   - icon: 🌐
     title: Social & Federated Login
     details: GitHub, Google, Microsoft, Discord, Telegram, X and Cloudflare, plus Generic OIDC and OAuth 2 sources for any other provider. GPG sign-in too.
@@ -34,7 +38,7 @@ features:
 
   - icon: 👥
     title: Teams
-    details: Shared ownership of OAuth apps and verified domains, with roles, invites, sub-teams and join requirements.
+    details: Shared ownership of apps and verified domains, with roles, invites, sub-teams and join requirements.
 
   - icon: 🤖
     title: Bot Protection
@@ -42,7 +46,7 @@ features:
 
   - icon: 🏗️
     title: App Registry & Cross-App Scopes
-    details: Users register their own OAuth apps. Apps can publish permission scopes that other apps request through the consent screen.
+    details: Users register their own apps, for OAuth, SAML or both. Apps can publish permission scopes that other apps request through the consent screen.
 
   - icon: 🔔
     title: Audit Logs & Notifications

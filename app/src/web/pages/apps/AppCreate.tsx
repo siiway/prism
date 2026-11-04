@@ -71,7 +71,7 @@ export function AppCreate() {
     <FormPage
       backTo="/apps"
       backLabel={t("nav.myApps")}
-      title={t("apps.createOAuthApp")}
+      title={t("apps.createApp")}
       subtitle={t("apps.createSubtitle")}
       onSubmit={handleCreate}
       actions={

@@ -113,6 +113,8 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 
 结束当前会话。Prism 同一时间只支持一个浏览器会话；切换账号意味着退出后重新登录。
 
+返回 `{ "ok": true, "next": "/login" }`。请将浏览器跳转到 `next`：如果该会话登录过启用 SAML 单点登出的应用，它会是 `/logout`，先让用户从这些应用登出。
+
 ### 邮箱验证
 
 | 端点                                      | 用途                                                |
@@ -210,10 +212,10 @@ EdDSA 和 ML-DSA 密钥。包含多个密钥的 `public_key`（多个块拼接�
 
 列表端点接受 `?page=`、`?limit=`，通常还接受 `?q=`，并返回 `total`。
 
-## OAuth 应用
+## 应用
 
-所有端点都需要认证。参见 [OAuth / OIDC 指南](oauth.md) 和
-[跨应用权限](app-permissions.md)。
+所有端点都需要认证。参见 [OAuth / OIDC 指南](oauth.md)、
+[SAML 指南](saml.md) 和 [跨应用权限](app-permissions.md)。
 
 | 方法                                | 路径                                         | 说明                                                                                                        |
 | ----------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -371,6 +373,20 @@ OAuth 令牌等价端点：`GET /api/oauth/me/social-connections`（`social:read
 ### `GET /api/oauth/consents` / `DELETE /api/oauth/consents/:client_id`
 
 列出当前用户已授权的应用，或撤销其中一个。撤销会移除该应用的授权以及所有未过期令牌。
+
+## SAML
+
+参见 [SAML 指南](saml.md)。
+
+| 方法                                | 路径                           | 说明                                                |
+| ----------------------------------- | ------------------------------ | --------------------------------------------------- |
+| `GET`                               | `/saml/metadata`               | 身份提供方元数据                                    |
+| `GET` / `POST`                      | `/saml/sso`                    | 单点登录，HTTP-Redirect 或 HTTP-POST 绑定           |
+| `GET` / `POST`                      | `/saml/slo`                    | 单点登出，HTTP-Redirect 或 HTTP-POST 绑定           |
+| `GET` / `POST` / `PATCH` / `DELETE` | `/api/saml/profiles[/:id]`     | 当前用户的 SAML 身份。创建和重命名接受 `{ "name" }` |
+| `POST`                              | `/api/saml/profiles/:id/share` | 将为某个应用创建的身份转为共享身份：`{ "name" }`    |
+
+为某个应用创建的身份不能重命名或删除；共享身份在有应用使用时不能删除。其他 `/api/saml/*` 端点供 Prism 自身的登录和登出页面使用。
 
 ## 搜索
 

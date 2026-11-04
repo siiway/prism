@@ -1,6 +1,6 @@
 ---
 title: App Access Whitelist
-description: Restrict OAuth authorization to specific teams and users, so only approved members can log into your application.
+description: Restrict OAuth and SAML sign-in to specific teams and users, so only approved members can log into your application.
 ---
 
 # App Access Whitelist
@@ -10,13 +10,13 @@ JWT claims-based access control — they can't read `in_team_*` or `role_in_team
 claims and enforce membership on their own. The **App Access Whitelist** feature lets
 Prism enforce this at the gate, before the user ever reaches the app.
 
-When enabled, the OAuth authorization flow checks the user against a set of rules.
+When enabled, OAuth and [SAML](saml.md) sign-in check the user against a set of rules.
 Users who don't match any rule are redirected to an "Access denied" page instead
 of the consent screen.
 
 **How it works**
 
-- The app owner enables the whitelist toggle in the app's settings
+- The app owner enables the whitelist on the app's **Access** tab
 - They add rules specifying which **teams** or **users** may authorize
 - Team rules can optionally require a **minimum role** (owner, co-owner, admin, or member)
 - Multiple rules are **OR'd** — matching any single rule grants access
@@ -28,7 +28,7 @@ of the consent screen.
 
 ### 1. Open the app in the dashboard
 
-Navigate to **My Apps** → select the app → click the **Access whitelist** tab.
+Navigate to **Apps** → select the app → click the **Access** tab.
 
 ### 2. Enable the whitelist
 

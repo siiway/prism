@@ -301,7 +301,7 @@ export function Dashboard() {
         <MetricGrid>
           <Metric
             to="/apps"
-            label={t("dashboard.oauthAppsRegistered")}
+            label={t("dashboard.appsRegistered")}
             value={appsData?.total ?? apps.length}
           />
           <Metric

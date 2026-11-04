@@ -1,11 +1,11 @@
 ---
 title: Teams
-description: Collaborate on OAuth apps and verified domains. Roles, invites, join requirements, sub-teams and member groups.
+description: Collaborate on apps and verified domains. Roles, invites, join requirements, sub-teams and member groups.
 ---
 
 # Teams
 
-A team is a shared owner for OAuth applications and verified domains. Members
+A team is a shared owner for applications and verified domains. Members
 manage the team's apps and domains in the same UI as their personal ones, and
 ownership survives any single member leaving.
 
@@ -190,7 +190,7 @@ members who joined with their own accounts, are not deleted.
 ## Team-owned apps and domains
 
 Create an app under a team from **Teams → \<team\> → Apps → New**, or move one in
-from your personal apps (**Apps → \<app\> → Settings → Transfer**). A transferred
+from your personal apps (**Apps → \<app\> → Overview → Move to team**). A transferred
 app keeps its client ID and secret, so integrations don't break.
 
 Only team admins or higher can create an app or rotate its secret. The secret is

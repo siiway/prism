@@ -27,7 +27,7 @@ A missing user and a private user give the same 404, so nobody can use it to fin
 | Join date        | When the account was created                              | Public      |
 | GPG public keys  | Fingerprint, key ID and label of each GPG key             | Public      |
 | Authorized apps  | Apps the user has granted access to (name, icon, website) | **Private** |
-| User-owned apps  | OAuth apps the user registered (name, icon, description)  | Public      |
+| User-owned apps  | Apps the user registered (name, icon, description)        | Public      |
 | Verified domains | Domains the user owns and has verified                    | Public      |
 
 These are the out-of-the-box site defaults; admins can change any of them. Authorized apps default to private because the list reveals which services someone uses.
@@ -42,7 +42,7 @@ Team owners and admins (not site admins) control a team's visibility. Teams are 
 | Avatar           | The team avatar                                                          | Public      |
 | Owner            | The owner's username, linked to their profile if that is also public     | **Private** |
 | Member count     | The number of members                                                    | Public      |
-| Team-owned apps  | OAuth apps registered to the team                                        | Public      |
+| Team-owned apps  | Apps registered to the team                                              | Public      |
 | Verified domains | Domains owned by the team                                                | Public      |
 | Member list      | Each member (each member's own "show joined teams" setting also applies) | **Private** |
 | Sub-teams        | Immediate sub-teams that have themselves opted into a public profile     | Public      |
