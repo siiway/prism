@@ -81,7 +81,8 @@ function toBody(f: SamlForm): SamlUpdateBody {
     sign: f.sign,
     slo_url: f.slo_url.trim() || null,
     slo_binding: f.slo_binding,
-    signing_cert: f.signing_cert.trim() || null,
+    // It only checks logout messages, so it goes with single logout.
+    signing_cert: (f.slo_url.trim() && f.signing_cert.trim()) || null,
   };
 }
 

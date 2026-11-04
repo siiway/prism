@@ -70,17 +70,20 @@ export async function boundProfile(
     .first<SamlProfileRow>();
 }
 
-/** The user's shared profiles, by name. */
-export async function sharedProfiles(
+/** The shared profiles the user can pick for an app, by name: none once
+ *  the app has its profile. */
+export async function profileChoices(
   db: D1Database,
+  appId: string,
   userId: string,
 ): Promise<SamlProfileRow[]> {
   const { results } = await db
     .prepare(
-      `SELECT * FROM saml_profiles WHERE user_id = ? AND app_id IS NULL
+      `SELECT * FROM saml_profiles WHERE user_id = ?1 AND app_id IS NULL
+         AND NOT EXISTS (SELECT 1 FROM saml_profile_apps WHERE app_id = ?2 AND user_id = ?1)
        ORDER BY name COLLATE NOCASE, created_at`,
     )
-    .bind(userId)
+    .bind(userId, appId)
     .all<SamlProfileRow>();
   return results;
 }

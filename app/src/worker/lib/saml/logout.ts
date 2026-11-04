@@ -27,6 +27,7 @@
 
 import { randomBase64url, sha256Hex } from "../crypto";
 import {
+  SamlError,
   encodeLogoutMessage,
   logoutRequestElement,
   logoutResponseElement,
@@ -35,7 +36,7 @@ import {
   type OutgoingMessage,
   type SloBinding,
 } from "./protocol";
-import { idpEndpoints } from "./serviceProviders";
+import { idpEndpoints, samlBlock } from "./serviceProviders";
 import { getSamlSigner } from "./sign";
 import { base64ToBytes } from "./x509";
 
@@ -116,7 +117,8 @@ async function participants(
 ): Promise<Participant[]> {
   const { results } = await db
     .prepare(
-      `SELECT s.app_id, s.name_id, s.name_id_format, s.session_index
+      `SELECT s.app_id, s.name_id, s.name_id_format, s.session_index,
+         a.owner_id, a.saml_override
        FROM saml_sessions s
        JOIN saml_service_providers sp ON sp.app_id = s.app_id
        JOIN oauth_apps a ON a.id = s.app_id
@@ -125,8 +127,18 @@ async function participants(
        ORDER BY s.created_at`,
     )
     .bind(sessionId, exceptAppId ?? "")
-    .all<Participant>();
-  return results;
+    .all<Participant & { owner_id: string; saml_override: number | null }>();
+  // Apps whose SAML an admin stopped are told nothing, the user's ID
+  // included.
+  const blocked = await Promise.all(results.map((r) => samlBlock(db, r)));
+  return results
+    .filter((_, i) => !blocked[i])
+    .map(({ app_id, name_id, name_id_format, session_index }) => ({
+      app_id,
+      name_id,
+      name_id_format,
+      session_index,
+    }));
 }
 
 const logoutPageUrl = (token: string) =>
@@ -199,6 +211,19 @@ export async function startSpLogout(
     verified: boolean;
   },
 ): Promise<string> {
+  // A signed request signs the user out without asking: once each. It
+  // stops counting as fresh well before the record of it goes.
+  if (origin.verified) {
+    const now = Math.floor(Date.now() / 1000);
+    const seen = await db
+      .prepare(
+        `INSERT INTO saml_logout_requests (app_id, request_id, expires_at)
+         VALUES (?, ?, ?) ON CONFLICT(app_id, request_id) DO NOTHING`,
+      )
+      .bind(origin.appId, origin.requestId, now + LOGOUT_TTL_SECONDS)
+      .run();
+    if (!seen.meta.changes) throw new SamlError("saml_logout_used");
+  }
   const token = await insertLogout(db, {
     origin_app_id: origin.appId,
     origin_request_id: origin.requestId,
@@ -458,14 +483,14 @@ export async function recordLogoutResponse(
   verify: (certificate: Uint8Array) => Promise<boolean>,
 ): Promise<boolean> {
   if (!row.current_app_id || !row.current_request_id) return false;
+  if (response.inResponseTo !== row.current_request_id) return false;
+  // Found by the ID only that SP was sent, so it's this logout's answer
+  // either way. One that doesn't hold up (another Issuer, a bad signature)
+  // leaves the SP unconfirmed, and the logout goes on to the next.
   const sp = await sloTarget(db, row.current_app_id);
-  if (
-    !sp ||
-    response.issuer !== sp.entity_id ||
-    response.inResponseTo !== row.current_request_id
-  )
-    return false;
   const confirmed =
+    !!sp &&
+    response.issuer === sp.entity_id &&
     response.success &&
     (!sp.signing_cert || (await verify(base64ToBytes(sp.signing_cert))));
   const status = confirmed ? row.status : partial(row.status);

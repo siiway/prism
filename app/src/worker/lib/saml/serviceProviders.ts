@@ -159,9 +159,12 @@ export async function parseSpSettings(
   if ("error" in sloBinding) return sloBinding;
 
   // The SP's signing certificate is optional too: with it, its logout
-  // messages must be signed. PEM or the bare base64 from its metadata.
+  // messages must be signed. PEM or the bare base64 from its metadata. It
+  // only checks logout messages, so it goes with single logout.
   const certText =
-    typeof body.signing_cert === "string" ? body.signing_cert.trim() : "";
+    sloUrl && typeof body.signing_cert === "string"
+      ? body.signing_cert.trim()
+      : "";
   let signingCert: string | null = null;
   if (certText) {
     const der = certificateFromText(certText);

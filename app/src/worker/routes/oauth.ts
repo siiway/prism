@@ -2725,8 +2725,6 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
   // (OpenID Connect RP-Initiated Logout §2). An ID token from another
   // session, or one that leaked, signs nobody out. A site admin can keep
   // this to first-party apps.
-  const firstPartyOnly =
-    (await getConfigValue(c.env.DB, "silent_logout_first_party_only")) === true;
   const fromThisSession =
     !!endingUser &&
     !!sessionId &&
@@ -2739,7 +2737,14 @@ async function handleEndSession(c: Context<AppEnv>): Promise<Response> {
          AND (a.is_first_party = 1 OR (? = 0 AND EXISTS (
            SELECT 1 FROM oauth_consents c WHERE c.client_id = a.client_id AND c.user_id = ?)))`,
     )
-      .bind(hintClientId, firstPartyOnly ? 1 : 0, endingUser.id)
+      .bind(
+        hintClientId,
+        (await getConfigValue(c.env.DB, "silent_logout_first_party_only")) ===
+          true
+          ? 1
+          : 0,
+        endingUser.id,
+      )
       .first());
   if (endingUser && sessionId && !fromThisSession) {
     const page = await startUnverifiedLogout(c.env.DB, {

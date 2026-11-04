@@ -817,6 +817,16 @@ describe("single logout", () => {
     return { id, query: deflate(xml) };
   }
 
+  /** An SP's LogoutResponse, posted to /saml/slo. */
+  const answer = (xml: string) =>
+    call("/saml/slo", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        SAMLResponse: Buffer.from(xml).toString("base64"),
+      }).toString(),
+    });
+
   const logoutResponse = (
     inResponseTo: string,
     issuer: string,
@@ -978,17 +988,9 @@ describe("single logout", () => {
     );
     expect(verifier.checkSignature(xml)).toBe(true);
 
-    // The CRM answers; a stray answer from someone else doesn't count.
+    // The CRM answers; an answer to a request Prism never sent doesn't count.
     const requestId = doc.documentElement.getAttribute("ID")!;
-    const answer = (xml: string) =>
-      call("/saml/slo", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          SAMLResponse: Buffer.from(xml).toString("base64"),
-        }).toString(),
-      });
-    const stray = await answer(logoutResponse(requestId, SP));
+    const stray = await answer(logoutResponse("_never-sent", SP2));
     expect(stray.headers.get("Location")).toBe(
       "/logout?error=saml_logout_expired",
     );
@@ -1017,6 +1019,29 @@ describe("single logout", () => {
 
     // And that's the end of it.
     expect((await step(null, bound)).status).toBe(404);
+  });
+
+  test("an answer from the wrong Issuer leaves the SP unconfirmed and goes on", async () => {
+    const cookie = await sessionCookie();
+    crmSession();
+    const token = pageToken(
+      await call(`/saml/slo?SAMLRequest=${logoutRequest("wiki-u1").query}`),
+    );
+    await step(token, cookie);
+    const first = await step(token, cookie, "confirm");
+    if (first.body.kind !== "post") throw new Error("expected a POST");
+    const sent = new DOMParser().parseFromString(
+      Buffer.from(first.body.fields.SAMLRequest, "base64").toString("utf8"),
+      "text/xml",
+    ) as unknown as Document;
+    const requestId = sent.documentElement.getAttribute("ID")!;
+    // Answered under the wiki's name instead of the CRM's.
+    const back = await answer(logoutResponse(requestId, SP));
+    expect(back.headers.get("Location")).toBe("/logout");
+    const last = await step(null, boundCookie(first.res));
+    if (last.body.kind !== "redirect") throw new Error("expected a redirect");
+    const reply = await readRedirect(last.body.url, "SAMLResponse");
+    expect(statusCodes(reply.doc)).toEqual(["Success", "PartialLogout"]);
   });
 
   test("an SP that never answers makes it a partial logout", async () => {
@@ -1139,6 +1164,39 @@ describe("single logout", () => {
       "/logout?error=saml_logout_expired",
     );
     expect((await step("nope")).status).toBe(404);
+  });
+
+  test("an app whose SAML is stopped can't sign anyone out, and isn't told", async () => {
+    const cookie = await sessionCookie();
+    crmSession();
+    sqlite.run("UPDATE oauth_apps SET saml_override = 0 WHERE id = 'a1'");
+    const res = await call(
+      `/saml/slo?SAMLRequest=${logoutRequest("wiki-u1").query}`,
+    );
+    expect(res.headers.get("Location")).toBe("/logout?error=saml_disabled_app");
+    // Signing out of Prism visits the CRM only; with it stopped too, none.
+    sqlite.run(
+      "INSERT OR REPLACE INTO saml_sessions (session_id, app_id, name_id, name_id_format, session_index, created_at) VALUES ('s1', 'a1', 'wiki-u1', 'persistent', '_wiki', 0)",
+    );
+    sqlite.run("UPDATE oauth_apps SET saml_override = 0 WHERE id = 'a2'");
+    const out = await call("/api/auth/logout", json({}, cookie));
+    expect(await out.json()).toEqual({ ok: true, next: "/login" });
+  });
+
+  test("the confirm step takes JSON only", async () => {
+    const cookie = await sessionCookie();
+    const token = pageToken(
+      await call(`/saml/slo?SAMLRequest=${logoutRequest("wiki-u1").query}`),
+    );
+    const res = await call("/api/saml/logout", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain", Cookie: cookie },
+      body: JSON.stringify({ token, action: "confirm" }),
+    });
+    expect(res.status).toBe(403);
+    expect(
+      sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get(),
+    ).not.toBeNull();
   });
 
   describe("with the SP's signing certificate on file", () => {
@@ -1294,6 +1352,16 @@ describe("single logout", () => {
         request.id,
       );
       expect(statusCodes(reply.doc)).toEqual(["Success"]);
+    });
+
+    test("a signed request works once", async () => {
+      const query = await redirectQuery("SAMLRequest", freshRequest().xml);
+      const first = await call(`/saml/slo?${query}`);
+      expect(first.headers.get("Location")).toStartWith("/logout?token=");
+      const again = await call(`/saml/slo?${query}`);
+      expect(again.headers.get("Location")).toBe(
+        "/logout?error=saml_logout_used",
+      );
     });
 
     test("a signed request (POST) signs out without asking, but only its user", async () => {
@@ -1782,6 +1850,9 @@ describe("single logout settings", () => {
     res = await put({ ...base, signing_cert: toPem(cert) });
     expect((await res.json<Body>()).saml?.signing_cert).toBe(toPem(cert));
     res = await put({ ...base, signing_cert: "" });
+    expect((await res.json<Body>()).saml?.signing_cert).toBeNull();
+    // It only checks logout messages: without single logout it isn't kept.
+    res = await put({ ...base, slo_url: "", signing_cert: toPem(cert) });
     expect((await res.json<Body>()).saml?.signing_cert).toBeNull();
   });
 

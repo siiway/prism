@@ -50,6 +50,8 @@ export function AdminSamlCard({ target, id, showMsg }: Props) {
         choice === "inherit" ? null : choice === "allow",
       );
       qc.setQueryData(queryKey, next);
+      // What an app's SAML tab says about being turned off.
+      void qc.invalidateQueries({ queryKey: ["app-saml"] });
       showMsg("success", t("admin.saml.saved"));
     } catch (err) {
       showMsg("error", apiErrorText(err, t("common.saveFailed")));

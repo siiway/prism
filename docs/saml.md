@@ -102,8 +102,9 @@ Apps with a single logout URL are signed out together:
   `RequestDenied` response.
 - With the app's signing certificate, its logout requests must be signed
   with it (RSA or ECDSA, with SHA-256 or stronger), carry a `Destination` of Prism's
-  single logout URL, and be no more than 5 minutes old. Prism refuses any
-  other request, and signs the user out without asking for one that passes.
+  single logout URL, and be no more than 5 minutes old. Each request works
+  once. Prism refuses any other request, and signs the user out without
+  asking for one that passes.
   The app's logout responses must be signed too, or Prism counts the logout
   as not confirmed (`PartialLogout`).
 - Signing out of Prism, from the account menu or through OIDC
@@ -126,5 +127,6 @@ Site admins decide which apps may use SAML:
 - An app's **Moderation** tab overrides both for that app.
 
 Each override can follow the level above, allow SAML or stop it. While SAML
-is stopped for an app, sign-in from it fails and its owner can't change its
-SAML settings, but the settings are kept for when it's allowed again.
+is stopped for an app, sign-in and single logout from it fail, it isn't sent
+logout requests, and its owner can't change its SAML settings. The settings
+are kept for when it's allowed again.

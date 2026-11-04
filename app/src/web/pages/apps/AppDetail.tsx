@@ -224,6 +224,8 @@ export function AppDetail() {
         await api.updateApp(app.id, payloadFor(section, form));
         await qc.invalidateQueries({ queryKey: ["app", app.id] });
         await qc.invalidateQueries({ queryKey: ["apps"] });
+        // The SAML tab lists the attributes the allowed scopes release.
+        void qc.invalidateQueries({ queryKey: ["app-saml", app.id] });
         setEdits((e) => {
           const next = { ...e };
           for (const [k, value] of sent)

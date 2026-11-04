@@ -58,8 +58,8 @@ export async function sweepExpiredOAuthCodes(db: D1Database): Promise<void> {
     )
     .bind(now, BATCH_SIZE)
     .run();
-  await db.batch(
-    ["saml_requests", "saml_logouts"].map((table) =>
+  await db.batch([
+    ...["saml_requests", "saml_logouts"].map((table) =>
       db
         .prepare(
           `DELETE FROM ${table}
@@ -69,5 +69,13 @@ export async function sweepExpiredOAuthCodes(db: D1Database): Promise<void> {
         )
         .bind(now, BATCH_SIZE),
     ),
-  );
+    db
+      .prepare(
+        `DELETE FROM saml_logout_requests
+          WHERE rowid IN (
+            SELECT rowid FROM saml_logout_requests WHERE expires_at <= ? LIMIT ?
+          )`,
+      )
+      .bind(now, BATCH_SIZE),
+  ]);
 }

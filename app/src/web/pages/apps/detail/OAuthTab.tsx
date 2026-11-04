@@ -41,13 +41,14 @@ const AUTH_METHODS = [
   "none",
 ];
 
-const ENDPOINTS: [string, string][] = [
-  ["Discovery", "/.well-known/openid-configuration"],
-  ["Authorization", "/api/oauth/authorize"],
-  ["Token", "/api/oauth/token"],
-  ["UserInfo", "/api/oauth/userinfo"],
-  ["End session", "/api/oauth/end_session"],
-];
+// Label key (under apps.) and path.
+const ENDPOINTS = [
+  ["endpointDiscovery", "/.well-known/openid-configuration"],
+  ["endpointAuthorization", "/api/oauth/authorize"],
+  ["endpointToken", "/api/oauth/token"],
+  ["endpointUserInfo", "/api/oauth/userinfo"],
+  ["endpointEndSession", "/api/oauth/end_session"],
+] as const;
 
 interface Props {
   app: OAuthApp;
@@ -169,10 +170,10 @@ export function OAuthTab({
           </>
         }
       >
-        {ENDPOINTS.map(([label, path]) => (
+        {ENDPOINTS.map(([key, path]) => (
           <SettingsRow
             key={path}
-            label={label}
+            label={t(`apps.${key}`)}
             description={
               <span className={styles.mono}>
                 {appOrigin}

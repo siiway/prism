@@ -88,8 +88,8 @@ import {
 import {
   bindProfile,
   boundProfile,
+  profileChoices,
   profileSummary,
-  sharedProfiles,
   type SamlProfileRow,
 } from "../lib/saml/profiles";
 import { getSamlSigner } from "../lib/saml/sign";
@@ -298,7 +298,8 @@ async function receiveLogout(
       if (request.destination && request.destination !== sloUrl)
         throw new SamlError("saml_request_invalid");
       const sp = await c.env.DB.prepare(
-        `SELECT sp.app_id, sp.slo_url, sp.signing_cert FROM saml_service_providers sp
+        `SELECT sp.app_id, sp.slo_url, sp.signing_cert, a.owner_id, a.saml_override
+         FROM saml_service_providers sp
          JOIN oauth_apps a ON a.id = sp.app_id
          WHERE sp.entity_id = ? AND a.is_active = 1`,
       )
@@ -307,8 +308,13 @@ async function receiveLogout(
           app_id: string;
           slo_url: string | null;
           signing_cert: string | null;
+          owner_id: string;
+          saml_override: number | null;
         }>();
       if (!sp) throw new SamlError("saml_unknown_sp");
+      // An app whose SAML an admin stopped can't sign anyone out either.
+      const blocked = await samlBlock(c.env.DB, sp);
+      if (blocked) throw new SamlError(blocked);
       // Nowhere registered to send the answer.
       if (!sp.slo_url) throw new SamlError("saml_slo_not_configured");
       // With the SP's certificate on file, only a signed request counts:
@@ -536,11 +542,11 @@ async function evaluate(
   // Whether the account may use the app; the SAML profile the app gets,
   // chosen at the first sign-in to it; and the user's stored consent
   // (first-party apps need none).
-  const [restricted, notListed, profile, shared, consent] = await Promise.all([
+  const [restricted, notListed, profile, choices, consent] = await Promise.all([
     checkAppAuthorizationAllowed(c.env.DB, restriction, app),
     checkAccessWhitelist(c.env.DB, app, user.id),
     boundProfile(c.env.DB, app.id, user.id),
-    sharedProfiles(c.env.DB, user.id),
+    profileChoices(c.env.DB, app.id, user.id),
     app.is_first_party
       ? null
       : c.env.DB.prepare(
@@ -565,8 +571,14 @@ async function evaluate(
           account: user,
         };
 
-  const profileChoices = profile ? [] : shared;
-  const base = { scopes, session, account: user, profile, profileChoices };
+  const base = {
+    scopes,
+    session,
+    account: user,
+    profile,
+    // Raced with a sign-in that just chose: nothing left to pick.
+    profileChoices: profile ? [] : choices,
+  };
 
   if (!app.is_first_party) {
     // The row is shared with OAuth, whose scopes add openid and the like:
@@ -585,7 +597,7 @@ async function evaluate(
   // With shared profiles to pick from, the user chooses which one the app
   // gets, and keeps it. A passive request can't ask, and must not choose
   // for them: like a consent it can't ask for, it gets NoPassive.
-  if (profileChoices.length > 0)
+  if (base.profileChoices.length > 0)
     return passive ? decline("NoPassive") : { next: "profile", ...base };
   return { next: "continue", ...base };
 }
@@ -603,18 +615,21 @@ samlApiRoutes.get("/requests/:token", async (c) => {
   const loaded = await loadRequest(c);
   if ("error" in loaded) return c.json({ error: loaded.error }, 404);
   const { app } = loaded;
-  const [ev, summary] = await Promise.all([
-    evaluate(c, loaded),
-    computeIsVerified(
+  const ev = await evaluate(c, loaded);
+  // Whether the app's domain is verified is only shown when the user is
+  // asked something; otherwise the page goes straight on.
+  const asks = ev.next === "consent" || ev.next === "profile";
+  const verified =
+    asks &&
+    (await computeIsVerified(
       c.env.DB,
       app.owner_id,
       app.website_url,
       app.redirect_uris,
       app.team_id,
-    ).then((verified) => buildConsentAppSummary(c.env, app, verified)),
-  ]);
+    ));
   return c.json({
-    app: summary,
+    app: await buildConsentAppSummary(c.env, app, verified),
     next: ev.next,
     error: ev.error ?? null,
     scopes: ev.scopes,
@@ -734,53 +749,58 @@ samlApiRoutes.post("/requests/:token", async (c) => {
   });
   if (!approved) return reply;
 
-  const autoAuthorize =
-    body.authorization_mode === "always" && !app.is_first_party ? 1 : 0;
-  // The consent row is shared with OAuth. Add SAML's scopes to it rather
-  // than replace them, and never turn "Always authorize" off: a one-time
-  // approval leaves a remembered consent (and its scopes) as it was.
-  const consentScopes = [
-    ...new Set([...(ev.consentedScopes ?? []), ...ev.scopes]),
-  ];
-  await Promise.all([
-    // So signing out of Prism can sign the user out of this SP too.
-    sessionId &&
-      recordSamlSession(c.env.DB, {
-        session_id: sessionId,
-        app_id: app.id,
-        name_id: nameIdValue,
-        name_id_format: sp.name_id_format,
-        session_index: sessionIndex,
-      }),
-    ev.next === "consent" &&
-      c.env.DB.prepare(
-        `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+  // The request is used up: whatever fails from here on, the SP still gets
+  // its response, or the user would be left with no way to sign in.
+  try {
+    const autoAuthorize =
+      body.authorization_mode === "always" && !app.is_first_party ? 1 : 0;
+    // The consent row is shared with OAuth. Add SAML's scopes to it rather
+    // than replace them, and never turn "Always authorize" off: a one-time
+    // approval leaves a remembered consent (and its scopes) as it was.
+    const consentScopes = [
+      ...new Set([...(ev.consentedScopes ?? []), ...ev.scopes]),
+    ];
+    await Promise.all([
+      // So signing out of Prism can sign the user out of this SP too.
+      sessionId &&
+        recordSamlSession(c.env.DB, {
+          session_id: sessionId,
+          app_id: app.id,
+          name_id: nameIdValue,
+          name_id_format: sp.name_id_format,
+          session_index: sessionIndex,
+        }),
+      ev.next === "consent" &&
+        c.env.DB.prepare(
+          `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(user_id, client_id) DO UPDATE SET
            scopes = CASE WHEN excluded.auto_authorize = 1 OR auto_authorize = 0 THEN excluded.scopes ELSE scopes END,
            auto_authorize = MAX(auto_authorize, excluded.auto_authorize),
            granted_at = excluded.granted_at`,
-      )
-        .bind(
-          randomId(),
-          approved.id,
-          app.client_id,
-          JSON.stringify(consentScopes),
-          now,
-          autoAuthorize,
         )
-        .run(),
-  ]);
+          .bind(
+            randomId(),
+            approved.id,
+            app.client_id,
+            JSON.stringify(consentScopes),
+            now,
+            autoAuthorize,
+          )
+          .run(),
+    ]);
 
-  // The same notice and audit trail as an OAuth authorization.
-  await recordAppAuthorization(c, {
-    user: approved,
-    app,
-    scopes: ev.scopes,
-    auto: ev.next !== "consent",
-    protocol: "saml",
-  });
-
+    // The same notice and audit trail as an OAuth authorization.
+    await recordAppAuthorization(c, {
+      user: approved,
+      app,
+      scopes: ev.scopes,
+      auto: ev.next !== "consent",
+      protocol: "saml",
+    });
+  } catch (err) {
+    console.error("[saml] recording a sign-in failed:", err);
+  }
   return reply;
 });
 
@@ -793,6 +813,11 @@ samlApiRoutes.post("/requests/:token", async (c) => {
  * and no one else can move it on or read its messages.
  */
 samlApiRoutes.post("/logout", async (c) => {
+  // JSON only: a form or text/plain POST needs no CORS preflight, so a page
+  // on a sibling site (same-site, so the session cookie rides along) could
+  // otherwise confirm a sign-out the user never saw.
+  if (!c.req.header("Content-Type")?.startsWith("application/json"))
+    return c.json({ error: "forbidden" }, 403);
   const body = await c.req
     .json<{ token?: unknown; action?: unknown }>()
     .catch(() => ({}) as Record<string, unknown>);
