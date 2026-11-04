@@ -18,9 +18,9 @@ Prism.
      Audience URI or SP Issuer.
    - **Assertion Consumer Service URLs**: where Prism posts the response, one
      per line. They must use https; http works only for `localhost`.
-   - **NameID**: how the app identifies the user. Choose either the Prism user
-     ID, which never changes, or the email address, which works only for
-     accounts with a verified email.
+   - **NameID**: how the app identifies the user. Choose either an ID for
+     this app, or the email address, which works only for accounts with a
+     verified email. See [User IDs](#user-ids).
    - **Signature**: what Prism signs. Most apps want the assertion signed.
      Error responses are always signed.
    - **Single logout URL** (optional): the app's SingleLogoutService URL,
@@ -42,11 +42,24 @@ Prism.
 The single sign-on and single logout URLs accept both the HTTP-Redirect and
 the HTTP-POST binding.
 
+## User IDs
+
+The persistent NameID and the `uid` attribute carry the ID of the user's
+SAML profile for the app, never their Prism user ID:
+
+- By default, each app gets a new random ID for the user at their first
+  sign-in, so apps can't match people across each other.
+- Users can make shared profiles under **SAML profiles**. At their first
+  sign-in to an app, they can choose one instead, and every app they choose
+  it for gets the same ID. Apps that skip consent still ask this once.
+- Either way, the app keeps that ID: it never changes, revoking the app
+  included.
+
 ## Attributes
 
 | Attribute          | Sent when                                                           |
 | ------------------ | ------------------------------------------------------------------- |
-| `uid`              | Always. The Prism user ID                                           |
+| `uid`              | Always. The user's ID for this app, as in the NameID                |
 | `username`, `name` | The app allows `profile`                                            |
 | `email`            | The app allows `email` and the email is verified                    |
 | `teams`            | The app allows `teams:read`. Team IDs                               |
@@ -64,9 +77,9 @@ Attribute names use the `basic` name format. Choose the app's scopes on its
 - Consent works as it does for OAuth. People approve an app the first time,
   and **Always authorize** skips the question afterwards. An **Always
   authorize** given at the app's OAuth sign-in also covers SAML, as long as it
-  includes the scopes SAML releases. First-party apps never ask. The app's
-  [access whitelist](app-access-whitelist.md) applies, and the app appears
-  under the user's connected apps.
+  includes the scopes SAML releases. First-party apps never ask for consent.
+  The app's [access whitelist](app-access-whitelist.md) applies, and the app
+  appears under the user's connected apps.
 - `ForceAuthn` makes the user sign in again. `IsPassive` gets a `NoPassive`
   response if the user would have to sign in or approve the app first.
 - A request for a different NameID format than the one configured gets an

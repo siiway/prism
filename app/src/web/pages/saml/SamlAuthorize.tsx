@@ -3,6 +3,9 @@
 // The worker parked the request and sent the browser here. The API says what
 // happens next: sign in (again, for ForceAuthn), ask for consent, go straight
 // on, or decline (an IsPassive request that can't be answered silently).
+// The first sign-in to an app also asks which SAML profile it gets, when the
+// user has shared ones to pick from (pages/samlProfiles): on the consent
+// page, or on its own ("profile") when consent is already settled.
 // Every outcome ends with a Response the page POSTs to the service provider.
 //
 // There is no route loader requiring a session: an IsPassive request must
@@ -33,6 +36,7 @@ import { scopeLabel } from "../../lib/scopeLabels";
 import { useSiteName } from "../../lib/useSiteName";
 import { AuthShell } from "../../components/AuthShell";
 import { OAuthConsentHeader } from "../../components/OAuthConsentHeader";
+import { ProfileChoice } from "./ProfileChoice";
 
 const useStyles = makeStyles({
   page: {
@@ -112,13 +116,24 @@ export function SamlAuthorize() {
     gcTime: 0,
   });
 
+  // On a first sign-in with shared profiles to pick from: which one the app
+  // gets, or "new" for its own per-app profile.
+  const [profileChoice, setProfileChoice] = useState("new");
+
   const decide = async (
     action: "approve" | "deny" | "decline",
     mode?: "once" | "always",
   ) => {
     setPosting(true);
     try {
-      submitPostback(await api.samlDecision(token, action, mode));
+      submitPostback(
+        await api.samlDecision(
+          token,
+          action,
+          mode,
+          action === "approve" ? profileChoice : undefined,
+        ),
+      );
     } catch (err) {
       setPosting(false);
       if (err instanceof ApiError && err.code === "unauthorized") {
@@ -180,7 +195,12 @@ export function SamlAuthorize() {
       </AuthShell>
     );
 
-  if (isLoading || !data || posting || data.next !== "consent")
+  if (
+    isLoading ||
+    !data ||
+    posting ||
+    (data.next !== "consent" && data.next !== "profile")
+  )
     return (
       <div className={styles.page}>
         <div className={styles.center}>
@@ -207,6 +227,43 @@ export function SamlAuthorize() {
             {t("saml.returnToApp", { appName: data.app.name })}
           </Button>
         </div>
+      </AuthShell>
+    );
+
+  // Which profile the app gets, on a first sign-in with shared ones to pick
+  // from. On its own page when consent is already settled.
+  const profilePicker = data.profile_choices.length > 0 && (
+    <>
+      <div className={styles.divider} />
+      <ProfileChoice
+        appName={data.app.name}
+        profiles={data.profile_choices}
+        value={profileChoice}
+        onChange={setProfileChoice}
+      />
+    </>
+  );
+
+  if (data.next === "profile")
+    return (
+      <AuthShell maxWidth={440} cardGap={24}>
+        <>
+          <Title2>{t("saml.title", { appName: data.app.name })}</Title2>
+          {data.user && <OAuthConsentHeader app={data.app} user={data.user} />}
+          {profilePicker}
+          <div className={styles.divider} />
+          <div className={styles.actions}>
+            <Button
+              appearance="primary"
+              onClick={() => void decide("approve", "once")}
+            >
+              {t("saml.continue")}
+            </Button>
+            <Button appearance="outline" onClick={() => void decide("deny")}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+        </>
       </AuthShell>
     );
 
@@ -241,6 +298,15 @@ export function SamlAuthorize() {
             ))}
           </div>
         </div>
+        {profilePicker}
+        {data.profile?.kind === "shared" && (
+          <Text size={200} className={styles.muted}>
+            {t("saml.profileCurrent", {
+              appName: data.app.name,
+              name: data.profile.name,
+            })}
+          </Text>
+        )}
         <div className={styles.divider} />
         <div className={styles.actions}>
           <Button

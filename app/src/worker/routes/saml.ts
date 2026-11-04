@@ -84,6 +84,12 @@ import {
   samlSessionIndex,
   startSpLogout,
 } from "../lib/saml/logout";
+import {
+  bindProfile,
+  boundProfile,
+  sharedProfiles,
+  type SamlProfileRow,
+} from "../lib/saml/profiles";
 import { getSamlSigner } from "../lib/saml/sign";
 import {
   verifyPostSignature,
@@ -441,7 +447,9 @@ async function loadRequest(
   return { pending, app, sp };
 }
 
-type Next = "login" | "reauth" | "consent" | "continue" | "decline";
+// "profile": consent is settled (a first-party app, or one the user always
+// authorizes), and the first sign-in only asks which profile the app gets.
+type Next = "login" | "reauth" | "consent" | "profile" | "continue" | "decline";
 
 interface Evaluation {
   next: Next;
@@ -457,6 +465,10 @@ interface Evaluation {
   account?: AuthUser;
   /** Scopes the user's stored consent for this app already holds. */
   consentedScopes?: string[];
+  /** The SAML profile the app gets for the user, once chosen. */
+  profile?: SamlProfileRow | null;
+  /** Before one is chosen: the user's shared profiles to pick from. */
+  profileChoices?: SamlProfileRow[];
 }
 
 async function currentAccount(
@@ -542,6 +554,11 @@ async function evaluate(
           account: user,
         };
 
+  // The SAML profile the app gets, chosen at the first sign-in to it.
+  const profile = await boundProfile(c.env.DB, app.id, user.id);
+  const profileChoices = profile ? [] : await sharedProfiles(c.env.DB, user.id);
+  const base = { scopes, session, account: user, profile, profileChoices };
+
   if (!app.is_first_party) {
     const consent = await c.env.DB.prepare(
       "SELECT scopes, auto_authorize FROM oauth_consents WHERE user_id = ? AND client_id = ?",
@@ -559,10 +576,22 @@ async function evaluate(
     if (!remembered)
       return passive
         ? decline("NoPassive")
-        : { next: "consent", scopes, session, account: user, consentedScopes };
+        : { next: "consent", ...base, consentedScopes };
   }
-  return { next: "continue", scopes, session, account: user };
+  // With shared profiles to pick from, the user chooses which one the app
+  // gets; a passive request can't ask, so it gets a new per-app profile.
+  if (profileChoices.length > 0 && !passive)
+    return { next: "profile", ...base };
+  return { next: "continue", ...base };
 }
+
+/** A profile as the sign-in page shows it. */
+const profileSummary = (p: SamlProfileRow) => ({
+  id: p.id,
+  kind: p.app_id ? ("app" as const) : ("shared" as const),
+  name: p.name,
+  name_id: p.name_id,
+});
 
 function destination(c: Context<AppEnv>, loaded: Loaded): Destination {
   return {
@@ -592,6 +621,8 @@ samlApiRoutes.get("/requests/:token", async (c) => {
     scopes: ev.scopes,
     name_id_format: loaded.sp.name_id_format,
     user: ev.account ?? c.get("user") ?? null,
+    profile: ev.profile ? profileSummary(ev.profile) : null,
+    profile_choices: (ev.profileChoices ?? []).map(profileSummary),
   });
 });
 
@@ -600,8 +631,16 @@ samlApiRoutes.post("/requests/:token", async (c) => {
     .json<{
       action?: string;
       authorization_mode?: "once" | "always";
+      profile?: unknown;
     }>()
-    .catch(() => ({}) as { action?: string; authorization_mode?: string });
+    .catch(
+      () =>
+        ({}) as {
+          action?: string;
+          authorization_mode?: string;
+          profile?: unknown;
+        },
+    );
   const action = body.action;
   if (action !== "approve" && action !== "deny" && action !== "decline")
     return c.json({ error: "field_invalid", params: { field: "action" } }, 400);
@@ -620,7 +659,10 @@ samlApiRoutes.post("/requests/:token", async (c) => {
   const allowed =
     action === "deny" ||
     (action === "decline" && ev.next === "decline") ||
-    (action === "approve" && (ev.next === "consent" || ev.next === "continue"));
+    (action === "approve" &&
+      (ev.next === "consent" ||
+        ev.next === "profile" ||
+        ev.next === "continue"));
   if (!allowed) return c.json({ error: "saml_request_state" }, 409);
 
   const signer = await getSamlSigner(c.env);
@@ -632,17 +674,39 @@ samlApiRoutes.post("/requests/:token", async (c) => {
   const sessionIndex = sessionId
     ? await samlSessionIndex(sessionId, app.id)
     : `_${randomId(20)}`;
+  // The ID of the user's SAML profile for this app, never the Prism user
+  // ID (SAML Core §8.3.7). The first sign-in picks the profile: `profile`
+  // names a shared one, or else the app gets a new per-app profile.
+  const profile = approved
+    ? await bindProfile(
+        c.env.DB,
+        app.id,
+        approved.id,
+        typeof body.profile === "string" && body.profile ? body.profile : "new",
+      )
+    : null;
+  if (approved && !profile)
+    return c.json(
+      { error: "field_invalid", params: { field: "profile" } },
+      400,
+    );
+  const subjectId = profile?.name_id ?? "";
   const nameIdValue = approved
     ? sp.name_id_format === "email"
       ? approved.email
-      : approved.id
+      : subjectId
     : "";
   const samlResponse = approved
     ? await buildSuccessResponse(
         dest,
         {
           nameId: { format: sp.name_id_format, value: nameIdValue },
-          attributes: await samlAttributes(c.env.DB, approved, ev.scopes),
+          attributes: await samlAttributes(
+            c.env.DB,
+            approved,
+            ev.scopes,
+            subjectId,
+          ),
           authnInstant: ev.session?.created_at ?? now,
           amr: ev.session?.amr ?? [],
           sessionIndex,

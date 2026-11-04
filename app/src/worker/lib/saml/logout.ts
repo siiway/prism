@@ -281,18 +281,22 @@ export async function beginLogout(
   let finishUrl = row.finish_url;
   let outcome: BeginOutcome = "keep";
   if (session) {
-    // An SP's request names whom to sign out; end_session means whoever is
-    // signed in.
+    // An SP's request names whom to sign out: the ID of the user's SAML
+    // profile for that app, their email, or the NameID this session's
+    // sign-in sent it (an email since changed). end_session means whoever
+    // is signed in.
     const nameId = row.origin_name_id ?? "";
     const known =
       !fromSp(row) ||
-      nameId === session.userId ||
       (!!session.email && nameId === session.email) ||
       !!(await db
         .prepare(
-          "SELECT 1 FROM saml_sessions WHERE session_id = ? AND app_id = ? AND name_id = ?",
+          `SELECT 1 FROM saml_profile_apps b JOIN saml_profiles p ON p.id = b.profile_id
+           WHERE b.app_id = ?1 AND b.user_id = ?2 AND p.name_id = ?3
+           UNION ALL
+           SELECT 1 FROM saml_sessions WHERE session_id = ?4 AND app_id = ?1 AND name_id = ?3`,
         )
-        .bind(session.sessionId, row.origin_app_id, nameId)
+        .bind(row.origin_app_id, session.userId, nameId, session.sessionId)
         .first());
     if (!known) status = "UnknownPrincipal";
     // The SP's signature shows it really asked: no question.

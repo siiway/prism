@@ -31,6 +31,7 @@ import {
   LockClosedRegular,
   NavigationRegular,
   PeopleRegular,
+  PersonAccountsRegular,
   PersonRegular,
   SearchRegular,
   SettingsRegular,
@@ -711,6 +712,12 @@ export function Layout() {
                 to="/connected-apps"
                 icon={LockClosedRegular}
                 label={t("nav.connectedApps")}
+                onNavigate={closeSidebar}
+              />
+              <NavItem
+                to="/saml-profiles"
+                icon={PersonAccountsRegular}
+                label={t("nav.samlProfiles")}
                 onNavigate={closeSidebar}
               />
 

@@ -101,16 +101,19 @@ export function releasedScopes(app: Pick<OAuthAppRow, "allowed_scopes">) {
 
 /**
  * The assertion's attributes for `scopes`, as attribute name → values.
- * `uid` (the Prism user ID) is always sent, so an SP that uses email as the
- * NameID still has a stable key. Email goes out only once verified: SAML has
- * no email_verified flag, and SPs commonly link accounts by email.
+ * `uid` is always sent, so an SP that uses email as the NameID still has a
+ * stable key: `subjectId`, the ID of the user's SAML profile for this app
+ * (lib/saml/profiles.ts), never the Prism user ID. Email goes out only once
+ * verified: SAML has no email_verified flag, and SPs commonly link accounts
+ * by email.
  */
 export async function samlAttributes(
   db: D1Database,
   user: AuthUser,
   scopes: string[],
+  subjectId: string,
 ): Promise<Record<string, string[]>> {
-  const attrs: Record<string, string[]> = { uid: [user.id] };
+  const attrs: Record<string, string[]> = { uid: [subjectId] };
   if (scopes.includes("profile")) {
     attrs.username = [user.username];
     attrs.name = [user.display_name || user.username];

@@ -12,6 +12,7 @@ import adminRoutes from "../src/worker/routes/admin";
 import appsRoutes from "../src/worker/routes/apps";
 import authRoutes from "../src/worker/routes/auth";
 import oauthRoutes from "../src/worker/routes/oauth";
+import samlProfileRoutes from "../src/worker/routes/samlProfiles";
 import { getRsaKeyPair } from "../src/worker/lib/config";
 import { signIdTokenRS256, signJWT } from "../src/worker/lib/jwt";
 import { samlApiRoutes, samlProtocolRoutes } from "../src/worker/routes/saml";
@@ -116,6 +117,28 @@ async function startSso(attrs = "", id?: string): Promise<string> {
   return location.searchParams.get("request")!;
 }
 
+/** The stored ID of user u1 at an app, made at their first sign-in. */
+const subjectId = (appId: string): string =>
+  (
+    sqlite
+      .query(
+        `SELECT p.name_id FROM saml_profile_apps b JOIN saml_profiles p ON p.id = b.profile_id
+         WHERE b.app_id = ? AND b.user_id = 'u1'`,
+      )
+      .get(appId) as { name_id: string }
+  ).name_id;
+
+/** The same, or null before user u1's first sign-in to the app. */
+const subjectIdOrNull = (appId: string): string | null =>
+  (
+    sqlite
+      .query(
+        `SELECT p.name_id FROM saml_profile_apps b JOIN saml_profiles p ON p.id = b.profile_id
+         WHERE b.app_id = ? AND b.user_id = 'u1'`,
+      )
+      .get(appId) as { name_id: string } | null
+  )?.name_id ?? null;
+
 const json = (body: unknown, cookie?: string): RequestInit => ({
   method: "POST",
   headers: {
@@ -133,6 +156,79 @@ function parseResponse(samlResponse: string): Document {
 }
 
 describe("SAML SSO", () => {
+  test("each app gets its own ID for the user, the same every time", async () => {
+    const OTHER = "https://other.example/metadata";
+    const now = Math.floor(Date.now() / 1000);
+    sqlite.run(
+      `INSERT INTO oauth_apps (id, owner_id, name, description, client_id, client_secret, redirect_uris, allowed_scopes, created_at, updated_at)
+       VALUES ('a3', 'u1', 'Other', '', 'client-3', 'secret', '[]', '[]', ?, ?)`,
+      [now, now],
+    );
+    sqlite.run(
+      `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign, created_at, updated_at)
+       VALUES ('a3', ?, '["https://other.example/acs"]', 'persistent', 'assertion', ?, ?)`,
+      [OTHER, now, now],
+    );
+    const cookie = await sessionCookie();
+    const signIn = async (issuer: string) => {
+      const res = await call(
+        `/saml/sso?SAMLRequest=${authnRequest("", issuer)}`,
+      );
+      const token = new URL(
+        res.headers.get("Location")!,
+        "https://x",
+      ).searchParams.get("request")!;
+      const body = await (
+        await call(
+          `/api/saml/requests/${token}`,
+          json({ action: "approve", authorization_mode: "once" }, cookie),
+        )
+      ).json<Body>();
+      return parseResponse(body.saml_response).getElementsByTagNameNS(
+        "*",
+        "NameID",
+      )[0].textContent!;
+    };
+
+    const wiki = await signIn(SP);
+    expect(wiki).toBe(subjectId("a1"));
+    expect(await signIn(SP)).toBe(wiki);
+    const other = await signIn(OTHER);
+    expect(other).toBe(subjectId("a3"));
+    expect(other).not.toBe(wiki);
+    expect([wiki, other]).not.toContain("u1");
+  });
+
+  test("revoking the app and allowing it again keeps the user's ID", async () => {
+    app.route("/api/oauth", oauthRoutes);
+    const cookie = await sessionCookie();
+    const signIn = async () => {
+      const token = await startSso();
+      const body = await (
+        await call(
+          `/api/saml/requests/${token}`,
+          json({ action: "approve", authorization_mode: "always" }, cookie),
+        )
+      ).json<Body>();
+      return parseResponse(body.saml_response).getElementsByTagNameNS(
+        "*",
+        "NameID",
+      )[0].textContent!;
+    };
+
+    const before = await signIn();
+    const revoked = await call("/api/oauth/consents/client-1", {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(revoked.status).toBe(200);
+    expect(
+      sqlite.query("SELECT 1 FROM oauth_consents WHERE user_id = 'u1'").get(),
+    ).toBeNull();
+    // Asked again, as after any revocation; the app still knows them.
+    expect(await signIn()).toBe(before);
+  });
+
   test("refuses an unknown SP and an unregistered ACS URL", async () => {
     let res = await call(
       `/saml/sso?SAMLRequest=${authnRequest("", "https://other.example")}`,
@@ -250,7 +346,12 @@ describe("SAML SSO", () => {
     const xml = Buffer.from(body.saml_response, "base64").toString("utf8");
     const doc = parseResponse(body.saml_response);
     expect(doc.documentElement.getAttribute("InResponseTo")).toBe("_req42");
-    expect(doc.getElementsByTagNameNS("*", "NameID")[0].textContent).toBe("u1");
+    // The user's ID for this app, not the Prism user ID.
+    const subject = subjectId("a1");
+    expect(subject).toMatch(/^[0-9a-f]{32}$/);
+    expect(doc.getElementsByTagNameNS("*", "NameID")[0].textContent).toBe(
+      subject,
+    );
     const attrs = Object.fromEntries(
       Array.from(doc.getElementsByTagNameNS("*", "Attribute")).map((a) => [
         a.getAttribute("Name"),
@@ -258,7 +359,7 @@ describe("SAML SSO", () => {
       ]),
     );
     expect(attrs).toEqual({
-      uid: "u1",
+      uid: subject,
       username: "alice",
       name: "Alice",
       email: "alice@example.com",
@@ -683,13 +784,23 @@ describe("single logout", () => {
        VALUES ('a2', ?, '["https://crm.example/acs"]', 'persistent', 'assertion', ?, 'post', ?, ?)`,
       [SP2, SLO2, now, now],
     );
+    // The user's per-app SAML profiles at the wiki and the CRM.
+    sqlite.run(
+      `INSERT INTO saml_profiles (id, user_id, name_id, app_id, name, created_at, updated_at)
+       VALUES ('p-wiki', 'u1', 'wiki-u1', 'a1', NULL, 0, 0),
+              ('p-crm', 'u1', 'crm-u1', 'a2', NULL, 0, 0)`,
+    );
+    sqlite.run(
+      `INSERT INTO saml_profile_apps (app_id, user_id, profile_id, created_at)
+       VALUES ('a1', 'u1', 'p-wiki', 0), ('a2', 'u1', 'p-crm', 0)`,
+    );
   });
 
   /** Signed in to the CRM in session s1, as an SSO approval would record. */
   const crmSession = () =>
     sqlite.run(
       `INSERT INTO saml_sessions (session_id, app_id, name_id, name_id_format, session_index, created_at)
-       VALUES ('s1', 'a2', 'u1', 'persistent', '_crm-session', 1)`,
+       VALUES ('s1', 'a2', 'crm-u1', 'persistent', '_crm-session', 1)`,
     );
 
   /** Sign in to the wiki (a1) through SSO in session s1. */
@@ -810,7 +921,7 @@ describe("single logout", () => {
         "SELECT * FROM saml_sessions WHERE session_id = 's1' AND app_id = 'a1'",
       )
       .get() as { name_id: string; session_index: string };
-    expect(row.name_id).toBe("u1");
+    expect(row.name_id).toBe("wiki-u1");
     expect(row.session_index).toBe(index!);
     expect(index).not.toContain("s1");
   });
@@ -820,7 +931,7 @@ describe("single logout", () => {
     await wikiSignIn(cookie);
     crmSession();
 
-    const request = logoutRequest("u1");
+    const request = logoutRequest("wiki-u1");
     const token = pageToken(
       await call(`/saml/slo?SAMLRequest=${request.query}&RelayState=rs1`),
     );
@@ -862,7 +973,9 @@ describe("single logout", () => {
     ) as unknown as Document;
     expect(doc.documentElement.localName).toBe("LogoutRequest");
     expect(doc.documentElement.getAttribute("Destination")).toBe(SLO2);
-    expect(doc.getElementsByTagNameNS("*", "NameID")[0].textContent).toBe("u1");
+    expect(doc.getElementsByTagNameNS("*", "NameID")[0].textContent).toBe(
+      "crm-u1",
+    );
     expect(doc.getElementsByTagNameNS("*", "SessionIndex")[0].textContent).toBe(
       "_crm-session",
     );
@@ -916,7 +1029,7 @@ describe("single logout", () => {
   test("an SP that never answers makes it a partial logout", async () => {
     const cookie = await sessionCookie();
     crmSession();
-    const request = logoutRequest("u1");
+    const request = logoutRequest("wiki-u1");
     const token = pageToken(
       await call(`/saml/slo?SAMLRequest=${request.query}`),
     );
@@ -934,24 +1047,28 @@ describe("single logout", () => {
   test("a logout for someone else ends nothing", async () => {
     const cookie = await sessionCookie();
     crmSession();
-    const token = pageToken(
-      await call(`/saml/slo?SAMLRequest=${logoutRequest("u2").query}`),
-    );
-    const last = await step(token, cookie);
-    expect(last.res.headers.get("Set-Cookie")).toBeNull();
-    expect(
-      sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get(),
-    ).not.toBeNull();
-    if (last.body.kind !== "redirect") throw new Error("expected a redirect");
-    const reply = await readRedirect(last.body.url, "SAMLResponse");
-    expect(statusCodes(reply.doc)).toEqual(["Requester", "UnknownPrincipal"]);
+    // Another user; the user's Prism ID, which no app knows them by; and
+    // their ID at a different app (the CRM's, sent by the wiki).
+    for (const nameId of ["u2", "u1", "crm-u1"]) {
+      const token = pageToken(
+        await call(`/saml/slo?SAMLRequest=${logoutRequest(nameId).query}`),
+      );
+      const last = await step(token, cookie);
+      expect(last.res.headers.get("Set-Cookie")).toBeNull();
+      expect(
+        sqlite.query("SELECT 1 FROM sessions WHERE id = 's1'").get(),
+      ).not.toBeNull();
+      if (last.body.kind !== "redirect") throw new Error("expected a redirect");
+      const reply = await readRedirect(last.body.url, "SAMLResponse");
+      expect(statusCodes(reply.doc)).toEqual(["Requester", "UnknownPrincipal"]);
+    }
   });
 
   test("staying signed in tells the SP no", async () => {
     const cookie = await sessionCookie();
     crmSession();
     const token = pageToken(
-      await call(`/saml/slo?SAMLRequest=${logoutRequest("u1").query}`),
+      await call(`/saml/slo?SAMLRequest=${logoutRequest("wiki-u1").query}`),
     );
     expect((await step(token, cookie)).body.kind).toBe("confirm");
     const last = await step(token, cookie, "cancel");
@@ -968,7 +1085,7 @@ describe("single logout", () => {
 
   test("nobody signed in: answered without asking", async () => {
     const token = pageToken(
-      await call(`/saml/slo?SAMLRequest=${logoutRequest("u1").query}`),
+      await call(`/saml/slo?SAMLRequest=${logoutRequest("wiki-u1").query}`),
     );
     const last = await step(token);
     if (last.body.kind !== "redirect") throw new Error("expected a redirect");
@@ -1016,7 +1133,9 @@ describe("single logout", () => {
     sqlite.run(
       "UPDATE saml_service_providers SET slo_url = NULL WHERE app_id = 'a1'",
     );
-    let res = await call(`/saml/slo?SAMLRequest=${logoutRequest("u1").query}`);
+    let res = await call(
+      `/saml/slo?SAMLRequest=${logoutRequest("wiki-u1").query}`,
+    );
     expect(res.headers.get("Location")).toBe(
       "/logout?error=saml_slo_not_configured",
     );
@@ -1068,7 +1187,7 @@ describe("single logout", () => {
     const iso = (seconds: number) =>
       new Date(seconds * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
 
-    function freshRequest(nameId = "u1", issuedAgo = 0) {
+    function freshRequest(nameId = "wiki-u1", issuedAgo = 0) {
       const id = `_signed${++logoutCount}`;
       const now = Math.floor(Date.now() / 1000) - issuedAgo;
       return {
@@ -1138,7 +1257,7 @@ describe("single logout", () => {
       expect(res.headers.get("Location")).toBe(refused);
 
       res = await call(
-        `/saml/slo?${await redirectQuery("SAMLRequest", freshRequest("u1", 3600).xml)}`,
+        `/saml/slo?${await redirectQuery("SAMLRequest", freshRequest("wiki-u1", 3600).xml)}`,
       );
       expect(res.headers.get("Location")).toBe(refused);
 
@@ -1160,7 +1279,7 @@ describe("single logout", () => {
       // Signed, but its NameID changed afterwards.
       res = await postSlo(
         "SAMLRequest",
-        signXml(freshRequest().xml).replace(">u1<", ">u2<"),
+        signXml(freshRequest().xml).replace(">wiki-u1<", ">u2<"),
       );
       expect(res.headers.get("Location")).toBe(refused);
     });
@@ -1213,7 +1332,9 @@ describe("single logout", () => {
         answer: (id: string) => Response | Promise<Response>,
       ) => {
         const token = pageToken(
-          await call(`/saml/slo?SAMLRequest=${logoutRequest("u1", SP2).query}`),
+          await call(
+            `/saml/slo?SAMLRequest=${logoutRequest("crm-u1", SP2).query}`,
+          ),
         );
         expect((await step(token, cookie)).body.kind).toBe("confirm");
         const first = await step(token, cookie, "confirm");
@@ -1256,6 +1377,317 @@ describe("single logout", () => {
         ),
       ).toEqual(["Success"]);
     });
+  });
+});
+
+describe("SAML profiles", () => {
+  const OTHER = "https://other.example/metadata";
+
+  beforeEach(() => {
+    app.route("/api/saml/profiles", samlProfileRoutes);
+    const now = Math.floor(Date.now() / 1000);
+    sqlite.run(
+      `INSERT INTO oauth_apps (id, owner_id, name, description, client_id, client_secret, redirect_uris, allowed_scopes, created_at, updated_at)
+       VALUES ('a3', 'u1', 'Other', '', 'client-3', 'secret', '[]', '[]', ?, ?)`,
+      [now, now],
+    );
+    sqlite.run(
+      `INSERT INTO saml_service_providers (app_id, entity_id, acs_urls, name_id_format, sign, created_at, updated_at)
+       VALUES ('a3', ?, '["https://other.example/acs"]', 'persistent', 'assertion', ?, ?)`,
+      [OTHER, now, now],
+    );
+    sqlite.run(
+      `INSERT INTO users (id, email, username, display_name, email_verified, created_at, updated_at)
+       VALUES ('u2', 'bob@example.com', 'bob', 'Bob', 1, ?, ?)`,
+      [now, now],
+    );
+  });
+
+  type Profile = {
+    id: string;
+    kind: "app" | "shared";
+    name: string | null;
+    name_id: string;
+    apps: { id: string; name: string }[];
+  };
+
+  const profilesApi = (
+    cookie: string,
+    method: string,
+    path = "",
+    body?: unknown,
+  ) =>
+    call(`/api/saml/profiles${path}`, {
+      method,
+      headers: {
+        Cookie: cookie,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  async function createShared(cookie: string, name: string) {
+    const res = await profilesApi(cookie, "POST", "", { name });
+    expect(res.status).toBe(201);
+    return (await res.json<{ profile: Profile }>()).profile;
+  }
+
+  /** Start a sign-in to the SP with `issuer`; the parked request's token. */
+  async function start(issuer: string, attrs = "") {
+    const res = await call(
+      `/saml/sso?SAMLRequest=${authnRequest(attrs, issuer)}`,
+    );
+    return new URL(res.headers.get("Location")!, "https://x").searchParams.get(
+      "request",
+    )!;
+  }
+
+  const info = async (token: string, cookie: string) =>
+    (
+      await call(`/api/saml/requests/${token}`, { headers: { Cookie: cookie } })
+    ).json<
+      Body & {
+        profile: { kind: string; name: string | null } | null;
+        profile_choices: { id: string; name: string; name_id: string }[];
+      }
+    >();
+
+  /** Approve; the NameID and uid the app receives. */
+  async function approve(token: string, cookie: string, profile?: string) {
+    const res = await call(
+      `/api/saml/requests/${token}`,
+      json({ action: "approve", authorization_mode: "once", profile }, cookie),
+    );
+    expect(res.status).toBe(200);
+    const doc = parseResponse((await res.json<Body>()).saml_response);
+    const uid = Array.from(doc.getElementsByTagNameNS("*", "Attribute"))
+      .find((a) => a.getAttribute("Name") === "uid")!
+      .getElementsByTagNameNS("*", "AttributeValue")[0].textContent;
+    const nameId = doc.getElementsByTagNameNS("*", "NameID")[0].textContent!;
+    expect(uid).toBe(nameId);
+    return nameId;
+  }
+
+  test("a first sign-in offers the shared profiles; the app keeps the one chosen", async () => {
+    const cookie = await sessionCookie();
+    const work = await createShared(cookie, "Work");
+    expect(work.kind).toBe("shared");
+    expect(work.name_id).toMatch(/^[0-9a-f]{32}$/);
+
+    let token = await start(SP);
+    let state = await info(token, cookie);
+    expect(state.next).toBe("consent");
+    expect(state.profile).toBeNull();
+    expect(state.profile_choices).toEqual([
+      { id: work.id, kind: "shared", name: "Work", name_id: work.name_id },
+    ]);
+    expect(await approve(token, cookie, work.id)).toBe(work.name_id);
+
+    // Chosen once: no question, and a different choice changes nothing.
+    token = await start(SP);
+    state = await info(token, cookie);
+    expect(state.profile).toMatchObject({ kind: "shared", name: "Work" });
+    expect(state.profile_choices).toEqual([]);
+    expect(await approve(token, cookie, "new")).toBe(work.name_id);
+
+    // Another app the user picks it for sees the same ID; one they don't,
+    // its own.
+    expect(await approve(await start(OTHER), cookie, work.id)).toBe(
+      work.name_id,
+    );
+    sqlite.run("DELETE FROM saml_profile_apps WHERE app_id = 'a3'");
+    const own = await approve(await start(OTHER), cookie, "new");
+    expect(own).not.toBe(work.name_id);
+  });
+
+  test("first-party apps ask only when there's a profile to pick; passive requests never", async () => {
+    sqlite.run("UPDATE oauth_apps SET is_first_party = 1");
+    const cookie = await sessionCookie();
+    expect((await info(await start(SP), cookie)).next).toBe("continue");
+
+    const work = await createShared(cookie, "Work");
+    sqlite.run("DELETE FROM saml_profile_apps");
+    // Only the profile is asked for: choosing one stores no consent.
+    let token = await start(SP);
+    expect((await info(token, cookie)).next).toBe("profile");
+    expect(await approve(token, cookie, work.id)).toBe(work.name_id);
+    expect(
+      sqlite.query("SELECT COUNT(*) AS n FROM oauth_consents").get(),
+    ).toEqual({ n: 0 });
+    sqlite.run("DELETE FROM saml_profile_apps");
+
+    // IsPassive can't ask: the app gets a new per-app profile.
+    token = await start(SP, 'IsPassive="true"');
+    expect((await info(token, cookie)).next).toBe("continue");
+    const nameId = await approve(token, cookie);
+    const { profiles } = await (
+      await profilesApi(cookie, "GET")
+    ).json<{
+      profiles: Profile[];
+    }>();
+    expect(profiles.find((p) => p.name_id === nameId)?.kind).toBe("app");
+  });
+
+  test("an app the user always authorizes asks only for the profile", async () => {
+    const cookie = await sessionCookie();
+    const work = await createShared(cookie, "Work");
+    sqlite.run(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES ('c1', 'u1', 'client-1', '["profile","email"]', 0, 1)`,
+    );
+    const token = await start(SP);
+    expect((await info(token, cookie)).next).toBe("profile");
+    expect(await approve(token, cookie, work.id)).toBe(work.name_id);
+    // The remembered consent is left as it was.
+    expect(
+      sqlite
+        .query("SELECT scopes, auto_authorize, granted_at FROM oauth_consents")
+        .all(),
+    ).toEqual([
+      { scopes: '["profile","email"]', auto_authorize: 1, granted_at: 0 },
+    ]);
+  });
+
+  test("only the user's own shared profiles can be chosen", async () => {
+    const cookie = await sessionCookie();
+    sqlite.run(
+      `INSERT INTO saml_profiles (id, user_id, name_id, app_id, name, created_at, updated_at)
+       VALUES ('p-bob', 'u2', 'bob-id', NULL, 'Bob''s', 0, 0),
+              ('p-own-app', 'u1', 'own-app-id', 'a3', NULL, 0, 0)`,
+    );
+    for (const profile of ["p-bob", "p-own-app", "nope"]) {
+      const res = await call(
+        `/api/saml/requests/${await start(SP)}`,
+        json({ action: "approve", profile }, cookie),
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: "field_invalid",
+        params: { field: "profile" },
+      });
+    }
+    expect(subjectIdOrNull("a1")).toBeNull();
+  });
+
+  test("a per-app profile can become shared, keeping its ID", async () => {
+    const cookie = await sessionCookie();
+    const wikiId = await approve(await start(SP), cookie);
+    let { profiles } = await (
+      await profilesApi(cookie, "GET")
+    ).json<{
+      profiles: Profile[];
+    }>();
+    expect(profiles).toHaveLength(1);
+    const perApp = profiles[0];
+    expect(perApp).toMatchObject({
+      kind: "app",
+      name: null,
+      name_id: wikiId,
+      apps: [{ id: "a1", name: "Wiki" }],
+    });
+
+    // It goes with its app: no renaming or deleting it alone.
+    expect(
+      (await profilesApi(cookie, "PATCH", `/${perApp.id}`, { name: "x" }))
+        .status,
+    ).toBe(409);
+    expect((await profilesApi(cookie, "DELETE", `/${perApp.id}`)).status).toBe(
+      409,
+    );
+
+    const res = await profilesApi(cookie, "POST", `/${perApp.id}/share`, {
+      name: "Main",
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json<{ profile: Profile }>()).profile).toMatchObject({
+      id: perApp.id,
+      kind: "shared",
+      name: "Main",
+      name_id: wikiId,
+      apps: [{ id: "a1", name: "Wiki" }],
+    });
+    expect(
+      (await profilesApi(cookie, "POST", `/${perApp.id}/share`, { name: "x" }))
+        .status,
+    ).toBe(409);
+
+    // The wiki sees no change; now another app can be given the same ID.
+    expect(await approve(await start(SP), cookie)).toBe(wikiId);
+    const token = await start(OTHER);
+    expect((await info(token, cookie)).profile_choices).toEqual([
+      { id: perApp.id, kind: "shared", name: "Main", name_id: wikiId },
+    ]);
+    expect(await approve(token, cookie, perApp.id)).toBe(wikiId);
+    ({ profiles } = await (
+      await profilesApi(cookie, "GET")
+    ).json<{
+      profiles: Profile[];
+    }>());
+    expect(profiles[0].apps.map((a) => a.id).sort()).toEqual(["a1", "a3"]);
+  });
+
+  test("shared profiles: create, rename, delete when unused, limits", async () => {
+    const cookie = await sessionCookie();
+    let res = await profilesApi(cookie, "POST", "", { name: "  " });
+    expect(await res.json()).toEqual({
+      error: "field_required",
+      params: { field: "name" },
+    });
+    res = await profilesApi(cookie, "POST", "", { name: "x".repeat(65) });
+    expect(await res.json()).toEqual({
+      error: "field_max_length",
+      params: { field: "name", max: 64 },
+    });
+
+    const spare = await createShared(cookie, "Spare");
+    res = await profilesApi(cookie, "PATCH", `/${spare.id}`, {
+      name: "Spare 2",
+    });
+    expect((await res.json<{ profile: Profile }>()).profile.name).toBe(
+      "Spare 2",
+    );
+
+    // In use: kept, since the app knows the user by it.
+    await approve(await start(SP), cookie, spare.id);
+    res = await profilesApi(cookie, "DELETE", `/${spare.id}`);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "saml_profile_in_use",
+      params: { count: 1 },
+    });
+    sqlite.run("DELETE FROM saml_profile_apps");
+    expect((await profilesApi(cookie, "DELETE", `/${spare.id}`)).status).toBe(
+      200,
+    );
+    res = await profilesApi(cookie, "GET", `/${spare.id}`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "saml_profile_not_found" });
+
+    // Someone else's profile doesn't exist for this user.
+    sqlite.run(
+      `INSERT INTO saml_profiles (id, user_id, name_id, app_id, name, created_at, updated_at)
+       VALUES ('p-bob', 'u2', 'bob-id', NULL, 'Bob''s', 0, 0)`,
+    );
+    expect((await profilesApi(cookie, "GET", "/p-bob")).status).toBe(404);
+    expect((await profilesApi(cookie, "DELETE", "/p-bob")).status).toBe(404);
+
+    // At most 50 shared profiles.
+    for (let i = 0; i < 50; i++)
+      sqlite.run(
+        `INSERT INTO saml_profiles (id, user_id, name_id, app_id, name, created_at, updated_at)
+         VALUES (?, 'u1', ?, NULL, 'n', 0, 0)`,
+        [`bulk${i}`, `bulk-id-${i}`],
+      );
+    res = await profilesApi(cookie, "POST", "", { name: "One more" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "saml_profile_limit",
+      params: { max: 50 },
+    });
+
+    expect((await call("/api/saml/profiles", { method: "GET" })).status).toBe(
+      401,
+    );
   });
 });
 

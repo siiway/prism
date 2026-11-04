@@ -118,6 +118,7 @@ import type {
   SamlRequestInfo,
   SamlPostback,
   SamlLogoutStep,
+  SamlProfile,
 } from "../../shared/api";
 
 export type {
@@ -917,15 +918,61 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
       undefined,
       getToken(),
     ),
+  /** `profile`: on a first sign-in, the shared profile the app gets
+   *  (its id), or "new" for a new per-app profile. */
   samlDecision: (
     token: string,
     action: "approve" | "deny" | "decline",
     authorizationMode?: "once" | "always",
+    profile?: string,
   ) =>
     request<SamlPostback>(
       "POST",
       `/saml/requests/${encodeURIComponent(token)}`,
-      { action, authorization_mode: authorizationMode },
+      { action, authorization_mode: authorizationMode, profile },
+      getToken(),
+    ),
+  listSamlProfiles: () =>
+    request<{ profiles: SamlProfile[] }>(
+      "GET",
+      "/saml/profiles",
+      undefined,
+      getToken(),
+    ),
+  getSamlProfile: (id: string) =>
+    request<{ profile: SamlProfile }>(
+      "GET",
+      `/saml/profiles/${encodeURIComponent(id)}`,
+      undefined,
+      getToken(),
+    ),
+  createSamlProfile: (name: string) =>
+    request<{ profile: SamlProfile }>(
+      "POST",
+      "/saml/profiles",
+      { name },
+      getToken(),
+    ),
+  renameSamlProfile: (id: string, name: string) =>
+    request<{ profile: SamlProfile }>(
+      "PATCH",
+      `/saml/profiles/${encodeURIComponent(id)}`,
+      { name },
+      getToken(),
+    ),
+  /** Turn a per-app profile into a shared one; it keeps its ID. */
+  shareSamlProfile: (id: string, name: string) =>
+    request<{ profile: SamlProfile }>(
+      "POST",
+      `/saml/profiles/${encodeURIComponent(id)}/share`,
+      { name },
+      getToken(),
+    ),
+  deleteSamlProfile: (id: string) =>
+    request<{ ok: true }>(
+      "DELETE",
+      `/saml/profiles/${encodeURIComponent(id)}`,
+      undefined,
       getToken(),
     ),
   /** `token`: a logout another site asked for (from the page URL); null

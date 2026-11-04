@@ -502,6 +502,39 @@ export function createRoutes(ctx: RouteContext): RouteObject[] {
             })),
         },
         {
+          path: "saml-profiles",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/samlProfiles/SamlProfiles").then((m) => ({
+              Component: m.SamlProfiles,
+            })),
+        },
+        {
+          path: "saml-profiles/new",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/samlProfiles/SamlProfileNew").then((m) => ({
+              Component: m.SamlProfileNew,
+            })),
+        },
+        {
+          path: "saml-profiles/:id",
+          loader: ({ request }) => {
+            requireAuthLoader(request);
+            return null;
+          },
+          lazy: () =>
+            import("./pages/samlProfiles/SamlProfileDetail").then((m) => ({
+              Component: perRecord(m.SamlProfileDetail),
+            })),
+        },
+        {
           path: "tokens",
           loader: ({ request }) => {
             requireAuthLoader(request);

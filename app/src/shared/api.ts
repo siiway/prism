@@ -1440,12 +1440,38 @@ export type SamlLogoutStep =
 /** GET /saml/requests/:token — what the sign-in page does next. */
 export interface SamlRequestInfo {
   app: OAuthAuthorizeInfo["app"];
-  next: "login" | "reauth" | "consent" | "continue" | "decline";
+  /** "profile": only the SAML profile is asked for; consent is settled. */
+  next: "login" | "reauth" | "consent" | "profile" | "continue" | "decline";
   /** An API error code: why this account can't sign in to the app. */
   error: string | null;
   scopes: string[];
   name_id_format: SamlNameIdFormat;
   user: OAuthAuthorizeInfo["user"] | null;
+  /** The SAML profile the app gets for the user, once chosen. */
+  profile: SamlProfileSummary | null;
+  /** Before one is chosen: the user's shared profiles to pick from. Empty
+   *  means the app gets a new per-app profile without asking. */
+  profile_choices: SamlProfileSummary[];
+}
+
+/** "app": made for one app at the first sign-in to it. "shared": made by
+ *  the user, and usable for any number of apps. */
+export type SamlProfileKind = "app" | "shared";
+
+export interface SamlProfileSummary {
+  id: string;
+  kind: SamlProfileKind;
+  /** A shared profile's name; null for a per-app one. */
+  name: string | null;
+  /** The ID apps receive (persistent NameID and uid). */
+  name_id: string;
+}
+
+/** One of the user's SAML profiles, with the apps that get it. */
+export interface SamlProfile extends SamlProfileSummary {
+  apps: { id: string; name: string; icon_url: string | null }[];
+  created_at: number;
+  updated_at: number;
 }
 
 /** The Response to POST to the service provider. */
