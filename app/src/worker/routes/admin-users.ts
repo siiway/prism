@@ -27,6 +27,7 @@ import { auditRequestAction } from "../lib/audit";
 import { hashPassword, randomId } from "../lib/crypto";
 import { readPage } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
+import { signOutEverywhere } from "../lib/session";
 import { isUserLocked } from "../lib/lockdown";
 import type { DomainRow, UserEmailRow, Variables } from "../types";
 import { parseScopeList } from "../lib/scopeGrants";
@@ -76,13 +77,6 @@ function auditUser(
   );
 }
 
-/** Drop every session for a user. Called after anything that changes who can
- *  authenticate as them — a password reset that left the old sessions alive
- *  would not actually lock the intruder out. */
-async function revokeSessions(db: D1Database, userId: string): Promise<void> {
-  await db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run();
-}
-
 // ─── Credentials ──────────────────────────────────────────────────────────────
 
 /** Set or clear the account's password.
@@ -126,13 +120,15 @@ app.post("/:id/password", async (c) => {
     hash = await hashPassword(body.password);
   }
 
-  await c.env.DB.prepare(
+  const setPassword = c.env.DB.prepare(
     "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-  )
-    .bind(hash, Math.floor(Date.now() / 1000), id)
-    .run();
+  ).bind(hash, Math.floor(Date.now() / 1000), id);
 
-  if (body.revoke_sessions !== false) await revokeSessions(c.env.DB, id);
+  // A reset that left the old sessions and app tokens alive would not lock
+  // an intruder out.
+  if (body.revoke_sessions !== false)
+    await signOutEverywhere(c.env, c.executionCtx, id, null, [setPassword]);
+  else await setPassword.run();
 
   auditUser(c, id, target.username, "user.password_set", {
     cleared: hash === null,

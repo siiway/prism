@@ -19,6 +19,7 @@ import {
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
 import { toSessionUser } from "../lib/sessionUser";
+import { signOutEverywhere } from "../lib/session";
 import { validateImageUrl } from "../lib/imageValidation";
 import {
   recordAudit,
@@ -461,11 +462,23 @@ app.post("/me/change-password", async (c) => {
     return c.json({ error: "password_too_short" }, 400);
 
   const hash = await hashPassword(body.new_password);
-  await c.env.DB.prepare(
+  const setPassword = c.env.DB.prepare(
     "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-  )
-    .bind(hash, Math.floor(Date.now() / 1000), user.id)
-    .run();
+  ).bind(hash, Math.floor(Date.now() / 1000), user.id);
+
+  // Whoever had the old password may still hold a session or an app's
+  // refresh token; a new password has to lock them out. This browser stays.
+  // A first password (an account that signed up through a social provider)
+  // replaces nothing anyone could have stolen, so it signs nothing out.
+  if (row.password_hash)
+    await signOutEverywhere(
+      c.env,
+      c.executionCtx,
+      user.id,
+      c.get("sessionId") ?? null,
+      [setPassword],
+    );
+  else await setPassword.run();
 
   return c.json({ ok: true });
 });

@@ -3,7 +3,8 @@
 // sign-in path (password, passkey, GPG, 2FA, social, invite registration,
 // first-run setup) goes through issueSession so none of them can skip a step.
 // Ending one in the browser (sign-out, OIDC end_session, SAML single logout)
-// goes through endBrowserSession, likewise.
+// goes through endBrowserSession, likewise. A password change ends all of the
+// user's sign-ins, apps included, through signOutEverywhere.
 
 import type { Context } from "hono";
 import { auditRequestMeta, recordAudit } from "./audit";
@@ -20,7 +21,7 @@ import { geoJson, recordSessionIp } from "./geo";
 import { signJWT } from "./jwt";
 import { proxyImageUrl } from "./proxyImage";
 import { startIdpLogout } from "./saml/logout";
-import type { UserRow, Variables } from "../types";
+import type { UserRow, Variables, WaitUntilCtx } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 
@@ -132,4 +133,38 @@ export async function endBrowserSession(
       .run();
   clearSessionCookie(c);
   return samlLogout ? "/logout" : finishUrl;
+}
+
+/**
+ * Sign a user out everywhere, as a password change does: every Prism session
+ * but `keepSessionId` (the browser that made the change, if any), every OAuth
+ * token, and every grant not yet redeemed (authorization codes, approved
+ * device codes, step-up 2FA codes), so a refresh token taken before the
+ * change stops working. JWT access tokens can't be recalled and run out on
+ * their own.
+ *
+ * `alongWith` runs in the same batch, first: the password write, so the new
+ * password never takes effect without the sign-out. Apps with a back-channel
+ * logout endpoint are told afterwards, best-effort: the change has happened
+ * by then, whatever an app's endpoint does.
+ */
+export async function signOutEverywhere(
+  env: Env,
+  ctx: WaitUntilCtx,
+  userId: string,
+  keepSessionId: string | null,
+  alongWith: D1PreparedStatement[] = [],
+): Promise<void> {
+  const db = env.DB;
+  await db.batch([
+    ...alongWith,
+    db
+      .prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?")
+      .bind(userId, keepSessionId ?? ""),
+    db.prepare("DELETE FROM oauth_tokens WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM oauth_codes WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM oauth_device_codes WHERE user_id = ?").bind(userId),
+    db.prepare("DELETE FROM oauth_2fa_codes WHERE user_id = ?").bind(userId),
+  ]);
+  await deliverBackChannelLogout(env, ctx, userId, null).catch(() => {});
 }

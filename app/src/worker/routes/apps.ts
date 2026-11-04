@@ -1854,6 +1854,7 @@ async function safeApp(
     token_endpoint_auth_method: row.token_endpoint_auth_method ?? null,
     jwks: row.jwks ?? null,
     jwks_uri: row.jwks_uri ?? null,
+    pkce_plain_used_at: row.pkce_plain_used_at ?? null,
     team_id: row.team_id ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,

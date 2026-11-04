@@ -11,7 +11,7 @@ import {
   verifyIdTokenRS256,
   extractAud,
 } from "../lib/jwt";
-import { randomBase64url, randomId, verifyPkce } from "../lib/crypto";
+import { randomBase64url, randomId } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import {
@@ -74,6 +74,7 @@ import {
   buildConsentAppSummary,
   readOAuthBody,
   recordAppAuthorization,
+  verifyAppPkce,
 } from "../lib/oauthClients";
 import { REQUESTABLE_SCOPES } from "../lib/scopes";
 import { deriveAcr } from "../lib/stepUp";
@@ -1580,10 +1581,12 @@ app.post("/token", async (c) => {
           },
           400,
         );
-      const pkceOk = await verifyPkce(
+      const pkceOk = await verifyAppPkce(
+        c.env.DB,
+        oauthApp,
         code_verifier,
         codeRow.code_challenge,
-        codeRow.code_challenge_method ?? "S256",
+        codeRow.code_challenge_method,
       );
       if (!pkceOk)
         return c.json(
@@ -1860,10 +1863,12 @@ app.post("/token", async (c) => {
           },
           400,
         );
-      const pkceOk = await verifyPkce(
+      const pkceOk = await verifyAppPkce(
+        c.env.DB,
+        oauthApp,
         code_verifier,
         dc.code_challenge,
-        dc.code_challenge_method ?? "S256",
+        dc.code_challenge_method,
       );
       if (!pkceOk)
         return c.json(

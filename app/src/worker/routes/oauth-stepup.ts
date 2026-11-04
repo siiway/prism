@@ -7,7 +7,7 @@ import { getConfig } from "../lib/config";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { hashSecret, hashLookupCandidate } from "../lib/secretCrypto";
-import { randomBase64url, verifyPkce } from "../lib/crypto";
+import { randomBase64url } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
 import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
@@ -28,6 +28,7 @@ import {
   authenticateClient,
   buildConsentAppSummary,
   readOAuthBody,
+  verifyAppPkce,
 } from "../lib/oauthClients";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -564,10 +565,12 @@ app.post("/2fa/verify", async (c) => {
         },
         400,
       );
-    const pkceOk = await verifyPkce(
+    const pkceOk = await verifyAppPkce(
+      c.env.DB,
+      oauthApp,
       code_verifier,
       codeRow.code_challenge,
-      codeRow.code_challenge_method ?? "S256",
+      codeRow.code_challenge_method,
     );
     if (!pkceOk)
       return c.json(

@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import { type OAuthApp } from "../../../lib/api";
 import { apiErrorText } from "../../../lib/apiError";
 import { docsUrl } from "../../../lib/docsUrl";
+import { formatDate } from "../../../lib/datetime";
 import { useApi, useAppOrigin } from "../../../lib/api-context";
 import { useConfirm } from "../../../lib/useConfirm";
 import { CopyButton } from "../../../components/CopyButton";
@@ -40,6 +41,9 @@ const AUTH_METHODS = [
   "private_key_jwt",
   "none",
 ];
+
+/** How long after its last PKCE `plain` exchange the app is still warned. */
+const PLAIN_PKCE_WARN_DAYS = 30;
 
 // Label key (under apps.) and path.
 const ENDPOINTS = [
@@ -75,6 +79,7 @@ export function OAuthTab({
   const { form, set } = formApi;
 
   const [rotating, setRotating] = useState(false);
+  const [nowSec] = useState(() => Math.floor(Date.now() / 1000));
 
   // A first secret is harmless to create; replacing one breaks whatever
   // still uses it, so that asks first.
@@ -102,8 +107,22 @@ export function OAuthTab({
 
   const guideUrl = docsUrl(i18n.language, "oauth");
 
+  // The app redeemed a code with PKCE `plain` lately. It stops showing once
+  // the app has gone PLAIN_PKCE_WARN_DAYS without it.
+  const plainPkceAt = app.pkce_plain_used_at;
+  const plainPkceRecent =
+    plainPkceAt != null && nowSec - plainPkceAt < PLAIN_PKCE_WARN_DAYS * 86400;
+
   return (
     <>
+      {plainPkceRecent && (
+        <MessageBar intent="warning">
+          {t("apps.pkcePlainWarning", { date: formatDate(plainPkceAt) })}{" "}
+          <Link href={guideUrl} target="_blank" rel="noreferrer">
+            {t("apps.oauthOidcGuide")}
+          </Link>
+        </MessageBar>
+      )}
       <SettingsCard
         id="credentials"
         title={t("apps.clientCredentials")}

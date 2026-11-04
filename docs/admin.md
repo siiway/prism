@@ -181,7 +181,8 @@ Usernames listed in `LOCKDOWN_USERS` can't be deleted. See
 - **Overview** — edit username, email and display name; set or clear the
   password; reset all 2FA or remove a single factor; verify, promote or remove
   email addresses. Setting a password doesn't notify the user, so hand it over
-  separately.
+  separately. It signs the account out everywhere, apps included, unless you
+  untick **Sign the account out everywhere**.
 - **Access** — personal access tokens, linked providers, GPG keys and authorized
   apps, each with a revoke. **Revoke all authorizations** cuts the account off
   from every app. Token values are never shown.
