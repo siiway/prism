@@ -466,9 +466,10 @@ third-party images directly.
 - `POST /api/proxy/image/register` (authenticated) registers a remote HTTPS image
   URL and returns `{ "id": "...", "url": "/api/proxy/image/<id>" }`. Private and
   reserved addresses are rejected.
-- `GET /api/proxy/image/:id` serves the image. It's safe to embed, SVGs are
-  sanitized, and images over 5 MiB are refused. Only registered IDs work; it
-  isn't an open proxy.
+- `GET /api/proxy/image/:id` serves the image. It's safe to embed: SVGs are
+  rebuilt from an allowlist of drawing elements, and an SVG that isn't
+  well-formed XML is refused. Images over 5 MiB are refused too. Only
+  registered IDs work; it isn't an open proxy.
 
 ## Admin
 

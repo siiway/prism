@@ -427,7 +427,7 @@ OAuth 令牌等价端点：`GET /api/oauth/me/social-connections`（`social:read
 远程头像和图标图片通过 Prism 提供，因此页面不会直接加载第三方图片。
 
 - `POST /api/proxy/image/register`（需认证）注册远程 HTTPS 图片 URL，并返回 `{ "id": "...", "url": "/api/proxy/image/<id>" }`。私有和保留地址会被拒绝。
-- `GET /api/proxy/image/:id` 提供图片。可安全嵌入，SVG 会被清理，超过 5 MiB 的图片会被拒绝。只有已注册的 ID 可用；它不是开放代理。
+- `GET /api/proxy/image/:id` 提供图片。可安全嵌入：SVG 会按允许的绘图元素清单重建，不是格式正确的 XML 的 SVG 会被拒绝。超过 5 MiB 的图片也会被拒绝。只有已注册的 ID 可用；它不是开放代理。
 
 ## 管理
 
