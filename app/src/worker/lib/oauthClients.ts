@@ -17,6 +17,8 @@ import {
   notificationActorMetaFromHeaders,
 } from "./notifications";
 import { proxyImageUrl } from "./proxyImage";
+import { verifyPkce } from "./crypto";
+import { readWithFallback } from "./schema";
 import type { OAuthAppRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -180,6 +182,44 @@ export async function authenticateClient(
     method: app.is_public ? "none" : "client_secret",
     usedBasic,
   };
+}
+
+/** How often a code redeemed with PKCE `plain` refreshes the app's
+ *  `pkce_plain_used_at`, so busy apps don't write on every exchange. */
+const PLAIN_PKCE_NOTE_INTERVAL = 3600;
+
+/**
+ * Check a PKCE verifier presented by `app`. A missing method means S256, as
+ * RFC 7636 defaults to it. `plain` still passes, but a pass is noted on the
+ * app so its OAuth tab warns the owner: with `plain` the challenge is the
+ * verifier, sent in the clear in the authorization request.
+ */
+export async function verifyAppPkce(
+  db: D1Database,
+  app: OAuthAppRow,
+  verifier: string,
+  challenge: string,
+  method: string | null,
+): Promise<boolean> {
+  const resolved = method ?? "S256";
+  const ok = await verifyPkce(verifier, challenge, resolved);
+  if (ok && resolved === "plain") {
+    const now = Math.floor(Date.now() / 1000);
+    // Only a warning: a database without the column still issues tokens.
+    await readWithFallback(
+      () =>
+        db
+          .prepare(
+            `UPDATE oauth_apps SET pkce_plain_used_at = ?
+              WHERE id = ?
+                AND (pkce_plain_used_at IS NULL OR pkce_plain_used_at < ?)`,
+          )
+          .bind(now, app.id, now - PLAIN_PKCE_NOTE_INTERVAL)
+          .run(),
+      null,
+    );
+  }
+  return ok;
 }
 
 /**

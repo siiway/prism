@@ -150,6 +150,9 @@ export interface OAuthAppRow {
   jwks_uri: string | null;
   /** OIDC Back-Channel Logout notification endpoint, or null. */
   backchannel_logout_uri: string | null;
+  /** When the app last redeemed a code with PKCE `plain`, or null.
+   *  Optional: absent until migration 0091 runs. */
+  pkce_plain_used_at?: number | null;
   created_at: number;
   updated_at: number;
 }

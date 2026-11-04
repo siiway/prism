@@ -89,6 +89,11 @@ GET https://your-prism-domain/api/oauth/authorize
 code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 ```
 
+Use `S256`. Prism still accepts `code_challenge_method=plain`, but with `plain`
+the challenge is the verifier itself, so anyone who sees the authorization
+request URL can redeem a stolen code. An app that uses `plain` gets a warning
+on its **OAuth** tab until it has gone 30 days without it.
+
 #### Scopes
 
 | Scope                  | Claims / access granted                               |
@@ -242,6 +247,12 @@ grant_type=refresh_token
 The response carries a **new** `refresh_token`; store it in place of the old one.
 Refresh tokens rotate on every use, and presenting an old one revokes the whole
 grant. Rotating doesn't extend the original expiry.
+
+When a user replaces their password, or an admin sets it, Prism revokes every
+refresh token and access token the user holds, in every app, and sends a
+[back-channel logout](#back-channel-logout) to apps that registered one. The
+next refresh fails with `invalid_grant`; send the user through authorization
+again. JWT access tokens can't be recalled and stay valid until they expire.
 
 ## Token introspection (RFC 7662)
 

@@ -83,6 +83,8 @@ GET https://your-prism-domain/api/oauth/authorize
 code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 ```
 
+请使用 `S256`。Prism 仍接受 `code_challenge_method=plain`，但使用 `plain` 时 challenge 就是 verifier 本身，任何看到授权请求 URL 的人都能兑换被窃取的授权码。使用 `plain` 的应用会在其 **OAuth** 标签页看到警告，直到连续 30 天不再使用为止。
+
 #### 权限范围
 
 | 范围                   | 包含的声明 / 授予的访问                        |
@@ -221,6 +223,8 @@ grant_type=refresh_token
 ```
 
 响应中会返回**新的** `refresh_token`，请用它替换旧的令牌。刷新令牌每次使用后都会轮换，出示旧令牌会撤销整个授权。轮换不会延长原有的过期时间。
+
+当用户更换已有密码或管理员为其设置密码时，Prism 会撤销该用户在所有应用中持有的刷新令牌和访问令牌，并向注册了[后端通道登出](#后端通道登出)的应用发送通知。之后的刷新会以 `invalid_grant` 失败，请让用户重新授权。JWT 访问令牌无法收回，会在过期前一直有效。
 
 ## 令牌内省（RFC 7662）
 

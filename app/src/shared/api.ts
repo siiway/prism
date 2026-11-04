@@ -1016,6 +1016,9 @@ export interface OAuthApp {
   /** RFC 7523 private_key_jwt: inline JWK Set (JSON string) and/or a JWKS URI. */
   jwks: string | null;
   jwks_uri: string | null;
+  /** When the app last redeemed a code with PKCE `plain` (unix seconds), or
+   *  null. Refreshed at most hourly. */
+  pkce_plain_used_at: number | null;
   team_id: string | null;
   created_at: number;
   updated_at: number;
