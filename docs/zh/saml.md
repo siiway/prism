@@ -66,8 +66,8 @@ SAML，这类应用也可以借助 Prism 完成登录。
   该询问。在应用的 OAuth 登录中选择的 **始终授权** 同样适用于 SAML，只要其中
   包含 SAML 发送的范围。第一方应用从不询问授权同意。应用的
   [访问白名单](app-access-whitelist.md) 依然生效，应用会出现在用户的已授权应用中。
-- `ForceAuthn` 会要求用户重新登录。若用户需要先登录或批准应用，`IsPassive` 会得到
-  一个 `NoPassive` 响应。
+- `ForceAuthn` 会要求用户重新登录。若用户需要先登录、批准应用或为其选择身份，
+  `IsPassive` 会得到一个 `NoPassive` 响应。
 - 如果请求的 NameID 格式与配置的不同，将收到 `InvalidNameIDPolicy` 响应。
 
 该证书为自签名证书，有效期至 2049 年。它封装了同时用于签名 Prism ID token 的

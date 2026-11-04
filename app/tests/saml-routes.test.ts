@@ -1500,7 +1500,7 @@ describe("SAML profiles", () => {
     expect(own).not.toBe(work.name_id);
   });
 
-  test("first-party apps ask only when there's a profile to pick; passive requests never", async () => {
+  test("first-party apps ask only when there's a profile to pick", async () => {
     sqlite.run("UPDATE oauth_apps SET is_first_party = 1");
     const cookie = await sessionCookie();
     expect((await info(await start(SP), cookie)).next).toBe("continue");
@@ -1508,15 +1508,39 @@ describe("SAML profiles", () => {
     const work = await createShared(cookie, "Work");
     sqlite.run("DELETE FROM saml_profile_apps");
     // Only the profile is asked for: choosing one stores no consent.
-    let token = await start(SP);
+    const token = await start(SP);
     expect((await info(token, cookie)).next).toBe("profile");
     expect(await approve(token, cookie, work.id)).toBe(work.name_id);
     expect(
       sqlite.query("SELECT COUNT(*) AS n FROM oauth_consents").get(),
     ).toEqual({ n: 0 });
-    sqlite.run("DELETE FROM saml_profile_apps");
+  });
 
-    // IsPassive can't ask: the app gets a new per-app profile.
+  test("a passive request never chooses the profile for the user", async () => {
+    sqlite.run("UPDATE oauth_apps SET is_first_party = 1");
+    const cookie = await sessionCookie();
+    const work = await createShared(cookie, "Work");
+    const bound = () =>
+      sqlite.query("SELECT COUNT(*) AS n FROM saml_profile_apps").get();
+
+    // With a profile to pick, IsPassive gets NoPassive and binds nothing.
+    let token = await start(SP, 'IsPassive="true"');
+    expect((await info(token, cookie)).next).toBe("decline");
+    const res = await call(
+      `/api/saml/requests/${token}`,
+      json({ action: "approve", profile: work.id }, cookie),
+    );
+    expect(res.status).toBe(409);
+    expect(bound()).toEqual({ n: 0 });
+
+    // The next interactive sign-in still asks.
+    token = await start(SP);
+    expect((await info(token, cookie)).next).toBe("profile");
+
+    // Nothing to pick: IsPassive goes on, with a new per-app profile.
+    expect((await profilesApi(cookie, "DELETE", `/${work.id}`)).status).toBe(
+      200,
+    );
     token = await start(SP, 'IsPassive="true"');
     expect((await info(token, cookie)).next).toBe("continue");
     const nameId = await approve(token, cookie);

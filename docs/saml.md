@@ -81,7 +81,8 @@ Attribute names use the `basic` name format. Choose the app's scopes on its
   The app's [access whitelist](app-access-whitelist.md) applies, and the app
   appears under the user's connected apps.
 - `ForceAuthn` makes the user sign in again. `IsPassive` gets a `NoPassive`
-  response if the user would have to sign in or approve the app first.
+  response if the user would have to sign in, approve the app or choose its
+  profile first.
 - A request for a different NameID format than the one configured gets an
   `InvalidNameIDPolicy` response.
 

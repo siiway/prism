@@ -579,9 +579,10 @@ async function evaluate(
         : { next: "consent", ...base, consentedScopes };
   }
   // With shared profiles to pick from, the user chooses which one the app
-  // gets; a passive request can't ask, so it gets a new per-app profile.
-  if (profileChoices.length > 0 && !passive)
-    return { next: "profile", ...base };
+  // gets, and keeps it. A passive request can't ask, and must not choose
+  // for them: like a consent it can't ask for, it gets NoPassive.
+  if (profileChoices.length > 0)
+    return passive ? decline("NoPassive") : { next: "profile", ...base };
   return { next: "continue", ...base };
 }
 
