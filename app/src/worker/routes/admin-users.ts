@@ -120,16 +120,15 @@ app.post("/:id/password", async (c) => {
     hash = await hashPassword(body.password);
   }
 
-  await c.env.DB.prepare(
+  const setPassword = c.env.DB.prepare(
     "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-  )
-    .bind(hash, Math.floor(Date.now() / 1000), id)
-    .run();
+  ).bind(hash, Math.floor(Date.now() / 1000), id);
 
   // A reset that left the old sessions and app tokens alive would not lock
   // an intruder out.
   if (body.revoke_sessions !== false)
-    await signOutEverywhere(c.env, c.executionCtx, id, null);
+    await signOutEverywhere(c.env, c.executionCtx, id, null, [setPassword]);
+  else await setPassword.run();
 
   auditUser(c, id, target.username, "user.password_set", {
     cleared: hash === null,

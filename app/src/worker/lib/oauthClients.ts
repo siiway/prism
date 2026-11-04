@@ -18,7 +18,6 @@ import {
 } from "./notifications";
 import { proxyImageUrl } from "./proxyImage";
 import { verifyPkce } from "./crypto";
-import { readWithFallback } from "./schema";
 import type { OAuthAppRow, Variables } from "../types";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
@@ -205,19 +204,17 @@ export async function verifyAppPkce(
   const ok = await verifyPkce(verifier, challenge, resolved);
   if (ok && resolved === "plain") {
     const now = Math.floor(Date.now() / 1000);
-    // Only a warning: a database without the column still issues tokens.
-    await readWithFallback(
-      () =>
-        db
-          .prepare(
-            `UPDATE oauth_apps SET pkce_plain_used_at = ?
-              WHERE id = ?
-                AND (pkce_plain_used_at IS NULL OR pkce_plain_used_at < ?)`,
-          )
-          .bind(now, app.id, now - PLAIN_PKCE_NOTE_INTERVAL)
-          .run(),
-      null,
-    );
+    // Only a warning: if it can't be written (no column yet, or any other
+    // database error), the exchange still goes through.
+    await db
+      .prepare(
+        `UPDATE oauth_apps SET pkce_plain_used_at = ?
+          WHERE id = ?
+            AND (pkce_plain_used_at IS NULL OR pkce_plain_used_at < ?)`,
+      )
+      .bind(now, app.id, now - PLAIN_PKCE_NOTE_INTERVAL)
+      .run()
+      .catch(() => {});
   }
   return ok;
 }
