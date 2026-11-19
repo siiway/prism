@@ -24,6 +24,7 @@ import {
 } from "@tanstack/react-query";
 import {
   RendererProvider,
+  SSRProvider,
   createDOMRenderer,
   renderToStyleElements,
 } from "@fluentui/react-components";
@@ -185,28 +186,35 @@ export async function render(
     (m) => m.route.id === "not-found",
   );
 
+  // SSRProvider (here and in entry-client) lets Fluent's useIsSSR() report
+  // the server render and the hydration pass. Tooltips with
+  // relationship="description" otherwise render their hidden content during
+  // hydration, which the server HTML doesn't have, and the page fails to
+  // hydrate.
   const renderOnce = () =>
     renderToString(
       <RendererProvider renderer={renderer}>
-        <I18nextProvider i18n={i18n}>
-          <QueryClientProvider client={queryClient}>
-            <ApiProvider client={apiClient} origin={origin}>
-              <AuthStoreProvider store={authStore}>
-                <ThemeProvider initialColorScheme={opts.colorScheme}>
-                  {/* hydrate={false}: the router's hydration data goes in
-                      the app-state slot below, not inside #root. Rendered
-                      here it is a <script> the client tree never has, and
-                      that one node failed hydration on every page. */}
-                  <StaticRouterProvider
-                    router={router}
-                    context={context}
-                    hydrate={false}
-                  />
-                </ThemeProvider>
-              </AuthStoreProvider>
-            </ApiProvider>
-          </QueryClientProvider>
-        </I18nextProvider>
+        <SSRProvider>
+          <I18nextProvider i18n={i18n}>
+            <QueryClientProvider client={queryClient}>
+              <ApiProvider client={apiClient} origin={origin}>
+                <AuthStoreProvider store={authStore}>
+                  <ThemeProvider initialColorScheme={opts.colorScheme}>
+                    {/* hydrate={false}: the router's hydration data goes in
+                        the app-state slot below, not inside #root. Rendered
+                        here it is a <script> the client tree never has, and
+                        that one node failed hydration on every page. */}
+                    <StaticRouterProvider
+                      router={router}
+                      context={context}
+                      hydrate={false}
+                    />
+                  </ThemeProvider>
+                </AuthStoreProvider>
+              </ApiProvider>
+            </QueryClientProvider>
+          </I18nextProvider>
+        </SSRProvider>
       </RendererProvider>,
     );
 

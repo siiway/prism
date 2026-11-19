@@ -9,6 +9,7 @@
 import i18n from "./i18n";
 import { StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
+import { SSRProvider } from "@fluentui/react-components";
 import {
   QueryClient,
   QueryClientProvider,
@@ -103,17 +104,21 @@ async function start(): Promise<void> {
   hydrateRoot(
     document.getElementById("root")!,
     <StrictMode>
-      <QueryClientProvider client={qc}>
-        <HydrationBoundary state={initial.queryState}>
-          <ApiProvider client={api} origin={window.location.origin}>
-            <AuthStoreProvider store={authStore}>
-              <ThemeProvider initialColorScheme={initial.colorScheme}>
-                <RouterProvider router={router} />
-              </ThemeProvider>
-            </AuthStoreProvider>
-          </ApiProvider>
-        </HydrationBoundary>
-      </QueryClientProvider>
+      {/* Must match entry-server: Fluent's SSR-aware components (Tooltip)
+          hold back until hydration is done only inside an SSRProvider. */}
+      <SSRProvider>
+        <QueryClientProvider client={qc}>
+          <HydrationBoundary state={initial.queryState}>
+            <ApiProvider client={api} origin={window.location.origin}>
+              <AuthStoreProvider store={authStore}>
+                <ThemeProvider initialColorScheme={initial.colorScheme}>
+                  <RouterProvider router={router} />
+                </ThemeProvider>
+              </AuthStoreProvider>
+            </ApiProvider>
+          </HydrationBoundary>
+        </QueryClientProvider>
+      </SSRProvider>
     </StrictMode>,
   );
 }
