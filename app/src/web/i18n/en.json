@@ -3091,8 +3091,13 @@
     "noShared": "No shared profiles yet.",
     "noApp": "No apps have signed you in with SAML yet.",
     "noMatch": "Nothing here matches your search.",
-    "emptyTitle": "No SAML profiles yet",
-    "emptyDesc": "A profile is made for each app you sign in to with SAML. Make a shared one to present the same ID to several apps.",
+    "getStarted": {
+      "title": "No SAML profiles yet",
+      "desc": "A profile is made for each app you sign in to with SAML. Make a shared one to present the same ID to several apps.",
+      "step1": "Sign in to an app that uses SAML with your {{siteName}} account.",
+      "step2": "The first time, choose a shared profile or let one be made for that app alone.",
+      "step3": "Come back here to rename a profile or make it shared."
+    },
     "kindShared": "Shared",
     "kindApp": "One app",
     "newTitle": "New shared profile",
