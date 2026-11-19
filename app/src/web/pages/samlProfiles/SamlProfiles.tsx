@@ -10,7 +10,7 @@ import {
   makeStyles,
   tokens,
 } from "@fluentui/react-components";
-import { AddRegular, PersonAccountsRegular } from "@fluentui/react-icons";
+import { AddRegular } from "@fluentui/react-icons";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -24,7 +24,8 @@ import {
   DataListSkeleton,
   type DataListColumn,
 } from "../../components/DataList";
-import { EmptyState } from "../../components/EmptyState";
+import { GetStartedPanel } from "../../components/GetStartedPanel";
+import { SamlProfileArt } from "../../components/Illustrations";
 import { ListSearch } from "../../components/ListSearch";
 import { PageHeader } from "../../components/PageHeader";
 import { profileTitle } from "./profileTitle";
@@ -72,6 +73,12 @@ export function SamlProfiles() {
     queryKey: ["saml-profiles"],
     queryFn: api.listSamlProfiles,
   });
+  const { data: site } = useQuery({
+    queryKey: ["site"],
+    queryFn: api.site,
+    staleTime: 60_000,
+  });
+  const siteName = site?.site_name ?? "Prism";
   const all = data?.profiles ?? [];
   const q = query.trim();
   const found = q ? all.filter((p) => matches(p, q)) : all;
@@ -172,10 +179,15 @@ export function SamlProfiles() {
       )}
 
       {data && all.length === 0 && (
-        <EmptyState
-          icon={<PersonAccountsRegular />}
-          title={t("samlProfiles.emptyTitle")}
-          description={t("samlProfiles.emptyDesc")}
+        <GetStartedPanel
+          art={<SamlProfileArt />}
+          title={t("samlProfiles.getStarted.title")}
+          description={t("samlProfiles.getStarted.desc")}
+          steps={[
+            t("samlProfiles.getStarted.step1", { siteName }),
+            t("samlProfiles.getStarted.step2"),
+            t("samlProfiles.getStarted.step3"),
+          ]}
           action={newButton}
         />
       )}

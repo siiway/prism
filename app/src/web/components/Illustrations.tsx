@@ -347,3 +347,42 @@ export function SamlArt() {
     </svg>
   );
 }
+
+function SamlAppWindow({ y }: { y: number }) {
+  return (
+    <g>
+      <rect x="150" y={y} width="66" height="46" rx="6" style={panel} />
+      <path d={`M150 ${y + 12} h66`} style={line} />
+      <circle cx="158" cy={y + 6} r="2.5" style={bar} />
+      <circle cx="166" cy={y + 6} r="2.5" style={bar} />
+      <rect x="163" y={y + 23} width="40" height="12" rx="3" style={accent} />
+      <rect
+        x="170"
+        y={y + 27.5}
+        width="26"
+        height="3"
+        rx="1.5"
+        style={onAccentFill}
+      />
+    </g>
+  );
+}
+
+/** A profile card whose ID is handed to two apps: SAML profiles. */
+export function SamlProfileArt() {
+  return (
+    <svg viewBox="0 0 240 150" aria-hidden>
+      <path
+        d="M104 75 h23 M127 43 v64 M127 43 h23 M127 107 h23"
+        style={dashed}
+      />
+      <rect x="24" y="35" width="80" height="80" rx="10" style={panel} />
+      <circle cx="64" cy="58" r="11" style={bar} />
+      <rect x="46" y="76" width="36" height="5" rx="2.5" style={bar} />
+      <rect x="38" y="90" width="52" height="14" rx="4" style={accent} />
+      <rect x="46" y="95" width="36" height="4" rx="2" style={onAccentFill} />
+      <SamlAppWindow y={20} />
+      <SamlAppWindow y={84} />
+    </svg>
+  );
+}
