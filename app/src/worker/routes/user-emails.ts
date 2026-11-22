@@ -3,7 +3,7 @@
 
 import { isSyntheticEmail } from "../lib/userCapabilities";
 import { Hono } from "hono";
-import { emailOwnedElsewhere } from "../lib/accountEmails";
+import { emailInUse, emailOwnedElsewhere } from "../lib/accountEmails";
 import { randomId } from "../lib/crypto";
 import { getConfig } from "../lib/config";
 import { newEmailVerifyToken } from "../lib/emailVerifyToken";
@@ -174,6 +174,9 @@ app.post("/me/emails/:id/set-primary", async (c) => {
       email_verify_code: string | null;
     }>();
   if (!userRow) return c.json({ error: "user_not_found" }, 404);
+  // Another account may still have it as its unverified primary.
+  if (await emailInUse(c.env.DB, emailRow.email, user.id))
+    return c.json({ error: "email_taken" }, 409);
 
   const now = Math.floor(Date.now() / 1000);
 
@@ -183,41 +186,50 @@ app.post("/me/emails/:id/set-primary", async (c) => {
   // dropped rather than demoted — keeping it would leave an unreachable
   // `@users.invalid` row sitting in the account's email list forever.
   const demoteOldPrimary = !isSyntheticEmail(userRow.email);
-  await c.env.DB.batch([
-    // Insert old primary as alternate. Carry the verification *state* but
-    // explicitly drop the verify_token / verify_code — those are tied to a
-    // specific outstanding inbound-mail challenge against the old primary
-    // address; reusing them on a new alternate row would let a user replay
-    // a code they already learned to flip a different address to verified.
-    ...(demoteOldPrimary
-      ? [
-          c.env.DB.prepare(
-            "INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)",
-          ).bind(
-            oldPrimaryId,
-            user.id,
-            userRow.email,
-            userRow.email_verified,
-            userRow.email_verified_via,
-            userRow.email_verified_at,
-            now,
-          ),
-        ]
-      : []),
-    // Update users table with new primary
-    c.env.DB.prepare(
-      "UPDATE users SET email = ?, email_verified = ?, email_verified_via = ?, email_verified_at = ?, email_verify_token = NULL, email_verify_code = NULL, updated_at = ? WHERE id = ?",
-    ).bind(
-      emailRow.email,
-      emailRow.verified,
-      emailRow.verified_via,
-      emailRow.verified_at,
-      now,
-      user.id,
-    ),
-    // Delete the promoted alternate
-    c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?").bind(emailRow.id),
-  ]);
+  try {
+    await c.env.DB.batch([
+      // Insert old primary as alternate. Carry the verification *state* but
+      // explicitly drop the verify_token / verify_code — those are tied to a
+      // specific outstanding inbound-mail challenge against the old primary
+      // address; reusing them on a new alternate row would let a user replay
+      // a code they already learned to flip a different address to verified.
+      ...(demoteOldPrimary
+        ? [
+            c.env.DB.prepare(
+              "INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)",
+            ).bind(
+              oldPrimaryId,
+              user.id,
+              userRow.email,
+              userRow.email_verified,
+              userRow.email_verified_via,
+              userRow.email_verified_at,
+              now,
+            ),
+          ]
+        : []),
+      // Update users table with new primary
+      c.env.DB.prepare(
+        "UPDATE users SET email = ?, email_verified = ?, email_verified_via = ?, email_verified_at = ?, email_verify_token = NULL, email_verify_code = NULL, updated_at = ? WHERE id = ?",
+      ).bind(
+        emailRow.email,
+        emailRow.verified,
+        emailRow.verified_via,
+        emailRow.verified_at,
+        now,
+        user.id,
+      ),
+      // Delete the promoted alternate
+      c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?").bind(
+        emailRow.id,
+      ),
+    ]);
+  } catch (err) {
+    // Taken between the check and the write.
+    if (err instanceof Error && err.message.includes("UNIQUE"))
+      return c.json({ error: "email_taken" }, 409);
+    throw err;
+  }
 
   return c.json({ ok: true });
 });
