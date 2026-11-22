@@ -1185,8 +1185,15 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
 
 // ─── Pending social state (for confirm / select pages) ────────────────────────
 
+/** The key comes from the browser, and KV_CACHE holds much else; only a
+ *  pending social sign-in may be read or used up through these routes. */
+function isPendingKey(key: unknown): key is string {
+  return typeof key === "string" && key.startsWith("social:pending:");
+}
+
 app.get("/pending/:key", async (c) => {
   const key = c.req.param("key");
+  if (!isPendingKey(key)) return c.json({ error: "session_invalid" }, 404);
   const raw = await c.env.KV_CACHE.get(key);
   if (!raw) return c.json({ error: "session_invalid" }, 404);
 
@@ -1247,6 +1254,7 @@ app.post("/complete", async (c) => {
     }>()
     .catch(() => null);
   if (!body) return c.json({ error: "invalid_request_body" }, 400);
+  if (!isPendingKey(body.key)) return c.json({ error: "session_invalid" }, 400);
 
   const raw = await c.env.KV_CACHE.get(body.key);
   if (!raw) return c.json({ error: "session_invalid" }, 400);
