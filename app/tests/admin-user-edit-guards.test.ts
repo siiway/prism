@@ -197,3 +197,9 @@ test("marking an address verified records the admin's word, unless another accou
     email_verified_at: null,
   });
 });
+
+test("an address another account uses is refused as the address", async () => {
+  const [dashboard] = await editBothWays("u1", { email: "admin@example.com" });
+  expect(dashboard.status).toBe(409);
+  expect(await dashboard.json()).toMatchObject({ error: "email_taken" });
+});

@@ -337,7 +337,7 @@ app.patch("/users/:id", async (c) => {
     if (!email.includes("@") || email.length > 254)
       return c.json({ error: "email_invalid" }, 400);
     if (await emailInUse(c.env.DB, email, id))
-      return c.json({ error: "email_or_username_taken" }, 409);
+      return c.json({ error: "email_taken" }, 409);
     updates.push("email = ?");
     values.push(email);
     newEmail = email;
