@@ -56,4 +56,19 @@ describe("backfilling admin:* grants", () => {
       ).n,
     ).toBe(2);
   });
+
+  test("reads an older space-separated scope list too", () => {
+    db.exec(`
+      INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at)
+        VALUES ('c4', 'user', 'legacy', 'openid  admin:users:read profile', 50);
+    `);
+    db.exec(backfill);
+    expect(
+      db
+        .query(
+          "SELECT grantee_user_id, scopes FROM site_scope_grants WHERE client_id = 'legacy'",
+        )
+        .get(),
+    ).toEqual({ grantee_user_id: "user", scopes: '["admin:users:read"]' });
+  });
 });
