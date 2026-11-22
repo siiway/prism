@@ -562,6 +562,8 @@ app.post("/passkey/register/finish", requireAuth, async (c) => {
   } catch (err) {
     // The library's reason is for operators, not the person signing in.
     console.warn("[passkey] registration failed:", err);
+    if (failedUserVerification(err))
+      return c.json({ error: "passkey_user_verification_required" }, 400);
     return c.json({ error: "passkey_registration_failed" }, 400);
   }
 
