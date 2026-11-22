@@ -68,3 +68,23 @@ test("an inbound email won't verify another account's address", async () => {
   expect(rejected).not.toBe("");
   expect(verified("bx").verified).toBe(0);
 });
+
+test("an inbound email that loses a race for the address is rejected, not thrown", async () => {
+  // Free when checked, taken by the time of the write.
+  sqlite.exec(`CREATE TRIGGER raced BEFORE UPDATE OF verified ON user_emails
+    WHEN NEW.id = 'cy'
+    BEGIN SELECT RAISE(ABORT, 'UNIQUE constraint failed: email belongs to another account'); END`);
+  let rejected = "";
+  await handleEmailWorker(
+    {
+      to: "verify-bbbb@prism.example",
+      from: "y@example.com",
+      setReject: (reason: string) => {
+        rejected = reason;
+      },
+    } as unknown as EmailMessage & { setReject(reason: string): void },
+    env(),
+  );
+  expect(rejected).not.toBe("");
+  expect(verified("cy").verified).toBe(0);
+});

@@ -59,11 +59,12 @@ export async function handleEmailWorker(
         message.setReject("Email address belongs to another account");
         return;
       }
-      await env.DB.prepare(
-        "UPDATE user_emails SET verified = 1, verify_code = NULL, verified_at = ? WHERE id = ?",
-      )
-        .bind(Math.floor(Date.now() / 1000), altEmail.id)
-        .run();
+      await verifyOrReject(
+        message,
+        env.DB.prepare(
+          "UPDATE user_emails SET verified = 1, verify_code = NULL, verified_at = ? WHERE id = ?",
+        ).bind(Math.floor(Date.now() / 1000), altEmail.id),
+      );
       return;
     }
     message.setReject("Invalid verification code");
@@ -90,9 +91,28 @@ export async function handleEmailWorker(
     return;
   }
 
-  await env.DB.prepare(
-    "UPDATE users SET email_verified = 1, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
-  )
-    .bind(Math.floor(Date.now() / 1000), user.id)
-    .run();
+  await verifyOrReject(
+    message,
+    env.DB.prepare(
+      "UPDATE users SET email_verified = 1, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+    ).bind(Math.floor(Date.now() / 1000), user.id),
+  );
+}
+
+/** Run the write that marks an address verified. If another account took
+ *  the address between the check and the write, the database refuses it,
+ *  and the mail is rejected like any other address in use. */
+async function verifyOrReject(
+  message: { setReject(reason: string): void },
+  write: D1PreparedStatement,
+): Promise<void> {
+  try {
+    await write.run();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("UNIQUE")) {
+      message.setReject("Email address belongs to another account");
+      return;
+    }
+    throw err;
+  }
 }
