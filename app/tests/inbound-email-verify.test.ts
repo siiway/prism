@@ -88,3 +88,30 @@ test("an inbound email that loses a race for the address is rejected, not thrown
   expect(rejected).not.toBe("");
   expect(verified("cy").verified).toBe(0);
 });
+
+test("mail from another of the account's addresses doesn't verify its primary", async () => {
+  // b signed up with an address it doesn't own, added one it does, and
+  // mails its primary's code from that one.
+  sqlite.exec(`
+    UPDATE users SET email_verify_code = 'cccc' WHERE id = 'b';
+    INSERT INTO user_emails (id, user_id, email, verified, created_at)
+      VALUES ('bz', 'b', 'z@example.com', 0, 0);
+  `);
+  inbox = [{ from: "z@example.com", subject: "cccc" }];
+  await runImapPoll(env(), new MemoryKv() as unknown as KVNamespace);
+  let rejected = "";
+  await handleEmailWorker(
+    {
+      to: "verify-cccc@prism.example",
+      from: "z@example.com",
+      setReject: (reason: string) => {
+        rejected = reason;
+      },
+    } as unknown as EmailMessage & { setReject(reason: string): void },
+    env(),
+  );
+  expect(rejected).not.toBe("");
+  expect(
+    sqlite.query("SELECT email_verified FROM users WHERE id = 'b'").get(),
+  ).toEqual({ email_verified: 0 });
+});

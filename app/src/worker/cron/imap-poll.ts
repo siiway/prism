@@ -72,14 +72,9 @@ async function verifyFromMessage(
     .first<{ id: string; email: string }>();
 
   if (user) {
-    // Sender must match registered email or an alternate
-    const emailMatches =
-      user.email.toLowerCase() === senderEmail ||
-      !!(await db
-        .prepare("SELECT id FROM user_emails WHERE user_id = ? AND email = ?")
-        .bind(user.id, senderEmail)
-        .first());
-    if (!emailMatches) return;
+    // Only mail from the address itself proves it. Mail from one of the
+    // account's other addresses proves nothing about this one.
+    if (user.email.toLowerCase() !== senderEmail) return;
     // Another account may have proved it owns the address meanwhile.
     if (await emailOwnedElsewhere(db, user.email, user.id)) {
       console.log(`[imap-poll] Email for user ${user.id} is taken`);

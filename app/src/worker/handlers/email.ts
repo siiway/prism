@@ -71,16 +71,9 @@ export async function handleEmailWorker(
     return;
   }
 
-  // The sender must match the user's registered email or an alternate
-  const emailMatches =
-    user.email.toLowerCase() === senderEmail ||
-    !!(await env.DB.prepare(
-      "SELECT id FROM user_emails WHERE user_id = ? AND email = ?",
-    )
-      .bind(user.id, senderEmail)
-      .first());
-
-  if (!emailMatches) {
+  // Only mail from the address itself proves it. Mail from one of the
+  // account's other addresses proves nothing about this one.
+  if (user.email.toLowerCase() !== senderEmail) {
     message.setReject("Sender does not match registered email");
     return;
   }
