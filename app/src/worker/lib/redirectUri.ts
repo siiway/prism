@@ -186,7 +186,8 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
   if (authority.includes("@")) return "userinfo";
   let host = authority;
   let port: string | null = null;
-  const bracketed = /^(\[[^\]]*\])(?::(.*))?$/.exec(authority);
+  // An IPv6 host, with the star that may end it (`http://[::1]*`).
+  const bracketed = /^(\[[^\]]*\]\*?)(?::(.*))?$/.exec(authority);
   if (bracketed) {
     host = bracketed[1];
     port = bracketed[2] ?? null;

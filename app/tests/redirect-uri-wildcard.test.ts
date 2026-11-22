@@ -89,6 +89,10 @@ describe("wildcard redirect URIs", () => {
     expect(matches("http://localhost*", "http://localhost.evil.com/cb")).toBe(
       false,
     );
+    expect(
+      validateRedirectUriEntry({ type: "wildcard", value: "http://[::1]*" }),
+    ).toBeNull();
+    expect(matches("http://[::1]*", "http://[::1]:3000/cb")).toBe(true);
   });
 
   test("a * ending the port also covers the path, as it always did", () => {
