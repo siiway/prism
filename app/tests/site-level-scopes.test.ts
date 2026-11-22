@@ -215,6 +215,42 @@ describe("admin:* scopes are site-level", () => {
     }
   });
 
+  test("a pushed request is approved with the scopes the user approved", async () => {
+    const kv = new MemoryKv({
+      "par:pushed": JSON.stringify({
+        client_id: "client_1",
+        redirect_uri: "https://tool.example/cb",
+        scope: "openid admin:users:write",
+        response_type: "code",
+        code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+        code_challenge_method: "S256",
+      }),
+    });
+    const res = await app.fetch(
+      new Request("https://prism.example/oauth/authorize", {
+        method: "POST",
+        headers: {
+          Cookie: await sessionCookie("user", "user"),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          request_uri: "urn:ietf:params:oauth:request_uri:pushed",
+          // What the consent screen showed a non-admin, plus a scope the
+          // pushed request never asked for.
+          scope: "openid profile",
+          action: "approve",
+          authorization_mode: "once",
+        }),
+      }),
+      { ...testEnv(), KV_CACHE: kv as unknown as KVNamespace },
+      executionCtx,
+    );
+    expect(res.status).toBe(200);
+    expect(sqlite.query("SELECT scopes FROM oauth_codes").get()).toEqual({
+      scopes: '["openid"]',
+    });
+  });
+
   test("they count as a site grant for the admin list", () => {
     expect(grantMatcher("site")("admin:config:write")).toBe(true);
     expect(

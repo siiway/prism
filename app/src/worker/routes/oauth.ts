@@ -907,7 +907,16 @@ app.post("/authorize", requireAuth, async (c) => {
       );
     body.client_id = pushed.client_id;
     body.redirect_uri = pushed.redirect_uri;
-    body.scope = pushed.scope;
+    // The pushed request bounds what can be granted. What the user approved
+    // on the consent screen narrows it, as for a plain request: scopes they
+    // unticked, or site-level ones left out for a non-admin.
+    const pushedScopes = parseScopeParam(pushed.scope);
+    body.scope =
+      body.scope === undefined
+        ? pushed.scope
+        : parseScopeParam(body.scope)
+            .filter((s) => pushedScopes.includes(s))
+            .join(" ");
     body.code_challenge = pushed.code_challenge;
     body.code_challenge_method = pushed.code_challenge_method;
     body.nonce = pushed.nonce;
