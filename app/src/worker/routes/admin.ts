@@ -9,6 +9,7 @@ import { getConfig } from "../lib/config";
 import { emailInUse } from "../lib/accountEmails";
 import {
   ADMIN_CONFIG_KEYS,
+  auditableConfigUpdates,
   prepareConfigUpdates,
   saveConfigUpdates,
 } from "../lib/adminConfig";
@@ -132,7 +133,13 @@ app.patch("/config", async (c) => {
   const { updates } = prepared;
   await saveConfigUpdates(c.env, updates);
 
-  auditAdmin(c, "admin.config.update", "site_config", null, updates);
+  auditAdmin(
+    c,
+    "admin.config.update",
+    "site_config",
+    null,
+    auditableConfigUpdates(updates),
+  );
   return c.json({ updated: Object.keys(updates) });
 });
 

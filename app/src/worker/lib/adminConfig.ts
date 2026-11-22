@@ -8,6 +8,7 @@ import type { CodedError } from "./apiError";
 import { encryptConfigUpdates, setConfigValues } from "./config";
 import { validateImageUrl } from "./imageValidation";
 import { invalidLoginRateLimitConfig } from "./loginRateLimit";
+import { SENSITIVE_CONFIG_KEYS } from "./secretCrypto";
 import { sanitizeRolePermissions } from "./teamGroups";
 import { sanitizeRestrictedCapabilities } from "./userCapabilities";
 
@@ -279,6 +280,20 @@ export async function prepareConfigUpdates(
   }
 
   return { updates };
+}
+
+/** Updates as the audit log may record them: a secret's value becomes
+ *  `***` when it was set and stays empty when it was cleared, so the log
+ *  shows the change without the secret. Audit entries are kept in plaintext
+ *  and can be sent on to webhooks. */
+export function auditableConfigUpdates(
+  updates: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(updates).map(([k, v]) =>
+      SENSITIVE_CONFIG_KEYS.has(k) ? [k, v ? "***" : ""] : [k, v],
+    ),
+  );
 }
 
 /** Store prepared updates, encrypting the secret keys when SECRETS_KEY is
