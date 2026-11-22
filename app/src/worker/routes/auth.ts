@@ -288,11 +288,13 @@ app.post("/login", async (c) => {
     )
       .bind(identifier)
       .first<UserRow>();
-    if (!user) {
+    // A verified alternate address wins over someone's unverified primary
+    // one: whoever proved they own the address is who signs in with it.
+    if (!user || !user.email_verified) {
       const alt = await c.env.DB.prepare(
-        "SELECT user_id FROM user_emails WHERE email = ? AND verified = 1",
+        "SELECT user_id FROM user_emails WHERE email = ? AND verified = 1 AND user_id != ?",
       )
-        .bind(identifier)
+        .bind(identifier, user?.id ?? "")
         .first<{ user_id: string }>();
       if (alt) {
         const altUser = await c.env.DB.prepare(
