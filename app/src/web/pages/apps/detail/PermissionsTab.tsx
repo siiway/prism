@@ -427,7 +427,7 @@ export function PermissionsTab({ app, formApi, showMsg }: Props) {
                     onChange={(_, d) =>
                       setDefDialog((s) => s && { ...s, scope: d.value })
                     }
-                    placeholder="read_posts"
+                    placeholder={t("apps.scopeNamePlaceholder")}
                     input={{ className: styles.monoInput }}
                   />
                 </Field>
@@ -605,7 +605,11 @@ export function PermissionsTab({ app, formApi, showMsg }: Props) {
                   <Input
                     value={ruleTarget}
                     onChange={(_, d) => setRuleTarget(d.value)}
-                    placeholder={ruleType.startsWith("app_") ? "prism_..." : ""}
+                    placeholder={
+                      ruleType.startsWith("app_")
+                        ? t("apps.scopeClientIdPlaceholder")
+                        : ""
+                    }
                     input={{ className: styles.monoInput }}
                   />
                 </Field>

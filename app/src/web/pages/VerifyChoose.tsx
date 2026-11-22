@@ -146,6 +146,8 @@ export function VerifyChoose() {
       if (res.verified) {
         setMsg({ type: "success", text: t("verifyChoose.verified") });
         setTimeout(() => navigate("/"), 1500);
+      } else if (res.taken) {
+        setMsg({ type: "error", text: t("verifyChoose.taken") });
       } else {
         setMsg({ type: "error", text: t("verifyChoose.notYetVerified") });
       }

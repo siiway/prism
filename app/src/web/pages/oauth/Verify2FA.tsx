@@ -182,22 +182,26 @@ export function Verify2FA() {
       if (err instanceof ApiError) {
         const errorCode = err.code;
         const humanMsg = err.message; // already translated
-        if (errorCode === "invalid_2fa" || errorCode === "captcha_failed") {
+        if (errorCode === "captcha_failed") {
+          // Captcha is checked before the challenge is used up, so the user
+          // can solve it again and retry.
           setErrorMsg(humanMsg);
-          // Both cases have spent the single-use captcha token (captcha is
-          // verified before the factor), so re-solve is required either way.
           if (captchaRequired) resetCaptcha();
           setLoading(false);
           return;
         }
-        // Other errors (invalid_challenge, challenge_consumed, etc.) are
-        // unrecoverable from the user's POV — bounce back to the app's
-        // redirect_uri so it can decide what to do. We have to use the
-        // redirect_uri the server gave us (data.redirect_uri), not anything
-        // from the URL — the URL never carried it.
+        // Everything else is final: past the captcha the server has used up
+        // the challenge, so even a mistyped code can't be retried here.
+        // Bounce back to the app's redirect_uri so it can start a new one.
+        // We have to use the redirect_uri the server gave us
+        // (data.redirect_uri), not anything from the URL — the URL never
+        // carried it.
         if (data?.redirect_uri) {
           const url = new URL(data.redirect_uri);
-          url.searchParams.set("error", "server_error");
+          url.searchParams.set(
+            "error",
+            errorCode === "invalid_2fa" ? "access_denied" : "server_error",
+          );
           // For the app's developers, not the person here: the stable code.
           url.searchParams.set("error_description", errorCode);
           if (stateParam) url.searchParams.set("state", stateParam);
@@ -388,7 +392,7 @@ export function Verify2FA() {
                     setTotpCode(d.value);
                     setErrorMsg(null);
                   }}
-                  placeholder="000000"
+                  placeholder={t("oauth.totpCodePlaceholder")}
                   maxLength={16}
                   autoComplete="one-time-code"
                   style={{ fontFamily: "monospace", letterSpacing: 4 }}

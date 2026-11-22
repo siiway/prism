@@ -68,6 +68,13 @@ export const APP_REQUESTABLE_SCOPES: string[] = PLATFORM_SCOPES.filter(
   (s) => !s.startsWith("team:"),
 );
 
+/** Scopes with authority over the whole instance: `site:*` and `admin:*`.
+ *  An app gets them only when a site admin approves with 2FA and the
+ *  confirmation phrase, never through remembered consent or the device flow. */
+export function isSiteLevelScope(scope: string): boolean {
+  return scope.startsWith("site:") || scope.startsWith("admin:");
+}
+
 /** Scopes a user can grant from their own account: the vocabulary minus the
  *  site-admin and team-bound families, which are only ever issued to apps.
  *  This is what a personal access token may carry, and what OIDC discovery

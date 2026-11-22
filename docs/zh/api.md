@@ -106,7 +106,7 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 **响应** — `{ "user": { ... } }`。如果已启用 TOTP 但未发送验证码：
 
 ```json
-{ "totp_required": true, "available_methods": ["totp", "passkey", "backup"] }
+{ "error": "totp_required", "totp_required": true }
 ```
 
 ### `POST /api/auth/logout`
@@ -117,12 +117,17 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 
 ### 邮箱验证
 
-| 端点                                      | 用途                                                |
-| ----------------------------------------- | --------------------------------------------------- |
-| `GET /api/auth/verify-email?token=`       | 使用邮件中的链接验证                                |
-| `POST /api/auth/email-verify-code`        | 获取用于发送验证的邮箱地址：`{ "address", "code" }` |
-| `POST /api/auth/check-email-verification` | `{ "verified": boolean }` — 用户发送邮件期间轮询    |
-| `POST /api/auth/resend-verify-email`      | 重新发送链接（接受验证码字段）                      |
+| 端点                                      | 用途                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `GET /api/auth/verify-email?token=`       | 使用邮件中的链接验证                                                                                   |
+| `POST /api/auth/email-verify-code`        | 获取用于发送验证的邮箱地址：`{ "address", "code" }`                                                    |
+| `POST /api/auth/check-email-verification` | `{ "verified": boolean, "taken": boolean }` — 用户发送邮件期间轮询。`taken` 表示另一个账户已验证该地址 |
+| `POST /api/auth/resend-verify-email`      | 重新发送链接（接受验证码字段）                                                                         |
+
+链接有效期为 24 小时。链接会重定向到 `/verify-email`，并带上 `status=success`、
+`expired`、`taken`（另一个账户已验证该地址）、`wrong_account` 或 `invalid`。
+备用地址的链接（`alt=1`）仅在用户登录了添加该地址的账户时有效，否则会得到
+`wrong_account`。
 
 ## TOTP
 
@@ -138,13 +143,13 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 
 ## Passkey (WebAuthn)
 
-| 端点                                               | 用途                                         |
-| -------------------------------------------------- | -------------------------------------------- |
-| `POST /api/auth/passkey/register/begin` / `finish` | 添加 Passkey                                 |
-| `POST /api/auth/passkey/auth/begin` / `finish`     | 登录。传入 `username` 可缩小凭据范围，或省略 |
-| `POST /api/auth/passkey/verify/begin` / `finish`   | 登录状态下重新验证（用于加强确认）           |
-| `GET /api/auth/passkeys`                           | 列出用户的 Passkey                           |
-| `DELETE /api/auth/passkeys/:id`                    | 移除一个                                     |
+| 端点                                               | 用途                                                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `POST /api/auth/passkey/register/begin` / `finish` | 添加 Passkey。认证器必须验证用户（PIN 或生物识别）                                 |
+| `POST /api/auth/passkey/auth/begin` / `finish`     | 登录。传入 `username` 可缩小凭据范围，或省略。认证器必须验证用户（PIN 或生物识别） |
+| `POST /api/auth/passkey/verify/begin` / `finish`   | 登录状态下重新验证（用于加强确认）                                                 |
+| `GET /api/auth/passkeys`                           | 列出用户的 Passkey                                                                 |
+| `DELETE /api/auth/passkeys/:id`                    | 移除一个                                                                           |
 
 ## GPG 密钥
 

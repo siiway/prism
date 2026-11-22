@@ -264,7 +264,13 @@ app.get("/:id", async (c) => {
     config.avatar_proxy_cache_mode !== "off" ||
     config.avatar_proxy_convert_to_webp
   ) {
-    const captured = await readStreamWithLimit(upstream.body, maxBytes);
+    let captured;
+    try {
+      captured = await readStreamWithLimit(upstream.body, maxBytes);
+    } catch {
+      // The upstream broke off mid-body: its fault, not ours.
+      return c.json({ error: "upstream_image_unreadable" }, 502);
+    }
     if (captured.exceeded) return c.json({ error: "avatar_too_large" }, 400);
     let bytes = captured.bytes;
     let contentType = ct;

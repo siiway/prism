@@ -139,7 +139,9 @@
     "username": "Username",
     "displayName": "Display name",
     "displayNamePlaceholder": "Jane Doe",
-    "tgVerifying": "Verifying your Telegram sign-in…"
+    "tgVerifying": "Verifying your Telegram sign-in…",
+    "emailPlaceholder": "you@example.com",
+    "usernamePlaceholder": "johndoe"
   },
   "init": {
     "firstRunSetup": "First Run Setup",
@@ -154,7 +156,9 @@
     "createAdminAccount": "Create Admin Account",
     "creating": "Creating…",
     "siteNamePlaceholder": "My Identity Platform",
-    "displayNamePlaceholder": "Admin"
+    "displayNamePlaceholder": "Admin",
+    "adminEmailPlaceholder": "admin@example.com",
+    "usernamePlaceholder": "admin"
   },
   "publicProfile": {
     "publicProfileBadge": "Public profile",
@@ -268,7 +272,7 @@
     "emailAddresses": "Email addresses",
     "primary": "Primary",
     "addEmail": "Add email address",
-    "emailAdded": "Email added — check your inbox for verification",
+    "emailAdded": "Email added. Open the link we sent while you're signed in to this account.",
     "emailRemoved": "Email removed",
     "primaryUpdated": "Primary email updated",
     "makePrimary": "Make primary",
@@ -288,7 +292,8 @@
     "publicProfileFollowingDefaultLong": "Following the site default",
     "readmeLinkGithub": "Link a GitHub account to use its profile README.",
     "removeEmailTitle": "Remove email address?",
-    "removeEmailBody": "{{email}} will be removed from your account."
+    "removeEmailBody": "{{email}} will be removed from your account.",
+    "addEmailPlaceholder": "user@example.com"
   },
   "security": {
     "title": "Security",
@@ -469,7 +474,7 @@
       "domainPlaceholder": "Type in your domain…",
       "domainAction": "Continue",
       "secureTitle": "Secure your account",
-      "secureDesc": "Add a passkey or an authenticator app so a password alone can't get into your account.",
+      "secureDesc": "Add an authenticator app so a password alone can't get into your account. A passkey lets you sign in without a password.",
       "secureAction": "Set up security",
       "linkTitle": "Link your accounts",
       "linkDesc": "Connect the accounts you already use to sign in faster and recover access.",
@@ -745,7 +750,14 @@
       "attrEmail": "Email address, only when verified",
       "attrTeams": "IDs of the teams the person is in",
       "attrGroups": "Member groups, as team-id:group-slug"
-    }
+    },
+    "postLogoutRedirectPlaceholder": "https://app.example.com/logged-out",
+    "backchannelLogoutPlaceholder": "https://app.example.com/backchannel-logout",
+    "jwksUriPlaceholder": "https://app.example.com/.well-known/jwks.json",
+    "scopeNamePlaceholder": "read_posts",
+    "scopeClientIdPlaceholder": "prism_...",
+    "redirectUriWildcardPlaceholder": "https://example.com/*",
+    "redirectUriRegexPlaceholder": "https://example\\.com/.*"
   },
   "domains": {
     "title": "Domain verification",
@@ -1135,7 +1147,8 @@
       "dissolveCancelledDone": "Dissolution cancelled."
     },
     "inviteRegOn": "This team's invites can create accounts",
-    "inviteRegPaused": "Paused while sign-up on {{siteName}} is closed."
+    "inviteRegPaused": "Paused while sign-up on {{siteName}} is closed.",
+    "maxUsesPlaceholder": "0"
   },
   "connections": {
     "title": "Linked accounts",
@@ -1474,7 +1487,9 @@
       "sudoActiveTitle": "Sudo mode active",
       "sudoActiveDesc": "You confirmed with {{appName}} in the last {{minutes}} minutes, so no code is needed this time.",
       "footerNote": "Confirming sends a one-time verification back to {{appName}}. It does not grant any new account access."
-    }
+    },
+    "totpCodePlaceholder": "000000",
+    "userCodePlaceholder": "XXXX-XXXX"
   },
   "saml": {
     "title": "Sign in to {{appName}}",
@@ -1768,6 +1783,7 @@
     "emailApiKey": "API key",
     "smtpHost": "SMTP host",
     "smtpHostPlaceholder": "smtp.example.com",
+    "imapHostPlaceholder": "imap.example.com",
     "smtpPort": "SMTP port",
     "smtpEncryption": "Encryption",
     "smtpStarttls": "STARTTLS (port 587)",
@@ -2589,7 +2605,19 @@
     "oauthTwoStepLabel": "Two-step verification",
     "oauthTwoStepDesc": "Skipped means people who use two-step verification aren't asked for their code after signing in this way.",
     "inviteStatusActive": "Active",
-    "inviteStatusPaused": "Paused"
+    "inviteStatusPaused": "Paused",
+    "inviteEmailPlaceholder": "user@example.com",
+    "mailServerUserPlaceholder": "user@example.com",
+    "emailReceiveHostPlaceholder": "mail.example.com",
+    "securityContactPlaceholder": "mailto:security@example.com",
+    "securityPolicyUrlPlaceholder": "https://example.com/security-policy",
+    "oauthIssuerUrlPlaceholder": "https://accounts.example.com",
+    "oauthAuthorizeUrlPlaceholder": "https://provider.example.com/oauth2/authorize",
+    "oauthTokenUrlPlaceholder": "https://provider.example.com/oauth2/token",
+    "oauthUserinfoUrlPlaceholder": "https://provider.example.com/oauth2/userinfo",
+    "sourceIconUrlPlaceholder": "https://example.com/icon.svg",
+    "sourceSlugPlaceholder": "{{provider}}-work",
+    "oauthScopesOidcPlaceholder": "openid email profile"
   },
   "notifications": {
     "title": "Notifications",
@@ -2837,6 +2865,7 @@
     "checkStatus": "Check verification status",
     "verified": "Email verified! Redirecting…",
     "notYetVerified": "Not verified yet — make sure you sent the email and try again.",
+    "taken": "Another account has verified this address, so it can't be verified for yours.",
     "skipForNow": "Skip for now",
     "linkSent": "Verification link sent — check your inbox."
   },
@@ -2845,6 +2874,12 @@
     "successDesc": "Your email address has been successfully verified. You can now use all features of your account.",
     "invalidTitle": "Verification failed",
     "invalidDesc": "This verification link is invalid or has already been used. Please request a new verification email from your profile.",
+    "expiredTitle": "Link expired",
+    "expiredDesc": "Verification links last 24 hours. Please request a new verification email from your profile.",
+    "takenTitle": "Address already in use",
+    "takenDesc": "Another account has verified this address, so it can't be verified for yours.",
+    "wrongAccountTitle": "Sign in to the right account",
+    "wrongAccountDesc": "This link only works while you're signed in to the account that added this address. Sign in to that account, then open the link again.",
     "goToDashboard": "Go to Dashboard",
     "goToLogin": "Go to Login"
   },
@@ -2878,7 +2913,8 @@
   "imageUrl": {
     "httpsRequired": "Image URL must use HTTPS",
     "preview": "Preview",
-    "loadFailed": "Could not load image from this URL"
+    "loadFailed": "Could not load image from this URL",
+    "placeholder": "https://example.com/image.png"
   },
   "notFound": {
     "title": "Page not found",
@@ -2987,7 +3023,10 @@
     "noEventsYet": "Nothing recorded yet.",
     "filterSame": "Show only events with the same",
     "deleteWebhookTitle": "Delete webhook?",
-    "deleteWebhookBody": "“{{name}}” will stop receiving audit events."
+    "deleteWebhookBody": "“{{name}}” will stop receiving audit events.",
+    "webhookUrlPlaceholder": "https://example.com/hook?token={id}",
+    "webhookHeadersPlaceholder": "{ \"Authorization\": \"Bearer {id}\" }",
+    "discordUrlPlaceholder": "https://discord.com/api/webhooks/…"
   },
   "join": {
     "intro": "Create an account to join this team. Your account is created on {{siteName}}, the identity provider this team uses.",
@@ -3249,6 +3288,7 @@
     "invalid_action": "That action isn't valid here.",
     "invalid_challenge": "The challenge is invalid. Start again.",
     "invalid_client": "The client couldn't be authenticated.",
+    "invalid_client_metadata": "The client registration was refused.",
     "invalid_connect_intent": "This link request isn't valid. Start again.",
     "invalid_credentials": "Incorrect username or password.",
     "invalid_dpop_proof": "The DPoP proof is invalid.",
@@ -3323,6 +3363,7 @@
     "passkey_auth_failed": "Passkey sign-in failed. Try again.",
     "passkey_not_found": "Passkey not found.",
     "passkey_registration_failed": "Couldn't register the passkey. Try again.",
+    "passkey_user_verification_required": "This passkey didn't check a PIN or fingerprint, which signing in needs. Set a PIN on the security key, or use another passkey.",
     "password_only_sign_in": "This account has no other way to sign in, so its password can't be cleared.",
     "password_too_short": "The password must be at least 8 characters.",
     "pgp_key_invalid": "That isn't a valid PGP public key.",
@@ -3346,6 +3387,7 @@
     "redirect_uri_scheme": "{{uri}} must use https:// (http:// only works for localhost).",
     "redirect_uri_userinfo": "{{uri}} can't contain a username or password.",
     "redirect_uri_whitespace": "{{uri}} can't contain spaces.",
+    "redirect_uri_wildcard_host": "{{uri}} needs a real host name, like https://*.example.com/callback.",
     "registration_disabled": "Sign-up is closed on this site.",
     "registration_session_expired": "The sign-up session expired. Start again.",
     "request_too_large": "The request is too large.",

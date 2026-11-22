@@ -6,8 +6,22 @@
 
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { configBag } from "../lib/config";
-import { encryptSecret, hashLookupCandidate } from "../lib/secretCrypto";
+import { configBag, getConfigValue } from "../lib/config";
+import { imageUrlFieldError } from "../lib/imageValidation";
+import { inviteExpiryFromDays } from "../lib/inviteExpiry";
+import { displayNameError } from "../lib/displayName";
+import {
+  encryptSecret,
+  hashLookupCandidate,
+  SENSITIVE_CONFIG_KEYS,
+} from "../lib/secretCrypto";
+import {
+  ADMIN_CONFIG_KEYS,
+  DASHBOARD_ONLY_CONFIG_KEYS,
+  decidesWhereSecretsGo,
+  prepareConfigUpdates,
+  saveConfigUpdates,
+} from "../lib/adminConfig";
 import {
   findPersonalAccessToken,
   isExpired,
@@ -23,14 +37,14 @@ import { validateRedirectUriForRegistration } from "../lib/redirectUri";
 import {
   guardCapability,
   hasLiveRestrictedAccounts,
-  sanitizeRestrictedCapabilities,
 } from "../lib/userCapabilities";
+import { getGroupsForTeamMembers, getMemberGroups } from "../lib/teamGroups";
 import {
-  getGroupsForTeamMembers,
-  getMemberGroups,
-  sanitizeRolePermissions,
-} from "../lib/teamGroups";
-import { recordAccountDeletion, auditRequestMeta } from "../lib/audit";
+  PLATFORM_AUDIT,
+  auditRequestMeta,
+  recordAccountDeletion,
+  recordAudit,
+} from "../lib/audit";
 import {
   getMember,
   getEffectiveMember,
@@ -38,6 +52,8 @@ import {
   ROLE_RANK,
   listEffectiveTeamMemberships,
   dissolveTeam,
+  createTeamStatements,
+  syncTeamUserStatement,
 } from "../lib/teams";
 import type { DomainRow, OAuthAppRow, Variables } from "../types";
 import { verifyDpopProof } from "../lib/dpop";
@@ -405,6 +421,15 @@ app.delete("/me/social-connections/:id", async (c) => {
 app.post("/me/teams", async (c) => {
   const resolved = await resolveBearerToken(c, "teams:create");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+  // The same gates as creating a team on the dashboard.
+  const owner = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
+    .bind(resolved.userId)
+    .first<{ role: string }>();
+  if (
+    owner?.role !== "admin" &&
+    (await getConfigValue(c.env.DB, "disable_user_create_team"))
+  )
+    return c.json({ error: "team_creation_disabled" }, 403);
   const capErr = await guardCapability(
     c.env.DB,
     resolved.userId,
@@ -419,25 +444,27 @@ app.post("/me/teams", async (c) => {
   }>();
   if (!body.name?.trim())
     return c.json({ error: "field_required", params: { field: "name" } }, 400);
+  if (body.avatar_url !== undefined) {
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: false,
+    });
+    if (imgErr) return c.json(imgErr, 400);
+  }
 
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
 
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "INSERT INTO teams (id, name, description, avatar_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-    ).bind(
+  await c.env.DB.batch(
+    createTeamStatements(c.env.DB, {
       id,
-      body.name.trim(),
-      body.description ?? "",
-      body.avatar_url ?? null,
+      name: body.name.trim(),
+      description: body.description ?? "",
+      avatarUrl: body.avatar_url || null,
+      parentId: null,
+      ownerId: resolved.userId,
       now,
-      now,
-    ),
-    c.env.DB.prepare(
-      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
-    ).bind(id, resolved.userId, now),
-  ]);
+    }),
+  );
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)
@@ -476,6 +503,11 @@ app.patch("/me/teams/:id", async (c) => {
     values.push(body.description);
   }
   if (body.avatar_url !== undefined) {
+    // The dashboard's check on a team avatar.
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: false,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
   }
@@ -485,9 +517,12 @@ app.patch("/me/teams/:id", async (c) => {
   updates.push("updated_at = ?");
   values.push(now, teamId);
 
-  await c.env.DB.prepare(`UPDATE teams SET ${updates.join(", ")} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE teams SET ${updates.join(", ")} WHERE id = ?`,
+    ).bind(...values),
+    syncTeamUserStatement(c.env.DB, teamId, now),
+  ]);
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(teamId)
@@ -589,9 +624,10 @@ app.post("/me/invites", async (c) => {
   const id = randomId();
   const token = randomBase64url(24);
   const storedToken = token;
-  const expiresAt = body.expires_in_days
-    ? now + body.expires_in_days * 86400
-    : null;
+  const expiry = inviteExpiryFromDays(body.expires_in_days, now);
+  if (!expiry.ok)
+    return c.json({ error: expiry.error, params: expiry.params }, 400);
+  const expiresAt = expiry.expiresAt;
 
   await c.env.DB.prepare(
     `INSERT INTO site_invites (id, token, email, note, max_uses, use_count, created_by, expires_at, created_at, enabled)
@@ -610,6 +646,16 @@ app.post("/me/invites", async (c) => {
     .run();
 
   const inviteUrl = `${c.env.APP_URL}/register?invite=${token}`;
+  const inviteEmail = body.email?.toLowerCase().trim() ?? null;
+  await auditAdminToken(
+    c,
+    resolved,
+    "invite.create",
+    "site_invite",
+    id,
+    { email: inviteEmail },
+    inviteEmail,
+  );
 
   return c.json(
     { id, token, invite_url: inviteUrl, expires_at: expiresAt },
@@ -661,6 +707,14 @@ app.delete("/me/invites/:id", async (c) => {
   await c.env.DB.prepare("DELETE FROM site_invites WHERE id = ?")
     .bind(c.req.param("id"))
     .run();
+  await auditAdminToken(
+    c,
+    resolved,
+    "invite.revoke",
+    "site_invite",
+    c.req.param("id"),
+    {},
+  );
 
   return c.json({ ok: true });
 });
@@ -717,17 +771,19 @@ app.patch("/me/profile", async (c) => {
   const values: unknown[] = [];
 
   if (body.display_name !== undefined) {
-    if (!body.display_name.trim())
-      return c.json(
-        { error: "field_empty", params: { field: "display_name" } },
-        400,
-      );
+    const nameErr = displayNameError(body.display_name);
+    if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
     values.push(body.display_name.trim());
   }
   if ("avatar_url" in body) {
+    // The dashboard's check: an uploaded asset or an image URL.
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: true,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
-    values.push(body.avatar_url ?? null);
+    values.push(body.avatar_url || null);
   }
 
   if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
@@ -770,6 +826,15 @@ app.patch("/me/profile", async (c) => {
 app.post("/me/apps", async (c) => {
   const resolved = await resolveBearerToken(c, "apps:write");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+  // The same gates as creating an app on the dashboard.
+  const owner = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
+    .bind(resolved.userId)
+    .first<{ role: string }>();
+  if (
+    owner?.role !== "admin" &&
+    (await getConfigValue(c.env.DB, "disable_user_create_app"))
+  )
+    return c.json({ error: "app_creation_disabled" }, 403);
   const capErr = await guardCapability(c.env.DB, resolved.userId, "app:create");
   if (capErr) return c.json({ error: capErr }, 403);
 
@@ -1172,7 +1237,11 @@ app.delete("/me/teams/:id/members/:userId", async (c) => {
 async function requireAdminToken(
   c: Context<AppEnv>,
   requiredScope: string,
-): Promise<{ userId: string; scopes: string[] } | null> {
+): Promise<{
+  userId: string;
+  scopes: string[];
+  clientId: string | null;
+} | null> {
   const resolved = await resolveBearerToken(c, requiredScope);
   if (!resolved) return null;
   const user = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
@@ -1180,6 +1249,38 @@ async function requireAdminToken(
     .first<{ role: string }>();
   if (!user || user.role !== "admin") return null;
   return resolved;
+}
+
+/** Record an admin action taken with an app's token in the platform audit
+ *  log, as the admin dashboard records its own, with the app's client_id. */
+async function auditAdminToken(
+  c: Context<AppEnv>,
+  resolved: { userId: string; clientId: string | null },
+  action: string,
+  resourceType: string,
+  resourceId: string | null,
+  metadata: Record<string, unknown>,
+  resourceName: string | null = null,
+): Promise<void> {
+  const actor = await c.env.DB.prepare(
+    "SELECT username FROM users WHERE id = ?",
+  )
+    .bind(resolved.userId)
+    .first<{ username: string }>();
+  const meta = auditRequestMeta(c);
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, {
+      ...PLATFORM_AUDIT,
+      action,
+      actorId: resolved.userId,
+      actorName: actor?.username ?? null,
+      resourceType,
+      resourceId,
+      resourceName,
+      ...meta,
+      metadata: { ...metadata, site_admin: true, client_id: resolved.clientId },
+    }),
+  );
 }
 
 // The /me/admin/* and /me/site/* user endpoints are one feature reached
@@ -1269,25 +1370,51 @@ app.patch("/me/admin/users/:id", async (c) => {
     avatar_url?: string | null;
   }>();
 
+  // The same guards as the admin dashboard: an app can't lock out the admin
+  // whose token it holds.
+  if (targetId === resolved.userId && body.role === "user")
+    return c.json({ error: "cannot_demote_self" }, 403);
+  // Any falsy is_active disables (the write is `is_active ? 1 : 0`).
+  if (
+    targetId === resolved.userId &&
+    body.is_active !== undefined &&
+    !body.is_active
+  )
+    return c.json({ error: "cannot_disable_self" }, 403);
+
   const now = Math.floor(Date.now() / 1000);
   const updates: string[] = [];
   const values: unknown[] = [];
+  // What was actually changed, for the audit log: never the raw body, which
+  // can carry ignored values and keys of the caller's choosing.
+  const applied: Record<string, unknown> = {};
 
   if (body.role !== undefined && ["admin", "user"].includes(body.role)) {
     updates.push("role = ?");
     values.push(body.role);
+    applied.role = body.role;
   }
   if (body.is_active !== undefined) {
     updates.push("is_active = ?");
     values.push(body.is_active ? 1 : 0);
+    applied.is_active = !!body.is_active;
   }
   if (body.display_name !== undefined) {
+    const nameErr = displayNameError(body.display_name);
+    if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
     values.push(body.display_name.trim());
+    applied.display_name = body.display_name.trim();
   }
   if ("avatar_url" in body) {
+    // An uploaded asset, or an image URL that checks out, as on the dashboard.
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: true,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
-    values.push(body.avatar_url ?? null);
+    values.push(body.avatar_url || null);
+    applied.avatar_url = body.avatar_url || null;
   }
 
   if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
@@ -1303,7 +1430,17 @@ app.patch("/me/admin/users/:id", async (c) => {
     "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users WHERE id = ?",
   )
     .bind(targetId)
-    .first();
+    .first<{ username: string }>();
+  if (user)
+    await auditAdminToken(
+      c,
+      resolved,
+      "admin.user.update",
+      "user",
+      targetId,
+      applied,
+      user.username,
+    );
 
   return c.json({
     user: user ? await proxyUserAvatar(c.env.APP_URL, c.env.DB, user) : null,
@@ -1459,8 +1596,13 @@ app.patch("/me/team/:teamId/info", async (c) => {
     values.push(body.description ?? null);
   }
   if ("avatar_url" in body) {
+    // The dashboard's check: an image URL that checks out.
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: false,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
-    values.push(body.avatar_url ?? null);
+    values.push(body.avatar_url || null);
   }
 
   if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
@@ -1469,9 +1611,12 @@ app.patch("/me/team/:teamId/info", async (c) => {
   updates.push("updated_at = ?");
   values.push(now, teamId);
 
-  await c.env.DB.prepare(`UPDATE teams SET ${updates.join(", ")} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE teams SET ${updates.join(", ")} WHERE id = ?`,
+    ).bind(...values),
+    syncTeamUserStatement(c.env.DB, teamId, now),
+  ]);
 
   const team = await c.env.DB.prepare(
     "SELECT id, name, description, avatar_url, created_at FROM teams WHERE id = ?",
@@ -1706,25 +1851,10 @@ app.get("/me/admin/config", async (c) => {
   const { getConfig } = await import("../lib/config");
   const config = await getConfig(c.env.DB);
 
-  // Strip sensitive credential fields
-  const SENSITIVE_KEYS = [
-    "github_client_secret",
-    "google_client_secret",
-    "microsoft_client_secret",
-    "discord_client_secret",
-    "captcha_secret_key",
-    "turnstile_secret_key",
-    "turnstile_china_secret_key",
-    "hcaptcha_secret_key",
-    "recaptcha_secret_key",
-    "geetest_captcha_key",
-    "cap_secret_key",
-    "smtp_password",
-    "email_api_key",
-  ];
+  // Credentials never leave through an app token.
   const safe = Object.fromEntries(
     Object.entries(configBag(config)).filter(
-      ([k]) => !SENSITIVE_KEYS.includes(k),
+      ([k]) => !SENSITIVE_CONFIG_KEYS.has(k),
     ),
   );
 
@@ -1738,53 +1868,36 @@ app.patch("/me/admin/config", async (c) => {
 
   const body = await c.req.json<Record<string, unknown>>();
 
-  // Disallow updating sensitive credential fields via this endpoint
-  const BLOCKED = new Set([
-    "github_client_id",
-    "github_client_secret",
-    "google_client_id",
-    "google_client_secret",
-    "microsoft_client_id",
-    "microsoft_client_secret",
-    "discord_client_id",
-    "discord_client_secret",
-    "captcha_secret_key",
-    "turnstile_secret_key",
-    "turnstile_china_secret_key",
-    "hcaptcha_secret_key",
-    "recaptcha_secret_key",
-    "geetest_captcha_key",
-    "cap_secret_key",
-    "smtp_password",
-    "email_api_key",
-    "initialized",
-  ]);
-
-  const updates: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(body)) {
-    if (!BLOCKED.has(k)) updates[k] = v;
-  }
-
-  // This endpoint is deny-listed rather than allow-listed, so the capability
-  // set has to be sanitised here too — otherwise arbitrary JSON reaches the
-  // config row through this path.
-  if (updates.default_team_role_permissions !== undefined) {
-    updates.default_team_role_permissions = sanitizeRolePermissions(
-      updates.default_team_role_permissions,
-    );
-  }
-  if (updates.restricted_user_capabilities !== undefined) {
-    updates.restricted_user_capabilities = sanitizeRestrictedCapabilities(
-      updates.restricted_user_capabilities,
-    );
-  }
-
+  // The keys the admin dashboard can set, with the same checks, minus
+  // credentials, the settings that decide where credentials are sent, the
+  // sign-in providers' client IDs, and code that runs on every page.
+  const prepared = await prepareConfigUpdates(
+    body,
+    (k) =>
+      ADMIN_CONFIG_KEYS.has(k) &&
+      !SENSITIVE_CONFIG_KEYS.has(k) &&
+      !decidesWhereSecretsGo(k) &&
+      !DASHBOARD_ONLY_CONFIG_KEYS.has(k) &&
+      !k.endsWith("_client_id"),
+  );
+  if ("refused" in prepared) return c.json(prepared.refused, 400);
+  const { updates } = prepared;
   if (Object.keys(updates).length === 0)
     return c.json({ error: "nothing_to_update" }, 400);
 
-  const { setConfigValues } = await import("../lib/config");
-  await setConfigValues(c.env.DB, updates);
-
+  await saveConfigUpdates(c.env, updates);
+  // Values aren't logged: secrets never reach this route, but keep the
+  // record to what changed.
+  await auditAdminToken(
+    c,
+    resolved,
+    "admin.config.update",
+    "site_config",
+    null,
+    {
+      keys: Object.keys(updates),
+    },
+  );
   return c.json({ updated: Object.keys(updates) });
 });
 

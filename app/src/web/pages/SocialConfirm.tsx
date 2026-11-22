@@ -106,7 +106,7 @@ export function SocialConfirm() {
                 e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""),
               )
             }
-            placeholder="your_username"
+            placeholder={t("auth.usernamePlaceholder")}
             maxLength={32}
             autoComplete="username"
             autoFocus

@@ -34,17 +34,18 @@ If your app runs entirely in the browser (nowhere to keep a secret), enable
 
 Each registered redirect URI has a match type:
 
-| Type       | Behaviour                                                                           |
-| ---------- | ----------------------------------------------------------------------------------- |
-| `Equals`   | Exact match (default, and the safest).                                              |
-| `Wildcard` | `*` stands for any run of characters, e.g. `https://example.com/*`.                 |
-| `Regex`    | A regular expression matched against the whole URI, e.g. `https://example\.com/.*`. |
+| Type       | Behaviour                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Equals`   | Exact match (default, and the safest).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `Wildcard` | In the path or query, `*` stands for any run of characters, e.g. `https://example.com/*`. In the host it never spans a dot: `https://*.example.com/cb` matches `a.example.com` but not `a.b.example.com`. `:*` allows any port. A `*` at the end of the host, as in `http://localhost*`, also covers any port and path, and one at the end of the port, as in `http://localhost:*` or `http://localhost:3000*`, any path. The domain itself must be written out, with no trailing dot: `https://*.com/cb` is refused, as is a wildcard over a shared suffix such as `*.co.uk` or `*.github.io`, and such an entry saved earlier matches nothing. Names under `localhost`, such as `https://*.localhost/cb`, are allowed. |
+| `Regex`    | A regular expression matched against the whole URI, e.g. `https://example\.com/.*`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 Whatever the type, the URI must use `https:` (or `http:` for loopback hosts) and
 must not contain userinfo or a fragment.
 
-If you leave the list empty, the app pins the first redirect URI it is
-successfully used with and is locked to it from then on.
+If you leave the list empty, the app pins the first redirect URI that you, or
+another manager of the app, approve it with, and is locked to it from then on.
+Until then, nobody else can sign in to it.
 
 ::: warning
 A `Regex` of `.*` allows **any** redirect URI, including attacker-controlled
@@ -93,37 +94,39 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 Use `S256`. Prism still accepts `code_challenge_method=plain`, but with `plain`
 the challenge is the verifier itself, so anyone who sees the authorization
 request URL can redeem a stolen code. An app that uses `plain` gets a warning
-on its **OAuth** tab until it has gone 30 days without it.
+on its **OAuth** tab until it has gone 30 days without it. Always send
+`code_challenge_method` with `code_challenge`; a request without it is refused
+with `invalid_request`.
 
 #### Scopes
 
-| Scope                  | Claims / access granted                               |
-| ---------------------- | ----------------------------------------------------- |
-| `openid`               | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC) |
-| `profile`              | `name`, `preferred_username`, `picture`               |
-| `profile:write`        | Update the user's profile (name, picture)             |
-| `email`                | `email`, `email_verified`                             |
-| `apps:read`            | List the apps the user owns                           |
-| `apps:write`           | Create, update, and delete the user's apps            |
-| `teams:read`           | List the user's teams                                 |
-| `teams:write`          | Update team settings and manage members               |
-| `teams:create`         | Create teams                                          |
-| `teams:delete`         | Delete teams                                          |
-| `domains:read`         | List the user's domains                               |
-| `domains:write`        | Add and remove domains                                |
-| `gpg:read`             | List the user's GPG public keys                       |
-| `gpg:write`            | Add and remove GPG public keys                        |
-| `social:read`          | List the user's linked social accounts                |
-| `social:write`         | Disconnect social accounts                            |
-| `admin:users:read`     | Read all user accounts (admin only)                   |
-| `admin:users:write`    | Modify user accounts (admin only)                     |
-| `admin:users:delete`   | Delete user accounts (admin only)                     |
-| `admin:config:read`    | Read instance configuration (admin only)              |
-| `admin:config:write`   | Update instance configuration (admin only)            |
-| `admin:invites:read`   | List invitations (admin only)                         |
-| `admin:invites:create` | Create invitations (admin only)                       |
-| `admin:invites:delete` | Delete invitations (admin only)                       |
-| `offline_access`       | Issue a refresh token                                 |
+| Scope                  | Claims / access granted                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `openid`               | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC)                                                                         |
+| `profile`              | `name`, `preferred_username`, `picture`                                                                                       |
+| `profile:write`        | Update the user's profile (name, picture)                                                                                     |
+| `email`                | `email`, `email_verified`                                                                                                     |
+| `apps:read`            | List the apps the user owns                                                                                                   |
+| `apps:write`           | Create, update, and delete the user's apps                                                                                    |
+| `teams:read`           | List the user's teams                                                                                                         |
+| `teams:write`          | Update team settings and manage members                                                                                       |
+| `teams:create`         | Create teams                                                                                                                  |
+| `teams:delete`         | Delete teams                                                                                                                  |
+| `domains:read`         | List the user's domains                                                                                                       |
+| `domains:write`        | Add and remove domains                                                                                                        |
+| `gpg:read`             | List the user's GPG public keys                                                                                               |
+| `gpg:write`            | Add and remove GPG public keys                                                                                                |
+| `social:read`          | List the user's linked social accounts                                                                                        |
+| `social:write`         | Disconnect social accounts                                                                                                    |
+| `admin:users:read`     | Read all user accounts (admin only)                                                                                           |
+| `admin:users:write`    | Modify user accounts (admin only)                                                                                             |
+| `admin:users:delete`   | Delete user accounts (admin only)                                                                                             |
+| `admin:config:read`    | Read instance configuration, without credentials (admin only)                                                                 |
+| `admin:config:write`   | Update instance configuration, except credentials, the mail and captcha servers they are sent to, and custom CSS (admin only) |
+| `admin:invites:read`   | List invitations (admin only)                                                                                                 |
+| `admin:invites:create` | Create invitations (admin only)                                                                                               |
+| `admin:invites:delete` | Delete invitations (admin only)                                                                                               |
+| `offline_access`       | Issue a refresh token                                                                                                         |
 
 Apps can also expose their own scopes to other apps; see
 [Cross-App Permissions](app-permissions.md).
@@ -155,7 +158,10 @@ an all-teams notice and a team picker.
 #### Site scopes (admin-only)
 
 Cross-instance scopes can only be granted by a site admin, who must confirm with
-2FA and type the phrase `grant site access`.
+2FA and type the phrase `grant site access`. The `admin:*` scopes above count as
+site scopes too: they need the same confirmation and are never approved
+automatically. When anyone else signs in, site scopes are dropped from the
+request, so the rest of it can still be approved silently or remembered.
 
 | Scope               | Grants                         |
 | ------------------- | ------------------------------ |
@@ -363,6 +369,10 @@ save it, it isn't shown again), a `registration_access_token` and a
 `Authorization: Bearer <registration_access_token>` to read (`GET`), update
 (`PUT`) or deregister (`DELETE`) the client.
 
+Registration follows the same rules as creating an app in the dashboard: it
+fails with `403` while app creation is turned off for users, or for an account
+that may not create apps.
+
 For a `private_key_jwt` client, set `token_endpoint_auth_method` to
 `private_key_jwt` and include `jwks` or `jwks_uri`. A `jwks_uri` or
 `backchannel_logout_uri` must be HTTPS and must not point at a private or
@@ -427,22 +437,26 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 ```
 
 You can exchange a token issued to your client, or one that carries a cross-app
-scope naming it (`app:<client_id>:*`). The new token's scope is a subset of the
-original's and its audience follows `resource` / `audience`. Exchanged tokens
-can't be refreshed.
+scope naming it (`app:<client_id>:*`); from another app's token you get only
+those `app:<client_id>:*` scopes. The new token's scope is a subset of that, its
+audience follows `resource` / `audience` but stays within the original's (asking
+for none keeps the original's), and it expires no later than the
+original. A DPoP-bound token needs a proof from the same key, and the new token
+stays bound to it. Exchanged tokens can't be refreshed.
 
 ## Re-authentication and context (`prompt`, `max_age`, `acr`)
 
 The authorization request honors these OpenID Connect parameters:
 
 - `prompt=none` — no UI. Returns `login_required` if the user must sign in, or
-  `consent_required` if consent is missing.
+  `consent_required` if consent is missing. Site-level and team scopes always
+  need the consent screen, so a silent request for them gets `consent_required`.
 - `prompt=login` — force a fresh sign-in.
 - `prompt=consent` — always show the consent screen.
 - `max_age=<seconds>` — require a sign-in no older than this.
 
 The ID token then carries `auth_time`, `amr` (e.g. `["pwd","otp","mfa"]`,
-`["webauthn"]`) and `acr` (`mfa` when a second factor was used, else `pwd`).
+`["webauthn","mfa"]`) and `acr` (`mfa` when a second factor was used, else `pwd`).
 
 ### Step-up authentication (RFC 9470)
 
@@ -604,15 +618,15 @@ Content-Type: application/json
 }
 ```
 
-| Field                                     | Required                    | Description                                                                          |
-| ----------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------ |
-| `client_id`                               | yes (Basic or body)         | Your app's client ID                                                                 |
-| `client_secret`                           | confidential clients        | In Basic auth or the body. `private_key_jwt` clients send `client_assertion` instead |
-| `redirect_uri`                            | yes                         | Must be registered on the app                                                        |
-| `action`                                  | recommended                 | Description (≤ 200 chars) of what the user is confirming, shown verbatim             |
-| `nonce`                                   | optional                    | Opaque value (≤ 256 chars) echoed back; bind it to the operation (e.g. an order ID)  |
-| `require_captcha`                         | optional                    | Ask for a captcha on this confirmation                                               |
-| `code_challenge`, `code_challenge_method` | required for public clients | PKCE                                                                                 |
+| Field                                     | Required                    | Description                                                                                             |
+| ----------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `client_id`                               | yes (Basic or body)         | Your app's client ID                                                                                    |
+| `client_secret`                           | confidential clients        | In Basic auth or the body. `private_key_jwt` clients send `client_assertion` instead                    |
+| `redirect_uri`                            | yes                         | Must be registered on the app                                                                           |
+| `action`                                  | recommended                 | Description (≤ 200 chars) of what the user is confirming, shown verbatim. Not shown for a public client |
+| `nonce`                                   | optional                    | Opaque value (≤ 256 chars) echoed back; bind it to the operation (e.g. an order ID)                     |
+| `require_captcha`                         | optional                    | Ask for a captcha on this confirmation                                                                  |
+| `code_challenge`, `code_challenge_method` | required for public clients | PKCE                                                                                                    |
 
 ```json
 {
@@ -706,10 +720,15 @@ Content-Type: application/json
 ### Security notes
 
 - The action text and redirect URI are fixed at step 1, which needs your app's
-  credentials, so a phishing URL can't change them.
+  credentials, so a phishing URL can't change them. A public client has no
+  credentials, so anyone with its `client_id` can create a challenge; its action
+  text is therefore never shown to the user, and is only returned when you verify
+  the code.
 - The code is bound to your `client_id` and `redirect_uri`, and PKCE binds it to
   your verifier.
-- TOTP attempts are rate-limited, and a failed attempt uses up the challenge.
+- TOTP attempts are rate-limited, and a failed attempt uses up the challenge: the
+  user comes back with `error=access_denied` and `error_description=invalid_2fa`.
+  Create a new challenge to let them try again.
 - This can't protect against a fully compromised device, or against someone who
   holds your `client_secret`. Rotate secrets if you suspect a leak.
 

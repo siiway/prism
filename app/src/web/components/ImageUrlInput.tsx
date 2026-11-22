@@ -68,7 +68,7 @@ export function ImageUrlInput({
           // sloppy paste doesn't fail the HTTPS validation below.
           onChange(e.target.value.trim());
         }}
-        placeholder={placeholder ?? "https://example.com/image.png"}
+        placeholder={placeholder ?? t("imageUrl.placeholder")}
       />
       {showPreview && !loadError && (
         <div

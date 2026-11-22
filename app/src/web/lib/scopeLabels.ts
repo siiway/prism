@@ -4,6 +4,7 @@
 // fall back to the raw value.
 
 import type { TFunction } from "i18next";
+import { isSiteLevelScope } from "../../shared/scopes";
 
 const KEYS = {
   openid: "Identity",
@@ -55,7 +56,7 @@ export interface ScopeLabel {
 
 export function scopeLabel(t: TFunction, scope: string): ScopeLabel {
   const key: ScopeName | undefined = (KEYS as Record<string, ScopeName>)[scope];
-  const site = scope.startsWith("site:") || scope.startsWith("admin:");
+  const site = isSiteLevelScope(scope);
   if (!key) return { label: scope, site };
   return {
     label: t(`oauth.scope${key}Label`),

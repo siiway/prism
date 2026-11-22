@@ -20,7 +20,7 @@ import {
 } from "../lib/proxyImage";
 import { toSessionUser } from "../lib/sessionUser";
 import { signOutEverywhere } from "../lib/session";
-import { validateImageUrl } from "../lib/imageValidation";
+import { imageUrlFieldError } from "../lib/imageValidation";
 import {
   recordAudit,
   recordAccountDeletion,
@@ -37,10 +37,8 @@ import type { RestrictedCapability, UserRow, Variables } from "../types";
 import notificationRoutes from "./user-notifications";
 import tokenRoutes from "./user-tokens";
 import emailRoutes from "./user-emails";
-import {
-  PASSWORD_MIN_LENGTH,
-  DISPLAY_NAME_MAX_LENGTH,
-} from "../../shared/limits";
+import { PASSWORD_MIN_LENGTH } from "../../shared/limits";
+import { displayNameError } from "../lib/displayName";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -136,29 +134,16 @@ app.patch("/me", async (c) => {
   const values: unknown[] = [];
 
   if (body.display_name !== undefined) {
-    if (
-      body.display_name.length < 1 ||
-      body.display_name.length > DISPLAY_NAME_MAX_LENGTH
-    )
-      return c.json(
-        {
-          error: "field_length",
-          params: {
-            field: "display_name",
-            min: 1,
-            max: DISPLAY_NAME_MAX_LENGTH,
-          },
-        },
-        400,
-      );
+    const nameErr = displayNameError(body.display_name);
+    if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
-    values.push(body.display_name);
+    values.push(body.display_name.trim());
   }
   if (body.avatar_url !== undefined) {
-    if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
-      const imgErr = await validateImageUrl(body.avatar_url);
-      if (imgErr) return c.json(imgErr, 400);
-    }
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: true,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
   }
@@ -394,8 +379,9 @@ app.patch("/me", async (c) => {
     .first<UserRow>();
   // Collect human-readable changes for the notification
   const changedFields: Record<string, string> = {};
+  // The values as stored, not as sent.
   if (body.display_name !== undefined)
-    changedFields.display_name = body.display_name;
+    changedFields.display_name = body.display_name.trim();
   if (body.avatar_url !== undefined)
     changedFields.avatar_url = body.avatar_url ?? "";
 

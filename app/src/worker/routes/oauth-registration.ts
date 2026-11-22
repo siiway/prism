@@ -10,6 +10,9 @@ import {
   timingSafeSecretEqual,
 } from "../lib/secretCrypto";
 import { randomBase64url, randomId } from "../lib/crypto";
+import { getConfigValue } from "../lib/config";
+import { guardCapability } from "../lib/userCapabilities";
+import { checkAppScopeOwnerRules } from "../lib/appScopeRules";
 import { requireAuth, tryPatAuth } from "../middleware/auth";
 import {
   parseRedirectUris,
@@ -213,6 +216,18 @@ app.post(
   requireAuth,
   async (c) => {
     const user = c.get("user");
+
+    // The same gates as creating an app on the dashboard.
+    if (user.role !== "admin") {
+      const disabled = await getConfigValue(
+        c.env.DB,
+        "disable_user_create_app",
+      );
+      if (disabled) return c.json({ error: "app_creation_disabled" }, 403);
+    }
+    const capErr = await guardCapability(c.env.DB, user.id, "app:create");
+    if (capErr) return c.json({ error: capErr }, 403);
+
     const body = await c.req
       .json<DcrMetadata>()
       .catch(() => ({}) as DcrMetadata);
@@ -221,6 +236,18 @@ app.post(
     if ("description" in norm)
       return c.json(
         { error: norm.code, error_description: norm.description },
+        400,
+      );
+
+    const ruleErr = await checkAppScopeOwnerRules(
+      c.env.DB,
+      norm.scopes,
+      [],
+      user.id,
+    );
+    if (ruleErr)
+      return c.json(
+        { error: "invalid_client_metadata", error_description: ruleErr.error },
         400,
       );
 
@@ -316,6 +343,18 @@ app.put("/register/:client_id", async (c) => {
   if ("description" in norm)
     return c.json(
       { error: norm.code, error_description: norm.description },
+      400,
+    );
+  // No session here: the rules are checked for the app's owner.
+  const ruleErr = await checkAppScopeOwnerRules(
+    c.env.DB,
+    norm.scopes,
+    JSON.parse(app.allowed_scopes) as string[],
+    app.owner_id,
+  );
+  if (ruleErr)
+    return c.json(
+      { error: "invalid_client_metadata", error_description: ruleErr.error },
       400,
     );
 

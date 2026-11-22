@@ -3,8 +3,14 @@
 
 import { isSyntheticEmail } from "../lib/userCapabilities";
 import { Hono } from "hono";
-import { randomId, randomBase64url } from "../lib/crypto";
+import {
+  emailInUse,
+  emailOwnedElsewhere,
+  oldPrimaryDemotion,
+} from "../lib/accountEmails";
+import { randomId } from "../lib/crypto";
 import { getConfig } from "../lib/config";
+import { newEmailVerifyToken } from "../lib/emailVerifyToken";
 import { hashSecret } from "../lib/secretCrypto";
 import {
   emailConfigFromSite,
@@ -57,13 +63,18 @@ app.post("/me/emails", async (c) => {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     return c.json({ error: "email_invalid" }, 400);
 
-  // Check uniqueness against primary emails
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM users WHERE email = ?",
+  // The account's own primary, or an address another account has proved it
+  // owns. Someone else's unverified primary doesn't block it: whoever
+  // verifies the address owns it. The primary is read from the database:
+  // the session's copy is the one from sign-in, stale after a change.
+  const primary = await c.env.DB.prepare("SELECT email FROM users WHERE id = ?")
+    .bind(user.id)
+    .first<{ email: string }>();
+  if (
+    email === primary?.email.toLowerCase() ||
+    (await emailOwnedElsewhere(c.env.DB, email, user.id))
   )
-    .bind(email)
-    .first();
-  if (existing) return c.json({ error: "email_taken" }, 409);
+    return c.json({ error: "email_taken" }, 409);
 
   // Check uniqueness against other alternate emails
   const altExisting = await c.env.DB.prepare(
@@ -75,14 +86,21 @@ app.post("/me/emails", async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
-  const verifyToken = randomBase64url(24);
+  const verifyToken = newEmailVerifyToken();
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
 
-  await c.env.DB.prepare(
-    "INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at) VALUES (?, ?, ?, 0, ?, ?)",
-  )
-    .bind(id, user.id, email, storedVerifyToken, now)
-    .run();
+  try {
+    await c.env.DB.prepare(
+      "INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at) VALUES (?, ?, ?, 0, ?, ?)",
+    )
+      .bind(id, user.id, email, storedVerifyToken, now)
+      .run();
+  } catch (err) {
+    // Added by another request between the check and the write.
+    if (err instanceof Error && err.message.includes("UNIQUE"))
+      return c.json({ error: "email_taken" }, 409);
+    throw err;
+  }
 
   // Send verification email if provider is configured
   const config = await getConfig(c.env.DB);
@@ -120,7 +138,7 @@ app.post("/me/emails/:id/resend", async (c) => {
   if (config.email_provider === "none")
     return c.json({ error: "email_not_configured" }, 503);
 
-  const verifyToken = randomBase64url(24);
+  const verifyToken = newEmailVerifyToken();
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
   await c.env.DB.prepare("UPDATE user_emails SET verify_token = ? WHERE id = ?")
     .bind(storedVerifyToken, emailRow.id)
@@ -171,6 +189,9 @@ app.post("/me/emails/:id/set-primary", async (c) => {
       email_verify_code: string | null;
     }>();
   if (!userRow) return c.json({ error: "user_not_found" }, 404);
+  // Another account may still have it as its unverified primary.
+  if (await emailInUse(c.env.DB, emailRow.email, user.id))
+    return c.json({ error: "email_taken" }, 409);
 
   const now = Math.floor(Date.now() / 1000);
 
@@ -179,42 +200,58 @@ app.post("/me/emails/:id/set-primary", async (c) => {
   // A synthesised placeholder is not an address anyone can reach, so it is
   // dropped rather than demoted — keeping it would leave an unreachable
   // `@users.invalid` row sitting in the account's email list forever.
-  const demoteOldPrimary = !isSyntheticEmail(userRow.email);
-  await c.env.DB.batch([
-    // Insert old primary as alternate. Carry the verification *state* but
-    // explicitly drop the verify_token / verify_code — those are tied to a
-    // specific outstanding inbound-mail challenge against the old primary
-    // address; reusing them on a new alternate row would let a user replay
-    // a code they already learned to flip a different address to verified.
-    ...(demoteOldPrimary
-      ? [
-          c.env.DB.prepare(
-            "INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)",
-          ).bind(
-            oldPrimaryId,
-            user.id,
-            userRow.email,
-            userRow.email_verified,
-            userRow.email_verified_via,
-            userRow.email_verified_at,
-            now,
-          ),
-        ]
-      : []),
-    // Update users table with new primary
-    c.env.DB.prepare(
-      "UPDATE users SET email = ?, email_verified = ?, email_verified_via = ?, email_verified_at = ?, email_verify_token = NULL, email_verify_code = NULL, updated_at = ? WHERE id = ?",
-    ).bind(
-      emailRow.email,
-      emailRow.verified,
-      emailRow.verified_via,
-      emailRow.verified_at,
-      now,
-      user.id,
-    ),
-    // Delete the promoted alternate
-    c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?").bind(emailRow.id),
-  ]);
+  const demotion = await oldPrimaryDemotion(
+    c.env.DB,
+    user.id,
+    userRow.email,
+    !!userRow.email_verified,
+  );
+  const demoteOldPrimary = !isSyntheticEmail(userRow.email) && demotion.keep;
+  try {
+    await c.env.DB.batch([
+      ...(demotion.dropClaim ? [demotion.dropClaim] : []),
+      // Insert old primary as alternate. Carry the verification *state* but
+      // explicitly drop the verify_token / verify_code — those are tied to a
+      // specific outstanding inbound-mail challenge against the old primary
+      // address; reusing them on a new alternate row would let a user replay
+      // a code they already learned to flip a different address to verified.
+      ...(demoteOldPrimary
+        ? [
+            c.env.DB.prepare(
+              "INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)",
+            ).bind(
+              oldPrimaryId,
+              user.id,
+              userRow.email,
+              userRow.email_verified,
+              userRow.email_verified_via,
+              userRow.email_verified_at,
+              now,
+            ),
+          ]
+        : []),
+      // Update users table with new primary
+      c.env.DB.prepare(
+        "UPDATE users SET email = ?, email_verified = ?, email_verified_via = ?, email_verified_at = ?, email_verify_token = NULL, email_verify_code = NULL, updated_at = ? WHERE id = ?",
+      ).bind(
+        emailRow.email,
+        emailRow.verified,
+        emailRow.verified_via,
+        emailRow.verified_at,
+        now,
+        user.id,
+      ),
+      // Delete the promoted alternate
+      c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?").bind(
+        emailRow.id,
+      ),
+    ]);
+  } catch (err) {
+    // Taken between the check and the write.
+    if (err instanceof Error && err.message.includes("UNIQUE"))
+      return c.json({ error: "email_taken" }, 409);
+    throw err;
+  }
 
   return c.json({ ok: true });
 });

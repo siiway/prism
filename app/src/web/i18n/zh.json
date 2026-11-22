@@ -139,7 +139,9 @@
     "username": "用户名",
     "displayName": "显示名称",
     "displayNamePlaceholder": "张三",
-    "tgVerifying": "正在验证 Telegram 登录…"
+    "tgVerifying": "正在验证 Telegram 登录…",
+    "emailPlaceholder": "you@example.com",
+    "usernamePlaceholder": "zhangsan"
   },
   "init": {
     "firstRunSetup": "首次运行设置",
@@ -154,7 +156,9 @@
     "createAdminAccount": "创建管理员账号",
     "creating": "创建中…",
     "siteNamePlaceholder": "我的身份平台",
-    "displayNamePlaceholder": "管理员"
+    "displayNamePlaceholder": "管理员",
+    "adminEmailPlaceholder": "admin@example.com",
+    "usernamePlaceholder": "admin"
   },
   "publicProfile": {
     "publicProfileBadge": "公开资料",
@@ -268,7 +272,7 @@
     "emailAddresses": "邮箱地址",
     "primary": "主邮箱",
     "addEmail": "添加邮箱地址",
-    "emailAdded": "邮箱已添加 — 请查收验证邮件",
+    "emailAdded": "邮箱已添加。请在登录此账户时打开我们发送的链接。",
     "emailRemoved": "邮箱已移除",
     "primaryUpdated": "主邮箱已更新",
     "makePrimary": "设为主邮箱",
@@ -288,7 +292,8 @@
     "publicProfileFollowingDefaultLong": "跟随站点默认设置",
     "readmeLinkGithub": "关联一个 GitHub 账号即可使用其个人主页 README。",
     "removeEmailTitle": "移除邮箱地址？",
-    "removeEmailBody": "{{email}} 将从你的账户中移除。"
+    "removeEmailBody": "{{email}} 将从你的账户中移除。",
+    "addEmailPlaceholder": "user@example.com"
   },
   "security": {
     "title": "安全",
@@ -469,7 +474,7 @@
       "domainPlaceholder": "输入您的域名…",
       "domainAction": "继续",
       "secureTitle": "保护您的账户",
-      "secureDesc": "添加通行密钥或身份验证器应用，让仅凭密码无法进入您的账户。",
+      "secureDesc": "添加身份验证器应用，让仅凭密码无法进入您的账户。通行密钥让您无需密码即可登录。",
       "secureAction": "设置安全选项",
       "linkTitle": "关联您的账户",
       "linkDesc": "关联您常用的账户，以便更快登录并找回访问权限。",
@@ -745,7 +750,14 @@
       "attrEmail": "邮箱地址，仅在已验证时发送",
       "attrTeams": "用户所在团队的 ID",
       "attrGroups": "身份组，格式为 团队 ID:身份组标识"
-    }
+    },
+    "postLogoutRedirectPlaceholder": "https://app.example.com/logged-out",
+    "backchannelLogoutPlaceholder": "https://app.example.com/backchannel-logout",
+    "jwksUriPlaceholder": "https://app.example.com/.well-known/jwks.json",
+    "scopeNamePlaceholder": "read_posts",
+    "scopeClientIdPlaceholder": "prism_...",
+    "redirectUriWildcardPlaceholder": "https://example.com/*",
+    "redirectUriRegexPlaceholder": "https://example\\.com/.*"
   },
   "domains": {
     "title": "域名验证",
@@ -1135,7 +1147,8 @@
       "dissolveCancelledDone": "已取消解散。"
     },
     "inviteRegOn": "本团队的邀请可以创建账号",
-    "inviteRegPaused": "{{siteName}} 已关闭注册，暂时停用。"
+    "inviteRegPaused": "{{siteName}} 已关闭注册，暂时停用。",
+    "maxUsesPlaceholder": "0"
   },
   "connections": {
     "title": "关联账号",
@@ -1474,7 +1487,9 @@
       "sudoActiveTitle": "sudo 模式已启用",
       "sudoActiveDesc": "你在 {{minutes}} 分钟内已在 {{appName}} 确认过，本次无需验证码。",
       "footerNote": "确认会向 {{appName}} 发回一次性验证结果,不会授予任何新的账户权限。"
-    }
+    },
+    "totpCodePlaceholder": "000000",
+    "userCodePlaceholder": "XXXX-XXXX"
   },
   "saml": {
     "title": "登录 {{appName}}",
@@ -1768,6 +1783,7 @@
     "emailApiKey": "API 密钥",
     "smtpHost": "SMTP 主机",
     "smtpHostPlaceholder": "smtp.example.com",
+    "imapHostPlaceholder": "imap.example.com",
     "smtpPort": "SMTP 端口",
     "smtpEncryption": "加密方式",
     "smtpStarttls": "STARTTLS（端口 587）",
@@ -2589,7 +2605,19 @@
     "oauthTwoStepLabel": "两步验证",
     "oauthTwoStepDesc": "选择「跳过」后，启用了二次验证的用户通过此方式登录时无需再输入验证码。",
     "inviteStatusActive": "有效",
-    "inviteStatusPaused": "已暂停"
+    "inviteStatusPaused": "已暂停",
+    "inviteEmailPlaceholder": "user@example.com",
+    "mailServerUserPlaceholder": "user@example.com",
+    "emailReceiveHostPlaceholder": "mail.example.com",
+    "securityContactPlaceholder": "mailto:security@example.com",
+    "securityPolicyUrlPlaceholder": "https://example.com/security-policy",
+    "oauthIssuerUrlPlaceholder": "https://accounts.example.com",
+    "oauthAuthorizeUrlPlaceholder": "https://provider.example.com/oauth2/authorize",
+    "oauthTokenUrlPlaceholder": "https://provider.example.com/oauth2/token",
+    "oauthUserinfoUrlPlaceholder": "https://provider.example.com/oauth2/userinfo",
+    "sourceIconUrlPlaceholder": "https://example.com/icon.svg",
+    "sourceSlugPlaceholder": "{{provider}}-work",
+    "oauthScopesOidcPlaceholder": "openid email profile"
   },
   "notifications": {
     "title": "通知",
@@ -2837,6 +2865,7 @@
     "checkStatus": "检查验证状态",
     "verified": "邮箱验证成功！正在跳转…",
     "notYetVerified": "尚未验证 — 请确认已发送邮件后重试。",
+    "taken": "另一个账户已验证该地址，因此无法为你的账户验证该地址。",
     "skipForNow": "暂时跳过",
     "linkSent": "验证链接已发送，请查收邮箱。"
   },
@@ -2845,6 +2874,12 @@
     "successDesc": "您的邮箱地址已成功验证，现在可以使用账号的所有功能。",
     "invalidTitle": "验证失败",
     "invalidDesc": "此验证链接无效或已被使用，请在个人资料页面重新请求验证邮件。",
+    "expiredTitle": "链接已过期",
+    "expiredDesc": "验证链接的有效期为 24 小时，请在个人资料页面重新请求验证邮件。",
+    "takenTitle": "地址已被占用",
+    "takenDesc": "另一个账户已验证该地址，因此无法为你的账户验证该地址。",
+    "wrongAccountTitle": "请登录正确的账户",
+    "wrongAccountDesc": "此链接仅在你登录了添加此地址的账户时有效。请登录该账户，然后再次打开此链接。",
     "goToDashboard": "前往控制台",
     "goToLogin": "前往登录"
   },
@@ -2878,7 +2913,8 @@
   "imageUrl": {
     "httpsRequired": "图片 URL 必须使用 HTTPS",
     "preview": "预览",
-    "loadFailed": "无法从该 URL 加载图片"
+    "loadFailed": "无法从该 URL 加载图片",
+    "placeholder": "https://example.com/image.png"
   },
   "notFound": {
     "title": "页面未找到",
@@ -2987,7 +3023,10 @@
     "noEventsYet": "暂无记录。",
     "filterSame": "仅显示相同的",
     "deleteWebhookTitle": "删除 Webhook？",
-    "deleteWebhookBody": "「{{name}}」将不再接收审计事件。"
+    "deleteWebhookBody": "「{{name}}」将不再接收审计事件。",
+    "webhookUrlPlaceholder": "https://example.com/hook?token={id}",
+    "webhookHeadersPlaceholder": "{ \"Authorization\": \"Bearer {id}\" }",
+    "discordUrlPlaceholder": "https://discord.com/api/webhooks/…"
   },
   "join": {
     "intro": "创建账号以加入该团队。你的账号创建在 {{siteName}} 上 —— 这是该团队使用的身份提供方。",
@@ -3249,6 +3288,7 @@
     "invalid_action": "此操作在这里无效。",
     "invalid_challenge": "验证无效，请重新开始。",
     "invalid_client": "无法验证客户端身份。",
+    "invalid_client_metadata": "客户端注册被拒绝。",
     "invalid_connect_intent": "此关联请求无效，请重新开始。",
     "invalid_credentials": "用户名或密码错误。",
     "invalid_dpop_proof": "DPoP 证明无效。",
@@ -3323,6 +3363,7 @@
     "passkey_auth_failed": "通行密钥登录失败，请重试。",
     "passkey_not_found": "未找到该通行密钥。",
     "passkey_registration_failed": "无法注册通行密钥，请重试。",
+    "passkey_user_verification_required": "此通行密钥未验证 PIN 或指纹，而登录需要验证。请在安全密钥上设置 PIN，或使用其他通行密钥。",
     "password_only_sign_in": "此账号没有其他登录方式，无法清除密码。",
     "password_too_short": "密码至少需要 8 个字符。",
     "pgp_key_invalid": "不是有效的 PGP 公钥。",
@@ -3346,6 +3387,7 @@
     "redirect_uri_scheme": "{{uri}} 必须使用 https://（http:// 仅限本机地址）。",
     "redirect_uri_userinfo": "{{uri}} 不能包含用户名或密码。",
     "redirect_uri_whitespace": "{{uri}} 不能包含空格。",
+    "redirect_uri_wildcard_host": "{{uri}} 需要一个真实的主机名，例如 https://*.example.com/callback。",
     "registration_disabled": "本站已关闭注册。",
     "registration_session_expired": "注册会话已过期，请重新开始。",
     "request_too_large": "请求内容过大。",

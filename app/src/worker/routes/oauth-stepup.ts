@@ -8,7 +8,7 @@ import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { hashSecret, hashLookupCandidate } from "../lib/secretCrypto";
 import { randomBase64url } from "../lib/crypto";
-import { verifyAnyTotp } from "../lib/totp";
+import { matchSecondFactorCode } from "../lib/totp";
 import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
 import { captchaRefusal } from "../middleware/captcha";
@@ -27,6 +27,7 @@ import type {
 import {
   authenticateClient,
   buildConsentAppSummary,
+  pkceMethodInvalid,
   readOAuthBody,
   verifyAppPkce,
 } from "../lib/oauthClients";
@@ -91,11 +92,25 @@ app.post("/2fa/challenges", async (c) => {
     return c.json({ error: "invalid_request" }, 400);
   }
 
+  // An app with no registered URI would accept any here, and step-up never
+  // learns one: anyone could point a challenge at their own site. It needs
+  // a registered URI first.
   const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
-  if (!redirectUriMatchesRegistered(redirect_uri, redirectUris)) {
+  if (
+    redirectUris.length === 0 ||
+    !redirectUriMatchesRegistered(redirect_uri, redirectUris)
+  ) {
     return c.json({ error: "invalid_redirect_uri" }, 400);
   }
 
+  if (pkceMethodInvalid(code_challenge, code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
+      },
+      400,
+    );
   // Public clients have no secret, so PKCE is the only way to bind the
   // verify call back to whoever created the challenge.
   if (oauthApp.is_public === 1 && !code_challenge) {
@@ -259,7 +274,10 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     challenge_id,
     redirect_uri: challenge.redirect_uri,
     state: state ?? null,
-    action: challenge.action,
+    // A public client is identified by its client_id alone, so anyone could
+    // create a challenge for it with whatever text they like. Its action text
+    // isn't shown, so a link to this page can't put words in the app's mouth.
+    action: oauthApp.is_public ? null : challenge.action,
     expires_at: challenge.expires_at,
     user: c.get("user") ?? null,
     totp_enrolled: totpEnrolled,
@@ -421,9 +439,9 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
         method = "passkey";
       }
     } else if (body.totp_code) {
-      if (await verifyAnyTotp(c.env, user.id, body.totp_code)) {
-        method = "totp";
-      }
+      // "backup" when a backup code was used, so an app that won't accept
+      // one for an action can tell.
+      method = await matchSecondFactorCode(c.env, user.id, body.totp_code);
     }
 
     if (!method) {

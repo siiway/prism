@@ -256,8 +256,8 @@ verification** and **Delete** are also available.
 
 ## Scope grants
 
-**Admin → Scope grants** lists the elevated OAuth grants apps hold: `site:*`
-(act across the instance) and `team:<id>:*` (act in one team). Open a grant to
+**Admin → Scope grants** lists the elevated OAuth grants apps hold: `site:*` and
+`admin:*` (act across the instance) and `team:<id>:*` (act in one team). Open a grant to
 see who approved it, what it allows and how many live tokens carry it.
 **Revoke this grant** removes those scopes and the tokens and codes that carry
 them; the app keeps anything else it was approved for.

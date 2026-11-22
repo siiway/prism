@@ -121,7 +121,9 @@ export function Login() {
             ? "auth.errorNoToken"
             : errorParam === "invite_required"
               ? "auth.errorInviteRequired"
-              : "auth.errorGeneric",
+              : errorParam === "account_disabled"
+                ? "apiErrors.account_disabled"
+                : "auth.errorGeneric",
       )
     : null;
 
@@ -329,7 +331,7 @@ export function Login() {
                     setIdentifier(e.target.value);
                     if (identifierError) setIdentifierError("");
                   }}
-                  placeholder="you@example.com"
+                  placeholder={t("auth.emailPlaceholder")}
                   autoComplete="username"
                   autoFocus
                 />

@@ -2,14 +2,19 @@
 
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
+import {
+  emailInUse,
+  emailOwnedElsewhere,
+  userForSignInEmail,
+} from "../lib/accountEmails";
+import { optionalDisplayName } from "../lib/displayName";
+import {
+  emailVerifyTokenFresh,
+  newEmailVerifyToken,
+} from "../lib/emailVerifyToken";
 import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
-import {
-  hashPassword,
-  randomId,
-  randomBase64url,
-  verifyPassword,
-} from "../lib/crypto";
+import { hashPassword, randomId, verifyPassword } from "../lib/crypto";
 import {
   emailConfigFromSite,
   sendEmail,
@@ -20,6 +25,7 @@ import { verifyAnyTotp } from "../lib/totp";
 import {
   beginPasskeyAuthentication,
   beginPasskeyRegistration,
+  failedUserVerification,
   finishPasskeyAuthentication,
   finishPasskeyRegistration,
   rowToPasskey,
@@ -34,7 +40,7 @@ import {
   checkLoginTotpLimit,
   logLoginError,
 } from "../lib/loginRateLimit";
-import { requireAuth } from "../middleware/auth";
+import { optionalAuth, requireAuth } from "../middleware/auth";
 import { endBrowserSession, issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import {
@@ -47,7 +53,13 @@ import {
   claimSiteInvite,
   releaseSiteInvite,
 } from "../lib/siteInvite";
-import type { PasskeyRow, SiteInviteRow, UserRow, Variables } from "../types";
+import type {
+  AuthUser,
+  PasskeyRow,
+  SiteInviteRow,
+  UserRow,
+  Variables,
+} from "../types";
 import totpRoutes from "./auth-totp";
 import gpgLoginRoutes from "./auth-gpg";
 import inboundEmailVerifyRoutes from "./auth-email-verify";
@@ -112,14 +124,20 @@ app.post("/register", async (c) => {
     return c.json({ error: "password_too_short" }, 400);
   if (!/^[a-z0-9_.-]{2,32}$/i.test(body.username))
     return c.json({ error: "username_invalid" }, 400);
+  // Optional: left blank, the username stands in.
+  const displayName = optionalDisplayName(body.display_name);
+  if (displayName.error) return c.json(displayName.error, 400);
 
   const userId = randomId();
   const passwordHash = await hashPassword(body.password);
   const now = Math.floor(Date.now() / 1000);
   const verifyToken = config.require_email_verification
-    ? randomBase64url(24)
+    ? newEmailVerifyToken()
     : null;
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
+
+  if (await emailInUse(c.env.DB, body.email.toLowerCase().trim()))
+    return c.json({ error: "email_or_username_taken" }, 409);
 
   // Take the invite use before creating the account, so concurrent
   // registrations cannot all pass the earlier check and overrun the cap. The
@@ -137,7 +155,7 @@ app.post("/register", async (c) => {
         body.email.toLowerCase().trim(),
         body.username.toLowerCase().trim(),
         passwordHash,
-        body.display_name ?? body.username,
+        displayName.name ?? body.username,
         config.require_email_verification ? 0 : 1,
         storedVerifyToken,
         now,
@@ -240,6 +258,17 @@ app.post("/login", async (c) => {
     return c.json({ error: captchaErr }, 400);
   }
 
+  if (
+    typeof body.identifier !== "string" ||
+    !body.identifier.trim() ||
+    typeof body.password !== "string" ||
+    !body.password
+  )
+    return c.json(
+      { error: "fields_required", params: { fields: "identifier, password" } },
+      400,
+    );
+
   // Brute-force guard: only credential attempts that cleared captcha count
   // toward it, so it measures real password tries rather than captcha misfires.
   const rl = await checkLoginCredentialLimits(
@@ -274,38 +303,11 @@ app.post("/login", async (c) => {
   // about who exists.
   let user: UserRow | null;
   if (isEmail) {
-    // Check primary email first, then alternate emails. kind='user' filter
-    // is defensive: synthetic team-user rows have a teams.invalid email so
-    // they would fail the password_hash check anyway, but excluding them
-    // here prevents any future credential-bearing flow from accidentally
-    // resolving the team-user.
-    user = await c.env.DB.prepare(
-      "SELECT * FROM users WHERE email = ? AND kind = 'user'",
-    )
-      .bind(identifier)
-      .first<UserRow>();
-    if (!user) {
-      const alt = await c.env.DB.prepare(
-        "SELECT user_id FROM user_emails WHERE email = ? AND verified = 1",
-      )
-        .bind(identifier)
-        .first<{ user_id: string }>();
-      if (alt) {
-        const altUser = await c.env.DB.prepare(
-          "SELECT * FROM users WHERE id = ? AND kind = 'user'",
-        )
-          .bind(alt.user_id)
-          .first<UserRow>();
-        if (altUser) {
-          // Check if alternate email login is allowed for this user
-          const allowed =
-            altUser.alt_email_login !== null
-              ? altUser.alt_email_login === 1
-              : loginConfig.allow_alt_email_login;
-          if (allowed) user = altUser;
-        }
-      }
-    }
+    user = await userForSignInEmail(
+      c.env.DB,
+      identifier,
+      loginConfig.allow_alt_email_login,
+    );
   } else {
     user = await c.env.DB.prepare(
       "SELECT * FROM users WHERE username = ? AND kind = 'user'",
@@ -421,7 +423,7 @@ app.post("/logout", requireAuth, async (c) =>
 
 // ─── Email verification ───────────────────────────────────────────────────────
 
-app.get("/verify-email", async (c) => {
+app.get("/verify-email", optionalAuth, async (c) => {
   const token = c.req.query("token");
   const isAlt = c.req.query("alt") === "1";
   if (!token) return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
@@ -431,22 +433,48 @@ app.get("/verify-email", async (c) => {
   const tokenLookup = await hashLookupCandidate(c.env, token);
   if (!tokenLookup)
     return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
+  // A real link that's too old says so, so the user knows to ask again.
+  const expired = !emailVerifyTokenFresh(token, now);
 
   if (isAlt) {
     // Alternate email verification
     const altEmail = await c.env.DB.prepare(
-      "SELECT id, verified FROM user_emails WHERE verify_token = ? OR verify_token = ?",
+      "SELECT id, user_id, email, verified FROM user_emails WHERE verify_token = ? OR verify_token = ?",
     )
       .bind(token, tokenLookup)
-      .first<{ id: string; verified: number }>();
+      .first<{
+        id: string;
+        user_id: string;
+        email: string;
+        verified: number;
+      }>();
     if (!altEmail)
       return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
+    if (expired)
+      return c.redirect(`${c.env.APP_URL}/verify-email?status=expired`);
+    // The link only works for the account that added the address. Anyone
+    // can add an address, so the owner may get a link from another
+    // account that looks like their own; opening it does nothing for that
+    // account unless whoever opens it is signed in to it.
+    const viewer = c.get("user") as AuthUser | undefined;
+    if (viewer?.id !== altEmail.user_id)
+      return c.redirect(`${c.env.APP_URL}/verify-email?status=wrong_account`);
+    // Someone else may have signed up with it since it was added.
+    if (await emailOwnedElsewhere(c.env.DB, altEmail.email, altEmail.user_id))
+      return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
 
-    await c.env.DB.prepare(
-      "UPDATE user_emails SET verified = 1, verify_token = NULL, verified_at = ? WHERE id = ?",
-    )
-      .bind(now, altEmail.id)
-      .run();
+    try {
+      await c.env.DB.prepare(
+        "UPDATE user_emails SET verified = 1, verify_token = NULL, verified_at = ? WHERE id = ?",
+      )
+        .bind(now, altEmail.id)
+        .run();
+    } catch (err) {
+      // Taken between the check and the write.
+      if (err instanceof Error && err.message.includes("UNIQUE"))
+        return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
+      throw err;
+    }
 
     return c.redirect(`${c.env.APP_URL}/verify-email?status=success`);
   }
@@ -458,12 +486,25 @@ app.get("/verify-email", async (c) => {
     .bind(token, tokenLookup)
     .first<UserRow>();
   if (!user) return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
+  if (expired)
+    return c.redirect(`${c.env.APP_URL}/verify-email?status=expired`);
 
-  await c.env.DB.prepare(
-    "UPDATE users SET email_verified = 1, email_verify_token = NULL, updated_at = ? WHERE id = ?",
-  )
-    .bind(now, user.id)
-    .run();
+  // Another account may have proved it owns the address meanwhile.
+  if (await emailOwnedElsewhere(c.env.DB, user.email, user.id))
+    return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
+
+  try {
+    await c.env.DB.prepare(
+      "UPDATE users SET email_verified = 1, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+    )
+      .bind(now, user.id)
+      .run();
+  } catch (err) {
+    // Taken between the check and the write.
+    if (err instanceof Error && err.message.includes("UNIQUE"))
+      return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
+    throw err;
+  }
 
   return c.redirect(`${c.env.APP_URL}/verify-email?status=success`);
 });
@@ -527,6 +568,8 @@ app.post("/passkey/register/finish", requireAuth, async (c) => {
   } catch (err) {
     // The library's reason is for operators, not the person signing in.
     console.warn("[passkey] registration failed:", err);
+    if (failedUserVerification(err))
+      return c.json({ error: "passkey_user_verification_required" }, 400);
     return c.json({ error: "passkey_registration_failed" }, 400);
   }
 
@@ -594,11 +637,20 @@ app.post("/passkey/auth/begin", async (c) => {
 
   const username = "username" in body ? body.username : undefined;
   if (username) {
-    const user = await c.env.DB.prepare(
-      "SELECT * FROM users WHERE (username = ? OR email = ?) AND kind = 'user'",
-    )
-      .bind(username, username)
-      .first<{ id: string }>();
+    // Matched the way password sign-in matches it: lowercased, and an email
+    // address finds its account through the shared lookup.
+    const name = username.toLowerCase().trim();
+    const user = name.includes("@")
+      ? await userForSignInEmail(
+          c.env.DB,
+          name,
+          (await getConfig(c.env.DB)).allow_alt_email_login,
+        )
+      : await c.env.DB.prepare(
+          "SELECT * FROM users WHERE username = ? AND kind = 'user'",
+        )
+          .bind(name)
+          .first<{ id: string }>();
     if (user) {
       const rows = await c.env.DB.prepare(
         "SELECT * FROM passkeys WHERE user_id = ?",
@@ -612,6 +664,7 @@ app.post("/passkey/auth/begin", async (c) => {
   const options = await beginPasskeyAuthentication(
     passkeys.map(rowToPasskey),
     rpId,
+    true,
   );
 
   // Store challenge in KV (5 minute TTL)
@@ -662,9 +715,12 @@ app.post("/passkey/auth/finish", async (c) => {
       rowToPasskey(passkeyRow),
       rpId,
       origin,
+      true,
     );
   } catch (err) {
     console.warn("[passkey] authentication failed:", err);
+    if (failedUserVerification(err))
+      return c.json({ error: "passkey_user_verification_required" }, 400);
     return c.json({ error: "passkey_auth_failed" }, 400);
   }
 
@@ -688,7 +744,9 @@ app.post("/passkey/auth/finish", async (c) => {
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
   // Passkey sign-in is a hardware/software cryptographic authenticator.
-  await issueSession(c, user, ttl, ["webauthn"]);
+  // The authenticator verified the user (PIN or biometric) on top of
+  // holding the key: two factors.
+  await issueSession(c, user, ttl, ["webauthn", "mfa"]);
   return c.json({
     user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });
@@ -715,6 +773,7 @@ app.post("/passkey/verify/begin", requireAuth, async (c) => {
   const options = await beginPasskeyAuthentication(
     rows.results.map(rowToPasskey),
     rpId,
+    false,
   );
 
   const challengeKey = `passkey:verify:${options.challenge}:${user.id}`;
@@ -741,6 +800,9 @@ app.post("/passkey/verify/finish", requireAuth, async (c) => {
   const challengeKey = `passkey:verify:${body.challenge}:${user.id}`;
   const stored = await c.env.KV_CACHE.get(challengeKey);
   if (!stored) return c.json({ error: "session_invalid" }, 400);
+  // One attempt per challenge, as with sign-in: a failed one can't be
+  // retried, and the same assertion sent twice can't earn two tokens.
+  await c.env.KV_CACHE.delete(challengeKey);
 
   const options = JSON.parse(stored) as { challenge: string };
 
@@ -762,6 +824,7 @@ app.post("/passkey/verify/finish", requireAuth, async (c) => {
       rowToPasskey(passkeyRow),
       rpId,
       origin,
+      false,
     );
   } catch (err) {
     console.warn("[passkey] verification failed:", err);
@@ -770,8 +833,6 @@ app.post("/passkey/verify/finish", requireAuth, async (c) => {
 
   if (!verification.verified)
     return c.json({ error: "verification_failed" }, 400);
-
-  await c.env.KV_CACHE.delete(challengeKey);
 
   // Update counter
   const now = Math.floor(Date.now() / 1000);

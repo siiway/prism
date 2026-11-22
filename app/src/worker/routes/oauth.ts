@@ -13,6 +13,7 @@ import {
 } from "../lib/jwt";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
+import { checkSiteGrantTotpLimit } from "../lib/loginRateLimit";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { rejectRepeatedParams } from "../middleware/repeatedParams";
 import {
@@ -35,7 +36,7 @@ import {
   bindTeamScopes,
   UNBOUND_TEAM_SCOPES,
 } from "../lib/scopes";
-import type { TeamPermission } from "../../shared/scopes";
+import { isSiteLevelScope, type TeamPermission } from "../../shared/scopes";
 import { deliverAppEvent } from "../lib/app-events";
 import {
   checkAppAuthorizationAllowed,
@@ -44,7 +45,7 @@ import {
 import { getGroupsForUserByTeam } from "../lib/teamGroups";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { getEffectiveMember, listEffectiveTeamMemberships } from "../lib/teams";
-import { checkAccessWhitelist } from "../lib/appAccess";
+import { canManageApp, checkAccessWhitelist } from "../lib/appAccess";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -82,6 +83,7 @@ import {
   TOKEN_TYPE_ACCESS_TOKEN,
   authenticateClient,
   buildConsentAppSummary,
+  pkceMethodInvalid,
   readOAuthBody,
   recordAppAuthorization,
   verifyAppPkce,
@@ -94,22 +96,27 @@ import registrationRoutes from "./oauth-registration";
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
-const SITE_SCOPES = new Set([
-  "site:user:read",
-  "site:user:write",
-  "site:user:delete",
-  "site:team:read",
-  "site:team:write",
-  "site:team:delete",
-  "site:config:read",
-  "site:config:write",
-  "site:token:revoke",
-]);
-
 const SITE_SCOPE_CONFIRM_PHRASE = "grant site access";
 
 function hasSiteScopes(scopes: string[]): boolean {
-  return scopes.some((s) => SITE_SCOPES.has(s));
+  return scopes.some(isSiteLevelScope);
+}
+
+/** Whether an authorization request may use this redirect URI. An app with
+ *  no registered URIs learns the first one it is approved with, and only
+ *  someone who manages the app may teach it: anyone else could lock it to
+ *  their own URL. Before sign-in there is no one to check yet; the approval
+ *  itself is checked again with the user. */
+async function redirectUriAllowed(
+  db: D1Database,
+  oauthApp: OAuthAppRow,
+  redirectUri: string,
+  user: { id: string; role: string } | undefined,
+): Promise<boolean> {
+  const registered = parseRedirectUris(oauthApp.redirect_uris);
+  if (!redirectUriMatchesRegistered(redirectUri, registered)) return false;
+  if (registered.length > 0 || !user) return true;
+  return canManageApp(db, oauthApp, user.id, user.role);
 }
 
 function hasUnboundTeamScopes(scopes: string[]): boolean {
@@ -235,10 +242,15 @@ async function loadPushedRequest(
 
 /** One-time use: consume a pushed request so its request_uri can't be replayed
  *  (RFC 9126 §2.2). Best-effort — the KV TTL is the backstop. */
-function consumePushedRequest(env: Env, requestUri: string): void {
+async function consumePushedRequest(
+  env: Env,
+  requestUri: string,
+): Promise<void> {
   if (!requestUri.startsWith(PAR_URN_PREFIX)) return;
   const id = requestUri.slice(PAR_URN_PREFIX.length);
-  if (id) void env.KV_CACHE.delete(`par:${id}`).catch(() => {});
+  // Awaited: a delete left running when the response goes out can be
+  // dropped, which would leave the request_uri usable until it expires.
+  if (id) await env.KV_CACHE.delete(`par:${id}`).catch(() => {});
 }
 
 // ─── Device Authorization Grant (RFC 8628) ───────────────────────────────────
@@ -436,6 +448,14 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
     c.env.DB.prepare(
       "DELETE FROM oauth_tokens WHERE user_id = ? AND client_id = ?",
     ).bind(user.id, clientId),
+    // Codes the app hasn't redeemed yet would still turn into tokens: the
+    // code and device grants don't look at the approval again.
+    c.env.DB.prepare(
+      "DELETE FROM oauth_codes WHERE user_id = ? AND client_id = ?",
+    ).bind(user.id, clientId),
+    c.env.DB.prepare(
+      "DELETE FROM oauth_device_codes WHERE user_id = ? AND client_id = ?",
+    ).bind(user.id, clientId),
   ]);
 
   if (appRow) {
@@ -560,6 +580,14 @@ app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
   if (!client_id || !redirect_uri || response_type !== "code") {
     return c.json({ error: "invalid_request" }, 400);
   }
+  if (pkceMethodInvalid(code_challenge, code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
+      },
+      400,
+    );
 
   const oauthApp = await c.env.DB.prepare(
     "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
@@ -568,12 +596,13 @@ app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
-  const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
-  if (!redirectUriMatchesRegistered(redirect_uri, redirectUris))
+  const currentUser = c.get("user");
+  if (
+    !(await redirectUriAllowed(c.env.DB, oauthApp, redirect_uri, currentUser))
+  )
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
   // Access whitelist check: if enabled, verify the user against the rules.
-  const currentUser = c.get("user");
   if (currentUser && oauthApp.access_whitelist_enabled) {
     const denied = await checkAccessWhitelist(
       c.env.DB,
@@ -593,22 +622,31 @@ app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
 
   const requestedScopes = parseScopeParam(scope);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
-  const [{ scopes, appScopes, rejected }, isVerified] = await Promise.all([
-    resolveRequestedScopes(
-      c.env.DB,
-      c.env.APP_URL,
-      requestedScopes,
-      allowedScopes,
-      oauthApp.client_id,
-    ),
-    computeIsVerified(
-      c.env.DB,
-      oauthApp.owner_id,
-      oauthApp.website_url,
-      oauthApp.redirect_uris,
-      oauthApp.team_id,
-    ),
-  ]);
+  const [{ scopes: resolvedScopes, appScopes, rejected }, isVerified] =
+    await Promise.all([
+      resolveRequestedScopes(
+        c.env.DB,
+        c.env.APP_URL,
+        requestedScopes,
+        allowedScopes,
+        oauthApp.client_id,
+      ),
+      computeIsVerified(
+        c.env.DB,
+        oauthApp.owner_id,
+        oauthApp.website_url,
+        oauthApp.redirect_uris,
+        oauthApp.team_id,
+      ),
+    ]);
+
+  // Only an admin can be granted site-level scopes. For anyone else they
+  // are left out, as the consent screen would decline them anyway, so the
+  // rest of the request can still be remembered or approved silently.
+  const scopes =
+    currentUser && currentUser.role !== "admin"
+      ? resolvedScopes.filter((s) => !isSiteLevelScope(s))
+      : resolvedScopes;
 
   // If the app requests team-scoped permissions, load the teams where the
   // authenticated user is owner or admin so the consent UI can show a picker.
@@ -765,9 +803,23 @@ app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
     existingConsentAutoAuthorize &&
     exactConsentMatch;
 
+  // A prompt=none error is sent straight to redirect_uri. An app with no
+  // registered URI hasn't had this one approved by anyone yet, and a silent
+  // request can't approve it, so refuse rather than redirect there.
+  if (
+    prompt === "none" &&
+    parseRedirectUris(oauthApp.redirect_uris).length === 0
+  )
+    return c.json({ error: "invalid_redirect_uri" }, 400);
+
   let promptNoneError: string | null = null;
   if (prompt === "none") {
     if (!currentUser || reauthRequired) promptNoneError = "login_required";
+    // Site-level scopes and team grants are only ever approved on the
+    // interactive screen (2FA, the phrase, the team picker), even for a
+    // first-party app or a remembered approval, so they can't be silent.
+    else if (hasSiteScopes(scopes) || needsTeamGrant)
+      promptNoneError = "consent_required";
     else if (
       !oauthApp.is_first_party &&
       (!existingConsentAutoAuthorize || !exactConsentMatch)
@@ -855,7 +907,16 @@ app.post("/authorize", requireAuth, async (c) => {
       );
     body.client_id = pushed.client_id;
     body.redirect_uri = pushed.redirect_uri;
-    body.scope = pushed.scope;
+    // The pushed request bounds what can be granted. What the user approved
+    // on the consent screen narrows it, as for a plain request: scopes they
+    // unticked, or site-level ones left out for a non-admin.
+    const pushedScopes = parseScopeParam(pushed.scope);
+    body.scope =
+      body.scope === undefined
+        ? pushed.scope
+        : parseScopeParam(body.scope)
+            .filter((s) => pushedScopes.includes(s))
+            .join(" ");
     body.code_challenge = pushed.code_challenge;
     body.code_challenge_method = pushed.code_challenge_method;
     body.nonce = pushed.nonce;
@@ -900,8 +961,7 @@ app.post("/authorize", requireAuth, async (c) => {
     if (appErr) return c.json({ error: appErr }, 403);
   }
 
-  const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
-  if (!redirectUriMatchesRegistered(body.redirect_uri, redirectUris))
+  if (!(await redirectUriAllowed(c.env.DB, oauthApp, body.redirect_uri, user)))
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
   const whitelistDenied = await checkAccessWhitelist(
@@ -922,13 +982,21 @@ app.post("/authorize", requireAuth, async (c) => {
     if (body.state) url.searchParams.set("state", body.state);
     // RFC 9207: identify the issuer on the (error) authorization response too.
     url.searchParams.set("iss", c.env.APP_URL);
-    if (body.request_uri) consumePushedRequest(c.env, body.request_uri);
+    if (body.request_uri) await consumePushedRequest(c.env, body.request_uri);
     return c.json({ redirect: url.toString() });
   }
 
   // OAuth 2.0 Security BCP §2.1.1: public clients MUST use PKCE.
   // Refuse to issue an authorization code without code_challenge so a code
   // intercepted at the redirect URI cannot be redeemed.
+  if (pkceMethodInvalid(body.code_challenge, body.code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
+      },
+      400,
+    );
   if (oauthApp.is_public === 1 && !body.code_challenge) {
     return c.json(
       {
@@ -968,6 +1036,14 @@ app.post("/authorize", requireAuth, async (c) => {
         twoFaOk = true;
       }
     } else if (body.totp_code) {
+      // Limited like sign-in's TOTP step, or a stolen session could guess
+      // its way past this gate; counted apart from it.
+      const limit = await checkSiteGrantTotpLimit(
+        c.env.DB,
+        user.id,
+        await getConfig(c.env.DB),
+      );
+      if (!limit.allowed) return c.json({ error: "too_many_requests" }, 429);
       twoFaOk = await verifyAnyTotp(c.env, user.id, body.totp_code);
     }
 
@@ -1048,7 +1124,7 @@ app.post("/authorize", requireAuth, async (c) => {
       .run();
   }
 
-  const siteScopes = boundScopes.filter((s) => SITE_SCOPES.has(s));
+  const siteScopes = boundScopes.filter(isSiteLevelScope);
 
   // Look up prior consent before inserting/updating
   const priorConsentRow = await c.env.DB.prepare(
@@ -1246,7 +1322,7 @@ app.post("/authorize", requireAuth, async (c) => {
   // RFC 9207: let the client confirm which issuer produced this response,
   // defeating mix-up attacks where a second AS is swapped in.
   url.searchParams.set("iss", c.env.APP_URL);
-  if (body.request_uri) consumePushedRequest(c.env, body.request_uri);
+  if (body.request_uri) await consumePushedRequest(c.env, body.request_uri);
 
   // Notify the app that a user just granted access
   c.executionCtx.waitUntil(
@@ -1790,11 +1866,25 @@ app.post("/token", rejectRepeatedParams, async (c) => {
         400,
       );
 
-    // Requested scope must be a subset of the subject token's scope.
+    // RFC 9449: a DPoP-bound token stays bound. Exchanging it takes a proof
+    // from the same key, and the new token is bound to that key too.
+    if (subject.dpopJkt && dpopJkt !== subject.dpopJkt)
+      return c.json(
+        { error: "invalid_dpop_proof", error_description: "DPoP key mismatch" },
+        400,
+      );
+
+    // Another app's token lends this client only what the user approved for
+    // it: the app:<clientId>:* scopes. The rest was approved for the app the
+    // token was issued to. The requested scope must be a subset of that.
+    const exchangeable =
+      subject.clientId === clientId
+        ? subject.scopes
+        : subject.scopes.filter((s) => s.startsWith(`app:${clientId}:`));
     const requested = parseScopeParam(params.scope);
-    let newScopes = subject.scopes;
+    let newScopes = exchangeable;
     if (requested.length) {
-      if (!requested.every((s) => subject.scopes.includes(s)))
+      if (!requested.every((s) => exchangeable.includes(s)))
         return c.json({ error: "invalid_scope" }, 400);
       newScopes = requested;
     }
@@ -1807,11 +1897,11 @@ app.post("/token", rejectRepeatedParams, async (c) => {
         : Array.isArray(json?.audience)
           ? json.audience.filter((v): v is string => typeof v === "string")
           : [];
-    const resources = validateResources([
+    const requestedResources = validateResources([
       ...collectResourceParams(form, json?.resource),
       ...audienceVals,
     ]);
-    if (resources === null)
+    if (requestedResources === null)
       return c.json(
         {
           error: "invalid_target",
@@ -1819,6 +1909,20 @@ app.post("/token", rejectRepeatedParams, async (c) => {
         },
         400,
       );
+    // A token limited to some resources can only be exchanged for one
+    // limited to those or fewer; asking for none keeps the same limit.
+    let resources = requestedResources;
+    if (subject.resources.length) {
+      if (!requestedResources.length) resources = subject.resources;
+      else if (!requestedResources.every((r) => subject.resources.includes(r)))
+        return c.json(
+          {
+            error: "invalid_target",
+            error_description: "resource/audience outside the subject token's",
+          },
+          400,
+        );
+    }
 
     const user = await c.env.DB.prepare(
       "SELECT * FROM users WHERE id = ? AND kind = 'user'",
@@ -1828,7 +1932,13 @@ app.post("/token", rejectRepeatedParams, async (c) => {
     if (!user || !user.is_active)
       return c.json({ error: "invalid_grant" }, 400);
 
-    const { atTtl } = tokenTtls(user, config);
+    // The new token can't outlive the one it came from; otherwise exchanging
+    // each token for the next would keep access alive with no refresh token.
+    const atTtl = Math.min(
+      tokenTtls(user, config).atTtl,
+      subject.expiresAt - now,
+    );
+    if (atTtl <= 0) return c.json({ error: "invalid_grant" }, 400);
     const resourceJson = serializeResources(resources);
     const jti = randomId();
     // A client that knows the user by its own ID for them (a SAML app) keeps
@@ -2067,6 +2177,15 @@ app.post("/par", rejectRepeatedParams, async (c) => {
       400,
     );
 
+  if (pkceMethodInvalid(params.code_challenge, params.code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
+      },
+      400,
+    );
+
   const payload: PushedRequest = {
     client_id: oauthApp.client_id,
     redirect_uri: redirectUri,
@@ -2133,6 +2252,15 @@ app.post("/device_authorization", rejectRepeatedParams, async (c) => {
         error: "invalid_scope",
         error_description:
           "site-level and team scopes cannot be granted via the device flow",
+      },
+      400,
+    );
+
+  if (pkceMethodInvalid(params.code_challenge, params.code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
       },
       400,
     );
@@ -2711,7 +2839,8 @@ app.post("/end_session", optionalAuth, handleEndSession);
 
 /**
  * Resolve an OAuth access token value (JWT or opaque) to its live grant, for
- * RFC 8693 token exchange. Returns the owner, scopes and issuing client, or
+ * RFC 8693 token exchange. Returns the owner, scopes, issuing client, expiry
+ * and DPoP key binding, or
  * null when the token is unknown, expired, or its user is inactive.
  */
 async function lookupAccessToken(
@@ -2722,6 +2851,9 @@ async function lookupAccessToken(
   subject: string | null;
   scopes: string[];
   clientId: string;
+  expiresAt: number;
+  dpopJkt: string | null;
+  resources: string[];
 } | null> {
   const now = Math.floor(Date.now() / 1000);
   let tokenRow: {
@@ -2730,6 +2862,8 @@ async function lookupAccessToken(
     scopes: string;
     expires_at: number;
     client_id: string;
+    dpop_jkt: string | null;
+    resource: string | null;
   } | null;
 
   if (token.split(".").length === 3) {
@@ -2737,7 +2871,7 @@ async function lookupAccessToken(
       const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
       const payload = verifyAccessToken(token, mldsaKey.publicKey);
       tokenRow = await c.env.DB.prepare(
-        "SELECT user_id, subject, scopes, expires_at, client_id FROM oauth_tokens WHERE id = ?",
+        "SELECT user_id, subject, scopes, expires_at, client_id, dpop_jkt, resource FROM oauth_tokens WHERE id = ?",
       )
         .bind(payload.jti)
         .first();
@@ -2748,7 +2882,7 @@ async function lookupAccessToken(
     const lookup = await hashLookupCandidate(c.env, token);
     if (!lookup) return null;
     tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, subject, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
+      "SELECT user_id, subject, scopes, expires_at, client_id, dpop_jkt, resource FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
     )
       .bind(token, lookup)
       .first();
@@ -2767,6 +2901,9 @@ async function lookupAccessToken(
     subject: tokenRow.subject,
     scopes: JSON.parse(tokenRow.scopes) as string[],
     clientId: tokenRow.client_id,
+    expiresAt: tokenRow.expires_at,
+    dpopJkt: tokenRow.dpop_jkt,
+    resources: parseResources(tokenRow.resource),
   };
 }
 

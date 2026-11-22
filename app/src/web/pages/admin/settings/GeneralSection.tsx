@@ -52,7 +52,7 @@ export function GeneralSection({ draft }: SectionProps) {
             <Input
               value={get("security_contact") ?? ""}
               onChange={(e) => set("security_contact", e.target.value)}
-              placeholder="mailto:security@example.com"
+              placeholder={t("admin.securityContactPlaceholder")}
             />
           </Field>
           <Field
@@ -62,7 +62,7 @@ export function GeneralSection({ draft }: SectionProps) {
             <Input
               value={get("security_policy_url") ?? ""}
               onChange={(e) => set("security_policy_url", e.target.value)}
-              placeholder="https://example.com/security-policy"
+              placeholder={t("admin.securityPolicyUrlPlaceholder")}
             />
           </Field>
         </SettingsBody>

@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import {
   grantMatcher,
   heldScopes,
+  likeAny,
   parseScopeList,
+  SITE_GRANT_LIKES,
   stripGrant,
 } from "../src/worker/lib/scopeGrants";
 
@@ -52,5 +55,34 @@ describe("stripGrant", () => {
   });
   test("returns null when nothing is left", () => {
     expect(stripGrant('["site:user:read"]', "site")).toBeNull();
+  });
+});
+
+describe("site grant LIKE patterns", () => {
+  test("find site-level scopes, not app scopes that mention them", () => {
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE t (id TEXT, scopes TEXT)");
+    const rows: [string, string][] = [
+      ["json-site", '["openid","site:user:read"]'],
+      ["json-admin", '["admin:config:read"]'],
+      ["legacy", "openid admin:users:read"],
+      ["legacy-first", "site:team:read openid"],
+      ["app-admin", '["openid","app:x:admin:panel"]'],
+      ["app-site", "openid app:x:site:map"],
+    ];
+    for (const r of rows) db.run("INSERT INTO t VALUES (?, ?)", r);
+    const found = (
+      db
+        .query(
+          `SELECT id FROM t WHERE ${likeAny("scopes", SITE_GRANT_LIKES)} ORDER BY id`,
+        )
+        .all(...SITE_GRANT_LIKES) as { id: string }[]
+    ).map((r) => r.id);
+    expect(found).toEqual([
+      "json-admin",
+      "json-site",
+      "legacy",
+      "legacy-first",
+    ]);
   });
 });

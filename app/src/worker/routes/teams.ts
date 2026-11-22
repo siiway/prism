@@ -12,6 +12,7 @@ import {
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
 import { isAllowedScope } from "../lib/scopes";
+import { checkAppScopeOwnerRules } from "../lib/appScopeRules";
 import {
   parseRedirectUris,
   validateRedirectUriEntry,
@@ -62,8 +63,7 @@ import {
   isInvalidReparent,
   isSiteAdmin,
   teamAuthority,
-  teamUserSyntheticEmail,
-  teamUserSyntheticUsername,
+  createTeamStatements,
   auditTeam,
 } from "../lib/teams";
 import teamDomainRoutes from "./teams-domains";
@@ -559,39 +559,18 @@ app.post("/", async (c) => {
 
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
-  const teamUserUsername = teamUserSyntheticUsername(id);
-  const teamUserEmail = teamUserSyntheticEmail(id);
 
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "INSERT INTO teams (id, name, description, avatar_url, parent_team_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ).bind(
+  await c.env.DB.batch(
+    createTeamStatements(c.env.DB, {
       id,
-      body.name.trim(),
-      body.description ?? "",
-      body.avatar_url ?? null,
+      name: body.name.trim(),
+      description: body.description ?? "",
+      avatarUrl: body.avatar_url ?? null,
       parentId,
+      ownerId,
       now,
-      now,
-    ),
-    // Synthetic user row mirroring the team — kind='team' rules out login,
-    // sessions, social linking, etc. The id matches teams.id so any code
-    // joining oauth_apps.owner_id → users still resolves to the team.
-    c.env.DB.prepare(
-      "INSERT INTO users (id, email, username, password_hash, display_name, avatar_url, role, kind, email_verified, is_active, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, 'user', 'team', 0, 1, ?, ?)",
-    ).bind(
-      id,
-      teamUserEmail,
-      teamUserUsername,
-      body.name.trim(),
-      body.avatar_url ?? null,
-      now,
-      now,
-    ),
-    c.env.DB.prepare(
-      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
-    ).bind(id, ownerId, now),
-  ]);
+    }),
+  );
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)
@@ -704,33 +683,17 @@ app.post("/:id/sub-teams", async (c) => {
 
   const subId = randomId();
   const now = Math.floor(Date.now() / 1000);
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "INSERT INTO teams (id, name, description, avatar_url, parent_team_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ).bind(
-      subId,
-      body.name.trim(),
-      body.description ?? "",
-      body.avatar_url ?? null,
-      id,
+  await c.env.DB.batch(
+    createTeamStatements(c.env.DB, {
+      id: subId,
+      name: body.name.trim(),
+      description: body.description ?? "",
+      avatarUrl: body.avatar_url ?? null,
+      parentId: id,
+      ownerId: user.id,
       now,
-      now,
-    ),
-    c.env.DB.prepare(
-      "INSERT INTO users (id, email, username, password_hash, display_name, avatar_url, role, kind, email_verified, is_active, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, 'user', 'team', 0, 1, ?, ?)",
-    ).bind(
-      subId,
-      teamUserSyntheticEmail(subId),
-      teamUserSyntheticUsername(subId),
-      body.name.trim(),
-      body.avatar_url ?? null,
-      now,
-      now,
-    ),
-    c.env.DB.prepare(
-      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
-    ).bind(subId, user.id, now),
-  ]);
+    }),
+  );
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(subId)
@@ -1816,6 +1779,13 @@ app.post("/:id/apps", async (c) => {
   const allowedScopes = (
     body.allowed_scopes ?? ["openid", "profile", "email"]
   ).filter(isAllowedScope);
+  const ruleErr = await checkAppScopeOwnerRules(
+    c.env.DB,
+    allowedScopes,
+    [],
+    user.id,
+  );
+  if (ruleErr) return c.json(ruleErr, 403);
 
   // owner_id points at the team-user row (id == teams.id) when teams have
   // been migrated to the unified user model. Falls back to the creator if

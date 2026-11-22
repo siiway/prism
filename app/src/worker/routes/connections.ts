@@ -12,6 +12,9 @@ import {
   timingSafeStrEqual,
 } from "../lib/crypto";
 import { getConfig } from "../lib/config";
+import { emailInUse, emailOwnedElsewhere } from "../lib/accountEmails";
+import { optionalDisplayName } from "../lib/displayName";
+import { DISPLAY_NAME_MAX_LENGTH } from "../../shared/limits";
 import { getIp } from "../lib/clientIp";
 import { decryptSecret, encryptSecret } from "../lib/secretCrypto";
 import {
@@ -43,6 +46,7 @@ import {
 } from "../lib/notifications";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { verifyAnyTotp } from "../lib/totp";
+import { checkLoginTotpLimit } from "../lib/loginRateLimit";
 import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import type {
@@ -716,6 +720,7 @@ app.post("/:provider/tg-verify", optionalAuth, async (c) => {
 
   if (linkedUsers.length === 1) {
     const user = linkedUsers[0];
+    if (!user.is_active) return c.json({ error: "account_disabled" }, 403);
     await c.env.DB.prepare(
       "UPDATE social_connections SET profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
     )
@@ -1093,6 +1098,8 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
   if (linkedUsers.length === 1) {
     // Single account — log in directly and refresh the token
     const user = linkedUsers[0];
+    if (!user.is_active)
+      return c.redirect(`${c.env.APP_URL}/login?error=account_disabled`);
     const storedAccess = await encryptSecret(c.env, accessToken);
     const storedRefresh = await encryptSecret(c.env, refreshToken);
     await c.env.DB.prepare(
@@ -1184,8 +1191,15 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
 
 // ─── Pending social state (for confirm / select pages) ────────────────────────
 
+/** The key comes from the browser, and KV_CACHE holds much else; only a
+ *  pending social sign-in may be read or used up through these routes. */
+function isPendingKey(key: unknown): key is string {
+  return typeof key === "string" && key.startsWith("social:pending:");
+}
+
 app.get("/pending/:key", async (c) => {
   const key = c.req.param("key");
+  if (!isPendingKey(key)) return c.json({ error: "session_invalid" }, 404);
   const raw = await c.env.KV_CACHE.get(key);
   if (!raw) return c.json({ error: "session_invalid" }, 404);
 
@@ -1209,7 +1223,11 @@ app.get("/pending/:key", async (c) => {
       state.profileData,
       state.providerEmail,
     ),
-    suggested_display_name: extractDisplayName(baseProvider, state.profileData),
+    // Cut to fit, as when the user leaves it out: sent back as typed, it is
+    // checked like any other name.
+    suggested_display_name: extractDisplayName(baseProvider, state.profileData)
+      .trim()
+      .slice(0, DISPLAY_NAME_MAX_LENGTH),
     users: state.users
       ? await Promise.all(
           state.users.map(
@@ -1246,12 +1264,17 @@ app.post("/complete", async (c) => {
     }>()
     .catch(() => null);
   if (!body) return c.json({ error: "invalid_request_body" }, 400);
+  if (!isPendingKey(body.key)) return c.json({ error: "session_invalid" }, 400);
 
   const raw = await c.env.KV_CACHE.get(body.key);
   if (!raw) return c.json({ error: "session_invalid" }, 400);
 
   const state = JSON.parse(raw) as PendingState;
-  await c.env.KV_CACHE.delete(body.key);
+  // Used up only once the request passes the checks below: right before a
+  // session is created, or once a new account exists. A username taken or a
+  // name too long can be corrected and sent again without another trip to
+  // the provider. The pending state expires after ten minutes either way.
+  const spend = () => c.env.KV_CACHE.delete(body.key);
 
   const now = Math.floor(Date.now() / 1000);
   // Resolve base provider type for display-name helpers
@@ -1269,6 +1292,8 @@ app.post("/complete", async (c) => {
       .bind(body.user_id)
       .first<UserRow>();
     if (!user) return c.json({ error: "user_not_found" }, 404);
+    if (!user.is_active) return c.json({ error: "account_disabled" }, 403);
+    await spend();
 
     const storedAccess = await encryptSecret(c.env, state.accessToken);
     const storedRefresh = await encryptSecret(c.env, state.refreshToken);
@@ -1362,11 +1387,16 @@ app.post("/complete", async (c) => {
       .toLowerCase()
       .replace(/[^a-z0-9_]/g, "_")
       .slice(0, 32);
-    const display_name = (
-      body.display_name ?? extractDisplayName(baseProvider, state.profileData)
-    )
-      .trim()
-      .slice(0, 64);
+    // A name the user typed is checked like any other; failing that, the
+    // provider's (cut to fit), and failing that, the username.
+    const chosenName = optionalDisplayName(body.display_name);
+    if (chosenName.error) return c.json(chosenName.error, 400);
+    const display_name =
+      (chosenName.name ??
+        extractDisplayName(baseProvider, state.profileData)
+          .trim()
+          .slice(0, DISPLAY_NAME_MAX_LENGTH)) ||
+      username;
 
     if (!username)
       return c.json(
@@ -1389,6 +1419,8 @@ app.post("/complete", async (c) => {
     // `1` here would let an attacker who set victim@example.com on a
     // fresh, unverified Discord account claim that address on Prism.
     const trustedEmail = state.providerEmail;
+    if (trustedEmail && (await emailInUse(c.env.DB, trustedEmail)))
+      return c.json({ error: "email_or_username_taken" }, 409);
     // Take the invite use before the insert — see claimSiteInvite. Released
     // below if creating the account fails.
     if (usedInvite && !(await claimSiteInvite(c.env, usedInvite)))
@@ -1411,8 +1443,15 @@ app.post("/complete", async (c) => {
         .run();
     } catch (err) {
       if (usedInvite) await releaseSiteInvite(c.env, usedInvite);
+      // Another request took the username or address since the checks.
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("UNIQUE"))
+        return c.json({ error: "email_or_username_taken" }, 409);
       throw err;
     }
+    // Spent once the account exists, so losing a race for the username
+    // above can still be corrected and sent again.
+    await spend();
 
     const storedAccess = await encryptSecret(c.env, state.accessToken);
     const storedRefresh = await encryptSecret(c.env, state.refreshToken);
@@ -1490,6 +1529,12 @@ app.post("/2fa/verify", async (c) => {
   if (!raw) return c.json({ error: "session_invalid" }, 400);
   const state = JSON.parse(raw) as Pending2faState;
 
+  // The same per-account limit as the password flow's TOTP step. A bad code
+  // keeps the key alive, so without it the code could be guessed.
+  const config = await getConfig(c.env.DB);
+  const limit = await checkLoginTotpLimit(c.env.DB, state.userId, config);
+  if (!limit.allowed) return c.json({ error: "too_many_requests" }, 429);
+
   const ok = await verifyAnyTotp(c.env, state.userId, body.totp_code);
   if (!ok) return c.json({ error: "totp_invalid" }, 401);
 
@@ -1502,6 +1547,7 @@ app.post("/2fa/verify", async (c) => {
     .bind(state.userId)
     .first<UserRow>();
   if (!user) return c.json({ error: "user_not_found" }, 404);
+  if (!user.is_active) return c.json({ error: "account_disabled" }, 403);
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(
@@ -1516,7 +1562,7 @@ app.post("/2fa/verify", async (c) => {
     ).catch(() => {}),
   );
 
-  await issueSession(c, user, SOCIAL_SESSION_TTL, ["ext"]);
+  await issueSession(c, user, SOCIAL_SESSION_TTL, ["ext", "otp", "mfa"]);
   return c.json({
     user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });
@@ -1750,7 +1796,14 @@ app.delete("/:id", requireAuth, async (c) => {
  * Auto-verify a user's email if the social provider confirms the same address.
  * Checks TTL expiry for previously social-verified emails.
  */
-async function trySocialEmailVerify(
+/** Whether an address's verification came from a social provider, whose
+ *  word lasts social_verify_ttl_days. Null is a link or mail the user sent,
+ *  and 'admin' an admin's word; neither expires nor is taken over. */
+function verifiedBySocial(via: string | null | undefined): boolean {
+  return !!via && via !== "admin";
+}
+
+export async function trySocialEmailVerify(
   db: D1Database,
   userId: string,
   userEmail: string,
@@ -1764,13 +1817,22 @@ async function trySocialEmailVerify(
   const now = Math.floor(Date.now() / 1000);
 
   if (!userEmailVerified) {
-    // Not yet verified — auto-verify via this provider
-    await db
-      .prepare(
-        "UPDATE users SET email_verified = 1, email_verified_via = ?, email_verified_at = ?, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
-      )
-      .bind(providerSlug, now, now, userId)
-      .run();
+    // Not yet verified — auto-verify via this provider, unless another
+    // account has proved it owns the address.
+    if (await emailOwnedElsewhere(db, userEmail, userId)) return;
+    try {
+      await db
+        .prepare(
+          "UPDATE users SET email_verified = 1, email_verified_via = ?, email_verified_at = ?, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+        )
+        .bind(providerSlug, now, now, userId)
+        .run();
+    } catch (err) {
+      // Taken between the check and the write: the sign-in goes on, with
+      // the address left unverified.
+      if (err instanceof Error && err.message.includes("UNIQUE")) return;
+      throw err;
+    }
     console.log(
       `[social-verify] Auto-verified email for user ${userId} via ${providerSlug}`,
     );
@@ -1788,7 +1850,7 @@ async function trySocialEmailVerify(
       email_verified_at: number | null;
     }>();
 
-  if (user?.email_verified_via) {
+  if (verifiedBySocial(user?.email_verified_via)) {
     // Refresh the timestamp so the TTL resets
     await db
       .prepare(
@@ -1803,7 +1865,7 @@ async function trySocialEmailVerify(
  * Check if a social-verified email has expired past the configured TTL.
  * If so, mark it as unverified. Called during login flows.
  */
-async function checkSocialVerifyExpiry(
+export async function checkSocialVerifyExpiry(
   db: D1Database,
   userId: string,
   socialVerifyTtlDays: number,
@@ -1821,7 +1883,12 @@ async function checkSocialVerifyExpiry(
       email_verified_at: number | null;
     }>();
 
-  if (!user || !user.email_verified || !user.email_verified_via) return;
+  if (
+    !user ||
+    !user.email_verified ||
+    !verifiedBySocial(user.email_verified_via)
+  )
+    return;
 
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = (user.email_verified_at ?? 0) + socialVerifyTtlDays * 86400;
@@ -1888,7 +1955,11 @@ function extractProviderEmail(
 ): string | null {
   // X (Twitter) v2 API never exposes email — treat the same as Telegram.
   if (provider === "telegram" || provider === "x") return null;
-  const email = typeof profile.email === "string" ? profile.email : null;
+  // Stored addresses are lowercase, and so is every comparison with them.
+  const email =
+    typeof profile.email === "string"
+      ? profile.email.trim().toLowerCase()
+      : null;
 
   switch (provider) {
     case "discord":

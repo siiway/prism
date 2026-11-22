@@ -196,7 +196,7 @@ export function ScopesCard({ formApi }: { formApi: AppFormApi }) {
                     autoFocus
                     value={targetClientId}
                     onChange={(_, d) => setTargetClientId(d.value)}
-                    placeholder="prism_..."
+                    placeholder={t("apps.scopeClientIdPlaceholder")}
                     input={{ className: styles.monoInput }}
                   />
                 </Field>
@@ -204,7 +204,7 @@ export function ScopesCard({ formApi }: { formApi: AppFormApi }) {
                   <Input
                     value={targetScope}
                     onChange={(_, d) => setTargetScope(d.value)}
-                    placeholder="read_posts"
+                    placeholder={t("apps.scopeNamePlaceholder")}
                     input={{ className: styles.monoInput }}
                   />
                 </Field>

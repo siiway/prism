@@ -2,6 +2,7 @@
 // with a key registered on their account.
 
 import { Hono } from "hono";
+import { userForSignInEmail } from "../lib/accountEmails";
 import { getConfig } from "../lib/config";
 import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
@@ -9,7 +10,7 @@ import { randomId } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
 import { verifySignedMessage } from "../lib/gpg";
 import { rateLimitIp } from "../middleware/rateLimit";
-import { logLoginError } from "../lib/loginRateLimit";
+import { checkLoginTotpLimit, logLoginError } from "../lib/loginRateLimit";
 import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import type { UserRow, Variables } from "../types";
@@ -22,8 +23,12 @@ const app = new Hono<AppEnv>();
 // Step 1: request a challenge
 app.post("/gpg-challenge", async (c) => {
   const ip = getIp(c);
-  const { ipv6_rate_limit_prefix, gpg_challenge_prefix, site_name } =
-    await getConfig(c.env.DB);
+  const {
+    ipv6_rate_limit_prefix,
+    gpg_challenge_prefix,
+    site_name,
+    allow_alt_email_login,
+  } = await getConfig(c.env.DB);
   const rl = await rateLimitIp(
     c.env.DB,
     ip,
@@ -42,10 +47,9 @@ app.post("/gpg-challenge", async (c) => {
 
   const identifier = body.identifier.toLowerCase().trim();
   const isEmail = identifier.includes("@");
+  // The same account /gpg-login will find, or the challenge never matches.
   const user = await (isEmail
-    ? c.env.DB.prepare("SELECT id FROM users WHERE email = ? AND kind = 'user'")
-        .bind(identifier)
-        .first<{ id: string }>()
+    ? userForSignInEmail(c.env.DB, identifier, allow_alt_email_login)
     : c.env.DB.prepare(
         "SELECT id FROM users WHERE username = ? AND kind = 'user'",
       )
@@ -105,10 +109,13 @@ app.post("/gpg-login", async (c) => {
   const identifier = body.identifier.toLowerCase().trim();
   const isEmail = identifier.includes("@");
 
+  // An email address finds its account the way password sign-in does.
   const user = await (isEmail
-    ? c.env.DB.prepare("SELECT * FROM users WHERE email = ? AND kind = 'user'")
-        .bind(identifier)
-        .first<UserRow>()
+    ? userForSignInEmail(
+        c.env.DB,
+        identifier,
+        gpgLoginConfig.allow_alt_email_login,
+      )
     : c.env.DB.prepare(
         "SELECT * FROM users WHERE username = ? AND kind = 'user'",
       )
@@ -215,9 +222,31 @@ app.post("/gpg-login", async (c) => {
   )
     .bind(user.id)
     .first<{ n: number }>();
+  let usedTotp = false;
   if ((gpgTotpCount?.n ?? 0) > 0 && user.gpg_require_2fa !== 0) {
     if (!body.totp_code)
       return c.json({ error: "totp_required", totp_required: true }, 200);
+    // Per account as well as per IP: the challenge survives a bad code, so
+    // the IP limit alone would let many addresses guess it.
+    const totpLimit = await checkLoginTotpLimit(
+      c.env.DB,
+      user.id,
+      gpgLoginConfig,
+    );
+    if (!totpLimit.allowed) {
+      c.executionCtx.waitUntil(
+        logLoginError(
+          c.env.DB,
+          "rate_limited",
+          body.identifier,
+          ip,
+          ua,
+          geoJson(c),
+          { user_id: user.id, factor: "totp" },
+        ).catch(() => {}),
+      );
+      return c.json({ error: "too_many_requests" }, 429);
+    }
     if (!(await verifyAnyTotp(c.env, user.id, body.totp_code))) {
       c.executionCtx.waitUntil(
         logLoginError(
@@ -232,6 +261,7 @@ app.post("/gpg-login", async (c) => {
       );
       return c.json({ error: "totp_invalid" }, 401);
     }
+    usedTotp = true;
   }
 
   // Consume the challenge (one-time use)
@@ -250,7 +280,8 @@ app.post("/gpg-login", async (c) => {
   }
 
   const ttl = gpgLoginConfig.session_ttl_days * 24 * 60 * 60;
-  await issueSession(c, user, ttl);
+  // swk: proof of a software-held key (RFC 8176).
+  await issueSession(c, user, ttl, usedTotp ? ["swk", "otp", "mfa"] : ["swk"]);
   return c.json({
     user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });

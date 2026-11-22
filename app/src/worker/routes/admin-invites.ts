@@ -12,6 +12,7 @@ import {
 import { readPage, likePattern } from "../lib/pagination";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { auditAdmin } from "../lib/audit";
+import { inviteExpiryFromDays } from "../lib/inviteExpiry";
 import type { SiteInviteRow, Variables } from "../types";
 import {
   inviteSetClause,
@@ -80,9 +81,10 @@ app.post("/invites", async (c) => {
   const id = randomId();
   const token = randomBase64url(24);
   const storedToken = token;
-  const expiresAt = body.expires_in_days
-    ? now + body.expires_in_days * 86400
-    : null;
+  const expiry = inviteExpiryFromDays(body.expires_in_days, now);
+  if (!expiry.ok)
+    return c.json({ error: expiry.error, params: expiry.params }, 400);
+  const expiresAt = expiry.expiresAt;
 
   await c.env.DB.prepare(
     `INSERT INTO site_invites (id, token, email, note, max_uses, use_count, created_by, expires_at, created_at, enabled)
@@ -188,20 +190,14 @@ app.patch("/invites/:id", async (c) => {
     changes.max_uses = maxUses;
   }
   if (body.expires_in_days !== undefined) {
-    if (body.expires_in_days === null) expiresAt = null;
-    else if (
-      !Number.isSafeInteger(body.expires_in_days) ||
-      body.expires_in_days < 1
-    )
-      return c.json(
-        {
-          error: "field_must_be_positive_integer",
-          params: { field: "expires_in_days" },
-        },
-        400,
-      );
-    else
-      expiresAt = Math.floor(Date.now() / 1000) + body.expires_in_days * 86400;
+    // null clears the expiry; otherwise the same rule as creating one.
+    const expiry = inviteExpiryFromDays(
+      body.expires_in_days,
+      Math.floor(Date.now() / 1000),
+    );
+    if (!expiry.ok)
+      return c.json({ error: expiry.error, params: expiry.params }, 400);
+    expiresAt = expiry.expiresAt;
     changes.expires_at = expiresAt;
   }
   if (body.enabled !== undefined) {

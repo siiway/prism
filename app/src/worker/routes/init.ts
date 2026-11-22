@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { isInitialized, setConfigValue } from "../lib/config";
 import { hashPassword, randomId } from "../lib/crypto";
 import { issueSession } from "../lib/session";
+import { optionalDisplayName } from "../lib/displayName";
 import { toSessionUser } from "../lib/sessionUser";
 import type { UserRow, Variables } from "../types";
 import { PASSWORD_MIN_LENGTH } from "../../shared/limits";
@@ -43,6 +44,9 @@ app.post("/", async (c) => {
   if (body.password.length < PASSWORD_MIN_LENGTH) {
     return c.json({ error: "password_too_short" }, 400);
   }
+  // Optional: left blank, the username stands in.
+  const displayName = optionalDisplayName(body.display_name);
+  if (displayName.error) return c.json(displayName.error, 400);
 
   const userId = randomId();
   const passwordHash = await hashPassword(body.password);
@@ -67,7 +71,7 @@ app.post("/", async (c) => {
         body.email.toLowerCase().trim(),
         body.username.toLowerCase().trim(),
         passwordHash,
-        body.display_name ?? body.username,
+        displayName.name ?? body.username,
         now,
         now,
       )

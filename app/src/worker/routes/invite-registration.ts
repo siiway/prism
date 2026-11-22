@@ -26,6 +26,8 @@ import { requireAuth } from "../middleware/auth";
 import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import { getConfig, getConfigValue } from "../lib/config";
+import { emailInUse } from "../lib/accountEmails";
+import { optionalDisplayName } from "../lib/displayName";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { getIp } from "../lib/clientIp";
@@ -228,6 +230,9 @@ app.post("/auth/register-with-invite", async (c) => {
     return c.json({ error: "password_too_short" }, 400);
   if (!/^[a-z0-9_.-]{2,32}$/i.test(body.username))
     return c.json({ error: "username_invalid" }, 400);
+  // Optional: left blank, the username stands in.
+  const displayName = optionalDisplayName(body.display_name);
+  if (displayName.error) return c.json(displayName.error, 400);
 
   const invite = await findInvite(c.env, body.invite_token);
   const now = Math.floor(Date.now() / 1000);
@@ -271,6 +276,8 @@ app.post("/auth/register-with-invite", async (c) => {
     email = body.email.toLowerCase().trim();
     if (invite.email && invite.email.toLowerCase() !== email)
       return c.json({ error: "invite_email_mismatch" }, 403);
+    if (await emailInUse(c.env.DB, email))
+      return c.json({ error: "email_or_username_taken" }, 409);
   } else {
     // Placeholder for now; rewritten below once the id exists. The holder can
     // bind a real address whenever they like, and must before converting.
@@ -325,7 +332,7 @@ app.post("/auth/register-with-invite", async (c) => {
         email,
         body.username.toLowerCase().trim(),
         passwordHash,
-        body.display_name ?? body.username,
+        displayName.name ?? body.username,
         team.id,
         invite.token,
         now,

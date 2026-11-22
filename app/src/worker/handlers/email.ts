@@ -1,5 +1,6 @@
 // Cloudflare Email Worker handler — receives inbound emails for email verification
 
+import { emailOwnedElsewhere } from "../lib/accountEmails";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 
 export async function handleEmailWorker(
@@ -53,34 +54,58 @@ export async function handleEmailWorker(
       .bind(code, codeLookup, senderEmail)
       .first<{ id: string; user_id: string }>();
     if (altEmail) {
-      await env.DB.prepare(
-        "UPDATE user_emails SET verified = 1, verify_code = NULL, verified_at = ? WHERE id = ?",
-      )
-        .bind(Math.floor(Date.now() / 1000), altEmail.id)
-        .run();
+      // Someone else may have signed up with it since it was added.
+      if (await emailOwnedElsewhere(env.DB, senderEmail, altEmail.user_id)) {
+        message.setReject("Email address belongs to another account");
+        return;
+      }
+      await verifyOrReject(
+        message,
+        env.DB.prepare(
+          "UPDATE user_emails SET verified = 1, verify_code = NULL, verified_at = ? WHERE id = ?",
+        ).bind(Math.floor(Date.now() / 1000), altEmail.id),
+      );
       return;
     }
     message.setReject("Invalid verification code");
     return;
   }
 
-  // The sender must match the user's registered email or an alternate
-  const emailMatches =
-    user.email.toLowerCase() === senderEmail ||
-    !!(await env.DB.prepare(
-      "SELECT id FROM user_emails WHERE user_id = ? AND email = ?",
-    )
-      .bind(user.id, senderEmail)
-      .first());
-
-  if (!emailMatches) {
+  // Only mail from the address itself proves it. Mail from one of the
+  // account's other addresses proves nothing about this one.
+  if (user.email.toLowerCase() !== senderEmail) {
     message.setReject("Sender does not match registered email");
     return;
   }
 
-  await env.DB.prepare(
-    "UPDATE users SET email_verified = 1, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
-  )
-    .bind(Math.floor(Date.now() / 1000), user.id)
-    .run();
+  // Another account may have proved it owns the address meanwhile.
+  if (await emailOwnedElsewhere(env.DB, user.email, user.id)) {
+    message.setReject("Email address belongs to another account");
+    return;
+  }
+
+  await verifyOrReject(
+    message,
+    env.DB.prepare(
+      "UPDATE users SET email_verified = 1, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+    ).bind(Math.floor(Date.now() / 1000), user.id),
+  );
+}
+
+/** Run the write that marks an address verified. If another account took
+ *  the address between the check and the write, the database refuses it,
+ *  and the mail is rejected like any other address in use. */
+async function verifyOrReject(
+  message: { setReject(reason: string): void },
+  write: D1PreparedStatement,
+): Promise<void> {
+  try {
+    await write.run();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("UNIQUE")) {
+      message.setReject("Email address belongs to another account");
+      return;
+    }
+    throw err;
+  }
 }

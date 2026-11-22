@@ -30,15 +30,15 @@ https://your-prism-domain/.well-known/jwks.json                  # signing keys
 
 每个注册的重定向 URI 都有一个匹配类型：
 
-| 类型       | 行为                                                          |
-| ---------- | ------------------------------------------------------------- |
-| `Equals`   | 精确匹配（默认，也是最安全的方式）。                          |
-| `Wildcard` | `*` 代表任意长度的字符，例如 `https://example.com/*`。        |
-| `Regex`    | 与整个 URI 匹配的正则表达式，例如 `https://example\.com/.*`。 |
+| 类型       | 行为                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Equals`   | 精确匹配（默认，也是最安全的方式）。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `Wildcard` | 在路径或查询中，`*` 代表任意长度的字符，例如 `https://example.com/*`。在主机中它不会跨越点号：`https://*.example.com/cb` 匹配 `a.example.com`，但不匹配 `a.b.example.com`。`:*` 允许任意端口。主机末尾的 `*`（如 `http://localhost*`）同时覆盖任意端口和路径；端口末尾的 `*`（如 `http://localhost:*` 或 `http://localhost:3000*`）也会覆盖任意路径。必须写出完整域名，且末尾不能带点：`https://*.com/cb` 会被拒绝，在 `*.co.uk` 或 `*.github.io` 这类共享后缀上使用通配符同样会被拒绝，此前已保存的此类条目不再匹配任何地址。`localhost` 下的名称（如 `https://*.localhost/cb`）是允许的。 |
+| `Regex`    | 与整个 URI 匹配的正则表达式，例如 `https://example\.com/.*`。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 无论哪种类型，URI 都必须使用 `https:`（loopback 主机可用 `http:`），且不得包含 userinfo 或 fragment。
 
-如果将列表留空，应用会固定使用第一个成功使用的重定向 URI，此后锁定为该值。
+如果将列表留空，应用会固定使用你（或应用的其他管理者）首次批准时使用的重定向 URI，此后锁定为该值。在此之前，其他人无法登录该应用。
 
 ::: warning
 `.*` 的 `Regex` 会允许**任意**重定向 URI，包括攻击者控制的地址。请仅在理解风险的情况下使用。
@@ -83,37 +83,37 @@ GET https://your-prism-domain/api/oauth/authorize
 code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 ```
 
-请使用 `S256`。Prism 仍接受 `code_challenge_method=plain`，但使用 `plain` 时 challenge 就是 verifier 本身，任何看到授权请求 URL 的人都能兑换被窃取的授权码。使用 `plain` 的应用会在其 **OAuth** 标签页看到警告，直到连续 30 天不再使用为止。
+请使用 `S256`。Prism 仍接受 `code_challenge_method=plain`，但使用 `plain` 时 challenge 就是 verifier 本身，任何看到授权请求 URL 的人都能兑换被窃取的授权码。使用 `plain` 的应用会在其 **OAuth** 标签页看到警告，直到连续 30 天不再使用为止。始终将 `code_challenge_method` 与 `code_challenge` 一起发送；缺少它的请求会以 `invalid_request` 拒绝。
 
 #### 权限范围
 
-| 范围                   | 包含的声明 / 授予的访问                        |
-| ---------------------- | ---------------------------------------------- |
-| `openid`               | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
-| `profile`              | `name`、`preferred_username`、`picture`        |
-| `profile:write`        | 更新用户的个人资料（名称、头像）               |
-| `email`                | `email`、`email_verified`                      |
-| `apps:read`            | 列出用户拥有的应用                             |
-| `apps:write`           | 创建、更新和删除用户的应用                     |
-| `teams:read`           | 列出用户的团队                                 |
-| `teams:write`          | 更新团队设置并管理成员                         |
-| `teams:create`         | 创建团队                                       |
-| `teams:delete`         | 删除团队                                       |
-| `domains:read`         | 列出用户的域名                                 |
-| `domains:write`        | 添加和删除域名                                 |
-| `gpg:read`             | 列出用户的 GPG 公钥                            |
-| `gpg:write`            | 添加和删除 GPG 公钥                            |
-| `social:read`          | 列出用户已关联的社交账号                       |
-| `social:write`         | 断开社交账号关联                               |
-| `admin:users:read`     | 读取所有用户账号（仅限管理员）                 |
-| `admin:users:write`    | 修改用户账号（仅限管理员）                     |
-| `admin:users:delete`   | 删除用户账号（仅限管理员）                     |
-| `admin:config:read`    | 读取实例配置（仅限管理员）                     |
-| `admin:config:write`   | 更新实例配置（仅限管理员）                     |
-| `admin:invites:read`   | 列出邀请（仅限管理员）                         |
-| `admin:invites:create` | 创建邀请（仅限管理员）                         |
-| `admin:invites:delete` | 删除邀请（仅限管理员）                         |
-| `offline_access`       | 签发刷新令牌                                   |
+| 范围                   | 包含的声明 / 授予的访问                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------------- |
+| `openid`               | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须）                                                |
+| `profile`              | `name`、`preferred_username`、`picture`                                                       |
+| `profile:write`        | 更新用户的个人资料（名称、头像）                                                              |
+| `email`                | `email`、`email_verified`                                                                     |
+| `apps:read`            | 列出用户拥有的应用                                                                            |
+| `apps:write`           | 创建、更新和删除用户的应用                                                                    |
+| `teams:read`           | 列出用户的团队                                                                                |
+| `teams:write`          | 更新团队设置并管理成员                                                                        |
+| `teams:create`         | 创建团队                                                                                      |
+| `teams:delete`         | 删除团队                                                                                      |
+| `domains:read`         | 列出用户的域名                                                                                |
+| `domains:write`        | 添加和删除域名                                                                                |
+| `gpg:read`             | 列出用户的 GPG 公钥                                                                           |
+| `gpg:write`            | 添加和删除 GPG 公钥                                                                           |
+| `social:read`          | 列出用户已关联的社交账号                                                                      |
+| `social:write`         | 断开社交账号关联                                                                              |
+| `admin:users:read`     | 读取所有用户账号（仅限管理员）                                                                |
+| `admin:users:write`    | 修改用户账号（仅限管理员）                                                                    |
+| `admin:users:delete`   | 删除用户账号（仅限管理员）                                                                    |
+| `admin:config:read`    | 读取实例配置，不含凭据（仅限管理员）                                                          |
+| `admin:config:write`   | 更新实例配置，但凭据、凭据所发送到的邮件服务器和验证码服务器以及自定义 CSS 除外（仅限管理员） |
+| `admin:invites:read`   | 列出邀请（仅限管理员）                                                                        |
+| `admin:invites:create` | 创建邀请（仅限管理员）                                                                        |
+| `admin:invites:delete` | 删除邀请（仅限管理员）                                                                        |
+| `offline_access`       | 签发刷新令牌                                                                                  |
 
 应用也可以向其他应用暴露自己的 scope；参见[跨应用权限](app-permissions.md)。
 
@@ -135,7 +135,7 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 #### 站点 scope
 
-跨实例 scope 只能由站点管理员授予，且必须通过 2FA 确认并输入短语 `grant site access`。
+跨实例 scope 只能由站点管理员授予，且必须通过 2FA 确认并输入短语 `grant site access`。上文的 `admin:*` scope 同样属于站点 scope：需要同样的确认，且从不自动批准。其他用户登录时，站点 scope 会从请求中移除，因此请求的其余部分仍可被静默批准或被记住。
 
 | Scope               | 授予的权限                |
 | ------------------- | ------------------------- |
@@ -322,6 +322,8 @@ Content-Type: application/json
 
 `201` 响应包含 `client_id`、`client_secret`（机密客户端；请保存，之后不再显示）、`registration_access_token` 和 `registration_client_uri`。使用该 URI 并携带 `Authorization: Bearer <registration_access_token>` 即可读取（`GET`）、更新（`PUT`）或注销（`DELETE`）该客户端。
 
+注册与在控制台创建应用遵循相同的规则：站点关闭了用户创建应用时，或该账号无权创建应用时，返回 `403`。
+
 对于 `private_key_jwt` 客户端，将 `token_endpoint_auth_method` 设为 `private_key_jwt`，并提供 `jwks` 或 `jwks_uri`。`jwks_uri` 或 `backchannel_logout_uri` 必须使用 HTTPS，且不得指向私有或保留地址。
 
 ## private_key_jwt 客户端认证（RFC 7523）
@@ -373,18 +375,18 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 &resource=https://api.example.com
 ```
 
-你可以交换签发给你的客户端的令牌，或携带指向它的跨应用 scope（`app:<client_id>:*`）的令牌。新令牌的 scope 是原令牌的子集，其受众遵循 `resource` / `audience`。交换得到的令牌不可刷新。
+你可以交换签发给你的客户端的令牌，或携带指向它的跨应用 scope（`app:<client_id>:*`）的令牌；交换其他应用的令牌时，只能得到其中的 `app:<client_id>:*` scope。新令牌的 scope 是其子集，其受众遵循 `resource` / `audience`，但不会超出原令牌的受众范围（不请求受众则沿用原令牌的受众），过期时间不晚于原令牌。绑定了 DPoP 的令牌需要提供同一密钥的证明，新令牌也会绑定到该密钥。交换得到的令牌不可刷新。
 
 ## 重新认证与上下文（`prompt`、`max_age`、`acr`）
 
 授权请求遵循以下 OpenID Connect 参数：
 
-- `prompt=none` — 不显示界面。如果用户需要登录则返回 `login_required`，如果缺少授权则返回 `consent_required`。
+- `prompt=none` — 不显示界面。如果用户需要登录则返回 `login_required`，如果缺少授权则返回 `consent_required`。站点级 scope 和团队 scope 始终需要经过授权页面，因此对它们发起静默请求会得到 `consent_required`。
 - `prompt=login` — 强制重新登录。
 - `prompt=consent` — 始终显示授权页面。
 - `max_age=<秒>` — 要求登录时间不早于该时长。
 
-ID 令牌随后携带 `auth_time`、`amr`（例如 `["pwd","otp","mfa"]`、`["webauthn"]`）和 `acr`（使用了第二因子时为 `mfa`，否则为 `pwd`）。
+ID 令牌随后携带 `auth_time`、`amr`（例如 `["pwd","otp","mfa"]`、`["webauthn","mfa"]`）和 `acr`（使用了第二因子时为 `mfa`，否则为 `pwd`）。
 
 ### 提升认证（RFC 9470）
 
@@ -519,7 +521,7 @@ Content-Type: application/json
 | `client_id`                               | 必填（Basic 或请求体） | 你的应用的 client ID                                                         |
 | `client_secret`                           | 机密客户端必填         | 通过 Basic 或请求体提供。`private_key_jwt` 客户端改为发送 `client_assertion` |
 | `redirect_uri`                            | 必填                   | 必须已在应用上注册                                                           |
-| `action`                                  | 推荐                   | 用户正在确认的内容描述（≤ 200 字符），原样展示                               |
+| `action`                                  | 推荐                   | 用户正在确认的内容描述（≤ 200 字符），原样展示。公共客户端不展示             |
 | `nonce`                                   | 可选                   | 原样回传的不透明值（≤ 256 字符）；建议绑定到具体操作（如订单 ID）            |
 | `require_captcha`                         | 可选                   | 在本次确认中要求验证码                                                       |
 | `code_challenge`, `code_challenge_method` | 公共客户端必填         | PKCE                                                                         |
@@ -602,9 +604,9 @@ Content-Type: application/json
 
 ### 安全说明
 
-- 操作文案和重定向 URI 在第一步就已固定，而这一步需要你的应用凭据，因此钓鱼 URL 无法修改它们。
+- 操作文案和重定向 URI 在第一步就已固定，而这一步需要你的应用凭据，因此钓鱼 URL 无法修改它们。公共客户端没有凭据，任何拥有其 `client_id` 的人都可以创建挑战；因此它的操作文案永远不会展示给用户，只会在你验证 code 时返回。
 - code 绑定到你的 `client_id` 和 `redirect_uri`，PKCE 又将它绑定到你的 verifier。
-- TOTP 尝试有速率限制，一次失败就会消耗掉当前挑战。
+- TOTP 尝试有速率限制，一次失败就会消耗掉当前挑战：用户会带着 `error=access_denied` 和 `error_description=invalid_2fa` 返回。要让用户重试，请创建新的挑战。
 - 这无法防御完全失陷的设备，也无法防御持有你 `client_secret` 的人。若怀疑泄露，请轮换密钥。
 
 ## 错误响应

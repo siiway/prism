@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { sha256 } from "../src/worker/lib/crypto";
-import { verifyAppPkce } from "../src/worker/lib/oauthClients";
+import {
+  pkceMethodInvalid,
+  verifyAppPkce,
+} from "../src/worker/lib/oauthClients";
+import { Hono } from "hono";
+import oauthRoutes from "../src/worker/routes/oauth";
 import type { OAuthAppRow } from "../src/worker/types";
-import { d1, migratedDatabase } from "./setup/d1";
+import { d1, executionCtx, MemoryKv, migratedDatabase } from "./setup/d1";
 
 let sqlite: Database;
 let db: D1Database;
@@ -64,4 +69,37 @@ describe("verifyAppPkce", () => {
       true,
     );
   });
+});
+
+describe("pkceMethodInvalid", () => {
+  test("a challenge needs S256 or plain stated", () => {
+    expect(pkceMethodInvalid("c", "S256")).toBe(false);
+    expect(pkceMethodInvalid("c", "plain")).toBe(false);
+    expect(pkceMethodInvalid("c", undefined)).toBe(true);
+    expect(pkceMethodInvalid("c", "")).toBe(true);
+    expect(pkceMethodInvalid("c", "S512")).toBe(true);
+    expect(pkceMethodInvalid(undefined, undefined)).toBe(false);
+  });
+});
+
+test("an authorization request with a challenge but no method is refused", async () => {
+  sqlite.run(
+    "UPDATE oauth_apps SET redirect_uris = '[\"https://a.example/cb\"]', allowed_scopes = '[\"openid\"]' WHERE id = 'app-1'",
+  );
+  const routes = new Hono();
+  routes.route("/oauth", oauthRoutes);
+  const res = await routes.fetch(
+    new Request(
+      "https://prism.example/oauth/app-info?client_id=client-1&redirect_uri=https://a.example/cb&response_type=code&scope=openid&code_challenge=abc",
+    ),
+    {
+      DB: db,
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  expect(res.status).toBe(400);
+  expect(await res.json()).toMatchObject({ error: "invalid_request" });
 });

@@ -23,12 +23,18 @@
 // keep their existing handlers and everything deeper falls through to here.
 
 import { Hono } from "hono";
+import {
+  emailInUse,
+  emailOwnedElsewhere,
+  oldPrimaryDemotion,
+} from "../lib/accountEmails";
 import { auditRequestAction } from "../lib/audit";
 import { hashPassword, randomId } from "../lib/crypto";
 import { readPage } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { signOutEverywhere } from "../lib/session";
 import { isUserLocked } from "../lib/lockdown";
+import { isSyntheticEmail } from "../lib/userCapabilities";
 import type { DomainRow, UserEmailRow, Variables } from "../types";
 import { parseScopeList } from "../lib/scopeGrants";
 import { PASSWORD_MIN_LENGTH } from "../../shared/limits";
@@ -471,13 +477,22 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   if (emailId === "primary") {
-    await c.env.DB.prepare(
-      `UPDATE users SET email_verified = 1, email_verified_via = 'admin',
-              email_verified_at = ?, email_verify_token = NULL,
-              email_verify_code = NULL, updated_at = ? WHERE id = ?`,
-    )
-      .bind(now, now, id)
-      .run();
+    if (await emailOwnedElsewhere(c.env.DB, target.email, id))
+      return c.json({ error: "email_taken" }, 409);
+    try {
+      await c.env.DB.prepare(
+        `UPDATE users SET email_verified = 1, email_verified_via = 'admin',
+                email_verified_at = ?, email_verify_token = NULL,
+                email_verify_code = NULL, updated_at = ? WHERE id = ?`,
+      )
+        .bind(now, now, id)
+        .run();
+    } catch (err) {
+      // Taken between the check and the write.
+      if (err instanceof Error && err.message.includes("UNIQUE"))
+        return c.json({ error: "email_taken" }, 409);
+      throw err;
+    }
     auditUser(c, id, target.username, "user.email_verified", {
       email: target.email,
       primary: true,
@@ -491,14 +506,23 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
     .bind(emailId, id)
     .first<{ id: string; email: string }>();
   if (!row) return c.json({ error: "email_not_found" }, 404);
+  if (await emailOwnedElsewhere(c.env.DB, row.email, id))
+    return c.json({ error: "email_taken" }, 409);
 
-  await c.env.DB.prepare(
-    `UPDATE user_emails SET verified = 1, verified_via = 'admin',
-            verified_at = ?, verify_token = NULL, verify_code = NULL
-      WHERE id = ?`,
-  )
-    .bind(now, row.id)
-    .run();
+  try {
+    await c.env.DB.prepare(
+      `UPDATE user_emails SET verified = 1, verified_via = 'admin',
+              verified_at = ?, verify_token = NULL, verify_code = NULL
+        WHERE id = ?`,
+    )
+      .bind(now, row.id)
+      .run();
+  } catch (err) {
+    // Taken between the check and the write.
+    if (err instanceof Error && err.message.includes("UNIQUE"))
+      return c.json({ error: "email_taken" }, 409);
+    throw err;
+  }
   auditUser(c, id, target.username, "user.email_verified", {
     email: row.email,
   });
@@ -540,31 +564,61 @@ app.post("/:id/emails/:emailId/set-primary", async (c) => {
       email_verified_at: number | null;
     }>();
   if (!userRow) return c.json({ error: "user_not_found" }, 404);
+  // Another account may have it as its primary, unverified, or have since
+  // proved it owns it.
+  if (await emailInUse(c.env.DB, row.email, id))
+    return c.json({ error: "email_taken" }, 409);
 
   const now = Math.floor(Date.now() / 1000);
-  await c.env.DB.batch([
-    // Demote the old primary into the alternates list, carrying its
-    // verification state but never its outstanding challenge tokens — those
-    // are bound to a specific pending check against that address.
-    c.env.DB.prepare(
-      `INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)`,
-    ).bind(
-      randomId(),
-      id,
-      userRow.email,
-      userRow.email_verified,
-      userRow.email_verified_via,
-      userRow.email_verified_at,
-      now,
-    ),
-    c.env.DB.prepare(
-      `UPDATE users SET email = ?, email_verified = ?, email_verified_via = ?,
+  const demotion = await oldPrimaryDemotion(
+    c.env.DB,
+    id,
+    userRow.email,
+    !!userRow.email_verified,
+  );
+  try {
+    await c.env.DB.batch([
+      ...(demotion.dropClaim ? [demotion.dropClaim] : []),
+      // Demote the old primary into the alternates list, carrying its
+      // verification state but never its outstanding challenge tokens — those
+      // are bound to a specific pending check against that address. A
+      // placeholder address (`@users.invalid`) reaches no one: dropped.
+      ...(demotion.keep && !isSyntheticEmail(userRow.email)
+        ? [
+            c.env.DB.prepare(
+              `INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at)
+             VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)`,
+            ).bind(
+              randomId(),
+              id,
+              userRow.email,
+              userRow.email_verified,
+              userRow.email_verified_via,
+              userRow.email_verified_at,
+              now,
+            ),
+          ]
+        : []),
+      c.env.DB.prepare(
+        `UPDATE users SET email = ?, email_verified = ?, email_verified_via = ?,
               email_verified_at = ?, email_verify_token = NULL,
               email_verify_code = NULL, updated_at = ? WHERE id = ?`,
-    ).bind(row.email, row.verified, row.verified_via, row.verified_at, now, id),
-    c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?").bind(row.id),
-  ]);
+      ).bind(
+        row.email,
+        row.verified,
+        row.verified_via,
+        row.verified_at,
+        now,
+        id,
+      ),
+      c.env.DB.prepare("DELETE FROM user_emails WHERE id = ?").bind(row.id),
+    ]);
+  } catch (err) {
+    // Taken between the check and the write.
+    if (err instanceof Error && err.message.includes("UNIQUE"))
+      return c.json({ error: "email_taken" }, 409);
+    throw err;
+  }
 
   auditUser(c, id, target.username, "user.primary_email_changed", {
     from: userRow.email,
@@ -678,6 +732,9 @@ app.delete("/:id/authorizations/:consentId", async (c) => {
     ).bind(id, row.client_id),
     c.env.DB.prepare(
       "DELETE FROM oauth_codes WHERE user_id = ? AND client_id = ?",
+    ).bind(id, row.client_id),
+    c.env.DB.prepare(
+      "DELETE FROM oauth_device_codes WHERE user_id = ? AND client_id = ?",
     ).bind(id, row.client_id),
   ]);
 

@@ -9,8 +9,10 @@
 // Each registered redirect URI now carries a match *type*:
 //   • equals   — normalized (scheme, host:port, pathname, search) equality.
 //                The safest option; used for legacy string entries too.
-//   • wildcard — a glob where `*` stands in for any run of characters.
-//                Matched against the raw candidate after a safety gate.
+//   • wildcard — a glob. Scheme, host, port and path+query are matched one
+//                by one: `*` in the host stays within a label, `*` as the
+//                port allows any port, and in the path or query it matches
+//                any run of characters.
 //   • regex    — an arbitrary regular expression, anchored full-match.
 //                Powerful and dangerous (`.*` allows *any* redirect URI).
 //
@@ -32,6 +34,7 @@ import {
   type RedirectUri,
   type RedirectUriMatchType,
 } from "../../shared/api";
+import { parse as parseDomain } from "tldts";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
@@ -97,7 +100,8 @@ export type RedirectUriReason =
   | "scheme"
   | "whitespace"
   | "regex"
-  | "match_type";
+  | "match_type"
+  | "wildcard_host";
 
 export function validateRedirectUriForRegistration(
   uri: string,
@@ -128,9 +132,8 @@ export function validateRedirectUriEntry(
     case "wildcard": {
       if (/\s/.test(entry.value)) return "whitespace";
       if (entry.value.includes("#")) return "fragment";
-      if (!/^https:\/\//i.test(entry.value) && !/^http:\/\//i.test(entry.value))
-        return "scheme";
-      return null;
+      const parsed = parseWildcard(entry.value);
+      return typeof parsed === "string" ? parsed : null;
     }
     case "regex": {
       try {
@@ -160,18 +163,176 @@ function normalizeKey(parsed: URL): string {
   return `${scheme}//${host}:${port}${path}${parsed.search}`;
 }
 
-/** Convert a glob (`*` → any run of characters) into an anchored RegExp. */
-function wildcardToRegExp(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^${escaped.replace(/\\\*/g, ".*")}$`);
+/** A wildcard entry split the way a URL is: the host and port are matched
+ *  on their own, so a `*` can never carry the match into another host. */
+interface WildcardPattern {
+  scheme: string;
+  /** Lowercased host glob; `*` matches within one label. */
+  host: string;
+  /** Port digits, `*` for any port, or null for the scheme's default. */
+  port: string | null;
+  /** Path and query glob; `*` matches any run of characters. */
+  rest: string;
 }
 
-function wildcardMatches(pattern: string, candidate: string): boolean {
-  try {
-    return wildcardToRegExp(pattern).test(candidate);
-  } catch {
-    return false;
+function defaultPort(scheme: string): string {
+  return scheme === "https:" ? "443" : scheme === "http:" ? "80" : "";
+}
+
+function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
+  const m = /^(https?):\/\/([^/?#]*)(.*)$/i.exec(pattern);
+  if (!m) return "scheme";
+  const [, scheme, authority, rest] = m;
+  if (authority.includes("@")) return "userinfo";
+  let host = authority;
+  let port: string | null = null;
+  // An IPv6 host, with the star that may end it (`http://[::1]*`).
+  const bracketed = /^(\[[^\]]*\]\*?)(?::(.*))?$/.exec(authority);
+  if (bracketed) {
+    host = bracketed[1];
+    port = bracketed[2] ?? null;
+  } else if (authority.includes(":")) {
+    const i = authority.lastIndexOf(":");
+    host = authority.slice(0, i);
+    port = authority.slice(i + 1);
   }
+  // A `*` ending the port (`http://localhost:3000*`) has always also covered
+  // the path, as one ending the host does: port 3000, any path.
+  if (port !== null && !rest && /^\d+\*$/.test(port)) port = port.slice(0, -1);
+  if (port !== null && !/^(\d+|\*)$/.test(port)) return "not_url";
+  // Written as URL parsing writes a candidate's port (`:0443` is 443), or
+  // it would never be equal to one.
+  if (port !== null && port !== "*") {
+    if (Number(port) > 65535) return "not_url";
+    port = String(Number(port));
+  }
+  // A `*` ending the host (`http://localhost*`) has always stood for
+  // the port and path, which the old whole-string glob ran on into. It is
+  // read that way, so the host is exactly localhost and never
+  // localhost.evil.com. With a port or path after it, it could only mean
+  // more host: refused.
+  if (host.endsWith("*")) {
+    if (port !== null || rest) return "wildcard_host";
+    host = host.slice(0, -1);
+    port = "*";
+  }
+  // The host must be a real one with the stars filled in, and more than
+  // stars and dots: `https://*/cb` would accept every site.
+  if (!/[^*.]/.test(host)) return "wildcard_host";
+  const filled = tryParse(`${scheme}://${host.replaceAll("*", "x")}/`);
+  if (!filled) return "wildcard_host";
+  // Compared label by label with the host as URL parsing writes it, which is
+  // how candidates arrive. A label without a star may be written in Unicode
+  // (`bücher`) and is taken in punycode; one with a star must already be
+  // written as parsing writes it, since a star can't stand inside punycode.
+  const given = host.toLowerCase().split(".");
+  const written = filled.hostname.split(".");
+  if (given.length !== written.length) return "wildcard_host";
+  const labels: string[] = [];
+  for (const [i, label] of given.entries()) {
+    if (!label.includes("*")) labels.push(written[i]);
+    else if (label.replaceAll("*", "x") === written[i]) labels.push(label);
+    else return "wildcard_host";
+  }
+  host = labels.join(".");
+  // A trailing dot names the same site, but the public suffix lookup below
+  // drops it, so `*.com.` would pass as a domain. No dot, no ambiguity.
+  if (host.endsWith(".")) return "wildcard_host";
+  // The registrable domain, the label above the public suffix plus the
+  // suffix, must be spelled out. `*.com`, `*.co.uk`, `*.github.io` or
+  // `pr-*.vercel.app` would let in sites anyone can register. This runs on
+  // every match too, so an entry saved before the rule matches nothing.
+  // Names under `localhost` are the machine itself (RFC 6761), not sites
+  // anyone can register.
+  if (
+    host.includes("*") &&
+    !/(^|\.)localhost$/.test(host) &&
+    !registrableDomainSpelledOut(host)
+  )
+    return "wildcard_host";
+  // Nothing after the host: a `*` ending the host (`http://localhost:*`,
+  // `https://example.com*`) has always also covered the path, so keep that;
+  // otherwise only the root. A query with no path is the root's query.
+  let path = rest;
+  if (!path) path = authority.endsWith("*") ? "*" : "/";
+  else {
+    path = encodedLikeAUrl(path);
+    // A dot segment can take a star with it (`/a/*/../cb` is `/a/cb`), and
+    // the entry would match something other than what was written.
+    if (path.split("*").length !== rest.split("*").length) return "not_url";
+  }
+  return {
+    scheme: `${scheme.toLowerCase()}:`,
+    host: host.toLowerCase(),
+    port,
+    rest: path,
+  };
+}
+
+function registrableDomainSpelledOut(host: string): boolean {
+  const { domain } = parseDomain(host.replaceAll("*", "x"), {
+    allowPrivateDomains: true,
+  });
+  if (!domain) return false;
+  return !host
+    .split(".")
+    .slice(-domain.split(".").length)
+    .some((label) => label.includes("*"));
+}
+
+const STAR_STAND_IN = "__prism_wildcard__";
+
+/** A pattern's path and query written the way URL parsing writes a
+ *  candidate's (`pathname + search`): percent-encoded, with dot segments
+ *  resolved, and `/` before a bare query. Otherwise \`/回调/*\` would never
+ *  match \`/%E5%9B%9E%E8%B0%83/x\`. The stars are set aside so they survive. */
+function encodedLikeAUrl(rest: string): string {
+  const url = tryParse(
+    `https://host.invalid${rest.replaceAll("*", STAR_STAND_IN)}`,
+  );
+  if (!url) return rest;
+  return `${url.pathname}${url.search}`.replaceAll(STAR_STAND_IN, "*");
+}
+
+/** Glob match where `*` stands for any run of characters. It only ever
+ *  backtracks to the last `*`, so no pattern can make it run away. */
+function globMatch(pattern: string, text: string): boolean {
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    if (pattern[p] === "*") {
+      star = p++;
+      mark = t;
+    } else if (p < pattern.length && pattern[p] === text[t]) {
+      p++;
+      t++;
+    } else if (star !== -1) {
+      p = star + 1;
+      t = ++mark;
+    } else return false;
+  }
+  while (pattern[p] === "*") p++;
+  return p === pattern.length;
+}
+
+/** A host glob: `*` matches letters, digits, hyphens and underscores, never
+ *  a dot. */
+function hostMatches(pattern: string, host: string): boolean {
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escaped.replace(/\\\*/g, "[a-z0-9_-]*")}$`).test(host);
+}
+
+function wildcardMatches(pattern: string, candidate: URL): boolean {
+  const w = parseWildcard(pattern);
+  if (typeof w === "string") return false;
+  if (candidate.protocol !== w.scheme) return false;
+  if (!hostMatches(w.host, candidate.hostname.toLowerCase())) return false;
+  const port = candidate.port || defaultPort(candidate.protocol);
+  if (w.port !== "*" && port !== (w.port ?? defaultPort(w.scheme)))
+    return false;
+  return globMatch(w.rest, `${candidate.pathname}${candidate.search}`);
 }
 
 function regexMatches(pattern: string, candidate: string): boolean {
@@ -188,8 +349,9 @@ function regexMatches(pattern: string, candidate: string): boolean {
  * Every candidate first passes the safety gate (https/loopback, no userinfo,
  * no fragment) regardless of match type. An empty registry means the app is
  * in "learn" mode and accepts any safe candidate (the caller pins the first
- * one used). `equals` entries compare on the normalized URL tuple; `wildcard`
- * and `regex` entries match against the raw candidate string.
+ * one used). `equals` entries compare on the normalized URL tuple, `wildcard`
+ * entries on its parts, and `regex` entries match against the raw candidate
+ * string.
  */
 export function redirectUriMatchesRegistered(
   candidate: string,
@@ -197,13 +359,14 @@ export function redirectUriMatchesRegistered(
 ): boolean {
   if (validateRedirectUriForRegistration(candidate) !== null) return false;
   if (registered.length === 0) return true;
-  const candidateKey = normalizeKey(tryParse(candidate)!);
+  const candidateUrl = tryParse(candidate)!;
+  const candidateKey = normalizeKey(candidateUrl);
   for (const entry of registered) {
     if (entry.type === "equals") {
       if (validateRedirectUriForRegistration(entry.value) !== null) continue;
       if (normalizeKey(tryParse(entry.value)!) === candidateKey) return true;
     } else if (entry.type === "wildcard") {
-      if (wildcardMatches(entry.value, candidate)) return true;
+      if (wildcardMatches(entry.value, candidateUrl)) return true;
     } else if (entry.type === "regex") {
       if (regexMatches(entry.value, candidate)) return true;
     }

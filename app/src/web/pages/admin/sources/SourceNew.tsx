@@ -133,7 +133,9 @@ export function SourceNew() {
           <Input
             {...NO_AUTOFILL}
             value={form.slug}
-            placeholder={`${form.provider}-work`}
+            placeholder={t("admin.sourceSlugPlaceholder", {
+              provider: form.provider,
+            })}
             // Lowercase as you type; anything else that isn't allowed is
             // flagged rather than silently changed.
             onChange={(_, d) =>

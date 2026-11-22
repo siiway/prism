@@ -109,7 +109,7 @@ export function DeviceVerify() {
         <Input
           value={codeInput}
           onChange={(_, d) => setCodeInput(d.value)}
-          placeholder="XXXX-XXXX"
+          placeholder={t("oauth.userCodePlaceholder")}
           input={{ className: styles.codeInput }}
           aria-label={t("oauth.device.codeLabel")}
         />

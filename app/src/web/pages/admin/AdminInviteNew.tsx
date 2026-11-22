@@ -100,7 +100,7 @@ export function AdminInviteNew() {
           autoFocus
           value={form.email}
           onChange={set("email")}
-          placeholder="user@example.com"
+          placeholder={t("admin.inviteEmailPlaceholder")}
         />
       </Field>
       <CheckboxField

@@ -1,10 +1,12 @@
-// Elevated scope grants: what `site:*` and `team:<id>:*` authority an
-// application holds, and how to take it back.
+// Elevated scope grants: what site-level (`site:*`, `admin:*`) and
+// `team:<id>:*` authority an application holds, and how to take it back.
 //
 // The site_scope_grants / team_scope_grants tables are written when someone
 // approves an app, but they are only a record. The authority itself lives in
 // the user's stored approval (oauth_consents) and in the tokens issued under
 // it, so withdrawing a grant has to change those too.
+
+import { isSiteLevelScope } from "../../shared/scopes";
 
 /** Scope lists are stored as JSON arrays; older rows may be space-separated. */
 export function parseScopeList(raw: string | null | undefined): string[] {
@@ -24,21 +26,35 @@ export function parseScopeList(raw: string | null | undefined): string[] {
 
 export type GrantKind = "site" | "team";
 
-/** Whether a scope is part of the grant: any `site:*` scope, or one bound to
- *  this team (`team:<id>:<permission>`). */
+/** Whether a scope is part of the grant: any `site:*` or `admin:*` scope, or
+ *  one bound to this team (`team:<id>:<permission>`). */
 export function grantMatcher(
   kind: GrantKind,
   teamId?: string,
 ): (scope: string) => boolean {
-  if (kind === "site") return (s) => s.startsWith("site:");
+  if (kind === "site") return isSiteLevelScope;
   const prefix = `team:${teamId}:`;
   return (s) => s.startsWith(prefix);
 }
 
-/** A LIKE pattern that finds rows whose scope list might hold the grant.
- *  Rows it finds are checked again with grantMatcher. */
-export function grantLike(kind: GrantKind, teamId?: string): string {
-  return kind === "site" ? "%site:%" : `%team:${teamId}:%`;
+/** LIKE patterns that find rows whose scope list might hold the grant.
+ *  Rows they find are checked again with grantMatcher. */
+export function grantLikes(kind: GrantKind, teamId?: string): string[] {
+  return kind === "site" ? SITE_GRANT_LIKES : [`%team:${teamId}:%`];
+}
+
+/** Each site-level prefix at the start of a scope, in a JSON list
+ *  (`["site:...`, `,"admin:...`) or an older space-separated one. A bare
+ *  `%admin:%` would also match app scopes like `app:<id>:admin:panel`. */
+export const SITE_GRANT_LIKES = ["site:", "admin:"].flatMap((prefix) => [
+  `%"${prefix}%`,
+  `${prefix}%`,
+  `% ${prefix}%`,
+]);
+
+/** `(column LIKE ? OR ...)`, one placeholder per pattern. */
+export function likeAny(column: string, patterns: string[]): string {
+  return `(${patterns.map(() => `${column} LIKE ?`).join(" OR ")})`;
 }
 
 /** The scopes of the grant that a stored list holds, without the

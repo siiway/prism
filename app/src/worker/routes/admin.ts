@@ -5,17 +5,19 @@ import {
   samlOverrideValue,
   samlOwnerSetting,
 } from "../lib/saml/serviceProviders";
+import { getConfig } from "../lib/config";
+import { emailInUse, emailOwnedElsewhere } from "../lib/accountEmails";
 import {
-  encryptConfigUpdates,
-  getConfig,
-  setConfigValues,
-} from "../lib/config";
-import { invalidLoginRateLimitConfig } from "../lib/loginRateLimit";
+  ADMIN_CONFIG_KEYS,
+  auditableConfigUpdates,
+  prepareConfigUpdates,
+  saveConfigUpdates,
+} from "../lib/adminConfig";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 import { sendEmail } from "../lib/email";
 import { hashBackupCodes } from "../lib/totp";
 import { requireAdmin } from "../middleware/auth";
-import { validateImageUrl } from "../lib/imageValidation";
+import { imageUrlFieldError } from "../lib/imageValidation";
 import { readPage, likePattern } from "../lib/pagination";
 import {
   collectReferencedImageUrls,
@@ -51,11 +53,9 @@ import type {
   Variables,
 } from "../types";
 import { isUserLocked, isTeamLocked } from "../lib/lockdown";
-import { sanitizeRolePermissions } from "../lib/teamGroups";
 import {
   hasLiveRestrictedAccounts,
   parseInviteRegistrationExemptions,
-  sanitizeRestrictedCapabilities,
 } from "../lib/userCapabilities";
 
 import adminDbRoutes from "./admin-db";
@@ -70,7 +70,7 @@ import adminResetRoutes from "./admin-reset";
 import adminInviteRoutes from "./admin-invites";
 import adminSourceRoutes from "./admin-sources";
 import type { ImageProxyResourceType } from "../../shared/codes";
-import { DISPLAY_NAME_MAX_LENGTH } from "../../shared/limits";
+import { displayNameError } from "../lib/displayName";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -126,273 +126,20 @@ app.get("/config", async (c) => {
 app.patch("/config", async (c) => {
   const body = await c.req.json<Record<string, unknown>>();
 
-  // Whitelist of settable keys
-  const allowed = new Set([
-    "site_name",
-    "site_description",
-    "site_icon_url",
-    "allow_registration",
-    "invite_only",
-    "require_email_verification",
-    "captcha_provider",
-    "captcha_providers",
-    "captcha_site_key",
-    "captcha_secret_key",
-    "turnstile_site_key",
-    "turnstile_secret_key",
-    "hcaptcha_site_key",
-    "hcaptcha_secret_key",
-    "recaptcha_site_key",
-    "recaptcha_secret_key",
-    "geetest_captcha_id",
-    "geetest_captcha_key",
-    "geetest_fail_open",
-    "cap_mode",
-    "cap_api_endpoint",
-    "cap_site_key",
-    "cap_secret_key",
-    "cap_challenge_count",
-    "cap_challenge_difficulty",
-    "cap_instrumentation",
-    "captcha_switch_timeout_seconds",
-    "turnstile_endpoint_mode",
-    "turnstile_china_site_key",
-    "turnstile_china_secret_key",
-    "domain_reverify_days",
-    "session_ttl_days",
-    "access_token_ttl_minutes",
-    "refresh_token_ttl_days",
-    "github_client_id",
-    "github_client_secret",
-    "google_client_id",
-    "google_client_secret",
-    "microsoft_client_id",
-    "microsoft_client_secret",
-    "discord_client_id",
-    "discord_client_secret",
-    "discord_bot_token",
-    "email_provider",
-    "email_verify_methods",
-    "email_receive_host",
-    "email_receive_provider",
-    "imap_host",
-    "imap_port",
-    "imap_secure",
-    "imap_user",
-    "imap_password",
-    "tg_notify_source_slug",
-    "discord_notify_source_slug",
-    "email_api_key",
-    "email_from",
-    "smtp_host",
-    "smtp_port",
-    "smtp_secure",
-    "smtp_user",
-    "smtp_password",
-    "custom_css",
-    "accent_color",
-    "avatar_proxy_max_source_bytes",
-    "avatar_proxy_cache_mode",
-    "avatar_proxy_cache_ttl_seconds",
-    "avatar_proxy_max_cache_bytes",
-    "avatar_proxy_convert_to_webp",
-    "security_contact",
-    "security_policy_url",
-    "login_error_retention_days",
-    "social_verify_ttl_days",
-    "allow_alt_email_login",
-    "login_dos_rate_limit",
-    "login_dos_rate_window_seconds",
-    "login_ip_rate_limit",
-    "login_ip_rate_window_seconds",
-    "login_identifier_rate_limit",
-    "login_identifier_rate_window_seconds",
-    "login_totp_rate_limit",
-    "login_totp_rate_window_seconds",
-    "ipv6_rate_limit_prefix",
-    "gpg_challenge_prefix",
-    "disable_user_create_team",
-    "disable_user_create_app",
-    "saml_enabled",
-    "silent_logout_first_party_only",
-    "disable_ssr",
-    "sudo_mode_ttl_minutes",
-    "require_captcha_for_2fa",
-    "enable_public_profiles",
-    "show_powered_by",
-    "default_profile_show_display_name",
-    "default_profile_show_avatar",
-    "default_profile_show_email",
-    "default_profile_show_joined_at",
-    "default_profile_show_gpg_keys",
-    "default_profile_show_authorized_apps",
-    "default_profile_show_owned_apps",
-    "default_profile_show_domains",
-    "default_profile_show_joined_teams",
-    "default_profile_show_readme",
-    "profile_readme_max_bytes",
-    "github_readme_token",
-    "github_readme_cache_ttl_seconds",
-    "default_team_profile_show_description",
-    "default_team_profile_show_avatar",
-    "default_team_profile_show_owner",
-    "default_team_profile_show_member_count",
-    "default_team_profile_show_apps",
-    "default_team_profile_show_domains",
-    "default_team_profile_show_members",
-    "default_team_require_2fa",
-    "default_team_require_verified_email",
-    "enable_sub_teams",
-    "max_team_depth",
-    "inherit_team_membership",
-    "inherit_team_domains",
-    "default_team_profile_show_sub_teams",
-    "default_team_role_permissions",
-    "team_invite_registration_max_uses_cap",
-    "team_invite_registration_rate_per_hour",
-    "restricted_user_capabilities",
-    "restricted_pending_ttl_hours",
-    "restricted_dissolve_grace_hours",
-  ]);
+  const prepared = await prepareConfigUpdates(body, (k) =>
+    ADMIN_CONFIG_KEYS.has(k),
+  );
+  if ("refused" in prepared) return c.json(prepared.refused, 400);
+  const { updates } = prepared;
+  await saveConfigUpdates(c.env, updates);
 
-  const updates: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(body)) {
-    if (allowed.has(k)) updates[k] = v;
-  }
-
-  if (
-    updates.avatar_proxy_cache_mode !== undefined &&
-    !["off", "kv", "d1"].includes(String(updates.avatar_proxy_cache_mode))
-  ) {
-    return c.json(
-      { error: "field_invalid", params: { field: "avatar_proxy_cache" } },
-      400,
-    );
-  }
-  for (const key of [
-    "avatar_proxy_max_source_bytes",
-    "avatar_proxy_cache_ttl_seconds",
-    "avatar_proxy_max_cache_bytes",
-  ]) {
-    const value = updates[key];
-    if (
-      value !== undefined &&
-      (typeof value !== "number" || !Number.isInteger(value) || value <= 0)
-    )
-      return c.json(
-        { error: "field_must_be_positive_integer", params: { field: key } },
-        400,
-      );
-  }
-  if (
-    updates.avatar_proxy_convert_to_webp !== undefined &&
-    typeof updates.avatar_proxy_convert_to_webp !== "boolean"
-  )
-    return c.json(
-      {
-        error: "field_must_be_boolean",
-        params: { field: "avatar_proxy_convert_to_webp" },
-      },
-      400,
-    );
-
-  if (updates.site_icon_url && typeof updates.site_icon_url === "string") {
-    const imgErr = await validateImageUrl(updates.site_icon_url);
-    if (imgErr) return c.json(imgErr, 400);
-  }
-
-  if (updates.profile_readme_max_bytes !== undefined) {
-    const v = updates.profile_readme_max_bytes;
-    if (
-      typeof v !== "number" ||
-      !Number.isInteger(v) ||
-      v < 1024 ||
-      v > 1024 * 1024
-    ) {
-      return c.json(
-        {
-          error: "field_int_range",
-          params: {
-            field: "profile_readme_max_bytes",
-            min: 1024,
-            max: 1048576,
-          },
-        },
-        400,
-      );
-    }
-  }
-
-  if (updates.github_readme_cache_ttl_seconds !== undefined) {
-    const v = updates.github_readme_cache_ttl_seconds;
-    // Anything under 60s would hammer the GitHub API; anything over a week
-    // means stale READMEs sit forever after a manual sync. Pin the range.
-    if (
-      typeof v !== "number" ||
-      !Number.isInteger(v) ||
-      v < 60 ||
-      v > 7 * 86400
-    ) {
-      return c.json(
-        {
-          error: "field_int_range",
-          params: {
-            field: "github_readme_cache_ttl_seconds",
-            min: 60,
-            max: 604800,
-          },
-        },
-        400,
-      );
-    }
-  }
-
-  const loginRateLimitError = invalidLoginRateLimitConfig(updates);
-  if (loginRateLimitError) return c.json(loginRateLimitError, 400);
-
-  // Rotating the site GitHub token always resets its failure counter so a
-  // fresh paste isn't immediately auto-cleared by leftover bad-credential
-  // counts from the previous token.
-  if (updates.github_readme_token !== undefined) {
-    updates.github_readme_token_failures = 0;
-  }
-
-  // Strip the site-default capability set down to keys we recognise so the
-  // config row can't accumulate arbitrary JSON from a hand-rolled request.
-  if (updates.default_team_role_permissions !== undefined) {
-    updates.default_team_role_permissions = sanitizeRolePermissions(
-      updates.default_team_role_permissions,
-    );
-  }
-
-  if (updates.restricted_user_capabilities !== undefined) {
-    updates.restricted_user_capabilities = sanitizeRestrictedCapabilities(
-      updates.restricted_user_capabilities,
-    );
-  }
-
-  // Bound sub-team nesting. Anything beyond ~20 is almost certainly a
-  // configuration mistake (and the recursive helpers walk N rows per check).
-  if (updates.max_team_depth !== undefined) {
-    const v = updates.max_team_depth;
-    if (typeof v !== "number" || !Number.isInteger(v) || v < 1 || v > 20) {
-      return c.json(
-        {
-          error: "field_int_range",
-          params: { field: "max_team_depth", min: 1, max: 20 },
-        },
-        400,
-      );
-    }
-  }
-
-  // Encrypt sensitive keys (captcha_secret_key, *_client_secret, etc.)
-  // before persisting if the SECRETS_KEY binding is configured. No-op
-  // otherwise — legacy plaintext storage continues to work.
-  const encrypted = await encryptConfigUpdates(c.env, updates);
-  await setConfigValues(c.env.DB, encrypted);
-
-  auditAdmin(c, "admin.config.update", "site_config", null, updates);
+  auditAdmin(
+    c,
+    "admin.config.update",
+    "site_config",
+    null,
+    auditableConfigUpdates(updates),
+  );
   return c.json({ updated: Object.keys(updates) });
 });
 
@@ -522,22 +269,29 @@ app.patch("/users/:id", async (c) => {
   }>();
 
   const user = await c.env.DB.prepare(
-    "SELECT id, username FROM users WHERE id = ?",
+    "SELECT id, username, email, email_verified FROM users WHERE id = ?",
   )
     .bind(id)
-    .first<{ id: string; username: string }>();
+    .first<{
+      id: string;
+      username: string;
+      email: string;
+      email_verified: number;
+    }>();
   if (!user) return c.json({ error: "user_not_found" }, 404);
 
   if (body.role === "user" && id === admin.id) {
     return c.json({ error: "cannot_demote_self" }, 403);
   }
 
-  if (body.is_active === false && id === admin.id) {
+  // Any falsy is_active disables (the write is `is_active ? 1 : 0`).
+  if (body.is_active !== undefined && !body.is_active && id === admin.id) {
     return c.json({ error: "cannot_disable_self" }, 403);
   }
 
   const updates: string[] = [];
   const values: unknown[] = [];
+  let newEmail: string | null = null;
 
   if (body.role !== undefined && ["admin", "user"].includes(body.role)) {
     updates.push("role = ?");
@@ -550,6 +304,24 @@ app.patch("/users/:id", async (c) => {
   if (body.email_verified !== undefined) {
     updates.push("email_verified = ?");
     values.push(body.email_verified ? 1 : 0);
+    // The address itself unchanged (a new one is handled below): marking it
+    // works as the dedicated verify endpoint does, refused once another
+    // account owns the address, and recording who vouched for it and when.
+    if (
+      body.email === undefined &&
+      !!body.email_verified !== (user.email_verified === 1)
+    ) {
+      if (
+        body.email_verified &&
+        (await emailOwnedElsewhere(c.env.DB, user.email, id))
+      )
+        return c.json({ error: "email_taken" }, 409);
+      updates.push("email_verified_via = ?", "email_verified_at = ?");
+      values.push(
+        body.email_verified ? "admin" : null,
+        body.email_verified ? Math.floor(Date.now() / 1000) : null,
+      );
+    }
   }
   if (body.username !== undefined) {
     // Same shape the registration endpoint enforces — an admin-set username
@@ -564,64 +336,106 @@ app.patch("/users/:id", async (c) => {
     const email = body.email.toLowerCase().trim();
     if (!email.includes("@") || email.length > 254)
       return c.json({ error: "email_invalid" }, 400);
+    if (await emailInUse(c.env.DB, email, id))
+      return c.json({ error: "email_taken" }, 409);
     updates.push("email = ?");
     values.push(email);
+    newEmail = email;
     // Changing the address invalidates whatever proved the old one. The
     // admin can mark the new one verified in the same request, or from the
     // user's email list — but it must not inherit the old verdict silently.
+    // One of the user's own alternates keeps the proof it already has.
     if (body.email_verified === undefined) {
-      updates.push("email_verified = ?", "email_verified_at = ?");
-      values.push(0, null);
+      const own = await c.env.DB.prepare(
+        "SELECT verified, verified_via, verified_at FROM user_emails WHERE user_id = ? AND email = ?",
+      )
+        .bind(id, email)
+        .first<{
+          verified: number;
+          verified_via: string | null;
+          verified_at: number | null;
+        }>();
+      updates.push(
+        "email_verified = ?",
+        "email_verified_via = ?",
+        "email_verified_at = ?",
+      );
+      values.push(
+        own?.verified ? 1 : 0,
+        own?.verified ? own.verified_via : null,
+        own?.verified ? own.verified_at : null,
+      );
+    } else {
+      // Marked in this request: the admin vouches for the new address now.
+      updates.push("email_verified_via = ?", "email_verified_at = ?");
+      values.push(
+        body.email_verified ? "admin" : null,
+        body.email_verified ? Math.floor(Date.now() / 1000) : null,
+      );
     }
     updates.push("email_verify_token = ?", "email_verify_code = ?");
     values.push(null, null);
   }
   if (body.display_name !== undefined) {
-    if (
-      body.display_name.length < 1 ||
-      body.display_name.length > DISPLAY_NAME_MAX_LENGTH
-    )
-      return c.json(
-        {
-          error: "field_length",
-          params: {
-            field: "display_name",
-            min: 1,
-            max: DISPLAY_NAME_MAX_LENGTH,
-          },
-        },
-        400,
-      );
+    const nameErr = displayNameError(body.display_name);
+    if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
-    values.push(body.display_name);
+    values.push(body.display_name.trim());
   }
   if (body.avatar_url !== undefined) {
-    if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
-      const imgErr = await validateImageUrl(body.avatar_url);
-      if (imgErr) return c.json(imgErr, 400);
-    }
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: true,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
   }
   if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
+  // What was changed, for the audit log: never the raw body, which can carry
+  // ignored values and keys of the caller's choosing. Each column pushed
+  // above has its value at the same index.
+  const applied = Object.fromEntries(
+    updates
+      .map((u, i) => [u.replace(" = ?", ""), values[i]] as const)
+      .filter(([k]) => k !== "email_verify_token" && k !== "email_verify_code"),
+  );
+
   updates.push("updated_at = ?");
   values.push(Math.floor(Date.now() / 1000), id);
 
   try {
-    await c.env.DB.prepare(
-      `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
-    )
-      .bind(...values)
-      .run();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
+      ).bind(...values),
+      // One of the user's own alternates made primary stops being an
+      // alternate, or they would hold the address twice and a later swap
+      // back would fail.
+      ...(newEmail
+        ? [
+            c.env.DB.prepare(
+              "DELETE FROM user_emails WHERE user_id = ? AND email = ?",
+            ).bind(id, newEmail),
+          ]
+        : []),
+    ]);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
-      return c.json({ error: "email_or_username_taken" }, 409);
+      return c.json(
+        {
+          error:
+            body.username === undefined
+              ? "email_taken"
+              : "email_or_username_taken",
+        },
+        409,
+      );
     throw err;
   }
 
-  auditAdmin(c, "admin.user.update", "user", id, body, user.username);
+  auditAdmin(c, "admin.user.update", "user", id, applied, user.username);
   return c.json({ ok: true });
 });
 
