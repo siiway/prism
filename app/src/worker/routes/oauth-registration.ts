@@ -12,6 +12,7 @@ import {
 import { randomBase64url, randomId } from "../lib/crypto";
 import { getConfigValue } from "../lib/config";
 import { guardCapability } from "../lib/userCapabilities";
+import { checkAppScopeOwnerRules } from "../lib/appScopeRules";
 import { requireAuth, tryPatAuth } from "../middleware/auth";
 import {
   parseRedirectUris,
@@ -238,6 +239,18 @@ app.post(
         400,
       );
 
+    const ruleErr = await checkAppScopeOwnerRules(
+      c.env.DB,
+      norm.scopes,
+      [],
+      user.id,
+    );
+    if (ruleErr)
+      return c.json(
+        { error: "invalid_client_metadata", error_description: ruleErr.error },
+        400,
+      );
+
     const id = randomId();
     const clientId = `prism_${randomBase64url(16)}`;
     const clientSecretPlain = norm.isPublic ? "" : randomBase64url(32);
@@ -330,6 +343,18 @@ app.put("/register/:client_id", async (c) => {
   if ("description" in norm)
     return c.json(
       { error: norm.code, error_description: norm.description },
+      400,
+    );
+  // No session here: the rules are checked for the app's owner.
+  const ruleErr = await checkAppScopeOwnerRules(
+    c.env.DB,
+    norm.scopes,
+    JSON.parse(app.allowed_scopes) as string[],
+    app.owner_id,
+  );
+  if (ruleErr)
+    return c.json(
+      { error: "invalid_client_metadata", error_description: ruleErr.error },
       400,
     );
 

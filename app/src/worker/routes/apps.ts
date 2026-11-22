@@ -24,7 +24,8 @@ import {
   validateRedirectUriEntry,
   type RedirectUriEntry,
 } from "../lib/redirectUri";
-import { isAllowedScope, parseAppScope } from "../lib/scopes";
+import { isAllowedScope } from "../lib/scopes";
+import { checkAppScopeOwnerRules } from "../lib/appScopeRules";
 import { getEffectiveMember, wantsNormalView } from "../lib/teams";
 import { canManageApp } from "../lib/appAccess";
 import { APP_EVENT_TYPES } from "../lib/app-events";
@@ -52,45 +53,6 @@ import type {
   Variables,
   WaitUntilCtx,
 } from "../types";
-import type { CodedError } from "../lib/apiError";
-
-/** Check access rules for target app before adding an app:* scope to allowed_scopes.
- *  Returns null if allowed, or the error if denied. */
-async function checkOwnerScopeAccess(
-  db: D1Database,
-  targetClientId: string,
-  requestingUserId: string,
-): Promise<CodedError | null> {
-  const targetApp = await db
-    .prepare("SELECT id FROM oauth_apps WHERE client_id = ? AND is_active = 1")
-    .bind(targetClientId)
-    .first<{ id: string }>();
-  if (!targetApp)
-    return {
-      error: "app_scope_target_missing",
-      params: { client_id: targetClientId },
-    };
-
-  const rules = await db
-    .prepare(
-      "SELECT rule_type, target_id FROM app_scope_access_rules WHERE app_id = ? AND rule_type IN ('owner_allow','owner_deny')",
-    )
-    .bind(targetApp.id)
-    .all<{ rule_type: string; target_id: string }>();
-
-  const allowList = rules.results
-    .filter((r) => r.rule_type === "owner_allow")
-    .map((r) => r.target_id);
-  const denyList = rules.results
-    .filter((r) => r.rule_type === "owner_deny")
-    .map((r) => r.target_id);
-
-  if (denyList.includes(requestingUserId)) return { error: "app_scope_denied" };
-  if (allowList.length > 0 && !allowList.includes(requestingUserId))
-    return { error: "app_scope_not_allowed" };
-
-  return null;
-}
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -321,6 +283,13 @@ app.post("/", async (c) => {
   const allowedScopes = (
     body.allowed_scopes ?? ["openid", "profile", "email"]
   ).filter(isAllowedScope);
+  const ruleErr = await checkAppScopeOwnerRules(
+    c.env.DB,
+    allowedScopes,
+    [],
+    user.id,
+  );
+  if (ruleErr) return c.json(ruleErr, 403);
   const optionalScopes = (body.optional_scopes ?? []).filter((s) =>
     allowedScopes.includes(s),
   );
@@ -555,22 +524,13 @@ app.patch("/:id", async (c) => {
 
   // Check access rules for any newly-added app:* scopes
   if (body.allowed_scopes) {
-    const existingScopes = JSON.parse(row.allowed_scopes) as string[];
-    const newAppScopes = body.allowed_scopes.filter(
-      (s) => s.startsWith("app:") && !existingScopes.includes(s),
+    const err = await checkAppScopeOwnerRules(
+      c.env.DB,
+      body.allowed_scopes,
+      JSON.parse(row.allowed_scopes) as string[],
+      user.id,
     );
-    const checkedClientIds = new Set<string>();
-    for (const s of newAppScopes) {
-      const parsed = parseAppScope(s);
-      if (!parsed || checkedClientIds.has(parsed.clientId)) continue;
-      checkedClientIds.add(parsed.clientId);
-      const err = await checkOwnerScopeAccess(
-        c.env.DB,
-        parsed.clientId,
-        user.id,
-      );
-      if (err) return c.json(err, 403);
-    }
+    if (err) return c.json(err, 403);
   }
 
   const now = Math.floor(Date.now() / 1000);

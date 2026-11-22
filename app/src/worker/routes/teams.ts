@@ -12,6 +12,7 @@ import {
   sweepOrphanedImageProxyMappings,
 } from "../lib/proxyImage";
 import { isAllowedScope } from "../lib/scopes";
+import { checkAppScopeOwnerRules } from "../lib/appScopeRules";
 import {
   parseRedirectUris,
   validateRedirectUriEntry,
@@ -1816,6 +1817,13 @@ app.post("/:id/apps", async (c) => {
   const allowedScopes = (
     body.allowed_scopes ?? ["openid", "profile", "email"]
   ).filter(isAllowedScope);
+  const ruleErr = await checkAppScopeOwnerRules(
+    c.env.DB,
+    allowedScopes,
+    [],
+    user.id,
+  );
+  if (ruleErr) return c.json(ruleErr, 403);
 
   // owner_id points at the team-user row (id == teams.id) when teams have
   // been migrated to the unified user model. Falls back to the creator if
