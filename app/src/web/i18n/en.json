@@ -2874,6 +2874,8 @@
     "invalidDesc": "This verification link is invalid or has already been used. Please request a new verification email from your profile.",
     "expiredTitle": "Link expired",
     "expiredDesc": "Verification links last 24 hours. Please request a new verification email from your profile.",
+    "takenTitle": "Address already in use",
+    "takenDesc": "Another account signed up with this address after you added it, so it can't be verified for yours.",
     "goToDashboard": "Go to Dashboard",
     "goToLogin": "Go to Login"
   },

@@ -23,6 +23,7 @@
 // keep their existing handlers and everything deeper falls through to here.
 
 import { Hono } from "hono";
+import { emailInUse } from "../lib/accountEmails";
 import { auditRequestAction } from "../lib/audit";
 import { hashPassword, randomId } from "../lib/crypto";
 import { readPage } from "../lib/pagination";
@@ -491,6 +492,8 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
     .bind(emailId, id)
     .first<{ id: string; email: string }>();
   if (!row) return c.json({ error: "email_not_found" }, 404);
+  if (await emailInUse(c.env.DB, row.email, id))
+    return c.json({ error: "email_taken" }, 409);
 
   await c.env.DB.prepare(
     `UPDATE user_emails SET verified = 1, verified_via = 'admin',

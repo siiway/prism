@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import authRoutes from "../src/worker/routes/auth";
 import { emailInUse } from "../src/worker/lib/accountEmails";
 import { hashPassword } from "../src/worker/lib/crypto";
+import { newEmailVerifyToken } from "../src/worker/lib/emailVerifyToken";
 import { d1, executionCtx, MemoryKv, migratedDatabase } from "./setup/d1";
 
 let sqlite: Database;
@@ -181,4 +182,49 @@ test("sign-up with a blank display name uses the username", async () => {
     .query("SELECT display_name FROM users WHERE username = 'blankname'")
     .get() as { display_name: string };
   expect(row.display_name).toBe("blankname");
+});
+
+test("someone's unverified alternate doesn't block the owner's sign-up", async () => {
+  sqlite.run(
+    `INSERT INTO user_emails (id, user_id, email, verified, created_at)
+     VALUES ('e2', 'victim', 'claimed@example.com', 0, 0)`,
+  );
+  expect(await emailInUse(d1(sqlite), "claimed@example.com")).toBe(false);
+});
+
+test("an alternate can't be verified once another account holds the address", async () => {
+  const token = newEmailVerifyToken();
+  sqlite.run(
+    `INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at)
+     VALUES ('e3', 'victim', 'late@example.com', 0, ?, 0)`,
+    [token],
+  );
+  sqlite.run(
+    `INSERT INTO users (id, username, email, created_at, updated_at)
+     VALUES ('other', 'other', 'late@example.com', 0, 0)`,
+  );
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  const res = await app.fetch(
+    new Request(
+      `https://prism.example/api/auth/verify-email?alt=1&token=${encodeURIComponent(token)}`,
+    ),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  expect(res.headers.get("Location")).toContain("status=taken");
+  expect(
+    (
+      sqlite
+        .query("SELECT verified FROM user_emails WHERE id = 'e3'")
+        .get() as {
+        verified: number;
+      }
+    ).verified,
+  ).toBe(0);
 });

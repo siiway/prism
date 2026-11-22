@@ -458,14 +458,22 @@ app.get("/verify-email", async (c) => {
   if (isAlt) {
     // Alternate email verification
     const altEmail = await c.env.DB.prepare(
-      "SELECT id, verified FROM user_emails WHERE verify_token = ? OR verify_token = ?",
+      "SELECT id, user_id, email, verified FROM user_emails WHERE verify_token = ? OR verify_token = ?",
     )
       .bind(token, tokenLookup)
-      .first<{ id: string; verified: number }>();
+      .first<{
+        id: string;
+        user_id: string;
+        email: string;
+        verified: number;
+      }>();
     if (!altEmail)
       return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
     if (expired)
       return c.redirect(`${c.env.APP_URL}/verify-email?status=expired`);
+    // Someone else may have signed up with it since it was added.
+    if (await emailInUse(c.env.DB, altEmail.email, altEmail.user_id))
+      return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
 
     await c.env.DB.prepare(
       "UPDATE user_emails SET verified = 1, verify_token = NULL, verified_at = ? WHERE id = ?",

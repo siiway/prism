@@ -3,9 +3,11 @@
 // two tables each keep their own column unique, so every path that gives an
 // account an address checks the other table here.
 
-/** Whether the address is already some account's primary or alternate
- *  email. `exceptUserId` leaves out that account's own addresses, for an
- *  account changing its primary to one of its alternates. */
+/** Whether the address is already some account's primary email, or a
+ *  verified alternate of one. An unverified alternate doesn't count: anyone
+ *  can add one without proof, and it would let them block the address's
+ *  owner from signing up. Verifying an alternate checks this again.
+ *  `exceptUserId` leaves out that account's own addresses. */
 export async function emailInUse(
   db: D1Database,
   email: string,
@@ -15,7 +17,8 @@ export async function emailInUse(
     .prepare(
       `SELECT 1 FROM users WHERE email = ? AND id != ?
        UNION ALL
-       SELECT 1 FROM user_emails WHERE email = ? AND user_id != ?
+       SELECT 1 FROM user_emails
+        WHERE email = ? AND user_id != ? AND verified = 1
        LIMIT 1`,
     )
     .bind(
