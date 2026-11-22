@@ -438,7 +438,8 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 You can exchange a token issued to your client, or one that carries a cross-app
 scope naming it (`app:<client_id>:*`); from another app's token you get only
 those `app:<client_id>:*` scopes. The new token's scope is a subset of that, its
-audience follows `resource` / `audience`, and it expires no later than the
+audience follows `resource` / `audience` but stays within the original's (asking
+for none keeps the original's), and it expires no later than the
 original. A DPoP-bound token needs a proof from the same key, and the new token
 stays bound to it. Exchanged tokens can't be refreshed.
 

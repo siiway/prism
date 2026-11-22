@@ -1879,11 +1879,11 @@ app.post("/token", rejectRepeatedParams, async (c) => {
         : Array.isArray(json?.audience)
           ? json.audience.filter((v): v is string => typeof v === "string")
           : [];
-    const resources = validateResources([
+    const requestedResources = validateResources([
       ...collectResourceParams(form, json?.resource),
       ...audienceVals,
     ]);
-    if (resources === null)
+    if (requestedResources === null)
       return c.json(
         {
           error: "invalid_target",
@@ -1891,6 +1891,20 @@ app.post("/token", rejectRepeatedParams, async (c) => {
         },
         400,
       );
+    // A token limited to some resources can only be exchanged for one
+    // limited to those or fewer; asking for none keeps the same limit.
+    let resources = requestedResources;
+    if (subject.resources.length) {
+      if (!requestedResources.length) resources = subject.resources;
+      else if (!requestedResources.every((r) => subject.resources.includes(r)))
+        return c.json(
+          {
+            error: "invalid_target",
+            error_description: "resource/audience outside the subject token's",
+          },
+          400,
+        );
+    }
 
     const user = await c.env.DB.prepare(
       "SELECT * FROM users WHERE id = ? AND kind = 'user'",
@@ -2821,6 +2835,7 @@ async function lookupAccessToken(
   clientId: string;
   expiresAt: number;
   dpopJkt: string | null;
+  resources: string[];
 } | null> {
   const now = Math.floor(Date.now() / 1000);
   let tokenRow: {
@@ -2830,6 +2845,7 @@ async function lookupAccessToken(
     expires_at: number;
     client_id: string;
     dpop_jkt: string | null;
+    resource: string | null;
   } | null;
 
   if (token.split(".").length === 3) {
@@ -2837,7 +2853,7 @@ async function lookupAccessToken(
       const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
       const payload = verifyAccessToken(token, mldsaKey.publicKey);
       tokenRow = await c.env.DB.prepare(
-        "SELECT user_id, subject, scopes, expires_at, client_id, dpop_jkt FROM oauth_tokens WHERE id = ?",
+        "SELECT user_id, subject, scopes, expires_at, client_id, dpop_jkt, resource FROM oauth_tokens WHERE id = ?",
       )
         .bind(payload.jti)
         .first();
@@ -2848,7 +2864,7 @@ async function lookupAccessToken(
     const lookup = await hashLookupCandidate(c.env, token);
     if (!lookup) return null;
     tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, subject, scopes, expires_at, client_id, dpop_jkt FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
+      "SELECT user_id, subject, scopes, expires_at, client_id, dpop_jkt, resource FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
     )
       .bind(token, lookup)
       .first();
@@ -2869,6 +2885,7 @@ async function lookupAccessToken(
     clientId: tokenRow.client_id,
     expiresAt: tokenRow.expires_at,
     dpopJkt: tokenRow.dpop_jkt,
+    resources: parseResources(tokenRow.resource),
   };
 }
 

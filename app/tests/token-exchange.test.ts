@@ -44,7 +44,12 @@ function issue(token: string, scopes: string[], dpopJkt: string | null = null) {
   );
 }
 
-function exchange(clientId: string, token: string, scope?: string) {
+function exchange(
+  clientId: string,
+  token: string,
+  scope?: string,
+  resource?: string,
+) {
   const body = new URLSearchParams({
     grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
     client_id: clientId,
@@ -52,6 +57,7 @@ function exchange(clientId: string, token: string, scope?: string) {
     subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
   });
   if (scope) body.set("scope", scope);
+  if (resource) body.set("resource", resource);
   return app.fetch(
     new Request("https://prism.example/oauth/token", {
       method: "POST",
@@ -92,5 +98,26 @@ describe("token exchange", () => {
     const res = await exchange("client_a", "tok");
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error: "invalid_dpop_proof" });
+  });
+
+  test("keeps the subject token's audience", async () => {
+    issue("tok", ["openid"]);
+    sqlite.run(
+      "UPDATE oauth_tokens SET resource = '[\"https://api-a.example\"]' WHERE id = 'id-tok'",
+    );
+    const other = await exchange(
+      "client_a",
+      "tok",
+      undefined,
+      "https://api-b.example",
+    );
+    expect(other.status).toBe(400);
+    expect(await other.json()).toMatchObject({ error: "invalid_target" });
+
+    expect((await exchange("client_a", "tok")).status).toBe(200);
+    const minted = sqlite
+      .query("SELECT resource FROM oauth_tokens WHERE id != 'id-tok'")
+      .get() as { resource: string };
+    expect(JSON.parse(minted.resource)).toEqual(["https://api-a.example"]);
   });
 });
