@@ -23,7 +23,7 @@
 // keep their existing handlers and everything deeper falls through to here.
 
 import { Hono } from "hono";
-import { emailInUse } from "../lib/accountEmails";
+import { emailOwnedElsewhere } from "../lib/accountEmails";
 import { auditRequestAction } from "../lib/audit";
 import { hashPassword, randomId } from "../lib/crypto";
 import { readPage } from "../lib/pagination";
@@ -472,13 +472,22 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   if (emailId === "primary") {
-    await c.env.DB.prepare(
-      `UPDATE users SET email_verified = 1, email_verified_via = 'admin',
-              email_verified_at = ?, email_verify_token = NULL,
-              email_verify_code = NULL, updated_at = ? WHERE id = ?`,
-    )
-      .bind(now, now, id)
-      .run();
+    if (await emailOwnedElsewhere(c.env.DB, target.email, id))
+      return c.json({ error: "email_taken" }, 409);
+    try {
+      await c.env.DB.prepare(
+        `UPDATE users SET email_verified = 1, email_verified_via = 'admin',
+                email_verified_at = ?, email_verify_token = NULL,
+                email_verify_code = NULL, updated_at = ? WHERE id = ?`,
+      )
+        .bind(now, now, id)
+        .run();
+    } catch (err) {
+      // Taken between the check and the write.
+      if (err instanceof Error && err.message.includes("UNIQUE"))
+        return c.json({ error: "email_taken" }, 409);
+      throw err;
+    }
     auditUser(c, id, target.username, "user.email_verified", {
       email: target.email,
       primary: true,
@@ -492,7 +501,7 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
     .bind(emailId, id)
     .first<{ id: string; email: string }>();
   if (!row) return c.json({ error: "email_not_found" }, 404);
-  if (await emailInUse(c.env.DB, row.email, id))
+  if (await emailOwnedElsewhere(c.env.DB, row.email, id))
     return c.json({ error: "email_taken" }, 409);
 
   try {

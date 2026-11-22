@@ -2,7 +2,7 @@
 
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
-import { emailInUse } from "../lib/accountEmails";
+import { emailInUse, emailOwnedElsewhere } from "../lib/accountEmails";
 import { optionalDisplayName } from "../lib/displayName";
 import {
   emailVerifyTokenFresh,
@@ -472,7 +472,7 @@ app.get("/verify-email", async (c) => {
     if (expired)
       return c.redirect(`${c.env.APP_URL}/verify-email?status=expired`);
     // Someone else may have signed up with it since it was added.
-    if (await emailInUse(c.env.DB, altEmail.email, altEmail.user_id))
+    if (await emailOwnedElsewhere(c.env.DB, altEmail.email, altEmail.user_id))
       return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
 
     try {
@@ -501,11 +501,22 @@ app.get("/verify-email", async (c) => {
   if (expired)
     return c.redirect(`${c.env.APP_URL}/verify-email?status=expired`);
 
-  await c.env.DB.prepare(
-    "UPDATE users SET email_verified = 1, email_verify_token = NULL, updated_at = ? WHERE id = ?",
-  )
-    .bind(now, user.id)
-    .run();
+  // Another account may have proved it owns the address meanwhile.
+  if (await emailOwnedElsewhere(c.env.DB, user.email, user.id))
+    return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
+
+  try {
+    await c.env.DB.prepare(
+      "UPDATE users SET email_verified = 1, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+    )
+      .bind(now, user.id)
+      .run();
+  } catch (err) {
+    // Taken between the check and the write.
+    if (err instanceof Error && err.message.includes("UNIQUE"))
+      return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
+    throw err;
+  }
 
   return c.redirect(`${c.env.APP_URL}/verify-email?status=success`);
 });

@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
 import authRoutes from "../src/worker/routes/auth";
-import { emailInUse } from "../src/worker/lib/accountEmails";
+import {
+  emailInUse,
+  emailOwnedElsewhere,
+} from "../src/worker/lib/accountEmails";
 import { hashPassword } from "../src/worker/lib/crypto";
 import { newEmailVerifyToken } from "../src/worker/lib/emailVerifyToken";
 import { d1, executionCtx, MemoryKv, migratedDatabase } from "./setup/d1";
@@ -194,7 +197,7 @@ test("someone's unverified alternate doesn't block the owner's sign-up", async (
   expect(await emailInUse(d1(sqlite), "claimed@example.com")).toBe(false);
 });
 
-test("an alternate can't be verified once another account holds the address", async () => {
+test("an alternate can't be verified once another account owns the address", async () => {
   const token = newEmailVerifyToken();
   sqlite.run(
     `INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at)
@@ -202,8 +205,8 @@ test("an alternate can't be verified once another account holds the address", as
     [token],
   );
   sqlite.run(
-    `INSERT INTO users (id, username, email, created_at, updated_at)
-     VALUES ('other', 'other', 'late@example.com', 0, 0)`,
+    `INSERT INTO users (id, username, email, email_verified, created_at, updated_at)
+     VALUES ('other', 'other', 'late@example.com', 1, 0, 0)`,
   );
   const app = new Hono();
   app.route("/api/auth", authRoutes);
@@ -229,4 +232,46 @@ test("an alternate can't be verified once another account holds the address", as
       }
     ).verified,
   ).toBe(0);
+});
+
+test("an unverified sign-up doesn't keep the owner from verifying the address", async () => {
+  const altToken = newEmailVerifyToken();
+  const primaryToken = newEmailVerifyToken();
+  sqlite.run(
+    `INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at)
+     VALUES ('e4', 'victim', 'mine@example.com', 0, ?, 0)`,
+    [altToken],
+  );
+  // Someone signed up with the owner's address and never confirmed it.
+  sqlite.run(
+    `INSERT INTO users (id, username, email, email_verify_token, created_at, updated_at)
+     VALUES ('squatter', 'squatter', 'mine@example.com', ?, 0, 0)`,
+    [primaryToken],
+  );
+  expect(
+    await emailOwnedElsewhere(d1(sqlite), "mine@example.com", "victim"),
+  ).toBe(false);
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  const verify = (query: string) =>
+    app.fetch(
+      new Request(`https://prism.example/api/auth/verify-email?${query}`),
+      {
+        DB: d1(sqlite),
+        APP_URL: "https://prism.example",
+        KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+        KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+      } as unknown as Env,
+      executionCtx,
+    );
+  const owner = await verify(`alt=1&token=${encodeURIComponent(altToken)}`);
+  expect(owner.headers.get("Location")).toContain("status=success");
+  // Once the owner has it, the squatter's primary can't be verified.
+  const squatter = await verify(`token=${encodeURIComponent(primaryToken)}`);
+  expect(squatter.headers.get("Location")).toContain("status=taken");
+  expect(
+    sqlite
+      .query("SELECT email_verified FROM users WHERE id = 'squatter'")
+      .get(),
+  ).toEqual({ email_verified: 0 });
 });

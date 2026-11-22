@@ -1,6 +1,6 @@
 // Cloudflare Email Worker handler — receives inbound emails for email verification
 
-import { emailInUse } from "../lib/accountEmails";
+import { emailOwnedElsewhere } from "../lib/accountEmails";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 
 export async function handleEmailWorker(
@@ -55,7 +55,7 @@ export async function handleEmailWorker(
       .first<{ id: string; user_id: string }>();
     if (altEmail) {
       // Someone else may have signed up with it since it was added.
-      if (await emailInUse(env.DB, senderEmail, altEmail.user_id)) {
+      if (await emailOwnedElsewhere(env.DB, senderEmail, altEmail.user_id)) {
         message.setReject("Email address belongs to another account");
         return;
       }
@@ -81,6 +81,12 @@ export async function handleEmailWorker(
 
   if (!emailMatches) {
     message.setReject("Sender does not match registered email");
+    return;
+  }
+
+  // Another account may have proved it owns the address meanwhile.
+  if (await emailOwnedElsewhere(env.DB, user.email, user.id)) {
+    message.setReject("Email address belongs to another account");
     return;
   }
 

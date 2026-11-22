@@ -3,6 +3,7 @@
 
 import { isSyntheticEmail } from "../lib/userCapabilities";
 import { Hono } from "hono";
+import { emailOwnedElsewhere } from "../lib/accountEmails";
 import { randomId } from "../lib/crypto";
 import { getConfig } from "../lib/config";
 import { newEmailVerifyToken } from "../lib/emailVerifyToken";
@@ -58,13 +59,14 @@ app.post("/me/emails", async (c) => {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     return c.json({ error: "email_invalid" }, 400);
 
-  // Check uniqueness against primary emails
-  const existing = await c.env.DB.prepare(
-    "SELECT id FROM users WHERE email = ?",
+  // The account's own primary, or an address another account has proved it
+  // owns. Someone else's unverified primary doesn't block it: whoever
+  // verifies the address owns it.
+  if (
+    email === user.email.toLowerCase() ||
+    (await emailOwnedElsewhere(c.env.DB, email, user.id))
   )
-    .bind(email)
-    .first();
-  if (existing) return c.json({ error: "email_taken" }, 409);
+    return c.json({ error: "email_taken" }, 409);
 
   // Check uniqueness against other alternate emails
   const altExisting = await c.env.DB.prepare(

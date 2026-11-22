@@ -16,13 +16,13 @@ let sqlite: Database;
 beforeEach(() => {
   sqlite = migratedDatabase();
   // b added x@example.com as an alternate; a then signed up with it, which
-  // is allowed while the alternate is unverified. c has an alternate of its
-  // own to verify.
+  // is allowed while the alternate is unverified, and confirmed it. c has an
+  // alternate of its own to verify.
   sqlite.exec(`
-    INSERT INTO users (id, username, email, created_at, updated_at) VALUES
-      ('a', 'a', 'x@example.com', 0, 0),
-      ('b', 'b', 'b@example.com', 0, 0),
-      ('c', 'c', 'c@example.com', 0, 0);
+    INSERT INTO users (id, username, email, email_verified, created_at, updated_at) VALUES
+      ('a', 'a', 'x@example.com', 1, 0, 0),
+      ('b', 'b', 'b@example.com', 0, 0, 0),
+      ('c', 'c', 'c@example.com', 0, 0, 0);
     INSERT INTO user_emails (id, user_id, email, verified, verify_code, created_at) VALUES
       ('bx', 'b', 'x@example.com', 0, 'aaaa', 0),
       ('cy', 'c', 'y@example.com', 0, 'bbbb', 0);

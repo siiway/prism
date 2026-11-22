@@ -2,7 +2,7 @@
 // Users send an email with their verification code as the subject
 // to the IMAP mailbox address (e.g. receive@prism.example.com).
 
-import { emailInUse } from "../lib/accountEmails";
+import { emailOwnedElsewhere } from "../lib/accountEmails";
 import { getConfig } from "../lib/config";
 import { pollVerifyEmails } from "../lib/imap";
 import { decryptSecret, hashLookupCandidate } from "../lib/secretCrypto";
@@ -80,6 +80,11 @@ async function verifyFromMessage(
         .bind(user.id, senderEmail)
         .first());
     if (!emailMatches) return;
+    // Another account may have proved it owns the address meanwhile.
+    if (await emailOwnedElsewhere(db, user.email, user.id)) {
+      console.log(`[imap-poll] Email for user ${user.id} is taken`);
+      return;
+    }
 
     await db
       .prepare(
@@ -102,7 +107,7 @@ async function verifyFromMessage(
 
   if (altEmail) {
     // Someone else may have signed up with it since it was added.
-    if (await emailInUse(db, senderEmail, altEmail.user_id)) {
+    if (await emailOwnedElsewhere(db, senderEmail, altEmail.user_id)) {
       console.log(`[imap-poll] Alternate email ${altEmail.id} is taken`);
       return;
     }

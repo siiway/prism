@@ -31,12 +31,24 @@ describe("an address belongs to one account, even when requests race", () => {
     ).toThrow("UNIQUE constraint failed");
   });
 
-  test("an alternate can't be verified while it's another account's primary", () => {
+  test("an alternate can't be verified while it's another account's verified primary", () => {
+    db.exec("UPDATE users SET email_verified = 1 WHERE id = 'b'");
     db.exec(
       "INSERT INTO user_emails (id, user_id, email, verified, created_at) VALUES ('e2', 'a', 'b@example.com', 0, 0)",
     );
     expect(() =>
       db.exec("UPDATE user_emails SET verified = 1 WHERE id = 'e2'"),
+    ).toThrow("UNIQUE constraint failed");
+  });
+
+  test("an unverified primary doesn't keep the owner from verifying it", () => {
+    db.exec(
+      "INSERT INTO user_emails (id, user_id, email, verified, created_at) VALUES ('e2', 'a', 'b@example.com', 0, 0)",
+    );
+    db.exec("UPDATE user_emails SET verified = 1 WHERE id = 'e2'");
+    // ...and once it's owned, that primary can't be verified.
+    expect(() =>
+      db.exec("UPDATE users SET email_verified = 1 WHERE id = 'b'"),
     ).toThrow("UNIQUE constraint failed");
   });
 

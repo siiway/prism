@@ -12,7 +12,7 @@ import {
   timingSafeStrEqual,
 } from "../lib/crypto";
 import { getConfig } from "../lib/config";
-import { emailInUse } from "../lib/accountEmails";
+import { emailInUse, emailOwnedElsewhere } from "../lib/accountEmails";
 import { optionalDisplayName } from "../lib/displayName";
 import { DISPLAY_NAME_MAX_LENGTH } from "../../shared/limits";
 import { getIp } from "../lib/clientIp";
@@ -1806,7 +1806,9 @@ async function trySocialEmailVerify(
   const now = Math.floor(Date.now() / 1000);
 
   if (!userEmailVerified) {
-    // Not yet verified — auto-verify via this provider
+    // Not yet verified — auto-verify via this provider, unless another
+    // account has proved it owns the address.
+    if (await emailOwnedElsewhere(db, userEmail, userId)) return;
     await db
       .prepare(
         "UPDATE users SET email_verified = 1, email_verified_via = ?, email_verified_at = ?, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
