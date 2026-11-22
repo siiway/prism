@@ -108,8 +108,8 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 | `admin:users:read`     | 读取所有用户账号（仅限管理员）                 |
 | `admin:users:write`    | 修改用户账号（仅限管理员）                     |
 | `admin:users:delete`   | 删除用户账号（仅限管理员）                     |
-| `admin:config:read`    | 读取实例配置（仅限管理员）                     |
-| `admin:config:write`   | 更新实例配置（仅限管理员）                     |
+| `admin:config:read`    | 读取实例配置，不含凭据（仅限管理员）           |
+| `admin:config:write`   | 更新实例配置，凭据除外（仅限管理员）           |
 | `admin:invites:read`   | 列出邀请（仅限管理员）                         |
 | `admin:invites:create` | 创建邀请（仅限管理员）                         |
 | `admin:invites:delete` | 删除邀请（仅限管理员）                         |

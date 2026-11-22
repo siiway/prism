@@ -7,7 +7,16 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { configBag } from "../lib/config";
-import { encryptSecret, hashLookupCandidate } from "../lib/secretCrypto";
+import {
+  encryptSecret,
+  hashLookupCandidate,
+  SENSITIVE_CONFIG_KEYS,
+} from "../lib/secretCrypto";
+import {
+  ADMIN_CONFIG_KEYS,
+  prepareConfigUpdates,
+  saveConfigUpdates,
+} from "../lib/adminConfig";
 import {
   findPersonalAccessToken,
   isExpired,
@@ -23,13 +32,8 @@ import { validateRedirectUriForRegistration } from "../lib/redirectUri";
 import {
   guardCapability,
   hasLiveRestrictedAccounts,
-  sanitizeRestrictedCapabilities,
 } from "../lib/userCapabilities";
-import {
-  getGroupsForTeamMembers,
-  getMemberGroups,
-  sanitizeRolePermissions,
-} from "../lib/teamGroups";
+import { getGroupsForTeamMembers, getMemberGroups } from "../lib/teamGroups";
 import { recordAccountDeletion, auditRequestMeta } from "../lib/audit";
 import {
   getMember,
@@ -1706,25 +1710,10 @@ app.get("/me/admin/config", async (c) => {
   const { getConfig } = await import("../lib/config");
   const config = await getConfig(c.env.DB);
 
-  // Strip sensitive credential fields
-  const SENSITIVE_KEYS = [
-    "github_client_secret",
-    "google_client_secret",
-    "microsoft_client_secret",
-    "discord_client_secret",
-    "captcha_secret_key",
-    "turnstile_secret_key",
-    "turnstile_china_secret_key",
-    "hcaptcha_secret_key",
-    "recaptcha_secret_key",
-    "geetest_captcha_key",
-    "cap_secret_key",
-    "smtp_password",
-    "email_api_key",
-  ];
+  // Credentials never leave through an app token.
   const safe = Object.fromEntries(
     Object.entries(configBag(config)).filter(
-      ([k]) => !SENSITIVE_KEYS.includes(k),
+      ([k]) => !SENSITIVE_CONFIG_KEYS.has(k),
     ),
   );
 
@@ -1738,53 +1727,21 @@ app.patch("/me/admin/config", async (c) => {
 
   const body = await c.req.json<Record<string, unknown>>();
 
-  // Disallow updating sensitive credential fields via this endpoint
-  const BLOCKED = new Set([
-    "github_client_id",
-    "github_client_secret",
-    "google_client_id",
-    "google_client_secret",
-    "microsoft_client_id",
-    "microsoft_client_secret",
-    "discord_client_id",
-    "discord_client_secret",
-    "captcha_secret_key",
-    "turnstile_secret_key",
-    "turnstile_china_secret_key",
-    "hcaptcha_secret_key",
-    "recaptcha_secret_key",
-    "geetest_captcha_key",
-    "cap_secret_key",
-    "smtp_password",
-    "email_api_key",
-    "initialized",
-  ]);
-
-  const updates: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(body)) {
-    if (!BLOCKED.has(k)) updates[k] = v;
-  }
-
-  // This endpoint is deny-listed rather than allow-listed, so the capability
-  // set has to be sanitised here too — otherwise arbitrary JSON reaches the
-  // config row through this path.
-  if (updates.default_team_role_permissions !== undefined) {
-    updates.default_team_role_permissions = sanitizeRolePermissions(
-      updates.default_team_role_permissions,
-    );
-  }
-  if (updates.restricted_user_capabilities !== undefined) {
-    updates.restricted_user_capabilities = sanitizeRestrictedCapabilities(
-      updates.restricted_user_capabilities,
-    );
-  }
-
+  // The keys the admin dashboard can set, with the same checks, minus
+  // credentials and the sign-in providers' client IDs.
+  const prepared = await prepareConfigUpdates(
+    body,
+    (k) =>
+      ADMIN_CONFIG_KEYS.has(k) &&
+      !SENSITIVE_CONFIG_KEYS.has(k) &&
+      !k.endsWith("_client_id"),
+  );
+  if ("refused" in prepared) return c.json(prepared.refused, 400);
+  const { updates } = prepared;
   if (Object.keys(updates).length === 0)
     return c.json({ error: "nothing_to_update" }, 400);
 
-  const { setConfigValues } = await import("../lib/config");
-  await setConfigValues(c.env.DB, updates);
-
+  await saveConfigUpdates(c.env, updates);
   return c.json({ updated: Object.keys(updates) });
 });
 
