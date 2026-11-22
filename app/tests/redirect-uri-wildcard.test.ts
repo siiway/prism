@@ -74,6 +74,19 @@ describe("wildcard redirect URIs", () => {
     );
   });
 
+  test("a * ending the port also covers the path, as it always did", () => {
+    const reason = (value: string) =>
+      validateRedirectUriEntry({ type: "wildcard", value });
+    expect(reason("http://localhost:3000*")).toBeNull();
+    expect(matches("http://localhost:3000*", "http://localhost:3000/cb")).toBe(
+      true,
+    );
+    expect(matches("http://localhost:3000*", "http://localhost:3001/cb")).toBe(
+      false,
+    );
+    expect(reason("http://localhost:3000*/cb")).toBe("not_url");
+  });
+
   test("a * ending the host never reaches a longer domain", () => {
     for (const candidate of [
       "https://example.community/steal",

@@ -195,6 +195,9 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
     host = authority.slice(0, i);
     port = authority.slice(i + 1);
   }
+  // A `*` ending the port (`http://localhost:3000*`) has always also covered
+  // the path, as one ending the host does: port 3000, any path.
+  if (port !== null && !rest && /^\d+\*$/.test(port)) port = port.slice(0, -1);
   if (port !== null && !/^(\d+|\*)$/.test(port)) return "not_url";
   // A `*` ending the host (`https://example.com*`) has always stood for
   // the path, which the old whole-string glob ran on into. It is read that
