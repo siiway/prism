@@ -6,7 +6,7 @@
 
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { configBag } from "../lib/config";
+import { configBag, getConfigValue } from "../lib/config";
 import { displayNameError } from "../lib/displayName";
 import {
   encryptSecret,
@@ -783,6 +783,15 @@ app.patch("/me/profile", async (c) => {
 app.post("/me/apps", async (c) => {
   const resolved = await resolveBearerToken(c, "apps:write");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+  // The same gates as creating an app on the dashboard.
+  const owner = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
+    .bind(resolved.userId)
+    .first<{ role: string }>();
+  if (
+    owner?.role !== "admin" &&
+    (await getConfigValue(c.env.DB, "disable_user_create_app"))
+  )
+    return c.json({ error: "app_creation_disabled" }, 403);
   const capErr = await guardCapability(c.env.DB, resolved.userId, "app:create");
   if (capErr) return c.json({ error: capErr }, 403);
 
