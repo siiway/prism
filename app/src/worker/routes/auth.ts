@@ -637,17 +637,19 @@ app.post("/passkey/auth/begin", async (c) => {
 
   const username = "username" in body ? body.username : undefined;
   if (username) {
-    // An email address finds its account the way password sign-in does.
-    const user = username.includes("@")
+    // Matched the way password sign-in matches it: lowercased, and an email
+    // address finds its account through the shared lookup.
+    const name = username.toLowerCase().trim();
+    const user = name.includes("@")
       ? await userForSignInEmail(
           c.env.DB,
-          username.toLowerCase().trim(),
+          name,
           (await getConfig(c.env.DB)).allow_alt_email_login,
         )
       : await c.env.DB.prepare(
           "SELECT * FROM users WHERE username = ? AND kind = 'user'",
         )
-          .bind(username)
+          .bind(name)
           .first<{ id: string }>();
     if (user) {
       const rows = await c.env.DB.prepare(

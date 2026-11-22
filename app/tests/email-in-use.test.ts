@@ -428,3 +428,27 @@ test("a GPG challenge for an email is for the account sign-in will find", async 
   // /gpg-login refuses a challenge stored for any other account.
   expect(await kv.get(`gpg:challenge:${challenge}`)).toBe("victim");
 });
+
+test("passkey sign-in finds a username typed with capitals", async () => {
+  sqlite.exec(`
+    INSERT INTO passkeys (id, user_id, credential_id, public_key, created_at)
+      VALUES ('p1', 'victim', 'dmljdGltLWtleQ', 'pk', 0);
+  `);
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  const res = await app.fetch(
+    new Request("https://prism.example/api/auth/passkey/auth/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: " Victim " }),
+    }),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  expect(JSON.stringify(await res.json())).toContain("dmljdGltLWtleQ");
+});
