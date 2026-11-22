@@ -41,7 +41,9 @@ describe("email addresses belong to one account", () => {
     sqlite.run("UPDATE users SET password_hash = ? WHERE id = 'victim'", [
       await hashPassword("victim-password"),
     ]);
-    // An account that took the address before sign-up checked alternates.
+    // An account that took the address before sign-up checked alternates,
+    // written before migration 0093 would have refused it.
+    sqlite.exec("DROP TRIGGER users_email_not_another_accounts_insert");
     sqlite.run(
       `INSERT INTO users (id, username, email, email_verified, password_hash, created_at, updated_at)
        VALUES ('squatter', 'squatter', 'alt@example.com', 0, ?, ?, ?)`,

@@ -1440,6 +1440,10 @@ app.post("/complete", async (c) => {
         .run();
     } catch (err) {
       if (usedInvite) await releaseSiteInvite(c.env, usedInvite);
+      // Another request took the username or address since the checks.
+      const msg = err instanceof Error ? err.message : "";
+      if (msg.includes("UNIQUE"))
+        return c.json({ error: "email_or_username_taken" }, 409);
       throw err;
     }
 
