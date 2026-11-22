@@ -1,5 +1,6 @@
 // Cloudflare Email Worker handler — receives inbound emails for email verification
 
+import { emailInUse } from "../lib/accountEmails";
 import { hashLookupCandidate } from "../lib/secretCrypto";
 
 export async function handleEmailWorker(
@@ -53,6 +54,11 @@ export async function handleEmailWorker(
       .bind(code, codeLookup, senderEmail)
       .first<{ id: string; user_id: string }>();
     if (altEmail) {
+      // Someone else may have signed up with it since it was added.
+      if (await emailInUse(env.DB, senderEmail, altEmail.user_id)) {
+        message.setReject("Email address belongs to another account");
+        return;
+      }
       await env.DB.prepare(
         "UPDATE user_emails SET verified = 1, verify_code = NULL, verified_at = ? WHERE id = ?",
       )

@@ -495,13 +495,20 @@ app.post("/:id/emails/:emailId/verify", async (c) => {
   if (await emailInUse(c.env.DB, row.email, id))
     return c.json({ error: "email_taken" }, 409);
 
-  await c.env.DB.prepare(
-    `UPDATE user_emails SET verified = 1, verified_via = 'admin',
-            verified_at = ?, verify_token = NULL, verify_code = NULL
-      WHERE id = ?`,
-  )
-    .bind(now, row.id)
-    .run();
+  try {
+    await c.env.DB.prepare(
+      `UPDATE user_emails SET verified = 1, verified_via = 'admin',
+              verified_at = ?, verify_token = NULL, verify_code = NULL
+        WHERE id = ?`,
+    )
+      .bind(now, row.id)
+      .run();
+  } catch (err) {
+    // Taken between the check and the write.
+    if (err instanceof Error && err.message.includes("UNIQUE"))
+      return c.json({ error: "email_taken" }, 409);
+    throw err;
+  }
   auditUser(c, id, target.username, "user.email_verified", {
     email: row.email,
   });

@@ -475,11 +475,18 @@ app.get("/verify-email", async (c) => {
     if (await emailInUse(c.env.DB, altEmail.email, altEmail.user_id))
       return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
 
-    await c.env.DB.prepare(
-      "UPDATE user_emails SET verified = 1, verify_token = NULL, verified_at = ? WHERE id = ?",
-    )
-      .bind(now, altEmail.id)
-      .run();
+    try {
+      await c.env.DB.prepare(
+        "UPDATE user_emails SET verified = 1, verify_token = NULL, verified_at = ? WHERE id = ?",
+      )
+        .bind(now, altEmail.id)
+        .run();
+    } catch (err) {
+      // Taken between the check and the write.
+      if (err instanceof Error && err.message.includes("UNIQUE"))
+        return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
+      throw err;
+    }
 
     return c.redirect(`${c.env.APP_URL}/verify-email?status=success`);
   }
