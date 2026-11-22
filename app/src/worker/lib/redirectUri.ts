@@ -223,13 +223,27 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
   // otherwise only the root. A query with no path is the root's query.
   let path = rest;
   if (!path) path = authority.endsWith("*") ? "*" : "/";
-  else if (path.startsWith("?")) path = `/${path}`;
+  else path = encodedLikeAUrl(path);
   return {
     scheme: `${scheme.toLowerCase()}:`,
     host: host.toLowerCase(),
     port,
     rest: path,
   };
+}
+
+const STAR_STAND_IN = "__prism_wildcard__";
+
+/** A pattern's path and query written the way URL parsing writes a
+ *  candidate's (`pathname + search`): percent-encoded, with dot segments
+ *  resolved, and `/` before a bare query. Otherwise \`/回调/*\` would never
+ *  match \`/%E5%9B%9E%E8%B0%83/x\`. The stars are set aside so they survive. */
+function encodedLikeAUrl(rest: string): string {
+  const url = tryParse(
+    `https://host.invalid${rest.replaceAll("*", STAR_STAND_IN)}`,
+  );
+  if (!url) return rest;
+  return `${url.pathname}${url.search}`.replaceAll(STAR_STAND_IN, "*");
 }
 
 /** Glob match where `*` stands for any run of characters. It only ever

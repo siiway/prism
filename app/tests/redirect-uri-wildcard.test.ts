@@ -101,6 +101,21 @@ describe("wildcard redirect URIs", () => {
     );
   });
 
+  test("paths with characters a URL encodes still match", () => {
+    expect(
+      matches("https://example.com/回调/*", "https://example.com/回调/x"),
+    ).toBe(true);
+    expect(
+      matches("https://example.com/a b/*", "https://example.com/a%20b/x"),
+    ).toBe(true);
+    expect(
+      matches(
+        "https://example.com/cb?next={x}",
+        "https://example.com/cb?next={x}",
+      ),
+    ).toBe(true);
+  });
+
   test("the scheme must match", () => {
     expect(matches("https://localhost/cb", "http://localhost/cb")).toBe(false);
   });
