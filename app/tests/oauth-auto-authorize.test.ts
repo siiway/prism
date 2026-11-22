@@ -226,6 +226,23 @@ describe("OAuth auto-authorization with production routes", () => {
     const body2 = await res2.json<{ auto_authorize_eligible: boolean }>();
     expect(body2.auto_authorize_eligible).toBe(true);
 
+    // Case 2b: a repeated scope token is the same request, so it still matches
+    const res2b = await app.fetch(
+      new Request(
+        "https://prism.example/oauth/app-info?client_id=client_1&redirect_uri=https://example.com/cb&response_type=code&scope=openid%20profile%20openid",
+        { headers: { Cookie: cookie } },
+      ),
+      testEnv(),
+      executionCtx,
+    );
+    expect(res2b.status).toBe(200);
+    const body2b = await res2b.json<{
+      auto_authorize_eligible: boolean;
+      scopes: string[];
+    }>();
+    expect(body2b.auto_authorize_eligible).toBe(true);
+    expect(body2b.scopes).toEqual(["openid", "profile"]);
+
     // Case 3: Scope changed (e.g. requesting email now) -> auto_authorize_eligible = false
     const res3 = await app.fetch(
       new Request(
@@ -278,7 +295,7 @@ describe("OAuth auto-authorization with production routes", () => {
         body: JSON.stringify({
           client_id: "client_1",
           redirect_uri: "https://example.com/cb",
-          scope: "openid profile",
+          scope: "openid profile profile",
           action: "approve",
           authorization_mode: "always",
         }),

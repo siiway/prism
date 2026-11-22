@@ -30,6 +30,7 @@ import {
   canClientIntrospectToken,
   parseUnboundTeamScope,
   parseBoundTeamScope,
+  parseScopeParam,
   bindTeamScopes,
   UNBOUND_TEAM_SCOPES,
 } from "../lib/scopes";
@@ -589,7 +590,7 @@ app.get("/app-info", optionalAuth, async (c) => {
     }
   }
 
-  const requestedScopes = (scope ?? "").split(" ").filter(Boolean);
+  const requestedScopes = parseScopeParam(scope);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
   const [{ scopes, appScopes, rejected }, isVerified] = await Promise.all([
     resolveRequestedScopes(
@@ -655,9 +656,7 @@ app.get("/app-info", optionalAuth, async (c) => {
   const appOptionalScopes = JSON.parse(
     oauthApp.optional_scopes ?? "[]",
   ) as string[];
-  const requestOptionalScopes = (optional_scope ?? "")
-    .split(" ")
-    .filter(Boolean);
+  const requestOptionalScopes = parseScopeParam(optional_scope);
   const optionalScopeSet = new Set([
     ...appOptionalScopes,
     ...requestOptionalScopes,
@@ -943,7 +942,7 @@ app.post("/authorize", requireAuth, async (c) => {
   const { scopes } = await resolveRequestedScopes(
     c.env.DB,
     c.env.APP_URL,
-    (body.scope ?? "").split(" ").filter(Boolean),
+    parseScopeParam(body.scope),
     allowedScopes,
     oauthApp.client_id,
   );
@@ -1791,7 +1790,7 @@ app.post("/token", async (c) => {
       );
 
     // Requested scope must be a subset of the subject token's scope.
-    const requested = (params.scope ?? "").split(" ").filter(Boolean);
+    const requested = parseScopeParam(params.scope);
     let newScopes = subject.scopes;
     if (requested.length) {
       if (!requested.every((s) => subject.scopes.includes(s)))
@@ -1940,7 +1939,7 @@ app.post("/token", async (c) => {
       JSON.parse(oauthApp.allowed_scopes) as string[],
       clientId,
     );
-    const requested = (params.scope ?? "").split(" ").filter(Boolean);
+    const requested = parseScopeParam(params.scope);
     if (requested.some((s) => !granted.includes(s)))
       return c.json({ error: "invalid_scope" }, 400);
     const scopes = requested.length ? requested : granted;
@@ -2113,7 +2112,7 @@ app.post("/device_authorization", async (c) => {
       400,
     );
 
-  const requestedScopes = (params.scope ?? "").split(" ").filter(Boolean);
+  const requestedScopes = parseScopeParam(params.scope);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
   const { scopes } = await resolveRequestedScopes(
     c.env.DB,

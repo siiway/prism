@@ -15,14 +15,17 @@ import {
   parseRedirectUris,
   validateRedirectUriForRegistration,
 } from "../lib/redirectUri";
-import { parseAppScope } from "../lib/scopes";
+import {
+  parseAppScope,
+  parseScopeParam,
+  REQUESTABLE_SCOPES,
+} from "../lib/scopes";
 import type { OAuthAppRow, Variables } from "../types";
 import { validateOutboundUrl } from "../lib/safeFetch";
 import {
   DEVICE_GRANT_TYPE,
   TOKEN_EXCHANGE_GRANT_TYPE,
 } from "../lib/oauthClients";
-import { REQUESTABLE_SCOPES } from "../lib/scopes";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -40,9 +43,7 @@ const DCR_GRANT_TYPES = [
 /** Keep only scopes this server recognises (platform scopes or an `app:*`
  *  delegation form); default to the OIDC basics when none are requested. */
 function filterDcrScopes(scope: string | undefined): string[] {
-  const requested = (scope ?? "openid profile email")
-    .split(" ")
-    .filter(Boolean);
+  const requested = parseScopeParam(scope ?? "openid profile email");
   return requested.filter(
     (s) => REQUESTABLE_SCOPES.has(s) || parseAppScope(s) !== null,
   );
