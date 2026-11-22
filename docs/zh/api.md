@@ -124,6 +124,9 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 | `POST /api/auth/check-email-verification` | `{ "verified": boolean }` — 用户发送邮件期间轮询    |
 | `POST /api/auth/resend-verify-email`      | 重新发送链接（接受验证码字段）                      |
 
+备用地址的链接（`alt=1`）仅在用户登录了添加该地址的账户时有效，否则会带
+`status=wrong_account` 重定向。
+
 ## TOTP
 
 所有端点都需要认证。一个用户可以拥有多个认证器。

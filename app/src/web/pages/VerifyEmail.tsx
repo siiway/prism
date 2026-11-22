@@ -53,6 +53,7 @@ export function VerifyEmail() {
   const success = status === "success";
   const expired = status === "expired";
   const taken = status === "taken";
+  const wrongAccount = status === "wrong_account";
 
   // Invalidate cached user data so email_verified updates
   if (success && user) {
@@ -81,7 +82,9 @@ export function VerifyEmail() {
               ? t("verifyEmail.expiredTitle")
               : taken
                 ? t("verifyEmail.takenTitle")
-                : t("verifyEmail.invalidTitle")}
+                : wrongAccount
+                  ? t("verifyEmail.wrongAccountTitle")
+                  : t("verifyEmail.invalidTitle")}
         </Title2>
 
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
@@ -91,7 +94,9 @@ export function VerifyEmail() {
               ? t("verifyEmail.expiredDesc")
               : taken
                 ? t("verifyEmail.takenDesc")
-                : t("verifyEmail.invalidDesc")}
+                : wrongAccount
+                  ? t("verifyEmail.wrongAccountDesc")
+                  : t("verifyEmail.invalidDesc")}
         </Text>
 
         <Button

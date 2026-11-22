@@ -145,6 +145,10 @@ signs the user out of them first.
 | `POST /api/auth/check-email-verification` | `{ "verified": boolean }` — poll while the user sends the email        |
 | `POST /api/auth/resend-verify-email`      | Resend the link (accepts captcha fields)                               |
 
+A link for an alternate address (`alt=1`) works only while the user is
+signed in to the account that added the address; otherwise it redirects with
+`status=wrong_account`.
+
 ## TOTP
 
 All endpoints require authentication. A user can have several authenticators.

@@ -272,7 +272,7 @@
     "emailAddresses": "Email addresses",
     "primary": "Primary",
     "addEmail": "Add email address",
-    "emailAdded": "Email added — check your inbox for verification",
+    "emailAdded": "Email added. Open the link we sent while you're signed in to this account.",
     "emailRemoved": "Email removed",
     "primaryUpdated": "Primary email updated",
     "makePrimary": "Make primary",
@@ -2877,6 +2877,8 @@
     "expiredDesc": "Verification links last 24 hours. Please request a new verification email from your profile.",
     "takenTitle": "Address already in use",
     "takenDesc": "Another account signed up with this address after you added it, so it can't be verified for yours.",
+    "wrongAccountTitle": "Sign in to the right account",
+    "wrongAccountDesc": "This link only works while you're signed in to the account that added this address. Sign in to that account, then open the link again.",
     "goToDashboard": "Go to Dashboard",
     "goToLogin": "Go to Login"
   },

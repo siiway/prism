@@ -7,6 +7,8 @@ import {
   emailOwnedElsewhere,
 } from "../src/worker/lib/accountEmails";
 import { hashPassword } from "../src/worker/lib/crypto";
+import { signJWT } from "../src/worker/lib/jwt";
+import { SESSION_COOKIE } from "../src/worker/lib/cookies";
 import { newEmailVerifyToken } from "../src/worker/lib/emailVerifyToken";
 import { d1, executionCtx, MemoryKv, migratedDatabase } from "./setup/d1";
 
@@ -28,6 +30,49 @@ beforeEach(() => {
 });
 
 afterEach(() => sqlite.close());
+
+const jwtSecret = "test-jwt-secret-email-in-use";
+
+/** Open a verification link, signed in as `asUser` if given. */
+async function openLink(query: string, asUser?: string) {
+  const headers: Record<string, string> = {};
+  if (asUser) {
+    sqlite.run(
+      "INSERT OR IGNORE INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, 9999999999, 0)",
+      [`s-${asUser}`, asUser, `h-${asUser}`],
+    );
+    const jwt = await signJWT(
+      {
+        sub: asUser,
+        role: "user",
+        sessionId: `s-${asUser}`,
+        email: `${asUser}@example.com`,
+        username: asUser,
+        display_name: asUser,
+        avatar_url: null,
+      },
+      jwtSecret,
+      3600,
+    );
+    headers.Cookie = `${SESSION_COOKIE}=${jwt}`;
+  }
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  return app.fetch(
+    new Request(`https://prism.example/api/auth/verify-email?${query}`, {
+      headers,
+    }),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv({
+        "system:jwt_secret": jwtSecret,
+      }) as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+}
 
 describe("email addresses belong to one account", () => {
   test("primary and alternate addresses both count", async () => {
@@ -208,19 +253,9 @@ test("an alternate can't be verified once another account owns the address", asy
     `INSERT INTO users (id, username, email, email_verified, created_at, updated_at)
      VALUES ('other', 'other', 'late@example.com', 1, 0, 0)`,
   );
-  const app = new Hono();
-  app.route("/api/auth", authRoutes);
-  const res = await app.fetch(
-    new Request(
-      `https://prism.example/api/auth/verify-email?alt=1&token=${encodeURIComponent(token)}`,
-    ),
-    {
-      DB: d1(sqlite),
-      APP_URL: "https://prism.example",
-      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
-      KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
-    } as unknown as Env,
-    executionCtx,
+  const res = await openLink(
+    `alt=1&token=${encodeURIComponent(token)}`,
+    "victim",
   );
   expect(res.headers.get("Location")).toContain("status=taken");
   expect(
@@ -251,27 +286,41 @@ test("an unverified sign-up doesn't keep the owner from verifying the address", 
   expect(
     await emailOwnedElsewhere(d1(sqlite), "mine@example.com", "victim"),
   ).toBe(false);
-  const app = new Hono();
-  app.route("/api/auth", authRoutes);
-  const verify = (query: string) =>
-    app.fetch(
-      new Request(`https://prism.example/api/auth/verify-email?${query}`),
-      {
-        DB: d1(sqlite),
-        APP_URL: "https://prism.example",
-        KV_CACHE: new MemoryKv() as unknown as KVNamespace,
-        KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
-      } as unknown as Env,
-      executionCtx,
-    );
-  const owner = await verify(`alt=1&token=${encodeURIComponent(altToken)}`);
+  const owner = await openLink(
+    `alt=1&token=${encodeURIComponent(altToken)}`,
+    "victim",
+  );
   expect(owner.headers.get("Location")).toContain("status=success");
   // Once the owner has it, the squatter's primary can't be verified.
-  const squatter = await verify(`token=${encodeURIComponent(primaryToken)}`);
+  const squatter = await openLink(`token=${encodeURIComponent(primaryToken)}`);
   expect(squatter.headers.get("Location")).toContain("status=taken");
   expect(
     sqlite
       .query("SELECT email_verified FROM users WHERE id = 'squatter'")
       .get(),
   ).toEqual({ email_verified: 0 });
+});
+
+test("an alternate's link does nothing unless its own account opens it", async () => {
+  // Someone else added the address; its owner gets the link.
+  const token = newEmailVerifyToken();
+  sqlite.run(
+    "INSERT INTO users (id, username, email, created_at, updated_at) VALUES ('other', 'other', 'other@example.com', 0, 0)",
+  );
+  sqlite.run(
+    `INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at)
+     VALUES ('e5', 'other', 'victim2@example.com', 0, ?, 0)`,
+    [token],
+  );
+  const query = `alt=1&token=${encodeURIComponent(token)}`;
+  for (const viewer of [undefined, "victim"]) {
+    const res = await openLink(query, viewer);
+    expect(res.headers.get("Location")).toContain("status=wrong_account");
+  }
+  expect(
+    sqlite.query("SELECT verified FROM user_emails WHERE id = 'e5'").get(),
+  ).toEqual({ verified: 0 });
+  // The account that added it can still use it.
+  const res = await openLink(query, "other");
+  expect(res.headers.get("Location")).toContain("status=success");
 });

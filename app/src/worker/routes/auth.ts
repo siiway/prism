@@ -36,7 +36,7 @@ import {
   checkLoginTotpLimit,
   logLoginError,
 } from "../lib/loginRateLimit";
-import { requireAuth } from "../middleware/auth";
+import { optionalAuth, requireAuth } from "../middleware/auth";
 import { endBrowserSession, issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import {
@@ -49,7 +49,13 @@ import {
   claimSiteInvite,
   releaseSiteInvite,
 } from "../lib/siteInvite";
-import type { PasskeyRow, SiteInviteRow, UserRow, Variables } from "../types";
+import type {
+  AuthUser,
+  PasskeyRow,
+  SiteInviteRow,
+  UserRow,
+  Variables,
+} from "../types";
 import totpRoutes from "./auth-totp";
 import gpgLoginRoutes from "./auth-gpg";
 import inboundEmailVerifyRoutes from "./auth-email-verify";
@@ -442,7 +448,7 @@ app.post("/logout", requireAuth, async (c) =>
 
 // ─── Email verification ───────────────────────────────────────────────────────
 
-app.get("/verify-email", async (c) => {
+app.get("/verify-email", optionalAuth, async (c) => {
   const token = c.req.query("token");
   const isAlt = c.req.query("alt") === "1";
   if (!token) return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
@@ -471,6 +477,13 @@ app.get("/verify-email", async (c) => {
       return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
     if (expired)
       return c.redirect(`${c.env.APP_URL}/verify-email?status=expired`);
+    // The link only works for the account that added the address. Anyone
+    // can add an address, so the owner may get a link from another
+    // account that looks like their own; opening it does nothing for that
+    // account unless whoever opens it is signed in to it.
+    const viewer = c.get("user") as AuthUser | undefined;
+    if (viewer?.id !== altEmail.user_id)
+      return c.redirect(`${c.env.APP_URL}/verify-email?status=wrong_account`);
     // Someone else may have signed up with it since it was added.
     if (await emailOwnedElsewhere(c.env.DB, altEmail.email, altEmail.user_id))
       return c.redirect(`${c.env.APP_URL}/verify-email?status=taken`);
