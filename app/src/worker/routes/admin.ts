@@ -285,6 +285,7 @@ app.patch("/users/:id", async (c) => {
 
   const updates: string[] = [];
   const values: unknown[] = [];
+  let newEmail: string | null = null;
 
   if (body.role !== undefined && ["admin", "user"].includes(body.role)) {
     updates.push("role = ?");
@@ -315,6 +316,7 @@ app.patch("/users/:id", async (c) => {
       return c.json({ error: "email_or_username_taken" }, 409);
     updates.push("email = ?");
     values.push(email);
+    newEmail = email;
     // Changing the address invalidates whatever proved the old one. The
     // admin can mark the new one verified in the same request, or from the
     // user's email list — but it must not inherit the old verdict silently.
@@ -358,11 +360,21 @@ app.patch("/users/:id", async (c) => {
   values.push(Math.floor(Date.now() / 1000), id);
 
   try {
-    await c.env.DB.prepare(
-      `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
-    )
-      .bind(...values)
-      .run();
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
+      ).bind(...values),
+      // One of the user's own alternates made primary stops being an
+      // alternate, or they would hold the address twice and a later swap
+      // back would fail.
+      ...(newEmail
+        ? [
+            c.env.DB.prepare(
+              "DELETE FROM user_emails WHERE user_id = ? AND email = ?",
+            ).bind(id, newEmail),
+          ]
+        : []),
+    ]);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
