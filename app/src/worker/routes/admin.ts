@@ -342,6 +342,13 @@ app.patch("/users/:id", async (c) => {
         own?.verified ? own.verified_via : null,
         own?.verified ? own.verified_at : null,
       );
+    } else {
+      // Marked in this request: the admin vouches for the new address now.
+      updates.push("email_verified_via = ?", "email_verified_at = ?");
+      values.push(
+        body.email_verified ? "admin" : null,
+        body.email_verified ? Math.floor(Date.now() / 1000) : null,
+      );
     }
     updates.push("email_verify_token = ?", "email_verify_code = ?");
     values.push(null, null);

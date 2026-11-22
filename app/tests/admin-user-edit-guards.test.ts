@@ -134,3 +134,30 @@ test("an app editing a profile gets the dashboard's avatar check", async () => {
     sqlite.query("SELECT avatar_url FROM users WHERE id = 'u1'").get(),
   ).toEqual({ avatar_url: null });
 });
+
+test("a new address marked verified records the admin's word, not the old proof", async () => {
+  sqlite.run(
+    "UPDATE users SET email_verified = 1, email_verified_via = 'social:github', email_verified_at = 5 WHERE id = 'u1'",
+  );
+  const [dashboard] = await editBothWays("u1", {
+    email: "new@example.com",
+    email_verified: true,
+  });
+  expect(dashboard.status).toBe(200);
+  const row = sqlite
+    .query(
+      "SELECT email, email_verified, email_verified_via, email_verified_at FROM users WHERE id = 'u1'",
+    )
+    .get() as {
+    email: string;
+    email_verified: number;
+    email_verified_via: string;
+    email_verified_at: number;
+  };
+  expect(row).toMatchObject({
+    email: "new@example.com",
+    email_verified: 1,
+    email_verified_via: "admin",
+  });
+  expect(row.email_verified_at).toBeGreaterThan(5);
+});
