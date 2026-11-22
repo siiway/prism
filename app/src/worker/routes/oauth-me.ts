@@ -623,6 +623,16 @@ app.post("/me/invites", async (c) => {
     .run();
 
   const inviteUrl = `${c.env.APP_URL}/register?invite=${token}`;
+  const inviteEmail = body.email?.toLowerCase().trim() ?? null;
+  await auditAdminToken(
+    c,
+    resolved,
+    "invite.create",
+    "site_invite",
+    id,
+    { email: inviteEmail },
+    inviteEmail,
+  );
 
   return c.json(
     { id, token, invite_url: inviteUrl, expires_at: expiresAt },
@@ -674,6 +684,14 @@ app.delete("/me/invites/:id", async (c) => {
   await c.env.DB.prepare("DELETE FROM site_invites WHERE id = ?")
     .bind(c.req.param("id"))
     .run();
+  await auditAdminToken(
+    c,
+    resolved,
+    "invite.revoke",
+    "site_invite",
+    c.req.param("id"),
+    {},
+  );
 
   return c.json({ ok: true });
 });
