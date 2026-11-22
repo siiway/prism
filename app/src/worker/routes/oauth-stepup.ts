@@ -8,7 +8,7 @@ import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { hashSecret, hashLookupCandidate } from "../lib/secretCrypto";
 import { randomBase64url } from "../lib/crypto";
-import { verifyAnyTotp } from "../lib/totp";
+import { matchSecondFactorCode } from "../lib/totp";
 import { sudoKvKey, isSudoActive, grantSudo } from "../lib/sudo";
 import { rateLimit } from "../middleware/rateLimit";
 import { captchaRefusal } from "../middleware/captcha";
@@ -430,9 +430,9 @@ app.post("/2fa/authorize", requireAuth, async (c) => {
         method = "passkey";
       }
     } else if (body.totp_code) {
-      if (await verifyAnyTotp(c.env, user.id, body.totp_code)) {
-        method = "totp";
-      }
+      // "backup" when a backup code was used, so an app that won't accept
+      // one for an action can tell.
+      method = await matchSecondFactorCode(c.env, user.id, body.totp_code);
     }
 
     if (!method) {

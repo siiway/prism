@@ -134,6 +134,16 @@ export async function verifyAnyTotp(
   userId: string,
   code: string,
 ): Promise<boolean> {
+  return (await matchSecondFactorCode(env, userId, code)) !== null;
+}
+
+/** Like verifyAnyTotp, but says which kind of code matched: `"backup"` for
+ *  a backup code, `"totp"` for an authenticator's code, null for neither. */
+export async function matchSecondFactorCode(
+  env: Env,
+  userId: string,
+  code: string,
+): Promise<"totp" | "backup" | null> {
   const db = env.DB;
   const recovery = await db
     .prepare("SELECT * FROM user_totp_recovery WHERE user_id = ?")
@@ -171,7 +181,7 @@ export async function verifyAnyTotp(
         )
         .bind(JSON.stringify(codes), userId, recovery.backup_codes)
         .run();
-      return claimed.meta.changes === 1;
+      return claimed.meta.changes === 1 ? "backup" : null;
     }
   }
   const totps = await db
@@ -193,10 +203,10 @@ export async function verifyAnyTotp(
     const counter = await matchTotpCounter(code, plainSecret);
     if (counter === null) continue;
     if (!(await claimTotpCounter(db, t.id, counter, t.last_used_counter)))
-      return false;
-    return true;
+      return null;
+    return "totp";
   }
-  return false;
+  return null;
 }
 
 /**
