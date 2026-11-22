@@ -279,7 +279,8 @@ app.patch("/users/:id", async (c) => {
     return c.json({ error: "cannot_demote_self" }, 403);
   }
 
-  if (body.is_active === false && id === admin.id) {
+  // Any falsy is_active disables (the write is `is_active ? 1 : 0`).
+  if (body.is_active !== undefined && !body.is_active && id === admin.id) {
     return c.json({ error: "cannot_disable_self" }, 403);
   }
 

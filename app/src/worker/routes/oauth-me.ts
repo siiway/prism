@@ -1347,7 +1347,12 @@ app.patch("/me/admin/users/:id", async (c) => {
   // whose token it holds.
   if (targetId === resolved.userId && body.role === "user")
     return c.json({ error: "cannot_demote_self" }, 403);
-  if (targetId === resolved.userId && body.is_active === false)
+  // Any falsy is_active disables (the write is `is_active ? 1 : 0`).
+  if (
+    targetId === resolved.userId &&
+    body.is_active !== undefined &&
+    !body.is_active
+  )
     return c.json({ error: "cannot_disable_self" }, 403);
 
   const now = Math.floor(Date.now() / 1000);
