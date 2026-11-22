@@ -102,3 +102,24 @@ describe("email addresses belong to one account", () => {
     expect(squatter).toBeNull();
   });
 });
+
+test("sign-in without an identifier is a field error, not a crash", async () => {
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  const res = await app.fetch(
+    new Request("https://prism.example/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "x" }),
+    }),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  expect(res.status).toBe(400);
+  expect(await res.json()).toMatchObject({ error: "fields_required" });
+});

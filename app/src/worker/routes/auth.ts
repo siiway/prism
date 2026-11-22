@@ -243,6 +243,17 @@ app.post("/login", async (c) => {
     return c.json({ error: captchaErr }, 400);
   }
 
+  if (
+    typeof body.identifier !== "string" ||
+    !body.identifier.trim() ||
+    typeof body.password !== "string" ||
+    !body.password
+  )
+    return c.json(
+      { error: "fields_required", params: { fields: "identifier, password" } },
+      400,
+    );
+
   // Brute-force guard: only credential attempts that cleared captcha count
   // toward it, so it measures real password tries rather than captcha misfires.
   const rl = await checkLoginCredentialLimits(
