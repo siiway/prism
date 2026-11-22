@@ -161,3 +161,39 @@ test("a new address marked verified records the admin's word, not the old proof"
   });
   expect(row.email_verified_at).toBeGreaterThan(5);
 });
+
+test("marking an address verified records the admin's word, unless another account owns it", async () => {
+  const row = () =>
+    sqlite
+      .query(
+        "SELECT email_verified, email_verified_via, email_verified_at FROM users WHERE id = 'u1'",
+      )
+      .get() as {
+      email_verified: number;
+      email_verified_via: string | null;
+      email_verified_at: number | null;
+    };
+  sqlite.run(
+    "INSERT INTO user_emails (id, user_id, email, verified, created_at) VALUES ('e1', 'admin', 'u1@example.com', 1, 0)",
+  );
+  const [taken] = await editBothWays("u1", { email_verified: true });
+  expect(taken.status).toBe(409);
+  expect(await taken.json()).toMatchObject({ error: "email_taken" });
+  expect(row().email_verified).toBe(0);
+
+  sqlite.run("DELETE FROM user_emails WHERE id = 'e1'");
+  const [ok] = await editBothWays("u1", { email_verified: true });
+  expect(ok.status).toBe(200);
+  expect(row()).toMatchObject({
+    email_verified: 1,
+    email_verified_via: "admin",
+  });
+  expect(row().email_verified_at).toBeGreaterThan(0);
+
+  await editBothWays("u1", { email_verified: false });
+  expect(row()).toEqual({
+    email_verified: 0,
+    email_verified_via: null,
+    email_verified_at: null,
+  });
+});

@@ -6,7 +6,7 @@ import {
   samlOwnerSetting,
 } from "../lib/saml/serviceProviders";
 import { getConfig } from "../lib/config";
-import { emailInUse } from "../lib/accountEmails";
+import { emailInUse, emailOwnedElsewhere } from "../lib/accountEmails";
 import {
   ADMIN_CONFIG_KEYS,
   auditableConfigUpdates,
@@ -269,10 +269,15 @@ app.patch("/users/:id", async (c) => {
   }>();
 
   const user = await c.env.DB.prepare(
-    "SELECT id, username FROM users WHERE id = ?",
+    "SELECT id, username, email, email_verified FROM users WHERE id = ?",
   )
     .bind(id)
-    .first<{ id: string; username: string }>();
+    .first<{
+      id: string;
+      username: string;
+      email: string;
+      email_verified: number;
+    }>();
   if (!user) return c.json({ error: "user_not_found" }, 404);
 
   if (body.role === "user" && id === admin.id) {
@@ -299,6 +304,24 @@ app.patch("/users/:id", async (c) => {
   if (body.email_verified !== undefined) {
     updates.push("email_verified = ?");
     values.push(body.email_verified ? 1 : 0);
+    // The address itself unchanged (a new one is handled below): marking it
+    // works as the dedicated verify endpoint does, refused once another
+    // account owns the address, and recording who vouched for it and when.
+    if (
+      body.email === undefined &&
+      !!body.email_verified !== (user.email_verified === 1)
+    ) {
+      if (
+        body.email_verified &&
+        (await emailOwnedElsewhere(c.env.DB, user.email, id))
+      )
+        return c.json({ error: "email_taken" }, 409);
+      updates.push("email_verified_via = ?", "email_verified_at = ?");
+      values.push(
+        body.email_verified ? "admin" : null,
+        body.email_verified ? Math.floor(Date.now() / 1000) : null,
+      );
+    }
   }
   if (body.username !== undefined) {
     // Same shape the registration endpoint enforces — an admin-set username
@@ -400,7 +423,15 @@ app.patch("/users/:id", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (msg.includes("UNIQUE"))
-      return c.json({ error: "email_or_username_taken" }, 409);
+      return c.json(
+        {
+          error:
+            body.username === undefined
+              ? "email_taken"
+              : "email_or_username_taken",
+        },
+        409,
+      );
     throw err;
   }
 
