@@ -12,6 +12,7 @@ import {
   timingSafeStrEqual,
 } from "../lib/crypto";
 import { getConfig } from "../lib/config";
+import { emailInUse } from "../lib/accountEmails";
 import { getIp } from "../lib/clientIp";
 import { decryptSecret, encryptSecret } from "../lib/secretCrypto";
 import {
@@ -1398,6 +1399,8 @@ app.post("/complete", async (c) => {
     // `1` here would let an attacker who set victim@example.com on a
     // fresh, unverified Discord account claim that address on Prism.
     const trustedEmail = state.providerEmail;
+    if (trustedEmail && (await emailInUse(c.env.DB, trustedEmail)))
+      return c.json({ error: "email_or_username_taken" }, 409);
     // Take the invite use before the insert — see claimSiteInvite. Released
     // below if creating the account fails.
     if (usedInvite && !(await claimSiteInvite(c.env, usedInvite)))

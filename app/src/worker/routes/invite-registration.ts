@@ -26,6 +26,7 @@ import { requireAuth } from "../middleware/auth";
 import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import { getConfig, getConfigValue } from "../lib/config";
+import { emailInUse } from "../lib/accountEmails";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { getIp } from "../lib/clientIp";
@@ -271,6 +272,8 @@ app.post("/auth/register-with-invite", async (c) => {
     email = body.email.toLowerCase().trim();
     if (invite.email && invite.email.toLowerCase() !== email)
       return c.json({ error: "invite_email_mismatch" }, 403);
+    if (await emailInUse(c.env.DB, email))
+      return c.json({ error: "email_or_username_taken" }, 409);
   } else {
     // Placeholder for now; rewritten below once the id exists. The holder can
     // bind a real address whenever they like, and must before converting.

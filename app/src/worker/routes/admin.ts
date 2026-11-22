@@ -6,6 +6,7 @@ import {
   samlOwnerSetting,
 } from "../lib/saml/serviceProviders";
 import { getConfig } from "../lib/config";
+import { emailInUse } from "../lib/accountEmails";
 import {
   ADMIN_CONFIG_KEYS,
   prepareConfigUpdates,
@@ -303,6 +304,8 @@ app.patch("/users/:id", async (c) => {
     const email = body.email.toLowerCase().trim();
     if (!email.includes("@") || email.length > 254)
       return c.json({ error: "email_invalid" }, 400);
+    if (await emailInUse(c.env.DB, email, id))
+      return c.json({ error: "email_or_username_taken" }, 409);
     updates.push("email = ?");
     values.push(email);
     // Changing the address invalidates whatever proved the old one. The

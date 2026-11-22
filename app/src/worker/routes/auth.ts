@@ -2,6 +2,7 @@
 
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
+import { emailInUse } from "../lib/accountEmails";
 import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
 import {
@@ -120,6 +121,9 @@ app.post("/register", async (c) => {
     ? randomBase64url(24)
     : null;
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
+
+  if (await emailInUse(c.env.DB, body.email.toLowerCase().trim()))
+    return c.json({ error: "email_or_username_taken" }, 409);
 
   // Take the invite use before creating the account, so concurrent
   // registrations cannot all pass the earlier check and overrun the cap. The
