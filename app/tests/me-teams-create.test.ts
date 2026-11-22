@@ -68,3 +68,17 @@ test("a team created with a token is stood up as the dashboard does it", async (
   });
   expect(bad.status).toBe(400);
 });
+
+test("a team's avatar set with a token gets the dashboard's check", async () => {
+  sqlite.exec(`
+    INSERT INTO teams (id, name, created_at, updated_at) VALUES ('t', 'Crew', 0, 0);
+    INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t', 'u', 'owner', 0);
+  `);
+  for (const avatar_url of ["http://example.com/a.png", 42]) {
+    const res = await send("PATCH", "/me/teams/t", { avatar_url });
+    expect(res.status).toBe(400);
+  }
+  expect(
+    sqlite.query("SELECT avatar_url FROM teams WHERE id = 't'").get(),
+  ).toEqual({ avatar_url: null });
+});

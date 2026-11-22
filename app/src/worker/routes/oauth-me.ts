@@ -502,6 +502,11 @@ app.patch("/me/teams/:id", async (c) => {
     values.push(body.description);
   }
   if (body.avatar_url !== undefined) {
+    // The dashboard's check on a team avatar.
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: false,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
   }
