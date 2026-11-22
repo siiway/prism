@@ -117,12 +117,12 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 
 ### 邮箱验证
 
-| 端点                                      | 用途                                                |
-| ----------------------------------------- | --------------------------------------------------- |
-| `GET /api/auth/verify-email?token=`       | 使用邮件中的链接验证                                |
-| `POST /api/auth/email-verify-code`        | 获取用于发送验证的邮箱地址：`{ "address", "code" }` |
-| `POST /api/auth/check-email-verification` | `{ "verified": boolean }` — 用户发送邮件期间轮询    |
-| `POST /api/auth/resend-verify-email`      | 重新发送链接（接受验证码字段）                      |
+| 端点                                      | 用途                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `GET /api/auth/verify-email?token=`       | 使用邮件中的链接验证                                                                                   |
+| `POST /api/auth/email-verify-code`        | 获取用于发送验证的邮箱地址：`{ "address", "code" }`                                                    |
+| `POST /api/auth/check-email-verification` | `{ "verified": boolean, "taken": boolean }` — 用户发送邮件期间轮询。`taken` 表示另一个账户已验证该地址 |
+| `POST /api/auth/resend-verify-email`      | 重新发送链接（接受验证码字段）                                                                         |
 
 备用地址的链接（`alt=1`）仅在用户登录了添加该地址的账户时有效，否则会带
 `status=wrong_account` 重定向。

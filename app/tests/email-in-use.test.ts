@@ -355,3 +355,47 @@ test("passkey sign-in by email finds the address's owner, not a squatter", async
   expect(text).toContain("dmljdGltLWtleQ");
   expect(text).not.toContain("c3F1YXR0ZXIta2V5");
 });
+
+test("the verification status says when another account has the address", async () => {
+  // The victim's primary is unverified, and another account verified it
+  // as an alternate meanwhile.
+  sqlite.exec(`
+    INSERT INTO users (id, username, email, created_at, updated_at)
+      VALUES ('late', 'late', 'late@example.com', 0, 0);
+    INSERT INTO user_emails (id, user_id, email, verified, created_at)
+      VALUES ('e6', 'late', 'victim@example.com', 1, 0);
+    INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at)
+      VALUES ('s-status', 'victim', 'h-status', 9999999999, 0);
+  `);
+  const jwt = await signJWT(
+    {
+      sub: "victim",
+      role: "user",
+      sessionId: "s-status",
+      email: "victim@example.com",
+      username: "victim",
+      display_name: "victim",
+      avatar_url: null,
+    },
+    jwtSecret,
+    3600,
+  );
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  const res = await app.fetch(
+    new Request("https://prism.example/api/auth/check-email-verification", {
+      method: "POST",
+      headers: { Cookie: `${SESSION_COOKIE}=${jwt}` },
+    }),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv({
+        "system:jwt_secret": jwtSecret,
+      }) as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  expect(await res.json()).toEqual({ verified: false, taken: true });
+});

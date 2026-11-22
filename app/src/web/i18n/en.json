@@ -2865,6 +2865,7 @@
     "checkStatus": "Check verification status",
     "verified": "Email verified! Redirecting…",
     "notYetVerified": "Not verified yet — make sure you sent the email and try again.",
+    "taken": "Another account has verified this address, so it can't be verified for yours.",
     "skipForNow": "Skip for now",
     "linkSent": "Verification link sent — check your inbox."
   },

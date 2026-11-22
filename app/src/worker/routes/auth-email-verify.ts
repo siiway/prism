@@ -2,6 +2,7 @@
 // instance (Email Workers or IMAP poll) instead of clicking a link.
 
 import { Hono } from "hono";
+import { emailOwnedElsewhere } from "../lib/accountEmails";
 import { getConfig } from "../lib/config";
 import { newEmailVerifyToken } from "../lib/emailVerifyToken";
 import { randomId } from "../lib/crypto";
@@ -103,12 +104,19 @@ app.post("/check-email-verification", requireAuth, async (c) => {
 
   // Re-check after potential IMAP poll
   const updated = await c.env.DB.prepare(
-    "SELECT email_verified FROM users WHERE id = ?",
+    "SELECT email, email_verified FROM users WHERE id = ?",
   )
     .bind(authUser.id)
-    .first<{ email_verified: number }>();
+    .first<{ email: string; email_verified: number }>();
+  if (!updated) return c.json({ error: "user_not_found" }, 404);
+  if (updated.email_verified) return c.json({ verified: true });
 
-  return c.json({ verified: !!updated?.email_verified });
+  // Mail for an address another account has since proved it owns is
+  // dropped; say so, or the user would wait for nothing.
+  return c.json({
+    verified: false,
+    taken: await emailOwnedElsewhere(c.env.DB, updated.email, authUser.id),
+  });
 });
 
 app.post("/resend-verify-email", requireAuth, async (c) => {

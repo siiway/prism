@@ -138,12 +138,12 @@ signs the user out of them first.
 
 ### Email verification
 
-| Endpoint                                  | Purpose                                                                |
-| ----------------------------------------- | ---------------------------------------------------------------------- |
-| `GET /api/auth/verify-email?token=`       | Verify using the emailed link                                          |
-| `POST /api/auth/email-verify-code`        | Get an address to email for verify-by-sending: `{ "address", "code" }` |
-| `POST /api/auth/check-email-verification` | `{ "verified": boolean }` — poll while the user sends the email        |
-| `POST /api/auth/resend-verify-email`      | Resend the link (accepts captcha fields)                               |
+| Endpoint                                  | Purpose                                                                                                                                   |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/auth/verify-email?token=`       | Verify using the emailed link                                                                                                             |
+| `POST /api/auth/email-verify-code`        | Get an address to email for verify-by-sending: `{ "address", "code" }`                                                                    |
+| `POST /api/auth/check-email-verification` | `{ "verified": boolean, "taken": boolean }` — poll while the user sends the email. `taken` means another account has verified the address |
+| `POST /api/auth/resend-verify-email`      | Resend the link (accepts captcha fields)                                                                                                  |
 
 A link for an alternate address (`alt=1`) works only while the user is
 signed in to the account that added the address; otherwise it redirects with
