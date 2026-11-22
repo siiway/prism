@@ -69,6 +69,9 @@ app.get("/tokens", async (c) => {
   });
 });
 
+/** Ten years: longer is no different from never expiring. */
+const PAT_MAX_EXPIRY_DAYS = 3650;
+
 // POST /api/user/tokens — create a PAT
 app.post("/tokens", async (c) => {
   const user = c.get("user");
@@ -93,12 +96,30 @@ app.post("/tokens", async (c) => {
   const scopes = body.scopes.filter((s) => VALID_PAT_SCOPES.has(s));
   if (scopes.length === 0) return c.json({ error: "scopes_invalid" }, 400);
 
+  // Leaving it out means the token never expires. Anything sent must be a
+  // whole number of days: 0 or a string used to mean "never" by accident,
+  // and a negative number made a token that was already expired.
+  const days = body.expires_in_days;
+  if (
+    days !== undefined &&
+    days !== null &&
+    (typeof days !== "number" ||
+      !Number.isInteger(days) ||
+      days < 1 ||
+      days > PAT_MAX_EXPIRY_DAYS)
+  )
+    return c.json(
+      {
+        error: "field_int_range",
+        params: { field: "expires_in_days", min: 1, max: PAT_MAX_EXPIRY_DAYS },
+      },
+      400,
+    );
+
   const id = randomId();
   const token = `prism_pat_${randomBase64url(48)}`;
   const now = Math.floor(Date.now() / 1000);
-  const expiresAt = body.expires_in_days
-    ? now + body.expires_in_days * 86400
-    : null;
+  const expiresAt = days ? now + days * 86400 : null;
 
   // Token is shown to the user once and never re-displayed; storing the
   // HMAC-keyed hash means a leak of the D1 row never gives bearer access.
