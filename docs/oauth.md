@@ -615,15 +615,15 @@ Content-Type: application/json
 }
 ```
 
-| Field                                     | Required                    | Description                                                                          |
-| ----------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------ |
-| `client_id`                               | yes (Basic or body)         | Your app's client ID                                                                 |
-| `client_secret`                           | confidential clients        | In Basic auth or the body. `private_key_jwt` clients send `client_assertion` instead |
-| `redirect_uri`                            | yes                         | Must be registered on the app                                                        |
-| `action`                                  | recommended                 | Description (≤ 200 chars) of what the user is confirming, shown verbatim             |
-| `nonce`                                   | optional                    | Opaque value (≤ 256 chars) echoed back; bind it to the operation (e.g. an order ID)  |
-| `require_captcha`                         | optional                    | Ask for a captcha on this confirmation                                               |
-| `code_challenge`, `code_challenge_method` | required for public clients | PKCE                                                                                 |
+| Field                                     | Required                    | Description                                                                                             |
+| ----------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `client_id`                               | yes (Basic or body)         | Your app's client ID                                                                                    |
+| `client_secret`                           | confidential clients        | In Basic auth or the body. `private_key_jwt` clients send `client_assertion` instead                    |
+| `redirect_uri`                            | yes                         | Must be registered on the app                                                                           |
+| `action`                                  | recommended                 | Description (≤ 200 chars) of what the user is confirming, shown verbatim. Not shown for a public client |
+| `nonce`                                   | optional                    | Opaque value (≤ 256 chars) echoed back; bind it to the operation (e.g. an order ID)                     |
+| `require_captcha`                         | optional                    | Ask for a captcha on this confirmation                                                                  |
+| `code_challenge`, `code_challenge_method` | required for public clients | PKCE                                                                                                    |
 
 ```json
 {
@@ -717,7 +717,10 @@ Content-Type: application/json
 ### Security notes
 
 - The action text and redirect URI are fixed at step 1, which needs your app's
-  credentials, so a phishing URL can't change them.
+  credentials, so a phishing URL can't change them. A public client has no
+  credentials, so anyone with its `client_id` can create a challenge; its action
+  text is therefore never shown to the user, and is only returned when you verify
+  the code.
 - The code is bound to your `client_id` and `redirect_uri`, and PKCE binds it to
   your verifier.
 - TOTP attempts are rate-limited, and a failed attempt uses up the challenge: the

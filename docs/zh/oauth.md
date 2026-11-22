@@ -521,7 +521,7 @@ Content-Type: application/json
 | `client_id`                               | 必填（Basic 或请求体） | 你的应用的 client ID                                                         |
 | `client_secret`                           | 机密客户端必填         | 通过 Basic 或请求体提供。`private_key_jwt` 客户端改为发送 `client_assertion` |
 | `redirect_uri`                            | 必填                   | 必须已在应用上注册                                                           |
-| `action`                                  | 推荐                   | 用户正在确认的内容描述（≤ 200 字符），原样展示                               |
+| `action`                                  | 推荐                   | 用户正在确认的内容描述（≤ 200 字符），原样展示。公共客户端不展示             |
 | `nonce`                                   | 可选                   | 原样回传的不透明值（≤ 256 字符）；建议绑定到具体操作（如订单 ID）            |
 | `require_captcha`                         | 可选                   | 在本次确认中要求验证码                                                       |
 | `code_challenge`, `code_challenge_method` | 公共客户端必填         | PKCE                                                                         |
@@ -604,7 +604,7 @@ Content-Type: application/json
 
 ### 安全说明
 
-- 操作文案和重定向 URI 在第一步就已固定，而这一步需要你的应用凭据，因此钓鱼 URL 无法修改它们。
+- 操作文案和重定向 URI 在第一步就已固定，而这一步需要你的应用凭据，因此钓鱼 URL 无法修改它们。公共客户端没有凭据，任何拥有其 `client_id` 的人都可以创建挑战；因此它的操作文案永远不会展示给用户，只会在你验证 code 时返回。
 - code 绑定到你的 `client_id` 和 `redirect_uri`，PKCE 又将它绑定到你的 verifier。
 - TOTP 尝试有速率限制，一次失败就会消耗掉当前挑战：用户会带着 `error=access_denied` 和 `error_description=invalid_2fa` 返回。要让用户重试，请创建新的挑战。
 - 这无法防御完全失陷的设备，也无法防御持有你 `client_secret` 的人。若怀疑泄露，请轮换密钥。

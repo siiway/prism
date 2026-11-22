@@ -268,7 +268,10 @@ app.get("/2fa/info", optionalAuth, async (c) => {
     challenge_id,
     redirect_uri: challenge.redirect_uri,
     state: state ?? null,
-    action: challenge.action,
+    // A public client is identified by its client_id alone, so anyone could
+    // create a challenge for it with whatever text they like. Its action text
+    // isn't shown, so a link to this page can't put words in the app's mouth.
+    action: oauthApp.is_public ? null : challenge.action,
     expires_at: challenge.expires_at,
     user: c.get("user") ?? null,
     totp_enrolled: totpEnrolled,
