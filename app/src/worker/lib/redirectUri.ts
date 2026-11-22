@@ -201,11 +201,17 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
   const filled = tryParse(`${scheme}://${host.replaceAll("*", "x")}/`);
   if (!filled || filled.hostname !== host.replaceAll("*", "x").toLowerCase())
     return "wildcard_host";
+  // Nothing after the host: a `*` ending the host (`http://localhost:*`,
+  // `https://example.com*`) has always also covered the path, so keep that;
+  // otherwise only the root. A query with no path is the root's query.
+  let path = rest;
+  if (!path) path = authority.endsWith("*") ? "*" : "/";
+  else if (path.startsWith("?")) path = `/${path}`;
   return {
     scheme: `${scheme.toLowerCase()}:`,
     host: host.toLowerCase(),
     port,
-    rest: rest || "/",
+    rest: path,
   };
 }
 

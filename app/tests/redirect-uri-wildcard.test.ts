@@ -59,6 +59,27 @@ describe("wildcard redirect URIs", () => {
     ).toBe(true);
   });
 
+  test("a * ending the host also covers the path, as it always did", () => {
+    expect(
+      matches("http://localhost:*", "http://localhost:3000/callback"),
+    ).toBe(true);
+    expect(matches("https://example.com*", "https://example.com/cb?x=1")).toBe(
+      true,
+    );
+    expect(
+      matches("https://example.com*", "https://example.com.evil.com/cb"),
+    ).toBe(false);
+    expect(matches("https://*.example.com", "https://a.example.com/cb")).toBe(
+      false,
+    );
+  });
+
+  test("a query without a path is the root's query", () => {
+    expect(matches("https://example.com?x=*", "https://example.com/?x=1")).toBe(
+      true,
+    );
+  });
+
   test("the scheme must match", () => {
     expect(matches("https://localhost/cb", "http://localhost/cb")).toBe(false);
   });
