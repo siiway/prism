@@ -98,6 +98,11 @@ describe("wildcard redirect URIs", () => {
       validateRedirectUriEntry({ type: "wildcard", value });
     expect(reason("https://*/cb")).toBe("wildcard_host");
     expect(reason("https://*.*/cb")).toBe("wildcard_host");
+    expect(reason("https://*.com/cb")).toBe("wildcard_host");
+    expect(reason("https://a*.*/cb")).toBe("wildcard_host");
+    expect(reason("https://app.*.com/cb")).toBe("wildcard_host");
+    expect(reason("https://pr-*.example.com/cb")).toBeNull();
+    expect(reason("https://example.com*")).toBeNull();
     expect(reason("https://user@*.example.com/cb")).toBe("userinfo");
     expect(reason("ftp://*.example.com/cb")).toBe("scheme");
     expect(reason("https://*.example.com:x/cb")).toBe("not_url");

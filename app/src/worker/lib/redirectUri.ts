@@ -132,7 +132,18 @@ export function validateRedirectUriEntry(
       if (/\s/.test(entry.value)) return "whitespace";
       if (entry.value.includes("#")) return "fragment";
       const parsed = parseWildcard(entry.value);
-      return typeof parsed === "string" ? parsed : null;
+      if (typeof parsed === "string") return parsed;
+      // The domain itself must be spelled out: `https://*.com/cb` would let
+      // any .com site in. A `*` ending the host only stands for the path.
+      const host = parsed.host.endsWith("*")
+        ? parsed.host.slice(0, -1)
+        : parsed.host;
+      if (host.includes("*")) {
+        const labels = host.split(".");
+        if (labels.length < 3 || labels.slice(-2).some((l) => l.includes("*")))
+          return "wildcard_host";
+      }
+      return null;
     }
     case "regex": {
       try {
