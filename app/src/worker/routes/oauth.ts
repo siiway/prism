@@ -35,7 +35,7 @@ import {
   bindTeamScopes,
   UNBOUND_TEAM_SCOPES,
 } from "../lib/scopes";
-import type { TeamPermission } from "../../shared/scopes";
+import { isSiteLevelScope, type TeamPermission } from "../../shared/scopes";
 import { deliverAppEvent } from "../lib/app-events";
 import {
   checkAppAuthorizationAllowed,
@@ -94,22 +94,10 @@ import registrationRoutes from "./oauth-registration";
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
 
-const SITE_SCOPES = new Set([
-  "site:user:read",
-  "site:user:write",
-  "site:user:delete",
-  "site:team:read",
-  "site:team:write",
-  "site:team:delete",
-  "site:config:read",
-  "site:config:write",
-  "site:token:revoke",
-]);
-
 const SITE_SCOPE_CONFIRM_PHRASE = "grant site access";
 
 function hasSiteScopes(scopes: string[]): boolean {
-  return scopes.some((s) => SITE_SCOPES.has(s));
+  return scopes.some(isSiteLevelScope);
 }
 
 function hasUnboundTeamScopes(scopes: string[]): boolean {
@@ -1048,7 +1036,7 @@ app.post("/authorize", requireAuth, async (c) => {
       .run();
   }
 
-  const siteScopes = boundScopes.filter((s) => SITE_SCOPES.has(s));
+  const siteScopes = boundScopes.filter(isSiteLevelScope);
 
   // Look up prior consent before inserting/updating
   const priorConsentRow = await c.env.DB.prepare(

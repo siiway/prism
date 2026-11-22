@@ -22,7 +22,7 @@ import {
   WarningRegular,
 } from "@fluentui/react-icons";
 import { startAuthentication } from "@simplewebauthn/browser";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -35,7 +35,7 @@ import { AuthShell } from "../../components/AuthShell";
 import { useAuthStore } from "../../store/auth";
 import { AppScopeList } from "../../components/AppScopeList";
 import { OAuthConsentHeader } from "../../components/OAuthConsentHeader";
-import type { TeamPermission } from "../../../shared/scopes";
+import { isSiteLevelScope, type TeamPermission } from "../../../shared/scopes";
 
 const TEAM_PERMISSION_KEYS: Record<TeamPermission, string> = {
   read: "oauth.teamScopePermRead",
@@ -158,8 +158,6 @@ export function Authorize() {
   const [teamScopeError, setTeamScopeError] = useState<string | null>(null);
   const [declinedScopes, setDeclinedScopes] = useState<Set<string>>(new Set());
 
-  const isSiteScope = useCallback((s: string) => s.startsWith("site:"), []);
-
   // Auto-decline all site scopes by default, so users must explicitly opt-in.
   // Render-time set (guarded by an identity ref) so the React 19 strict
   // rule against setState-in-effect is satisfied.
@@ -175,7 +173,7 @@ export function Authorize() {
     });
     setDeclinedScopes((prev) => {
       const next = new Set(prev);
-      data.scopes.filter(isSiteScope).forEach((s) => next.add(s));
+      data.scopes.filter(isSiteLevelScope).forEach((s) => next.add(s));
       return next;
     });
   }
@@ -206,7 +204,7 @@ export function Authorize() {
   const hasPendingSiteScopes =
     requiresSiteGrant &&
     (data?.scopes ?? [])
-      .filter(isSiteScope)
+      .filter(isSiteLevelScope)
       .some((s) => !declinedScopes.has(s));
   const twoFaDone =
     twoFaMode === "passkey"
@@ -482,7 +480,7 @@ export function Authorize() {
           </Text>
           <div className={styles.scopeList}>
             {data.scopes
-              .filter((s) => !s.startsWith("app:") && !isSiteScope(s))
+              .filter((s) => !s.startsWith("app:") && !isSiteLevelScope(s))
               .map((scope) => {
                 const info = scopeLabel(t, scope);
                 const isOptional = (data.optional_scopes ?? []).includes(scope);
@@ -567,7 +565,7 @@ export function Authorize() {
                   {t("oauth.siteScopeWarningDesc")}
                 </Text>
                 <div className={styles.scopeList} style={{ marginTop: 4 }}>
-                  {data.scopes.filter(isSiteScope).map((scope) => {
+                  {data.scopes.filter(isSiteLevelScope).map((scope) => {
                     const info = scopeLabel(t, scope);
                     const isDeclined = declinedScopes.has(scope);
                     return (

@@ -23,10 +23,12 @@ import { isUserLocked } from "../lib/lockdown";
 import { readPage, likePattern } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
 import {
-  grantLike,
+  grantLikes,
   grantMatcher,
   heldScopes,
+  likeAny,
   parseScopeList,
+  SITE_GRANT_LIKES,
   stripGrant,
 } from "../lib/scopeGrants";
 import type { DomainRow, Variables } from "../types";
@@ -766,8 +768,8 @@ app.post("/users/bulk", async (c) => {
 
 // ─── Elevated scope grants ────────────────────────────────────────────────────
 //
-// `site:*` and `site:team:*` scopes are the highest-privilege grants the OAuth
-// layer issues: they let an application act across the instance, and the
+// Site-level scopes (`site:*`, `admin:*`) are the highest-privilege grants the
+// OAuth layer issues: they let an application act across the instance, and the
 // site-team ones deliberately bypass the team owner's consent. Team grants
 // (`team:<id>:*`) are smaller but still reach into a team on someone's behalf.
 //
@@ -806,18 +808,18 @@ app.get("/scope-grants/site", async (c) => {
      AND (EXISTS (SELECT 1 FROM oauth_consents oc
                    WHERE oc.client_id = g.client_id
                      AND oc.user_id = g.grantee_user_id
-                     AND oc.scopes LIKE '%site:%')
+                     AND ${likeAny("oc.scopes", SITE_GRANT_LIKES)})
        OR EXISTS (SELECT 1 FROM oauth_tokens t
                    WHERE t.client_id = g.client_id
                      AND t.user_id = g.grantee_user_id
-                     AND t.scopes LIKE '%site:%' AND ${LIVE}))
+                     AND ${likeAny("t.scopes", SITE_GRANT_LIKES)} AND ${LIVE}))
      ${
        q
          ? `AND (a.name LIKE ? ESCAPE '\\' OR g.client_id LIKE ? ESCAPE '\\'
               OR u.username LIKE ? ESCAPE '\\')`
          : ""
      }`;
-  const args: unknown[] = [now, now];
+  const args: unknown[] = [...SITE_GRANT_LIKES, ...SITE_GRANT_LIKES, now, now];
   if (q) args.push(likePattern(q), likePattern(q), likePattern(q));
   const from = `FROM site_scope_grants g
     LEFT JOIN oauth_apps a ON a.client_id = g.client_id
@@ -960,7 +962,7 @@ async function loadGrant(
  *  grants belong to one account; team grants to anyone who approved the app
  *  for that team. LIKE narrows the rows, grantMatcher decides. */
 async function grantHolders(db: D1Database, kind: GrantKind, g: GrantRow) {
-  const like = grantLike(kind, g.team_id);
+  const likes = grantLikes(kind, g.team_id);
   const matches = grantMatcher(kind, g.team_id);
   const carries = (row: { scopes: string }) =>
     parseScopeList(row.scopes).some(matches);
@@ -973,23 +975,23 @@ async function grantHolders(db: D1Database, kind: GrantKind, g: GrantRow) {
     db
       .prepare(
         `SELECT id, user_id, scopes FROM oauth_consents
-          WHERE client_id = ?${byUser} AND scopes LIKE ?`,
+          WHERE client_id = ?${byUser} AND ${likeAny("scopes", likes)}`,
       )
-      .bind(...(args as never[]), like)
+      .bind(...(args as never[]), ...likes)
       .all<{ id: string; user_id: string; scopes: string }>(),
     db
       .prepare(
         `SELECT t.id, t.user_id, t.scopes FROM oauth_tokens t
-          WHERE t.client_id = ?${byUser} AND t.scopes LIKE ? AND ${LIVE}`,
+          WHERE t.client_id = ?${byUser} AND ${likeAny("t.scopes", likes)} AND ${LIVE}`,
       )
-      .bind(...(args as never[]), like, now, now)
+      .bind(...(args as never[]), ...likes, now, now)
       .all<{ id: string; user_id: string; scopes: string }>(),
     db
       .prepare(
         `SELECT code, scopes FROM oauth_codes
-          WHERE client_id = ?${byUser} AND scopes LIKE ?`,
+          WHERE client_id = ?${byUser} AND ${likeAny("scopes", likes)}`,
       )
-      .bind(...(args as never[]), like)
+      .bind(...(args as never[]), ...likes)
       .all<{ code: string; scopes: string }>(),
   ]);
   return {
