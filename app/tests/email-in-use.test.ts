@@ -399,3 +399,32 @@ test("the verification status says when another account has the address", async 
   );
   expect(await res.json()).toEqual({ verified: false, taken: true });
 });
+
+test("a GPG challenge for an email is for the account sign-in will find", async () => {
+  sqlite.exec("DROP TRIGGER users_email_not_another_accounts_insert");
+  sqlite.exec(`
+    UPDATE users SET alt_email_login = 1 WHERE id = 'victim';
+    INSERT INTO users (id, username, email, email_verified, created_at, updated_at)
+      VALUES ('squatter', 'squatter', 'alt@example.com', 0, 0, 0);
+  `);
+  const kv = new MemoryKv();
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  const res = await app.fetch(
+    new Request("https://prism.example/api/auth/gpg-challenge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier: "alt@example.com" }),
+    }),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: kv as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  const { challenge } = (await res.json()) as { challenge: string };
+  // /gpg-login refuses a challenge stored for any other account.
+  expect(await kv.get(`gpg:challenge:${challenge}`)).toBe("victim");
+});

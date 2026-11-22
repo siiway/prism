@@ -23,8 +23,12 @@ const app = new Hono<AppEnv>();
 // Step 1: request a challenge
 app.post("/gpg-challenge", async (c) => {
   const ip = getIp(c);
-  const { ipv6_rate_limit_prefix, gpg_challenge_prefix, site_name } =
-    await getConfig(c.env.DB);
+  const {
+    ipv6_rate_limit_prefix,
+    gpg_challenge_prefix,
+    site_name,
+    allow_alt_email_login,
+  } = await getConfig(c.env.DB);
   const rl = await rateLimitIp(
     c.env.DB,
     ip,
@@ -43,10 +47,9 @@ app.post("/gpg-challenge", async (c) => {
 
   const identifier = body.identifier.toLowerCase().trim();
   const isEmail = identifier.includes("@");
+  // The same account /gpg-login will find, or the challenge never matches.
   const user = await (isEmail
-    ? c.env.DB.prepare("SELECT id FROM users WHERE email = ? AND kind = 'user'")
-        .bind(identifier)
-        .first<{ id: string }>()
+    ? userForSignInEmail(c.env.DB, identifier, allow_alt_email_login)
     : c.env.DB.prepare(
         "SELECT id FROM users WHERE username = ? AND kind = 'user'",
       )
