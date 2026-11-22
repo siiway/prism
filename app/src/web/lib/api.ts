@@ -1124,10 +1124,10 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
 
   // ─── OAuth authorize ─────────────────────────────────────────────────────
-  oauthAuthorizeInfo: (params: Record<string, string>) =>
+  oauthAuthorizeInfo: (params: URLSearchParams) =>
     request<OAuthAuthorizeInfo>(
       "GET",
-      `/oauth/app-info?${new URLSearchParams(params)}`,
+      `/oauth/app-info?${params}`,
       undefined,
       getToken(),
     ),

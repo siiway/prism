@@ -124,7 +124,9 @@ export function Authorize() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["oauth-authorize", params.client_id, params.redirect_uri],
-    queryFn: () => api.oauthAuthorizeInfo(params),
+    // The raw query, so the server sees (and refuses) a repeated parameter
+    // that Object.fromEntries above would have collapsed.
+    queryFn: () => api.oauthAuthorizeInfo(searchParams),
     retry: false,
   });
 

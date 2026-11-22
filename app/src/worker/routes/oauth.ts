@@ -14,6 +14,7 @@ import {
 import { randomBase64url, randomId } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
 import { requireAuth, optionalAuth } from "../middleware/auth";
+import { rejectRepeatedParams } from "../middleware/repeatedParams";
 import {
   computeIsVerified,
   buildVerifiedDomainsMap,
@@ -509,7 +510,7 @@ app.get("/authorize", (c) => {
 });
 
 // GET /api/oauth/app-info — consent screen data (called by the SPA)
-app.get("/app-info", optionalAuth, async (c) => {
+app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
   let {
     client_id,
     redirect_uri,
@@ -1272,7 +1273,7 @@ app.route("/", stepUpRoutes);
 
 // ─── Token endpoint ──────────────────────────────────────────────────────────
 
-app.post("/token", async (c) => {
+app.post("/token", rejectRepeatedParams, async (c) => {
   // RFC 6749 §5.1: token responses MUST NOT be cached (applies to every
   // return path below, success or error).
   noStore(c);
@@ -2010,7 +2011,7 @@ app.post("/token", async (c) => {
 
 // ─── Pushed Authorization Request endpoint (RFC 9126) ────────────────────────
 
-app.post("/par", async (c) => {
+app.post("/par", rejectRepeatedParams, async (c) => {
   noStore(c);
   const { params, form, json } = await readOAuthBody(c);
 
@@ -2088,7 +2089,7 @@ app.post("/par", async (c) => {
 
 // ─── Device Authorization Grant (RFC 8628) ───────────────────────────────────
 
-app.post("/device_authorization", async (c) => {
+app.post("/device_authorization", rejectRepeatedParams, async (c) => {
   noStore(c);
   const { params, form, json } = await readOAuthBody(c);
 
@@ -2431,7 +2432,7 @@ async function authenticateCallingClient(
   return auth.ok ? auth.app : null;
 }
 
-app.post("/introspect", async (c) => {
+app.post("/introspect", rejectRepeatedParams, async (c) => {
   const body = await c.req.text();
   const params = Object.fromEntries(new URLSearchParams(body));
 
@@ -2527,7 +2528,7 @@ app.post("/introspect", async (c) => {
 
 // ─── Revocation endpoint ─────────────────────────────────────────────────────
 
-app.post("/revoke", async (c) => {
+app.post("/revoke", rejectRepeatedParams, async (c) => {
   const body = await c.req.text();
   const params = Object.fromEntries(new URLSearchParams(body));
 

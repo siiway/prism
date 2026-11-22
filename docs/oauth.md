@@ -730,6 +730,11 @@ Token endpoint errors return HTTP 400:
 Common codes: `invalid_request`, `invalid_client`, `invalid_grant`,
 `unauthorized_client`, `unsupported_grant_type`, `access_denied`.
 
+Send each parameter once. A request that repeats one (`scope=a&scope=b`) fails
+with `invalid_request`; only `resource` and `audience` may repeat. A scope
+listed twice inside one `scope` value (`openid profile openid`) is fine and
+counts once.
+
 ## Integrations
 
 ### Cloudflare Access
