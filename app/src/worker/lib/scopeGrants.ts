@@ -1,12 +1,12 @@
 // Elevated scope grants: what site-level (`site:*`, `admin:*`) and
 // `team:<id>:*` authority an application holds, and how to take it back.
-
-import { isSiteLevelScope } from "../../shared/scopes";
 //
 // The site_scope_grants / team_scope_grants tables are written when someone
 // approves an app, but they are only a record. The authority itself lives in
 // the user's stored approval (oauth_consents) and in the tokens issued under
 // it, so withdrawing a grant has to change those too.
+
+import { isSiteLevelScope } from "../../shared/scopes";
 
 /** Scope lists are stored as JSON arrays; older rows may be space-separated. */
 export function parseScopeList(raw: string | null | undefined): string[] {
