@@ -23,7 +23,11 @@
 // keep their existing handlers and everything deeper falls through to here.
 
 import { Hono } from "hono";
-import { emailInUse, emailOwnedElsewhere } from "../lib/accountEmails";
+import {
+  emailInUse,
+  emailOwnedElsewhere,
+  oldPrimaryDemotion,
+} from "../lib/accountEmails";
 import { auditRequestAction } from "../lib/audit";
 import { hashPassword, randomId } from "../lib/crypto";
 import { readPage } from "../lib/pagination";
@@ -565,23 +569,34 @@ app.post("/:id/emails/:emailId/set-primary", async (c) => {
     return c.json({ error: "email_taken" }, 409);
 
   const now = Math.floor(Date.now() / 1000);
+  const demotion = await oldPrimaryDemotion(
+    c.env.DB,
+    id,
+    userRow.email,
+    !!userRow.email_verified,
+  );
   try {
     await c.env.DB.batch([
+      ...(demotion.dropClaim ? [demotion.dropClaim] : []),
       // Demote the old primary into the alternates list, carrying its
       // verification state but never its outstanding challenge tokens — those
       // are bound to a specific pending check against that address.
-      c.env.DB.prepare(
-        `INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at)
-       VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)`,
-      ).bind(
-        randomId(),
-        id,
-        userRow.email,
-        userRow.email_verified,
-        userRow.email_verified_via,
-        userRow.email_verified_at,
-        now,
-      ),
+      ...(demotion.keep
+        ? [
+            c.env.DB.prepare(
+              `INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at)
+             VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)`,
+            ).bind(
+              randomId(),
+              id,
+              userRow.email,
+              userRow.email_verified,
+              userRow.email_verified_via,
+              userRow.email_verified_at,
+              now,
+            ),
+          ]
+        : []),
       c.env.DB.prepare(
         `UPDATE users SET email = ?, email_verified = ?, email_verified_via = ?,
               email_verified_at = ?, email_verify_token = NULL,

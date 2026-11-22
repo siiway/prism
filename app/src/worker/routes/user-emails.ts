@@ -3,7 +3,11 @@
 
 import { isSyntheticEmail } from "../lib/userCapabilities";
 import { Hono } from "hono";
-import { emailInUse, emailOwnedElsewhere } from "../lib/accountEmails";
+import {
+  emailInUse,
+  emailOwnedElsewhere,
+  oldPrimaryDemotion,
+} from "../lib/accountEmails";
 import { randomId } from "../lib/crypto";
 import { getConfig } from "../lib/config";
 import { newEmailVerifyToken } from "../lib/emailVerifyToken";
@@ -185,9 +189,16 @@ app.post("/me/emails/:id/set-primary", async (c) => {
   // A synthesised placeholder is not an address anyone can reach, so it is
   // dropped rather than demoted — keeping it would leave an unreachable
   // `@users.invalid` row sitting in the account's email list forever.
-  const demoteOldPrimary = !isSyntheticEmail(userRow.email);
+  const demotion = await oldPrimaryDemotion(
+    c.env.DB,
+    user.id,
+    userRow.email,
+    !!userRow.email_verified,
+  );
+  const demoteOldPrimary = !isSyntheticEmail(userRow.email) && demotion.keep;
   try {
     await c.env.DB.batch([
+      ...(demotion.dropClaim ? [demotion.dropClaim] : []),
       // Insert old primary as alternate. Carry the verification *state* but
       // explicitly drop the verify_token / verify_code — those are tied to a
       // specific outstanding inbound-mail challenge against the old primary

@@ -56,3 +56,31 @@ export async function emailOwnedElsewhere(
     .first();
   return row !== null;
 }
+
+/** What becomes of the old primary address when an account makes another
+ *  of its addresses primary. It moves to the account's alternates, unless
+ *  another account already has it as an alternate, which the column's
+ *  uniqueness refuses. Then a claim that account never proved gives way to
+ *  a verified old primary; otherwise the old primary isn't kept. */
+export async function oldPrimaryDemotion(
+  db: D1Database,
+  userId: string,
+  oldEmail: string,
+  oldVerified: boolean,
+): Promise<{ keep: boolean; dropClaim: D1PreparedStatement | null }> {
+  const claim = await db
+    .prepare(
+      "SELECT id, verified FROM user_emails WHERE email = ? AND user_id != ?",
+    )
+    .bind(oldEmail, userId)
+    .first<{ id: string; verified: number }>();
+  if (!claim) return { keep: true, dropClaim: null };
+  if (oldVerified && !claim.verified)
+    return {
+      keep: true,
+      dropClaim: db
+        .prepare("DELETE FROM user_emails WHERE id = ? AND verified = 0")
+        .bind(claim.id),
+    };
+  return { keep: false, dropClaim: null };
+}

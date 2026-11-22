@@ -73,3 +73,48 @@ test("making an address primary while another account has it is refused, not a c
     sqlite.query("SELECT email FROM users WHERE id = 'victim'").get(),
   ).toEqual({ email: "victim@example.com" });
 });
+
+test("someone else's claim on the old primary doesn't block a switch", async () => {
+  // The victim's primary is unverified, and another account added it as an
+  // alternate without verifying it either.
+  sqlite.exec(`
+    UPDATE users SET email_verified = 0 WHERE id = 'victim';
+    INSERT INTO user_emails (id, user_id, email, verified, created_at) VALUES
+      ('n1', 'victim', 'new@example.com', 1, 0),
+      ('c1', 'squatter', 'victim@example.com', 0, 0);
+  `);
+  const res = await post("/api/user/me/emails/n1/set-primary", "victim", "s2");
+  expect(res.status).toBe(200);
+  expect(
+    sqlite.query("SELECT email FROM users WHERE id = 'victim'").get(),
+  ).toEqual({ email: "new@example.com" });
+  // Neither proved the old address; the other claim stays, the old primary goes.
+  expect(
+    sqlite
+      .query(
+        "SELECT user_id FROM user_emails WHERE email = 'victim@example.com'",
+      )
+      .all(),
+  ).toEqual([{ user_id: "squatter" }]);
+});
+
+test("a verified old primary outranks an unproved claim on it", async () => {
+  sqlite.exec(`
+    INSERT INTO user_emails (id, user_id, email, verified, created_at) VALUES
+      ('n1', 'victim', 'new@example.com', 1, 0),
+      ('c1', 'squatter', 'victim@example.com', 0, 0);
+  `);
+  const res = await post(
+    "/api/admin/users/victim/emails/n1/set-primary",
+    "admin",
+    "s1",
+  );
+  expect(res.status).toBe(200);
+  expect(
+    sqlite
+      .query(
+        "SELECT user_id, verified FROM user_emails WHERE email = 'victim@example.com'",
+      )
+      .all(),
+  ).toEqual([{ user_id: "victim", verified: 1 }]);
+});
