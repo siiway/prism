@@ -145,9 +145,11 @@ signs the user out of them first.
 | `POST /api/auth/check-email-verification` | `{ "verified": boolean, "taken": boolean }` — poll while the user sends the email. `taken` means another account has verified the address |
 | `POST /api/auth/resend-verify-email`      | Resend the link (accepts captcha fields)                                                                                                  |
 
-A link for an alternate address (`alt=1`) works only while the user is
-signed in to the account that added the address; otherwise it redirects with
-`status=wrong_account`.
+A link lasts 24 hours. It redirects to `/verify-email` with `status=success`,
+`expired`, `taken` (another account has verified the address),
+`wrong_account` or `invalid`. A link for an alternate address (`alt=1`)
+works only while the user is signed in to the account that added the address;
+otherwise it gives `wrong_account`.
 
 ## TOTP
 

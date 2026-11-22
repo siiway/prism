@@ -124,8 +124,10 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 | `POST /api/auth/check-email-verification` | `{ "verified": boolean, "taken": boolean }` — 用户发送邮件期间轮询。`taken` 表示另一个账户已验证该地址 |
 | `POST /api/auth/resend-verify-email`      | 重新发送链接（接受验证码字段）                                                                         |
 
-备用地址的链接（`alt=1`）仅在用户登录了添加该地址的账户时有效，否则会带
-`status=wrong_account` 重定向。
+链接有效期为 24 小时。链接会重定向到 `/verify-email`，并带上 `status=success`、
+`expired`、`taken`（另一个账户已验证该地址）、`wrong_account` 或 `invalid`。
+备用地址的链接（`alt=1`）仅在用户登录了添加该地址的账户时有效，否则会得到
+`wrong_account`。
 
 ## TOTP
 
