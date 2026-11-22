@@ -682,6 +682,9 @@ app.delete("/:id/authorizations/:consentId", async (c) => {
     c.env.DB.prepare(
       "DELETE FROM oauth_codes WHERE user_id = ? AND client_id = ?",
     ).bind(id, row.client_id),
+    c.env.DB.prepare(
+      "DELETE FROM oauth_device_codes WHERE user_id = ? AND client_id = ?",
+    ).bind(id, row.client_id),
   ]);
 
   auditUser(c, id, target.username, "user.authorization_revoked", {

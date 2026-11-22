@@ -167,6 +167,10 @@ app.post("/revoke/app/:appId", async (c) => {
     c.env.DB.prepare("DELETE FROM oauth_codes WHERE client_id = ?").bind(
       row.client_id,
     ),
+    // An approved device code would still turn into a token on the next poll.
+    c.env.DB.prepare("DELETE FROM oauth_device_codes WHERE client_id = ?").bind(
+      row.client_id,
+    ),
     c.env.DB.prepare("DELETE FROM oauth_consents WHERE client_id = ?").bind(
       row.client_id,
     ),
@@ -231,6 +235,9 @@ app.post("/revoke/user/:userId/grants", async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM oauth_tokens WHERE user_id = ?").bind(userId),
     c.env.DB.prepare("DELETE FROM oauth_codes WHERE user_id = ?").bind(userId),
+    c.env.DB.prepare("DELETE FROM oauth_device_codes WHERE user_id = ?").bind(
+      userId,
+    ),
     c.env.DB.prepare("DELETE FROM oauth_consents WHERE user_id = ?").bind(
       userId,
     ),

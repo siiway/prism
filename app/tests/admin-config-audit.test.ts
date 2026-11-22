@@ -140,4 +140,51 @@ describe("saving the site config", () => {
       email_verified_at: 123,
     });
   });
+
+  test("revoking an app drops its approved device codes", async () => {
+    sqlite.exec(`
+      INSERT INTO oauth_apps (id, client_id, client_secret, name, owner_id, redirect_uris, allowed_scopes, created_at, updated_at)
+        VALUES ('app1', 'tool', 'x', 'Tool', 'admin', '[]', '["openid"]', 0, 0);
+      INSERT INTO oauth_device_codes (device_code, user_code, client_id, status, user_id, expires_at, created_at)
+        VALUES ('d1', 'AAAA', 'tool', 'approved', 'admin', 9999999999, 0);
+    `);
+    const jwt = await signJWT(
+      {
+        sub: "admin",
+        role: "admin",
+        sessionId: "s1",
+        email: "admin@example.com",
+        username: "admin",
+        display_name: "admin",
+        avatar_url: null,
+      },
+      jwtSecret,
+      3600,
+    );
+    const app = new Hono();
+    app.route("/api/admin", adminRoutes);
+    const res = await app.fetch(
+      new Request("https://prism.example/api/admin/revoke/app/app1", {
+        method: "POST",
+        headers: {
+          Cookie: `${SESSION_COOKIE}=${jwt}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      }),
+      {
+        DB: d1(sqlite),
+        APP_URL: "https://prism.example",
+        KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+        KV_SESSIONS: new MemoryKv({
+          "system:jwt_secret": jwtSecret,
+        }) as unknown as KVNamespace,
+      } as unknown as Env,
+      executionCtx,
+    );
+    expect(res.status).toBe(200);
+    expect(
+      sqlite.query("SELECT device_code FROM oauth_device_codes").get(),
+    ).toBeNull();
+  });
 });
