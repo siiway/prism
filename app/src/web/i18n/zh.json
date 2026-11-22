@@ -755,7 +755,9 @@
     "backchannelLogoutPlaceholder": "https://app.example.com/backchannel-logout",
     "jwksUriPlaceholder": "https://app.example.com/.well-known/jwks.json",
     "scopeNamePlaceholder": "read_posts",
-    "scopeClientIdPlaceholder": "prism_..."
+    "scopeClientIdPlaceholder": "prism_...",
+    "redirectUriWildcardPlaceholder": "https://example.com/*",
+    "redirectUriRegexPlaceholder": "https://example\\.com/.*"
   },
   "domains": {
     "title": "域名验证",
@@ -2613,7 +2615,8 @@
     "oauthTokenUrlPlaceholder": "https://provider.example.com/oauth2/token",
     "oauthUserinfoUrlPlaceholder": "https://provider.example.com/oauth2/userinfo",
     "sourceIconUrlPlaceholder": "https://example.com/icon.svg",
-    "sourceSlugPlaceholder": "{{provider}}-work"
+    "sourceSlugPlaceholder": "{{provider}}-work",
+    "oauthScopesOidcPlaceholder": "openid email profile"
   },
   "notifications": {
     "title": "通知",
@@ -2902,7 +2905,8 @@
   "imageUrl": {
     "httpsRequired": "图片 URL 必须使用 HTTPS",
     "preview": "预览",
-    "loadFailed": "无法从该 URL 加载图片"
+    "loadFailed": "无法从该 URL 加载图片",
+    "placeholder": "https://example.com/image.png"
   },
   "notFound": {
     "title": "页面未找到",
@@ -3013,7 +3017,8 @@
     "deleteWebhookTitle": "删除 Webhook？",
     "deleteWebhookBody": "「{{name}}」将不再接收审计事件。",
     "webhookUrlPlaceholder": "https://example.com/hook?token={id}",
-    "webhookHeadersPlaceholder": "{ \"Authorization\": \"Bearer {id}\" }"
+    "webhookHeadersPlaceholder": "{ \"Authorization\": \"Bearer {id}\" }",
+    "discordUrlPlaceholder": "https://discord.com/api/webhooks/…"
   },
   "join": {
     "intro": "创建账号以加入该团队。你的账号创建在 {{siteName}} 上 —— 这是该团队使用的身份提供方。",

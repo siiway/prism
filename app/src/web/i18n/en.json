@@ -755,7 +755,9 @@
     "backchannelLogoutPlaceholder": "https://app.example.com/backchannel-logout",
     "jwksUriPlaceholder": "https://app.example.com/.well-known/jwks.json",
     "scopeNamePlaceholder": "read_posts",
-    "scopeClientIdPlaceholder": "prism_..."
+    "scopeClientIdPlaceholder": "prism_...",
+    "redirectUriWildcardPlaceholder": "https://example.com/*",
+    "redirectUriRegexPlaceholder": "https://example\\.com/.*"
   },
   "domains": {
     "title": "Domain verification",
@@ -2613,7 +2615,8 @@
     "oauthTokenUrlPlaceholder": "https://provider.example.com/oauth2/token",
     "oauthUserinfoUrlPlaceholder": "https://provider.example.com/oauth2/userinfo",
     "sourceIconUrlPlaceholder": "https://example.com/icon.svg",
-    "sourceSlugPlaceholder": "{{provider}}-work"
+    "sourceSlugPlaceholder": "{{provider}}-work",
+    "oauthScopesOidcPlaceholder": "openid email profile"
   },
   "notifications": {
     "title": "Notifications",
@@ -2902,7 +2905,8 @@
   "imageUrl": {
     "httpsRequired": "Image URL must use HTTPS",
     "preview": "Preview",
-    "loadFailed": "Could not load image from this URL"
+    "loadFailed": "Could not load image from this URL",
+    "placeholder": "https://example.com/image.png"
   },
   "notFound": {
     "title": "Page not found",
@@ -3013,7 +3017,8 @@
     "deleteWebhookTitle": "Delete webhook?",
     "deleteWebhookBody": "“{{name}}” will stop receiving audit events.",
     "webhookUrlPlaceholder": "https://example.com/hook?token={id}",
-    "webhookHeadersPlaceholder": "{ \"Authorization\": \"Bearer {id}\" }"
+    "webhookHeadersPlaceholder": "{ \"Authorization\": \"Bearer {id}\" }",
+    "discordUrlPlaceholder": "https://discord.com/api/webhooks/…"
   },
   "join": {
     "intro": "Create an account to join this team. Your account is created on {{siteName}}, the identity provider this team uses.",

@@ -104,8 +104,8 @@ export function RedirectUriEditor({ label, value, onChange }: Props) {
                 entry.type === "equals"
                   ? t("apps.redirectUrisPlaceholder")
                   : entry.type === "wildcard"
-                    ? "https://example.com/*"
-                    : "https://example\\.com/.*"
+                    ? t("apps.redirectUriWildcardPlaceholder")
+                    : t("apps.redirectUriRegexPlaceholder")
               }
               onChange={(e) => update(i, { value: e.target.value })}
             />

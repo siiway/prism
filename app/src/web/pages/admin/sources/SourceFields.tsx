@@ -258,7 +258,11 @@ export function EndpointFields({ form, onChange }: FieldsProps) {
       <Field label={t("admin.oauthScopes")} hint={t("admin.oauthScopesHint")}>
         <Input
           {...text("scopes")}
-          placeholder={form.provider === "oidc" ? "openid email profile" : ""}
+          placeholder={
+            form.provider === "oidc"
+              ? t("admin.oauthScopesOidcPlaceholder")
+              : ""
+          }
         />
       </Field>
     </div>

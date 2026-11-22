@@ -542,7 +542,7 @@ export function AuditWebhooks({
                       placeholder={
                         isEdit
                           ? t("audit.unchanged")
-                          : "https://discord.com/api/webhooks/…"
+                          : t("audit.discordUrlPlaceholder")
                       }
                       onChange={(e) =>
                         setForm((f) => ({ ...f, webhook_url: e.target.value }))
