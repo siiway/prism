@@ -616,6 +616,7 @@ app.post("/passkey/auth/begin", async (c) => {
   const options = await beginPasskeyAuthentication(
     passkeys.map(rowToPasskey),
     rpId,
+    true,
   );
 
   // Store challenge in KV (5 minute TTL)
@@ -666,6 +667,7 @@ app.post("/passkey/auth/finish", async (c) => {
       rowToPasskey(passkeyRow),
       rpId,
       origin,
+      true,
     );
   } catch (err) {
     console.warn("[passkey] authentication failed:", err);
@@ -719,6 +721,7 @@ app.post("/passkey/verify/begin", requireAuth, async (c) => {
   const options = await beginPasskeyAuthentication(
     rows.results.map(rowToPasskey),
     rpId,
+    false,
   );
 
   const challengeKey = `passkey:verify:${options.challenge}:${user.id}`;
@@ -766,6 +769,7 @@ app.post("/passkey/verify/finish", requireAuth, async (c) => {
       rowToPasskey(passkeyRow),
       rpId,
       origin,
+      false,
     );
   } catch (err) {
     console.warn("[passkey] verification failed:", err);

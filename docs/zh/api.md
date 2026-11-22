@@ -138,13 +138,13 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 
 ## Passkey (WebAuthn)
 
-| 端点                                               | 用途                                         |
-| -------------------------------------------------- | -------------------------------------------- |
-| `POST /api/auth/passkey/register/begin` / `finish` | 添加 Passkey                                 |
-| `POST /api/auth/passkey/auth/begin` / `finish`     | 登录。传入 `username` 可缩小凭据范围，或省略 |
-| `POST /api/auth/passkey/verify/begin` / `finish`   | 登录状态下重新验证（用于加强确认）           |
-| `GET /api/auth/passkeys`                           | 列出用户的 Passkey                           |
-| `DELETE /api/auth/passkeys/:id`                    | 移除一个                                     |
+| 端点                                               | 用途                                                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `POST /api/auth/passkey/register/begin` / `finish` | 添加 Passkey                                                                       |
+| `POST /api/auth/passkey/auth/begin` / `finish`     | 登录。传入 `username` 可缩小凭据范围，或省略。认证器必须验证用户（PIN 或生物识别） |
+| `POST /api/auth/passkey/verify/begin` / `finish`   | 登录状态下重新验证（用于加强确认）                                                 |
+| `GET /api/auth/passkeys`                           | 列出用户的 Passkey                                                                 |
+| `DELETE /api/auth/passkeys/:id`                    | 移除一个                                                                           |
 
 ## GPG 密钥
 

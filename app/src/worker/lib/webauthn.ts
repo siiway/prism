@@ -78,9 +78,14 @@ export async function finishPasskeyRegistration(
   });
 }
 
+/** `requireUserVerification` is for signing in with the passkey alone: the
+ *  authenticator must then check a PIN or biometric, or a key with no PIN
+ *  would let whoever holds it in with nothing else. Confirming an action in
+ *  an existing session only asks for it when available. */
 export async function beginPasskeyAuthentication(
   passkeys: StoredPasskey[],
   rpId: string,
+  requireUserVerification: boolean,
 ) {
   return generateAuthenticationOptions({
     rpID: rpId,
@@ -88,7 +93,7 @@ export async function beginPasskeyAuthentication(
       id: p.credentialId,
       transports: p.transports,
     })),
-    userVerification: "preferred",
+    userVerification: requireUserVerification ? "required" : "preferred",
   });
 }
 
@@ -98,6 +103,7 @@ export async function finishPasskeyAuthentication(
   passkey: StoredPasskey,
   rpId: string,
   origin: string,
+  requireUserVerification: boolean,
 ) {
   return verifyAuthenticationResponse({
     response,
@@ -112,7 +118,7 @@ export async function finishPasskeyAuthentication(
       counter: passkey.counter,
       transports: passkey.transports,
     },
-    requireUserVerification: false,
+    requireUserVerification,
   });
 }
 

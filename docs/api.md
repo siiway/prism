@@ -159,13 +159,13 @@ All endpoints require authentication. A user can have several authenticators.
 
 ## Passkeys (WebAuthn)
 
-| Endpoint                                           | Purpose                                                        |
-| -------------------------------------------------- | -------------------------------------------------------------- |
-| `POST /api/auth/passkey/register/begin` / `finish` | Add a passkey                                                  |
-| `POST /api/auth/passkey/auth/begin` / `finish`     | Sign in. Pass `username` to narrow the credentials, or omit it |
-| `POST /api/auth/passkey/verify/begin` / `finish`   | Re-verify while signed in (used by step-up confirmations)      |
-| `GET /api/auth/passkeys`                           | List the user's passkeys                                       |
-| `DELETE /api/auth/passkeys/:id`                    | Remove one                                                     |
+| Endpoint                                           | Purpose                                                                                                                   |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/auth/passkey/register/begin` / `finish` | Add a passkey                                                                                                             |
+| `POST /api/auth/passkey/auth/begin` / `finish`     | Sign in. Pass `username` to narrow the credentials, or omit it. The authenticator must verify the user (PIN or biometric) |
+| `POST /api/auth/passkey/verify/begin` / `finish`   | Re-verify while signed in (used by step-up confirmations)                                                                 |
+| `GET /api/auth/passkeys`                           | List the user's passkeys                                                                                                  |
+| `DELETE /api/auth/passkeys/:id`                    | Remove one                                                                                                                |
 
 ## GPG keys
 
