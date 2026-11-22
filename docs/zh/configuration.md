@@ -219,14 +219,14 @@ Cloudflare 通过全球主机和中国大陆主机（`challenges.cloudflare-cn.c
 
 ## 诊断与限流
 
-| 键                                                | 默认值       | 说明                                 |
-| ------------------------------------------------- | ------------ | ------------------------------------ |
-| `login_error_retention_days`                      | `30`         | 失败登录记录的保留天数               |
-| `login_dos_rate_limit` / `_window_seconds`        | `120` / `60` | 每个 IP 的登录 POST 次数             |
-| `login_ip_rate_limit` / `_window_seconds`         | `60` / `60`  | 每个 IP 通过验证码后的登录尝试次数   |
-| `login_identifier_rate_limit` / `_window_seconds` | `30` / `300` | 每个邮箱或用户名的登录尝试次数       |
-| `login_totp_rate_limit` / `_window_seconds`       | `15` / `300` | 每个用户的 TOTP 提交次数             |
-| `ipv6_rate_limit_prefix`                          | `64`         | 共享同一个限流桶的 IPv6 地址前缀位数 |
+| 键                                                | 默认值       | 说明                                                     |
+| ------------------------------------------------- | ------------ | -------------------------------------------------------- |
+| `login_error_retention_days`                      | `30`         | 失败登录记录的保留天数                                   |
+| `login_dos_rate_limit` / `_window_seconds`        | `120` / `60` | 每个 IP 的登录 POST 次数                                 |
+| `login_ip_rate_limit` / `_window_seconds`         | `60` / `60`  | 每个 IP 通过验证码后的登录尝试次数                       |
+| `login_identifier_rate_limit` / `_window_seconds` | `30` / `300` | 每个邮箱或用户名的登录尝试次数                           |
+| `login_totp_rate_limit` / `_window_seconds`       | `15` / `300` | 每个用户的 TOTP 提交次数，登录和批准站点级权限时分别计数 |
+| `ipv6_rate_limit_prefix`                          | `64`         | 共享同一个限流桶的 IPv6 地址前缀位数                     |
 
 限值为 `1` 到 `86400` 的整数。密码步骤和 TOTP 步骤是分开的请求，两者都会计数。
 

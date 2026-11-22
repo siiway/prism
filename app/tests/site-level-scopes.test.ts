@@ -6,6 +6,8 @@ import { signJWT } from "../src/worker/lib/jwt";
 import { SESSION_COOKIE } from "../src/worker/lib/cookies";
 import { grantMatcher, heldScopes } from "../src/worker/lib/scopeGrants";
 import { isSiteLevelScope } from "../src/shared/scopes";
+import { checkLoginTotpLimit } from "../src/worker/lib/loginRateLimit";
+import { getConfig } from "../src/worker/lib/config";
 import { d1, executionCtx, MemoryKv, migratedDatabase } from "./setup/d1";
 
 const jwtSecret = "test-jwt-secret-site-scopes";
@@ -136,6 +138,13 @@ describe("admin:* scopes are site-level", () => {
     // The default limit is 15 codes per 5 minutes.
     for (let i = 0; i < 15; i++) expect((await guess()).status).toBe(400);
     expect((await guess()).status).toBe(429);
+    // Sign-in's own attempts are untouched.
+    const signIn = await checkLoginTotpLimit(
+      d1(sqlite),
+      "admin",
+      await getConfig(d1(sqlite)),
+    );
+    expect(signIn.allowed).toBe(true);
   });
 
   test("the consent screen asks for the site grant and never auto-approves", async () => {

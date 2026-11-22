@@ -104,6 +104,23 @@ export async function checkLoginTotpLimit(
   );
 }
 
+/** TOTP codes at the check for approving site-level scopes. The same limit
+ *  as sign-in's, counted apart: otherwise someone holding a stolen session
+ *  could use up the owner's sign-in attempts here, and an admin approving
+ *  several apps would use up their own. */
+export async function checkSiteGrantTotpLimit(
+  db: D1Database,
+  userId: string,
+  config: LoginRateLimitConfig,
+) {
+  return rateLimit(
+    db,
+    `site-grant-totp:${userId}`,
+    config.login_totp_rate_limit,
+    config.login_totp_rate_window_seconds,
+  );
+}
+
 /** Record a failed sign-in attempt in the admin login-error log. */
 export async function logLoginError(
   db: D1Database,

@@ -250,14 +250,14 @@ file, and are re-checked on a schedule.
 
 ## Diagnostics & rate limiting
 
-| Key                                               | Default      | Description                                              |
-| ------------------------------------------------- | ------------ | -------------------------------------------------------- |
-| `login_error_retention_days`                      | `30`         | How long failed-sign-in records are kept                 |
-| `login_dos_rate_limit` / `_window_seconds`        | `120` / `60` | Login POSTs per IP                                       |
-| `login_ip_rate_limit` / `_window_seconds`         | `60` / `60`  | Captcha-cleared login attempts per IP                    |
-| `login_identifier_rate_limit` / `_window_seconds` | `30` / `300` | Login attempts per email or username                     |
-| `login_totp_rate_limit` / `_window_seconds`       | `15` / `300` | TOTP submissions per user                                |
-| `ipv6_rate_limit_prefix`                          | `64`         | Bits of an IPv6 address that share one rate-limit bucket |
+| Key                                               | Default      | Description                                                                              |
+| ------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------- |
+| `login_error_retention_days`                      | `30`         | How long failed-sign-in records are kept                                                 |
+| `login_dos_rate_limit` / `_window_seconds`        | `120` / `60` | Login POSTs per IP                                                                       |
+| `login_ip_rate_limit` / `_window_seconds`         | `60` / `60`  | Captcha-cleared login attempts per IP                                                    |
+| `login_identifier_rate_limit` / `_window_seconds` | `30` / `300` | Login attempts per email or username                                                     |
+| `login_totp_rate_limit` / `_window_seconds`       | `15` / `300` | TOTP submissions per user, counted apart at sign-in and when approving site-level scopes |
+| `ipv6_rate_limit_prefix`                          | `64`         | Bits of an IPv6 address that share one rate-limit bucket                                 |
 
 Limits are integers from `1` to `86400`. The password step and the TOTP step are
 separate requests, and both count.
