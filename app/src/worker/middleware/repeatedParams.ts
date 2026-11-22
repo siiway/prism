@@ -23,23 +23,28 @@ export function findRepeatedParam(params: URLSearchParams): string | null {
   return null;
 }
 
-/** Answer a request that repeats a parameter, in its query string or its
- *  form-encoded body, with `invalid_request`. A JSON body is left alone: its
- *  parser has already kept one value per key. */
+/** Answer a request that repeats a parameter with `invalid_request`. The query
+ *  string and a form-encoded body count as one list, so a parameter sent once
+ *  in each is repeated too. A JSON body is left alone: its parser has already
+ *  kept one value per key. */
 export const rejectRepeatedParams: MiddlewareHandler<AppEnv> = async (
   c,
   next,
 ) => {
-  let repeated = findRepeatedParam(new URL(c.req.url).searchParams);
+  const params = new URL(c.req.url).searchParams;
   if (
-    !repeated &&
     c.req.method === "POST" &&
     !(c.req.header("Content-Type") ?? "").includes("application/json")
   ) {
     // Hono caches the body, so the route can still read it afterwards.
-    repeated = findRepeatedParam(new URLSearchParams(await c.req.text()));
+    for (const [k, v] of new URLSearchParams(await c.req.text()))
+      params.append(k, v);
   }
-  if (repeated)
+  const repeated = findRepeatedParam(params);
+  if (repeated) {
+    // RFC 6749 §5.1: token endpoint responses, errors included, are no-store.
+    c.header("Cache-Control", "no-store");
+    c.header("Pragma", "no-cache");
     return c.json(
       {
         error: "invalid_request",
@@ -47,5 +52,6 @@ export const rejectRepeatedParams: MiddlewareHandler<AppEnv> = async (
       },
       400,
     );
+  }
   await next();
 };

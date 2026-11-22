@@ -57,6 +57,17 @@ describe("rejectRepeatedParams", () => {
       body: "grant_type=refresh_token&scope=a&scope=b",
     });
     expect(res.status).toBe(400);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(await res.json()).toMatchObject({ error: "invalid_request" });
+  });
+
+  test("counts the query string and form body as one request", async () => {
+    const res = await app.request("/echo?scope=a", {
+      method: "POST",
+      headers: form,
+      body: "grant_type=refresh_token&scope=b",
+    });
+    expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error: "invalid_request" });
   });
 
