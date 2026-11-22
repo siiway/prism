@@ -34,6 +34,7 @@ import {
   type RedirectUri,
   type RedirectUriMatchType,
 } from "../../shared/api";
+import { parse as parseDomain } from "tldts";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
@@ -133,12 +134,21 @@ export function validateRedirectUriEntry(
       if (entry.value.includes("#")) return "fragment";
       const parsed = parseWildcard(entry.value);
       if (typeof parsed === "string") return parsed;
-      // The domain itself must be spelled out: `https://*.com/cb` would let
-      // any .com site in.
+      // The registrable domain, the label above the public suffix plus the
+      // suffix, must be spelled out. `*.com`, `*.co.uk`, `*.github.io` or
+      // `pr-*.vercel.app` would let in sites anyone can register.
       const host = parsed.host;
       if (host.includes("*")) {
+        const { domain } = parseDomain(host.replaceAll("*", "x"), {
+          allowPrivateDomains: true,
+        });
         const labels = host.split(".");
-        if (labels.length < 3 || labels.slice(-2).some((l) => l.includes("*")))
+        if (
+          !domain ||
+          labels
+            .slice(-domain.split(".").length)
+            .some((label) => label.includes("*"))
+        )
           return "wildcard_host";
       }
       return null;

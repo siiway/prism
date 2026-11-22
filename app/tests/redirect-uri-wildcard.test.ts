@@ -138,6 +138,15 @@ describe("wildcard redirect URIs", () => {
     expect(reason("https://a*.*/cb")).toBe("wildcard_host");
     expect(reason("https://app.*.com/cb")).toBe("wildcard_host");
     expect(reason("https://pr-*.example.com/cb")).toBeNull();
+    expect(reason("https://*.example.co.uk/cb")).toBeNull();
+    for (const shared of [
+      "https://*.co.uk/cb",
+      "https://*.com.cn/cb",
+      "https://*.github.io/cb",
+      "https://pr-*.vercel.app/cb",
+      "https://192.168.*.1/cb",
+    ])
+      expect(reason(shared)).toBe("wildcard_host");
     expect(reason("https://example.com*")).toBeNull();
     expect(reason("https://user@*.example.com/cb")).toBe("userinfo");
     expect(reason("ftp://*.example.com/cb")).toBe("scheme");
