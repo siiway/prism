@@ -100,33 +100,33 @@ with `invalid_request`.
 
 #### Scopes
 
-| Scope                  | Claims / access granted                                                                                          |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `openid`               | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC)                                                            |
-| `profile`              | `name`, `preferred_username`, `picture`                                                                          |
-| `profile:write`        | Update the user's profile (name, picture)                                                                        |
-| `email`                | `email`, `email_verified`                                                                                        |
-| `apps:read`            | List the apps the user owns                                                                                      |
-| `apps:write`           | Create, update, and delete the user's apps                                                                       |
-| `teams:read`           | List the user's teams                                                                                            |
-| `teams:write`          | Update team settings and manage members                                                                          |
-| `teams:create`         | Create teams                                                                                                     |
-| `teams:delete`         | Delete teams                                                                                                     |
-| `domains:read`         | List the user's domains                                                                                          |
-| `domains:write`        | Add and remove domains                                                                                           |
-| `gpg:read`             | List the user's GPG public keys                                                                                  |
-| `gpg:write`            | Add and remove GPG public keys                                                                                   |
-| `social:read`          | List the user's linked social accounts                                                                           |
-| `social:write`         | Disconnect social accounts                                                                                       |
-| `admin:users:read`     | Read all user accounts (admin only)                                                                              |
-| `admin:users:write`    | Modify user accounts (admin only)                                                                                |
-| `admin:users:delete`   | Delete user accounts (admin only)                                                                                |
-| `admin:config:read`    | Read instance configuration, without credentials (admin only)                                                    |
-| `admin:config:write`   | Update instance configuration, except credentials and the mail and captcha servers they are sent to (admin only) |
-| `admin:invites:read`   | List invitations (admin only)                                                                                    |
-| `admin:invites:create` | Create invitations (admin only)                                                                                  |
-| `admin:invites:delete` | Delete invitations (admin only)                                                                                  |
-| `offline_access`       | Issue a refresh token                                                                                            |
+| Scope                  | Claims / access granted                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `openid`               | `sub`, `iss`, `aud`, `iat`, `exp` (required for OIDC)                                                                         |
+| `profile`              | `name`, `preferred_username`, `picture`                                                                                       |
+| `profile:write`        | Update the user's profile (name, picture)                                                                                     |
+| `email`                | `email`, `email_verified`                                                                                                     |
+| `apps:read`            | List the apps the user owns                                                                                                   |
+| `apps:write`           | Create, update, and delete the user's apps                                                                                    |
+| `teams:read`           | List the user's teams                                                                                                         |
+| `teams:write`          | Update team settings and manage members                                                                                       |
+| `teams:create`         | Create teams                                                                                                                  |
+| `teams:delete`         | Delete teams                                                                                                                  |
+| `domains:read`         | List the user's domains                                                                                                       |
+| `domains:write`        | Add and remove domains                                                                                                        |
+| `gpg:read`             | List the user's GPG public keys                                                                                               |
+| `gpg:write`            | Add and remove GPG public keys                                                                                                |
+| `social:read`          | List the user's linked social accounts                                                                                        |
+| `social:write`         | Disconnect social accounts                                                                                                    |
+| `admin:users:read`     | Read all user accounts (admin only)                                                                                           |
+| `admin:users:write`    | Modify user accounts (admin only)                                                                                             |
+| `admin:users:delete`   | Delete user accounts (admin only)                                                                                             |
+| `admin:config:read`    | Read instance configuration, without credentials (admin only)                                                                 |
+| `admin:config:write`   | Update instance configuration, except credentials, the mail and captcha servers they are sent to, and custom CSS (admin only) |
+| `admin:invites:read`   | List invitations (admin only)                                                                                                 |
+| `admin:invites:create` | Create invitations (admin only)                                                                                               |
+| `admin:invites:delete` | Delete invitations (admin only)                                                                                               |
+| `offline_access`       | Issue a refresh token                                                                                                         |
 
 Apps can also expose their own scopes to other apps; see
 [Cross-App Permissions](app-permissions.md).

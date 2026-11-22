@@ -141,6 +141,13 @@ export const ADMIN_CONFIG_KEYS: ReadonlySet<string> = new Set([
   "restricted_dissolve_grace_hours",
 ]);
 
+/** Settings that put the admin's own code on every page, the sign-in and
+ *  consent screens included. An app that could set them could restyle or
+ *  hide what those screens warn about, so only the dashboard sets them. */
+export const DASHBOARD_ONLY_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  "custom_css",
+]);
+
 /** Settings that decide where a stored secret is sent: the mail servers
  *  Prism signs in to with the SMTP and IMAP passwords, the email provider
  *  that gets the API key, and the endpoint that gets the Cap secret. Whoever

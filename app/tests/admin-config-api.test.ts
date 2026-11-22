@@ -81,6 +81,7 @@ describe("admin:config API", () => {
       smtp_host: "attacker.example",
       cap_api_endpoint: "https://attacker.example",
       github_client_id: "new",
+      custom_css: ".site-scope-warning { display: none }",
       made_up_key: 1,
     });
     expect(res.status).toBe(400);
@@ -88,6 +89,7 @@ describe("admin:config API", () => {
     expect(stored("imap_password")).toBe('"imap-secret"');
     expect(stored("made_up_key")).toBeNull();
     expect(stored("smtp_host")).toBeNull();
+    expect(stored("custom_css")).not.toContain("display");
   });
 
   test("writing goes through the admin dashboard's checks", async () => {
