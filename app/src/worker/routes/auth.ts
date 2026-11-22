@@ -767,6 +767,9 @@ app.post("/passkey/verify/finish", requireAuth, async (c) => {
   const challengeKey = `passkey:verify:${body.challenge}:${user.id}`;
   const stored = await c.env.KV_CACHE.get(challengeKey);
   if (!stored) return c.json({ error: "session_invalid" }, 400);
+  // One attempt per challenge, as with sign-in: a failed one can't be
+  // retried, and the same assertion sent twice can't earn two tokens.
+  await c.env.KV_CACHE.delete(challengeKey);
 
   const options = JSON.parse(stored) as { challenge: string };
 
@@ -797,8 +800,6 @@ app.post("/passkey/verify/finish", requireAuth, async (c) => {
 
   if (!verification.verified)
     return c.json({ error: "verification_failed" }, 400);
-
-  await c.env.KV_CACHE.delete(challengeKey);
 
   // Update counter
   const now = Math.floor(Date.now() / 1000);
