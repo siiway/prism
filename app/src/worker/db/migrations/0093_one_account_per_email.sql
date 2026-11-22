@@ -6,6 +6,13 @@
 -- that catch a duplicate answer the same way as for a duplicate primary.
 -- Rows that already overlap are left alone; only new writes are checked.
 
+-- Addresses are stored and compared lowercase, but social sign-ups used to
+-- keep the provider's casing, which an exact comparison then misses. Bring
+-- those in line first. One whose lowercase form another row already holds
+-- is left as it is: that address is on two accounts already.
+UPDATE OR IGNORE users SET email = lower(email) WHERE email != lower(email);
+UPDATE OR IGNORE user_emails SET email = lower(email) WHERE email != lower(email);
+
 CREATE TRIGGER users_email_not_another_accounts_insert
 BEFORE INSERT ON users
 WHEN EXISTS (
