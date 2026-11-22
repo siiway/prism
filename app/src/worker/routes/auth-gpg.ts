@@ -9,7 +9,7 @@ import { randomId } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
 import { verifySignedMessage } from "../lib/gpg";
 import { rateLimitIp } from "../middleware/rateLimit";
-import { logLoginError } from "../lib/loginRateLimit";
+import { checkLoginTotpLimit, logLoginError } from "../lib/loginRateLimit";
 import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import type { UserRow, Variables } from "../types";
@@ -218,6 +218,27 @@ app.post("/gpg-login", async (c) => {
   if ((gpgTotpCount?.n ?? 0) > 0 && user.gpg_require_2fa !== 0) {
     if (!body.totp_code)
       return c.json({ error: "totp_required", totp_required: true }, 200);
+    // Per account as well as per IP: the challenge survives a bad code, so
+    // the IP limit alone would let many addresses guess it.
+    const totpLimit = await checkLoginTotpLimit(
+      c.env.DB,
+      user.id,
+      gpgLoginConfig,
+    );
+    if (!totpLimit.allowed) {
+      c.executionCtx.waitUntil(
+        logLoginError(
+          c.env.DB,
+          "rate_limited",
+          body.identifier,
+          ip,
+          ua,
+          geoJson(c),
+          { user_id: user.id, factor: "totp" },
+        ).catch(() => {}),
+      );
+      return c.json({ error: "too_many_requests" }, 429);
+    }
     if (!(await verifyAnyTotp(c.env, user.id, body.totp_code))) {
       c.executionCtx.waitUntil(
         logLoginError(

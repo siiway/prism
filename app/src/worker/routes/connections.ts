@@ -43,6 +43,7 @@ import {
 } from "../lib/notifications";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { verifyAnyTotp } from "../lib/totp";
+import { checkLoginTotpLimit } from "../lib/loginRateLimit";
 import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import type {
@@ -1489,6 +1490,12 @@ app.post("/2fa/verify", async (c) => {
   const raw = await c.env.KV_CACHE.get(body.key);
   if (!raw) return c.json({ error: "session_invalid" }, 400);
   const state = JSON.parse(raw) as Pending2faState;
+
+  // The same per-account limit as the password flow's TOTP step. A bad code
+  // keeps the key alive, so without it the code could be guessed.
+  const config = await getConfig(c.env.DB);
+  const limit = await checkLoginTotpLimit(c.env.DB, state.userId, config);
+  if (!limit.allowed) return c.json({ error: "too_many_requests" }, 429);
 
   const ok = await verifyAnyTotp(c.env, state.userId, body.totp_code);
   if (!ok) return c.json({ error: "totp_invalid" }, 401);
