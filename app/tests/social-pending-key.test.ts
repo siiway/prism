@@ -77,3 +77,32 @@ test("a sign-up with a fixable mistake keeps the pending sign-in", async () => {
   expect(res.status).toBe(409);
   expect(await cache.get("social:pending:k")).toBe(pending);
 });
+
+test("losing a race for the username keeps the pending sign-in", async () => {
+  // Free when checked, taken by the time of the insert.
+  sqlite.run(`CREATE TRIGGER raced BEFORE INSERT ON users WHEN NEW.username = 'raced'
+    BEGIN SELECT RAISE(ABORT, 'UNIQUE constraint failed: users.username'); END`);
+  const pending = JSON.stringify({
+    type: "register",
+    provider: "github",
+    providerUserId: "1",
+    providerEmail: null,
+    profileData: {},
+    accessToken: "a",
+    refreshToken: null,
+    tokenExpiresAt: null,
+  });
+  await cache.put("social:pending:k", pending);
+  const res = await send("/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      key: "social:pending:k",
+      action: "register",
+      username: "raced",
+    }),
+  });
+  expect(res.status).toBe(409);
+  expect(await res.json()).toMatchObject({ error: "email_or_username_taken" });
+  expect(await cache.get("social:pending:k")).toBe(pending);
+});

@@ -1266,10 +1266,10 @@ app.post("/complete", async (c) => {
   if (!raw) return c.json({ error: "session_invalid" }, 400);
 
   const state = JSON.parse(raw) as PendingState;
-  // Used up only once the request passes the checks below, right before an
-  // account or session is created: a username taken or a name too long can
-  // be corrected and sent again without another trip to the provider. The
-  // pending state expires after ten minutes either way.
+  // Used up only once the request passes the checks below: right before a
+  // session is created, or once a new account exists. A username taken or a
+  // name too long can be corrected and sent again without another trip to
+  // the provider. The pending state expires after ten minutes either way.
   const spend = () => c.env.KV_CACHE.delete(body.key);
 
   const now = Math.floor(Date.now() / 1000);
@@ -1417,7 +1417,6 @@ app.post("/complete", async (c) => {
     const trustedEmail = state.providerEmail;
     if (trustedEmail && (await emailInUse(c.env.DB, trustedEmail)))
       return c.json({ error: "email_or_username_taken" }, 409);
-    await spend();
     // Take the invite use before the insert — see claimSiteInvite. Released
     // below if creating the account fails.
     if (usedInvite && !(await claimSiteInvite(c.env, usedInvite)))
@@ -1446,6 +1445,9 @@ app.post("/complete", async (c) => {
         return c.json({ error: "email_or_username_taken" }, 409);
       throw err;
     }
+    // Spent once the account exists, so losing a race for the username
+    // above can still be corrected and sent again.
+    await spend();
 
     const storedAccess = await encryptSecret(c.env, state.accessToken);
     const storedRefresh = await encryptSecret(c.env, state.refreshToken);
