@@ -152,3 +152,32 @@ test("sign-up refuses an overlong display name", async () => {
     sqlite.query("SELECT id FROM users WHERE username = 'newbie'").get(),
   ).toBeNull();
 });
+
+test("sign-up with a blank display name uses the username", async () => {
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  const res = await app.fetch(
+    new Request("https://prism.example/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "blank@example.com",
+        username: "blankname",
+        password: "a-long-enough-password",
+        display_name: "",
+      }),
+    }),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  expect(res.status).toBeLessThan(300);
+  const row = sqlite
+    .query("SELECT display_name FROM users WHERE username = 'blankname'")
+    .get() as { display_name: string };
+  expect(row.display_name).toBe("blankname");
+});

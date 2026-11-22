@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
 import { emailInUse } from "../lib/accountEmails";
-import { displayNameError } from "../lib/displayName";
+import { optionalDisplayName } from "../lib/displayName";
 import {
   emailVerifyTokenFresh,
   newEmailVerifyToken,
@@ -113,10 +113,9 @@ app.post("/register", async (c) => {
     return c.json({ error: "password_too_short" }, 400);
   if (!/^[a-z0-9_.-]{2,32}$/i.test(body.username))
     return c.json({ error: "username_invalid" }, 400);
-  if (body.display_name !== undefined) {
-    const nameErr = displayNameError(body.display_name);
-    if (nameErr) return c.json(nameErr, 400);
-  }
+  // Optional: left blank, the username stands in.
+  const displayName = optionalDisplayName(body.display_name);
+  if (displayName.error) return c.json(displayName.error, 400);
 
   const userId = randomId();
   const passwordHash = await hashPassword(body.password);
@@ -145,7 +144,7 @@ app.post("/register", async (c) => {
         body.email.toLowerCase().trim(),
         body.username.toLowerCase().trim(),
         passwordHash,
-        body.display_name?.trim() ?? body.username,
+        displayName.name ?? body.username,
         config.require_email_verification ? 0 : 1,
         storedVerifyToken,
         now,

@@ -18,3 +18,16 @@ export function displayNameError(name: unknown): CodedError | null {
     params: { field: "display_name", min: 1, max: DISPLAY_NAME_MAX_LENGTH },
   };
 }
+
+/** An optional display name, as sign-up forms send it: missing or blank
+ *  means none, and the caller uses the username instead. Returns the
+ *  trimmed name, or the error to answer with. */
+export function optionalDisplayName(value: unknown): {
+  name?: string;
+  error?: CodedError;
+} {
+  if (value === undefined || value === null) return {};
+  if (typeof value === "string" && !value.trim()) return {};
+  const error = displayNameError(value);
+  return error ? { error } : { name: (value as string).trim() };
+}
