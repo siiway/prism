@@ -361,6 +361,15 @@ app.patch("/users/:id", async (c) => {
   }
   if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
 
+  // What was changed, for the audit log: never the raw body, which can carry
+  // ignored values and keys of the caller's choosing. Each column pushed
+  // above has its value at the same index.
+  const applied = Object.fromEntries(
+    updates
+      .map((u, i) => [u.replace(" = ?", ""), values[i]] as const)
+      .filter(([k]) => k !== "email_verify_token" && k !== "email_verify_code"),
+  );
+
   updates.push("updated_at = ?");
   values.push(Math.floor(Date.now() / 1000), id);
 
@@ -387,7 +396,7 @@ app.patch("/users/:id", async (c) => {
     throw err;
   }
 
-  auditAdmin(c, "admin.user.update", "user", id, body, user.username);
+  auditAdmin(c, "admin.user.update", "user", id, applied, user.username);
   return c.json({ ok: true });
 });
 

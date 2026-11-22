@@ -242,4 +242,60 @@ describe("saving the site config", () => {
       ).expires_at,
     ).toBeNull();
   });
+
+  test("a user edit is logged with what changed, not the raw request", async () => {
+    sqlite.exec(`
+      INSERT INTO users (id, username, email, created_at, updated_at)
+        VALUES ('u2', 'u2', 'u2@example.com', 0, 0);
+    `);
+    const jwt = await signJWT(
+      {
+        sub: "admin",
+        role: "admin",
+        sessionId: "s1",
+        email: "admin@example.com",
+        username: "admin",
+        display_name: "admin",
+        avatar_url: null,
+      },
+      jwtSecret,
+      3600,
+    );
+    const app = new Hono();
+    app.route("/api/admin", adminRoutes);
+    const res = await app.fetch(
+      new Request("https://prism.example/api/admin/users/u2", {
+        method: "PATCH",
+        headers: {
+          Cookie: `${SESSION_COOKIE}=${jwt}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          role: "owner",
+          display_name: " New ",
+          note: "x",
+        }),
+      }),
+      {
+        DB: d1(sqlite),
+        APP_URL: "https://prism.example",
+        KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+        KV_SESSIONS: new MemoryKv({
+          "system:jwt_secret": jwtSecret,
+        }) as unknown as KVNamespace,
+      } as unknown as Env,
+      executionCtx,
+    );
+    expect(res.status).toBe(200);
+    await Bun.sleep(10);
+    const row = sqlite
+      .query(
+        "SELECT metadata FROM audit_events WHERE action = 'admin.user.update' AND resource_id = 'u2'",
+      )
+      .get() as { metadata: string };
+    const meta = JSON.parse(row.metadata);
+    expect(meta.display_name).toBe("New");
+    expect(meta).not.toHaveProperty("role");
+    expect(meta).not.toHaveProperty("note");
+  });
 });
