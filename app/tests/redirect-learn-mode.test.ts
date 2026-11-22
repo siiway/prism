@@ -104,6 +104,18 @@ describe("an app with no redirect URIs", () => {
     expect(registered()).toBe("[]");
   });
 
+  test("won't send a silent request's error to an unchecked URI", async () => {
+    const res = await app.fetch(
+      new Request(
+        "https://prism.example/oauth/app-info?client_id=client_1&redirect_uri=https://evil.example/&response_type=code&scope=openid&prompt=none",
+      ),
+      testEnv(),
+      executionCtx,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "invalid_redirect_uri" });
+  });
+
   test("learns the first URI its owner approves", async () => {
     const res = await authorize("owner", "approve");
     expect(res.status).toBe(200);

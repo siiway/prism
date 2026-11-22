@@ -793,6 +793,15 @@ app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
     existingConsentAutoAuthorize &&
     exactConsentMatch;
 
+  // A prompt=none error is sent straight to redirect_uri. An app with no
+  // registered URI hasn't had this one approved by anyone yet, and a silent
+  // request can't approve it, so refuse rather than redirect there.
+  if (
+    prompt === "none" &&
+    parseRedirectUris(oauthApp.redirect_uris).length === 0
+  )
+    return c.json({ error: "invalid_redirect_uri" }, 400);
+
   let promptNoneError: string | null = null;
   if (prompt === "none") {
     if (!currentUser || reauthRequired) promptNoneError = "login_required";
