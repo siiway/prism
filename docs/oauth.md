@@ -718,7 +718,9 @@ Content-Type: application/json
   credentials, so a phishing URL can't change them.
 - The code is bound to your `client_id` and `redirect_uri`, and PKCE binds it to
   your verifier.
-- TOTP attempts are rate-limited, and a failed attempt uses up the challenge.
+- TOTP attempts are rate-limited, and a failed attempt uses up the challenge: the
+  user comes back with `error=access_denied` and `error_description=invalid_2fa`.
+  Create a new challenge to let them try again.
 - This can't protect against a fully compromised device, or against someone who
   holds your `client_secret`. Rotate secrets if you suspect a leak.
 

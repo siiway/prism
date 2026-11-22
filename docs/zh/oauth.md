@@ -606,7 +606,7 @@ Content-Type: application/json
 
 - 操作文案和重定向 URI 在第一步就已固定，而这一步需要你的应用凭据，因此钓鱼 URL 无法修改它们。
 - code 绑定到你的 `client_id` 和 `redirect_uri`，PKCE 又将它绑定到你的 verifier。
-- TOTP 尝试有速率限制，一次失败就会消耗掉当前挑战。
+- TOTP 尝试有速率限制，一次失败就会消耗掉当前挑战：用户会带着 `error=access_denied` 和 `error_description=invalid_2fa` 返回。要让用户重试，请创建新的挑战。
 - 这无法防御完全失陷的设备，也无法防御持有你 `client_secret` 的人。若怀疑泄露，请轮换密钥。
 
 ## 错误响应
