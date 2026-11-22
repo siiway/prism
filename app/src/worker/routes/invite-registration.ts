@@ -27,6 +27,7 @@ import { issueSession } from "../lib/session";
 import { toSessionUser } from "../lib/sessionUser";
 import { getConfig, getConfigValue } from "../lib/config";
 import { emailInUse } from "../lib/accountEmails";
+import { displayNameError } from "../lib/displayName";
 import { turnstileEndpointFor, type TurnstileVariant } from "../lib/turnstile";
 import { buildPublicCaptcha } from "../lib/captchaPublic";
 import { getIp } from "../lib/clientIp";
@@ -229,6 +230,10 @@ app.post("/auth/register-with-invite", async (c) => {
     return c.json({ error: "password_too_short" }, 400);
   if (!/^[a-z0-9_.-]{2,32}$/i.test(body.username))
     return c.json({ error: "username_invalid" }, 400);
+  if (body.display_name !== undefined) {
+    const nameErr = displayNameError(body.display_name);
+    if (nameErr) return c.json(nameErr, 400);
+  }
 
   const invite = await findInvite(c.env, body.invite_token);
   const now = Math.floor(Date.now() / 1000);
@@ -328,7 +333,7 @@ app.post("/auth/register-with-invite", async (c) => {
         email,
         body.username.toLowerCase().trim(),
         passwordHash,
-        body.display_name ?? body.username,
+        body.display_name?.trim() ?? body.username,
         team.id,
         invite.token,
         now,

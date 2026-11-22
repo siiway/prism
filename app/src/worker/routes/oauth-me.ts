@@ -7,6 +7,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { configBag } from "../lib/config";
+import { displayNameError } from "../lib/displayName";
 import {
   encryptSecret,
   hashLookupCandidate,
@@ -731,6 +732,8 @@ app.patch("/me/profile", async (c) => {
         { error: "field_empty", params: { field: "display_name" } },
         400,
       );
+    const nameErr = displayNameError(body.display_name);
+    if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
     values.push(body.display_name.trim());
   }
@@ -1327,6 +1330,8 @@ app.patch("/me/admin/users/:id", async (c) => {
     values.push(body.is_active ? 1 : 0);
   }
   if (body.display_name !== undefined) {
+    const nameErr = displayNameError(body.display_name);
+    if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
     values.push(body.display_name.trim());
   }

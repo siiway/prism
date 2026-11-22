@@ -123,3 +123,32 @@ test("sign-in without an identifier is a field error, not a crash", async () => 
   expect(res.status).toBe(400);
   expect(await res.json()).toMatchObject({ error: "fields_required" });
 });
+
+test("sign-up refuses an overlong display name", async () => {
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  const res = await app.fetch(
+    new Request("https://prism.example/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "new@example.com",
+        username: "newbie",
+        password: "a-long-enough-password",
+        display_name: "x".repeat(65),
+      }),
+    }),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  expect(res.status).toBe(400);
+  expect(await res.json()).toMatchObject({ error: "field_length" });
+  expect(
+    sqlite.query("SELECT id FROM users WHERE username = 'newbie'").get(),
+  ).toBeNull();
+});
