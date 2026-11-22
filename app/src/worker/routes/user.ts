@@ -379,8 +379,9 @@ app.patch("/me", async (c) => {
     .first<UserRow>();
   // Collect human-readable changes for the notification
   const changedFields: Record<string, string> = {};
+  // The values as stored, not as sent.
   if (body.display_name !== undefined)
-    changedFields.display_name = body.display_name;
+    changedFields.display_name = body.display_name.trim();
   if (body.avatar_url !== undefined)
     changedFields.avatar_url = body.avatar_url ?? "";
 
