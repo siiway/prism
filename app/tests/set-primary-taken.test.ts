@@ -156,3 +156,17 @@ test("an admin's switch drops a placeholder primary, as the user's own does", as
       .all(),
   ).toEqual([{ email: "mine@example.com" }]);
 });
+
+test("an alternate added by two requests at once is refused, not a crash", async () => {
+  // The other request's row lands between the check and the write.
+  sqlite.exec(`
+    CREATE TRIGGER race BEFORE INSERT ON user_emails
+      WHEN NEW.email = 'race@example.com'
+      BEGIN SELECT RAISE(ABORT, 'UNIQUE constraint failed: user_emails.email'); END;
+  `);
+  const res = await post("/api/user/me/emails", "victim", "s2", {
+    email: "race@example.com",
+  });
+  expect(res.status).toBe(409);
+  expect(await res.json()).toMatchObject({ error: "email_taken" });
+});

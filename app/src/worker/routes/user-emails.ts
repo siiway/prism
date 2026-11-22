@@ -89,11 +89,18 @@ app.post("/me/emails", async (c) => {
   const verifyToken = newEmailVerifyToken();
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
 
-  await c.env.DB.prepare(
-    "INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at) VALUES (?, ?, ?, 0, ?, ?)",
-  )
-    .bind(id, user.id, email, storedVerifyToken, now)
-    .run();
+  try {
+    await c.env.DB.prepare(
+      "INSERT INTO user_emails (id, user_id, email, verified, verify_token, created_at) VALUES (?, ?, ?, 0, ?, ?)",
+    )
+      .bind(id, user.id, email, storedVerifyToken, now)
+      .run();
+  } catch (err) {
+    // Added by another request between the check and the write.
+    if (err instanceof Error && err.message.includes("UNIQUE"))
+      return c.json({ error: "email_taken" }, 409);
+    throw err;
+  }
 
   // Send verification email if provider is configured
   const config = await getConfig(c.env.DB);
