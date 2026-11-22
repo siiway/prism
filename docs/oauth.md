@@ -366,6 +366,10 @@ save it, it isn't shown again), a `registration_access_token` and a
 `Authorization: Bearer <registration_access_token>` to read (`GET`), update
 (`PUT`) or deregister (`DELETE`) the client.
 
+Registration follows the same rules as creating an app in the dashboard: it
+fails with `403` while app creation is turned off for users, or for an account
+that may not create apps.
+
 For a `private_key_jwt` client, set `token_endpoint_auth_method` to
 `private_key_jwt` and include `jwks` or `jwks_uri`. A `jwks_uri` or
 `backchannel_logout_uri` must be HTTPS and must not point at a private or

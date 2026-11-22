@@ -10,6 +10,8 @@ import {
   timingSafeSecretEqual,
 } from "../lib/secretCrypto";
 import { randomBase64url, randomId } from "../lib/crypto";
+import { getConfigValue } from "../lib/config";
+import { guardCapability } from "../lib/userCapabilities";
 import { requireAuth, tryPatAuth } from "../middleware/auth";
 import {
   parseRedirectUris,
@@ -213,6 +215,18 @@ app.post(
   requireAuth,
   async (c) => {
     const user = c.get("user");
+
+    // The same gates as creating an app on the dashboard.
+    if (user.role !== "admin") {
+      const disabled = await getConfigValue(
+        c.env.DB,
+        "disable_user_create_app",
+      );
+      if (disabled) return c.json({ error: "app_creation_disabled" }, 403);
+    }
+    const capErr = await guardCapability(c.env.DB, user.id, "app:create");
+    if (capErr) return c.json({ error: capErr }, 403);
+
     const body = await c.req
       .json<DcrMetadata>()
       .catch(() => ({}) as DcrMetadata);

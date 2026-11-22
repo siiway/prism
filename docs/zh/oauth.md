@@ -322,6 +322,8 @@ Content-Type: application/json
 
 `201` 响应包含 `client_id`、`client_secret`（机密客户端；请保存，之后不再显示）、`registration_access_token` 和 `registration_client_uri`。使用该 URI 并携带 `Authorization: Bearer <registration_access_token>` 即可读取（`GET`）、更新（`PUT`）或注销（`DELETE`）该客户端。
 
+注册与在控制台创建应用遵循相同的规则：站点关闭了用户创建应用时，或该账号无权创建应用时，返回 `403`。
+
 对于 `private_key_jwt` 客户端，将 `token_endpoint_auth_method` 设为 `private_key_jwt`，并提供 `jwks` 或 `jwks_uri`。`jwks_uri` 或 `backchannel_logout_uri` 必须使用 HTTPS，且不得指向私有或保留地址。
 
 ## private_key_jwt 客户端认证（RFC 7523）
