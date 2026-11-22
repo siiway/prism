@@ -43,7 +43,14 @@ export function grantLikes(kind: GrantKind, teamId?: string): string[] {
   return kind === "site" ? SITE_GRANT_LIKES : [`%team:${teamId}:%`];
 }
 
-export const SITE_GRANT_LIKES = ["%site:%", "%admin:%"];
+/** Each site-level prefix at the start of a scope, in a JSON list
+ *  (`["site:...`, `,"admin:...`) or an older space-separated one. A bare
+ *  `%admin:%` would also match app scopes like `app:<id>:admin:panel`. */
+export const SITE_GRANT_LIKES = ["site:", "admin:"].flatMap((prefix) => [
+  `%"${prefix}%`,
+  `${prefix}%`,
+  `% ${prefix}%`,
+]);
 
 /** `(column LIKE ? OR ...)`, one placeholder per pattern. */
 export function likeAny(column: string, patterns: string[]): string {
