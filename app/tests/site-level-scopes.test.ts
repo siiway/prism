@@ -136,6 +136,26 @@ describe("admin:* scopes are site-level", () => {
     });
   });
 
+  test("a silent request for them gets consent_required", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    sqlite.run(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES ('c1', 'admin', 'client_1', '["openid","admin:users:write"]', ?, 1)`,
+      [now],
+    );
+    const res = await app.fetch(
+      new Request(
+        "https://prism.example/oauth/app-info?client_id=client_1&redirect_uri=https://tool.example/cb&response_type=code&scope=openid%20admin:users:write&prompt=none",
+        { headers: { Cookie: await sessionCookie("admin", "admin") } },
+      ),
+      testEnv(),
+      executionCtx,
+    );
+    expect(await res.json()).toMatchObject({
+      prompt_none_error: "consent_required",
+    });
+  });
+
   test("they count as a site grant for the admin list", () => {
     expect(grantMatcher("site")("admin:config:write")).toBe(true);
     expect(

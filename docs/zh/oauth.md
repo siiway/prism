@@ -381,7 +381,7 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 
 授权请求遵循以下 OpenID Connect 参数：
 
-- `prompt=none` — 不显示界面。如果用户需要登录则返回 `login_required`，如果缺少授权则返回 `consent_required`。
+- `prompt=none` — 不显示界面。如果用户需要登录则返回 `login_required`，如果缺少授权则返回 `consent_required`。站点级 scope 和团队 scope 始终需要经过授权页面，因此对它们发起静默请求会得到 `consent_required`。
 - `prompt=login` — 强制重新登录。
 - `prompt=consent` — 始终显示授权页面。
 - `max_age=<秒>` — 要求登录时间不早于该时长。

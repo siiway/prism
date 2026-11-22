@@ -447,7 +447,8 @@ stays bound to it. Exchanged tokens can't be refreshed.
 The authorization request honors these OpenID Connect parameters:
 
 - `prompt=none` — no UI. Returns `login_required` if the user must sign in, or
-  `consent_required` if consent is missing.
+  `consent_required` if consent is missing. Site-level and team scopes always
+  need the consent screen, so a silent request for them gets `consent_required`.
 - `prompt=login` — force a fresh sign-in.
 - `prompt=consent` — always show the consent screen.
 - `max_age=<seconds>` — require a sign-in no older than this.

@@ -796,6 +796,11 @@ app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
   let promptNoneError: string | null = null;
   if (prompt === "none") {
     if (!currentUser || reauthRequired) promptNoneError = "login_required";
+    // Site-level scopes and team grants are only ever approved on the
+    // interactive screen (2FA, the phrase, the team picker), even for a
+    // first-party app or a remembered approval, so they can't be silent.
+    else if (hasSiteScopes(scopes) || needsTeamGrant)
+      promptNoneError = "consent_required";
     else if (
       !oauthApp.is_first_party &&
       (!existingConsentAutoAuthorize || !exactConsentMatch)
