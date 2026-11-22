@@ -80,6 +80,17 @@ describe("wildcard redirect URIs", () => {
     );
   });
 
+  test("a * ending the host also covers the port, as it always did", () => {
+    expect(matches("http://localhost*", "http://localhost:5173/cb")).toBe(true);
+    expect(matches("http://localhost*", "http://localhost/cb")).toBe(true);
+    expect(matches("https://example.com*", "https://example.com:8443/")).toBe(
+      true,
+    );
+    expect(matches("http://localhost*", "http://localhost.evil.com/cb")).toBe(
+      false,
+    );
+  });
+
   test("a * ending the port also covers the path, as it always did", () => {
     const reason = (value: string) =>
       validateRedirectUriEntry({ type: "wildcard", value });

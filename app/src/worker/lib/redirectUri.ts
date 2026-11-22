@@ -199,13 +199,15 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
   // the path, as one ending the host does: port 3000, any path.
   if (port !== null && !rest && /^\d+\*$/.test(port)) port = port.slice(0, -1);
   if (port !== null && !/^(\d+|\*)$/.test(port)) return "not_url";
-  // A `*` ending the host (`https://example.com*`) has always stood for
-  // the path, which the old whole-string glob ran on into. It is read that
-  // way, so the host is exactly example.com and never example.community.
-  // With a port or path after it, it could only mean more host: refused.
+  // A `*` ending the host (`http://localhost*`) has always stood for
+  // the port and path, which the old whole-string glob ran on into. It is
+  // read that way, so the host is exactly localhost and never
+  // localhost.evil.com. With a port or path after it, it could only mean
+  // more host: refused.
   if (host.endsWith("*")) {
     if (port !== null || rest) return "wildcard_host";
     host = host.slice(0, -1);
+    port = "*";
   }
   // The host must be a real one with the stars filled in, and more than
   // stars and dots: `https://*/cb` would accept every site.
