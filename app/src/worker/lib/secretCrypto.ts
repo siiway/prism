@@ -129,8 +129,18 @@ async function getKeys(env: Env): Promise<KeyPair> {
       );
       return { aes, hmac };
     })();
+    // A failed read (a transient secrets-store error, say) must not stay
+    // cached, or every later request in this isolate would fail with it.
+    cachedKeys.catch(() => {
+      cachedKeys = null;
+    });
   }
   return cachedKeys;
+}
+
+/** Forget the cached keys. For tests. */
+export function resetSecretKeyCache(): void {
+  cachedKeys = null;
 }
 
 export function isEncryptedSecret(value: string | null | undefined): boolean {
