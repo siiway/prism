@@ -474,7 +474,7 @@
       "domainPlaceholder": "Type in your domain…",
       "domainAction": "Continue",
       "secureTitle": "Secure your account",
-      "secureDesc": "Add a passkey or an authenticator app so a password alone can't get into your account.",
+      "secureDesc": "Add an authenticator app so a password alone can't get into your account. A passkey lets you sign in without a password.",
       "secureAction": "Set up security",
       "linkTitle": "Link your accounts",
       "linkDesc": "Connect the accounts you already use to sign in faster and recover access.",

@@ -474,7 +474,7 @@
       "domainPlaceholder": "输入您的域名…",
       "domainAction": "继续",
       "secureTitle": "保护您的账户",
-      "secureDesc": "添加通行密钥或身份验证器应用，让仅凭密码无法进入您的账户。",
+      "secureDesc": "添加身份验证器应用，让仅凭密码无法进入您的账户。通行密钥让您无需密码即可登录。",
       "secureAction": "设置安全选项",
       "linkTitle": "关联您的账户",
       "linkDesc": "关联您常用的账户，以便更快登录并找回访问权限。",
