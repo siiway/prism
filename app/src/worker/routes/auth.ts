@@ -450,8 +450,10 @@ app.get("/verify-email", async (c) => {
   const now = Math.floor(Date.now() / 1000);
 
   const tokenLookup = await hashLookupCandidate(c.env, token);
-  if (!tokenLookup || !emailVerifyTokenFresh(token, now))
+  if (!tokenLookup)
     return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
+  // A real link that's too old says so, so the user knows to ask again.
+  const expired = !emailVerifyTokenFresh(token, now);
 
   if (isAlt) {
     // Alternate email verification
@@ -462,6 +464,8 @@ app.get("/verify-email", async (c) => {
       .first<{ id: string; verified: number }>();
     if (!altEmail)
       return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
+    if (expired)
+      return c.redirect(`${c.env.APP_URL}/verify-email?status=expired`);
 
     await c.env.DB.prepare(
       "UPDATE user_emails SET verified = 1, verify_token = NULL, verified_at = ? WHERE id = ?",
@@ -479,6 +483,8 @@ app.get("/verify-email", async (c) => {
     .bind(token, tokenLookup)
     .first<UserRow>();
   if (!user) return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
+  if (expired)
+    return c.redirect(`${c.env.APP_URL}/verify-email?status=expired`);
 
   await c.env.DB.prepare(
     "UPDATE users SET email_verified = 1, email_verify_token = NULL, updated_at = ? WHERE id = ?",

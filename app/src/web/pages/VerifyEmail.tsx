@@ -51,6 +51,7 @@ export function VerifyEmail() {
 
   const status = params.get("status");
   const success = status === "success";
+  const expired = status === "expired";
 
   // Invalidate cached user data so email_verified updates
   if (success && user) {
@@ -75,13 +76,17 @@ export function VerifyEmail() {
         <Title2>
           {success
             ? t("verifyEmail.successTitle")
-            : t("verifyEmail.invalidTitle")}
+            : expired
+              ? t("verifyEmail.expiredTitle")
+              : t("verifyEmail.invalidTitle")}
         </Title2>
 
         <Text style={{ color: tokens.colorNeutralForeground3 }}>
           {success
             ? t("verifyEmail.successDesc")
-            : t("verifyEmail.invalidDesc")}
+            : expired
+              ? t("verifyEmail.expiredDesc")
+              : t("verifyEmail.invalidDesc")}
         </Text>
 
         <Button

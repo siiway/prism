@@ -67,7 +67,7 @@ describe("email verification links", () => {
     const { location, verified } = await verify(
       newEmailVerifyToken(now - 2 * 86400),
     );
-    expect(location).toContain("status=invalid");
+    expect(location).toContain("status=expired");
     expect(verified).toBe(0);
   });
 });

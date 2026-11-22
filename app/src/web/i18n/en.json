@@ -2872,6 +2872,8 @@
     "successDesc": "Your email address has been successfully verified. You can now use all features of your account.",
     "invalidTitle": "Verification failed",
     "invalidDesc": "This verification link is invalid or has already been used. Please request a new verification email from your profile.",
+    "expiredTitle": "Link expired",
+    "expiredDesc": "Verification links last 24 hours. Please request a new verification email from your profile.",
     "goToDashboard": "Go to Dashboard",
     "goToLogin": "Go to Login"
   },
