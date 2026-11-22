@@ -90,6 +90,18 @@ describe("addresses stored before everything was lowercase", () => {
     expect(await emailInUse(d1(db), "other@example.com")).toBe(true);
   });
 
+  test("rows that already overlapped can still be written", () => {
+    rerun(`
+      UPDATE users SET email_verified = 1 WHERE id = 'b';
+      INSERT INTO user_emails (id, user_id, email, verified, created_at)
+        VALUES ('e7', 'a', 'b@example.com', 1, 0);
+    `);
+    db.exec(
+      "UPDATE user_emails SET verified = 1, verified_via = 'admin' WHERE id = 'e7'",
+    );
+    db.exec("UPDATE users SET email_verified = 1 WHERE id = 'b'");
+  });
+
   test("one that only differs in case from another row is left alone", () => {
     rerun(`
       INSERT INTO users (id, username, email, created_at, updated_at)

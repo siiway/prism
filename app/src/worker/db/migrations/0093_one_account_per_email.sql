@@ -52,7 +52,8 @@ END;
 
 CREATE TRIGGER user_emails_not_another_accounts_update
 BEFORE UPDATE OF email, verified ON user_emails
-WHEN NEW.verified = 1 AND EXISTS (
+WHEN NEW.verified = 1 AND (NEW.email != OLD.email OR OLD.verified = 0)
+ AND EXISTS (
   SELECT 1 FROM users
    WHERE email = NEW.email AND email_verified = 1 AND id != NEW.user_id
 )
