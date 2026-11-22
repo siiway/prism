@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import connections from "../src/worker/routes/connections";
+import connections, {
+  trySocialEmailVerify,
+} from "../src/worker/routes/connections";
 import { d1, executionCtx, MemoryKv, migratedDatabase } from "./setup/d1";
 
 const resetRequest = JSON.stringify({ requested_at: 0, requested_by: "admin" });
@@ -105,4 +107,25 @@ test("losing a race for the username keeps the pending sign-in", async () => {
   expect(res.status).toBe(409);
   expect(await res.json()).toMatchObject({ error: "email_or_username_taken" });
   expect(await cache.get("social:pending:k")).toBe(pending);
+});
+
+test("losing a race for the address leaves it unverified instead of failing the sign-in", async () => {
+  sqlite.run(
+    "INSERT INTO users (id, username, email, created_at, updated_at) VALUES ('u', 'u', 'u@example.com', 0, 0)",
+  );
+  // Free when checked, owned elsewhere by the time of the write.
+  sqlite.run(`CREATE TRIGGER raced BEFORE UPDATE OF email_verified ON users
+    WHEN NEW.id = 'u'
+    BEGIN SELECT RAISE(ABORT, 'UNIQUE constraint failed: email belongs to another account'); END`);
+  await trySocialEmailVerify(
+    d1(sqlite),
+    "u",
+    "u@example.com",
+    0,
+    "u@example.com",
+    "github",
+  );
+  expect(
+    sqlite.query("SELECT email_verified FROM users WHERE id = 'u'").get(),
+  ).toEqual({ email_verified: 0 });
 });

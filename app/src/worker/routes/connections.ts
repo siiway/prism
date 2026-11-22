@@ -1792,7 +1792,7 @@ app.delete("/:id", requireAuth, async (c) => {
  * Auto-verify a user's email if the social provider confirms the same address.
  * Checks TTL expiry for previously social-verified emails.
  */
-async function trySocialEmailVerify(
+export async function trySocialEmailVerify(
   db: D1Database,
   userId: string,
   userEmail: string,
@@ -1809,12 +1809,19 @@ async function trySocialEmailVerify(
     // Not yet verified — auto-verify via this provider, unless another
     // account has proved it owns the address.
     if (await emailOwnedElsewhere(db, userEmail, userId)) return;
-    await db
-      .prepare(
-        "UPDATE users SET email_verified = 1, email_verified_via = ?, email_verified_at = ?, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
-      )
-      .bind(providerSlug, now, now, userId)
-      .run();
+    try {
+      await db
+        .prepare(
+          "UPDATE users SET email_verified = 1, email_verified_via = ?, email_verified_at = ?, email_verify_code = NULL, email_verify_token = NULL, updated_at = ? WHERE id = ?",
+        )
+        .bind(providerSlug, now, now, userId)
+        .run();
+    } catch (err) {
+      // Taken between the check and the write: the sign-in goes on, with
+      // the address left unverified.
+      if (err instanceof Error && err.message.includes("UNIQUE")) return;
+      throw err;
+    }
     console.log(
       `[social-verify] Auto-verified email for user ${userId} via ${providerSlug}`,
     );
