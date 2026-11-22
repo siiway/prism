@@ -15,6 +15,7 @@ import {
 } from "../lib/secretCrypto";
 import {
   ADMIN_CONFIG_KEYS,
+  decidesWhereSecretsGo,
   prepareConfigUpdates,
   saveConfigUpdates,
 } from "../lib/adminConfig";
@@ -1784,12 +1785,14 @@ app.patch("/me/admin/config", async (c) => {
   const body = await c.req.json<Record<string, unknown>>();
 
   // The keys the admin dashboard can set, with the same checks, minus
-  // credentials and the sign-in providers' client IDs.
+  // credentials, the settings that decide where credentials are sent, and
+  // the sign-in providers' client IDs.
   const prepared = await prepareConfigUpdates(
     body,
     (k) =>
       ADMIN_CONFIG_KEYS.has(k) &&
       !SENSITIVE_CONFIG_KEYS.has(k) &&
+      !decidesWhereSecretsGo(k) &&
       !k.endsWith("_client_id"),
   );
   if ("refused" in prepared) return c.json(prepared.refused, 400);

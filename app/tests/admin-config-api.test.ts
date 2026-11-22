@@ -78,6 +78,8 @@ describe("admin:config API", () => {
     const res = await call("PATCH", {
       imap_password: "new",
       discord_bot_token: "new",
+      smtp_host: "attacker.example",
+      cap_api_endpoint: "https://attacker.example",
       github_client_id: "new",
       made_up_key: 1,
     });
@@ -85,6 +87,7 @@ describe("admin:config API", () => {
     expect(await res.json()).toMatchObject({ error: "nothing_to_update" });
     expect(stored("imap_password")).toBe('"imap-secret"');
     expect(stored("made_up_key")).toBeNull();
+    expect(stored("smtp_host")).toBeNull();
   });
 
   test("writing goes through the admin dashboard's checks", async () => {

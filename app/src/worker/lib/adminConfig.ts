@@ -141,6 +141,20 @@ export const ADMIN_CONFIG_KEYS: ReadonlySet<string> = new Set([
   "restricted_dissolve_grace_hours",
 ]);
 
+/** Settings that decide where a stored secret is sent: the mail servers
+ *  Prism signs in to with the SMTP and IMAP passwords, the email provider
+ *  that gets the API key, and the endpoint that gets the Cap secret. Whoever
+ *  can change them can have the secret sent to themselves. */
+export function decidesWhereSecretsGo(key: string): boolean {
+  return (
+    key.startsWith("smtp_") ||
+    key.startsWith("imap_") ||
+    key === "email_provider" ||
+    key === "email_receive_provider" ||
+    key === "cap_api_endpoint"
+  );
+}
+
 /** Keep the allowed keys of a request body, validate them, and normalise
  *  what needs it. `refused` is the API error to answer with (status 400)
  *  when a value is not accepted. */
