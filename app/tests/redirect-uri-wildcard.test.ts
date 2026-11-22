@@ -95,6 +95,18 @@ describe("wildcard redirect URIs", () => {
     expect(matches("http://[::1]*", "http://[::1]:3000/cb")).toBe(true);
   });
 
+  test("an entry means what it says once written as a URL", () => {
+    const reason = (value: string) =>
+      validateRedirectUriEntry({ type: "wildcard", value });
+    expect(
+      matches("https://example.com:0443/cb", "https://example.com/cb"),
+    ).toBe(true);
+    expect(reason("https://example.com:65536/cb")).toBe("not_url");
+    // Resolving `..` would drop the star.
+    expect(reason("https://example.com/a/*/../cb")).toBe("not_url");
+    expect(reason("https://example.com/a/../*/cb")).toBeNull();
+  });
+
   test("a * ending the port also covers the path, as it always did", () => {
     const reason = (value: string) =>
       validateRedirectUriEntry({ type: "wildcard", value });

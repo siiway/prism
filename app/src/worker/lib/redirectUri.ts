@@ -200,6 +200,12 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
   // the path, as one ending the host does: port 3000, any path.
   if (port !== null && !rest && /^\d+\*$/.test(port)) port = port.slice(0, -1);
   if (port !== null && !/^(\d+|\*)$/.test(port)) return "not_url";
+  // Written as URL parsing writes a candidate's port (`:0443` is 443), or
+  // it would never be equal to one.
+  if (port !== null && port !== "*") {
+    if (Number(port) > 65535) return "not_url";
+    port = String(Number(port));
+  }
   // A `*` ending the host (`http://localhost*`) has always stood for
   // the port and path, which the old whole-string glob ran on into. It is
   // read that way, so the host is exactly localhost and never
@@ -249,7 +255,12 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
   // otherwise only the root. A query with no path is the root's query.
   let path = rest;
   if (!path) path = authority.endsWith("*") ? "*" : "/";
-  else path = encodedLikeAUrl(path);
+  else {
+    path = encodedLikeAUrl(path);
+    // A dot segment can take a star with it (`/a/*/../cb` is `/a/cb`), and
+    // the entry would match something other than what was written.
+    if (path.split("*").length !== rest.split("*").length) return "not_url";
+  }
   return {
     scheme: `${scheme.toLowerCase()}:`,
     host: host.toLowerCase(),
