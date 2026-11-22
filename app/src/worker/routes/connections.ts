@@ -13,6 +13,8 @@ import {
 } from "../lib/crypto";
 import { getConfig } from "../lib/config";
 import { emailInUse } from "../lib/accountEmails";
+import { optionalDisplayName } from "../lib/displayName";
+import { DISPLAY_NAME_MAX_LENGTH } from "../../shared/limits";
 import { getIp } from "../lib/clientIp";
 import { decryptSecret, encryptSecret } from "../lib/secretCrypto";
 import {
@@ -1376,11 +1378,16 @@ app.post("/complete", async (c) => {
       .toLowerCase()
       .replace(/[^a-z0-9_]/g, "_")
       .slice(0, 32);
-    const display_name = (
-      body.display_name ?? extractDisplayName(baseProvider, state.profileData)
-    )
-      .trim()
-      .slice(0, 64);
+    // A name the user typed is checked like any other; failing that, the
+    // provider's (cut to fit), and failing that, the username.
+    const chosenName = optionalDisplayName(body.display_name);
+    if (chosenName.error) return c.json(chosenName.error, 400);
+    const display_name =
+      (chosenName.name ??
+        extractDisplayName(baseProvider, state.profileData)
+          .trim()
+          .slice(0, DISPLAY_NAME_MAX_LENGTH)) ||
+      username;
 
     if (!username)
       return c.json(

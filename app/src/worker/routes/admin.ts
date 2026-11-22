@@ -70,7 +70,7 @@ import adminResetRoutes from "./admin-reset";
 import adminInviteRoutes from "./admin-invites";
 import adminSourceRoutes from "./admin-sources";
 import type { ImageProxyResourceType } from "../../shared/codes";
-import { DISPLAY_NAME_MAX_LENGTH } from "../../shared/limits";
+import { displayNameError } from "../lib/displayName";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -328,23 +328,10 @@ app.patch("/users/:id", async (c) => {
     values.push(null, null);
   }
   if (body.display_name !== undefined) {
-    if (
-      body.display_name.length < 1 ||
-      body.display_name.length > DISPLAY_NAME_MAX_LENGTH
-    )
-      return c.json(
-        {
-          error: "field_length",
-          params: {
-            field: "display_name",
-            min: 1,
-            max: DISPLAY_NAME_MAX_LENGTH,
-          },
-        },
-        400,
-      );
+    const nameErr = displayNameError(body.display_name);
+    if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
-    values.push(body.display_name);
+    values.push(body.display_name.trim());
   }
   if (body.avatar_url !== undefined) {
     if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {

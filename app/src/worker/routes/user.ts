@@ -37,10 +37,8 @@ import type { RestrictedCapability, UserRow, Variables } from "../types";
 import notificationRoutes from "./user-notifications";
 import tokenRoutes from "./user-tokens";
 import emailRoutes from "./user-emails";
-import {
-  PASSWORD_MIN_LENGTH,
-  DISPLAY_NAME_MAX_LENGTH,
-} from "../../shared/limits";
+import { PASSWORD_MIN_LENGTH } from "../../shared/limits";
+import { displayNameError } from "../lib/displayName";
 
 type AppEnv = { Bindings: Env; Variables: Variables };
 const app = new Hono<AppEnv>();
@@ -136,23 +134,10 @@ app.patch("/me", async (c) => {
   const values: unknown[] = [];
 
   if (body.display_name !== undefined) {
-    if (
-      body.display_name.length < 1 ||
-      body.display_name.length > DISPLAY_NAME_MAX_LENGTH
-    )
-      return c.json(
-        {
-          error: "field_length",
-          params: {
-            field: "display_name",
-            min: 1,
-            max: DISPLAY_NAME_MAX_LENGTH,
-          },
-        },
-        400,
-      );
+    const nameErr = displayNameError(body.display_name);
+    if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
-    values.push(body.display_name);
+    values.push(body.display_name.trim());
   }
   if (body.avatar_url !== undefined) {
     if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {

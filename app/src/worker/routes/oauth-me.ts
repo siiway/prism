@@ -748,11 +748,6 @@ app.patch("/me/profile", async (c) => {
   const values: unknown[] = [];
 
   if (body.display_name !== undefined) {
-    if (!body.display_name.trim())
-      return c.json(
-        { error: "field_empty", params: { field: "display_name" } },
-        400,
-      );
     const nameErr = displayNameError(body.display_name);
     if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
