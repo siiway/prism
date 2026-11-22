@@ -160,7 +160,8 @@ an all-teams notice and a team picker.
 Cross-instance scopes can only be granted by a site admin, who must confirm with
 2FA and type the phrase `grant site access`. The `admin:*` scopes above count as
 site scopes too: they need the same confirmation and are never approved
-automatically.
+automatically. When anyone else signs in, site scopes are dropped from the
+request, so the rest of it can still be approved silently or remembered.
 
 | Scope               | Grants                         |
 | ------------------- | ------------------------------ |

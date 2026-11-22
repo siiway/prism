@@ -135,7 +135,7 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 #### 站点 scope
 
-跨实例 scope 只能由站点管理员授予，且必须通过 2FA 确认并输入短语 `grant site access`。上文的 `admin:*` scope 同样属于站点 scope：需要同样的确认，且从不自动批准。
+跨实例 scope 只能由站点管理员授予，且必须通过 2FA 确认并输入短语 `grant site access`。上文的 `admin:*` scope 同样属于站点 scope：需要同样的确认，且从不自动批准。其他用户登录时，站点 scope 会从请求中移除，因此请求的其余部分仍可被静默批准或被记住。
 
 | Scope               | 授予的权限                |
 | ------------------- | ------------------------- |

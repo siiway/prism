@@ -622,22 +622,31 @@ app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
 
   const requestedScopes = parseScopeParam(scope);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
-  const [{ scopes, appScopes, rejected }, isVerified] = await Promise.all([
-    resolveRequestedScopes(
-      c.env.DB,
-      c.env.APP_URL,
-      requestedScopes,
-      allowedScopes,
-      oauthApp.client_id,
-    ),
-    computeIsVerified(
-      c.env.DB,
-      oauthApp.owner_id,
-      oauthApp.website_url,
-      oauthApp.redirect_uris,
-      oauthApp.team_id,
-    ),
-  ]);
+  const [{ scopes: resolvedScopes, appScopes, rejected }, isVerified] =
+    await Promise.all([
+      resolveRequestedScopes(
+        c.env.DB,
+        c.env.APP_URL,
+        requestedScopes,
+        allowedScopes,
+        oauthApp.client_id,
+      ),
+      computeIsVerified(
+        c.env.DB,
+        oauthApp.owner_id,
+        oauthApp.website_url,
+        oauthApp.redirect_uris,
+        oauthApp.team_id,
+      ),
+    ]);
+
+  // Only an admin can be granted site-level scopes. For anyone else they
+  // are left out, as the consent screen would decline them anyway, so the
+  // rest of the request can still be remembered or approved silently.
+  const scopes =
+    currentUser && currentUser.role !== "admin"
+      ? resolvedScopes.filter((s) => !isSiteLevelScope(s))
+      : resolvedScopes;
 
   // If the app requests team-scoped permissions, load the teams where the
   // authenticated user is owner or admin so the consent UI can show a picker.

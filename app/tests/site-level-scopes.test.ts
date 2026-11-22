@@ -189,6 +189,32 @@ describe("admin:* scopes are site-level", () => {
     });
   });
 
+  test("a non-admin's request leaves them out, so a remembered approval still applies", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    sqlite.run(
+      `INSERT INTO oauth_consents (id, user_id, client_id, scopes, granted_at, auto_authorize)
+       VALUES ('c1', 'user', 'client_1', '["openid"]', ?, 1)`,
+      [now],
+    );
+    const cookie = await sessionCookie("user", "user");
+    for (const prompt of ["", "&prompt=none"]) {
+      const res = await app.fetch(
+        new Request(
+          `https://prism.example/oauth/app-info?client_id=client_1&redirect_uri=https://tool.example/cb&response_type=code&scope=openid%20admin:users:write${prompt}`,
+          { headers: { Cookie: cookie } },
+        ),
+        testEnv(),
+        executionCtx,
+      );
+      expect(await res.json()).toMatchObject({
+        scopes: ["openid"],
+        requires_site_grant: false,
+        auto_authorize_eligible: true,
+        prompt_none_error: null,
+      });
+    }
+  });
+
   test("they count as a site grant for the admin list", () => {
     expect(grantMatcher("site")("admin:config:write")).toBe(true);
     expect(
