@@ -49,3 +49,31 @@ describe("pending social sign-in routes", () => {
     expect(await cache.get("admin:reset-request")).toBe(resetRequest);
   });
 });
+
+test("a sign-up with a fixable mistake keeps the pending sign-in", async () => {
+  sqlite.run(
+    "INSERT INTO users (id, username, email, created_at, updated_at) VALUES ('t', 'taken', 't@example.com', 0, 0)",
+  );
+  const pending = JSON.stringify({
+    type: "register",
+    provider: "github",
+    providerUserId: "1",
+    providerEmail: null,
+    profileData: {},
+    accessToken: "a",
+    refreshToken: null,
+    tokenExpiresAt: null,
+  });
+  await cache.put("social:pending:k", pending);
+  const res = await send("/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      key: "social:pending:k",
+      action: "register",
+      username: "taken",
+    }),
+  });
+  expect(res.status).toBe(409);
+  expect(await cache.get("social:pending:k")).toBe(pending);
+});
