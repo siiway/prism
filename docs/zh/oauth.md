@@ -87,33 +87,33 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 
 #### 权限范围
 
-| 范围                   | 包含的声明 / 授予的访问                        |
-| ---------------------- | ---------------------------------------------- |
-| `openid`               | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须） |
-| `profile`              | `name`、`preferred_username`、`picture`        |
-| `profile:write`        | 更新用户的个人资料（名称、头像）               |
-| `email`                | `email`、`email_verified`                      |
-| `apps:read`            | 列出用户拥有的应用                             |
-| `apps:write`           | 创建、更新和删除用户的应用                     |
-| `teams:read`           | 列出用户的团队                                 |
-| `teams:write`          | 更新团队设置并管理成员                         |
-| `teams:create`         | 创建团队                                       |
-| `teams:delete`         | 删除团队                                       |
-| `domains:read`         | 列出用户的域名                                 |
-| `domains:write`        | 添加和删除域名                                 |
-| `gpg:read`             | 列出用户的 GPG 公钥                            |
-| `gpg:write`            | 添加和删除 GPG 公钥                            |
-| `social:read`          | 列出用户已关联的社交账号                       |
-| `social:write`         | 断开社交账号关联                               |
-| `admin:users:read`     | 读取所有用户账号（仅限管理员）                 |
-| `admin:users:write`    | 修改用户账号（仅限管理员）                     |
-| `admin:users:delete`   | 删除用户账号（仅限管理员）                     |
-| `admin:config:read`    | 读取实例配置，不含凭据（仅限管理员）           |
-| `admin:config:write`   | 更新实例配置，凭据除外（仅限管理员）           |
-| `admin:invites:read`   | 列出邀请（仅限管理员）                         |
-| `admin:invites:create` | 创建邀请（仅限管理员）                         |
-| `admin:invites:delete` | 删除邀请（仅限管理员）                         |
-| `offline_access`       | 签发刷新令牌                                   |
+| 范围                   | 包含的声明 / 授予的访问                                                          |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| `openid`               | `sub`、`iss`、`aud`、`iat`、`exp`（OIDC 必须）                                   |
+| `profile`              | `name`、`preferred_username`、`picture`                                          |
+| `profile:write`        | 更新用户的个人资料（名称、头像）                                                 |
+| `email`                | `email`、`email_verified`                                                        |
+| `apps:read`            | 列出用户拥有的应用                                                               |
+| `apps:write`           | 创建、更新和删除用户的应用                                                       |
+| `teams:read`           | 列出用户的团队                                                                   |
+| `teams:write`          | 更新团队设置并管理成员                                                           |
+| `teams:create`         | 创建团队                                                                         |
+| `teams:delete`         | 删除团队                                                                         |
+| `domains:read`         | 列出用户的域名                                                                   |
+| `domains:write`        | 添加和删除域名                                                                   |
+| `gpg:read`             | 列出用户的 GPG 公钥                                                              |
+| `gpg:write`            | 添加和删除 GPG 公钥                                                              |
+| `social:read`          | 列出用户已关联的社交账号                                                         |
+| `social:write`         | 断开社交账号关联                                                                 |
+| `admin:users:read`     | 读取所有用户账号（仅限管理员）                                                   |
+| `admin:users:write`    | 修改用户账号（仅限管理员）                                                       |
+| `admin:users:delete`   | 删除用户账号（仅限管理员）                                                       |
+| `admin:config:read`    | 读取实例配置，不含凭据（仅限管理员）                                             |
+| `admin:config:write`   | 更新实例配置，但凭据以及凭据所发送到的邮件服务器和验证码服务器除外（仅限管理员） |
+| `admin:invites:read`   | 列出邀请（仅限管理员）                                                           |
+| `admin:invites:create` | 创建邀请（仅限管理员）                                                           |
+| `admin:invites:delete` | 删除邀请（仅限管理员）                                                           |
+| `offline_access`       | 签发刷新令牌                                                                     |
 
 应用也可以向其他应用暴露自己的 scope；参见[跨应用权限](app-permissions.md)。
 
