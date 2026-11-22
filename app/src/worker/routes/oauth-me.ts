@@ -7,6 +7,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { configBag, getConfigValue } from "../lib/config";
+import { validateImageUrl } from "../lib/imageValidation";
 import { inviteExpiryFromDays } from "../lib/inviteExpiry";
 import { displayNameError } from "../lib/displayName";
 import {
@@ -1342,6 +1343,13 @@ app.patch("/me/admin/users/:id", async (c) => {
     avatar_url?: string | null;
   }>();
 
+  // The same guards as the admin dashboard: an app can't lock out the admin
+  // whose token it holds.
+  if (targetId === resolved.userId && body.role === "user")
+    return c.json({ error: "cannot_demote_self" }, 403);
+  if (targetId === resolved.userId && body.is_active === false)
+    return c.json({ error: "cannot_disable_self" }, 403);
+
   const now = Math.floor(Date.now() / 1000);
   const updates: string[] = [];
   const values: unknown[] = [];
@@ -1367,9 +1375,14 @@ app.patch("/me/admin/users/:id", async (c) => {
     applied.display_name = body.display_name.trim();
   }
   if ("avatar_url" in body) {
+    // An uploaded asset, or an image URL that checks out, as on the dashboard.
+    if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
+      const imgErr = await validateImageUrl(body.avatar_url);
+      if (imgErr) return c.json(imgErr, 400);
+    }
     updates.push("avatar_url = ?");
-    values.push(body.avatar_url ?? null);
-    applied.avatar_url = body.avatar_url ?? null;
+    values.push(body.avatar_url || null);
+    applied.avatar_url = body.avatar_url || null;
   }
 
   if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);

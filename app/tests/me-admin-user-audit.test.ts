@@ -61,4 +61,45 @@ describe("a user change made with an app token", () => {
     expect(meta).not.toHaveProperty("role");
     expect(meta).not.toHaveProperty("note");
   });
+
+  test("gets the dashboard's guards", async () => {
+    const app = new Hono();
+    app.route("/api/oauth", meRoutes);
+    const patch = (id: string, body: unknown) =>
+      app.fetch(
+        new Request(`https://prism.example/api/oauth/me/admin/users/${id}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: "Bearer tok",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        }),
+        {
+          DB: d1(sqlite),
+          APP_URL: "https://prism.example",
+          KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+          KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+        } as unknown as Env,
+        executionCtx,
+      );
+    const demote = await patch("admin", { role: "user" });
+    expect(demote.status).toBe(403);
+    expect(await demote.json()).toMatchObject({ error: "cannot_demote_self" });
+    const disable = await patch("admin", { is_active: false });
+    expect(await disable.json()).toMatchObject({
+      error: "cannot_disable_self",
+    });
+    const avatar = await patch("u1", {
+      avatar_url: "http://tracker.example/x",
+    });
+    expect(avatar.status).toBe(400);
+    expect(
+      (
+        sqlite.query("SELECT avatar_url FROM users WHERE id = 'u1'").get() as {
+          avatar_url: string | null;
+        }
+      ).avatar_url,
+    ).toBeNull();
+  });
 });
