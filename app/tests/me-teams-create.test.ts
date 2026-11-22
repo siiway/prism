@@ -82,3 +82,17 @@ test("a team's avatar set with a token gets the dashboard's check", async () => 
     sqlite.query("SELECT avatar_url FROM teams WHERE id = 't'").get(),
   ).toEqual({ avatar_url: null });
 });
+
+test("renaming a team with a token renames its team-user too", async () => {
+  sqlite.exec(`
+    INSERT INTO teams (id, name, created_at, updated_at) VALUES ('t', 'Crew', 0, 0);
+    INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES ('t', 'u', 'owner', 0);
+    INSERT INTO users (id, username, email, display_name, kind, created_at, updated_at)
+      VALUES ('t', 'team:t', 'team-t@teams.invalid', 'Crew', 'team', 0, 0);
+  `);
+  const res = await send("PATCH", "/me/teams/t", { name: "Band" });
+  expect(res.status).toBe(200);
+  expect(
+    sqlite.query("SELECT display_name FROM users WHERE id = 't'").get(),
+  ).toEqual({ display_name: "Band" });
+});

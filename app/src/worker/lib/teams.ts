@@ -415,6 +415,25 @@ export function teamUserSyntheticEmail(teamId: string): string {
   return `team-${teamId}@teams.invalid`;
 }
 
+/** Copy a team's name and avatar to its team-user row, which admin and
+ *  profile views show for the apps the team owns. Run after any change to
+ *  either. */
+export function syncTeamUserStatement(
+  db: D1Database,
+  teamId: string,
+  now: number,
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE users
+          SET display_name = (SELECT name FROM teams WHERE id = ?1),
+              avatar_url = (SELECT avatar_url FROM teams WHERE id = ?1),
+              updated_at = ?2
+        WHERE id = ?1 AND kind = 'team'`,
+    )
+    .bind(teamId, now);
+}
+
 /** The writes that stand a team up, for one batch: its row, the synthetic
  *  team-user that the team's apps are owned by (kind='team' rules out
  *  sign-in, sessions, social linking and the like; its id is the team's,

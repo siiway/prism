@@ -53,6 +53,7 @@ import {
   listEffectiveTeamMemberships,
   dissolveTeam,
   createTeamStatements,
+  syncTeamUserStatement,
 } from "../lib/teams";
 import type { DomainRow, OAuthAppRow, Variables } from "../types";
 import { verifyDpopProof } from "../lib/dpop";
@@ -516,9 +517,12 @@ app.patch("/me/teams/:id", async (c) => {
   updates.push("updated_at = ?");
   values.push(now, teamId);
 
-  await c.env.DB.prepare(`UPDATE teams SET ${updates.join(", ")} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE teams SET ${updates.join(", ")} WHERE id = ?`,
+    ).bind(...values),
+    syncTeamUserStatement(c.env.DB, teamId, now),
+  ]);
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(teamId)
@@ -1607,9 +1611,12 @@ app.patch("/me/team/:teamId/info", async (c) => {
   updates.push("updated_at = ?");
   values.push(now, teamId);
 
-  await c.env.DB.prepare(`UPDATE teams SET ${updates.join(", ")} WHERE id = ?`)
-    .bind(...values)
-    .run();
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `UPDATE teams SET ${updates.join(", ")} WHERE id = ?`,
+    ).bind(...values),
+    syncTeamUserStatement(c.env.DB, teamId, now),
+  ]);
 
   const team = await c.env.DB.prepare(
     "SELECT id, name, description, avatar_url, created_at FROM teams WHERE id = ?",
