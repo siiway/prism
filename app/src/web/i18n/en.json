@@ -3249,6 +3249,7 @@
     "invalid_action": "That action isn't valid here.",
     "invalid_challenge": "The challenge is invalid. Start again.",
     "invalid_client": "The client couldn't be authenticated.",
+    "invalid_client_metadata": "The client registration was refused.",
     "invalid_connect_intent": "This link request isn't valid. Start again.",
     "invalid_credentials": "Incorrect username or password.",
     "invalid_dpop_proof": "The DPoP proof is invalid.",
