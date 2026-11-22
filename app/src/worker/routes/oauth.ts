@@ -82,6 +82,7 @@ import {
   TOKEN_TYPE_ACCESS_TOKEN,
   authenticateClient,
   buildConsentAppSummary,
+  pkceMethodInvalid,
   readOAuthBody,
   recordAppAuthorization,
   verifyAppPkce,
@@ -565,6 +566,14 @@ app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
   if (!client_id || !redirect_uri || response_type !== "code") {
     return c.json({ error: "invalid_request" }, 400);
   }
+  if (pkceMethodInvalid(code_challenge, code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
+      },
+      400,
+    );
 
   const oauthApp = await c.env.DB.prepare(
     "SELECT * FROM oauth_apps WHERE client_id = ? AND is_active = 1",
@@ -934,6 +943,14 @@ app.post("/authorize", requireAuth, async (c) => {
   // OAuth 2.0 Security BCP §2.1.1: public clients MUST use PKCE.
   // Refuse to issue an authorization code without code_challenge so a code
   // intercepted at the redirect URI cannot be redeemed.
+  if (pkceMethodInvalid(body.code_challenge, body.code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
+      },
+      400,
+    );
   if (oauthApp.is_public === 1 && !body.code_challenge) {
     return c.json(
       {
@@ -2092,6 +2109,15 @@ app.post("/par", rejectRepeatedParams, async (c) => {
       400,
     );
 
+  if (pkceMethodInvalid(params.code_challenge, params.code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
+      },
+      400,
+    );
+
   const payload: PushedRequest = {
     client_id: oauthApp.client_id,
     redirect_uri: redirectUri,
@@ -2158,6 +2184,15 @@ app.post("/device_authorization", rejectRepeatedParams, async (c) => {
         error: "invalid_scope",
         error_description:
           "site-level and team scopes cannot be granted via the device flow",
+      },
+      400,
+    );
+
+  if (pkceMethodInvalid(params.code_challenge, params.code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
       },
       400,
     );

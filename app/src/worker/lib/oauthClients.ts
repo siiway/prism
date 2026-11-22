@@ -187,11 +187,23 @@ export async function authenticateClient(
  *  `pkce_plain_used_at`, so busy apps don't write on every exchange. */
 const PLAIN_PKCE_NOTE_INTERVAL = 3600;
 
+/** Whether a request's PKCE parameters must be refused: a code_challenge
+ *  needs an explicit, supported code_challenge_method. RFC 7636 would read a
+ *  missing one as `plain`; asking for it keeps a client that forgot it from
+ *  weakening PKCE silently, and from failing only at the token request. */
+export function pkceMethodInvalid(
+  challenge: string | null | undefined,
+  method: string | null | undefined,
+): boolean {
+  return !!challenge && method !== "S256" && method !== "plain";
+}
+
 /**
- * Check a PKCE verifier presented by `app`. A missing method means S256, as
- * RFC 7636 defaults to it. `plain` still passes, but a pass is noted on the
- * app so its OAuth tab warns the owner: with `plain` the challenge is the
- * verifier, sent in the clear in the authorization request.
+ * Check a PKCE verifier presented by `app`. Requests are refused without a
+ * method (pkceMethodInvalid), so a missing one only comes from codes issued
+ * before that, and is read as S256. `plain` still passes, but a pass is
+ * noted on the app so its OAuth tab warns the owner: with `plain` the
+ * challenge is the verifier, sent in the clear in the authorization request.
  */
 export async function verifyAppPkce(
   db: D1Database,

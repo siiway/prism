@@ -27,6 +27,7 @@ import type {
 import {
   authenticateClient,
   buildConsentAppSummary,
+  pkceMethodInvalid,
   readOAuthBody,
   verifyAppPkce,
 } from "../lib/oauthClients";
@@ -96,6 +97,14 @@ app.post("/2fa/challenges", async (c) => {
     return c.json({ error: "invalid_redirect_uri" }, 400);
   }
 
+  if (pkceMethodInvalid(code_challenge, code_challenge_method))
+    return c.json(
+      {
+        error: "invalid_request",
+        error_description: "code_challenge_method must be S256 or plain",
+      },
+      400,
+    );
   // Public clients have no secret, so PKCE is the only way to bind the
   // verify call back to whoever created the challenge.
   if (oauthApp.is_public === 1 && !code_challenge) {

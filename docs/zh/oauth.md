@@ -83,7 +83,7 @@ GET https://your-prism-domain/api/oauth/authorize
 code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 ```
 
-请使用 `S256`。Prism 仍接受 `code_challenge_method=plain`，但使用 `plain` 时 challenge 就是 verifier 本身，任何看到授权请求 URL 的人都能兑换被窃取的授权码。使用 `plain` 的应用会在其 **OAuth** 标签页看到警告，直到连续 30 天不再使用为止。
+请使用 `S256`。Prism 仍接受 `code_challenge_method=plain`，但使用 `plain` 时 challenge 就是 verifier 本身，任何看到授权请求 URL 的人都能兑换被窃取的授权码。使用 `plain` 的应用会在其 **OAuth** 标签页看到警告，直到连续 30 天不再使用为止。始终将 `code_challenge_method` 与 `code_challenge` 一起发送；缺少它的请求会以 `invalid_request` 拒绝。
 
 #### 权限范围
 

@@ -94,7 +94,9 @@ code_challenge = BASE64URL(SHA-256(ASCII(code_verifier)))
 Use `S256`. Prism still accepts `code_challenge_method=plain`, but with `plain`
 the challenge is the verifier itself, so anyone who sees the authorization
 request URL can redeem a stolen code. An app that uses `plain` gets a warning
-on its **OAuth** tab until it has gone 30 days without it.
+on its **OAuth** tab until it has gone 30 days without it. Always send
+`code_challenge_method` with `code_challenge`; a request without it is refused
+with `invalid_request`.
 
 #### Scopes
 
