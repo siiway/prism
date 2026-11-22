@@ -92,8 +92,14 @@ app.post("/2fa/challenges", async (c) => {
     return c.json({ error: "invalid_request" }, 400);
   }
 
+  // An app with no registered URI would accept any here, and step-up never
+  // learns one: anyone could point a challenge at their own site. It needs
+  // a registered URI first.
   const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
-  if (!redirectUriMatchesRegistered(redirect_uri, redirectUris)) {
+  if (
+    redirectUris.length === 0 ||
+    !redirectUriMatchesRegistered(redirect_uri, redirectUris)
+  ) {
     return c.json({ error: "invalid_redirect_uri" }, 400);
   }
 

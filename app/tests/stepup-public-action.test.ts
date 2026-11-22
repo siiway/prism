@@ -62,4 +62,24 @@ describe("step-up for a public client", () => {
     expect(info.status).toBe(200);
     expect(await info.json()).toMatchObject({ action: null });
   });
+
+  test("needs a registered redirect URI", async () => {
+    sqlite.run("UPDATE oauth_apps SET redirect_uris = '[]' WHERE id = 'pub'");
+    const res = await app.fetch(
+      new Request("https://prism.example/oauth/2fa/challenges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: "public_client",
+          redirect_uri: "https://evil.example/",
+          code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+          code_challenge_method: "S256",
+        }),
+      }),
+      env,
+      executionCtx,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: "invalid_redirect_uri" });
+  });
 });
