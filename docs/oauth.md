@@ -34,11 +34,11 @@ If your app runs entirely in the browser (nowhere to keep a secret), enable
 
 Each registered redirect URI has a match type:
 
-| Type       | Behaviour                                                                                                                                                                                                                       |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Equals`   | Exact match (default, and the safest).                                                                                                                                                                                          |
-| `Wildcard` | In the path or query, `*` stands for any run of characters, e.g. `https://example.com/*`. In the host it never spans a dot: `https://*.example.com/cb` matches `a.example.com` but not `a.b.example.com`. `:*` allows any port. |
-| `Regex`    | A regular expression matched against the whole URI, e.g. `https://example\.com/.*`.                                                                                                                                             |
+| Type       | Behaviour                                                                                                                                                                                                                                                                                                       |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Equals`   | Exact match (default, and the safest).                                                                                                                                                                                                                                                                          |
+| `Wildcard` | In the path or query, `*` stands for any run of characters, e.g. `https://example.com/*`. In the host it never spans a dot: `https://*.example.com/cb` matches `a.example.com` but not `a.b.example.com`. `:*` allows any port. A `*` at the end of the host, as in `http://localhost:*`, also covers any path. |
+| `Regex`    | A regular expression matched against the whole URI, e.g. `https://example\.com/.*`.                                                                                                                                                                                                                             |
 
 Whatever the type, the URI must use `https:` (or `http:` for loopback hosts) and
 must not contain userinfo or a fragment.
