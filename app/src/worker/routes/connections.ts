@@ -1792,6 +1792,13 @@ app.delete("/:id", requireAuth, async (c) => {
  * Auto-verify a user's email if the social provider confirms the same address.
  * Checks TTL expiry for previously social-verified emails.
  */
+/** Whether an address's verification came from a social provider, whose
+ *  word lasts social_verify_ttl_days. Null is a link or mail the user sent,
+ *  and 'admin' an admin's word; neither expires nor is taken over. */
+function verifiedBySocial(via: string | null | undefined): boolean {
+  return !!via && via !== "admin";
+}
+
 export async function trySocialEmailVerify(
   db: D1Database,
   userId: string,
@@ -1839,7 +1846,7 @@ export async function trySocialEmailVerify(
       email_verified_at: number | null;
     }>();
 
-  if (user?.email_verified_via) {
+  if (verifiedBySocial(user?.email_verified_via)) {
     // Refresh the timestamp so the TTL resets
     await db
       .prepare(
@@ -1854,7 +1861,7 @@ export async function trySocialEmailVerify(
  * Check if a social-verified email has expired past the configured TTL.
  * If so, mark it as unverified. Called during login flows.
  */
-async function checkSocialVerifyExpiry(
+export async function checkSocialVerifyExpiry(
   db: D1Database,
   userId: string,
   socialVerifyTtlDays: number,
@@ -1872,7 +1879,12 @@ async function checkSocialVerifyExpiry(
       email_verified_at: number | null;
     }>();
 
-  if (!user || !user.email_verified || !user.email_verified_via) return;
+  if (
+    !user ||
+    !user.email_verified ||
+    !verifiedBySocial(user.email_verified_via)
+  )
+    return;
 
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = (user.email_verified_at ?? 0) + socialVerifyTtlDays * 86400;
