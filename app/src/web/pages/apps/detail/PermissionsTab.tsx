@@ -605,7 +605,11 @@ export function PermissionsTab({ app, formApi, showMsg }: Props) {
                   <Input
                     value={ruleTarget}
                     onChange={(_, d) => setRuleTarget(d.value)}
-                    placeholder={ruleType.startsWith("app_") ? "prism_..." : ""}
+                    placeholder={
+                      ruleType.startsWith("app_")
+                        ? t("apps.scopeClientIdPlaceholder")
+                        : ""
+                    }
                     input={{ className: styles.monoInput }}
                   />
                 </Field>

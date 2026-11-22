@@ -1783,6 +1783,7 @@
     "emailApiKey": "API key",
     "smtpHost": "SMTP host",
     "smtpHostPlaceholder": "smtp.example.com",
+    "imapHostPlaceholder": "imap.example.com",
     "smtpPort": "SMTP port",
     "smtpEncryption": "Encryption",
     "smtpStarttls": "STARTTLS (port 587)",

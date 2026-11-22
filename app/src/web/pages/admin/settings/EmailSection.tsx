@@ -317,7 +317,7 @@ export function EmailSection({ draft, showMsg }: SectionProps) {
             <MailServerFields
               kind="imap"
               draft={draft}
-              hostPlaceholder="imap.example.com"
+              hostPlaceholder={t("admin.imapHostPlaceholder")}
             />
           )}
         </SettingsBody>

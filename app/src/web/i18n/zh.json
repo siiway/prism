@@ -1783,6 +1783,7 @@
     "emailApiKey": "API 密钥",
     "smtpHost": "SMTP 主机",
     "smtpHostPlaceholder": "smtp.example.com",
+    "imapHostPlaceholder": "imap.example.com",
     "smtpPort": "SMTP 端口",
     "smtpEncryption": "加密方式",
     "smtpStarttls": "STARTTLS（端口 587）",
