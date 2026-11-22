@@ -215,6 +215,7 @@ app.post("/gpg-login", async (c) => {
   )
     .bind(user.id)
     .first<{ n: number }>();
+  let usedTotp = false;
   if ((gpgTotpCount?.n ?? 0) > 0 && user.gpg_require_2fa !== 0) {
     if (!body.totp_code)
       return c.json({ error: "totp_required", totp_required: true }, 200);
@@ -253,6 +254,7 @@ app.post("/gpg-login", async (c) => {
       );
       return c.json({ error: "totp_invalid" }, 401);
     }
+    usedTotp = true;
   }
 
   // Consume the challenge (one-time use)
@@ -271,7 +273,8 @@ app.post("/gpg-login", async (c) => {
   }
 
   const ttl = gpgLoginConfig.session_ttl_days * 24 * 60 * 60;
-  await issueSession(c, user, ttl);
+  // swk: proof of a software-held key (RFC 8176).
+  await issueSession(c, user, ttl, usedTotp ? ["swk", "otp", "mfa"] : ["swk"]);
   return c.json({
     user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });

@@ -386,7 +386,7 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 - `prompt=consent` — 始终显示授权页面。
 - `max_age=<秒>` — 要求登录时间不早于该时长。
 
-ID 令牌随后携带 `auth_time`、`amr`（例如 `["pwd","otp","mfa"]`、`["webauthn"]`）和 `acr`（使用了第二因子时为 `mfa`，否则为 `pwd`）。
+ID 令牌随后携带 `auth_time`、`amr`（例如 `["pwd","otp","mfa"]`、`["webauthn","mfa"]`）和 `acr`（使用了第二因子时为 `mfa`，否则为 `pwd`）。
 
 ### 提升认证（RFC 9470）
 

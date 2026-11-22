@@ -694,7 +694,9 @@ app.post("/passkey/auth/finish", async (c) => {
   const config = await getConfig(c.env.DB);
   const ttl = config.session_ttl_days * 24 * 60 * 60;
   // Passkey sign-in is a hardware/software cryptographic authenticator.
-  await issueSession(c, user, ttl, ["webauthn"]);
+  // The authenticator verified the user (PIN or biometric) on top of
+  // holding the key: two factors.
+  await issueSession(c, user, ttl, ["webauthn", "mfa"]);
   return c.json({
     user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });

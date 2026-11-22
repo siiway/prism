@@ -451,7 +451,7 @@ The authorization request honors these OpenID Connect parameters:
 - `max_age=<seconds>` — require a sign-in no older than this.
 
 The ID token then carries `auth_time`, `amr` (e.g. `["pwd","otp","mfa"]`,
-`["webauthn"]`) and `acr` (`mfa` when a second factor was used, else `pwd`).
+`["webauthn","mfa"]`) and `acr` (`mfa` when a second factor was used, else `pwd`).
 
 ### Step-up authentication (RFC 9470)
 

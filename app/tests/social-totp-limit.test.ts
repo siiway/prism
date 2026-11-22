@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
 import connections from "../src/worker/routes/connections";
+import { hashBackupCodes } from "../src/worker/lib/totp";
 import { d1, executionCtx, MemoryKv, migratedDatabase } from "./setup/d1";
 
 let sqlite: Database;
@@ -47,6 +48,23 @@ function verify(code: string) {
 }
 
 describe("TOTP after social sign-in", () => {
+  test("a passed check records the second factor on the session", async () => {
+    const [hashed] = await hashBackupCodes(["abcd-efgh"]);
+    sqlite.run(
+      "INSERT INTO totp_authenticators (id, user_id, secret, enabled, created_at) VALUES ('t1', 'alice', 'JBSWY3DPEHPK3PXP', 1, 0)",
+    );
+    sqlite.run(
+      "INSERT INTO user_totp_recovery (user_id, backup_codes, updated_at) VALUES ('alice', ?, 0)",
+      [JSON.stringify([hashed])],
+    );
+    const res = await verify("abcd-efgh");
+    expect(res.status).toBe(200);
+    const session = sqlite
+      .query("SELECT amr FROM sessions WHERE user_id = 'alice'")
+      .get() as { amr: string };
+    expect(JSON.parse(session.amr)).toEqual(["ext", "otp", "mfa"]);
+  });
+
   test("stops taking codes after the per-account limit", async () => {
     // The default limit is 15 codes per 5 minutes.
     for (let i = 0; i < 15; i++)

@@ -1534,7 +1534,7 @@ app.post("/2fa/verify", async (c) => {
     ).catch(() => {}),
   );
 
-  await issueSession(c, user, SOCIAL_SESSION_TTL, ["ext"]);
+  await issueSession(c, user, SOCIAL_SESSION_TTL, ["ext", "otp", "mfa"]);
   return c.json({
     user: await toSessionUser(c.env.APP_URL, c.env.DB, user),
   });
