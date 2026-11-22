@@ -284,10 +284,11 @@ function globMatch(pattern: string, text: string): boolean {
   return p === pattern.length;
 }
 
-/** A host glob: `*` matches letters, digits and hyphens, never a dot. */
+/** A host glob: `*` matches letters, digits, hyphens and underscores, never
+ *  a dot. */
 function hostMatches(pattern: string, host: string): boolean {
   const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^${escaped.replace(/\\\*/g, "[a-z0-9-]*")}$`).test(host);
+  return new RegExp(`^${escaped.replace(/\\\*/g, "[a-z0-9_-]*")}$`).test(host);
 }
 
 function wildcardMatches(pattern: string, candidate: URL): boolean {

@@ -23,6 +23,12 @@ describe("wildcard redirect URIs", () => {
         "https://pr-12.example.com/callback",
       ),
     ).toBe(true);
+    expect(
+      matches(
+        "https://*.example.com/callback",
+        "https://my_app.example.com/callback",
+      ),
+    ).toBe(true);
   });
 
   test("a host wildcard never reaches another host", () => {
