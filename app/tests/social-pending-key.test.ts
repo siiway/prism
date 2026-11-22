@@ -129,3 +129,24 @@ test("losing a race for the address leaves it unverified instead of failing the 
     sqlite.query("SELECT email_verified FROM users WHERE id = 'u'").get(),
   ).toEqual({ email_verified: 0 });
 });
+
+test("a provider's long name is suggested cut to fit", async () => {
+  await cache.put(
+    "social:pending:k",
+    JSON.stringify({
+      type: "register",
+      provider: "github",
+      providerUserId: "1",
+      providerEmail: null,
+      profileData: { name: "x".repeat(70) },
+      accessToken: "a",
+      refreshToken: null,
+      tokenExpiresAt: null,
+    }),
+  );
+  const res = await send("/pending/social:pending:k");
+  const { suggested_display_name } = (await res.json()) as {
+    suggested_display_name: string;
+  };
+  expect(suggested_display_name).toBe("x".repeat(64));
+});

@@ -1223,7 +1223,11 @@ app.get("/pending/:key", async (c) => {
       state.profileData,
       state.providerEmail,
     ),
-    suggested_display_name: extractDisplayName(baseProvider, state.profileData),
+    // Cut to fit, as when the user leaves it out: sent back as typed, it is
+    // checked like any other name.
+    suggested_display_name: extractDisplayName(baseProvider, state.profileData)
+      .trim()
+      .slice(0, DISPLAY_NAME_MAX_LENGTH),
     users: state.users
       ? await Promise.all(
           state.users.map(
