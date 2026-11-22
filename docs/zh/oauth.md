@@ -373,7 +373,7 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 &resource=https://api.example.com
 ```
 
-你可以交换签发给你的客户端的令牌，或携带指向它的跨应用 scope（`app:<client_id>:*`）的令牌。新令牌的 scope 是原令牌的子集，其受众遵循 `resource` / `audience`。交换得到的令牌不可刷新。
+你可以交换签发给你的客户端的令牌，或携带指向它的跨应用 scope（`app:<client_id>:*`）的令牌；交换其他应用的令牌时，只能得到其中的 `app:<client_id>:*` scope。新令牌的 scope 是其子集，其受众遵循 `resource` / `audience`，过期时间不晚于原令牌。绑定了 DPoP 的令牌需要提供同一密钥的证明，新令牌也会绑定到该密钥。交换得到的令牌不可刷新。
 
 ## 重新认证与上下文（`prompt`、`max_age`、`acr`）
 

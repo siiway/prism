@@ -1778,11 +1778,25 @@ app.post("/token", rejectRepeatedParams, async (c) => {
         400,
       );
 
-    // Requested scope must be a subset of the subject token's scope.
+    // RFC 9449: a DPoP-bound token stays bound. Exchanging it takes a proof
+    // from the same key, and the new token is bound to that key too.
+    if (subject.dpopJkt && dpopJkt !== subject.dpopJkt)
+      return c.json(
+        { error: "invalid_dpop_proof", error_description: "DPoP key mismatch" },
+        400,
+      );
+
+    // Another app's token lends this client only what the user approved for
+    // it: the app:<clientId>:* scopes. The rest was approved for the app the
+    // token was issued to. The requested scope must be a subset of that.
+    const exchangeable =
+      subject.clientId === clientId
+        ? subject.scopes
+        : subject.scopes.filter((s) => s.startsWith(`app:${clientId}:`));
     const requested = parseScopeParam(params.scope);
-    let newScopes = subject.scopes;
+    let newScopes = exchangeable;
     if (requested.length) {
-      if (!requested.every((s) => subject.scopes.includes(s)))
+      if (!requested.every((s) => exchangeable.includes(s)))
         return c.json({ error: "invalid_scope" }, 400);
       newScopes = requested;
     }
@@ -1816,7 +1830,13 @@ app.post("/token", rejectRepeatedParams, async (c) => {
     if (!user || !user.is_active)
       return c.json({ error: "invalid_grant" }, 400);
 
-    const { atTtl } = tokenTtls(user, config);
+    // The new token can't outlive the one it came from; otherwise exchanging
+    // each token for the next would keep access alive with no refresh token.
+    const atTtl = Math.min(
+      tokenTtls(user, config).atTtl,
+      subject.expiresAt - now,
+    );
+    if (atTtl <= 0) return c.json({ error: "invalid_grant" }, 400);
     const resourceJson = serializeResources(resources);
     const jti = randomId();
     // A client that knows the user by its own ID for them (a SAML app) keeps
@@ -2699,7 +2719,8 @@ app.post("/end_session", optionalAuth, handleEndSession);
 
 /**
  * Resolve an OAuth access token value (JWT or opaque) to its live grant, for
- * RFC 8693 token exchange. Returns the owner, scopes and issuing client, or
+ * RFC 8693 token exchange. Returns the owner, scopes, issuing client, expiry
+ * and DPoP key binding, or
  * null when the token is unknown, expired, or its user is inactive.
  */
 async function lookupAccessToken(
@@ -2710,6 +2731,8 @@ async function lookupAccessToken(
   subject: string | null;
   scopes: string[];
   clientId: string;
+  expiresAt: number;
+  dpopJkt: string | null;
 } | null> {
   const now = Math.floor(Date.now() / 1000);
   let tokenRow: {
@@ -2718,6 +2741,7 @@ async function lookupAccessToken(
     scopes: string;
     expires_at: number;
     client_id: string;
+    dpop_jkt: string | null;
   } | null;
 
   if (token.split(".").length === 3) {
@@ -2725,7 +2749,7 @@ async function lookupAccessToken(
       const mldsaKey = await getMLDSAKey(c.env.KV_SESSIONS);
       const payload = verifyAccessToken(token, mldsaKey.publicKey);
       tokenRow = await c.env.DB.prepare(
-        "SELECT user_id, subject, scopes, expires_at, client_id FROM oauth_tokens WHERE id = ?",
+        "SELECT user_id, subject, scopes, expires_at, client_id, dpop_jkt FROM oauth_tokens WHERE id = ?",
       )
         .bind(payload.jti)
         .first();
@@ -2736,7 +2760,7 @@ async function lookupAccessToken(
     const lookup = await hashLookupCandidate(c.env, token);
     if (!lookup) return null;
     tokenRow = await c.env.DB.prepare(
-      "SELECT user_id, subject, scopes, expires_at, client_id FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
+      "SELECT user_id, subject, scopes, expires_at, client_id, dpop_jkt FROM oauth_tokens WHERE access_token = ? OR access_token = ?",
     )
       .bind(token, lookup)
       .first();
@@ -2755,6 +2779,8 @@ async function lookupAccessToken(
     subject: tokenRow.subject,
     scopes: JSON.parse(tokenRow.scopes) as string[],
     clientId: tokenRow.client_id,
+    expiresAt: tokenRow.expires_at,
+    dpopJkt: tokenRow.dpop_jkt,
   };
 }
 
