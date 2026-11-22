@@ -44,7 +44,7 @@ import {
 import { getGroupsForUserByTeam } from "../lib/teamGroups";
 import { recordAudit, auditRequestMeta } from "../lib/audit";
 import { getEffectiveMember, listEffectiveTeamMemberships } from "../lib/teams";
-import { checkAccessWhitelist } from "../lib/appAccess";
+import { canManageApp, checkAccessWhitelist } from "../lib/appAccess";
 import {
   deliverUserEmailNotifications,
   notificationActorMetaFromHeaders,
@@ -98,6 +98,23 @@ const SITE_SCOPE_CONFIRM_PHRASE = "grant site access";
 
 function hasSiteScopes(scopes: string[]): boolean {
   return scopes.some(isSiteLevelScope);
+}
+
+/** Whether an authorization request may use this redirect URI. An app with
+ *  no registered URIs learns the first one it is approved with, and only
+ *  someone who manages the app may teach it: anyone else could lock it to
+ *  their own URL. Before sign-in there is no one to check yet; the approval
+ *  itself is checked again with the user. */
+async function redirectUriAllowed(
+  db: D1Database,
+  oauthApp: OAuthAppRow,
+  redirectUri: string,
+  user: { id: string; role: string } | undefined,
+): Promise<boolean> {
+  const registered = parseRedirectUris(oauthApp.redirect_uris);
+  if (!redirectUriMatchesRegistered(redirectUri, registered)) return false;
+  if (registered.length > 0 || !user) return true;
+  return canManageApp(db, oauthApp, user.id, user.role);
 }
 
 function hasUnboundTeamScopes(scopes: string[]): boolean {
@@ -556,12 +573,13 @@ app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
     .first<OAuthAppRow>();
   if (!oauthApp) return c.json({ error: "invalid_client" }, 400);
 
-  const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
-  if (!redirectUriMatchesRegistered(redirect_uri, redirectUris))
+  const currentUser = c.get("user");
+  if (
+    !(await redirectUriAllowed(c.env.DB, oauthApp, redirect_uri, currentUser))
+  )
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
   // Access whitelist check: if enabled, verify the user against the rules.
-  const currentUser = c.get("user");
   if (currentUser && oauthApp.access_whitelist_enabled) {
     const denied = await checkAccessWhitelist(
       c.env.DB,
@@ -888,8 +906,7 @@ app.post("/authorize", requireAuth, async (c) => {
     if (appErr) return c.json({ error: appErr }, 403);
   }
 
-  const redirectUris = parseRedirectUris(oauthApp.redirect_uris);
-  if (!redirectUriMatchesRegistered(body.redirect_uri, redirectUris))
+  if (!(await redirectUriAllowed(c.env.DB, oauthApp, body.redirect_uri, user)))
     return c.json({ error: "invalid_redirect_uri" }, 400);
 
   const whitelistDenied = await checkAccessWhitelist(

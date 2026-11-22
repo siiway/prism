@@ -38,7 +38,7 @@ https://your-prism-domain/.well-known/jwks.json                  # signing keys
 
 无论哪种类型，URI 都必须使用 `https:`（loopback 主机可用 `http:`），且不得包含 userinfo 或 fragment。
 
-如果将列表留空，应用会固定使用第一个成功使用的重定向 URI，此后锁定为该值。
+如果将列表留空，应用会固定使用你（或应用的其他管理者）首次批准时使用的重定向 URI，此后锁定为该值。在此之前，其他人无法登录该应用。
 
 ::: warning
 `.*` 的 `Regex` 会允许**任意**重定向 URI，包括攻击者控制的地址。请仅在理解风险的情况下使用。

@@ -43,8 +43,9 @@ Each registered redirect URI has a match type:
 Whatever the type, the URI must use `https:` (or `http:` for loopback hosts) and
 must not contain userinfo or a fragment.
 
-If you leave the list empty, the app pins the first redirect URI it is
-successfully used with and is locked to it from then on.
+If you leave the list empty, the app pins the first redirect URI that you, or
+another manager of the app, approve it with, and is locked to it from then on.
+Until then, nobody else can sign in to it.
 
 ::: warning
 A `Regex` of `.*` allows **any** redirect URI, including attacker-controlled

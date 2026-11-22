@@ -25,7 +25,8 @@ import {
   type RedirectUriEntry,
 } from "../lib/redirectUri";
 import { isAllowedScope, parseAppScope } from "../lib/scopes";
-import { getEffectiveMember, hasRole, wantsNormalView } from "../lib/teams";
+import { getEffectiveMember, wantsNormalView } from "../lib/teams";
+import { canManageApp } from "../lib/appAccess";
 import { APP_EVENT_TYPES } from "../lib/app-events";
 import { recordAudit, auditRequestMeta, type AuditInput } from "../lib/audit";
 import {
@@ -186,14 +187,12 @@ async function canAccess(
   siteRole: string,
   write: boolean,
 ): Promise<boolean> {
+  if (write) return canManageApp(db, row, userId, siteRole);
   if (siteRole === "admin") return true;
-  if (row.team_id) {
-    // Effective role, so sub-team-owned apps respect inherited membership the
-    // same way the team API does.
-    const m = await getEffectiveMember(db, row.team_id, userId);
-    if (!m) return false;
-    return write ? hasRole(m.role, "admin") : true;
-  }
+  // Effective membership, so sub-team-owned apps respect inherited membership
+  // the same way the team API does.
+  if (row.team_id)
+    return (await getEffectiveMember(db, row.team_id, userId)) !== null;
   return row.owner_id === userId;
 }
 
