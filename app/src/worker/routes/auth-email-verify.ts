@@ -87,7 +87,7 @@ app.post("/check-email-verification", requireAuth, async (c) => {
     .bind(authUser.id)
     .first<{ email_verified: number }>();
   if (!user) return c.json({ error: "user_not_found" }, 404);
-  if (user.email_verified) return c.json({ verified: true });
+  if (user.email_verified) return c.json({ verified: true, taken: false });
 
   // If IMAP, do an on-demand poll to process any pending emails
   const config = await getConfig(c.env.DB);
@@ -109,7 +109,7 @@ app.post("/check-email-verification", requireAuth, async (c) => {
     .bind(authUser.id)
     .first<{ email: string; email_verified: number }>();
   if (!updated) return c.json({ error: "user_not_found" }, 404);
-  if (updated.email_verified) return c.json({ verified: true });
+  if (updated.email_verified) return c.json({ verified: true, taken: false });
 
   // Mail for an address another account has since proved it owns is
   // dropped; say so, or the user would wait for nothing.

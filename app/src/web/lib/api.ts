@@ -516,7 +516,7 @@ const buildApi = (request: ApiRequest, getToken: () => string | undefined) => ({
     ),
 
   checkEmailVerification: () =>
-    request<{ verified: boolean; taken?: boolean }>(
+    request<{ verified: boolean; taken: boolean }>(
       "POST",
       "/auth/check-email-verification",
       {},

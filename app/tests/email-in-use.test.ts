@@ -398,6 +398,27 @@ test("the verification status says when another account has the address", async 
     executionCtx,
   );
   expect(await res.json()).toEqual({ verified: false, taken: true });
+
+  // Once verified, `taken` is still there, and false.
+  sqlite.exec(
+    "DELETE FROM user_emails WHERE id = 'e6'; UPDATE users SET email_verified = 1 WHERE id = 'victim'",
+  );
+  const again = await app.fetch(
+    new Request("https://prism.example/api/auth/check-email-verification", {
+      method: "POST",
+      headers: { Cookie: `${SESSION_COOKIE}=${jwt}` },
+    }),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv({
+        "system:jwt_secret": jwtSecret,
+      }) as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  expect(await again.json()).toEqual({ verified: true, taken: false });
 });
 
 test("a GPG challenge for an email is for the account sign-in will find", async () => {
