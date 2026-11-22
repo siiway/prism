@@ -127,3 +127,64 @@ describe("image proxy body limit", () => {
     expect(cancelled).toBe(true);
   });
 });
+
+test("answers 502 when the upstream breaks off mid-image in cache mode", async () => {
+  globalThis.fetch = (async (input) => {
+    const url = requestUrl(input);
+    if (url.hostname === "cloudflare-dns.com") {
+      return url.searchParams.get("type") === "A"
+        ? Response.json({
+            Status: 0,
+            Answer: [{ type: 1, data: "93.184.216.34" }],
+          })
+        : Response.json({ Status: 0, Answer: [] });
+    }
+    let sent = false;
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent) controller.error(new Error("connection reset"));
+          else {
+            sent = true;
+            controller.enqueue(new Uint8Array(1024));
+          }
+        },
+      }),
+      { headers: { "Content-Type": "image/png" } },
+    );
+  }) as typeof fetch;
+
+  const env = {
+    KV_CACHE: {
+      get: async () => null,
+      getWithMetadata: async () => ({ value: null, metadata: null }),
+      put: async () => {},
+    },
+    DB: {
+      prepare: (sql: string) => ({
+        all: async () => ({
+          results: sql.includes("site_config")
+            ? [{ key: "avatar_proxy_cache_mode", value: '"kv"' }]
+            : [],
+        }),
+        bind: () => ({
+          all: async () => ({ results: [] }),
+          first: async () => ({
+            ...(sql.includes("image_proxy_mappings")
+              ? { url: "https://images.example.test/reset.png" }
+              : {}),
+          }),
+        }),
+      }),
+    },
+  } as unknown as Env;
+  const response = await proxyRoutes.request(
+    `https://prism.example.test/${"c".repeat(32)}`,
+    undefined,
+    env,
+  );
+  expect(response.status).toBe(502);
+  expect(await response.json()).toEqual({
+    error: "upstream_image_unreadable",
+  });
+});
