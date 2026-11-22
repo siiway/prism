@@ -29,7 +29,12 @@ beforeEach(() => {
 
 afterEach(() => sqlite.close());
 
-async function post(path: string, sub: string, sessionId: string) {
+async function post(
+  path: string,
+  sub: string,
+  sessionId: string,
+  body?: unknown,
+) {
   const jwt = await signJWT(
     {
       sub,
@@ -49,7 +54,11 @@ async function post(path: string, sub: string, sessionId: string) {
   return app.fetch(
     new Request(`https://prism.example${path}`, {
       method: "POST",
-      headers: { Cookie: `${SESSION_COOKIE}=${jwt}` },
+      headers: {
+        Cookie: `${SESSION_COOKIE}=${jwt}`,
+        "Content-Type": "application/json",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
     }),
     {
       DB: d1(sqlite),
@@ -117,4 +126,14 @@ test("a verified old primary outranks an unproved claim on it", async () => {
       )
       .all(),
   ).toEqual([{ user_id: "victim", verified: 1 }]);
+});
+
+test("the current primary can't be added as an alternate after a switch", async () => {
+  // The primary changed after sign-in, so the session still names the old one.
+  sqlite.exec("UPDATE users SET email = 'new@example.com' WHERE id = 'victim'");
+  const res = await post("/api/user/me/emails", "victim", "s2", {
+    email: "new@example.com",
+  });
+  expect(res.status).toBe(409);
+  expect(await res.json()).toMatchObject({ error: "email_taken" });
 });

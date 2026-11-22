@@ -65,9 +65,13 @@ app.post("/me/emails", async (c) => {
 
   // The account's own primary, or an address another account has proved it
   // owns. Someone else's unverified primary doesn't block it: whoever
-  // verifies the address owns it.
+  // verifies the address owns it. The primary is read from the database:
+  // the session's copy is the one from sign-in, stale after a change.
+  const primary = await c.env.DB.prepare("SELECT email FROM users WHERE id = ?")
+    .bind(user.id)
+    .first<{ email: string }>();
   if (
-    email === user.email.toLowerCase() ||
+    email === primary?.email.toLowerCase() ||
     (await emailOwnedElsewhere(c.env.DB, email, user.id))
   )
     return c.json({ error: "email_taken" }, 409);
