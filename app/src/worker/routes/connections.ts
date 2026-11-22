@@ -718,6 +718,7 @@ app.post("/:provider/tg-verify", optionalAuth, async (c) => {
 
   if (linkedUsers.length === 1) {
     const user = linkedUsers[0];
+    if (!user.is_active) return c.json({ error: "account_disabled" }, 403);
     await c.env.DB.prepare(
       "UPDATE social_connections SET profile_data = ? WHERE user_id = ? AND provider = ? AND provider_user_id = ?",
     )
@@ -1095,6 +1096,8 @@ app.get("/:provider/callback", optionalAuth, async (c) => {
   if (linkedUsers.length === 1) {
     // Single account — log in directly and refresh the token
     const user = linkedUsers[0];
+    if (!user.is_active)
+      return c.redirect(`${c.env.APP_URL}/login?error=account_disabled`);
     const storedAccess = await encryptSecret(c.env, accessToken);
     const storedRefresh = await encryptSecret(c.env, refreshToken);
     await c.env.DB.prepare(
@@ -1279,6 +1282,7 @@ app.post("/complete", async (c) => {
       .bind(body.user_id)
       .first<UserRow>();
     if (!user) return c.json({ error: "user_not_found" }, 404);
+    if (!user.is_active) return c.json({ error: "account_disabled" }, 403);
 
     const storedAccess = await encryptSecret(c.env, state.accessToken);
     const storedRefresh = await encryptSecret(c.env, state.refreshToken);
@@ -1520,6 +1524,7 @@ app.post("/2fa/verify", async (c) => {
     .bind(state.userId)
     .first<UserRow>();
   if (!user) return c.json({ error: "user_not_found" }, 404);
+  if (!user.is_active) return c.json({ error: "account_disabled" }, 403);
 
   c.executionCtx.waitUntil(
     deliverUserEmailNotifications(

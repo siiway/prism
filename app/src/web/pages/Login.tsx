@@ -121,7 +121,9 @@ export function Login() {
             ? "auth.errorNoToken"
             : errorParam === "invite_required"
               ? "auth.errorInviteRequired"
-              : "auth.errorGeneric",
+              : errorParam === "account_disabled"
+                ? "apiErrors.account_disabled"
+                : "auth.errorGeneric",
       )
     : null;
 

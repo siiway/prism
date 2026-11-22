@@ -48,6 +48,19 @@ function verify(code: string) {
 }
 
 describe("TOTP after social sign-in", () => {
+  test("a disabled account gets no session", async () => {
+    const [hashed] = await hashBackupCodes(["abcd-efgh"]);
+    sqlite.run("UPDATE users SET is_active = 0 WHERE id = 'alice'");
+    sqlite.run(
+      "INSERT INTO user_totp_recovery (user_id, backup_codes, updated_at) VALUES ('alice', ?, 0)",
+      [JSON.stringify([hashed])],
+    );
+    const res = await verify("abcd-efgh");
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "account_disabled" });
+    expect(sqlite.query("SELECT id FROM sessions").get()).toBeNull();
+  });
+
   test("a passed check records the second factor on the session", async () => {
     const [hashed] = await hashBackupCodes(["abcd-efgh"]);
     sqlite.run(
