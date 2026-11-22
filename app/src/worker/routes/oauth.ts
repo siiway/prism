@@ -14,6 +14,7 @@ import {
 import { randomBase64url, randomId } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
 import { requireAuth, optionalAuth } from "../middleware/auth";
+import { rejectRepeatedParams } from "../middleware/repeatedParams";
 import {
   computeIsVerified,
   buildVerifiedDomainsMap,
@@ -30,6 +31,7 @@ import {
   canClientIntrospectToken,
   parseUnboundTeamScope,
   parseBoundTeamScope,
+  parseScopeParam,
   bindTeamScopes,
   UNBOUND_TEAM_SCOPES,
 } from "../lib/scopes";
@@ -508,7 +510,7 @@ app.get("/authorize", (c) => {
 });
 
 // GET /api/oauth/app-info — consent screen data (called by the SPA)
-app.get("/app-info", optionalAuth, async (c) => {
+app.get("/app-info", rejectRepeatedParams, optionalAuth, async (c) => {
   let {
     client_id,
     redirect_uri,
@@ -589,7 +591,7 @@ app.get("/app-info", optionalAuth, async (c) => {
     }
   }
 
-  const requestedScopes = (scope ?? "").split(" ").filter(Boolean);
+  const requestedScopes = parseScopeParam(scope);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
   const [{ scopes, appScopes, rejected }, isVerified] = await Promise.all([
     resolveRequestedScopes(
@@ -655,9 +657,7 @@ app.get("/app-info", optionalAuth, async (c) => {
   const appOptionalScopes = JSON.parse(
     oauthApp.optional_scopes ?? "[]",
   ) as string[];
-  const requestOptionalScopes = (optional_scope ?? "")
-    .split(" ")
-    .filter(Boolean);
+  const requestOptionalScopes = parseScopeParam(optional_scope);
   const optionalScopeSet = new Set([
     ...appOptionalScopes,
     ...requestOptionalScopes,
@@ -943,7 +943,7 @@ app.post("/authorize", requireAuth, async (c) => {
   const { scopes } = await resolveRequestedScopes(
     c.env.DB,
     c.env.APP_URL,
-    (body.scope ?? "").split(" ").filter(Boolean),
+    parseScopeParam(body.scope),
     allowedScopes,
     oauthApp.client_id,
   );
@@ -1273,7 +1273,7 @@ app.route("/", stepUpRoutes);
 
 // ─── Token endpoint ──────────────────────────────────────────────────────────
 
-app.post("/token", async (c) => {
+app.post("/token", rejectRepeatedParams, async (c) => {
   // RFC 6749 §5.1: token responses MUST NOT be cached (applies to every
   // return path below, success or error).
   noStore(c);
@@ -1791,7 +1791,7 @@ app.post("/token", async (c) => {
       );
 
     // Requested scope must be a subset of the subject token's scope.
-    const requested = (params.scope ?? "").split(" ").filter(Boolean);
+    const requested = parseScopeParam(params.scope);
     let newScopes = subject.scopes;
     if (requested.length) {
       if (!requested.every((s) => subject.scopes.includes(s)))
@@ -1940,7 +1940,7 @@ app.post("/token", async (c) => {
       JSON.parse(oauthApp.allowed_scopes) as string[],
       clientId,
     );
-    const requested = (params.scope ?? "").split(" ").filter(Boolean);
+    const requested = parseScopeParam(params.scope);
     if (requested.some((s) => !granted.includes(s)))
       return c.json({ error: "invalid_scope" }, 400);
     const scopes = requested.length ? requested : granted;
@@ -2011,7 +2011,7 @@ app.post("/token", async (c) => {
 
 // ─── Pushed Authorization Request endpoint (RFC 9126) ────────────────────────
 
-app.post("/par", async (c) => {
+app.post("/par", rejectRepeatedParams, async (c) => {
   noStore(c);
   const { params, form, json } = await readOAuthBody(c);
 
@@ -2089,7 +2089,7 @@ app.post("/par", async (c) => {
 
 // ─── Device Authorization Grant (RFC 8628) ───────────────────────────────────
 
-app.post("/device_authorization", async (c) => {
+app.post("/device_authorization", rejectRepeatedParams, async (c) => {
   noStore(c);
   const { params, form, json } = await readOAuthBody(c);
 
@@ -2113,7 +2113,7 @@ app.post("/device_authorization", async (c) => {
       400,
     );
 
-  const requestedScopes = (params.scope ?? "").split(" ").filter(Boolean);
+  const requestedScopes = parseScopeParam(params.scope);
   const allowedScopes = JSON.parse(oauthApp.allowed_scopes) as string[];
   const { scopes } = await resolveRequestedScopes(
     c.env.DB,
@@ -2432,7 +2432,7 @@ async function authenticateCallingClient(
   return auth.ok ? auth.app : null;
 }
 
-app.post("/introspect", async (c) => {
+app.post("/introspect", rejectRepeatedParams, async (c) => {
   const body = await c.req.text();
   const params = Object.fromEntries(new URLSearchParams(body));
 
@@ -2528,7 +2528,7 @@ app.post("/introspect", async (c) => {
 
 // ─── Revocation endpoint ─────────────────────────────────────────────────────
 
-app.post("/revoke", async (c) => {
+app.post("/revoke", rejectRepeatedParams, async (c) => {
   const body = await c.req.text();
   const params = Object.fromEntries(new URLSearchParams(body));
 

@@ -10,6 +10,13 @@ export const REQUESTABLE_SCOPES = new Set(APP_REQUESTABLE_SCOPES);
 
 const VALID_PLATFORM_SCOPES = new Set(PLATFORM_SCOPES);
 
+/** Splits a space-delimited `scope` parameter (RFC 6749 §3.3) into tokens.
+ *  A scope is a set of access ranges, so a repeated token adds nothing and is
+ *  dropped; the first occurrence keeps its place. */
+export function parseScopeParam(raw: string | null | undefined): string[] {
+  return [...new Set((raw ?? "").split(" ").filter(Boolean))];
+}
+
 /** Whether `s` may appear in an app's allowed_scopes: a platform scope, or an
  *  `app:<client_id>:<inner>` delegation scope with a non-empty inner scope.
  *  Personal and team apps both validate with this one function — the two

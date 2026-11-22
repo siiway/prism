@@ -623,6 +623,8 @@ Content-Type: application/json
 
 常见错误码：`invalid_request`、`invalid_client`、`invalid_grant`、`unauthorized_client`、`unsupported_grant_type`、`access_denied`。
 
+每个参数只能发送一次。重复某个参数的请求（`scope=a&scope=b`）会以 `invalid_request` 失败；只有 `resource` 和 `audience` 可以重复。在同一个 `scope` 值中重复列出某个 scope（`openid profile openid`）没有问题，只计一次。
+
 ## 集成
 
 ### Cloudflare Access
