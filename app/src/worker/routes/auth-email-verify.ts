@@ -3,7 +3,8 @@
 
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
-import { randomId, randomBase64url } from "../lib/crypto";
+import { newEmailVerifyToken } from "../lib/emailVerifyToken";
+import { randomId } from "../lib/crypto";
 import {
   emailConfigFromSite,
   sendEmail,
@@ -137,7 +138,7 @@ app.post("/resend-verify-email", requireAuth, async (c) => {
 
   // Generate a fresh token; stored as the keyed hash but emailed as
   // plaintext so the click-through URL is verifiable.
-  const verifyToken = randomBase64url(24);
+  const verifyToken = newEmailVerifyToken();
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
   await c.env.DB.prepare("UPDATE users SET email_verify_token = ? WHERE id = ?")
     .bind(storedVerifyToken, user.id)

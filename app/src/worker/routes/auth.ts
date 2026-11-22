@@ -3,14 +3,13 @@
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
 import { emailInUse } from "../lib/accountEmails";
+import {
+  emailVerifyTokenFresh,
+  newEmailVerifyToken,
+} from "../lib/emailVerifyToken";
 import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
-import {
-  hashPassword,
-  randomId,
-  randomBase64url,
-  verifyPassword,
-} from "../lib/crypto";
+import { hashPassword, randomId, verifyPassword } from "../lib/crypto";
 import {
   emailConfigFromSite,
   sendEmail,
@@ -118,7 +117,7 @@ app.post("/register", async (c) => {
   const passwordHash = await hashPassword(body.password);
   const now = Math.floor(Date.now() / 1000);
   const verifyToken = config.require_email_verification
-    ? randomBase64url(24)
+    ? newEmailVerifyToken()
     : null;
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
 
@@ -435,7 +434,7 @@ app.get("/verify-email", async (c) => {
   const now = Math.floor(Date.now() / 1000);
 
   const tokenLookup = await hashLookupCandidate(c.env, token);
-  if (!tokenLookup)
+  if (!tokenLookup || !emailVerifyTokenFresh(token, now))
     return c.redirect(`${c.env.APP_URL}/verify-email?status=invalid`);
 
   if (isAlt) {

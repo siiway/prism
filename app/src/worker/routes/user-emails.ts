@@ -3,8 +3,9 @@
 
 import { isSyntheticEmail } from "../lib/userCapabilities";
 import { Hono } from "hono";
-import { randomId, randomBase64url } from "../lib/crypto";
+import { randomId } from "../lib/crypto";
 import { getConfig } from "../lib/config";
+import { newEmailVerifyToken } from "../lib/emailVerifyToken";
 import { hashSecret } from "../lib/secretCrypto";
 import {
   emailConfigFromSite,
@@ -75,7 +76,7 @@ app.post("/me/emails", async (c) => {
 
   const now = Math.floor(Date.now() / 1000);
   const id = randomId();
-  const verifyToken = randomBase64url(24);
+  const verifyToken = newEmailVerifyToken();
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
 
   await c.env.DB.prepare(
@@ -120,7 +121,7 @@ app.post("/me/emails/:id/resend", async (c) => {
   if (config.email_provider === "none")
     return c.json({ error: "email_not_configured" }, 503);
 
-  const verifyToken = randomBase64url(24);
+  const verifyToken = newEmailVerifyToken();
   const storedVerifyToken = await hashSecret(c.env, verifyToken);
   await c.env.DB.prepare("UPDATE user_emails SET verify_token = ? WHERE id = ?")
     .bind(storedVerifyToken, emailRow.id)
