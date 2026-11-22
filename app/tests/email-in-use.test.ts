@@ -31,6 +31,7 @@ describe("email addresses belong to one account", () => {
     expect(await emailInUse(db, "victim@example.com")).toBe(true);
     expect(await emailInUse(db, "alt@example.com")).toBe(true);
     expect(await emailInUse(db, "free@example.com")).toBe(false);
+    expect(await emailInUse(db, " Alt@Example.COM ")).toBe(true);
     expect(await emailInUse(db, "alt@example.com", "victim")).toBe(false);
   });
 

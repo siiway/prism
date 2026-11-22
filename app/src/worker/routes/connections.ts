@@ -1911,7 +1911,11 @@ function extractProviderEmail(
 ): string | null {
   // X (Twitter) v2 API never exposes email — treat the same as Telegram.
   if (provider === "telegram" || provider === "x") return null;
-  const email = typeof profile.email === "string" ? profile.email : null;
+  // Stored addresses are lowercase, and so is every comparison with them.
+  const email =
+    typeof profile.email === "string"
+      ? profile.email.trim().toLowerCase()
+      : null;
 
   switch (provider) {
     case "discord":

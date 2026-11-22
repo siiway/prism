@@ -18,7 +18,12 @@ export async function emailInUse(
        SELECT 1 FROM user_emails WHERE email = ? AND user_id != ?
        LIMIT 1`,
     )
-    .bind(email, exceptUserId, email, exceptUserId)
+    .bind(
+      email.trim().toLowerCase(),
+      exceptUserId,
+      email.trim().toLowerCase(),
+      exceptUserId,
+    )
     .first();
   return row !== null;
 }
