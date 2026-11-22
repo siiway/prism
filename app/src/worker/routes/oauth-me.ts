@@ -7,6 +7,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { configBag, getConfigValue } from "../lib/config";
+import { inviteExpiryFromDays } from "../lib/inviteExpiry";
 import { displayNameError } from "../lib/displayName";
 import {
   encryptSecret,
@@ -600,9 +601,10 @@ app.post("/me/invites", async (c) => {
   const id = randomId();
   const token = randomBase64url(24);
   const storedToken = token;
-  const expiresAt = body.expires_in_days
-    ? now + body.expires_in_days * 86400
-    : null;
+  const expiry = inviteExpiryFromDays(body.expires_in_days, now);
+  if (!expiry.ok)
+    return c.json({ error: expiry.error, params: expiry.params }, 400);
+  const expiresAt = expiry.expiresAt;
 
   await c.env.DB.prepare(
     `INSERT INTO site_invites (id, token, email, note, max_uses, use_count, created_by, expires_at, created_at, enabled)
