@@ -314,7 +314,7 @@ export function InviteDialog({
                     onChange={(e) =>
                       setForm((f) => ({ ...f, max_uses: e.target.value }))
                     }
-                    placeholder="0"
+                    placeholder={t("teams.maxUsesPlaceholder")}
                   />
                 </Field>
                 <Field label={t("teams.inviteExpiry")}>

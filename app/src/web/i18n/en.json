@@ -750,7 +750,12 @@
       "attrEmail": "Email address, only when verified",
       "attrTeams": "IDs of the teams the person is in",
       "attrGroups": "Member groups, as team-id:group-slug"
-    }
+    },
+    "postLogoutRedirectPlaceholder": "https://app.example.com/logged-out",
+    "backchannelLogoutPlaceholder": "https://app.example.com/backchannel-logout",
+    "jwksUriPlaceholder": "https://app.example.com/.well-known/jwks.json",
+    "scopeNamePlaceholder": "read_posts",
+    "scopeClientIdPlaceholder": "prism_..."
   },
   "domains": {
     "title": "Domain verification",
@@ -1140,7 +1145,8 @@
       "dissolveCancelledDone": "Dissolution cancelled."
     },
     "inviteRegOn": "This team's invites can create accounts",
-    "inviteRegPaused": "Paused while sign-up on {{siteName}} is closed."
+    "inviteRegPaused": "Paused while sign-up on {{siteName}} is closed.",
+    "maxUsesPlaceholder": "0"
   },
   "connections": {
     "title": "Linked accounts",
@@ -1480,7 +1486,8 @@
       "sudoActiveDesc": "You confirmed with {{appName}} in the last {{minutes}} minutes, so no code is needed this time.",
       "footerNote": "Confirming sends a one-time verification back to {{appName}}. It does not grant any new account access."
     },
-    "totpCodePlaceholder": "000000"
+    "totpCodePlaceholder": "000000",
+    "userCodePlaceholder": "XXXX-XXXX"
   },
   "saml": {
     "title": "Sign in to {{appName}}",
@@ -2596,7 +2603,17 @@
     "oauthTwoStepDesc": "Skipped means people who use two-step verification aren't asked for their code after signing in this way.",
     "inviteStatusActive": "Active",
     "inviteStatusPaused": "Paused",
-    "inviteEmailPlaceholder": "user@example.com"
+    "inviteEmailPlaceholder": "user@example.com",
+    "mailServerUserPlaceholder": "user@example.com",
+    "emailReceiveHostPlaceholder": "mail.example.com",
+    "securityContactPlaceholder": "mailto:security@example.com",
+    "securityPolicyUrlPlaceholder": "https://example.com/security-policy",
+    "oauthIssuerUrlPlaceholder": "https://accounts.example.com",
+    "oauthAuthorizeUrlPlaceholder": "https://provider.example.com/oauth2/authorize",
+    "oauthTokenUrlPlaceholder": "https://provider.example.com/oauth2/token",
+    "oauthUserinfoUrlPlaceholder": "https://provider.example.com/oauth2/userinfo",
+    "sourceIconUrlPlaceholder": "https://example.com/icon.svg",
+    "sourceSlugPlaceholder": "{{provider}}-work"
   },
   "notifications": {
     "title": "Notifications",
@@ -2994,7 +3011,9 @@
     "noEventsYet": "Nothing recorded yet.",
     "filterSame": "Show only events with the same",
     "deleteWebhookTitle": "Delete webhook?",
-    "deleteWebhookBody": "“{{name}}” will stop receiving audit events."
+    "deleteWebhookBody": "“{{name}}” will stop receiving audit events.",
+    "webhookUrlPlaceholder": "https://example.com/hook?token={id}",
+    "webhookHeadersPlaceholder": "{ \"Authorization\": \"Bearer {id}\" }"
   },
   "join": {
     "intro": "Create an account to join this team. Your account is created on {{siteName}}, the identity provider this team uses.",

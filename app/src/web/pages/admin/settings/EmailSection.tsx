@@ -111,7 +111,7 @@ function MailServerFields({
           <Input
             value={get(user) ?? ""}
             onChange={(e) => set(user, e.target.value)}
-            placeholder="user@example.com"
+            placeholder={t("admin.mailServerUserPlaceholder")}
           />
         </Field>
         <Field label={t(keys.password)}>
@@ -310,7 +310,7 @@ export function EmailSection({ draft, showMsg }: SectionProps) {
             <Input
               value={get("email_receive_host") ?? ""}
               onChange={(e) => set("email_receive_host", e.target.value)}
-              placeholder="mail.example.com"
+              placeholder={t("admin.emailReceiveHostPlaceholder")}
             />
           </Field>
           {receiveProvider === "imap" && (

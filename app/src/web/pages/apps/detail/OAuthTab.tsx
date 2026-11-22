@@ -233,7 +233,7 @@ export function OAuthTab({
               <Textarea
                 value={form.post_logout_text}
                 onChange={(_, d) => set("post_logout_text", d.value)}
-                placeholder="https://app.example.com/logged-out"
+                placeholder={t("apps.postLogoutRedirectPlaceholder")}
                 rows={3}
                 resize="vertical"
                 textarea={{ className: styles.monoInput }}
@@ -246,7 +246,7 @@ export function OAuthTab({
               <Input
                 value={form.backchannel_logout_uri}
                 onChange={(_, d) => set("backchannel_logout_uri", d.value)}
-                placeholder="https://app.example.com/backchannel-logout"
+                placeholder={t("apps.backchannelLogoutPlaceholder")}
                 input={{ className: styles.monoInput }}
               />
             </Field>
@@ -314,7 +314,7 @@ export function OAuthTab({
                 <Input
                   value={form.jwks_uri}
                   onChange={(_, d) => set("jwks_uri", d.value)}
-                  placeholder="https://app.example.com/.well-known/jwks.json"
+                  placeholder={t("apps.jwksUriPlaceholder")}
                   input={{ className: styles.monoInput }}
                 />
               </Field>

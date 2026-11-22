@@ -586,7 +586,7 @@ export function AuditWebhooks({
                     <Field label={t("audit.generalUrl")}>
                       <Input
                         value={form.url}
-                        placeholder="https://example.com/hook?token={id}"
+                        placeholder={t("audit.webhookUrlPlaceholder")}
                         onChange={(e) =>
                           setForm((f) => ({ ...f, url: e.target.value }))
                         }
@@ -614,7 +614,7 @@ export function AuditWebhooks({
                       <Textarea
                         value={form.headers}
                         rows={3}
-                        placeholder={'{ "Authorization": "Bearer {id}" }'}
+                        placeholder={t("audit.webhookHeadersPlaceholder")}
                         onChange={(e) =>
                           setForm((f) => ({ ...f, headers: e.target.value }))
                         }

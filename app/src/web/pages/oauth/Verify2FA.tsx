@@ -392,7 +392,7 @@ export function Verify2FA() {
                     setTotpCode(d.value);
                     setErrorMsg(null);
                   }}
-                  placeholder="000000"
+                  placeholder={t("oauth.totpCodePlaceholder")}
                   maxLength={16}
                   autoComplete="one-time-code"
                   style={{ fontFamily: "monospace", letterSpacing: 4 }}

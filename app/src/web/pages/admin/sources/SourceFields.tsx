@@ -225,7 +225,7 @@ export function EndpointFields({ form, onChange }: FieldsProps) {
             <Input
               className={styles.grow}
               {...text("issuer_url")}
-              placeholder="https://accounts.example.com"
+              placeholder={t("admin.oauthIssuerUrlPlaceholder")}
             />
             <Button
               disabled={discovering || !form.issuer_url.trim()}
@@ -240,19 +240,19 @@ export function EndpointFields({ form, onChange }: FieldsProps) {
       <Field label={t("admin.oauthAuthUrl")} required>
         <Input
           {...text("auth_url")}
-          placeholder="https://provider.example.com/oauth2/authorize"
+          placeholder={t("admin.oauthAuthorizeUrlPlaceholder")}
         />
       </Field>
       <Field label={t("admin.oauthTokenUrl")} required>
         <Input
           {...text("token_url")}
-          placeholder="https://provider.example.com/oauth2/token"
+          placeholder={t("admin.oauthTokenUrlPlaceholder")}
         />
       </Field>
       <Field label={t("admin.oauthUserinfoUrl")} required>
         <Input
           {...text("userinfo_url")}
-          placeholder="https://provider.example.com/oauth2/userinfo"
+          placeholder={t("admin.oauthUserinfoUrlPlaceholder")}
         />
       </Field>
       <Field label={t("admin.oauthScopes")} hint={t("admin.oauthScopesHint")}>
@@ -381,7 +381,7 @@ export function ButtonFields({ form, onChange }: FieldsProps) {
           >
             <Input
               value={form.icon_url}
-              placeholder="https://example.com/icon.svg"
+              placeholder={t("admin.sourceIconUrlPlaceholder")}
               onChange={(_, d) => onChange({ ...form, icon_url: d.value })}
             />
           </Field>

@@ -427,7 +427,7 @@ export function PermissionsTab({ app, formApi, showMsg }: Props) {
                     onChange={(_, d) =>
                       setDefDialog((s) => s && { ...s, scope: d.value })
                     }
-                    placeholder="read_posts"
+                    placeholder={t("apps.scopeNamePlaceholder")}
                     input={{ className: styles.monoInput }}
                   />
                 </Field>

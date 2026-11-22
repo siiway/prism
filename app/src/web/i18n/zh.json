@@ -750,7 +750,12 @@
       "attrEmail": "邮箱地址，仅在已验证时发送",
       "attrTeams": "用户所在团队的 ID",
       "attrGroups": "身份组，格式为 团队 ID:身份组标识"
-    }
+    },
+    "postLogoutRedirectPlaceholder": "https://app.example.com/logged-out",
+    "backchannelLogoutPlaceholder": "https://app.example.com/backchannel-logout",
+    "jwksUriPlaceholder": "https://app.example.com/.well-known/jwks.json",
+    "scopeNamePlaceholder": "read_posts",
+    "scopeClientIdPlaceholder": "prism_..."
   },
   "domains": {
     "title": "域名验证",
@@ -1140,7 +1145,8 @@
       "dissolveCancelledDone": "已取消解散。"
     },
     "inviteRegOn": "本团队的邀请可以创建账号",
-    "inviteRegPaused": "{{siteName}} 已关闭注册，暂时停用。"
+    "inviteRegPaused": "{{siteName}} 已关闭注册，暂时停用。",
+    "maxUsesPlaceholder": "0"
   },
   "connections": {
     "title": "关联账号",
@@ -1480,7 +1486,8 @@
       "sudoActiveDesc": "你在 {{minutes}} 分钟内已在 {{appName}} 确认过，本次无需验证码。",
       "footerNote": "确认会向 {{appName}} 发回一次性验证结果,不会授予任何新的账户权限。"
     },
-    "totpCodePlaceholder": "000000"
+    "totpCodePlaceholder": "000000",
+    "userCodePlaceholder": "XXXX-XXXX"
   },
   "saml": {
     "title": "登录 {{appName}}",
@@ -2596,7 +2603,17 @@
     "oauthTwoStepDesc": "选择「跳过」后，启用了二次验证的用户通过此方式登录时无需再输入验证码。",
     "inviteStatusActive": "有效",
     "inviteStatusPaused": "已暂停",
-    "inviteEmailPlaceholder": "user@example.com"
+    "inviteEmailPlaceholder": "user@example.com",
+    "mailServerUserPlaceholder": "user@example.com",
+    "emailReceiveHostPlaceholder": "mail.example.com",
+    "securityContactPlaceholder": "mailto:security@example.com",
+    "securityPolicyUrlPlaceholder": "https://example.com/security-policy",
+    "oauthIssuerUrlPlaceholder": "https://accounts.example.com",
+    "oauthAuthorizeUrlPlaceholder": "https://provider.example.com/oauth2/authorize",
+    "oauthTokenUrlPlaceholder": "https://provider.example.com/oauth2/token",
+    "oauthUserinfoUrlPlaceholder": "https://provider.example.com/oauth2/userinfo",
+    "sourceIconUrlPlaceholder": "https://example.com/icon.svg",
+    "sourceSlugPlaceholder": "{{provider}}-work"
   },
   "notifications": {
     "title": "通知",
@@ -2994,7 +3011,9 @@
     "noEventsYet": "暂无记录。",
     "filterSame": "仅显示相同的",
     "deleteWebhookTitle": "删除 Webhook？",
-    "deleteWebhookBody": "「{{name}}」将不再接收审计事件。"
+    "deleteWebhookBody": "「{{name}}」将不再接收审计事件。",
+    "webhookUrlPlaceholder": "https://example.com/hook?token={id}",
+    "webhookHeadersPlaceholder": "{ \"Authorization\": \"Bearer {id}\" }"
   },
   "join": {
     "intro": "创建账号以加入该团队。你的账号创建在 {{siteName}} 上 —— 这是该团队使用的身份提供方。",
