@@ -1350,24 +1350,31 @@ app.patch("/me/admin/users/:id", async (c) => {
   const now = Math.floor(Date.now() / 1000);
   const updates: string[] = [];
   const values: unknown[] = [];
+  // What was actually changed, for the audit log: never the raw body, which
+  // can carry ignored values and keys of the caller's choosing.
+  const applied: Record<string, unknown> = {};
 
   if (body.role !== undefined && ["admin", "user"].includes(body.role)) {
     updates.push("role = ?");
     values.push(body.role);
+    applied.role = body.role;
   }
   if (body.is_active !== undefined) {
     updates.push("is_active = ?");
     values.push(body.is_active ? 1 : 0);
+    applied.is_active = !!body.is_active;
   }
   if (body.display_name !== undefined) {
     const nameErr = displayNameError(body.display_name);
     if (nameErr) return c.json(nameErr, 400);
     updates.push("display_name = ?");
     values.push(body.display_name.trim());
+    applied.display_name = body.display_name.trim();
   }
   if ("avatar_url" in body) {
     updates.push("avatar_url = ?");
     values.push(body.avatar_url ?? null);
+    applied.avatar_url = body.avatar_url ?? null;
   }
 
   if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
@@ -1391,7 +1398,7 @@ app.patch("/me/admin/users/:id", async (c) => {
       "admin.user.update",
       "user",
       targetId,
-      body,
+      applied,
       user.username,
     );
 
