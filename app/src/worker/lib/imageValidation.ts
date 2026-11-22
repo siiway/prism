@@ -8,6 +8,21 @@ import { isBlockedHost, safeFetch } from "./safeFetch";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
+/** An image URL field from a request body: null or "" clears it, an
+ *  uploaded asset is fine where uploads are, and anything else must be an
+ *  image URL that checks out. A value that isn't a string is refused. */
+export async function imageUrlFieldError(
+  value: unknown,
+  field: string,
+  { allowUploads }: { allowUploads: boolean },
+): Promise<CodedError | null> {
+  if (value === null || value === "") return null;
+  if (typeof value !== "string")
+    return { error: "field_invalid", params: { field } };
+  if (allowUploads && value.startsWith("/api/assets/")) return null;
+  return validateImageUrl(value);
+}
+
 export async function validateImageUrl(
   url: string,
 ): Promise<CodedError | null> {

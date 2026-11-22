@@ -17,7 +17,7 @@ import { hashLookupCandidate } from "../lib/secretCrypto";
 import { sendEmail } from "../lib/email";
 import { hashBackupCodes } from "../lib/totp";
 import { requireAdmin } from "../middleware/auth";
-import { validateImageUrl } from "../lib/imageValidation";
+import { imageUrlFieldError } from "../lib/imageValidation";
 import { readPage, likePattern } from "../lib/pagination";
 import {
   collectReferencedImageUrls,
@@ -353,10 +353,10 @@ app.patch("/users/:id", async (c) => {
     values.push(body.display_name.trim());
   }
   if (body.avatar_url !== undefined) {
-    if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
-      const imgErr = await validateImageUrl(body.avatar_url);
-      if (imgErr) return c.json(imgErr, 400);
-    }
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: true,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
   }

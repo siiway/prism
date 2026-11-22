@@ -7,7 +7,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { configBag, getConfigValue } from "../lib/config";
-import { validateImageUrl } from "../lib/imageValidation";
+import { imageUrlFieldError } from "../lib/imageValidation";
 import { inviteExpiryFromDays } from "../lib/inviteExpiry";
 import { displayNameError } from "../lib/displayName";
 import {
@@ -755,8 +755,13 @@ app.patch("/me/profile", async (c) => {
     values.push(body.display_name.trim());
   }
   if ("avatar_url" in body) {
+    // The dashboard's check: an uploaded asset or an image URL.
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: true,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
-    values.push(body.avatar_url ?? null);
+    values.push(body.avatar_url || null);
   }
 
   if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);
@@ -1381,10 +1386,10 @@ app.patch("/me/admin/users/:id", async (c) => {
   }
   if ("avatar_url" in body) {
     // An uploaded asset, or an image URL that checks out, as on the dashboard.
-    if (body.avatar_url && !body.avatar_url.startsWith("/api/assets/")) {
-      const imgErr = await validateImageUrl(body.avatar_url);
-      if (imgErr) return c.json(imgErr, 400);
-    }
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: true,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
     values.push(body.avatar_url || null);
     applied.avatar_url = body.avatar_url || null;
@@ -1569,8 +1574,13 @@ app.patch("/me/team/:teamId/info", async (c) => {
     values.push(body.description ?? null);
   }
   if ("avatar_url" in body) {
+    // The dashboard's check: an image URL that checks out.
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: false,
+    });
+    if (imgErr) return c.json(imgErr, 400);
     updates.push("avatar_url = ?");
-    values.push(body.avatar_url ?? null);
+    values.push(body.avatar_url || null);
   }
 
   if (updates.length === 0) return c.json({ error: "nothing_to_update" }, 400);

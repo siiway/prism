@@ -93,3 +93,44 @@ test("an admin can't disable their own account with any falsy value", async () =
   }
   expect(isActive()).toBe(1);
 });
+
+test("an avatar URL that isn't a string is refused, not a crash", async () => {
+  for (const value of [5, true, { url: "x" }]) {
+    for (const res of await editBothWays("u1", { avatar_url: value })) {
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({
+        error: "field_invalid",
+        params: { field: "avatar_url" },
+      });
+    }
+  }
+});
+
+test("an app editing a profile gets the dashboard's avatar check", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  sqlite.run(
+    `INSERT INTO oauth_tokens (id, access_token, client_id, user_id, scopes, expires_at, created_at)
+     VALUES ('t2', 'ptok', 'tool', 'u1', '["profile:write"]', ?, ?)`,
+    [now + 600, now],
+  );
+  const app = new Hono();
+  app.route("/api/oauth", meRoutes);
+  for (const avatar_url of [5, "http://tracker.example/x"]) {
+    const res = await app.fetch(
+      new Request("https://prism.example/api/oauth/me/profile", {
+        method: "PATCH",
+        headers: {
+          Authorization: "Bearer ptok",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ avatar_url }),
+      }),
+      env(),
+      executionCtx,
+    );
+    expect(res.status).toBe(400);
+  }
+  expect(
+    sqlite.query("SELECT avatar_url FROM users WHERE id = 'u1'").get(),
+  ).toEqual({ avatar_url: null });
+});
