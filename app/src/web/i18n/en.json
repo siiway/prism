@@ -139,7 +139,9 @@
     "username": "Username",
     "displayName": "Display name",
     "displayNamePlaceholder": "Jane Doe",
-    "tgVerifying": "Verifying your Telegram sign-in…"
+    "tgVerifying": "Verifying your Telegram sign-in…",
+    "emailPlaceholder": "you@example.com",
+    "usernamePlaceholder": "johndoe"
   },
   "init": {
     "firstRunSetup": "First Run Setup",
@@ -154,7 +156,9 @@
     "createAdminAccount": "Create Admin Account",
     "creating": "Creating…",
     "siteNamePlaceholder": "My Identity Platform",
-    "displayNamePlaceholder": "Admin"
+    "displayNamePlaceholder": "Admin",
+    "adminEmailPlaceholder": "admin@example.com",
+    "usernamePlaceholder": "admin"
   },
   "publicProfile": {
     "publicProfileBadge": "Public profile",
@@ -288,7 +292,8 @@
     "publicProfileFollowingDefaultLong": "Following the site default",
     "readmeLinkGithub": "Link a GitHub account to use its profile README.",
     "removeEmailTitle": "Remove email address?",
-    "removeEmailBody": "{{email}} will be removed from your account."
+    "removeEmailBody": "{{email}} will be removed from your account.",
+    "addEmailPlaceholder": "user@example.com"
   },
   "security": {
     "title": "Security",
@@ -1474,7 +1479,8 @@
       "sudoActiveTitle": "Sudo mode active",
       "sudoActiveDesc": "You confirmed with {{appName}} in the last {{minutes}} minutes, so no code is needed this time.",
       "footerNote": "Confirming sends a one-time verification back to {{appName}}. It does not grant any new account access."
-    }
+    },
+    "totpCodePlaceholder": "000000"
   },
   "saml": {
     "title": "Sign in to {{appName}}",
@@ -2589,7 +2595,8 @@
     "oauthTwoStepLabel": "Two-step verification",
     "oauthTwoStepDesc": "Skipped means people who use two-step verification aren't asked for their code after signing in this way.",
     "inviteStatusActive": "Active",
-    "inviteStatusPaused": "Paused"
+    "inviteStatusPaused": "Paused",
+    "inviteEmailPlaceholder": "user@example.com"
   },
   "notifications": {
     "title": "Notifications",

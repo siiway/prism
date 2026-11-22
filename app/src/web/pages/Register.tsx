@@ -143,7 +143,7 @@ export function Register() {
                 type="email"
                 value={form.email}
                 onChange={update("email")}
-                placeholder="you@example.com"
+                placeholder={t("auth.emailPlaceholder")}
               />
             </Field>
 
@@ -151,7 +151,7 @@ export function Register() {
               <Input
                 value={form.username}
                 onChange={update("username")}
-                placeholder="johndoe"
+                placeholder={t("auth.usernamePlaceholder")}
               />
             </Field>
             <Field label={t("auth.displayName")}>

@@ -110,7 +110,7 @@ export function Init() {
               type="email"
               value={form.email}
               onChange={update("email")}
-              placeholder="admin@example.com"
+              placeholder={t("init.adminEmailPlaceholder")}
             />
           </Field>
 
@@ -118,7 +118,7 @@ export function Init() {
             <Input
               value={form.username}
               onChange={update("username")}
-              placeholder="admin"
+              placeholder={t("init.usernamePlaceholder")}
             />
           </Field>
           <Field label={t("init.displayName")}>

@@ -623,7 +623,7 @@ export function Profile() {
               aria-label={t("profile.addEmail")}
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
-              placeholder="user@example.com"
+              placeholder={t("profile.addEmailPlaceholder")}
             />
             <Button
               type="submit"

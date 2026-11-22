@@ -139,7 +139,9 @@
     "username": "用户名",
     "displayName": "显示名称",
     "displayNamePlaceholder": "张三",
-    "tgVerifying": "正在验证 Telegram 登录…"
+    "tgVerifying": "正在验证 Telegram 登录…",
+    "emailPlaceholder": "you@example.com",
+    "usernamePlaceholder": "zhangsan"
   },
   "init": {
     "firstRunSetup": "首次运行设置",
@@ -154,7 +156,9 @@
     "createAdminAccount": "创建管理员账号",
     "creating": "创建中…",
     "siteNamePlaceholder": "我的身份平台",
-    "displayNamePlaceholder": "管理员"
+    "displayNamePlaceholder": "管理员",
+    "adminEmailPlaceholder": "admin@example.com",
+    "usernamePlaceholder": "admin"
   },
   "publicProfile": {
     "publicProfileBadge": "公开资料",
@@ -288,7 +292,8 @@
     "publicProfileFollowingDefaultLong": "跟随站点默认设置",
     "readmeLinkGithub": "关联一个 GitHub 账号即可使用其个人主页 README。",
     "removeEmailTitle": "移除邮箱地址？",
-    "removeEmailBody": "{{email}} 将从你的账户中移除。"
+    "removeEmailBody": "{{email}} 将从你的账户中移除。",
+    "addEmailPlaceholder": "user@example.com"
   },
   "security": {
     "title": "安全",
@@ -1474,7 +1479,8 @@
       "sudoActiveTitle": "sudo 模式已启用",
       "sudoActiveDesc": "你在 {{minutes}} 分钟内已在 {{appName}} 确认过，本次无需验证码。",
       "footerNote": "确认会向 {{appName}} 发回一次性验证结果,不会授予任何新的账户权限。"
-    }
+    },
+    "totpCodePlaceholder": "000000"
   },
   "saml": {
     "title": "登录 {{appName}}",
@@ -2589,7 +2595,8 @@
     "oauthTwoStepLabel": "两步验证",
     "oauthTwoStepDesc": "选择「跳过」后，启用了二次验证的用户通过此方式登录时无需再输入验证码。",
     "inviteStatusActive": "有效",
-    "inviteStatusPaused": "已暂停"
+    "inviteStatusPaused": "已暂停",
+    "inviteEmailPlaceholder": "user@example.com"
   },
   "notifications": {
     "title": "通知",

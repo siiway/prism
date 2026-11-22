@@ -331,7 +331,7 @@ export function Login() {
                     setIdentifier(e.target.value);
                     if (identifierError) setIdentifierError("");
                   }}
-                  placeholder="you@example.com"
+                  placeholder={t("auth.emailPlaceholder")}
                   autoComplete="username"
                   autoFocus
                 />

@@ -663,7 +663,7 @@ export function Authorize() {
                               setTotpCode(d.value);
                               setSiteError(null);
                             }}
-                            placeholder="000000"
+                            placeholder={t("oauth.totpCodePlaceholder")}
                             maxLength={6}
                             inputMode="numeric"
                             autoComplete="one-time-code"
