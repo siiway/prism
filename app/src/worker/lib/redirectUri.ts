@@ -134,10 +134,8 @@ export function validateRedirectUriEntry(
       const parsed = parseWildcard(entry.value);
       if (typeof parsed === "string") return parsed;
       // The domain itself must be spelled out: `https://*.com/cb` would let
-      // any .com site in. A `*` ending the host only stands for the path.
-      const host = parsed.host.endsWith("*")
-        ? parsed.host.slice(0, -1)
-        : parsed.host;
+      // any .com site in.
+      const host = parsed.host;
       if (host.includes("*")) {
         const labels = host.split(".");
         if (labels.length < 3 || labels.slice(-2).some((l) => l.includes("*")))
@@ -206,6 +204,14 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
     port = authority.slice(i + 1);
   }
   if (port !== null && !/^(\d+|\*)$/.test(port)) return "not_url";
+  // A `*` ending the host (`https://example.com*`) has always stood for
+  // the path, which the old whole-string glob ran on into. It is read that
+  // way, so the host is exactly example.com and never example.community.
+  // With a port or path after it, it could only mean more host: refused.
+  if (host.endsWith("*")) {
+    if (port !== null || rest) return "wildcard_host";
+    host = host.slice(0, -1);
+  }
   // The host must be a real one with the stars filled in, and more than
   // stars and dots: `https://*/cb` would accept every site.
   if (!/[^*.]/.test(host)) return "wildcard_host";

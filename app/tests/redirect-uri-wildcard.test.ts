@@ -74,6 +74,27 @@ describe("wildcard redirect URIs", () => {
     );
   });
 
+  test("a * ending the host never reaches a longer domain", () => {
+    for (const candidate of [
+      "https://example.community/steal",
+      "https://example.company/cb",
+      "https://example.comx.evil.com/cb",
+    ])
+      expect(matches("https://example.com*", candidate)).toBe(false);
+    expect(
+      validateRedirectUriEntry({
+        type: "wildcard",
+        value: "https://example.com*/cb",
+      }),
+    ).toBe("wildcard_host");
+    expect(
+      validateRedirectUriEntry({
+        type: "wildcard",
+        value: "https://example.com*:8443",
+      }),
+    ).toBe("wildcard_host");
+  });
+
   test("a query without a path is the root's query", () => {
     expect(matches("https://example.com?x=*", "https://example.com/?x=1")).toBe(
       true,
