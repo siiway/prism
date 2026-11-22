@@ -447,6 +447,14 @@ app.delete("/consents/:client_id", requireAuth, async (c) => {
     c.env.DB.prepare(
       "DELETE FROM oauth_tokens WHERE user_id = ? AND client_id = ?",
     ).bind(user.id, clientId),
+    // Codes the app hasn't redeemed yet would still turn into tokens: the
+    // code and device grants don't look at the approval again.
+    c.env.DB.prepare(
+      "DELETE FROM oauth_codes WHERE user_id = ? AND client_id = ?",
+    ).bind(user.id, clientId),
+    c.env.DB.prepare(
+      "DELETE FROM oauth_device_codes WHERE user_id = ? AND client_id = ?",
+    ).bind(user.id, clientId),
   ]);
 
   if (appRow) {
