@@ -241,10 +241,15 @@ async function loadPushedRequest(
 
 /** One-time use: consume a pushed request so its request_uri can't be replayed
  *  (RFC 9126 §2.2). Best-effort — the KV TTL is the backstop. */
-function consumePushedRequest(env: Env, requestUri: string): void {
+async function consumePushedRequest(
+  env: Env,
+  requestUri: string,
+): Promise<void> {
   if (!requestUri.startsWith(PAR_URN_PREFIX)) return;
   const id = requestUri.slice(PAR_URN_PREFIX.length);
-  if (id) void env.KV_CACHE.delete(`par:${id}`).catch(() => {});
+  // Awaited: a delete left running when the response goes out can be
+  // dropped, which would leave the request_uri usable until it expires.
+  if (id) await env.KV_CACHE.delete(`par:${id}`).catch(() => {});
 }
 
 // ─── Device Authorization Grant (RFC 8628) ───────────────────────────────────
@@ -936,7 +941,7 @@ app.post("/authorize", requireAuth, async (c) => {
     if (body.state) url.searchParams.set("state", body.state);
     // RFC 9207: identify the issuer on the (error) authorization response too.
     url.searchParams.set("iss", c.env.APP_URL);
-    if (body.request_uri) consumePushedRequest(c.env, body.request_uri);
+    if (body.request_uri) await consumePushedRequest(c.env, body.request_uri);
     return c.json({ redirect: url.toString() });
   }
 
@@ -1268,7 +1273,7 @@ app.post("/authorize", requireAuth, async (c) => {
   // RFC 9207: let the client confirm which issuer produced this response,
   // defeating mix-up attacks where a second AS is swapped in.
   url.searchParams.set("iss", c.env.APP_URL);
-  if (body.request_uri) consumePushedRequest(c.env, body.request_uri);
+  if (body.request_uri) await consumePushedRequest(c.env, body.request_uri);
 
   // Notify the app that a user just granted access
   c.executionCtx.waitUntil(
