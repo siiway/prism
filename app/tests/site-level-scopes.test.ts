@@ -114,6 +114,30 @@ describe("admin:* scopes are site-level", () => {
     });
   });
 
+  test("the 2FA code can't be guessed without limit", async () => {
+    const cookie = await sessionCookie("admin", "admin");
+    const guess = () =>
+      app.fetch(
+        new Request("https://prism.example/oauth/authorize", {
+          method: "POST",
+          headers: { Cookie: cookie, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id: "client_1",
+            redirect_uri: "https://tool.example/cb",
+            scope: "openid admin:config:read",
+            action: "approve",
+            totp_code: "000000",
+            confirm_text: "grant site access",
+          }),
+        }),
+        testEnv(),
+        executionCtx,
+      );
+    // The default limit is 15 codes per 5 minutes.
+    for (let i = 0; i < 15; i++) expect((await guess()).status).toBe(400);
+    expect((await guess()).status).toBe(429);
+  });
+
   test("the consent screen asks for the site grant and never auto-approves", async () => {
     const now = Math.floor(Date.now() / 1000);
     sqlite.run(

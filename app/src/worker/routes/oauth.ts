@@ -13,6 +13,7 @@ import {
 } from "../lib/jwt";
 import { randomBase64url, randomId } from "../lib/crypto";
 import { verifyAnyTotp } from "../lib/totp";
+import { checkLoginTotpLimit } from "../lib/loginRateLimit";
 import { requireAuth, optionalAuth } from "../middleware/auth";
 import { rejectRepeatedParams } from "../middleware/repeatedParams";
 import {
@@ -1017,6 +1018,14 @@ app.post("/authorize", requireAuth, async (c) => {
         twoFaOk = true;
       }
     } else if (body.totp_code) {
+      // The same per-account limit as sign-in's TOTP step, or a stolen
+      // session could guess its way past this gate.
+      const limit = await checkLoginTotpLimit(
+        c.env.DB,
+        user.id,
+        await getConfig(c.env.DB),
+      );
+      if (!limit.allowed) return c.json({ error: "too_many_requests" }, 429);
       twoFaOk = await verifyAnyTotp(c.env, user.id, body.totp_code);
     }
 
