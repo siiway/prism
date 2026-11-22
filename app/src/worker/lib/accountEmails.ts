@@ -1,3 +1,5 @@
+import type { UserRow } from "../types";
+
 // An email address belongs to the one account that proved it owns it, as
 // its verified primary address (users.email) or a verified alternate
 // (user_emails). Anyone can type an address without proof, so an
@@ -83,4 +85,42 @@ export async function oldPrimaryDemotion(
         .bind(claim.id),
     };
   return { keep: false, dropClaim: null };
+}
+
+/** The account an email address signs in to: the one whose primary address
+ *  it is, unless that primary is unverified and another account has
+ *  verified the address as an alternate it may sign in with. Whoever proved
+ *  they own the address is who signs in with it. `kind = 'user'` keeps the
+ *  synthetic team-user rows out of every sign-in. */
+export async function userForSignInEmail(
+  db: D1Database,
+  email: string,
+  allowAltEmailLogin: boolean,
+): Promise<UserRow | null> {
+  let user = await db
+    .prepare("SELECT * FROM users WHERE email = ? AND kind = 'user'")
+    .bind(email)
+    .first<UserRow>();
+  if (user?.email_verified) return user;
+  const alt = await db
+    .prepare(
+      "SELECT user_id FROM user_emails WHERE email = ? AND verified = 1 AND user_id != ?",
+    )
+    .bind(email, user?.id ?? "")
+    .first<{ user_id: string }>();
+  if (!alt) return user;
+  const altUser = await db
+    .prepare("SELECT * FROM users WHERE id = ? AND kind = 'user'")
+    .bind(alt.user_id)
+    .first<UserRow>();
+  // The account's own choice, else the site's, on signing in with an
+  // alternate address.
+  if (
+    altUser &&
+    (altUser.alt_email_login !== null
+      ? altUser.alt_email_login === 1
+      : allowAltEmailLogin)
+  )
+    user = altUser;
+  return user;
 }

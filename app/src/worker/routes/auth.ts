@@ -2,7 +2,11 @@
 
 import { Hono } from "hono";
 import { getConfig } from "../lib/config";
-import { emailInUse, emailOwnedElsewhere } from "../lib/accountEmails";
+import {
+  emailInUse,
+  emailOwnedElsewhere,
+  userForSignInEmail,
+} from "../lib/accountEmails";
 import { optionalDisplayName } from "../lib/displayName";
 import {
   emailVerifyTokenFresh,
@@ -299,40 +303,11 @@ app.post("/login", async (c) => {
   // about who exists.
   let user: UserRow | null;
   if (isEmail) {
-    // Check primary email first, then alternate emails. kind='user' filter
-    // is defensive: synthetic team-user rows have a teams.invalid email so
-    // they would fail the password_hash check anyway, but excluding them
-    // here prevents any future credential-bearing flow from accidentally
-    // resolving the team-user.
-    user = await c.env.DB.prepare(
-      "SELECT * FROM users WHERE email = ? AND kind = 'user'",
-    )
-      .bind(identifier)
-      .first<UserRow>();
-    // A verified alternate address wins over someone's unverified primary
-    // one: whoever proved they own the address is who signs in with it.
-    if (!user || !user.email_verified) {
-      const alt = await c.env.DB.prepare(
-        "SELECT user_id FROM user_emails WHERE email = ? AND verified = 1 AND user_id != ?",
-      )
-        .bind(identifier, user?.id ?? "")
-        .first<{ user_id: string }>();
-      if (alt) {
-        const altUser = await c.env.DB.prepare(
-          "SELECT * FROM users WHERE id = ? AND kind = 'user'",
-        )
-          .bind(alt.user_id)
-          .first<UserRow>();
-        if (altUser) {
-          // Check if alternate email login is allowed for this user
-          const allowed =
-            altUser.alt_email_login !== null
-              ? altUser.alt_email_login === 1
-              : loginConfig.allow_alt_email_login;
-          if (allowed) user = altUser;
-        }
-      }
-    }
+    user = await userForSignInEmail(
+      c.env.DB,
+      identifier,
+      loginConfig.allow_alt_email_login,
+    );
   } else {
     user = await c.env.DB.prepare(
       "SELECT * FROM users WHERE username = ? AND kind = 'user'",
@@ -662,11 +637,18 @@ app.post("/passkey/auth/begin", async (c) => {
 
   const username = "username" in body ? body.username : undefined;
   if (username) {
-    const user = await c.env.DB.prepare(
-      "SELECT * FROM users WHERE (username = ? OR email = ?) AND kind = 'user'",
-    )
-      .bind(username, username)
-      .first<{ id: string }>();
+    // An email address finds its account the way password sign-in does.
+    const user = username.includes("@")
+      ? await userForSignInEmail(
+          c.env.DB,
+          username.toLowerCase().trim(),
+          (await getConfig(c.env.DB)).allow_alt_email_login,
+        )
+      : await c.env.DB.prepare(
+          "SELECT * FROM users WHERE username = ? AND kind = 'user'",
+        )
+          .bind(username)
+          .first<{ id: string }>();
     if (user) {
       const rows = await c.env.DB.prepare(
         "SELECT * FROM passkeys WHERE user_id = ?",

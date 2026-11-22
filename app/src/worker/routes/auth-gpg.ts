@@ -2,6 +2,7 @@
 // with a key registered on their account.
 
 import { Hono } from "hono";
+import { userForSignInEmail } from "../lib/accountEmails";
 import { getConfig } from "../lib/config";
 import { getIp } from "../lib/clientIp";
 import { geoJson } from "../lib/geo";
@@ -105,10 +106,13 @@ app.post("/gpg-login", async (c) => {
   const identifier = body.identifier.toLowerCase().trim();
   const isEmail = identifier.includes("@");
 
+  // An email address finds its account the way password sign-in does.
   const user = await (isEmail
-    ? c.env.DB.prepare("SELECT * FROM users WHERE email = ? AND kind = 'user'")
-        .bind(identifier)
-        .first<UserRow>()
+    ? userForSignInEmail(
+        c.env.DB,
+        identifier,
+        gpgLoginConfig.allow_alt_email_login,
+      )
     : c.env.DB.prepare(
         "SELECT * FROM users WHERE username = ? AND kind = 'user'",
       )

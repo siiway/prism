@@ -324,3 +324,34 @@ test("an alternate's link does nothing unless its own account opens it", async (
   const res = await openLink(query, "other");
   expect(res.headers.get("Location")).toContain("status=success");
 });
+
+test("passkey sign-in by email finds the address's owner, not a squatter", async () => {
+  sqlite.exec("DROP TRIGGER users_email_not_another_accounts_insert");
+  sqlite.exec(`
+    UPDATE users SET alt_email_login = 1 WHERE id = 'victim';
+    INSERT INTO users (id, username, email, email_verified, created_at, updated_at)
+      VALUES ('squatter', 'squatter', 'alt@example.com', 0, 0, 0);
+    INSERT INTO passkeys (id, user_id, credential_id, public_key, created_at) VALUES
+      ('p1', 'victim', 'dmljdGltLWtleQ', 'pk', 0),
+      ('p2', 'squatter', 'c3F1YXR0ZXIta2V5', 'pk', 0);
+  `);
+  const app = new Hono();
+  app.route("/api/auth", authRoutes);
+  const res = await app.fetch(
+    new Request("https://prism.example/api/auth/passkey/auth/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "alt@example.com" }),
+    }),
+    {
+      DB: d1(sqlite),
+      APP_URL: "https://prism.example",
+      KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+      KV_SESSIONS: new MemoryKv() as unknown as KVNamespace,
+    } as unknown as Env,
+    executionCtx,
+  );
+  const text = JSON.stringify(await res.json());
+  expect(text).toContain("dmljdGltLWtleQ");
+  expect(text).not.toContain("c3F1YXR0ZXIta2V5");
+});
