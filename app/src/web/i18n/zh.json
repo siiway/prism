@@ -3346,6 +3346,7 @@
     "redirect_uri_scheme": "{{uri}} 必须使用 https://（http:// 仅限本机地址）。",
     "redirect_uri_userinfo": "{{uri}} 不能包含用户名或密码。",
     "redirect_uri_whitespace": "{{uri}} 不能包含空格。",
+    "redirect_uri_wildcard_host": "{{uri}} 需要一个真实的主机名，例如 https://*.example.com/callback。",
     "registration_disabled": "本站已关闭注册。",
     "registration_session_expired": "注册会话已过期，请重新开始。",
     "request_too_large": "请求内容过大。",

@@ -9,8 +9,10 @@
 // Each registered redirect URI now carries a match *type*:
 //   • equals   — normalized (scheme, host:port, pathname, search) equality.
 //                The safest option; used for legacy string entries too.
-//   • wildcard — a glob where `*` stands in for any run of characters.
-//                Matched against the raw candidate after a safety gate.
+//   • wildcard — a glob. Scheme, host, port and path+query are matched one
+//                by one: `*` in the host stays within a label, `*` as the
+//                port allows any port, and in the path or query it matches
+//                any run of characters.
 //   • regex    — an arbitrary regular expression, anchored full-match.
 //                Powerful and dangerous (`.*` allows *any* redirect URI).
 //
@@ -97,7 +99,8 @@ export type RedirectUriReason =
   | "scheme"
   | "whitespace"
   | "regex"
-  | "match_type";
+  | "match_type"
+  | "wildcard_host";
 
 export function validateRedirectUriForRegistration(
   uri: string,
@@ -128,9 +131,8 @@ export function validateRedirectUriEntry(
     case "wildcard": {
       if (/\s/.test(entry.value)) return "whitespace";
       if (entry.value.includes("#")) return "fragment";
-      if (!/^https:\/\//i.test(entry.value) && !/^http:\/\//i.test(entry.value))
-        return "scheme";
-      return null;
+      const parsed = parseWildcard(entry.value);
+      return typeof parsed === "string" ? parsed : null;
     }
     case "regex": {
       try {
@@ -160,18 +162,91 @@ function normalizeKey(parsed: URL): string {
   return `${scheme}//${host}:${port}${path}${parsed.search}`;
 }
 
-/** Convert a glob (`*` → any run of characters) into an anchored RegExp. */
-function wildcardToRegExp(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^${escaped.replace(/\\\*/g, ".*")}$`);
+/** A wildcard entry split the way a URL is: the host and port are matched
+ *  on their own, so a `*` can never carry the match into another host. */
+interface WildcardPattern {
+  scheme: string;
+  /** Lowercased host glob; `*` matches within one label. */
+  host: string;
+  /** Port digits, `*` for any port, or null for the scheme's default. */
+  port: string | null;
+  /** Path and query glob; `*` matches any run of characters. */
+  rest: string;
 }
 
-function wildcardMatches(pattern: string, candidate: string): boolean {
-  try {
-    return wildcardToRegExp(pattern).test(candidate);
-  } catch {
-    return false;
+function defaultPort(scheme: string): string {
+  return scheme === "https:" ? "443" : scheme === "http:" ? "80" : "";
+}
+
+function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
+  const m = /^(https?):\/\/([^/?#]*)(.*)$/i.exec(pattern);
+  if (!m) return "scheme";
+  const [, scheme, authority, rest] = m;
+  if (authority.includes("@")) return "userinfo";
+  let host = authority;
+  let port: string | null = null;
+  const bracketed = /^(\[[^\]]*\])(?::(.*))?$/.exec(authority);
+  if (bracketed) {
+    host = bracketed[1];
+    port = bracketed[2] ?? null;
+  } else if (authority.includes(":")) {
+    const i = authority.lastIndexOf(":");
+    host = authority.slice(0, i);
+    port = authority.slice(i + 1);
   }
+  if (port !== null && !/^(\d+|\*)$/.test(port)) return "not_url";
+  // The host must be a real one with the stars filled in, and more than
+  // stars and dots: `https://*/cb` would accept every site.
+  if (!/[^*.]/.test(host)) return "wildcard_host";
+  const filled = tryParse(`${scheme}://${host.replaceAll("*", "x")}/`);
+  if (!filled || filled.hostname !== host.replaceAll("*", "x").toLowerCase())
+    return "wildcard_host";
+  return {
+    scheme: `${scheme.toLowerCase()}:`,
+    host: host.toLowerCase(),
+    port,
+    rest: rest || "/",
+  };
+}
+
+/** Glob match where `*` stands for any run of characters. It only ever
+ *  backtracks to the last `*`, so no pattern can make it run away. */
+function globMatch(pattern: string, text: string): boolean {
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    if (pattern[p] === "*") {
+      star = p++;
+      mark = t;
+    } else if (p < pattern.length && pattern[p] === text[t]) {
+      p++;
+      t++;
+    } else if (star !== -1) {
+      p = star + 1;
+      t = ++mark;
+    } else return false;
+  }
+  while (pattern[p] === "*") p++;
+  return p === pattern.length;
+}
+
+/** A host glob: `*` matches letters, digits and hyphens, never a dot. */
+function hostMatches(pattern: string, host: string): boolean {
+  const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escaped.replace(/\\\*/g, "[a-z0-9-]*")}$`).test(host);
+}
+
+function wildcardMatches(pattern: string, candidate: URL): boolean {
+  const w = parseWildcard(pattern);
+  if (typeof w === "string") return false;
+  if (candidate.protocol !== w.scheme) return false;
+  if (!hostMatches(w.host, candidate.hostname.toLowerCase())) return false;
+  const port = candidate.port || defaultPort(candidate.protocol);
+  if (w.port !== "*" && port !== (w.port ?? defaultPort(w.scheme)))
+    return false;
+  return globMatch(w.rest, `${candidate.pathname}${candidate.search}`);
 }
 
 function regexMatches(pattern: string, candidate: string): boolean {
@@ -188,8 +263,9 @@ function regexMatches(pattern: string, candidate: string): boolean {
  * Every candidate first passes the safety gate (https/loopback, no userinfo,
  * no fragment) regardless of match type. An empty registry means the app is
  * in "learn" mode and accepts any safe candidate (the caller pins the first
- * one used). `equals` entries compare on the normalized URL tuple; `wildcard`
- * and `regex` entries match against the raw candidate string.
+ * one used). `equals` entries compare on the normalized URL tuple, `wildcard`
+ * entries on its parts, and `regex` entries match against the raw candidate
+ * string.
  */
 export function redirectUriMatchesRegistered(
   candidate: string,
@@ -197,13 +273,14 @@ export function redirectUriMatchesRegistered(
 ): boolean {
   if (validateRedirectUriForRegistration(candidate) !== null) return false;
   if (registered.length === 0) return true;
-  const candidateKey = normalizeKey(tryParse(candidate)!);
+  const candidateUrl = tryParse(candidate)!;
+  const candidateKey = normalizeKey(candidateUrl);
   for (const entry of registered) {
     if (entry.type === "equals") {
       if (validateRedirectUriForRegistration(entry.value) !== null) continue;
       if (normalizeKey(tryParse(entry.value)!) === candidateKey) return true;
     } else if (entry.type === "wildcard") {
-      if (wildcardMatches(entry.value, candidate)) return true;
+      if (wildcardMatches(entry.value, candidateUrl)) return true;
     } else if (entry.type === "regex") {
       if (regexMatches(entry.value, candidate)) return true;
     }

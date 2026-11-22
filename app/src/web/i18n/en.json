@@ -3346,6 +3346,7 @@
     "redirect_uri_scheme": "{{uri}} must use https:// (http:// only works for localhost).",
     "redirect_uri_userinfo": "{{uri}} can't contain a username or password.",
     "redirect_uri_whitespace": "{{uri}} can't contain spaces.",
+    "redirect_uri_wildcard_host": "{{uri}} needs a real host name, like https://*.example.com/callback.",
     "registration_disabled": "Sign-up is closed on this site.",
     "registration_session_expired": "The sign-up session expired. Start again.",
     "request_too_large": "The request is too large.",
