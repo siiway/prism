@@ -137,3 +137,22 @@ test("the current primary can't be added as an alternate after a switch", async 
   expect(res.status).toBe(409);
   expect(await res.json()).toMatchObject({ error: "email_taken" });
 });
+
+test("an admin's switch drops a placeholder primary, as the user's own does", async () => {
+  sqlite.exec(`
+    UPDATE users SET email = 'victim@users.invalid' WHERE id = 'victim';
+    INSERT INTO user_emails (id, user_id, email, verified, created_at)
+      VALUES ('e2', 'victim', 'real@example.com', 1, 0);
+  `);
+  const res = await post(
+    "/api/admin/users/victim/emails/e2/set-primary",
+    "admin",
+    "s1",
+  );
+  expect(res.status).toBe(200);
+  expect(
+    sqlite
+      .query("SELECT email FROM user_emails WHERE user_id = 'victim'")
+      .all(),
+  ).toEqual([{ email: "mine@example.com" }]);
+});

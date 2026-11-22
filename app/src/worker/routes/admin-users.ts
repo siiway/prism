@@ -34,6 +34,7 @@ import { readPage } from "../lib/pagination";
 import { proxyImageUrl } from "../lib/proxyImage";
 import { signOutEverywhere } from "../lib/session";
 import { isUserLocked } from "../lib/lockdown";
+import { isSyntheticEmail } from "../lib/userCapabilities";
 import type { DomainRow, UserEmailRow, Variables } from "../types";
 import { parseScopeList } from "../lib/scopeGrants";
 import { PASSWORD_MIN_LENGTH } from "../../shared/limits";
@@ -580,8 +581,9 @@ app.post("/:id/emails/:emailId/set-primary", async (c) => {
       ...(demotion.dropClaim ? [demotion.dropClaim] : []),
       // Demote the old primary into the alternates list, carrying its
       // verification state but never its outstanding challenge tokens — those
-      // are bound to a specific pending check against that address.
-      ...(demotion.keep
+      // are bound to a specific pending check against that address. A
+      // placeholder address (`@users.invalid`) reaches no one: dropped.
+      ...(demotion.keep && !isSyntheticEmail(userRow.email)
         ? [
             c.env.DB.prepare(
               `INSERT INTO user_emails (id, user_id, email, verified, verify_token, verify_code, verified_via, verified_at, created_at)
