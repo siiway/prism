@@ -415,6 +415,50 @@ export function teamUserSyntheticEmail(teamId: string): string {
   return `team-${teamId}@teams.invalid`;
 }
 
+/** The writes that stand a team up, for one batch: its row, the synthetic
+ *  team-user that the team's apps are owned by (kind='team' rules out
+ *  sign-in, sessions, social linking and the like; its id is the team's,
+ *  so oauth_apps.owner_id joins to users still resolve), and the owner. */
+export function createTeamStatements(
+  db: D1Database,
+  team: {
+    id: string;
+    name: string;
+    description: string;
+    avatarUrl: string | null;
+    parentId: string | null;
+    ownerId: string;
+    now: number;
+  },
+): D1PreparedStatement[] {
+  const { id, name, description, avatarUrl, parentId, ownerId, now } = team;
+  return [
+    db
+      .prepare(
+        "INSERT INTO teams (id, name, description, avatar_url, parent_team_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .bind(id, name, description, avatarUrl, parentId, now, now),
+    db
+      .prepare(
+        "INSERT INTO users (id, email, username, password_hash, display_name, avatar_url, role, kind, email_verified, is_active, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?, 'user', 'team', 0, 1, ?, ?)",
+      )
+      .bind(
+        id,
+        teamUserSyntheticEmail(id),
+        teamUserSyntheticUsername(id),
+        name,
+        avatarUrl,
+        now,
+        now,
+      ),
+    db
+      .prepare(
+        "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
+      )
+      .bind(id, ownerId, now),
+  ];
+}
+
 /**
  * Disband a team and all its sub-teams (cascade). For each team in the
  * subtree (deepest first) we reassign team-owned apps to a real-user

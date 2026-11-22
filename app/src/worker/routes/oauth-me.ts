@@ -52,6 +52,7 @@ import {
   ROLE_RANK,
   listEffectiveTeamMemberships,
   dissolveTeam,
+  createTeamStatements,
 } from "../lib/teams";
 import type { DomainRow, OAuthAppRow, Variables } from "../types";
 import { verifyDpopProof } from "../lib/dpop";
@@ -419,6 +420,15 @@ app.delete("/me/social-connections/:id", async (c) => {
 app.post("/me/teams", async (c) => {
   const resolved = await resolveBearerToken(c, "teams:create");
   if (!resolved) return c.json({ error: "insufficient_scope" }, 403);
+  // The same gates as creating a team on the dashboard.
+  const owner = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
+    .bind(resolved.userId)
+    .first<{ role: string }>();
+  if (
+    owner?.role !== "admin" &&
+    (await getConfigValue(c.env.DB, "disable_user_create_team"))
+  )
+    return c.json({ error: "team_creation_disabled" }, 403);
   const capErr = await guardCapability(
     c.env.DB,
     resolved.userId,
@@ -433,25 +443,27 @@ app.post("/me/teams", async (c) => {
   }>();
   if (!body.name?.trim())
     return c.json({ error: "field_required", params: { field: "name" } }, 400);
+  if (body.avatar_url !== undefined) {
+    const imgErr = await imageUrlFieldError(body.avatar_url, "avatar_url", {
+      allowUploads: false,
+    });
+    if (imgErr) return c.json(imgErr, 400);
+  }
 
   const id = randomId();
   const now = Math.floor(Date.now() / 1000);
 
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "INSERT INTO teams (id, name, description, avatar_url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-    ).bind(
+  await c.env.DB.batch(
+    createTeamStatements(c.env.DB, {
       id,
-      body.name.trim(),
-      body.description ?? "",
-      body.avatar_url ?? null,
+      name: body.name.trim(),
+      description: body.description ?? "",
+      avatarUrl: body.avatar_url || null,
+      parentId: null,
+      ownerId: resolved.userId,
       now,
-      now,
-    ),
-    c.env.DB.prepare(
-      "INSERT INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)",
-    ).bind(id, resolved.userId, now),
-  ]);
+    }),
+  );
 
   const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?")
     .bind(id)
