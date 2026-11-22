@@ -133,25 +133,7 @@ export function validateRedirectUriEntry(
       if (/\s/.test(entry.value)) return "whitespace";
       if (entry.value.includes("#")) return "fragment";
       const parsed = parseWildcard(entry.value);
-      if (typeof parsed === "string") return parsed;
-      // The registrable domain, the label above the public suffix plus the
-      // suffix, must be spelled out. `*.com`, `*.co.uk`, `*.github.io` or
-      // `pr-*.vercel.app` would let in sites anyone can register.
-      const host = parsed.host;
-      if (host.includes("*")) {
-        const { domain } = parseDomain(host.replaceAll("*", "x"), {
-          allowPrivateDomains: true,
-        });
-        const labels = host.split(".");
-        if (
-          !domain ||
-          labels
-            .slice(-domain.split(".").length)
-            .some((label) => label.includes("*"))
-        )
-          return "wildcard_host";
-      }
-      return null;
+      return typeof parsed === "string" ? parsed : null;
     }
     case "regex": {
       try {
@@ -228,6 +210,15 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
   const filled = tryParse(`${scheme}://${host.replaceAll("*", "x")}/`);
   if (!filled || filled.hostname !== host.replaceAll("*", "x").toLowerCase())
     return "wildcard_host";
+  // A trailing dot names the same site, but the public suffix lookup below
+  // drops it, so `*.com.` would pass as a domain. No dot, no ambiguity.
+  if (host.endsWith(".")) return "wildcard_host";
+  // The registrable domain, the label above the public suffix plus the
+  // suffix, must be spelled out. `*.com`, `*.co.uk`, `*.github.io` or
+  // `pr-*.vercel.app` would let in sites anyone can register. This runs on
+  // every match too, so an entry saved before the rule matches nothing.
+  if (host.includes("*") && !registrableDomainSpelledOut(host))
+    return "wildcard_host";
   // Nothing after the host: a `*` ending the host (`http://localhost:*`,
   // `https://example.com*`) has always also covered the path, so keep that;
   // otherwise only the root. A query with no path is the root's query.
@@ -240,6 +231,17 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
     port,
     rest: path,
   };
+}
+
+function registrableDomainSpelledOut(host: string): boolean {
+  const { domain } = parseDomain(host.replaceAll("*", "x"), {
+    allowPrivateDomains: true,
+  });
+  if (!domain) return false;
+  return !host
+    .split(".")
+    .slice(-domain.split(".").length)
+    .some((label) => label.includes("*"));
 }
 
 const STAR_STAND_IN = "__prism_wildcard__";

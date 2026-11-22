@@ -147,11 +147,31 @@ describe("wildcard redirect URIs", () => {
       "https://192.168.*.1/cb",
     ])
       expect(reason(shared)).toBe("wildcard_host");
+    for (const dotted of [
+      "https://*.com./cb",
+      "https://*.co.uk./cb",
+      "https://*.github.io./cb",
+      "https://*.example.com./cb",
+    ])
+      expect(reason(dotted)).toBe("wildcard_host");
     expect(reason("https://example.com*")).toBeNull();
     expect(reason("https://user@*.example.com/cb")).toBe("userinfo");
     expect(reason("ftp://*.example.com/cb")).toBe("scheme");
     expect(reason("https://*.example.com:x/cb")).toBe("not_url");
     expect(reason("https://*.example.com/cb")).toBeNull();
     expect(reason("http://localhost:*/cb")).toBeNull();
+  });
+
+  test("an entry over a shared suffix matches nothing, even one saved earlier", () => {
+    expect(
+      matches("https://*.vercel.app/cb", "https://evil.vercel.app/cb"),
+    ).toBe(false);
+    expect(matches("https://*.github.io/*", "https://evil.github.io/x")).toBe(
+      false,
+    );
+    expect(matches("https://*.com./cb", "https://evil.com./cb")).toBe(false);
+    expect(
+      matches("https://*.example.com/cb", "https://a.example.com/cb"),
+    ).toBe(true);
   });
 });
