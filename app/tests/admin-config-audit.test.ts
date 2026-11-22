@@ -187,4 +187,59 @@ describe("saving the site config", () => {
       sqlite.query("SELECT device_code FROM oauth_device_codes").get(),
     ).toBeNull();
   });
+
+  test("editing an invite's expiry follows the creation rules", async () => {
+    sqlite.exec(`
+      INSERT INTO site_invites (id, token, created_by, expires_at, created_at)
+        VALUES ('i1', 'tok-i1', 'admin', 100, 0);
+    `);
+    const jwt = await signJWT(
+      {
+        sub: "admin",
+        role: "admin",
+        sessionId: "s1",
+        email: "admin@example.com",
+        username: "admin",
+        display_name: "admin",
+        avatar_url: null,
+      },
+      jwtSecret,
+      3600,
+    );
+    const app = new Hono();
+    app.route("/api/admin", adminRoutes);
+    const patch = (expires_in_days: unknown) =>
+      app.fetch(
+        new Request("https://prism.example/api/admin/invites/i1", {
+          method: "PATCH",
+          headers: {
+            Cookie: `${SESSION_COOKIE}=${jwt}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ expires_in_days }),
+        }),
+        {
+          DB: d1(sqlite),
+          APP_URL: "https://prism.example",
+          KV_CACHE: new MemoryKv() as unknown as KVNamespace,
+          KV_SESSIONS: new MemoryKv({
+            "system:jwt_secret": jwtSecret,
+          }) as unknown as KVNamespace,
+        } as unknown as Env,
+        executionCtx,
+      );
+    const tooFar = await patch(10_000_000);
+    expect(tooFar.status).toBe(400);
+    expect(await tooFar.json()).toMatchObject({ error: "field_int_range" });
+    expect((await patch(null)).status).toBe(200);
+    expect(
+      (
+        sqlite
+          .query("SELECT expires_at FROM site_invites WHERE id = 'i1'")
+          .get() as {
+          expires_at: number | null;
+        }
+      ).expires_at,
+    ).toBeNull();
+  });
 });
