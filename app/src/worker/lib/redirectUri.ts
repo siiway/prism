@@ -211,8 +211,21 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
   // stars and dots: `https://*/cb` would accept every site.
   if (!/[^*.]/.test(host)) return "wildcard_host";
   const filled = tryParse(`${scheme}://${host.replaceAll("*", "x")}/`);
-  if (!filled || filled.hostname !== host.replaceAll("*", "x").toLowerCase())
-    return "wildcard_host";
+  if (!filled) return "wildcard_host";
+  // Compared label by label with the host as URL parsing writes it, which is
+  // how candidates arrive. A label without a star may be written in Unicode
+  // (`bücher`) and is taken in punycode; one with a star must already be
+  // written as parsing writes it, since a star can't stand inside punycode.
+  const given = host.toLowerCase().split(".");
+  const written = filled.hostname.split(".");
+  if (given.length !== written.length) return "wildcard_host";
+  const labels: string[] = [];
+  for (const [i, label] of given.entries()) {
+    if (!label.includes("*")) labels.push(written[i]);
+    else if (label.replaceAll("*", "x") === written[i]) labels.push(label);
+    else return "wildcard_host";
+  }
+  host = labels.join(".");
   // A trailing dot names the same site, but the public suffix lookup below
   // drops it, so `*.com.` would pass as a domain. No dot, no ambiguity.
   if (host.endsWith(".")) return "wildcard_host";
@@ -220,7 +233,13 @@ function parseWildcard(pattern: string): WildcardPattern | RedirectUriReason {
   // suffix, must be spelled out. `*.com`, `*.co.uk`, `*.github.io` or
   // `pr-*.vercel.app` would let in sites anyone can register. This runs on
   // every match too, so an entry saved before the rule matches nothing.
-  if (host.includes("*") && !registrableDomainSpelledOut(host))
+  // Names under `localhost` are the machine itself (RFC 6761), not sites
+  // anyone can register.
+  if (
+    host.includes("*") &&
+    !/(^|\.)localhost$/.test(host) &&
+    !registrableDomainSpelledOut(host)
+  )
     return "wildcard_host";
   // Nothing after the host: a `*` ending the host (`http://localhost:*`,
   // `https://example.com*`) has always also covered the path, so keep that;

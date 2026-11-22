@@ -135,6 +135,30 @@ describe("wildcard redirect URIs", () => {
     ).toBe(true);
   });
 
+  test("hosts written in Unicode and names under localhost still work", () => {
+    expect(
+      validateRedirectUriEntry({
+        type: "wildcard",
+        value: "https://bücher.example/*",
+      }),
+    ).toBeNull();
+    expect(
+      matches("https://bücher.example/*", "https://bücher.example/x"),
+    ).toBe(true);
+    expect(
+      matches("https://*.bücher.example/*", "https://a.bücher.example/x"),
+    ).toBe(true);
+    expect(
+      validateRedirectUriEntry({
+        type: "wildcard",
+        value: "https://bü*cher.example/*",
+      }),
+    ).toBe("wildcard_host");
+    expect(matches("https://*.localhost/*", "https://a.localhost/x")).toBe(
+      true,
+    );
+  });
+
   test("the scheme must match", () => {
     expect(matches("https://localhost/cb", "http://localhost/cb")).toBe(false);
   });
