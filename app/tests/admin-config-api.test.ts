@@ -96,4 +96,19 @@ describe("admin:config API", () => {
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ updated: ["site_name"] });
   });
+
+  test("a change is recorded in the audit log, naming the app", async () => {
+    await call("PATCH", { site_name: "Renamed" });
+    await Bun.sleep(10);
+    const row = sqlite
+      .query(
+        "SELECT actor_id, metadata FROM audit_events WHERE action = 'admin.config.update'",
+      )
+      .get() as { actor_id: string; metadata: string } | null;
+    expect(row?.actor_id).toBe("admin");
+    expect(JSON.parse(row!.metadata)).toMatchObject({
+      keys: ["site_name"],
+      client_id: "client",
+    });
+  });
 });

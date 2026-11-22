@@ -34,7 +34,12 @@ import {
   hasLiveRestrictedAccounts,
 } from "../lib/userCapabilities";
 import { getGroupsForTeamMembers, getMemberGroups } from "../lib/teamGroups";
-import { recordAccountDeletion, auditRequestMeta } from "../lib/audit";
+import {
+  PLATFORM_AUDIT,
+  auditRequestMeta,
+  recordAccountDeletion,
+  recordAudit,
+} from "../lib/audit";
 import {
   getMember,
   getEffectiveMember,
@@ -1176,7 +1181,11 @@ app.delete("/me/teams/:id/members/:userId", async (c) => {
 async function requireAdminToken(
   c: Context<AppEnv>,
   requiredScope: string,
-): Promise<{ userId: string; scopes: string[] } | null> {
+): Promise<{
+  userId: string;
+  scopes: string[];
+  clientId: string | null;
+} | null> {
   const resolved = await resolveBearerToken(c, requiredScope);
   if (!resolved) return null;
   const user = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?")
@@ -1184,6 +1193,38 @@ async function requireAdminToken(
     .first<{ role: string }>();
   if (!user || user.role !== "admin") return null;
   return resolved;
+}
+
+/** Record an admin action taken with an app's token in the platform audit
+ *  log, as the admin dashboard records its own, with the app's client_id. */
+async function auditAdminToken(
+  c: Context<AppEnv>,
+  resolved: { userId: string; clientId: string | null },
+  action: string,
+  resourceType: string,
+  resourceId: string | null,
+  metadata: Record<string, unknown>,
+  resourceName: string | null = null,
+): Promise<void> {
+  const actor = await c.env.DB.prepare(
+    "SELECT username FROM users WHERE id = ?",
+  )
+    .bind(resolved.userId)
+    .first<{ username: string }>();
+  const meta = auditRequestMeta(c);
+  c.executionCtx.waitUntil(
+    recordAudit(c.env, c.executionCtx, {
+      ...PLATFORM_AUDIT,
+      action,
+      actorId: resolved.userId,
+      actorName: actor?.username ?? null,
+      resourceType,
+      resourceId,
+      resourceName,
+      ...meta,
+      metadata: { ...metadata, site_admin: true, client_id: resolved.clientId },
+    }),
+  );
 }
 
 // The /me/admin/* and /me/site/* user endpoints are one feature reached
@@ -1307,7 +1348,17 @@ app.patch("/me/admin/users/:id", async (c) => {
     "SELECT id, username, display_name, avatar_url, email, email_verified, role, is_active, created_at FROM users WHERE id = ?",
   )
     .bind(targetId)
-    .first();
+    .first<{ username: string }>();
+  if (user)
+    await auditAdminToken(
+      c,
+      resolved,
+      "admin.user.update",
+      "user",
+      targetId,
+      body,
+      user.username,
+    );
 
   return c.json({
     user: user ? await proxyUserAvatar(c.env.APP_URL, c.env.DB, user) : null,
@@ -1742,6 +1793,18 @@ app.patch("/me/admin/config", async (c) => {
     return c.json({ error: "nothing_to_update" }, 400);
 
   await saveConfigUpdates(c.env, updates);
+  // Values aren't logged: secrets never reach this route, but keep the
+  // record to what changed.
+  await auditAdminToken(
+    c,
+    resolved,
+    "admin.config.update",
+    "site_config",
+    null,
+    {
+      keys: Object.keys(updates),
+    },
+  );
   return c.json({ updated: Object.keys(updates) });
 });
 
