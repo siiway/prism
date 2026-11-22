@@ -320,9 +320,27 @@ app.patch("/users/:id", async (c) => {
     // Changing the address invalidates whatever proved the old one. The
     // admin can mark the new one verified in the same request, or from the
     // user's email list — but it must not inherit the old verdict silently.
+    // One of the user's own alternates keeps the proof it already has.
     if (body.email_verified === undefined) {
-      updates.push("email_verified = ?", "email_verified_at = ?");
-      values.push(0, null);
+      const own = await c.env.DB.prepare(
+        "SELECT verified, verified_via, verified_at FROM user_emails WHERE user_id = ? AND email = ?",
+      )
+        .bind(id, email)
+        .first<{
+          verified: number;
+          verified_via: string | null;
+          verified_at: number | null;
+        }>();
+      updates.push(
+        "email_verified = ?",
+        "email_verified_via = ?",
+        "email_verified_at = ?",
+      );
+      values.push(
+        own?.verified ? 1 : 0,
+        own?.verified ? own.verified_via : null,
+        own?.verified ? own.verified_at : null,
+      );
     }
     updates.push("email_verify_token = ?", "email_verify_code = ?");
     values.push(null, null);

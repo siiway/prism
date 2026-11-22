@@ -80,8 +80,8 @@ describe("saving the site config", () => {
     sqlite.exec(`
       INSERT INTO users (id, username, email, created_at, updated_at)
         VALUES ('u', 'u', 'a@example.com', 0, 0);
-      INSERT INTO user_emails (id, user_id, email, verified, created_at)
-        VALUES ('e1', 'u', 'b@example.com', 1, 0);
+      INSERT INTO user_emails (id, user_id, email, verified, verified_via, verified_at, created_at)
+        VALUES ('e1', 'u', 'b@example.com', 1, 'link', 123, 0);
     `);
     const jwt = await signJWT(
       {
@@ -128,5 +128,16 @@ describe("saving the site config", () => {
     expect(
       sqlite.query("SELECT id FROM user_emails WHERE user_id = 'u'").get(),
     ).toBeNull();
+    expect(
+      sqlite
+        .query(
+          "SELECT email_verified, email_verified_via, email_verified_at FROM users WHERE id = 'u'",
+        )
+        .get(),
+    ).toEqual({
+      email_verified: 1,
+      email_verified_via: "link",
+      email_verified_at: 123,
+    });
   });
 });
