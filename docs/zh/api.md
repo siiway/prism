@@ -106,7 +106,7 @@ OAuth 和 OpenID Connect 协议端点（`/api/oauth/token`、`/api/oauth/registe
 **响应** — `{ "user": { ... } }`。如果已启用 TOTP 但未发送验证码：
 
 ```json
-{ "totp_required": true, "available_methods": ["totp", "passkey", "backup"] }
+{ "error": "totp_required", "totp_required": true }
 ```
 
 ### `POST /api/auth/logout`

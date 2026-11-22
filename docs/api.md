@@ -124,7 +124,7 @@ Passkeys use the dedicated endpoints below.
 **Response** — `{ "user": { ... } }`. If TOTP is enrolled but no code was sent:
 
 ```json
-{ "totp_required": true, "available_methods": ["totp", "passkey", "backup"] }
+{ "error": "totp_required", "totp_required": true }
 ```
 
 ### `POST /api/auth/logout`
