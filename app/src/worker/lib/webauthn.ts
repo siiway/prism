@@ -56,9 +56,11 @@ export async function beginPasskeyRegistration(
       id: p.credentialId,
       transports: p.transports,
     })),
+    // Signing in with a passkey requires user verification, so one that
+    // can't do it would register and then never sign in.
     authenticatorSelection: {
       residentKey: "preferred",
-      userVerification: "preferred",
+      userVerification: "required",
     },
   });
 }
@@ -74,7 +76,7 @@ export async function finishPasskeyRegistration(
     expectedChallenge,
     expectedRPID: rpId,
     expectedOrigin: origin,
-    requireUserVerification: false,
+    requireUserVerification: true,
   });
 }
 
@@ -129,4 +131,10 @@ function base64urlToUint8Array(str: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
+}
+
+/** Whether a failed passkey check failed only for want of user
+ *  verification, as a security key without a PIN does. */
+export function failedUserVerification(err: unknown): boolean {
+  return err instanceof Error && /user verification/i.test(err.message);
 }

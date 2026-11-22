@@ -21,6 +21,7 @@ import { verifyAnyTotp } from "../lib/totp";
 import {
   beginPasskeyAuthentication,
   beginPasskeyRegistration,
+  failedUserVerification,
   finishPasskeyAuthentication,
   finishPasskeyRegistration,
   rowToPasskey,
@@ -687,6 +688,8 @@ app.post("/passkey/auth/finish", async (c) => {
     );
   } catch (err) {
     console.warn("[passkey] authentication failed:", err);
+    if (failedUserVerification(err))
+      return c.json({ error: "passkey_user_verification_required" }, 400);
     return c.json({ error: "passkey_auth_failed" }, 400);
   }
 

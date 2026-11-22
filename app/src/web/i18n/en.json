@@ -3350,6 +3350,7 @@
     "passkey_auth_failed": "Passkey sign-in failed. Try again.",
     "passkey_not_found": "Passkey not found.",
     "passkey_registration_failed": "Couldn't register the passkey. Try again.",
+    "passkey_user_verification_required": "This passkey didn't check a PIN or fingerprint, which signing in needs. Set a PIN on the security key, or use another passkey.",
     "password_only_sign_in": "This account has no other way to sign in, so its password can't be cleared.",
     "password_too_short": "The password must be at least 8 characters.",
     "pgp_key_invalid": "That isn't a valid PGP public key.",

@@ -3350,6 +3350,7 @@
     "passkey_auth_failed": "通行密钥登录失败，请重试。",
     "passkey_not_found": "未找到该通行密钥。",
     "passkey_registration_failed": "无法注册通行密钥，请重试。",
+    "passkey_user_verification_required": "此通行密钥未验证 PIN 或指纹，而登录需要验证。请在安全密钥上设置 PIN，或使用其他通行密钥。",
     "password_only_sign_in": "此账号没有其他登录方式，无法清除密码。",
     "password_too_short": "密码至少需要 8 个字符。",
     "pgp_key_invalid": "不是有效的 PGP 公钥。",
